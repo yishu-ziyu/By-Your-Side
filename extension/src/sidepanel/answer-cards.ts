@@ -10,7 +10,7 @@
 import DOMPurify from "dompurify";
 import { isPopout, targetWindowId } from "./target-window.js";
 import { createElement as icon, LayoutGrid, Table2 } from "lucide";
-import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, evaluate, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
+import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, evaluate, fillRefs, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { captureCitationContext, toast } from "./sonar-citations.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
@@ -85,9 +85,13 @@ const KIND: Record<PendingComponent["tag"], Block["kind"]> = { stat: "stats", st
 /** 自己成一块、不和同类组件排在一起的组件：空位单独占一块。 */
 const STANDALONE = new Set<PendingComponent["tag"]>(["table", "callout", "diagram"]);
 
+/** 卡片里的说明文字：{=名字} 换成跟着可调值重算的数（recompute 按 data-gc-ref 改写）。 */
+const textHtml = (text: string, values: ReadonlyMap<string, string>) => fillRefs(esc(text), values, (v, id) => `<span data-gc-ref="${esc(id)}">${esc(v)}</span>`, "…");
+
 /** 一个块的 HTML；extra 是排在这个块末尾的空位（写到一半的同类组件）。 */
-function blockHtml(b: Block, i: number, extra: string): string {
+function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<string, string>): string {
   const key = (j: number) => `b${i}.${j}`;
+  const t = (text: string) => textHtml(text, values);
 
   switch (b.kind) {
     case "fields":
@@ -97,17 +101,17 @@ function blockHtml(b: Block, i: number, extra: string): string {
     case "inputs":
       return `<div class="gc-inputs" data-gc-key="b${i}">${b.items.map((v, j) => keyed(key(j), inputHtml(v))).join("")}</div>`;
     case "stats":
-      return `<div class="gc-stats" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${esc(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(s.value)}</div><div class="n">${[s.note && esc(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-stats" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${esc(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(s.value)}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
     case "steps":
-      return `<ol class="gc-steps" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<li class="gc-step"><span class="num">${j + 1}</span><div><div class="t">${esc(s.title)}</div>${s.detail ? `<div class="d">${esc(s.detail)}</div>` : ""}</div></li>`)).join("")}${extra}</ol>`;
+      return `<ol class="gc-steps" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<li class="gc-step"><span class="num">${j + 1}</span><div><div class="t">${esc(s.title)}</div>${s.detail ? `<div class="d">${t(s.detail)}</div>` : ""}</div></li>`)).join("")}${extra}</ol>`;
     case "options":
-      return `<div class="gc-options" data-gc-key="b${i}">${b.items.map((o, j) => keyed(key(j), `<div class="gc-option${o.pick ? " pick" : ""}"${fromAttrs(o.from)}><div class="gc-row"><span class="name">${esc(o.name)}</span>${o.pick ? '<span class="badge">推荐</span>' : ""}${o.value ? cellHtml(o.value, "span", ' class="price"') : ""}${o.meta ? `<span class="meta">${esc(o.meta)}</span>` : ""}</div><div class="gc-why">${esc(o.why)}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-options" data-gc-key="b${i}">${b.items.map((o, j) => keyed(key(j), `<div class="gc-option${o.pick ? " pick" : ""}"${fromAttrs(o.from)}><div class="gc-row"><span class="name">${esc(o.name)}</span>${o.pick ? '<span class="badge">推荐</span>' : ""}${o.value ? cellHtml(o.value, "span", ' class="price"') : ""}${o.meta ? `<span class="meta">${t(o.meta)}</span>` : ""}</div><div class="gc-why">${t(o.why)}</div></div>`)).join("")}${extra}</div>`;
     case "table":
       return `<table class="gc-table" data-gc-key="b${i}"><thead><tr>${b.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${b.rows.map((r, j) => keyed(key(j), `<tr${r.tag ? ' class="best"' : ""}${fromAttrs(r.from)}>${r.cells.map((c) => cellHtml(c, "td")).join("")}</tr>`)).join("")}${extra}</tbody></table>`;
     case "checks":
-      return `<ul class="gc-checks" data-gc-key="b${i}">${b.items.map((c, j) => keyed(key(j), `<li class="gc-check"><label><input type="checkbox"><span><span class="t">${esc(c.text)}</span>${c.note ? `<span class="d">${esc(c.note)}</span>` : ""}</span></label></li>`)).join("")}${extra}</ul>`;
+      return `<ul class="gc-checks" data-gc-key="b${i}">${b.items.map((c, j) => keyed(key(j), `<li class="gc-check"><label><input type="checkbox"><span><span class="t">${esc(c.text)}</span>${c.note ? `<span class="d">${t(c.note)}</span>` : ""}</span></label></li>`)).join("")}${extra}</ul>`;
     case "callout":
-      return keyed(`b${i}`, `<div class="gc-callout ${b.tone}">${esc(b.text)}</div>`);
+      return keyed(`b${i}`, `<div class="gc-callout ${b.tone}">${t(b.text)}</div>`);
     case "diagram": {
       const cites = Object.entries(b.cites);
       const list = cites.length ? `<ul class="gc-cites" hidden>${cites.map(([node, c]) => `<li data-node="${esc(node)}" data-from="${esc(c.from ?? "")}">${esc(c.text)}</li>`).join("")}</ul><div class="gc-diagram-hint">点方块看原文</div><div class="gc-quote" hidden><div class="gc-quote-from"></div><q></q></div>` : "";
@@ -139,7 +143,7 @@ function cardHtml(card: Card): string {
     const joins = p && i === card.blocks.length - 1 && !STANDALONE.has(p.tag) && KIND[p.tag] === b.kind;
     const items = b.kind === "table" ? b.rows.length : b.kind === "callout" || b.kind === "diagram" || b.kind === "app" ? 0 : b.items.length;
 
-    return blockHtml(b, i, joins ? placeholder(p, `b${i}.${items}`, b.kind === "table" ? b.cols.length : 0) : "");
+    return blockHtml(b, i, joins ? placeholder(p, `b${i}.${items}`, b.kind === "table" ? b.cols.length : 0) : "", card.values);
   });
   const p = card.pending;
   const n = card.blocks.length;
@@ -161,7 +165,7 @@ function cardHtml(card: Card): string {
   const sourceCell = (r: (typeof rows)[number], i: number) => (shared && i > 0 ? "" : `<td class="s"${shared ? ` rowspan="${rows.length}"` : ""}>${r.source ? esc(r.source) : "—"}</td>`);
   const evidence = rows.length ? keyed("ev", `<div class="gc-evidence" hidden><table><thead><tr><th>项</th><th>结果</th><th>怎么算</th><th>出处</th></tr></thead><tbody>${rows.map((r, i) => `<tr><td>${esc(r.label)}${r.tab ? `<button type="button" class="gc-btn gc-point" data-card-tab="${esc(r.tab)}">指给我看</button>` : ""}</td>${cellHtml(r, "td", ' class="r"')}<td class="f">${r.formula ? formulaHtml(r.formula, r.expr) : "—"}</td>${sourceCell(r, i)}</tr>`).join("")}</tbody></table></div>`) : "";
   const faces = rows.length ? keyed("faces", `<div class="gc-faces" role="group" aria-label="结论 / 依据">${FACE_BUTTONS}</div>`) : "";
-  const head = card.title ? `<div class="gc-head${faces ? " has-faces" : ""}"><div class="gc-title">${esc(card.title)}</div>${card.sub ? `<div class="gc-sub">${esc(card.sub)}</div>` : ""}</div>` : faces ? '<div class="gc-head has-faces" data-gc-key="head"></div>' : "";
+  const head = card.title ? `<div class="gc-head${faces ? " has-faces" : ""}"><div class="gc-title">${esc(card.title)}</div>${card.sub ? `<div class="gc-sub">${textHtml(card.sub, card.values)}</div>` : ""}</div>` : faces ? '<div class="gc-head has-faces" data-gc-key="head"></div>' : "";
 
   // 只有写完的卡片带状态键：写到一半时原文还在变，摘要也跟着变。
   return `<div class="gen-card"${card.closed ? ` data-gc-card="${card.key}"` : ""}>${head}${body ? `<div class="gc-body" data-gc-key="body">${body}</div>` : ""}${evidence}${buttons ? `<div class="gc-actions">${buttons}</div>` : ""}${card.source && card.closed ? `<div class="gc-foot">${esc(card.source)}</div>` : ""}${faces}</div>`;

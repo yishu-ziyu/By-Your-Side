@@ -1,7 +1,7 @@
 /**
  * 卡片里可调的数。
  *   npx tsx scripts/acceptance/real-path/card-inputs.mts --headless
- * 脚本模型写一张订阅卡：月数（加减）、人数（加减 + 滑块）、引用它们的数字格 / 选项 / 表格 / 正文 {=total}，外加另一张只有清单的卡。
+ * 脚本模型写一张订阅卡：月数（加减）、人数（加减 + 滑块）、引用它们的数字格 / 选项 / 表格 / 正文与说明文字里的 {=名字}，外加另一张只有清单的卡。
  * 点加号、打字超出范围、点滑块，看卡片和正文当场重算；勾一项后重开侧栏，看调过的数和勾选都还在、另一张卡不受影响。
  */
 import assert from "node:assert/strict";
@@ -19,14 +19,14 @@ await mkdir(artifacts, { recursive: true });
 
 const TASK = "订阅按月数算一共多少，几个人分";
 
-const ANSWER = `按 {=months} 算，一共花 {=total}。
+const ANSWER = `按 {=months} 算，一共花 {=total}。共 {=months} 个月。
 <card title="订阅按月数算">
 <input id="months" label="月数" value="12" min="1" max="20" unit="个月" />
 <input id="people" label="人数" value="2" min="1" max="50" unit="人" />
 <stat label="Notion" value="=68*months" unit="¥" note="月付" />
 <stat label="Duolingo" value="398" unit="¥" />
 <stat id="total" label="合计" value="=68*months+398" unit="¥" />
-<stat label="每人" value="=(68*months+398)/people" unit="¥" />
+<stat label="每人" value="=(68*months+398)/people" unit="¥" note="{=total} 由 {=people}分" />
 <option name="Notion 年付" value="=48*months" unit="¥" why="折合每月 48" />
 <table cols="订阅|费用"><tr cells="Notion|=68*months" /><tr cells="Duolingo|398" /></table>
 <checklist><check text="取消 Calm" /><check text="Notion 改年付" /></checklist>
@@ -46,7 +46,7 @@ let error: string | null = null;
 
 const evidence: Record<string, unknown> = {};
 
-type Seen = { months: string; people: string; slider: string | null; monthsSlider: boolean; stats: string[]; formula: string; option: string; cells: string[]; evidence: string[]; prose: string; checks: boolean[]; otherChecks: boolean[] };
+type Seen = { months: string; people: string; slider: string | null; monthsSlider: boolean; stats: string[]; notes: string[]; formula: string; option: string; cells: string[]; evidence: string[]; prose: string; checks: boolean[]; otherChecks: boolean[] };
 
 /** 第一张卡和它所在回答的现状。 */
 const SEEN = `(() => {
@@ -59,6 +59,7 @@ const SEEN = `(() => {
     monthsSlider: !!card?.querySelector('.gc-range[data-gc-var="months"]'),
     stats: [...card.querySelectorAll(".gc-stat .v")].map(v => v.textContent),
     formula: card.querySelectorAll(".gc-stat .n")[2]?.textContent ?? "",
+    notes: [...card.querySelectorAll(".gc-stat .n")].map(n => n.textContent),
     option: card.querySelector(".gc-option .price")?.textContent,
     cells: [...card.querySelectorAll(".gc-table td")].map(td => td.textContent),
     evidence: [...card.querySelectorAll(".gc-evidence td.r")].map(td => td.textContent),
@@ -99,6 +100,9 @@ try {
   assert.equal(first.people, "2", "R1: people input drawn");
   assert.ok(!first.monthsSlider && first.slider === "2", `R1: slider only for the input with many steps: ${JSON.stringify(first)}`);
   assert.deepEqual(first.stats, ["¥816", "¥398", "¥1,214", "¥607"], "R1: initial values computed");
+  // 说明文字里的 {=名字} 也画成算出的数；{=months} 后面模型再写的「个月」只留一个。
+  assert.ok(first.notes[3]?.startsWith("¥1,214 由 2 人分"), `R1: note refs filled: ${first.notes[3]}`);
+  assert.ok(first.prose.includes("共 12 个月。") && !first.prose.includes("个月 个月"), `R1: unit not doubled: ${first.prose}`);
 
   // R2：点两下月数的加号 → 14 个月，所有引用它的地方都重算。
   const plus = '.gen-card .gc-input:nth-child(1) .gc-bump[data-gc-bump="1"]';
@@ -115,6 +119,7 @@ try {
   assert.deepEqual(after.cells, ["Notion", "952", "Duolingo", "398"], "R2: table cell recomputed");
   assert.ok(after.evidence.includes("¥1,350"), `R2: evidence face recomputed: ${after.evidence}`);
   assert.ok(after.prose.includes("按 14 个月 算，一共花 ¥1,350"), `R2: prose {=months} {=total} recomputed: ${after.prose}`);
+  assert.ok(after.notes[3]?.startsWith("¥1,350 由 2 人分"), `R2: note follows the input: ${after.notes[3]}`);
 
   // R1：打字超出范围，失焦后夹回 20；在 20 上再点加号仍是 20；再打回 14。
   const months = '.gen-card .gc-num[data-gc-var="months"]';
@@ -141,6 +146,7 @@ try {
   const people = Number(slid.people);
   assert.ok(people > 2 && slid.slider === slid.people, `R2: slider moves the number: ${JSON.stringify(slid)}`);
   assert.equal(slid.stats[3], yuan(Math.round(1350 / people * 100) / 100), "R2: per person follows the slider");
+  assert.ok(slid.notes[3]?.startsWith(`¥1,350 由 ${people} 人分`), `R2: note follows the slider: ${slid.notes[3]}`);
 
   // R3：勾第一项，重开侧栏，调过的数和勾选都还在；另一张卡不受影响。
   await tap(".gen-card .gc-check:first-child label");
@@ -155,6 +161,7 @@ try {
   assert.equal(replay.months, "14", "R3: months kept after reopening");
   assert.equal(replay.people, String(people), "R3: people kept after reopening");
   assert.equal(replay.stats[2], "¥1,350", "R3: total recomputed after reopening");
+  assert.ok(replay.notes[3]?.startsWith(`¥1,350 由 ${people} 人分`), `R3: note recomputed after reopening: ${replay.notes[3]}`);
   assert.ok(replay.prose.includes("按 14 个月 算，一共花 ¥1,350"), `R3: prose recomputed after reopening: ${replay.prose}`);
   assert.deepEqual(replay.checks, [true, false], "R3: tick kept after reopening");
   assert.deepEqual(replay.otherChecks, [false], "R3: the other card is untouched");

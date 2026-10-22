@@ -581,15 +581,25 @@ export function resolveProse(prose: string, cards: Card[], mark = (value: string
   const numbers = new Set(cards.flatMap((c) => [...c.numbers]));
 
   return outsideCode(prose, (part) => {
-    const out = part.replace(/\{=([A-Za-z_][\w-]*)\}/g, (_all, id: string) => {
-      const v = values.get(id);
-
-      if (v) return mark(v, id);
-
-      return done ? "见下方卡片" : "…";
-    });
+    const out = fillRefs(part, values, mark, done ? "见下方卡片" : "…");
 
     return guard ? out.replace(/((?:预算|低于|高于|不超过|不到|超过|至少|最多|以内)\s*(?:是|为)?\s*)?[¥￥$]\s?(\d[\d,]*(?:\.\d+)?)(?!\d|[.,]\d|\s*(?:万|千|亿|[kKwW]|以内|以下|以上|左右|起))/g, (all, condition: string | undefined, n: string) => (condition || numbers.has(plain(n)) ? all : "见下方卡片")) : out;
+  });
+}
+
+/**
+ * {=名字} 换成卡片算出的数；正文和卡片里的说明文字共用。算出的数已带单位，模型常在后面再写一遍（「{=slow} 小时」），只留一个。
+ */
+export function fillRefs(text: string, values: ReadonlyMap<string, string>, mark: (value: string, id: string) => string, missing: string): string {
+  return text.replace(/\{=([A-Za-z_][\w-]*)\}([ \t]*)(\p{L}+|%)?/gu, (_all, id: string, space: string, after: string | undefined) => {
+    const v = values.get(id);
+
+    if (!v) return `${missing}${space}${after ?? ""}`;
+    const unit = /[\d.,]\s*(\S+)$/.exec(v)?.[1];
+
+    if (after && unit && after.startsWith(unit)) return `${mark(v, id)}${after.slice(unit.length)}`;
+
+    return `${mark(v, id)}${space}${after ?? ""}`;
   });
 }
 
@@ -615,14 +625,16 @@ export function answerMarkdown(text: string): string {
   if (!/<card[\s>]|\{=/.test(text)) return text;
   const parts = splitAnswer(text);
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
-  const md = (c: Card) => [c.title ? `**${c.title}**${c.sub ? `（${c.sub}）` : ""}` : "", ...c.blocks.map((b) => {
+  const values = new Map(cards.flatMap((c) => [...c.values]).reverse());
+  const t = (text: string) => fillRefs(text, values, (v) => v, "…");
+  const md = (c: Card) => [c.title ? `**${c.title}**${c.sub ? `（${t(c.sub)}）` : ""}` : "", ...c.blocks.map((b) => {
     switch (b.kind) {
-      case "stats": return b.items.map((s) => `- ${s.label}：${s.value}${s.formula ? `（${s.formula}）` : ""}${s.note ? `，${s.note}` : ""}${s.tag ? ` · ${s.tag}` : ""}`).join("\n");
-      case "steps": return b.items.map((s, i) => `${i + 1}. ${s.title}${s.detail ? `：${s.detail}` : ""}`).join("\n");
-      case "options": return b.items.map((o) => `- ${o.name}${o.pick ? "（推荐）" : ""}${o.value ? ` ${o.value.value}` : ""}${o.meta ? `，${o.meta}` : ""}：${o.why}`).join("\n");
+      case "stats": return b.items.map((s) => `- ${s.label}：${s.value}${s.formula ? `（${s.formula}）` : ""}${s.note ? `，${t(s.note)}` : ""}${s.tag ? ` · ${s.tag}` : ""}`).join("\n");
+      case "steps": return b.items.map((s, i) => `${i + 1}. ${s.title}${s.detail ? `：${t(s.detail)}` : ""}`).join("\n");
+      case "options": return b.items.map((o) => `- ${o.name}${o.pick ? "（推荐）" : ""}${o.value ? ` ${o.value.value}` : ""}${o.meta ? `，${t(o.meta)}` : ""}：${t(o.why)}`).join("\n");
       case "table": return [`| ${b.cols.join(" | ")} |`, `|${b.cols.map(() => " --- ").join("|")}|`, ...b.rows.map((r) => `| ${r.cells.map((c) => c.value).join(" | ")}${r.tag ? `（${r.tag}）` : ""} |`)].join("\n");
-      case "checks": return b.items.map((c) => `- [ ] ${c.text}${c.note ? `（${c.note}）` : ""}`).join("\n");
-      case "callout": return `> ${b.text}`;
+      case "checks": return b.items.map((c) => `- [ ] ${c.text}${c.note ? `（${t(c.note)}）` : ""}`).join("\n");
+      case "callout": return `> ${t(b.text)}`;
       case "inputs": return b.items.map((v) => `- ${v.label}：${showValue(v.value, v.unit)}`).join("\n");
       case "app": return `（小程序：${b.title}）`;
       case "fields": return b.items.map((f) => `- ${f.label}：${f.value || "（待填）"}${f.options ? `（可选：${f.options.join(" / ")}）` : ""}`).join("\n");
