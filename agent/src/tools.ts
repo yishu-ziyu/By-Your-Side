@@ -618,7 +618,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         // 指向另一个动作的参数照常执行会悄悄丢掉模型的意图（例如 list 带 url 只回列表），模型看不出用错就原地重复同一个调用。
         const misuse = tabsMisuse(params);
 
-        if (misuse) throw new Error(misuse);
+        if (misuse) {
+          rpc.markCallRejected?.(_id);
+          return { ...textResult(misuse, { failure: { kind: "invalid_arguments", retry: "change_input" } }), isError: true };
+        }
 
         if (params.action === "list") {
           const data = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];

@@ -340,7 +340,12 @@ export class DurableAgentLoop implements AgentLoop {
       execute: async (args, api, context) => {
         await this.flushPersistence();
         const blocked = this.hooks.has("tool_call") ? await this.hooks.toolCall(tool.name, api.callId, args as HookArgs) : undefined;
-        if (blocked?.block) return { content: [{ type: "text" as const, text: blocked.reason ?? "已阻止" }], isError: true };
+        if (blocked?.block) {
+          const content = [{ type: "text" as const, text: blocked.reason ?? "已阻止" }];
+          // Refusals still count toward the existing no-progress budget, even though the tool did not run.
+          const hooked = this.hooks.has("tool_result") ? await this.hooks.toolResult({ toolName: tool.name, toolCallId: api.callId, input: args as HookArgs, content, details: blocked.details, isError: true }) : undefined;
+          return { content: [...(hooked?.content ?? content)], details: (hooked?.details ?? blocked.details) as never, isError: hooked?.isError ?? true };
+        }
         // 抛出的错误要留在结果正文里。pi-durable 会把异常收成诊断，模型看到的就变成带外壳的一段，认不出原来的那句。
         const running = new AbortController();
         const stop = () => running.abort();
