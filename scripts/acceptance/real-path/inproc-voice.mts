@@ -7,6 +7,7 @@
  *   --case=opinion   闲聊："你觉得这个页面做得怎么样？"，同上，是人设示例之外的留出题
  *   --case=barge-in   插话：先请它讲个长故事，回答播到一半时问备注；旧回答要在开口后马上停声，新问题照常回答
  *   --case=stop-task  点选等待中：问候照常回答、停声不停任务；说“终止任务”直接终止原任务，回执前不宣称已停，旧要求不能复活
+ *   --case=ask-status 点选等待中问「任务结束了吗？」：问句不是终止，原任务和点选层都留着，助手照常回答
  *
  * 麦克风是 macOS say 合成的中文 WAV（Chrome 假设备只放一遍）。语音密钥来自 ~/.sideagent/stepfun-api.key，
  * 文字模型来自 ~/.sideagent/providers.local.json（--model=provider/id，默认 kimi-coding/kimi-for-coding）。
@@ -59,7 +60,7 @@ if (firstUtterance && caseName !== "question") throw new Error("首句验收只�
 const planVoice = process.argv.includes("--plan");
 if (planVoice && caseName !== "question") throw new Error("套餐首句验收只用于页面问答");
 
-const QUESTIONS = new Map([["question", "这个页面上的备注写的是什么"], ["mark", "帮我把保存按钮圈出来，不要点它"], ["stop-task", "终止任务"], ["chat", "我今天有点累，陪我聊两句吧。"], ["opinion", "你觉得这个页面做得怎么样？"], ["barge-in", "等一下，先不讲了，我想问你这个页面上的备注写的是什么"]]);
+const QUESTIONS = new Map([["question", "这个页面上的备注写的是什么"], ["mark", "帮我把保存按钮圈出来，不要点它"], ["stop-task", "终止任务"], ["ask-status", "任务结束了吗？"], ["chat", "我今天有点累，陪我聊两句吧。"], ["opinion", "你觉得这个页面做得怎么样？"], ["barge-in", "等一下，先不讲了，我想问你这个页面上的备注写的是什么"]]);
 
 const QUESTION = QUESTIONS.get(caseName);
 
@@ -350,7 +351,7 @@ try {
     }
   };
 
-  if (caseName === "stop-task") {
+  if (caseName === "stop-task" || caseName === "ask-status") {
     // 供应商原始帧时间线：只留事件类型、ID、工具名和文字；音频只记每轮首帧时刻，密钥不在帧内容里。
     const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "扩展内 agent 文档");
     const off = await rp.attach(offscreen.targetId);
@@ -451,85 +452,122 @@ try {
       return state;
     };
 
-    // 第一句是普通问候：可控任务期间的转写闸门必须放行，助手照常回答，任务不动。
-    await rp.click(panel, "#input");
-    await rp.click(panel, ".voice-start");
+    if (caseName === "ask-status") {
+      // 问任务状态的句子也带「结束…任务」：宿主不能把它当成终止，要交给模型照常回答，原任务和点选层都留着。
+      const askedAt = Date.now();
 
-    const greeted = await until(async () => {
-      const state = await sample();
+      await rp.click(panel, "#input");
+      await rp.click(panel, ".voice-start");
+      const asked = await until(async () => {
+        const state = await sample();
 
-      return state.heard.includes("你好") && state.answer && state.voiceState === "speaking" ? state : undefined;
-    }, 40_000, "问候被正常回答", 200);
+        return state.heard.includes("任务") ? state : undefined;
+      }, 40_000, "听到问任务状态", 200);
 
-    stopEvidence.greeting = greeted;
-    verdicts.chatPassesGate = verdict(greeted.taskBusy, { heard: greeted.heard, answer: greeted.answer, taskBusy: greeted.taskBusy });
-    // SAFETY: 表达式只返回布尔值。
-    const muted = await rp.evaluate(panel, `(() => { const b = document.querySelector(".voice-stop-speech"); if (!b || b.hidden || b.disabled) return false; b.click(); return true; })()`) as boolean;
+      // 宿主误判时终止在转写后一两秒内就下发；等这句回答说完再看任务。
+      await until(async () => {
+        const state = await sample();
 
-    const afterMute = await until(async () => {
-      const state = await sample();
-
-      return state.voiceState === "listening" ? state : undefined;
-    }, 10_000, "停声后继续收音", 200);
-
-    // SAFETY: 表达式只返回布尔值。
-    const pendingAfterMute = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
-    const abortedByMute = (await protocol()).some(frame => frame.kind === "receipt" && frame.action === "abort" && frame.runId === runId);
-
-    stopEvidence.afterMute = { muted, panel: afterMute, pendingPicker: pendingAfterMute, abortedByMute };
-    verdicts.muteKeepsOriginalTask = verdict(pendingAfterMute && afterMute.taskBusy && !abortedByMute, { muted, runId, pendingPicker: pendingAfterMute, taskBusy: afterMute.taskBusy, abortedByMute });
-    await rp.screenshot(panel, join(artifacts, "02-muted-still-running.png"));
-
-    // 第二句“终止任务”：直接终止原任务，不复述确认；回执之前不能宣称已停。
-    const confirmationWaitingAt = Date.now();
-    let abort: StopFrame | undefined;
-
-    await until(async () => {
-      await sample();
-      abort = (await protocol()).find(frame => frame.kind === "receipt" && frame.action === "abort" && frame.source === "voice");
-
-      return abort;
-    }, 40_000, "语音终止回执", 200);
-    const receipt = abort!;
-    const afterAbort = await sample();
-    const claims = voiceSamples.filter(v => /已终止|终止了|已停止|停了|已经停/.test(v.answer));
-
-    stopEvidence.confirmation = { panel: afterAbort, receipt: { ...receipt } };
-    verdicts.confirmedOriginalAbort = verdict(receipt.status === "applied" && receipt.runId === runId && receipt.conversationId === "default" && afterAbort.heard.includes("终止任务"), { runId, receipt: { ...receipt }, heard: afterAbort.heard });
-    verdicts.noReadback = verdict(!voiceSamples.some(v => v.answer.includes("你是说")), { answers: [...new Set(voiceSamples.map(v => v.answer))] });
-    verdicts.noClaimBeforeReceipt = verdict(!claims.some(v => v.at < receipt.at), { receiptAt: receipt.at, claims });
-
-    const terminal = await until(async () => {
+        return state.answer && state.voiceState === "listening" ? state : undefined;
+      }, 30_000, "回答说完", 300).catch(() => undefined);
+      const after = await sample();
+      const frames = await protocol();
+      const aborted = frames.filter(frame => frame.kind === "receipt" && frame.action === "abort" && frame.at >= askedAt).map(frame => ({ ...frame }));
       // SAFETY: 表达式只返回布尔值。
       const picker = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
-      const frames = await protocol();
-      const ended = frames.some(frame => frame.kind === "status" && ["aborted", "idle"].includes(frame.state ?? "") && frame.at >= confirmationWaitingAt) || frames.some(frame => frame.kind === "event" && frame.event === "run_stopped" && frame.at >= confirmationWaitingAt);
 
-      return !picker && ended ? { picker, ended } : undefined;
-    }, 15_000, "终止后点选层与任务状态收束", 300);
+      stopEvidence.askStatus = { heard: asked.heard, panel: after, aborted, picker };
+      verdicts.heardStatusQuestion = verdict(/结束|完/.test(asked.heard), { heard: asked.heard });
+      verdicts.statusQuestionKeepsTask = verdict(!aborted.length && picker && after.taskBusy, { runId, aborted, picker, taskBusy: after.taskBusy });
+      verdicts.statusQuestionAnswered = verdict(!!after.answer, { answer: after.answer });
+      stopEvidence.protocol = frames.map(frame => ({ ...frame }));
+      await rp.screenshot(panel, join(artifacts, "02-asked-status-panel.png"));
+      await rp.screenshot(page, join(artifacts, "03-asked-status-page.png"));
+      // SAFETY: PANEL_STATE/页面探针脚本返回的对象形状由同文件的表达式定义。
+      await writeFile(join(artifacts, "panel-transcript.txt"), (await rp.evaluate(panel, PANEL_STATE) as PanelState).transcript);
+    }
 
-    stopEvidence.terminal = terminal;
-    verdicts.abortClearsPicker = verdict(!terminal.picker && terminal.ended, terminal);
+    if (caseName === "stop-task") {
+      // 第一句是普通问候：可控任务期间的转写闸门必须放行，助手照常回答，任务不动。
+      await rp.click(panel, "#input");
+      await rp.click(panel, ".voice-start");
 
-    const lateRequestId = `late-after-abort-${Date.now()}`;
-    await rp.evaluate(panel, `window.__stopProbe.port.postMessage({ kind: "client", msg: { type: "task_action", conversationId: "default", request: { requestId: ${JSON.stringify(lateRequestId)}, conversationId: "default", source: "text", action: "steer", expectedRunId: ${JSON.stringify(runId)}, text: "现在点击保存按钮" } } }); true`);
-    const lateReceipt = await until(async () => (await protocol()).find(frame => frame.kind === "receipt" && frame.requestId === lateRequestId), 10_000, "迟到旧要求的拒绝回执", 300);
-    await new Promise(resolve => setTimeout(resolve, 2_000));
-    await readMarks();
-    const finalFrames = await protocol();
-    // SAFETY: 练习页把 window.receipts 维护为普通 JSON 对象。
-    const pageReceipts = await rp.evaluate(page, "window.receipts") as JsonRecord;
-    // SAFETY: 表达式只返回布尔值。
-    const pickerReturned = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
-    const revived = finalFrames.some(frame => frame.kind === "event" && frame.event === "agent_start" && frame.runId === runId && frame.at > abort.at);
+      const greeted = await until(async () => {
+        const state = await sample();
 
-    stopEvidence.late = { request: { requestId: lateRequestId, expectedRunId: runId }, receipt: { ...lateReceipt }, revived, pickerReturned, pageReceipts, markCount: marks.size };
-    verdicts.lateRequestCannotRevive = verdict(lateReceipt.status === "rejected" && !revived && !pickerReturned && marks.size === 0 && Array.isArray(pageReceipts.save) && pageReceipts.save.length === 0 && Array.isArray(pageReceipts.cancel) && pageReceipts.cancel.length === 0, { lateReceipt: { ...lateReceipt }, revived, pickerReturned, pageReceipts, markCount: marks.size });
-    stopEvidence.protocol = finalFrames.map(frame => ({ ...frame }));
-    await rp.screenshot(panel, join(artifacts, "03-stopped-panel.png"));
-    await rp.screenshot(page, join(artifacts, "04-stopped-page.png"));
-    // SAFETY: PANEL_STATE/页面探针脚本返回的对象形状由同文件的表达式定义。
-    await writeFile(join(artifacts, "panel-transcript.txt"), (await rp.evaluate(panel, PANEL_STATE) as PanelState).transcript);
+        return state.heard.includes("你好") && state.answer && state.voiceState === "speaking" ? state : undefined;
+      }, 40_000, "问候被正常回答", 200);
+
+      stopEvidence.greeting = greeted;
+      verdicts.chatPassesGate = verdict(greeted.taskBusy, { heard: greeted.heard, answer: greeted.answer, taskBusy: greeted.taskBusy });
+      // SAFETY: 表达式只返回布尔值。
+      const muted = await rp.evaluate(panel, `(() => { const b = document.querySelector(".voice-stop-speech"); if (!b || b.hidden || b.disabled) return false; b.click(); return true; })()`) as boolean;
+
+      const afterMute = await until(async () => {
+        const state = await sample();
+
+        return state.voiceState === "listening" ? state : undefined;
+      }, 10_000, "停声后继续收音", 200);
+
+      // SAFETY: 表达式只返回布尔值。
+      const pendingAfterMute = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
+      const abortedByMute = (await protocol()).some(frame => frame.kind === "receipt" && frame.action === "abort" && frame.runId === runId);
+
+      stopEvidence.afterMute = { muted, panel: afterMute, pendingPicker: pendingAfterMute, abortedByMute };
+      verdicts.muteKeepsOriginalTask = verdict(pendingAfterMute && afterMute.taskBusy && !abortedByMute, { muted, runId, pendingPicker: pendingAfterMute, taskBusy: afterMute.taskBusy, abortedByMute });
+      await rp.screenshot(panel, join(artifacts, "02-muted-still-running.png"));
+
+      // 第二句“终止任务”：直接终止原任务，不复述确认；回执之前不能宣称已停。
+      const confirmationWaitingAt = Date.now();
+      let abort: StopFrame | undefined;
+
+      await until(async () => {
+        await sample();
+        abort = (await protocol()).find(frame => frame.kind === "receipt" && frame.action === "abort" && frame.source === "voice");
+
+        return abort;
+      }, 40_000, "语音终止回执", 200);
+      const receipt = abort!;
+      const afterAbort = await sample();
+      const claims = voiceSamples.filter(v => /已终止|终止了|已停止|停了|已经停/.test(v.answer));
+
+      stopEvidence.confirmation = { panel: afterAbort, receipt: { ...receipt } };
+      verdicts.confirmedOriginalAbort = verdict(receipt.status === "applied" && receipt.runId === runId && receipt.conversationId === "default" && afterAbort.heard.includes("终止任务"), { runId, receipt: { ...receipt }, heard: afterAbort.heard });
+      verdicts.noReadback = verdict(!voiceSamples.some(v => v.answer.includes("你是说")), { answers: [...new Set(voiceSamples.map(v => v.answer))] });
+      verdicts.noClaimBeforeReceipt = verdict(!claims.some(v => v.at < receipt.at), { receiptAt: receipt.at, claims });
+
+      const terminal = await until(async () => {
+        // SAFETY: 表达式只返回布尔值。
+        const picker = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
+        const frames = await protocol();
+        const ended = frames.some(frame => frame.kind === "status" && ["aborted", "idle"].includes(frame.state ?? "") && frame.at >= confirmationWaitingAt) || frames.some(frame => frame.kind === "event" && frame.event === "run_stopped" && frame.at >= confirmationWaitingAt);
+
+        return !picker && ended ? { picker, ended } : undefined;
+      }, 15_000, "终止后点选层与任务状态收束", 300);
+
+      stopEvidence.terminal = terminal;
+      verdicts.abortClearsPicker = verdict(!terminal.picker && terminal.ended, terminal);
+
+      const lateRequestId = `late-after-abort-${Date.now()}`;
+      await rp.evaluate(panel, `window.__stopProbe.port.postMessage({ kind: "client", msg: { type: "task_action", conversationId: "default", request: { requestId: ${JSON.stringify(lateRequestId)}, conversationId: "default", source: "text", action: "steer", expectedRunId: ${JSON.stringify(runId)}, text: "现在点击保存按钮" } } }); true`);
+      const lateReceipt = await until(async () => (await protocol()).find(frame => frame.kind === "receipt" && frame.requestId === lateRequestId), 10_000, "迟到旧要求的拒绝回执", 300);
+      await new Promise(resolve => setTimeout(resolve, 2_000));
+      await readMarks();
+      const finalFrames = await protocol();
+      // SAFETY: 练习页把 window.receipts 维护为普通 JSON 对象。
+      const pageReceipts = await rp.evaluate(page, "window.receipts") as JsonRecord;
+      // SAFETY: 表达式只返回布尔值。
+      const pickerReturned = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
+      const revived = finalFrames.some(frame => frame.kind === "event" && frame.event === "agent_start" && frame.runId === runId && frame.at > abort.at);
+
+      stopEvidence.late = { request: { requestId: lateRequestId, expectedRunId: runId }, receipt: { ...lateReceipt }, revived, pickerReturned, pageReceipts, markCount: marks.size };
+      verdicts.lateRequestCannotRevive = verdict(lateReceipt.status === "rejected" && !revived && !pickerReturned && marks.size === 0 && Array.isArray(pageReceipts.save) && pageReceipts.save.length === 0 && Array.isArray(pageReceipts.cancel) && pageReceipts.cancel.length === 0, { lateReceipt: { ...lateReceipt }, revived, pickerReturned, pageReceipts, markCount: marks.size });
+      stopEvidence.protocol = finalFrames.map(frame => ({ ...frame }));
+      await rp.screenshot(panel, join(artifacts, "03-stopped-panel.png"));
+      await rp.screenshot(page, join(artifacts, "04-stopped-page.png"));
+      // SAFETY: PANEL_STATE/页面探针脚本返回的对象形状由同文件的表达式定义。
+      await writeFile(join(artifacts, "panel-transcript.txt"), (await rp.evaluate(panel, PANEL_STATE) as PanelState).transcript);
+    }
   } else {
   // 开口时间线：假麦克风从 getUserMedia 起放 WAV，就绪前的帧被侧栏丢弃；记下开麦、握手、首帧音频、断句与转写的时刻。
   const opening: Array<{ at: number; event: string; text?: string }> = [];
@@ -860,7 +898,7 @@ try {
   const seen = last as PanelState | null;
   result.lastPanel = { states, voiceState: seen?.voiceState ?? null, voiceStatus: seen?.voiceStatus ?? "", heard: seen?.heard ?? "", answer: seen?.answer ?? "" };
 
-  if (caseName === "stop-task" && panelSession) result.stopTaskProtocol = await rp.evaluate(panelSession, "window.__stopProbe?.frames ?? []").catch(() => []);
+  if ((caseName === "stop-task" || caseName === "ask-status") && panelSession) result.stopTaskProtocol = await rp.evaluate(panelSession, "window.__stopProbe?.frames ?? []").catch(() => []);
 
   if (panelSession) await rp.screenshot(panelSession, join(artifacts, "panel-failed.png")).catch(() => {});
 } finally {
