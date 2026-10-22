@@ -77,7 +77,7 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
   // 付款只拦这段脚本自己触发的：页面自己的定时器合成的点击不归助手。
   const onPress = (e: Event) => { if (e.isTrusted || !fromScript()) return; const p = payTarget(real(e)); if (p) holdPay(e, p); };
   const onClick = (e: MouseEvent) => { if (e.isTrusted) return; const p = fromScript() ? payTarget(real(e)) : null; if (p) { holdPay(e, p); return; } const b = actionable(e.target as Element); if (b && isSend(btnName(b))) { stop(e); record({ route: "script", label: btnName(b).trim().slice(0, 40), content: draftNear(b), rect: rectOf(b) }, () => (b as HTMLElement).click()); } };
-  const onSubmit = (e: SubmitEvent) => { if (e.isTrusted && !fromScript()) return; const form = e.target as HTMLFormElement; const pay = e.submitter ? payTarget(e.submitter) : payIn(form); if (pay) { holdPay(e, pay); return; } const sub = e.submitter && isSend(btnName(e.submitter)) ? e.submitter : !e.submitter ? sendIn(form) : null; if (sub) { stop(e); record({ route: "script", label: btnName(sub).trim().slice(0, 40), content: draftNear(sub), rect: rectOf(sub) }, () => form.requestSubmit(e.submitter as HTMLElement ?? undefined)); } };
+  const onSubmit = (e: SubmitEvent) => { if (e.isTrusted && !fromScript()) return; const form = e.target as HTMLFormElement; const pay = !fromScript() ? null : e.submitter ? payTarget(e.submitter) : payIn(form); if (pay) { holdPay(e, pay); return; } const sub = e.submitter && isSend(btnName(e.submitter)) ? e.submitter : !e.submitter ? sendIn(form) : null; if (sub) { stop(e); record({ route: "script", label: btnName(sub).trim().slice(0, 40), content: draftNear(sub), rect: rectOf(sub) }, () => form.requestSubmit(e.submitter as HTMLElement ?? undefined)); } };
   // 回车落在按钮上看按钮名；落在输入框里看它所在表单的提交按钮，不看框里写的字；多行框和编辑器里回车只是换行。
   const enterPays = (t: Element | null) => { if (!t) return null; const b = actionable(t); if (b) return isPay(label(b)) ? b : null; if (t.tagName === "TEXTAREA" || (t as HTMLElement).isContentEditable) return null; return payIn((t as HTMLInputElement).form ?? t.closest("form")); };
   const onKey = (e: KeyboardEvent) => {
@@ -112,6 +112,7 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
   };
   try {
     // shadow DOM 里的点击、不冒泡出来的合成事件和表单提交到不了 window 上的监听：在脚本调用的入口上就认付款。
+    // 这段按源码注入、不在严格模式里：页面设成只读的方法赋值会悄悄失败，所以装完逐项核对。
     HTMLElement.prototype.click = function (this: HTMLElement) { const p = fromScript() ? payTarget(this) : null; if (p) { holdPay(null, p); return; } return origClick.call(this); };
     HTMLFormElement.prototype.requestSubmit = function (this: HTMLFormElement, submitter?: HTMLElement | null) { const p = fromScript() ? (submitter ? payTarget(submitter) : payIn(this)) : null; if (p) { holdPay(null, p); return; } return origRequestSubmit.call(this, submitter); };
     EventTarget.prototype.dispatchEvent = function (this: EventTarget, ev: Event) {
@@ -151,6 +152,8 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
     window.addEventListener("click", onClick, true);
     window.addEventListener("submit", onSubmit, true);
     for (const t of ["keydown", "keypress", "keyup"]) window.addEventListener(t, onKey as EventListener, true);
+    const stuck = [[HTMLFormElement.prototype.submit, origSubmit, "submit"], [HTMLFormElement.prototype.requestSubmit, origRequestSubmit, "requestSubmit"], [HTMLElement.prototype.click, origClick, "click"], [EventTarget.prototype.dispatchEvent, origDispatch, "dispatchEvent"], [window.fetch, origFetch, "fetch"], [XMLHttpRequest.prototype.open, origOpen, "XMLHttpRequest.open"], [XMLHttpRequest.prototype.send, origSend, "XMLHttpRequest.send"], [navigator.sendBeacon, origBeacon, "sendBeacon"]].filter(([now, orig]) => now === orig).map(([, , name]) => name);
+    if (stuck.length) throw new Error(`页面不让替换 ${stuck.join("、")}`);
   } catch (error) { restore(); throw error; }
   const disarm = () => {
     restore();

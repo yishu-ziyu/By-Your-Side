@@ -2691,8 +2691,9 @@ function keyWouldPayInPage(isPay: (text: string) => boolean, enter: boolean): st
   while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
   if (!el) return null;
   const nameOf = (node: Element) => (node.getAttribute("aria-label") || (node.tagName === "INPUT" ? (node as HTMLInputElement).value : (node as HTMLElement).innerText ?? node.textContent ?? "") || node.getAttribute("title") || "").trim().replace(/\s+/g, " ");
+  // 焦点在按钮或链接上时，回车、空格只按下它自己：按它的名字判，不看旁边的按钮。
   const own = el.closest('button,[role="button"],input[type="submit"],input[type="button"],input[type="image"],a');
-  if (own && isPay(nameOf(own))) return nameOf(own).slice(0, 40);
+  if (own) return isPay(nameOf(own)) ? nameOf(own).slice(0, 40) : null;
   // 空格只按下焦点上的控件；多行框和编辑器里回车只是换行。
   if (!enter || el.tagName === "TEXTAREA" || el.isContentEditable) return null;
   // 输入框用 form 属性关联到别处的表单时，form 指向真正会被提交的那个；表单外用 form 属性关联的按钮在 elements 里。
