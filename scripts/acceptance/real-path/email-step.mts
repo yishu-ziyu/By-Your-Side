@@ -4,7 +4,7 @@
  *   npx tsx scripts/acceptance/real-path/email-step.mts --headless [--case=sms|sms-done|email-question|email|email-ask]
  *
  * 不带 --case 依次跑五种：
- * - sms：手机号登录页有「发送验证码」，助手填好手机号后问「要提交吗？」。侧栏留着这句问话，不出现「去邮箱」的接着做，也没有提交。
+ * - sms：手机号登录页有「发送验证码」和挨着短信状态的「邮箱登录」标签，助手填好手机号后问「要提交吗？」。侧栏留着这句问话，不出现「去邮箱」的接着做，也没有提交。
  * - sms-done：同一页，助手说填好了、没提交（不是问句）。只看页面文字：「发送验证码」不算邮件，不出现「去邮箱」。
  * - email-question：页面写着确认邮件已发送，助手提了一句邮箱、问的却是别的事（「要换个备注吗？」）。问话交给用户，不直接去邮箱。
  * - email：同一页，助手说已提交、请用户确认邮件里的链接。请用户做的是邮件这一步，所以核对照旧让助手接着去邮箱。
@@ -28,7 +28,7 @@ const messageText=(content:any):string=>typeof content==='string'?content:Array.
 const traceExpr=`new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-lines')){db.close();resolve([]);return;}const tx=db.transaction('trace-lines');const q=tx.objectStore('trace-lines').getAll();q.onsuccess=()=>resolve(q.result.map(x=>JSON.parse(x.line)));tx.oncomplete=()=>db.close()}})`;
 
 const PAGES:Record<'sms'|'email',string>={
- sms:`<!doctype html><meta charset="utf-8"><title>手机号登录</title><style>body{font:17px/1.6 system-ui;max-width:520px;margin:40px auto}input{width:100%;padding:10px}</style><h1>手机号登录</h1><label>手机号<input id="phone" inputmode="tel"></label><label>验证码<input id="code"></label><button type="button" id="send-code">发送验证码</button><p><button type="button" onclick="fetch('/submit',{method:'POST'})">登录</button></p><p>手机号登录 · 邮箱登录 · 密码登录</p>`,
+ sms:`<!doctype html><meta charset="utf-8"><title>手机号登录</title><style>body{font:17px/1.6 system-ui;max-width:520px;margin:40px auto}input{width:100%;padding:10px}</style><h1>手机号登录</h1><label>手机号<input id="phone" inputmode="tel"></label><label>验证码<input id="code"></label><button type="button" id="send-code">发送验证码</button><p><button type="button" onclick="fetch('/submit',{method:'POST'})">登录</button></p><p>手机号登录 · 邮箱登录 · 密码登录</p><p>邮箱登录！验证码已发送</p><p lang="en">Code sent to your phone; Email login</p>`,
  email:`<!doctype html><meta charset="utf-8"><title>注册 — 示例网站</title><style>body{font:17px/1.6 system-ui;max-width:520px;margin:40px auto}input{width:100%;padding:10px}</style><h1>注册</h1><label>备注<input id="note"></label><p id="sent">确认邮件已发送到 a@example.com，请查收邮箱，点击邮件中的链接完成注册。</p>`,
 };
 
@@ -39,7 +39,7 @@ async function run(scenario:Scenario){
  /** 这一轮不该接着去邮箱：问话或「没提交」交回给用户。 */
  const staysPut=sms||scenario==='email-question';
  const TASK=sms?'填好手机号 13800000000，提交前问我。':'帮我把备注填成「来自邀请」，注册的事接着办完。';
- const REPLY={sms:'已填好手机号 13800000000，要提交吗？','sms-done':'已填好手机号 13800000000，没有提交。','email-question':'备注已填好，接下来可以打开邮箱。要换个备注吗？',email:'备注已填好，注册已提交。确认邮件已发出，请确认邮件中的链接以完成注册。','email-ask':'备注已填好。要我帮你打开邮箱点确认链接吗？'}[scenario];
+ const REPLY={sms:'已填好手机号 13800000000，要提交吗？','sms-done':'已填好手机号 13800000000，没有提交。','email-question':'备注已填好，接下来可以打开邮箱，要换个备注吗？',email:'备注已填好，注册已提交。确认邮件已发出，请确认邮件中的链接以完成注册。','email-ask':'备注已填好。要我帮你打开邮箱点确认链接吗？'}[scenario];
  const model=await startScriptedModel([
   {match:'[GOAL CHECK]',steps:[{text:'已经去邮箱看过了。'}]},
   {match:TASK,steps:[{tool:{name:'fill',args:sms?{target:'#phone',value:'13800000000'}:{target:'#note',value:'来自邀请'}}},{text:REPLY}]},
