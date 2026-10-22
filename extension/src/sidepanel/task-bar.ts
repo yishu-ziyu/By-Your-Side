@@ -147,12 +147,6 @@ function controlCopy(control: ControlState, state: TaskView["state"] | null, now
   return null;
 }
 
-interface DraftMaterials {
-  page: { tabId: number; title: string; url: string } | null;
-  selection: string | null;
-  attachments: Array<{ id: string; name: string }>;
-}
-
 interface SentRequestMaterials {
   requestId: string;
   action: "start" | "steer";
@@ -182,7 +176,6 @@ interface MaterialRow {
   kind: TaskMaterialItem["kind"];
   kindLabel: string;
   label: string;
-  removable: boolean;
 }
 
 interface TaskBarModel {
@@ -201,7 +194,6 @@ interface TaskBarModel {
   materials: {
     rows: MaterialRow[];
     head: string;
-    note: string | null;
     /** 发送中/未接收等状态行，已随任务送入时为 null。 */
     status: string | null;
   } | null;
@@ -210,9 +202,6 @@ interface TaskBarModel {
 
 interface TaskBarInputs {
   view: TaskView | null;
-  draft: DraftMaterials | null;
-  /** 草稿里已写但还没发出的正文：有正文时才为一行「页面」材料（发送时后台一定会带上页面上下文）。 */
-  draftHasText?: boolean;
   /** 已发出但还没有 accepted/终态回执的请求（一般 0–1 条）。 */
   sending: SentRequestMaterials[];
   /** 当前 run 已确认送入的材料。 */
@@ -227,27 +216,15 @@ interface TaskBarInputs {
 
 const KIND_LABEL: Record<TaskMaterialItem["kind"], string> = { page: "页面", selection: "选区", attachment: "附件" };
 
-function draftRows(draft: DraftMaterials): MaterialRow[] {
-  const rows: MaterialRow[] = [];
-
-  if (draft.page) rows.push({ key: "draft:page", kind: "page", kindLabel: KIND_LABEL.page, label: pageLabelOf(draft.page), removable: false });
-
-  if (draft.selection) rows.push({ key: "draft:sel", kind: "selection", kindLabel: KIND_LABEL.selection, label: `「${clip(draft.selection, 20)}」`, removable: true });
-
-  for (const att of draft.attachments) rows.push({ key: `draft:att:${att.id}`, kind: "attachment", kindLabel: KIND_LABEL.attachment, label: clip(att.name, 18), removable: true });
-
-  return rows;
-}
-
 /** 已发出、还没确认接收的材料行（发送中/接收未知）。 */
 function sentRows(entry: SentRequestMaterials): MaterialRow[] {
   const rows: MaterialRow[] = [];
 
-  if (entry.page) rows.push({ key: `sent:${entry.requestId}:page`, kind: "page", kindLabel: KIND_LABEL.page, label: pageLabelOf({ title: entry.page.title, url: entry.page.url }), removable: false });
+  if (entry.page) rows.push({ key: `sent:${entry.requestId}:page`, kind: "page", kindLabel: KIND_LABEL.page, label: pageLabelOf({ title: entry.page.title, url: entry.page.url }) });
 
-  if (entry.selection) rows.push({ key: `sent:${entry.requestId}:sel`, kind: "selection", kindLabel: KIND_LABEL.selection, label: `「${clip(entry.selection, 20)}」`, removable: false });
+  if (entry.selection) rows.push({ key: `sent:${entry.requestId}:sel`, kind: "selection", kindLabel: KIND_LABEL.selection, label: `「${clip(entry.selection, 20)}」` });
 
-  for (const att of entry.attachments) rows.push({ key: `sent:${entry.requestId}:att:${att.id}`, kind: "attachment", kindLabel: KIND_LABEL.attachment, label: clip(att.name, 18), removable: false });
+  for (const att of entry.attachments) rows.push({ key: `sent:${entry.requestId}:att:${att.id}`, kind: "attachment", kindLabel: KIND_LABEL.attachment, label: clip(att.name, 18) });
 
   return rows;
 }
@@ -257,14 +234,14 @@ function taskRows(set: TaskMaterialSet, resolvedPageLabel: string | null): Mater
 
   for (const item of set.items) {
     if (item.kind === "page") {
-      rows.push({ key: item.key, kind: "page", kindLabel: KIND_LABEL.page, label: item.key === 'task:page' ? resolvedPageLabel ?? item.label : item.label, removable: false });
+      rows.push({ key: item.key, kind: "page", kindLabel: KIND_LABEL.page, label: item.key === 'task:page' ? resolvedPageLabel ?? item.label : item.label });
     } else {
-      rows.push({ key: item.key, kind: item.kind, kindLabel: KIND_LABEL[item.kind], label: item.label, removable: false });
+      rows.push({ key: item.key, kind: item.kind, kindLabel: KIND_LABEL[item.kind], label: item.label });
     }
   }
 
   if (!rows.some((r) => r.kind === "page") && resolvedPageLabel) {
-    rows.unshift({ key: "task:page", kind: "page", kindLabel: KIND_LABEL.page, label: resolvedPageLabel, removable: false });
+    rows.unshift({ key: "task:page", kind: "page", kindLabel: KIND_LABEL.page, label: resolvedPageLabel });
   }
 
   return rows;
@@ -275,7 +252,7 @@ const SENDING_QUIET_MS = 800;
 
 /** 组装展示模型：纯函数，同一输入必得同一输出。 */
 function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
-  const { view, draft, sending, taskMaterials, control, now } = input;
+  const { view, sending, taskMaterials, control, now } = input;
   const newest = sending.at(-1);
   // 刚发出的这一条还在安静期：连更早那条“没确认收到”也先不讲，免得先亮旧的那条、0.8 秒后又换成这一条。
   const quiet = newest?.status === "sending" && now - newest.sentAt < SENDING_QUIET_MS;
@@ -293,7 +270,7 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   // 已结束(idle/aborted/error)的任务不在顶部留痕：结论在回答里，要用户处理的事由接续入口负责。
   const isOngoing = !!view && (view.state === "running" || view.state === "paused" || view.state === "interrupted");
 
-  // ── 材料区：已确认送入的任务材料 + 这一条还没确认接收的材料；草稿只在没有前两者时出现 ──
+  // ── 材料区：已确认送入的任务材料 + 这一条还没确认接收的材料。还没发出的草稿由输入框里的文件卡和引用条讲，这里不重复 ──
   let materials: TaskBarModel["materials"] = null;
   const pendingEntry = unresolved.length ? unresolved[unresolved.length - 1]! : null;
   const liveTaskMaterials = isOngoing ? taskMaterials : null;
@@ -309,19 +286,7 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
       rows,
       head: pendingRows.length && confirmedRows.length ? `${head}（另有 ${pendingRows.length} 项材料待确认）` : head,
       status: pendingEntry ? (pendingEntry.status === "unknown" ? "助手还没确认收到这一条" : "正在发送，助手还没确认收到") : null,
-      note: null,
     };
-  }
-
-  // 草稿行只在既没有已确认材料、也没有发送中请求时接管材料区；
-  // 任务运行中新起草的材料由输入区的瓷贴/引用条负责移除，任务条优先讲正在用的材料。
-  if (!materials && draft) {
-    const onlyPage = !draft.selection && !draft.attachments.length && !input.draftHasText;
-    const rows = onlyPage ? [] : draftRows(draft);
-
-    if (rows.length) {
-      materials = { rows, head: `要一起发送的材料 · ${rows.length} 项`, status: null, note: "发送前可移除" };
-    }
   }
 
   // 没被接收的消息不在顶部另起一张卡：原因已经在消息流里（如「还没有配置模型」），卡上只会剩下空的目标和占位。
@@ -396,8 +361,6 @@ interface TaskBarOptions {
   /** 挂载点；TaskBar 拥有其内容（replaceChildren）。 */
   root: HTMLElement;
   resolvePage(tabId: number): Promise<{ title?: string; url?: string } | null>;
-  removeDraftAttachment(id: string): void;
-  removeDraftSelection(): void;
   /** 控制失败后的重试入口（复用真实控制按钮，不是新权限）。 */
   onRetryControl?(action: "takeover" | "stop"): void;
   /** 当前选中的会话：不属于它的视图不得改写任务条（切会话/旧 run 重放都不能串）。 */
@@ -408,17 +371,15 @@ interface TaskBarOptions {
 }
 
 /**
- * 任务条组件。main.ts 只调用 updateView/setDraft/noteRequestSent/noteReceipt/noteControl*；
+ * 任务条组件。main.ts 只调用 updateView/noteRequestSent/noteReceipt/noteControl*；
  * 渲染幂等：同一状态重复渲染不产生重复节点或重复控件。
  */
 export class TaskBar {
   private view: TaskView | null = null;
   private handoffShown = false;
-  private draft: DraftMaterials | null = null;
   private readonly sent = new Map<string, SentRequestMaterials>();
   private taskMaterials: TaskMaterialSet | null = null;
   private control: ControlState = { takeover: { pending: false, since: null, failReason: null }, stop: { pending: false, since: null, accepted: false, failReason: null } };
-  private draftHasText = false;
   private readonly pageCache = new Map<number, { label: string | null; host: string | null; at: number }>();
   private model: TaskBarModel | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -542,19 +503,10 @@ export class TaskBar {
   /** 切会话 / 重置渲染：全部清空。 */
   reset(): void {
     this.view = null;
-    this.draft = null;
-    this.draftHasText = false;
     this.sent.clear();
     this.taskMaterials = null;
     this.pageCache.clear();
     this.control = { takeover: { pending: false, since: null, failReason: null }, stop: { pending: false, since: null, accepted: false, failReason: null } };
-    this.render();
-  }
-
-  setDraft(draft: DraftMaterials | null, hasText = false): void {
-    if (this.disposed) return;
-    this.draft = draft;
-    this.draftHasText = hasText;
     this.render();
   }
 
@@ -700,17 +652,6 @@ export class TaskBar {
     const target = event.target as Element | null;
 
     if (!target || typeof target.closest !== "function") return;
-    const remove = target.closest("button[data-remove-key]") as HTMLButtonElement | null;
-
-    if (remove) {
-      const key = remove.getAttribute("data-remove-key") ?? "";
-
-      if (key === "draft:sel") this.opts.removeDraftSelection();
-      else if (key.startsWith("draft:att:")) this.opts.removeDraftAttachment(key.slice("draft:att:".length));
-
-      return;
-    }
-
     if (target.closest(".tb-expand")) {
       this.expanded = !this.expanded;
       const label = this.expanded ? "收起任务详情" : "展开任务详情";
@@ -758,11 +699,9 @@ export class TaskBar {
 
     const model = buildTaskBarModel({
       view: this.view,
-      draft: this.draft,
       sending: [...this.sent.values()],
       taskMaterials: this.taskMaterials,
       control: this.control,
-      draftHasText: this.draftHasText,
       pageLabel: tabId != null ? this.pageCache.get(tabId)?.label ?? null : null,
       pageHost: tabId != null ? this.pageCache.get(tabId)?.host ?? null : null,
       pageTabId: tabId,
@@ -776,7 +715,7 @@ export class TaskBar {
     // 页面归你、停止/接管回执、还没送入的材料。任务页不是你在看的页时不提醒：过程行和回答已说明。
     // 页面归你时，输入框上方的「你在操作」已经说了；侧栏重开、没有那一行时，任务条照旧说。
     const own = model.state === "paused" && !this.handoffShown || !!model.control
-      || !!model.materials && (!!model.materials.status || model.materials.rows.some((row) => row.removable));
+      || !!model.materials?.status;
 
     this.el.hidden = !model.visible || !own;
 
@@ -806,14 +745,14 @@ export class TaskBar {
 
     if (model.outcome) this.el.setAttribute("data-outcome", model.outcome);
     else this.el.removeAttribute("data-outcome");
-    // 还没有任务（只是草稿或发送中）时没有目标可说，整行不显示，不放占位字。
+    // 还没有任务（只是发送中）时没有目标可说，整行不显示，不放占位字。
     this.headEl.hidden = !model.goal && !this.view?.revisions.length;
     this.goalEl.textContent = model.goal ?? "";
     this.goalEl.title = model.goalTitle ?? model.goal ?? "";
     this.revisionsEl.textContent = this.view?.revisions.length ? `改过 ${this.view.revisions.length} 次` : "";
     this.revisionsEl.title = this.view?.revisions.length ? this.view.revisions.join("\n") : "";
     const statusBits = [model.headline, model.activity, model.idleAge].filter(Boolean);
-    // 还没有任务状态（草稿、发送中）时，摘要行说材料那一句，材料区不再重复这句标题。
+    // 还没有任务状态（发送中）时，摘要行说材料那一句，材料区不再重复这句标题。
     const materialsHead = statusBits.length ? null : model.materials?.head ?? null;
     this.statusEl.textContent = materialsHead ?? statusBits.join(" · ");
     this.statusEl.hidden = !this.statusEl.textContent;
@@ -823,8 +762,8 @@ export class TaskBar {
     this.pageEl.hidden = !model.page;
     this.pageEl.textContent = model.page ? `页面：${model.page.label}` : "";
     this.renderMaterials(model.materials);
-    // 只有已送入、不可再改的材料才收进详情；发送中、可移除的草稿材料要一直看得见。
-    const settledMaterials = !!model.materials && !model.materials.status && !model.materials.rows.some((row) => row.removable);
+    // 只有已送入的材料才收进详情；发送中的材料要一直看得见。
+    const settledMaterials = !!model.materials && !model.materials.status;
     flag(this.materialsEl, "data-settled", settledMaterials);
     // 材料里已经列出这一页时，展开后不再另写一行「作用于」。
     flag(this.el, "data-page-in-materials", !!model.materials?.rows.some((row) => row.kind === "page"));
@@ -894,17 +833,6 @@ export class TaskBar {
       label.textContent = row.label;
       li.append(kind, label);
 
-      if (row.removable) {
-        const remove = doc.createElement("button");
-        remove.type = "button";
-        remove.className = "tb-remove";
-        remove.textContent = "移除";
-        remove.title = "发送前移除这项材料";
-        remove.setAttribute("aria-label", `移除${row.kindLabel}：${row.label}`);
-        remove.setAttribute("data-remove-key", row.key);
-        li.appendChild(remove);
-      }
-
       list.appendChild(li);
     }
 
@@ -915,13 +843,6 @@ export class TaskBar {
       status.className = "tb-mat-status";
       status.textContent = materials.status;
       this.materialsEl.appendChild(status);
-    }
-
-    if (materials.note) {
-      const note = doc.createElement("div");
-      note.className = "tb-mat-note";
-      note.textContent = materials.note;
-      this.materialsEl.appendChild(note);
     }
   }
 

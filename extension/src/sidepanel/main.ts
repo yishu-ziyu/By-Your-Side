@@ -514,9 +514,6 @@ const fileInput = document.getElementById("file-input") as HTMLInputElement;
 
 let attachments!: AttachmentsManager;
 
-/** 附件管理器构造期间会回调 onChanged；装配完成前不碰任务条。 */
-let attachmentsReady = false;
-
 // 页面感知胶囊与检查器 DOM
 const pagePill = document.getElementById("page-pill") as HTMLElement | null;
 
@@ -5480,8 +5477,6 @@ attachments = new AttachmentsManager({
     if (!scope || scope === selectedConversationId) {
       autoResize();
       saveDraft();
-
-      if (attachmentsReady) syncTaskBarDraft();
     } else {
       const draft = conversationDrafts.get(scope) ?? { text: "", attachments: [], ask: null };
       draft.attachments = attachments.getAttachments(scope);
@@ -5493,8 +5488,6 @@ attachments = new AttachmentsManager({
     addMsg("msg error", errMsg);
   },
 });
-
-attachmentsReady = true;
 
 // ── 任务条：消费 task_view，材料事实来自实际发出的请求与回执 ──
 function resolveTabPage(tabId: number): Promise<{ title?: string; url?: string } | null> {
@@ -5528,8 +5521,6 @@ function activeTabId(): Promise<number | null> {
 const taskBar = new TaskBar({
   root: document.getElementById("task-bar-root")!,
   resolvePage: resolveTabPage,
-  removeDraftAttachment: (id) => attachments.removeItem(id),
-  removeDraftSelection: clearPendingAsk,
   currentConversationId: () => selectedConversationId,
   // 重试走真实控制入口：与接管/停止按钮同一条路径，不新增权限。
   onRetryControl: (action) => {
@@ -5539,26 +5530,6 @@ const taskBar = new TaskBar({
 });
 
 window.addEventListener("pagehide", () => taskBar.dispose());
-
-/**
- * 草稿材料：选区引用与附件瓷贴是唯一可移除入口；页面按发送时会附上的那一页如实展示。
- * 任务条只汇总，不自己采集页面内容。
- */
-function syncTaskBarDraft(): void {
-  const atts = attachments.getAttachments().map((a) => ({ id: a.id, name: a.name }));
-
-  const page = pendingAsk
-    ? { tabId: pendingAsk.tabId, title: pendingAsk.title, url: pendingAsk.url }
-    : activeTabInfo
-      ? { tabId: activeTabInfo.id, title: activeTabInfo.title, url: activeTabInfo.url }
-      : null;
-
-  const selection = pendingAsk?.text ?? null;
-  const hasText = inputEl.value.trim().length > 0;
-  taskBar.setDraft(page || selection || atts.length ? { page, selection, attachments: atts } : null, hasText);
-}
-
-syncTaskBarDraft();
 
 function hostOf(url: string): string {
   try {
@@ -5579,7 +5550,6 @@ function applyPendingAsk(ask: PendingAsk): void {
   askCiteEl.hidden = false;
   inputEl.focus({ preventScroll: true });
   saveDraft();
-  syncTaskBarDraft();
 }
 
 function clearPendingAsk(): void {
@@ -5591,7 +5561,6 @@ function clearPendingAsk(): void {
   if (askCiteText) askCiteText.textContent = "";
   void chrome.storage?.session?.remove(ASK_STORE);
   saveDraft();
-  syncTaskBarDraft();
 }
 
 askCiteClose?.addEventListener("click", () => clearPendingAsk());
@@ -5636,7 +5605,6 @@ function restoreLostSend(): void {
     if (lost.ask) applyPendingAsk(lost.ask);
     autoResize();
     saveDraft();
-    syncTaskBarDraft();
   }
 
   sendFailNotifiedFor = null;
@@ -5803,7 +5771,7 @@ sendBtn.onclick = () => {
   }
 };
 
-inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncTaskBarDraft(); syncSteerSend(); });
+inputEl.addEventListener("input", () => { autoResize(); saveDraft(); syncSteerSend(); });
 // 点进来或开始打字就让后台先连上模型服务；后台自己限次数，这里不节流。
 inputEl.addEventListener("focus", () => { send({ type: "warm_up" }); });
 inputEl.addEventListener("input", () => { if (inputEl.value.length === 1) send({ type: "warm_up" }); });
