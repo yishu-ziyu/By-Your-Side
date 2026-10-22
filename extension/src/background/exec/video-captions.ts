@@ -19,6 +19,9 @@ interface CaptionTrack {
 interface PageCaptions {
   pageUrl: string;
   videoId: string | null;
+  /** 播放器自己的标题与分P：用户问“哪个视频、第几P”时不必再读页面。 */
+  title: string;
+  part: { index: number; title: string; count: number } | null;
   identityVerified: boolean;
   videos: number;
   tracks: CaptionTrack[];
@@ -39,7 +42,10 @@ const READ_CAPTIONS = `(async () => {
   const part = Math.max(1, Number(page.searchParams.get('p') || 1));
   const cid = videoData?.pages?.[part - 1]?.cid ?? (part === 1 ? videoData?.cid : null);
   const identityVerified = !!videoId && (youtube ? player?.videoDetails?.videoId === videoId : bilibili && videoData?.bvid === videoId && cid != null);
-  const out = { pageUrl: location.href, videoId, identityVerified, videos: document.querySelectorAll("video").length, tracks: [], lists: [], failed: [] };
+  const title = String((youtube ? player?.videoDetails?.title : videoData?.title) ?? "");
+  const pages = Array.isArray(videoData?.pages) ? videoData.pages : [];
+  const partInfo = bilibili && pages.length > 1 ? { index: part, title: String(pages[part - 1]?.part ?? ""), count: pages.length } : null;
+  const out = { pageUrl: location.href, videoId, title: identityVerified ? title : "", part: identityVerified ? partInfo : null, identityVerified, videos: document.querySelectorAll("video").length, tracks: [], lists: [], failed: [] };
   if ((youtube || bilibili) && !identityVerified) {
     out.failed.push('The current video does not match the available player data. Old player tracks were discarded.');
     return out;
@@ -109,12 +115,16 @@ function pageCaptions(value: unknown): PageCaptions {
     return l && typeof l.count === "number" ? [{ request: text(l.request), field: text(l.field), count: l.count }] : [];
   }).slice(0, 10);
 
-  return { pageUrl: typeof record.pageUrl === "string" ? record.pageUrl : "", videoId: typeof record.videoId === "string" ? record.videoId : null, identityVerified: record.identityVerified === true, videos: typeof record.videos === "number" ? record.videos : 0, tracks, lists, failed: array(record.failed).map(text).filter(Boolean).slice(0, 5) };
+  const part = record.part && typeof record.part === "object" ? record.part as Record<string, unknown> : null;
+
+  return { pageUrl: typeof record.pageUrl === "string" ? record.pageUrl : "", videoId: typeof record.videoId === "string" ? record.videoId : null, title: text(record.title), part: part && Number.isSafeInteger(part.index) && Number.isSafeInteger(part.count) ? { index: Number(part.index), title: text(part.title), count: Number(part.count) } : null, identityVerified: record.identityVerified === true, videos: typeof record.videos === "number" ? record.videos : 0, tracks, lists, failed: array(record.failed).map(text).filter(Boolean).slice(0, 5) };
 }
 
 function report(found: PageCaptions): string {
   const lines = ["Video captions on this page, read from the player itself (do not build subtitle API URLs yourself: some sites answer unsigned or guessed requests with another video's subtitles):"];
-  if (found.videoId) lines.push(`- current video: ${found.videoId}; player identity ${found.identityVerified ? "matched" : "unverified"}`);
+  if (found.videoId) lines.push(`- current video: ${found.videoId}${found.title ? ` "${found.title}"` : ""}; player identity ${found.identityVerified ? "matched" : "unverified"}`);
+
+  if (found.part) lines.push(`- current part: P${found.part.index} of ${found.part.count}${found.part.title ? ` "${found.part.title}"` : ""}`);
   lines.push(`- video elements: ${found.videos}`);
 
   for (const list of found.lists) lines.push(`- ${list.request} → ${list.field}: ${list.count} entr${list.count === 1 ? "y" : "ies"}`);
@@ -131,7 +141,7 @@ function report(found: PageCaptions): string {
   return lines.join("\n");
 }
 
-export async function videoCaptions(params: { tabId?: number }, sessionId: string = LEAD_SESSION_ID): Promise<{ text: string; tabId: number; tracks: number; lists: number; sourceUrl: string; videoId: string | null; identityVerified: boolean; captionTracks: CaptionTrack[] }> {
+export async function videoCaptions(params: { tabId?: number }, sessionId: string = LEAD_SESSION_ID): Promise<{ text: string; tabId: number; tracks: number; lists: number; sourceUrl: string; videoId: string | null; title: string; part: PageCaptions["part"]; identityVerified: boolean; captionTracks: CaptionTrack[] }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -140,10 +150,12 @@ export async function videoCaptions(params: { tabId?: number }, sessionId: strin
   const current = await resolveReadableTab(tab.id, sessionId);
   if (current.url !== found.pageUrl) {
     found.identityVerified = false;
+    found.title = "";
+    found.part = null;
     found.tracks = [];
     found.lists = [];
     found.failed.push("The page changed while reading captions; the old result was discarded.");
   }
 
-  return { text: report(found), tabId: tab.id, tracks: found.tracks.length, lists: found.lists.length, sourceUrl: found.pageUrl, videoId: found.videoId, identityVerified: found.identityVerified, captionTracks: found.tracks };
+  return { text: report(found), tabId: tab.id, tracks: found.tracks.length, lists: found.lists.length, sourceUrl: found.pageUrl, videoId: found.videoId, title: found.title, part: found.part, identityVerified: found.identityVerified, captionTracks: found.tracks };
 }

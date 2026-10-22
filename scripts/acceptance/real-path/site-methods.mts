@@ -16,7 +16,7 @@ const cases = [
   { id: "yt-language", url: "https://www.youtube.com/watch?v=multi1", method: "youtube.captions", language: "zh", expected: "这段字幕属于当前视频。", also: ['"language":"zh-CN"'], absent: "ترجمة" },
   { id: "yt-no-captions", url: "https://www.youtube.com/watch?v=nocap1", method: "youtube.captions", expected: '"status":"no_captions"' },
   { id: "yt-stale", url: "https://www.youtube.com/watch?v=video456&stale=1", method: "youtube.captions", expected: "unavailable", absent: "这是上一条视频" },
-  { id: "bili-captions", url: "https://www.bilibili.com/video/BV1TEST123", method: "bilibili.captions", expected: "当前分P的字幕。", absent: "其他分P字幕" },
+  { id: "bili-captions", url: "https://www.bilibili.com/video/BV1TEST123", method: "bilibili.captions", expected: "当前分P的字幕。", also: ['"title":"练习合集"', '"part":{"index":1,"title":"第一讲","count":2}'], absent: "其他分P字幕" },
   { id: "x-post", url: "https://x.com/example/status/1234567890", method: "x.read-post", expected: "这是指定的原帖正文。", absent: "这是推荐帖" },
   { id: "yt-search", url: "https://www.youtube.com/", method: "youtube.search", query: "猫 & 自然", expected: "猫 & 自然" },
   { id: "bili-search", url: "https://www.bilibili.com/", method: "bilibili.search", query: "故宫 建筑", expected: "故宫 建筑" },
@@ -57,7 +57,7 @@ function fixture(url: URL): { type: string; body: string } {
     body += `<video></video><script>window.ytInitialPlayerResponse=${JSON.stringify({ videoDetails: { videoId: url.searchParams.has("stale") ? "oldvideo" : url.searchParams.get("v") }, ...(url.searchParams.get("v") === "nocap1" ? {} : { captions: { playerCaptionsTracklistRenderer: { captionTracks: url.searchParams.get("v") === "multi1" ? [{ languageCode: "ar", name: { simpleText: "Arabic" }, baseUrl: "https://www.youtube.com/captions-ar" }, { languageCode: "zh-CN", name: { simpleText: "Chinese (China)" }, baseUrl: "https://www.youtube.com/captions" }] : [{ languageCode: "zh", name: { simpleText: "中文" }, baseUrl: "https://www.youtube.com/captions" }] } } }) })};</script>`;
   }
   if (url.hostname === "www.bilibili.com" && url.pathname.startsWith("/video/")) {
-    body += `<video></video><script>window.__INITIAL_STATE__={videoData:{bvid:'BV1TEST123',cid:222,pages:[{cid:222}]}};Promise.all([fetch('/x/player/wbi/v2?cid=111'),fetch('/x/player/wbi/v2?cid=222')]).then(()=>document.body.dataset.ready='1');</script>`;
+    body += `<video></video><script>window.__INITIAL_STATE__={videoData:{bvid:'BV1TEST123',title:'练习合集',cid:222,pages:[{cid:222,part:'第一讲'},{cid:333,part:'第二讲'}]}};Promise.all([fetch('/x/player/wbi/v2?cid=111'),fetch('/x/player/wbi/v2?cid=222')]).then(()=>document.body.dataset.ready='1');</script>`;
   }
   if (url.hostname === "x.com" && url.pathname.includes("/status/")) {
     body += `<article data-testid="tweet"><div data-testid="User-Name">推荐作者</div><a href="/other/status/9876543210"><time datetime="2026-01-01"></time></a><div data-testid="tweetText">这是推荐帖</div></article><article data-testid="tweet"><div data-testid="User-Name">原帖作者</div><a href="/example/status/1234567890"><time datetime="2026-01-02"></time></a><div data-testid="tweetText">这是指定的原帖正文。</div></article>`;
