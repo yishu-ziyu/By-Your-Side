@@ -85,7 +85,10 @@ export class NoProgressPolicy {
     return pi=>{
       pi.on('tool_result',(event,ctx)=>{
         if(this.stopped)return;
-        const text=event.content.filter(item=>item.type==='text').map(item=>item.text).join('\n');
+        const details:unknown=event.details;
+        const refusal=details&&typeof details==='object'&&'repeatedParameterFailure' in details&&typeof details.repeatedParameterFailure==='string'?details.repeatedParameterFailure:null;
+        // The explanation attached to a refusal is not new evidence or progress.
+        const text=refusal??event.content.filter(item=>item.type==='text').map(item=>item.text).join('\n');
         const input=event.input;
         const step=this.steps.get(event.toolCallId)??{effect:false,waited:false};
         this.steps.delete(event.toolCallId);
