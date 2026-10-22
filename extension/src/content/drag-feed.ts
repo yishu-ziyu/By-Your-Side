@@ -98,7 +98,9 @@ export function installDragFeed(): void {
   addEventListener('scroll', () => { if (current) place(); }, { capture: true, passive: true });
   addEventListener('resize', () => { if (current) place(); }, { passive: true });
 
+  // 拖动只认用户真拖：网页脚本派发的 dragstart 不能往后台登记材料。
   grip.addEventListener('dragstart', event => {
+    if (!event.isTrusted) return;
     const block = current;
     const source = block ? registerSource(block, block.matches('table') ? 'table' : 'code') : null;
 
@@ -115,7 +117,7 @@ export function installDragFeed(): void {
 
   // 拖动已选中的文字：浏览器照常带上选中文字，我们只多附一个材料凭据。
   document.addEventListener('dragstart', event => {
-    if (event.composedPath().includes(grip) || !event.dataTransfer) return;
+    if (!event.isTrusted || event.composedPath().includes(grip) || !event.dataTransfer) return;
     const selection = getSelection();
     const target = event.target instanceof Node ? event.target : null;
 
