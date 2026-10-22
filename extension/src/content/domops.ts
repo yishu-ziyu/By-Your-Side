@@ -84,7 +84,8 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       throw new Error("非 multiple 的 select 不能一次选多项。操作未执行。");
     }
 
-    for (let i = 0; i < select.options.length; i++) select.options[i]!.selected = false;
+    // 先全部找到再改：有一项找不到时下拉框保持原样，「操作未执行」才是真的。
+    const matches: HTMLOptionElement[] = [];
 
     if (!clear) {
       for (const item of requested) {
@@ -110,10 +111,14 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
             [...select.options].find((o) => o.label === wanted || o.text.includes(wanted));
         }
 
-        if (!match) throw new Error(`下拉框没有匹配选项: ${JSON.stringify(item)}。操作未执行。`);
-        match.selected = true;
+        if (!match) throw new Error(`下拉框没有匹配选项: ${JSON.stringify(item)}。可选：${[...select.options].map((o) => o.text.trim()).join(" / ")}。操作未执行。`);
+        matches.push(match);
       }
     }
+
+    for (let i = 0; i < select.options.length; i++) select.options[i]!.selected = false;
+
+    for (const match of matches) match.selected = true;
 
     select.dispatchEvent(new Event("input", { bubbles: true }));
     select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -496,4 +501,18 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       return { atBottom: atBottom() };
     },
   };
+
+  // chrome.scripting.executeScript 把页面里抛出的错误换成 null 结果：先把错误记在这里，callDom 拿到空结果时来取。
+  for (const [name, fn] of Object.entries(ns.dom)) {
+    (ns.dom as unknown as Record<string, unknown>)[name] = (...args: unknown[]) => {
+      ns.lastDomError = undefined;
+      const fail = (error: unknown): never => { ns.lastDomError = error instanceof Error ? error.message : String(error); throw error; };
+
+      try {
+        const value = (fn as (...a: unknown[]) => unknown)(...args);
+
+        return value instanceof Promise ? value.catch(fail) : value;
+      } catch (error) { return fail(error); }
+    };
+  }
 })();
