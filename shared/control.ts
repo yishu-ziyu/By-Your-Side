@@ -267,7 +267,7 @@ export class ControlGate {
   private owner: ControlOwner = "agent";
   private generation = 0;
   private draining = false;
-  private inflight = new Map<string, { settled: Promise<unknown>; sessionId: string }>();
+  private inflight = new Map<string, { settled: Promise<unknown>; sessionId: string; name: ToolName }>();
   private completed = new Map<string, CompletedOutcome>();
   /** true = 该 session 仍归用户，写操作与认领别页都禁止。 */
   private sessionBlocked = new Map<string, boolean>();
@@ -366,7 +366,7 @@ export class ControlGate {
       release = resolve;
     });
 
-    this.inflight.set(key, { settled: sentinel, sessionId: sessionKey(sessionId) });
+    this.inflight.set(key, { settled: sentinel, sessionId: sessionKey(sessionId), name });
 
     if (!this.canLand(name, sessionId, params)) {
       this.inflight.delete(key);
@@ -428,6 +428,26 @@ export class ControlGate {
     }
 
     return { generation: gen, superseded: false };
+  }
+
+  /**
+   * 按页接管只等这页成员已开始的写操作：别的页上的助手照常干活，所以不走 beginTakeover 的全局排空。
+   * 写操作卡住时不能让用户一直看着「正在停住」：到 limitMs 就返回 false，由调用方当结果未知继续交还。
+   */
+  async drainSessions(sessionIds: Iterable<string>, limitMs: number): Promise<boolean> {
+    const ids = new Set([...sessionIds].map(sessionKey));
+    // 等页面事件（下载、弹窗）不改页面，它最长能等两分钟，不该让停止陪着等。
+    const pending = [...this.inflight.values()].filter((entry) => ids.has(entry.sessionId) && entry.name !== "wait_event").map((entry) => entry.settled);
+
+    if (!pending.length) return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const limit = new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), limitMs); });
+
+    try {
+      return await Promise.race([Promise.allSettled(pending).then(() => true as const), limit]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   commitTakeover(generation: number, sessionIds?: string[]): boolean {
