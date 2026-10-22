@@ -1,7 +1,7 @@
 /**
  * 提交直接交给网站，回答直接显示，不挂拦截的标签。只装扩展、隔离构建、本机脚本模型、本机预订页。
  *   npx tsx scripts/acceptance/real-path/answer-straight.mts --headless
- * 用户说「下周四」，脚本模型先点一个不存在的按钮、fetch 一个 404 地址、POST 一个回 302 的地址、GET 一个 204 空回执、fetch 一个没人听的端口，
+ * 用户说「下周四」，脚本模型先点一个不存在的按钮、fetch 一个 404 地址、GET 一个回 302 的地址、GET 一个 204 空回执、fetch 一个没人听的端口，
  * 再把日期填成 10 月 8 日，点「提交」，最后跑一段 browser_run（先取 204，最后一次 fetch 是 404，像翻页翻到头），然后不再调工具直接回答。
  * 点击、404、没人听的端口、程序里的 404 这四步失败，回答也不提；302 和 204 不算失败。
  * 目标核对的结论故意晚 4 秒才回（判做完）。
@@ -76,7 +76,7 @@ const model = await startScriptedModel([
   { match: ASK, steps: [
     { tool: { name: "click", args: { target: "#gone", label: "不存在的按钮" } } },
     { tool: { name: "fetch", args: { url: `http://${FETCH_HOST}:${siteAddress(site).port}/missing` } } },
-    { tool: { name: "fetch", args: { url: `http://${FETCH_HOST}:${siteAddress(site).port}/moved`, method: "POST", body: "x=1" } } },
+    { tool: { name: "fetch", args: { url: `http://${FETCH_HOST}:${siteAddress(site).port}/moved` } } },
     { tool: { name: "fetch", args: { url: `http://${FETCH_HOST}:${siteAddress(site).port}/empty` } } },
     { tool: { name: "fetch", args: { url: `http://${FETCH_HOST}:${CLOSED_PORT}/` } } },
     { tool: { name: "fill", args: { target: "#date", value: WRONG, label: "日期" } } },
@@ -147,7 +147,7 @@ try {
   // 直调 fetch 和 browser_run 里的 fetch 各一处 404。
   check("e browser_run 里失败的 fetch 写人话原因", hits.includes("/gone-api") && notes.filter(n => n.includes("页面不存在（404）")).length === 2, { hits: [...hits], notes, steps });
   // 失败只有点击、直调 404、没人听的端口、程序里 404 四处；204 或 302 被当成失败就会多出来。
-  check("f 204 空回执和 302 跳转不算失败", hits.includes("/empty") && hits.includes("POST /moved") && notes.length === 4, { hits: [...hits], notes, steps });
+  check("f 204 空回执和 302 跳转不算失败", hits.includes("/empty") && hits.includes("GET /moved") && notes.length === 4, { hits: [...hits], notes, steps });
   check("g 连不上的地址写「连不上这个地址」", notes.filter(n => n.includes("连不上这个地址")).length === 1 && !notes.some(n => /结果未知|已取消/.test(n)), { notes });
   // 这一轮的过程行：回执标题和状态图标。
   const run = await rp.evaluate(panel, `(() => { const r = [...document.querySelectorAll("#messages .run-steps")].at(-1); const mark = r?.querySelector(".run-orb-mark"); return { title: r?.querySelector("summary")?.textContent ?? null, mark: mark && !mark.hidden ? mark.dataset.state ?? null : null }; })()`) as { title: string | null; mark: string | null };

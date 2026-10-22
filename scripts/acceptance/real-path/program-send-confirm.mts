@@ -8,7 +8,10 @@
  *   script-submit：脚本 requestSubmit()      native-submit：脚本 form.submit()
  *   fetch：脚本 fetch POST 发送接口          xhr：脚本 XHR POST 发送接口
  *   save：脚本点「保存」不出确认框，照常保存（不误拦）
- * 失败方式：去掉 evaluate.ts 的拦截，脚本路径在用户决定前就收到 POST；去掉 pressKeyGuarded，key-enter 同样。
+ *   tool-fetch / tool-fetch-send：请求工具 fetch 带登录态 POST 一个名字不像发送的接口（/api/orders），同样先问；卡上不露令牌
+ *   tool-fetch-get：请求工具 fetch GET 同一个接口，不出确认框，照常取到
+ * 失败方式：去掉 evaluate.ts 的拦截，脚本路径在用户决定前就收到 POST；去掉 pressKeyGuarded，key-enter 同样；
+ * 去掉 index.ts 里 fetch 的 confirmPost，tool-fetch 在用户决定前就收到 POST。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -33,7 +36,9 @@ window.chatApi = { send: text => fetch('/api/send', { method: 'POST', headers: {
 </script></body></html>`;
 
 const posts: Array<{ path: string; at: number }> = [];
+let orderReads = 0;
 const site = createServer(async (req, res) => {
+  if (req.method === "GET" && req.url === "/api/orders") { orderReads += 1; res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ orders: [{ id: 7, item: "季度报表打印" }] })); return; }
   if (req.method === "POST") { for await (const _ of req) { /* drain */ } posts.push({ path: req.url ?? "", at: Date.now() }); if (req.url === "/api/send-error") { res.writeHead(503).end("service unavailable"); return; } res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
@@ -42,6 +47,11 @@ const saved = () => posts.filter(p => p.path === "/save").length;
 
 const js = (code: string) => ({ tool: { name: "browser_run", args: { label: "脚本", code: `return await browser.js({ code: ${JSON.stringify(code)} });` } } });
 type Case = { id: string; step: unknown; answer: "decline" | "esc" | "send" | "none"; error?: boolean; confirmed?: boolean };
+await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
+const siteUrl = `http://127.0.0.1:${siteAddress(site).port}/`;
+// fetch 拒抓本机地址（shared/fetch.ts）：用 host-resolver-rules 把一个公网名字映回本机测试站。
+const ORDERS_HOST = "orders-fixture.test";
+const order = (method: "GET" | "POST") => ({ tool: { name: "fetch", args: { url: `http://${ORDERS_HOST}:${siteAddress(site).port}/api/orders`, method, ...(method === "POST" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ item: "季度报表打印", passengers: 2, token: "tok-SECRET-42" }) } : {}) } } });
 const ALL_CASES: Case[] = [
   { id: "click", step: { tool: { name: "click", args: { target: "#send", label: "发送" } } }, answer: "decline" },
   { id: "script-click", step: js("document.querySelector('#send').click(); 'ok'"), answer: "decline" },
@@ -59,10 +69,12 @@ const ALL_CASES: Case[] = [
   { id: "key-enter-send", step: { tool: { name: "press_key", args: { key: "Enter" } } }, answer: "send" },
   { id: "js-tool", step: { tool: { name: "js", args: { code: "document.querySelector('#send').click(); 'ok'" } } }, answer: "decline" },
   { id: "native-submit", step: js("document.querySelector('#n').submit(); 'ok'"), answer: "decline" },
+  { id: "tool-fetch", step: order("POST"), answer: "decline" },
+  { id: "tool-fetch-send", step: order("POST"), answer: "send" },
+  { id: "tool-fetch-get", step: order("GET"), answer: "none" },
 ];
 const CASES = process.env.ONLY ? ALL_CASES.filter(c => process.env.ONLY!.split(",").includes(c.id)) : ALL_CASES;
 if (!CASES.length || (process.env.ONLY && process.env.ONLY.split(",").some(id => !ALL_CASES.some(c => c.id === id)))) throw new Error("ONLY 包含未知用例，未运行不能算通过。");
-await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const ask = (id: string) => `用例 ${id}：把消息发出去。`;
 const answer = (id: string) => `${id}：资料已整理，会议在周五下午三点。`;
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
@@ -79,12 +91,12 @@ const model = await startScriptedModel([
   }
 });
 
-const rp = await launchRealPath();
+const rp = await launchRealPath({ chromeArgs: [`--host-resolver-rules=MAP ${ORDERS_HOST} 127.0.0.1`, "--no-proxy-server"] });
 const rows: Array<Record<string, Json>> = [];
 
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
-  const url = `http://127.0.0.1:${siteAddress(site).port}/`;
+  const url = siteUrl;
   await rp.cdp.send("Page.navigate", { url }, work);
   const panel = await rp.attach(await rp.openSidePanel());
   const items = { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
@@ -110,9 +122,9 @@ try {
 
   for (const c of CASES) {
     if (c.id === "native-submit" || c.id.startsWith("key-enter")) { await rp.cdp.send("Page.navigate", { url }, work); await sleep(1500); }
-    const before = sendPosts(); const t0 = Date.now(); const tFrom = toolTexts.length;
+    const before = sendPosts(); const readsBefore = orderReads; const t0 = Date.now(); const tFrom = toolTexts.length;
     await rp.click(panel, "#input"); await rp.typeText(panel, ask(c.id)); await rp.pressEnter(panel);
-    const seen = await until(async () => sendPosts() > before ? "posted" : (await box()) ?? (c.answer === "none" && saved() > 0 ? "saved" : null), 20_000, `${c.id} 确认框或请求`, 100).catch(() => "nothing");
+    const seen = await until(async () => sendPosts() > before ? "posted" : (await box()) ?? (c.answer === "none" && (saved() > 0 || orderReads > readsBefore) ? "quiet" : null), 20_000, `${c.id} 确认框或请求`, 100).catch(() => "nothing");
     await sleep(600);
     const dlg = typeof seen === "object" ? seen : null;
     const postsBeforeDecision = sendPosts() - before;
@@ -126,7 +138,7 @@ try {
     const cardAfter = await panelCard();
     await rp.screenshot(panel, join(out, `${c.id}-after.png`));
     const retryButtons = await rp.evaluate(panel, `[...document.querySelectorAll('.msg.assistant')].filter(m => m.textContent.includes(${JSON.stringify(answer(c.id))})).at(-1)?.querySelectorAll('.send-declined-card button').length ?? 0`);
-    const row = { chips: chips as Json, answerShown, expectedError: !!c.error, expectedConfirmed: c.confirmed ?? (c.answer === "send" && !c.error), retryButtons: retryButtons as Json, cardAfter, id: c.id, answer: c.answer, confirmShown: !!dlg, postsBeforeDecision, postsAfter: sendPosts() - before, dialogText: dlg?.text ?? null, buttons: dlg?.buttons ?? null, ring: dlg?.ring ?? null, pageButtons: dlg?.pageButtons ?? null, pageNotice: dlg?.pageNotice ?? null, panelCard: card, tool: toolTexts.slice(tFrom), secs: (Date.now() - t0) / 1000 };
+    const row = { chips: chips as Json, answerShown, expectedError: !!c.error, expectedConfirmed: c.confirmed ?? (c.answer === "send" && !c.error), retryButtons: retryButtons as Json, cardAfter, id: c.id, answer: c.answer, confirmShown: !!dlg, postsBeforeDecision, postsAfter: sendPosts() - before, dialogText: dlg?.text ?? null, buttons: dlg?.buttons ?? null, ring: dlg?.ring ?? null, pageButtons: dlg?.pageButtons ?? null, pageNotice: dlg?.pageNotice ?? null, panelCard: card, reads: orderReads - readsBefore, tool: toolTexts.slice(tFrom), secs: (Date.now() - t0) / 1000 };
     rows.push(row as never); console.log("ROW", JSON.stringify(row));
   }
 } finally {
@@ -143,6 +155,10 @@ const pass = rows.length === CASES.length && rows.every(r => {
   if (r.id === "fetch-reject-send" && !tool.includes("HTTP 503")) return false;
   if (r.id === "script-error-send" && (!tool.includes("page-computation-failed") || !tool.includes("不要重复发送"))) return false;
   if (r.id === "save") return !r.confirmShown && saved() === 1;
+  if (r.id === "tool-fetch-get") return !r.confirmShown && r.postsAfter === 0 && r.reads === 1 && tool.includes("季度报表打印");
+  // 卡上要写请求真正去的地方，不只写所在网页。
+  // 卡上要写请求真正去的地方，不只写所在网页；令牌这类字段只写占位，因为卡的内容会存进侧栏记录。
+  if (r.id.startsWith("tool-fetch") && !(String(r.panelCard).includes("/api/orders") && String(r.panelCard).includes("网页请求") && !String(r.panelCard).includes("tok-SECRET-42") && String(r.panelCard).includes('"passengers":2'))) return false;
   return r.confirmShown && r.pageButtons === 0 && String(r.pageNotice).includes("等你在侧栏确认") && r.postsBeforeDecision === 0 && r.postsAfter === (r.answer === "send" ? 1 : 0) && (r.answer === "send" ? String(r.cardAfter).includes("已发送") === r.expectedConfirmed : true);
 });
 for (const r of rows) console.log(r.id, r.confirmShown ? "确认框" : "无确认框", "决定前", r.postsBeforeDecision, "最终", r.postsAfter);
