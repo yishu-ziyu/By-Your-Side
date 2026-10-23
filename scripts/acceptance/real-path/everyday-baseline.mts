@@ -384,7 +384,7 @@ const GOAL_CASES: Case[] = [
     check: (c) => SAYS_DEAD.test(c.answer) ? null : "没说清翻不过去",
     goal: nudgesAtMost(1) },
   { id: "unreachable", path: "/article", prompt: `打开 http://127.0.0.1:${closedPort}/policy ，告诉我那页写了什么。`,
-    check: (c) => /连不上|无法访问|打不开|拒绝(了)?连接|无法连接|ERR_CONNECTION/i.test(c.answer) ? null : "没说网站连不上",
+    check: (c) => /连不上|无法访问|打不开|拒绝(了)?连接|连接(被|遭)?拒绝|无法连接|ERR_CONNECTION/i.test(c.answer) ? null : "没说网站连不上",
     goal: nudgesAtMost(0) },
   { id: "wiki-missing", path: "/fd-article", prompt: "帮我在维基百科查一下「全双工芝士蛋糕定理」。",
     check: (c) => c.tabs.some((u) => u.includes("wikipedia.org")) ? null : "没有打开维基百科" },
