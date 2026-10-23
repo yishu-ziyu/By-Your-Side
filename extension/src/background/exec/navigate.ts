@@ -110,7 +110,7 @@ async function keepUserPage(
   if (tab.url === url || tab.url === new URL(url).href) {
     await dispatch();
 
-    return { url: tab.url, title: tab.title ?? "", readiness: "complete", waitMs: 0, note: "The user's page already shows this address; it was not reloaded, so their reading position and marks are kept." };
+    return { url: tab.url, title: tab.title ?? "", readiness: "complete", waitMs: 0, note: "The user's page already shows this address; it was not reloaded, so their reading position and marks are kept. To reload it (for example to verify a change), navigate again with inPlace:true." };
   }
 
   if (new URL(tab.url).origin === new URL(url).origin) return null;

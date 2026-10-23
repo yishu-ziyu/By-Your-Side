@@ -469,7 +469,7 @@
       },
       "inPlace": {
        "type": "boolean",
-       "description": "true only when the user asked for the page in front of them to go to this address (\"在这个页面打开…\", \"就在这页搜\"): it then loads in that tab even on another site, replacing what they were reading."
+       "description": "true only when the user asked for the page in front of them to go to this address (\"在这个页面打开…\", \"就在这页搜\"), or to reload that page: it then loads in that tab even on another site, replacing what they were reading."
       }
      }
     }

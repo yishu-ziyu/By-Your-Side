@@ -719,7 +719,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       parameters: Type.Object({
         url: Type.String({ description: "Absolute URL" }),
         timeout: Type.Optional(Type.Number({ description: "Load timeout in seconds" })),
-        inPlace: Type.Optional(Type.Boolean({ description: "true only when the user asked for the page in front of them to go to this address (\"在这个页面打开…\", \"就在这页搜\"): it then loads in that tab even on another site, replacing what they were reading." })),
+        inPlace: Type.Optional(Type.Boolean({ description: "true only when the user asked for the page in front of them to go to this address (\"在这个页面打开…\", \"就在这页搜\"), or to reload that page: it then loads in that tab even on another site, replacing what they were reading." })),
       }),
       execute: async (_id, params) => {
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
