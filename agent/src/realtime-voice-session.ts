@@ -21,6 +21,7 @@ export type RealtimeVoiceDependencies = {
   diagnosticMode?: boolean;
   diagnostic?: (event: string, fields: Record<string, string | number | boolean | null>) => void;
   getSnapshot: () => TaskProgressSnapshot | null;
+  snapshotOf?: (conversationId: string) => TaskProgressSnapshot | null;
   getDeliverySnapshot?: (stream: UserDeliveryStream) => TaskProgressSnapshot | null;
   getTargets?: () => VoiceTarget[];
   emit: (event: VoiceEvent) => void;
