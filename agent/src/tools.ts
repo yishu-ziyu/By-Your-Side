@@ -723,7 +723,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
-        const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}${data.retry ? `\n${data.retry}` : ""}${data.note && data.readiness !== "download" && data.readiness !== "error_page" && (data.openedTabId != null || data.readiness === "complete") ? `\n${data.note}` : ""}`;
+        const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}${data.retry ? `\n${data.retry}` : ""}${data.note && data.readiness !== "download" && data.readiness !== "error_page" && (data.workingTabId != null || data.readiness === "complete") ? `\n${data.note}` : ""}`;
 
         // 地址变成了下载（页面没换）或 Chrome 显示错误页：不补读快照，只说 Chrome 报告的结果。
         if (data.readiness === "download" || data.readiness === "error_page") return textResult(data.note ? `${head}\n${data.note}` : head, data);

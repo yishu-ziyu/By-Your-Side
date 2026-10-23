@@ -15,7 +15,7 @@ export async function navigate(
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
   cancelled?: () => boolean,
-): Promise<{ url: string; title: string; note?: string; retry?: string; openedTabId?: number } & PageReadiness> {
+): Promise<{ url: string; title: string; note?: string; retry?: string; workingTabId?: number } & PageReadiness> {
   // 没有完整网址时 Chrome 不会打开新文档，下面会白等到超时：立刻报错，并点明程序里常见的取错值。
   const url = typeof params.url === "string" ? params.url.trim() : "";
 
@@ -83,7 +83,7 @@ async function keepUserPage(
   sessionId: string,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
   cancelled?: () => boolean,
-): Promise<({ url: string; title: string; note?: string; retry?: string; openedTabId?: number } & PageReadiness) | null> {
+): Promise<({ url: string; title: string; note?: string; retry?: string; workingTabId?: number } & PageReadiness) | null> {
   if (!/^(https?|file):/.test(url)) return null;
   const dispatch = async () => { await beforeDispatch?.(); beforeDispatch?.checkNow?.(); };
 
@@ -102,7 +102,7 @@ async function keepUserPage(
     // 工作标签页本来就在用户眼前时，原地导航用户会看到新页；换成切页也让用户看到它。后台工作页切过去不动前台。
     if (tab.active) await chrome.tabs.update(open.id, { active: true });
 
-    return { url: open.url ?? url, title: open.title ?? "", readiness: "complete", waitMs: 0, note: `This address is already open in tab ${open.id} of the same window, so that tab is now the working tab instead of loading a duplicate; its reading position and marks are kept.` };
+    return { url: open.url ?? url, title: open.title ?? "", readiness: "complete", waitMs: 0, workingTabId: open.id, note: `This address is already open in tab ${open.id} of the same window, so that tab is now the working tab instead of loading a duplicate; its reading position and marks are kept.` };
   }
 
   if (!tab.active || !isWebPage(tab.url)) return null;
@@ -122,7 +122,7 @@ async function keepUserPage(
     ...rest,
     readiness: rest.readiness ?? "timeout",
     waitMs: rest.waitMs ?? 0,
-    openedTabId: tabId,
+    workingTabId: tabId,
     note: [rest.note, `Opened in new background tab ${tabId} beside the user's page (tab ${tab.id}), which stays as it is with its reading position and marks; tab ${tabId} is now the working tab. To act on the user's page again use tabs switch ${tab.id}. Load an address in the user's page itself only when they asked for that page to go there: navigate with inPlace:true.`].filter(Boolean).join("\n"),
   };
 }
