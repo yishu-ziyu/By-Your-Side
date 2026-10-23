@@ -503,12 +503,15 @@ async function routeSpoken(tab: chrome.tabs.Tab, conversationId: string, text: s
  if (turn !== pttTurn) return;
  const selection = probe && typeof probe === "object" && "selection" in probe && typeof probe.selection === "string" ? probe.selection.trim() : "";
  const asked = probe && typeof probe === "object" && "asked" in probe && typeof probe.asked === "string" ? probe.asked : undefined;
+ const source = probe && typeof probe === "object" && "source" in probe ? probe.source : undefined;
 
  if (!selection) return handOffSpoken(tab, conversationId, text, pttId, undefined, turn);
  const startedAt = Date.now();
+ // 判断去向要一两秒：同时先把阅读回答写起来（不显示、不念），判成问这段时卡片直接接上；判成任务或作废就取消。
+ reading.prefetch(tab.id!, text, source);
  const route = await reading.route(text, selection, asked);
 
- if (turn !== pttTurn) return;
+ if (turn !== pttTurn) { reading.cancelPrefetch('stale'); return; }
  pttTiming(pttId, conversationId, `routed_${route}`);
  let card = false;
 
@@ -522,6 +525,7 @@ async function routeSpoken(tab: chrome.tabs.Tab, conversationId: string, text: s
  console.info("[reading] voice_route", JSON.stringify({ pttId, route, card, ms: Date.now() - startedAt }));
 
  if (card) return pttCapsule.dismiss(tab.id!);
+ reading.cancelPrefetch(route === "task" ? "task" : "card_failed");
 
  return handOffSpoken(tab, conversationId, text, pttId, selection, turn);
 }

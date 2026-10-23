@@ -9,6 +9,12 @@ const STORE = 'readingRecords';
 /** 分流判断最多等这么久；模型那边自己 10 秒放弃，这里多留一点来回。 */
 const ROUTE_WAIT_MS = 12_000;
 
+/** 预取的回答这么久没被认领就取消（分流最多等 ROUTE_WAIT_MS）。 */
+const PREFETCH_MS = ROUTE_WAIT_MS + 8_000;
+
+/** 两次拼出的问答是否逐字相同：只比发给模型的内容，不比请求号、时间和转侧栏的记账。 */
+const transcriptKey = (record: ReadingRecord) => JSON.stringify({...record, requestId: undefined, updatedAt: undefined, handoffError: undefined});
+
 /** 写完一句才念；英文句点不算，免得把小数和缩写当句尾。 */
 const SENTENCE_END = /[。！？!?；;\n]/g;
 
@@ -52,6 +58,73 @@ export function installReading(deps: Dependencies) {
   let speaking: { threadId: string; requestId: string; said: number; busy: boolean } | null = null;
   /** 页面上正显示「在念」的那张卡：只在念与不念真的切换时告诉页面。 */
   let voiced: ReadingRecord | null = null;
+  /**
+   * 选着文字说的话在判断去向的同时先写回答：只发请求、不改卡片记录、不推给页面、不念，最新的回答进度先存在这里。
+   * 判成问这段、卡片发来同一个问题、拼出的问答逐字相同时认领它；判成任务、又按下说话、拼出来不一样或过期就取消。
+   */
+  let prefetched: { threadId: string; requestId: string; key: string; latest?: ReadingEvent; timer: ReturnType<typeof setTimeout>; at: number } | null = null;
+
+  /** 预取是否接上、为什么没接上，写进扩展日志：首字变慢时分得清是听写慢、分流慢，还是预取没被认领。 */
+  const notePrefetch = (outcome: string, extra: Record<string, unknown> = {}) => console.info('[reading] prefetch', JSON.stringify({outcome, ...extra}));
+
+  const cancelPrefetch = (reason = 'cancelled') => {
+    if (!prefetched) return;
+    notePrefetch(reason, {ms: Date.now() - prefetched.at, chars: prefetched.latest?.text.length ?? 0});
+    clearTimeout(prefetched.timer);
+    deps.send({type: 'reading_cancel', threadId: prefetched.threadId, requestId: prefetched.requestId});
+    prefetched = null;
+  };
+
+  /** 新的一轮问答：卡片发问题和预取用同一段拼法，模型拿到的内容才一样。校验不过就抛出原来的提示。 */
+  const compose = (record: ReadingRecord, raw: { question?: unknown; retry?: unknown; correction?: unknown; depth?: unknown; spoken?: unknown; source?: unknown }) => {
+    // 生成中发来的问题是改口：停下旧回答和发出新问题在同一步里完成，旧回答没有继续写的间隙。
+    const busy = readingBusy(record);
+
+    if (busy && raw.correction !== true) throw new Error('先点「停止回答」。');
+    const question = typeof raw.question === 'string' ? raw.question.trim() : '';
+
+    if (!question || question.length > 2000) throw new Error('问题要在 1–2000 字之间。');
+    const last = record.turns.at(-1);
+    const retry = last && (raw.retry === true || last.state === 'error') && ['stopped', 'error'].includes(last.state) && last.question === question;
+    // 按下说话时已经停下的那一轮，接着说出的新要求同样是改口。
+    const resumed = !busy && !retry && raw.correction === true && last?.state === 'stopped' && record.interruptedTurn === record.turns.length - 1;
+    const correction = busy || resumed;
+    const previousTurns = retry ? record.turns.slice(0, -1) : record.turns;
+    const given = raw.source && typeof raw.source === 'object' ? raw.source as Record<string, unknown> : undefined;
+    const pointed = given && typeof given.text === 'string' && typeof given.surrounding === 'string'
+      ? {text: given.text, surrounding: given.surrounding.slice(0, TURN_SURROUNDING_LIMIT)} : retry ? last.source : undefined;
+
+    if (pointed && !isReadingTurnSource(pointed)) throw new Error('选中的文字太长，或读不出来。');
+    const current = [...previousTurns].reverse().find(t => t.source)?.source?.text ?? record.source.text;
+    const turnSource: ReadingTurnSource | undefined = pointed && pointed.text !== current ? pointed : undefined;
+
+    if (previousTurns.length >= READING_TURN_LIMIT) throw new Error('这段问答太长了。点「在侧栏继续」。');
+    const depth = raw.depth === 'deep' ? 'deep' as const : 'fast' as const;
+    const spoken = raw.spoken === true;
+    const turn = {question, answer: '', state: 'pending' as const, ...(spoken ? {spoken} : {}), ...(turnSource ? {source: turnSource} : {})};
+    const candidate = {...record, depth, turns: [...previousTurns, turn]};
+
+    if (!isReadingTranscript(candidate) || JSON.stringify(candidate).length + READING_ANSWER_LIMIT > 64000) throw new Error('这段问答太长了。点「在侧栏继续」。');
+
+    return {candidate, turn, retry, last, busy, correction, spoken};
+  };
+
+  /** 发问前要改的记录字段（改口记号、清掉转侧栏的记账）：卡片发问和预取一样改。 */
+  const advance = (record: ReadingRecord, composed: ReturnType<typeof compose>) => {
+    if (composed.correction) record.correctedTurns = [...(record.correctedTurns ?? []), composed.candidate.turns.length - 1];
+    record.interruptedTurn = undefined;
+    record.depth = composed.candidate.depth;
+    record.turns = composed.candidate.turns;
+    record.transferredConversationId = undefined;
+    record.handoffRequestId = undefined;
+  };
+
+  /** 回答进度落到这一轮上，推给页面，写完一句就念。 */
+  const apply = (record: ReadingRecord, event: ReadingEvent) => {
+    Object.assign(record.turns.at(-1)!, {state: event.state, answer: event.text, error: event.error});
+    publish(record);
+    say(record);
+  };
 
   const toPage = (record: ReadingRecord, message: object) => {
     const options = record.documentKey.startsWith('document:') ? {documentId: record.documentKey.slice(9)} : undefined;
@@ -206,54 +279,27 @@ export function installReading(deps: Dependencies) {
  return {ok: true, record}; }
 
       if (raw.type === 'reading_send') {
-        // 生成中发来的问题是改口：停下旧回答和发出新问题在同一步里完成，旧回答没有继续写的间隙。
-        const busy = readingBusy(record);
+        const composed = compose(record, raw);
+        const {turn, retry, last, busy, spoken} = composed;
 
-        if (busy && raw.correction !== true) throw new Error('先点「停止回答」。');
-        const question = typeof raw.question === 'string' ? raw.question.trim() : '';
+        if (composed.correction && busy) stop(record, false);
+        advance(record, composed);
+        // 预取的那一路拼出的问答逐字相同才认领；不同就取消它，照常发问。
+        const adopted = prefetched && prefetched.threadId === record.threadId && prefetched.key === transcriptKey(record) ? prefetched : null;
 
-        if (!question || question.length > 2000) throw new Error('问题要在 1–2000 字之间。');
-        const last = record.turns.at(-1);
-        const retry = last && (raw.retry === true || last.state === 'error') && ['stopped', 'error'].includes(last.state) && last.question === question;
-        // 按下说话时已经停下的那一轮，接着说出的新要求同样是改口。
-        const resumed = !busy && !retry && raw.correction === true && last?.state === 'stopped' && record.interruptedTurn === record.turns.length - 1;
-        const correction = busy || resumed;
-        const previousTurns = retry ? record.turns.slice(0, -1) : record.turns;
-        const pointed = raw.source && typeof raw.source === 'object' && typeof raw.source.text === 'string' && typeof raw.source.surrounding === 'string'
-          ? {text: raw.source.text, surrounding: raw.source.surrounding.slice(0, TURN_SURROUNDING_LIMIT)} : retry ? last.source : undefined;
-
-        if (pointed && !isReadingTurnSource(pointed)) throw new Error('选中的文字太长，或读不出来。');
-        const current = [...previousTurns].reverse().find(t => t.source)?.source?.text ?? record.source.text;
-        const turnSource: ReadingTurnSource | undefined = pointed && pointed.text !== current ? pointed : undefined;
-
-        if (previousTurns.length >= READING_TURN_LIMIT) throw new Error('这段问答太长了。点「在侧栏继续」。');
-        const depth = raw.depth === 'deep' ? 'deep' as const : 'fast' as const;
-        const spoken = raw.spoken === true;
-        const turn = {question, answer: '', state: 'pending' as const, ...(spoken ? {spoken} : {}), ...(turnSource ? {source: turnSource} : {})};
-        const candidate = {...record, depth, turns: [...previousTurns, turn]};
-
-        if (!isReadingTranscript(candidate) || JSON.stringify(candidate).length + READING_ANSWER_LIMIT > 64000) throw new Error('这段问答太长了。点「在侧栏继续」。');
-        if (correction) {
-          if (busy) stop(record, false);
-          record.correctedTurns = [...(record.correctedTurns ?? []), candidate.turns.length - 1];
-        }
-
-        record.interruptedTurn = undefined;
-
-        record.depth = depth;
-        record.turns = candidate.turns;
-        record.requestId = crypto.randomUUID();
+        if (adopted) { clearTimeout(adopted.timer); prefetched = null; notePrefetch('adopted', {ms: Date.now() - adopted.at, chars: adopted.latest?.text.length ?? 0}); } else cancelPrefetch(prefetched ? 'mismatch' : 'none');
+        record.requestId = adopted?.requestId ?? crypto.randomUUID();
         hush();
 
         if (spoken) speaking = {threadId: record.threadId, requestId: record.requestId, said: 0, busy: false};
-        record.transferredConversationId = undefined;
-        record.handoffRequestId = undefined;
 
-        if (!deps.send({type: 'reading_request', requestId: record.requestId, transcript: record, conversationId: record.modelConversationId})) {
-          Object.assign(turn, {state: 'error', answer: retry ? last.answer : '', error: '未连接到助手。内容已保留，连接恢复后可重试。'});
+        if (!adopted && !deps.send({type: 'reading_request', requestId: record.requestId, transcript: record, conversationId: record.modelConversationId})) {
+          Object.assign(turn, {state: 'error', answer: retry && last ? last.answer : '', error: '未连接到助手。内容已保留，连接恢复后可重试。'});
         }
 
         publish(record);
+
+        if (adopted?.latest) apply(record, adopted.latest);
 
         return {ok: true, record};
       }
@@ -299,6 +345,7 @@ export function installReading(deps: Dependencies) {
      */
     interrupt(tabId: number) {
       hush();
+      cancelPrefetch('pressed_again');
       void ready.then(() => {
         for (const r of records.values()) {
           if (r.source.tabId !== tabId || !readingBusy(r)) continue;
@@ -307,6 +354,33 @@ export function installReading(deps: Dependencies) {
         }
       });
     },
+    /** 判断去向的同时先写这句话的阅读回答（见 prefetched）；这一页没有开着的卡、卡还在回答或拼不出来就不预取。 */
+    prefetch(tabId: number, question: string, source: unknown) {
+      cancelPrefetch('replaced');
+      void ready.then(() => {
+        const record = [...records.values()].filter(r => r.source.tabId === tabId).sort((a, b) => a.updatedAt - b.updatedAt).at(-1);
+
+        if (!record || readingBusy(record)) { notePrefetch('skipped', {reason: record ? 'busy' : 'no_card'});
+
+ return; }
+        let next: ReadingRecord;
+
+        try {
+          next = structuredClone(record);
+          advance(next, compose(next, {question, correction: true, depth: 'fast', spoken: true, source}));
+        } catch (error) { notePrefetch('skipped', {reason: error instanceof Error ? error.message : 'compose'});
+
+ return; }
+        const requestId = crypto.randomUUID();
+
+        const transcript: ReadingRecord = {...next, requestId};
+
+        if (!deps.send({type: 'reading_request', requestId, transcript, conversationId: next.modelConversationId})) return;
+        prefetched = {threadId: record.threadId, requestId, key: transcriptKey(next), timer: setTimeout(() => cancelPrefetch('expired'), PREFETCH_MS), at: Date.now()};
+        notePrefetch('started');
+      });
+    },
+    cancelPrefetch,
     /** 页面上选着文字时说的一句话该去哪；判断不了或助手没连上就当任务。 */
     route(utterance: string, selection: string, asked?: string): Promise<ReadingRoute> {
       const requestId = crypto.randomUUID();
@@ -331,10 +405,12 @@ export function installReading(deps: Dependencies) {
  return;
         }
 
+        if (prefetched?.requestId === event.requestId) { prefetched.latest = event;
+
+ return; }
+
         if (!record || record.requestId !== event.requestId || !readingBusy(record)) return;
-        Object.assign(record.turns.at(-1)!, {state: event.state, answer: event.text, error: event.error});
-        publish(record);
-        say(record);
+        apply(record, event);
       });
     },
     disconnected() {
