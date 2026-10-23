@@ -4,6 +4,7 @@ import type {TaskProgressSnapshot, VoiceConversationContext} from '../../shared/
 import {nextStepIgnoringPlaceholder, nextStepInstruction} from '../../shared/task-next-step.js';
 import {localDateOf} from '../../shared/memory.js';
 import {siteHintFor} from './site-hints.js';
+import {mentionedServiceUrls, siteOfUrl} from '../../shared/site-methods.js';
 
 /** 今天的本地日期和星期几：「下周四」「明天」要从这里算；只给日期时模型会把下周四算成明天。 */
 function today(now = new Date()): string {
@@ -89,7 +90,10 @@ export class ProductContext {
       });
       pi.on('before_agent_start',async event=>{
         // 先读站点笔记（读不到 1 秒就不带），再动下面会改状态的 newTurns、onProjection：等待期间不留半截状态。
-        const notes=await this.siteNotes?.(this.pageUrl()).catch(()=>null)??null;
+        const page=this.pageUrl();
+        // 用户点名的服务（「记进 flomo」）不在当前页上：也带上它的方法和笔记。
+        const named=mentionedServiceUrls(String(event.prompt??'')).filter(url=>!page||siteOfUrl(url)!==siteOfUrl(page));
+        const notes=(await Promise.all([page,...named].map(url=>this.siteNotes?.(url).catch(()=>null)??null))).filter(Boolean).join('')||null;
         const apps=await this.miniApps?.().catch(()=>false)??false;
         const current=this.snapshot();
         const active=new Set(pi.getActiveTools());
