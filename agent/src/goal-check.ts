@@ -272,6 +272,12 @@ function aboutNames(names: readonly string[], text: string): boolean {
   return names.length > 0 && (names.some(name => text.includes(name.split(" ").at(-1)!)) || /作者|姓名|人名|名字|名单|\b(authors?|names?|people)\b/i.test(text));
 }
 
+/** video_captions 在核对过视频身份、读到播放器字幕清单为空时写的那句。 */
+const NO_CAPTIONS = "the player's own caption list for this video is empty";
+
+/** 回答说这个视频没有字幕。 */
+const SAYS_NO_CAPTIONS = /没有(任何)?(可用的|可加载的|可读的)?字幕|无字幕|拿不到字幕|字幕(列表|清单|轨)?(是|为)?空|no (subtitles|captions)/i;
+
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
 export async function checkGoal(host: SideCallHost, model: Model<Api>, input: GoalCheckInput, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
   // 实测模型把多行 CSV 写成一行字面 \n；不自动解码文件，以免改变用户要求的转义示例。
@@ -295,6 +301,11 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   const deadClicks = (input.observations ?? []).filter(item => !item.earlier).reduce((count, item) => count + (item.text.match(NO_EFFECT)?.length ?? 0), 0);
 
   if (deadClicks >= 2 && claimsDeadControl(input.lastReply) && !asksUser(input.lastReply)) return { status: "blocked", remaining: plainBlockedReason("unresponsive"), cause: "unresponsive" };
+  // 视频没有字幕：宿主核对过是这个视频、读到播放器自己的字幕清单为空（video_captions 只在这时写这句），回答也照实说了。
+  // 数据本来就不存在；不让模型判，因为它常催去公众号、搜索引擎找文字稿，多跑两三分钟也拿不到用户要的字幕。
+  const captionsAbsent = (input.observations ?? []).some(item => !item.earlier && item.text.includes(NO_CAPTIONS));
+
+  if (captionsAbsent && /字幕|captions?|subtitles?/i.test(input.goal.join(" ")) && SAYS_NO_CAPTIONS.test(input.lastReply) && !asksUser(input.lastReply)) return { status: "blocked", remaining: plainBlockedReason("missing"), cause: "missing" };
   const seen = { pairs: new Set(input.readWords?.pairs), complete: input.readWords?.complete ?? true };
   for (const text of [...input.goal, input.goalPage?.title ?? "", input.page?.title ?? "", input.page?.text ?? "", ...(input.observations ?? []).map(item => item.text), ...(input.files ?? []).map(file => file.content ?? "")]) readWords(text, seen);
   const notInReads = unreadNames(input.lastReply, seen);
