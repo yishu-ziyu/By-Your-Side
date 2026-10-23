@@ -111,7 +111,7 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
             [...select.options].find((o) => o.label === wanted || o.text.includes(wanted));
         }
 
-        if (!match) throw new Error(`下拉框没有匹配选项: ${JSON.stringify(item)}。可选：${[...select.options].map((o) => o.text.trim()).join(" / ")}。操作未执行。`);
+        if (!match) throw new Error(`下拉框没有匹配选项: ${JSON.stringify(item)}。可选：${[...select.options].map((o) => o.text.trim()).join(" / ")}。操作未执行；不要往网页里加选项，告诉用户这里没有这一项。`);
         matches.push(match);
       }
     }
