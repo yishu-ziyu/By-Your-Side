@@ -8,7 +8,13 @@ import { extensionAlive } from "./alive.js";
 import { createPttCapsule } from "./ptt-capsule.js";
 import { createPttKeys } from "./ptt-keys.js";
 
-export function installPushToTalkKeys(): void {
+/**
+ * 阅读卡接手按住说话的样子：选着文字或开着卡时，光标飞到那段字边上听，start/stop 返回 true，胶囊就不出来。
+ * 只换「在听」「听写中」由谁画；报给后台的照旧。
+ */
+export interface PttCompanion { start: () => boolean; stop: () => boolean; cancel: () => void }
+
+export function installPushToTalkKeys(companion?: PttCompanion): void {
   const report = (phase: PttPageMessage["phase"]) => {
     const message: PttPageMessage = { type: "ptt", phase };
     void chrome.runtime.sendMessage(message).catch(() => {});
@@ -17,9 +23,10 @@ export function installPushToTalkKeys(): void {
   const capsule = createPttCapsule();
 
   const keys = createPttKeys({
-    onStart: () => { capsule.show({ phase: "listening" }); report("start"); },
-    onStop: () => { capsule.show({ phase: "transcribing" }); report("stop"); },
-    onCancel: () => { capsule.hide(); report("cancel"); },
+    // 光标接手时，上一轮留在底部的结果胶囊一起收掉：同一时刻只有一个 BYS 在听。
+    onStart: () => { if (companion?.start()) capsule.hide(); else capsule.show({ phase: "listening" }); report("start"); },
+    onStop: () => { if (!companion?.stop()) capsule.show({ phase: "transcribing" }); report("stop"); },
+    onCancel: () => { companion?.cancel(); capsule.hide(); report("cancel"); },
   });
 
   // 只认用户真按的键：网页脚本派发的按键也会进到这里，不挡的话任何网页都能替用户按住说话、打开麦克风。
