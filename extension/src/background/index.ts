@@ -2573,7 +2573,7 @@ return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid),
  * card 只进侧栏历史，让这一轮画成那张卡。
  */
 spoken: async (text: string, context?: PageContext, card?: NudgeCard) => {
-  const sent = uplink.sendClientMessage(await attachPageContext({ type: lastStatus === "idle" ? "user_message" : "steer", text, context }));
+  const sent = uplink.sendClientMessage(await attachPageContext({ type: lastStatus === "idle" ? "user_message" : "steer", text, context, ...(card ? {} : { spoken: true as const }) }));
 
   // 没送出去就不记：胶囊上留着这句话可以重发，重发成功才进对话。
   if (sent) recordAndBroadcastHistory(card ? { kind: "user", text, card } : { kind: "user", text });

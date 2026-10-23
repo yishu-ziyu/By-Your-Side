@@ -326,12 +326,13 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
-  | { type: "user_message"; text: string; context?: PageContext; attachments?: Attachment[] }
+  /** spoken：按住说话听写来的一句，回答会被念出来。 */
+  | { type: "user_message"; text: string; context?: PageContext; attachments?: Attachment[]; spoken?: true }
   | { type: "task_action"; request: TaskActionRequest }
   | { type: "task_receipt_query"; requestId: string }
   /** 重开侧栏/重连/切回会话时补取当前只读任务视图；不产生任务或权限。 */
   | { type: "task_view_query"; requestId: string }
-  | { type: "steer"; text: string; context?: PageContext; attachments?: Attachment[] }
+  | { type: "steer"; text: string; context?: PageContext; attachments?: Attachment[]; spoken?: true }
   | { type: "abort"; taskRequestId?:string }
   | { type:'task_control_result';requestId:string;action:'pause'|'resume'|'abort';runId:string;ok:boolean;reason?:string;uncertain?:boolean;partial?:boolean }
   | {
@@ -1012,6 +1013,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     ) {
       return null;
     }
+
+    if ((msg.type === "user_message" || msg.type === "steer") && msg.spoken !== undefined && msg.spoken !== true) return null;
 
     if (
       (msg.type === "user_message" || msg.type === "steer") &&

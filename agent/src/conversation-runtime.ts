@@ -97,10 +97,11 @@ export async function createConversationRuntime(
           msg.text,
           msg.context,
           msg.attachments,
+          msg.spoken ? { spoken: true } : undefined,
         );
         break;
       case "steer":
-        session.steer(msg.text, msg.context, msg.attachments);
+        session.steer(msg.text, msg.context, msg.attachments, msg.spoken === true);
         break;
       case "abort":
         session.abort();
