@@ -172,16 +172,16 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
    * 浏览器把连接留在池里，真正的请求就复用它；回什么都不影响请求，只记进诊断。
    * 凭据模式必须和模型请求（extension/src/inproc/model-runtime.ts 的 omitCookies）一样是 omit：Chrome 按凭据模式分连接池，不一致就另开一条连接。
    */
-  private warmUp(id: string, context?: PageContext): void {
+  private warmUp(id: string, context?: PageContext, connectionOnly = false): void {
     const session = (this.entries.get(id) ?? [...this.entries.values()][0])?.runtime.session;
     const origin = session?.modelOrigin();
 
-    if (session) void session.warmPageObservation(context);
+    if (session && !connectionOnly) void session.warmPageObservation(context);
     if (!session || !origin) return;
     const now = Date.now();
 
     if (now - (this.warmedAt.get(origin) ?? 0) < WARM_UP_INTERVAL_MS) {
-      void session.warmPromptCache();
+      if (!connectionOnly) void session.warmPromptCache();
       return;
     }
     this.warmedAt.set(origin, now);
@@ -190,7 +190,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
       .then(() => true, () => false)
       .then(ok => {
         settle(ok, Date.now());
-        if (ok) void session.warmPromptCache();
+        if (ok && !connectionOnly) void session.warmPromptCache();
       });
   }
   getTaskProgress(id: string): TaskProgressSnapshot | null { const snapshot=this.progress.get(id)?.snapshot();
@@ -1813,7 +1813,7 @@ return;}
 
     // 点进输入框是被动事件：放在会话查找和断点检查前面，找不到会话或断点不可用时也不往界面报错。
     if (message.type === "warm_up") {
-      this.warmUp(id, message.context);
+      this.warmUp(id, message.context, message.connection === true);
 
       return;
     }

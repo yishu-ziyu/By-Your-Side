@@ -8,6 +8,7 @@ import { installFloatCard } from "./float-card.js";
 import { installSonarPinpoint } from "./sonar-pinpoint.js";
 import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
+import { PTT_WARM } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
 import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic } from 'lucide';
@@ -860,11 +861,16 @@ function boot(): void {
   });
 
   function changedSelection(keyboard = false): void {
+    const next = selectionSnapshot();
+
+    // 选中以后常接着按住右 ⌥ 问这段：先让后台把听写连好，松开后少等一次握手。
+    if (next) {
+      void chrome.runtime.sendMessage({ type: PTT_WARM }).catch(() => {});
+    }
+
     if (!barEnabled || pageMuted) {
       return;
     }
-
-    const next = selectionSnapshot();
 
     if (!next || root.activeElement || next.source.text === snapshot?.source.text && visible) {
       return;

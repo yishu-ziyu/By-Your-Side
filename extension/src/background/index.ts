@@ -20,8 +20,9 @@ import type { ReadingRecord } from "../shared/reading-state.js";
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
 import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, PageContext, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
-import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
+import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, PTT_WARM, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
 import { installPttCapsule } from "./ptt-capsule.js";
+import { readVoiceDictationKey } from "../shared/dictation-config.js";
 import { createVoiceCaptureSink } from "../shared/trace-store.js";
 import { pttTimingLine, voiceCaptureDayKey } from "../../../shared/voice-capture-core.js";
 import { installReinject } from "./reinject.js";
@@ -469,6 +470,15 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  })();
 
  return true;
+});
+
+// 选中文字以后常常接着问这段（打字或按住说话）：先连上模型服务；配了听写密钥再让离屏文档连好听写，不开麦、不送声音。
+chrome.runtime.onMessage.addListener((raw: { type?: unknown } | undefined, sender) => {
+ if (raw?.type !== PTT_WARM || sender.id !== chrome.runtime.id || sender.tab?.id == null) return;
+ transport.sendClientMessage({ type: "warm_up", connection: true, conversationId: conversationForWindow(sender.tab.windowId) });
+ void readVoiceDictationKey().then(({ key }) => {
+  if (key) return chrome.runtime.sendMessage({ target: PTT_TARGET, phase: "warm" } satisfies PttCommand);
+ }).catch(() => {});
 });
 
 /**
