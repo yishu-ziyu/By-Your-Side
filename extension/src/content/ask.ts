@@ -734,14 +734,15 @@ function boot(): void {
   }
 
   /** 按住说话这句话对着哪段：按下时抓住的那段；卡开着时带上卡上最近一问。 */
-  function voiceTarget(): { selection?: string; asked?: string } {
+  function voiceTarget(): { selection?: string; asked?: string; source?: { text: string; surrounding: string; truncated?: boolean } } {
     const card = visible && expanded && record?.turns.length ? record : undefined;
     const target = voice?.target ?? selectionSnapshot() ?? (card ? snapshot : null);
 
     if (!target) return {};
     const asked = card?.turns.at(-1)?.question;
 
-    return { selection: target.source.text, ...(asked ? { asked: questionLabel(asked) } : {}) };
+    // source 与 voiceAsk 发问时带的一样：后台判断去向的同时按它先写回答，拼出的问答才对得上。
+    return { selection: target.source.text, source: { text: target.source.text, surrounding: target.source.surrounding, truncated: target.source.truncated }, ...(asked ? { asked: questionLabel(asked) } : {}) };
   }
 
   /** 说的话交给阅读卡：卡开着就接在这张卡里（换了段，这一轮带上新的一段）；没开就在这段旁边开卡。还在回答时就是改口。 */
