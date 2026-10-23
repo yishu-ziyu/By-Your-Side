@@ -15,6 +15,10 @@
  *   分流  「这段我记不住，举个例子」进卡片，侧栏没有新消息；换选另一段说「这里呢」，卡片引用和标记跟着换到新段；
  *         「把这段记进 flomo」「打开邮箱」交给助手：侧栏出现这句话，前者带着选中的文字，卡片不多出一轮。
  * 模型回答写得好不好（是不是例子、有没有从头重讲）另存原文，人看。
+ *
+ * --scripted：回答和分流换成本机脚本模型（听写、念仍是真的），解释慢慢一句句写，保证按下时回答还在写：
+ *   只走「这里没看懂 → 念到一半改口」，另判旧回答停在原处（「已停在这里，按新要求接着答」）、新一轮带「已按新要求回答」。
+ *   真模型答得快，按下时多半已写完，这种「边写边排队念」的情况只有这里能稳定撞上。
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -23,6 +27,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { launchRealPath, requireHeadless, REPO, sleep, until, type Json } from "./harness.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
+import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
 
@@ -60,6 +65,16 @@ for (const [name, text] of Object.entries(SAID) as Array<[Said, string]>) {
 const silence = join(out, "silence.wav");
 execFileSync("sox", ["-n", "-r", "48000", "-c", "1", "-b", "16", silence, "trim", "0", "120"]);
 
+const scripted = process.argv.includes("--scripted");
+const OLD = Array.from({ length: 60 }, (_, i) => `第${i + 1}句：可逆过程要慢到每一步都接近平衡。`).join("");
+const EXAMPLE = "比如慢慢推注射器的活塞，里面的气体一直很均匀。";
+// 匹配的是模型收到的用户消息原文：分流请求带 "utterance"，阅读回答带 "question"；改口那次的回答请求两问都带，排在前面。
+const fixture = scripted ? await startScriptedModel([
+  { match: '"utterance":"举个例子', steps: [{ text: '{"route":"reading"}' }] },
+  { match: '"utterance":"这里没看懂', steps: [{ text: '{"route":"reading"}' }] },
+  { match: '"question":"举个例子', steps: [{ text: EXAMPLE }] },
+  { match: '"question":"这里没看懂', steps: [{ text: OLD, chunkDelayMs: 150 }] },
+]) : null;
 const plan = await loadModelPlan(DEFAULT_TEST_MODEL);
 const planKey = (await readFile(join(homedir(), ".sideagent", "step-plan.key"), "utf8")).trim();
 // SAFETY: Pi 的 auth.json 里 minimax-cn 存 { type: "api_key", key }。
@@ -68,6 +83,8 @@ const speechKey = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.jso
 const rp = await launchRealPath({ microphoneWav: silence });
 /** 失败时读出侧栏最后的提示（没成的原因会写在那里）。 */
 let panelTail: () => Promise<string> = async () => "";
+/** 离屏页最后一次念的结果（ptt-speech.ts 写在根元素上）：没出声时看是哪种失败。 */
+let speechResult: () => Promise<Json> = async () => null;
 
 type Check = { name: string; pass: boolean | null; detail: Json };
 const checks: Check[] = [];
@@ -118,7 +135,8 @@ try {
   await rp.cdp.send("Runtime.enable", {}, inproc);
   const worker = (await rp.targets()).find((t) => t.type === "service_worker" && t.url.endsWith("/background.js"));
   if (worker) { const session = await rp.attach(worker.targetId); consoleOf.set(session, "background"); await rp.cdp.send("Runtime.enable", {}, session); }
-  const items = { ...modelStorageItems(plan), inproc_voice_key: planKey, ptt_speech_key: speechKey };
+  const models = fixture ? { inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: fixture.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } } : modelStorageItems(plan);
+  const items = { ...models, inproc_voice_key: planKey, ptt_speech_key: speechKey };
   // 离屏页拿不到 chrome.storage，借设置页写。
   // SAFETY: CDP Target.createTarget 返回 { targetId }。
   const { targetId: settingsTarget } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html` }) as { targetId: string };
@@ -126,7 +144,7 @@ try {
   await until(async () => await rp.evaluate(settings, "typeof chrome !== 'undefined' && !!chrome.storage?.local") || undefined, 15_000, "设置页");
   await rp.evaluate(settings, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget });
-  record.model = DEFAULT_TEST_MODEL;
+  record.model = fixture ? "scripted" : DEFAULT_TEST_MODEL;
 
   // 离屏页：麦克风换成「设备静音 + 脚本放的人声」，和产品录音同一采样率（不同采样率的流接不进去），每次按住新开一路（松开时产品会停掉那一路）；念声的原始样本和停声时刻记下来。
   await rp.evaluate(inproc, `(() => {
@@ -159,6 +177,7 @@ try {
     for (const [id, at] of Object.entries(got.c)) closed.set(id, at);
   };
   pump = setInterval(() => { void drainAudio().catch(() => {}); }, 300);
+  speechResult = async () => JSON.parse(String(await rp.evaluate(inproc, `document.documentElement.dataset.pttSpeech ?? "null"`))) as Json;
   await rp.cdp.send("Network.enable", {}, inproc);
   // 听写连接的握手、报错和关闭：连不上时看得出是鉴权、限流还是网络。
   for (const method of ["Network.webSocketCreated", "Network.webSocketHandshakeResponseReceived", "Network.webSocketFrameError", "Network.webSocketClosed"]) {
@@ -276,7 +295,7 @@ try {
   await rp.screenshot(work, join(out, "1-card.png"));
 
   // ── 2. 等它念起来，念到一半按住说「举个例子就好」 ──
-  const firstAudio = await until(async () => { await drainAudio(); const a = played.find((p) => p.at > ask.upAt); return a && Date.now() > a.at + 1200 ? a : undefined; }, 40_000, "回答开始出声并念了一会儿");
+  const firstAudio = await until(async () => { await drainAudio(); const a = played.find((p) => p.at > ask.upAt); return a && Date.now() > a.at + (scripted ? 600 : 1200) ? a : undefined; }, 40_000, "回答开始出声并念了一会儿");
   const before = await card();
   const oldStateAtPress = before.turns[0]!.status;
   const speechBeforePress = speechRequests.filter((r) => r.at > ask.upAt).map((r) => r.text);
@@ -322,6 +341,13 @@ try {
   record.answers = { explain: after.turns[0]!.answer, example: after.turns[1]!.answer, oldStateAtPress };
   await rp.screenshot(work, join(out, "2-corrected.png"));
 
+  if (scripted) {
+    check("改口（回答还在写时按下）：旧回答停在原处写着「已停在这里，按新要求接着答」，新一轮带「已按新要求回答」，新回答里没有旧回答的句子",
+      /正在回答/.test(oldStateAtPress) && after.turns[0]!.status === "已停在这里，按新要求接着答" && after.turns[0]!.answer.length < OLD.length && after.turns[1]!.tag.includes("已按新要求回答") && !after.turns[1]!.answer.includes("第") && after.turns[1]!.answer.includes("注射器"),
+      { stateAtPress: oldStateAtPress, oldStatus: after.turns[0]!.status, oldChars: after.turns[0]!.answer.length, fullOldChars: OLD.length, newTag: after.turns[1]!.tag, newAnswer: after.turns[1]!.answer });
+  }
+  else {
+
   // ── 4. 分流 ──
   const usersBefore = (await panelUsers()).length;
   const remember = await holdAndSay("remember");
@@ -365,10 +391,12 @@ try {
   await stopTask();
   check("分流：「打开邮箱」交给助手处理，卡片不多出一轮", !!mail && mail.includes("邮箱") && (await turnsNow()) === cardTurns, { message: mail ?? null });
   await rp.screenshot(panel, join(out, "4-panel.png"));
+  }
   await drainAudio();
 } catch (error) {
   check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
   record.panelTail = await panelTail().catch(() => "");
+  record.lastSpeech = await speechResult().catch(() => null);
 } finally {
   clearInterval(pump);
   record.spoken = spoken.map((s) => ({ ...s }));
@@ -376,9 +404,10 @@ try {
   record.speechRequests = speechRequests.map((r) => ({ at: r.at, text: r.text.slice(0, 120) }));
   record.audio = { chunks: played.length, contexts: [...new Set(played.map((p) => p.ctx))].length, closed: Object.fromEntries(closed) };
   const passed = checks.every((c) => c.pass !== false);
-  await writeFile(join(out, "result.json"), JSON.stringify({ status: passed ? "PASS" : "FAIL", dependency: `isolated real extension; real model ${DEFAULT_TEST_MODEL}; real zh.wikipedia article; real Step Plan dictation of macOS say voice; real MiniMax speech`, checks, record }, null, 2));
+  await writeFile(join(out, "result.json"), JSON.stringify({ status: passed ? "PASS" : "FAIL", dependency: `isolated real extension; ${fixture ? "scripted local model" : `real model ${DEFAULT_TEST_MODEL}`}; real zh.wikipedia article; real Step Plan dictation of macOS say voice; real MiniMax speech`, checks, record }, null, 2));
   await rp.close();
   await rp.remove();
+  await fixture?.close();
   await muxVideo().catch((error: Error) => console.log(`带声音的视频没合成：${error.message.split("\n")[0]}`));
   console.log(JSON.stringify({ status: passed ? "PASS" : "FAIL", out }, null, 2));
   if (!passed) process.exitCode = 1;
