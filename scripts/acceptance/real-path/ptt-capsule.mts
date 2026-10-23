@@ -387,7 +387,9 @@ try {
   await until(async () => (await capsuleState(work))?.speaking === false || undefined, 3_000, "speech hushed");
   three.ms.hushedAfterEsc = Date.now() - hushAt;
   three.spoken = await lastSpeech(inproc);
-  assert.deepEqual(three.spoken, { ok: false, reason: "hushed" }, "R3: Esc hushed the speech");
+  // 被打断时若已出声，回复里还带开始出声的时刻；这里只看是不是被打断。
+  const hushed = (reply: unknown) => { const r = reply as { ok?: unknown; reason?: unknown } | null; return r?.ok === false && r.reason === "hushed"; };
+  assert.ok(hushed(three.spoken), `R3: Esc hushed the speech ${JSON.stringify(three.spoken)}`);
   assert.equal((await capsuleState(work))?.phase, "done", "R3: Esc while speaking keeps the capsule");
   // 结果马上到（没有工具步、没有延时）：确认句还在念就被结果打断，回复是 hushed，只放了很短一段。
   const asked3 = evidence.speechRequests.slice(requestsBefore3);
@@ -395,7 +397,7 @@ try {
   three.ack = { requests: asked3.map(request => request.text), replies: replies3 };
   assert.ok(asked3.length === 2 && asked3[0]!.text === ACK && asked3[1]!.text === ANSWER3, `ack: one ack, then the result ${JSON.stringify(three.ack)}`);
   three.ms.ackCutAfter = asked3[1]!.at - asked3[0]!.at;
-  assert.deepEqual(replies3[0], { ok: false, reason: "hushed" }, `ack: cut off when the result arrived ${JSON.stringify(three.ack)}`);
+  assert.ok(hushed(replies3[0]), `ack: cut off when the result arrived ${JSON.stringify(three.ack)}`);
   assert.ok(three.ms.ackCutAfter < one.ms.ackDone! - one.ms.ackSpeaking! - 300, `ack: the result came before the ack could finish (${three.ms.ackCutAfter} ms vs a full ack of ${one.ms.ackDone! - one.ms.ackSpeaking!} ms)`);
   await rp.screenshot(work, join(artifacts, "7-hushed.png"));
 
