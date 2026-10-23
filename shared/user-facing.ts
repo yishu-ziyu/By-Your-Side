@@ -109,6 +109,12 @@ function classifyModelError(text: string, model: string | undefined): Pick<Model
 
   if (quotaWords) return quota;
 
+  // 服务商的内容审核拦下了输出（MiniMax 1027 new_sensitive、OpenAI content_filter）：同一个模型再试多半还会被拦，
+  // 只给「换一个模型」，换不换由用户定；不自动换，免得替用户绕过他选的服务商的审核。
+  if (/new_sensitive|content[_ ]filter|content[_ ]policy|sensitive content|内容审核|敏感内容/i.test(text)) {
+    return { kind: "missing", title: "模型的内容审核拦下了这次回答", copy: "同一个模型再试多半还会被拦，可以换个模型再问。" };
+  }
+
   if (/\b404\b|not.?found|does not exist|不存在/i.test(text)) return { kind: "missing", title: "找不到这个模型", copy: "可能已下线，或当前账号没有权限。换一个模型就能继续。" };
 
   if (/\b5\d\d\b|overload|unavailable|bad gateway|internal server error/i.test(text)) return { kind: "busy", title: "模型服务暂时出错", copy: "对方繁忙或故障，已自动重试几次。可以稍后再试，或换个模型立刻继续。" };
