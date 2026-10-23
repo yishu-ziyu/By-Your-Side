@@ -65,3 +65,10 @@ export const PTT_SPEAK_RESULT = "ptt_speak_result";
 
 /** 订阅 Key 的样子：MiniMax 按 Key 决定扣套餐还是按量，只认订阅 Key（sk-cp-）。 */
 export const isSubscriptionKey = (key: string) => /^sk-cp-[\w-]{8,}$/.test(key.trim());
+
+/** 后台 → 网页：按住说话问阅读卡时的声音进展。heard：听写出的那句话（分流前就到）；speaking / quiet：这张卡的回答开始念、不再念。 */
+export const READING_VOICE = "reading_voice";
+
+export type ReadingVoiceMessage =
+  | { type: typeof READING_VOICE; phase: "heard"; text: string }
+  | { type: typeof READING_VOICE; phase: "speaking" | "quiet"; threadId: string };

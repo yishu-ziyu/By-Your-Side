@@ -1,7 +1,8 @@
-import { isReadingTranscript, READING_ANSWER_LIMIT, READING_ROUTE_SELECTION_LIMIT, READING_TURN_LIMIT, type ReadingEvent, type ReadingRoute, type ReadingRouteResult, type ReadingSource } from '../../../shared/reading.js';
+import { isReadingTranscript, isReadingTurnSource, READING_ANSWER_LIMIT, READING_ROUTE_SELECTION_LIMIT, READING_TURN_LIMIT, type ReadingEvent, type ReadingRoute, type ReadingRouteResult, type ReadingSource, type ReadingTurnSource } from '../../../shared/reading.js';
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import type { PttVoice } from './ptt-capsule.js';
+import { READING_VOICE, type ReadingVoiceMessage } from '../shared/ptt.js';
 
 const STORE = 'readingRecords';
 
@@ -10,6 +11,9 @@ const ROUTE_WAIT_MS = 12_000;
 
 /** 写完一句才念；英文句点不算，免得把小数和缩写当句尾。 */
 const SENTENCE_END = /[。！？!?；;\n]/g;
+
+/** 换段时每轮带的相邻段落短一些：一张卡换几段也放得进问答总长。 */
+const TURN_SURROUNDING_LIMIT = 1000;
 
 function sentencesEnd(text: string): number {
   let end = 0;
@@ -46,10 +50,35 @@ export function installReading(deps: Dependencies) {
    * 按下说话、停止、改口都把它清掉；旧请求晚到的字因此不会再进队，念完的回调发现不是自己也就不再接着念。
    */
   let speaking: { threadId: string; requestId: string; said: number; busy: boolean } | null = null;
+  /** 页面上正显示「在念」的那张卡：只在念与不念真的切换时告诉页面。 */
+  let voiced: ReadingRecord | null = null;
+
+  const toPage = (record: ReadingRecord, message: object) => {
+    const options = record.documentKey.startsWith('document:') ? {documentId: record.documentKey.slice(9)} : undefined;
+    void chrome.tabs.sendMessage(record.source.tabId, message, options).catch(() => {});
+  };
+
+  const quiet = () => {
+    if (!voiced) return;
+    toPage(voiced, {type: READING_VOICE, phase: 'quiet', threadId: voiced.threadId} satisfies ReadingVoiceMessage);
+    voiced = null;
+  };
+
+  const loud = (record: ReadingRecord) => {
+    if (voiced?.threadId === record.threadId) return;
+    quiet();
+    voiced = record;
+    toPage(record, {type: READING_VOICE, phase: 'speaking', threadId: record.threadId} satisfies ReadingVoiceMessage);
+  };
+
+  const endSpeaking = () => {
+    speaking = null;
+    quiet();
+  };
 
   const hush = (threadId?: string) => {
     if (!speaking || (threadId && speaking.threadId !== threadId)) return;
-    speaking = null;
+    endSpeaking();
     deps.voice.hush();
   };
 
@@ -62,7 +91,7 @@ export function installReading(deps: Dependencies) {
     const end = turn.state === 'done' ? rest.length : turn.state === 'streaming' ? sentencesEnd(rest) : 0;
 
     if (!end) {
-      if (turn.state !== 'streaming' && turn.state !== 'pending') speaking = null;
+      if (turn.state !== 'streaming' && turn.state !== 'pending') endSpeaking();
 
       return;
     }
@@ -73,15 +102,16 @@ export function installReading(deps: Dependencies) {
     if (!text) return say(record);
     const playing = deps.voice.speak(text, record.modelConversationId, true);
 
-    if (!playing) { speaking = null;
+    if (!playing) { endSpeaking();
 
  return; }
     s.busy = true;
+    loud(record);
     void playing.then(reply => {
       if (speaking !== s) return;
       s.busy = false;
 
-      if (!reply.ok) { speaking = null;
+      if (!reply.ok) { endSpeaking();
 
  return; }
       const current = records.get(s.threadId);
@@ -109,8 +139,7 @@ export function installReading(deps: Dependencies) {
   const publish = (record: ReadingRecord) => {
     record.updatedAt = Date.now();
     persist();
-    const options = record.documentKey.startsWith('document:') ? {documentId: record.documentKey.slice(9)} : undefined;
-    void chrome.tabs.sendMessage(record.source.tabId, {type: 'reading_update', record}, options).catch(() => {});
+    toPage(record, {type: 'reading_update', record});
   };
 
   const stop = (record: ReadingRecord, announce = true) => {
@@ -178,27 +207,38 @@ export function installReading(deps: Dependencies) {
 
       if (raw.type === 'reading_send') {
         // 生成中发来的问题是改口：停下旧回答和发出新问题在同一步里完成，旧回答没有继续写的间隙。
-        const correction = readingBusy(record);
+        const busy = readingBusy(record);
 
-        if (correction && raw.correction !== true) throw new Error('先点「停止回答」。');
+        if (busy && raw.correction !== true) throw new Error('先点「停止回答」。');
         const question = typeof raw.question === 'string' ? raw.question.trim() : '';
 
         if (!question || question.length > 2000) throw new Error('问题要在 1–2000 字之间。');
         const last = record.turns.at(-1);
         const retry = last && (raw.retry === true || last.state === 'error') && ['stopped', 'error'].includes(last.state) && last.question === question;
+        // 按下说话时已经停下的那一轮，接着说出的新要求同样是改口。
+        const resumed = !busy && !retry && raw.correction === true && last?.state === 'stopped' && record.interruptedTurn === record.turns.length - 1;
+        const correction = busy || resumed;
         const previousTurns = retry ? record.turns.slice(0, -1) : record.turns;
+        const pointed = raw.source && typeof raw.source === 'object' && typeof raw.source.text === 'string' && typeof raw.source.surrounding === 'string'
+          ? {text: raw.source.text, surrounding: raw.source.surrounding.slice(0, TURN_SURROUNDING_LIMIT)} : retry ? last.source : undefined;
+
+        if (pointed && !isReadingTurnSource(pointed)) throw new Error('选中的文字太长，或读不出来。');
+        const current = [...previousTurns].reverse().find(t => t.source)?.source?.text ?? record.source.text;
+        const turnSource: ReadingTurnSource | undefined = pointed && pointed.text !== current ? pointed : undefined;
 
         if (previousTurns.length >= READING_TURN_LIMIT) throw new Error('这段问答太长了。点「在侧栏继续」。');
         const depth = raw.depth === 'deep' ? 'deep' as const : 'fast' as const;
         const spoken = raw.spoken === true;
-        const turn = {question, answer: '', state: 'pending' as const, ...(spoken ? {spoken} : {})};
+        const turn = {question, answer: '', state: 'pending' as const, ...(spoken ? {spoken} : {}), ...(turnSource ? {source: turnSource} : {})};
         const candidate = {...record, depth, turns: [...previousTurns, turn]};
 
         if (!isReadingTranscript(candidate) || JSON.stringify(candidate).length + READING_ANSWER_LIMIT > 64000) throw new Error('这段问答太长了。点「在侧栏继续」。');
         if (correction) {
-          stop(record, false);
+          if (busy) stop(record, false);
           record.correctedTurns = [...(record.correctedTurns ?? []), candidate.turns.length - 1];
         }
+
+        record.interruptedTurn = undefined;
 
         record.depth = depth;
         record.turns = candidate.turns;
@@ -253,8 +293,20 @@ export function installReading(deps: Dependencies) {
   chrome.tabs.onUpdated.addListener((tabId, change) => { if (change.status === 'loading') dropTab(tabId); });
 
   return {
-    /** 按下说话：正在念的阅读回答马上停，已经排着的句子也不再念。 */
-    hushVoice: () => hush(),
+    /**
+     * 按下说话：正在念的阅读回答马上停，已经排着的句子也不再念；这一页还在写的回答也停在已写出的地方，
+     * 不在用户说话时继续变长。记下停的是哪一轮，接着说出的新要求按改口接上。
+     */
+    interrupt(tabId: number) {
+      hush();
+      void ready.then(() => {
+        for (const r of records.values()) {
+          if (r.source.tabId !== tabId || !readingBusy(r)) continue;
+          r.interruptedTurn = r.turns.length - 1;
+          stop(r);
+        }
+      });
+    },
     /** 页面上选着文字时说的一句话该去哪；判断不了或助手没连上就当任务。 */
     route(utterance: string, selection: string, asked?: string): Promise<ReadingRoute> {
       const requestId = crypto.randomUUID();

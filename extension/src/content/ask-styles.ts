@@ -23,6 +23,8 @@ export const ASK_STYLES = `
   --t-tiny: 11.5px;
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
+  /* 和网页上那段字的黄色标记同一种黄：卡里的引用和页面上的标记一眼对得上。 */
+  --mark: rgba(242, 196, 56, .78);
 }
 :host([data-tone="warm"]) {
   --ink: #1d1b18;
@@ -68,7 +70,9 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 
 .head { display: flex; align-items: center; gap: 4px; height: 28px; padding: 4px 4px 0 12px; font-size: var(--t-meta); color: var(--ink-mute); }
 .head .q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.head .quote { color: var(--ink-fg-2); }
+.head .quote { color: var(--ink-fg-2); padding-left: 8px; box-shadow: inset 2px 0 0 var(--mark); }
+.turn > .source { margin-bottom: 6px; padding-left: 8px; box-shadow: inset 2px 0 0 var(--mark); font-size: var(--t-meta); line-height: 1.5; color: var(--ink-fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-pending .question { color: var(--ink-fg-2); }
 .question svg { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; stroke-width: 2; color: var(--ink-mute); }
 .messages { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-hover) transparent; padding: 4px 12px 10px; max-height: min(420px, 52vh); }
 .turn + .turn { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ink-rule); }
@@ -116,6 +120,10 @@ button.send svg { color: #fff; width: 15px; height: 15px; stroke-width: 2; }
 .restore { position: fixed; right: 18px; bottom: 18px; pointer-events: auto; height: 36px; padding: 0 14px; background: var(--ink); color: var(--ink-fg); border-radius: 999px; box-shadow: var(--shadow); }
 @media (hover: hover) and (pointer: fine) { .restore:hover { background: var(--ink); } }
 
+.surface { transition: opacity .2s var(--ease-out); }
+/* 读者在滚正文：浮在正文上的卡片淡下去让开，停下就回来，不收起、不改内容。 */
+.surface.receding { opacity: .28; transition-duration: .12s; }
+.surface.glide { transition: left .28s var(--ease-out), top .28s var(--ease-out), opacity .2s var(--ease-out); }
 .surface.enter { animation: lens-in .24s var(--ease-spring); transform-origin: var(--origin, bottom center); }
 .surface.morph { animation: lens-morph .24s var(--ease-out); transform-origin: var(--origin, bottom center); }
 @keyframes lens-in { from { opacity: 0; transform: translateY(4px) scale(.96); } to { opacity: 1; transform: none; } }
@@ -128,5 +136,5 @@ button.send svg { color: #fff; width: 15px; height: 15px; stroke-width: 2; }
 .reader-label { padding: 0 8px; color: var(--ink-fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reader-rate { min-width: 46px; font-variant-numeric: tabular-nums; color: var(--ink-fg-2); }
 @keyframes reader-enter { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) { .surface.enter, .surface.morph, .menu, .reader, .caret { animation: none; } button { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .surface.enter, .surface.morph, .menu, .reader, .caret { animation: none; } button, .surface, .surface.glide { transition: none; } }
 `;

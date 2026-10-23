@@ -20,7 +20,7 @@ import type { ReadingRecord } from "../shared/reading-state.js";
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
 import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, PageContext, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
-import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, PTT_WARM, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
+import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, PTT_WARM, READING_VOICE, type ReadingVoiceMessage, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
 import { installPttCapsule } from "./ptt-capsule.js";
 import { readVoiceDictationKey } from "../shared/dictation-config.js";
 import { createVoiceCaptureSink } from "../shared/trace-store.js";
@@ -428,6 +428,12 @@ function pttFailureText(reply: Extract<PttReply, { ok: false }>): string {
  return `听写没成功：${reply.message ?? "未知原因"}`;
 }
 
+/**
+ * 按住说话的轮次：每次按下加一。听写、问页面、分流都要等，等回来时用户可能已经又按下了：
+ * 那时这一句作废，不再进卡、不交给助手、不动胶囊，免得旧话在新一次说话之后冒出来。
+ */
+let pttTurn = 0;
+
 // 按住说话：网页脚本报按下/松开/取消，离屏文档录音并听写；听写出的一句交给当前会话。
 // 胶囊：松开以后的每个结局都显示在说话的那一页底部。
 chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, sender, sendResponse) => {
@@ -437,13 +443,15 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  void (async () => {
   const command: PttCommand = { target: PTT_TARGET, phase: raw.phase };
   const releasedAt = Date.now();
-  if (raw.phase === "start") { reading.hushVoice(); pttCapsule.recording(tabId); }
+  if (raw.phase === "start") { pttTurn++; reading.interrupt(tabId); pttCapsule.recording(tabId); }
+  const turn = pttTurn;
   // SAFETY: 离屏文档对 PttCommand 只回 PttReply；没有接收方时 sendMessage 会抛错。
   const reply = await (chrome.runtime.sendMessage(command) as Promise<PttReply | undefined>).catch(() => undefined);
   const conversationId = conversationForWindow(tab.windowId);
   const conversation = controller(conversationId);
 
-  if (raw.phase === "cancel") pttCapsule.closed(tabId);
+  if (turn !== pttTurn) { /* 又按下了：这一次的结局作废 */ }
+  else if (raw.phase === "cancel") pttCapsule.closed(tabId);
   else if (!reply) {
    const text = "按住说话没有接上：助手还没启动好，稍后再试。";
    conversation.notice(text, "error");
@@ -462,7 +470,11 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
    const pttId = `ptt-${crypto.randomUUID().slice(0, 8)}`;
    pttTiming(pttId, conversationId, "released", releasedAt);
    pttTiming(pttId, conversationId, reply.text ? "dictated" : "dictated_empty");
-   if (reply.text) await routeSpoken(tab, conversationId, reply.text, pttId);
+   if (reply.text) {
+    // 先把听到的话告诉页面：分流要等一两秒，阅读卡可以先写上这一问。
+    void chrome.tabs.sendMessage(tabId, { type: READING_VOICE, phase: "heard", text: reply.text } satisfies ReadingVoiceMessage, { frameId: 0 }).catch(() => {});
+    await routeSpoken(tab, conversationId, reply.text, pttId, turn);
+   }
    else pttCapsule.failed(tabId, pttFailureText({ ok: false, reason: "empty" }));
   }
 
@@ -485,19 +497,25 @@ chrome.runtime.onMessage.addListener((raw: { type?: unknown } | undefined, sende
  * 页面上选着文字或开着阅读卡时说的话，先按整句意思判断：问这段的交给阅读卡，在原处接着答；
  * 要做事的带着选中的文字交给助手。没有选中的文字时照旧直接交给助手。
  */
-async function routeSpoken(tab: chrome.tabs.Tab, conversationId: string, text: string, pttId: string): Promise<void> {
+async function routeSpoken(tab: chrome.tabs.Tab, conversationId: string, text: string, pttId: string, turn: number): Promise<void> {
  const probe: unknown = await chrome.tabs.sendMessage(tab.id!, { type: "reading_voice_probe" }, { frameId: 0 }).catch(() => null);
+
+ if (turn !== pttTurn) return;
  const selection = probe && typeof probe === "object" && "selection" in probe && typeof probe.selection === "string" ? probe.selection.trim() : "";
  const asked = probe && typeof probe === "object" && "asked" in probe && typeof probe.asked === "string" ? probe.asked : undefined;
 
- if (!selection) return handOffSpoken(tab, conversationId, text, pttId);
+ if (!selection) return handOffSpoken(tab, conversationId, text, pttId, undefined, turn);
  const startedAt = Date.now();
  const route = await reading.route(text, selection, asked);
+
+ if (turn !== pttTurn) return;
  pttTiming(pttId, conversationId, `routed_${route}`);
  let card = false;
 
  if (route === "reading") {
   const answer: unknown = await chrome.tabs.sendMessage(tab.id!, { type: "reading_voice_ask", question: text }, { frameId: 0 }).catch(() => null);
+
+  if (turn !== pttTurn) return;
   card = !!answer && typeof answer === "object" && "ok" in answer && answer.ok === true;
  }
 
@@ -505,14 +523,20 @@ async function routeSpoken(tab: chrome.tabs.Tab, conversationId: string, text: s
 
  if (card) return pttCapsule.dismiss(tab.id!);
 
- return handOffSpoken(tab, conversationId, text, pttId, selection);
+ return handOffSpoken(tab, conversationId, text, pttId, selection, turn);
 }
 
-/** 听写出的话交给会话；没送出去（助手没连上）就在胶囊上留着这句话，可以重发。 */
-async function handOffSpoken(tab: chrome.tabs.Tab, conversationId: string, text: string, pttId?: string, selection?: string): Promise<void> {
+/**
+ * 听写出的话交给会话；没送出去（助手没连上）就在胶囊上留着这句话，可以重发。
+ * turn：按住说话的轮次；交出去以后用户又按下了，胶囊留给新的一次，不再显示这一句的进展。重发不带。
+ */
+async function handOffSpoken(tab: chrome.tabs.Tab, conversationId: string, text: string, pttId?: string, selection?: string, turn?: number): Promise<void> {
  const context: PageContext = { tabId: tab.id!, title: tab.title ?? "", url: tab.url ?? "", ...(selection ? { selection: { text: selection.slice(0, 2000) } } : {}) };
+ const handed = await controller(conversationId).spoken(text, context);
 
- if (await controller(conversationId).spoken(text, context)) {
+ if (turn !== undefined && turn !== pttTurn) return;
+
+ if (handed) {
   if (pttId) pttTiming(pttId, conversationId, "handed");
   pttCapsule.handedOff(tab.id!, conversationId, text, pttId);
  }
