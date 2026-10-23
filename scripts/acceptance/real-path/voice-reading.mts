@@ -401,10 +401,18 @@ try {
   clearInterval(pump);
   record.spoken = spoken.map((s) => ({ ...s }));
   record.sockets = sockets;
+  // 每句话松开到听写连接收尾（转写回来）多久，以及那条连接是不是按下前就连好了。
+  record.dictation = spoken.map((s) => {
+    // 松开时会新开下一条备用连接，它若断开不算：只看松开前就建好的那条。
+    const before = new Set(sockets.filter((k) => k.event === "reated" && Number(k.at) < s.upAt).map((k) => k.id));
+    const closed = sockets.find((k) => k.event === "losed" && Number(k.at) > s.upAt && before.has(k.id));
+    const opened = sockets.find((k) => k.event === "andshakeResponseReceived" && k.id === closed?.id)?.at;
+    return { name: s.name, releaseToTextMs: closed ? Number(closed.at) - s.upAt : null, readyBeforePress: opened !== undefined && Number(opened) < s.downAt };
+  });
   record.speechRequests = speechRequests.map((r) => ({ at: r.at, text: r.text.slice(0, 120) }));
   record.audio = { chunks: played.length, contexts: [...new Set(played.map((p) => p.ctx))].length, closed: Object.fromEntries(closed) };
   const passed = checks.every((c) => c.pass !== false);
-  await writeFile(join(out, "result.json"), JSON.stringify({ status: passed ? "PASS" : "FAIL", dependency: `isolated real extension; ${fixture ? "scripted local model" : `real model ${DEFAULT_TEST_MODEL}`}; real zh.wikipedia article; real Step Plan dictation of macOS say voice; real MiniMax speech`, checks, record }, null, 2));
+  await writeFile(join(out, "result.json"), JSON.stringify({ status: passed ? "PASS" : "FAIL", dependency: `isolated real extension; ${fixture ? "scripted local model" : `real model ${DEFAULT_TEST_MODEL}`}; real zh.wikipedia article; real Realtime 3 dictation of macOS say voice; real MiniMax speech`, checks, record }, null, 2));
   await rp.close();
   await rp.remove();
   await fixture?.close();
