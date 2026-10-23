@@ -10,7 +10,8 @@
  *   npm run logs -- --voice --file <voice.jsonl>   同上，读设置页导出（或验收用例导出）的语音记录，不碰浏览器
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -150,6 +151,40 @@ const out = join(repo, "out/daily-logs", stamp);
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, "traces.jsonl"), traces.map((e) => JSON.stringify(e) + "\n").join(""));
 writeFileSync(join(out, "voice.jsonl"), voice.map((e) => JSON.stringify(e) + "\n").join(""));
+keepRecentExports(join(repo, "out/daily-logs"));
+
+/**
+ * 每份导出都是诊断库的整份副本（几十 MB），自用回放约每 15 分钟导一次，攒下来会写满磁盘。
+ * 诊断库自己会轮换掉旧记录，记忆成绩单要看以前几周：所以先把各份导出里的行按整行去重并进 archive/，再只留最近几份。
+ */
+function keepRecentExports(root, keep = 3) {
+  const archive = join(root, "archive");
+  const stamps = readdirSync(root).filter((name) => /^\d{4}-\d{2}-\d{2}-\d{6}$/.test(name)).sort();
+  const hash = (line) => createHash("sha1").update(line).digest("base64");
+  mkdirSync(archive, { recursive: true });
+
+  for (const file of ["traces.jsonl", "voice.jsonl"]) {
+    const target = join(archive, file);
+    const seen = new Set(existsSync(target) ? readFileSync(target, "utf8").split("\n").filter(Boolean).map(hash) : []);
+    const fresh = [];
+
+    for (const stamp of stamps) {
+      const source = join(root, stamp, file);
+
+      if (!existsSync(source)) continue;
+
+      for (const line of readFileSync(source, "utf8").split("\n")) {
+        if (!line || seen.has(hash(line))) continue;
+        seen.add(hash(line));
+        fresh.push(line);
+      }
+    }
+
+    if (fresh.length) appendFileSync(target, `${fresh.join("\n")}\n`);
+  }
+
+  for (const stamp of stamps.slice(0, -keep)) rmSync(join(root, stamp), { recursive: true, force: true });
+}
 
 const local = (time) => new Date(time).toLocaleString("sv-SE");
 const oneLine = (text, max) => { const flat = String(text ?? "").replace(/\s+/g, " ").trim(); return flat.length > max ? `${flat.slice(0, max)}…` : flat; };
