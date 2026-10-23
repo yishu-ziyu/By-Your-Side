@@ -1,5 +1,5 @@
 /**
- * 记忆成绩单：从 out/daily-logs 的全部快照（npm run logs 导出）里合并去重，按周统计记忆有没有让产品变好。
+ * 记忆成绩单：从 out/daily-logs 的最近几份快照和累积存档 archive/（npm run logs 导出）里合并去重，按周统计记忆有没有让产品变好。
  * 只读诊断里的结论字段（种类、方面、动作），不读原话。
  *
  *   npm run memory:report                最近 4 周
