@@ -17,6 +17,8 @@ import { evaluate, feedback, claimFrom } from './evaluator.mjs';
 import { installAudit, installBudget, networkUsage } from './instrumentation.mts';
 
 requireHeadless();
+// 每个任务已录 execution.mp4；评测跑几十个任务，不再叠一份自动录屏。
+process.env.SIDEAGENT_RECORD ??= '0';
 const arg = (key: string) => process.argv.find(x => x.startsWith(`--${key}=`))?.slice(key.length + 3);
 const selectedTasks = arg('tasks')?.split(',') ?? tasks;
 const selectedSeeds = arg('seeds')?.split(',').map(Number) ?? seeds;
