@@ -205,10 +205,11 @@ function voiceTimings(lines) {
       const resultAudio = result ? panel("result_audio").find((e) => e.at >= result.at && (ids.has(e.ref) || e.ref === "live-context")) : undefined;
       const gate = host("gpt_live_host_gate").find((e) => e.turnId === done.key);
       const bound = host("gpt_live_task_bound").find((e) => ids.has(e.delegationId));
+      const ownResult = (point) => result && panel(point).some((e) => e.at >= result.at && (ids.has(e.ref) || e.ref === "live-context"));
       tables.live.push({ at: t0, cells: {
         首声: since(t0, panel("remote_audio").find(inTurn)), 委派到达: since(t0, delegations[0]), 宿主判完: since(t0, routed),
         送回结果: since(t0, result), 结果出声: since(t0, resultAudio),
-      }, note: [gate ? "宿主补判" : "", routed?.kind ?? "", bound ? "开了任务" : ""].filter(Boolean).join(" ") });
+      }, note: [gate ? "宿主补判" : "", routed?.kind ?? "", bound ? "开了任务" : "", ownResult("result_unvoiced") ? "结果没念出来" : ownResult("result_resent") ? "结果重送过" : ""].filter(Boolean).join(" ") });
     }
 
     const stops = host("voice_metric").filter((e) => e.name === "vad_speech_stopped_since_ready");
