@@ -262,6 +262,13 @@ export class TaskProgress {
     if (this.turns.length > 12) this.turns.splice(0, this.turns.length - 12);
   }
 
+  /** 另开的那件还没有自己的对话：先接上发起它的会话里已经说过的，「刚才那段」「这个例子」指的就是这些。 */
+  inheritTurns(turns: VoiceConversationContext["recentTurns"]): void {
+    if (this.turns.length) return;
+
+    for (const turn of turns) this.pushTurn(turn.role, turn.text);
+  }
+
   /** 记录被处理过的语音原话（含 chat/steer），按请求编号去重；仅作后续分类的数据，不产生新授权。 */
   recordUserTurn(text: string, requestId?: string): void {
     if (requestId) {
