@@ -635,7 +635,7 @@ try {
 
     if (run.settingsTargetId) await rp.cdp.send("Target.closeTarget", { targetId: run.settingsTargetId });
 
-    await rp.cdp.send("Page.bringToFront", {}, work);
+    if (!daily) await rp.cdp.send("Page.bringToFront", {}, work);
   }
 
   await until(async () => (await readPanel()).connected || undefined, 90_000, "侧栏连上 agent", 500);
@@ -766,7 +766,7 @@ try {
 
     if (item.openTab) await rp.cdp.send("Target.createTarget", { url: `${origin}${item.openTab}`, background: true });
     // 上一条可能新开了标签页并让它成为当前页（open-tab）；每条都从自己的练习页开始。
-    await rp.cdp.send("Page.bringToFront", {}, work);
+    if (!daily) await rp.cdp.send("Page.bringToFront", {}, work);
     await sleep(1500);
     await rp.click(panel, "#conversation-new");
     await until(async () => {

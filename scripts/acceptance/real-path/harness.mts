@@ -124,13 +124,13 @@ function browserControls(cdp: ReturnType<typeof createCdp>, id: string) {
    * sidePanel.open 要求用户手势，后台 service worker 里调用会被拒；扩展页面加 CDP userGesture 可以。
    * 辅助页只在点击时申请麦克风，打开不会触发任何动作。
    */
-  const openSidePanel = async (): Promise<string> => {
+  const openSidePanel = async (inWindow?: number): Promise<string> => {
     const helper = (await cdp.send("Target.createTarget", { url: `chrome-extension://${id}/voice-permission.html`, background: true })).targetId;
 
     try {
       const session = await attach(helper);
       await until(async () => (await evaluate(session, `document.readyState === "complete" && !!globalThis.chrome?.windows`)) || undefined, 10_000, "辅助页加载");
-      const windowId = Number(await evaluate(session, "chrome.windows.getCurrent().then((w) => w.id)"));
+      const windowId = inWindow ?? Number(await evaluate(session, "chrome.windows.getCurrent().then((w) => w.id)"));
       const opened = await evaluate(session, `chrome.sidePanel.open({ windowId: ${windowId} }).then(() => "opened", (e) => "error: " + e.message)`, { userGesture: true });
 
       if (opened !== "opened") throw new Error(`打开侧栏失败：${opened}`);
@@ -226,8 +226,18 @@ export async function attachDailyChrome({ port = Number(process.env.CDP_PORT ?? 
   const tempDir = trackTempDir(dirs.data);
   const before = new Set((await rp.targets()).map((t) => t.targetId));
 
-  // 日常 Chrome 没有 about:blank 初始页：在当前窗口前台开一个，侧栏跟着这个窗口。
-  const { targetId: workTargetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
+  // 在日常 Chrome 里另开一个不抢焦点的窗口放工作页和侧栏：用户正在用的窗口和前台应用都不动。
+  // CDP 的 createTarget 开窗会激活 Chrome，所以经扩展页用 chrome.windows.create({focused:false})。
+  const helper = (await cdp.send("Target.createTarget", { url: `chrome-extension://${id}/voice-permission.html`, background: true })).targetId;
+  let windowId: number;
+  try {
+    const session = await rp.attach(helper);
+    await until(async () => (await rp.evaluate(session, `document.readyState === "complete" && !!globalThis.chrome?.windows`)) || undefined, 10_000, "辅助页加载");
+    windowId = Number(await rp.evaluate(session, `chrome.windows.create({ url: "about:blank", focused: false }).then((w) => w.id)`));
+  } finally {
+    await cdp.send("Target.closeTarget", { targetId: helper }).catch(() => {});
+  }
+  const { targetId: workTargetId } = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank" && !before.has(t.targetId)), 10_000, "后台工作窗口");
 
   const close = async () => {
     for (const t of await rp.targets()) {
@@ -249,6 +259,19 @@ export async function attachDailyChrome({ port = Number(process.env.CDP_PORT ?? 
     dirs,
     /** 本次新开的工作标签页；用户可能另有 about:blank 标签页，不能按网址找。 */
     workTargetId: String(workTargetId),
+    /** 侧栏开在后台工作窗口里，不开在用户正在用的窗口。 */
+    openSidePanel: async () => {
+      await rp.openSidePanel(windowId);
+      // 用户自己的窗口里通常已开着侧栏：按窗口找这次后台窗口里的那个。
+      return until(async () => {
+        for (const t of await rp.targets()) {
+          if (t.type !== "page" || !t.url.startsWith(`chrome-extension://${id}/sidepanel.html`)) continue;
+          const own = await rp.evaluate(await rp.attach(t.targetId), "chrome.windows.getCurrent().then((w) => w.id)").catch(() => null);
+          if (own === windowId) return t.targetId;
+        }
+        return undefined;
+      }, 15_000, "后台窗口里的侧栏");
+    },
     hostLog: async () => "",
     close,
     remove: async () => tempDir.release(),
