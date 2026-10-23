@@ -19,9 +19,9 @@ type VoiceTimingCommand = Extract<VoiceCommand, { kind: "timing" }>;
  * 宿主诊断事件里记进日常记录的只有这些：分段计时要用的时间和编号。
  * 委派文字、原话、出错原文不在里面：日常记录不新存用户原话。
  */
-const HOST_TIMING_EVENTS = new Set(["gpt_live_delegation", "gpt_live_task_bound", "gpt_live_task_queued", "gpt_live_delegation_context", "gpt_live_host_gate", "gpt_live_host_gate_failed", "voice_metric", "voice_route"]);
+const HOST_TIMING_EVENTS = new Set(["gpt_live_delegation", "gpt_live_task_bound", "gpt_live_task_queued", "gpt_live_delegation_context", "gpt_live_host_gate", "gpt_live_host_gate_failed", "gpt_live_route_start", "gpt_live_progress", "voice_metric", "voice_route"]);
 
-const HOST_TIMING_FIELDS = new Set(["delegationId", "requestId", "kind", "source", "diverged", "delegatedChars", "userWordsChars", "runId", "conversationId", "channel", "chars", "viaSession", "turnId", "turn", "name", "ms", "waitMs", "routeMs", "path"]);
+const HOST_TIMING_FIELDS = new Set(["delegationId", "requestId", "kind", "source", "diverged", "delegatedChars", "userWordsChars", "runId", "conversationId", "channel", "chars", "viaSession", "turnId", "turn", "name", "ms", "waitMs", "routeMs", "path", "quietMs"]);
 
 /** Turn may be null for upstream ASR that cannot be attributed. */
 interface VoiceCaptureLine {

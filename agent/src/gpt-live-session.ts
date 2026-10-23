@@ -249,6 +249,7 @@ export class GptLiveSession {
 
     try {
       await this.waitForInput(origin);
+      this.deps.diagnostic?.('gpt_live_route_start', { delegationId: id });
       userWords = userTurnId ? this.dialogue.get(userTurnId)?.text : undefined;
       delegated = group.texts.join('');
       // 交接以用户整句原话为准；委派文字已覆盖原话时用委派文字（模型可能已解开“刚才那个”这类指代）。
