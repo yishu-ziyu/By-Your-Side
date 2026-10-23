@@ -137,6 +137,10 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
           const entry=await this.create(request.conversationId,request.text?.slice(0,36)||'独立任务');
 
           if(this.queueClosed){entry.runtime.dispose();throw new TaskActionRejected('连接已关闭，任务未启动。');}
+          // 轮到它时才取：排队那一刻上一件还没答完，它查到的东西要等这时才在发起会话的对话里。
+          const earlier=request.originConversationId?this.getTaskProgress(request.originConversationId)?.conversationContext?.recentTurns:undefined;
+
+          if(earlier?.length)this.progress.get(request.conversationId)?.inheritTurns(earlier);
 
           const receipt=await this.dispatchTaskAction(request,()=>true,request.context?undefined:{pageObservation:'on-demand'});
 

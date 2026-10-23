@@ -51,12 +51,15 @@ export async function openTab(
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
   cancelled?: () => boolean,
+  beside?: chrome.tabs.Tab,
 ): Promise<{ tabId: number; url: string; title: string; note?: string; retry?: string; tabClosed?: true } & Partial<PageReadiness>> {
   const previous = await getWorkingTabId(sessionId);
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   // 助手开的页留在后台，不换走用户正在看的标签页。
-  const tab = await chrome.tabs.create({ url: params.url, active: false });
+  // 替用户页开的新页放在它旁边、同一个窗口：不写窗口时 Chrome 放进最后获得焦点的窗口，可能是另一个开着侧栏的窗口。
+  const placement = beside?.id != null ? { windowId: beside.windowId, index: beside.index + 1, openerTabId: beside.id } : {};
+  const tab = await chrome.tabs.create({ url: params.url, active: false, ...placement });
 
   if (tab.id == null) throw new Error("创建标签页失败");
   void quietOpenedTab(tab.id);

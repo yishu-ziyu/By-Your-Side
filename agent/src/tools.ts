@@ -715,14 +715,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "navigate",
       label: "Navigate",
-      description: "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL in the result, and treat the attached snapshot as possibly partial. document: download means the address started a download instead of opening a page; the tab stays on its current page and the result says what Chrome reports about the file. document: error_page means Chrome showed its own error page (for example the site could not be reached).",
+      description: "Navigate the working tab to a URL and wait for the new document to be interactive. When the document is ready, the result already contains a fresh full-page snapshot of the new page (same format and refs as snapshot), so act on it directly instead of taking another snapshot. Readiness timeout is not confirmed navigation success; then verify the URL in the result, and treat the attached snapshot as possibly partial. document: download means the address started a download instead of opening a page; the tab stays on its current page and the result says what Chrome reports about the file. document: error_page means Chrome showed its own error page (for example the site could not be reached). The page in front of the user keeps what they are reading: when the working tab is that page and the URL is on another site, the URL opens in a new background tab beside it and that tab becomes the working tab; when the URL is already open in another tab of the window, that tab becomes the working tab instead of a duplicate; the result says which tab it is.",
       parameters: Type.Object({
         url: Type.String({ description: "Absolute URL" }),
         timeout: Type.Optional(Type.Number({ description: "Load timeout in seconds" })),
+        inPlace: Type.Optional(Type.Boolean({ description: "true only when the user asked for the page in front of them to go to this address (\"在这个页面打开…\", \"就在这页搜\"), or to reload that page: it then loads in that tab even on another site, replacing what they were reading." })),
       }),
       execute: async (_id, params) => {
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
-        const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}${data.retry ? `\n${data.retry}` : ""}`;
+        const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}${data.retry ? `\n${data.retry}` : ""}${data.note && data.readiness !== "download" && data.readiness !== "error_page" && (data.workingTabId != null || data.readiness === "complete") ? `\n${data.note}` : ""}`;
 
         // 地址变成了下载（页面没换）或 Chrome 显示错误页：不补读快照，只说 Chrome 报告的结果。
         if (data.readiness === "download" || data.readiness === "error_page") return textResult(data.note ? `${head}\n${data.note}` : head, data);
