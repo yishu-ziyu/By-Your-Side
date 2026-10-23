@@ -9,6 +9,7 @@
  *   --case=long-result：真实维基长回答、完整开头与侧栏提示、真实结果音频。
  *   --case=current-page：真实 wikipedia.org 标题与英语、日语、西班牙语入口。
  *   --case=handoff：先约定“那个技术”指逆向工程，再用真实语音请求维基查询。
+ *   --case=host-gate：关掉 GPT-Live 的委派、让它只会口头答应（复现「嘴上说做了、页面没动」），用户要标出段落时宿主自己接下、真的标出来并念出结果。
  *   --case=reading：只用语音读中文维基文章：标出感兴趣的段落、去别的网站接着查、记下来、回到原文；每步只记用户看得到的结果，一步没过也走完，看清断在哪几处。
  *   --case=server-error：人工注入服务错误，只证明故障处理，不是真服务失败。
  *   外语名称/音译和中文覆盖率只记录人工复核证据；数字仍自动核对。
@@ -27,7 +28,7 @@ import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-c
 
 requireHeadless();
 const caseName = process.argv.find((a) => a.startsWith("--case="))?.slice(7) ?? "main";
-assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup", "reading"].includes(caseName), `未知用例：${caseName}`);
+assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup", "reading", "host-gate"].includes(caseName), `未知用例：${caseName}`);
 const model = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL;
 assert.match(model, /^[^/]+\/.+$/, "--model 需要 provider/model");
 const fastModel = process.argv.find((a) => a.startsWith("--fast-model="))?.slice(13);
@@ -35,7 +36,8 @@ if (fastModel) assert.match(fastModel, /^[^/]+\/.+$/, "--fast-model 需要 provi
 const longResult = caseName === "long-result", currentPage = caseName === "current-page", serverError = caseName === "server-error", handoff = caseName === "handoff";
 const pageContext = caseName === 'page-context';
 const followup = caseName === 'followup';
-const reading = caseName === 'reading';
+const reading = caseName === 'reading' || caseName === 'host-gate';
+const hostGate = caseName === 'host-gate';
 const ARTICLE = 'https://zh.wikipedia.org/zh-cn/%E9%80%86%E5%90%91%E5%B7%A5%E7%A8%8B';
 const apiKey = process.argv.includes("--case=api-key"), noLogin = apiKey || process.argv.includes("--case=no-login"), bargeResult = process.argv.includes("--case=barge-result");
 const extraFact = process.argv.includes("--extra-fact") ? "另外，全双工技术最早由爱迪生在1873年提出。" : "";
@@ -164,6 +166,10 @@ try {
         setInterval(() => { an.getFloatTimeDomainData(b); gl.meter.push([Date.now(), +Math.sqrt(b.reduce((s, v) => s + v * v, 0) / b.length).toFixed(4)]); }, 20); });
       return dc; };
     return true; })()`);
+  // 语音层不委派：建通话时去掉委派能力，并让它对操作请求只口头答应，宿主得自己接住。
+  if (hostGate) await rp.evaluate(panel, `(() => { const real = window.fetch.bind(window); window.fetch = (url, init) => {
+    if (String(url).includes('/realtime') && typeof init?.body === 'string') { try { const body = JSON.parse(init.body); if (body.session) { delete body.session.delegation; body.session.instructions = '你是浏览器助手的语音层，不能委派，也没有任何工具。用户要你操作网页时，口头答应一句就好。一律用中文，简短。'; init = { ...init, body: JSON.stringify(body) }; } } catch {} }
+    return real(url, init); }; return true; })()`);
   await rp.click(panel, "#input");
   await rp.click(panel, ".voice-start");
 
@@ -255,6 +261,32 @@ try {
       }
       assert.equal(calls.length, 1, '六句对话沿用原来的通话，没有挂断重拨');
       console.log('真实对话复验完成');
+    } else if (hostGate) {
+      const text = '这篇文章里讲法律的那一段挺有意思的，你帮我在页面上标出来。';
+      const input = await say(await speech(text, 'host-gate.wav'));
+      const spokenEnd = input.at + input.ms;
+      const userTurn = await until(async () => (await read()).in.find(e => e.type === 'turn.done' && e.turn?.role === 'user' && e.at > input.at), 60_000, '这句已被服务完整接收');
+      const appended = await until(async () => (await read()).out.find(e => e.type === 'session.context.append' && e.channel === 'speakable' && e.at > userTurn.at), 120_000, '宿主把结果送到会话层');
+      const done = await until(async () => (await read()).in.find(e => e.type === 'turn.done' && e.turn?.role === 'assistant' && e.at >= appended.at), 60_000, '结果念完');
+      await sleep(2000);
+      const g = await read();
+      await rp.screenshot(work, join(out, 'host-gate-page.png'));
+      await rp.screenshot(panel, join(out, 'host-gate-panel.png'));
+      await rp.click(panel, '.voice-start').catch(() => {});
+      const exported = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, 'downloads'));
+      const traces = String((exported as { traces?: string }).traces ?? '').split('\n').filter(Boolean).map(l => JSON.parse(l)) as Array<{ time: string; type: string; data?: { toolName?: string; isError?: boolean; text?: string } }>;
+      await writeFile(join(out, 'trace.json'), JSON.stringify(traces, null, 2));
+      const sent = appended.content?.map(c => c.text).join('') ?? '';
+      Object.assign(evidence, {
+        heard: userTurn.turn?.transcript, delegations: g.in.filter(e => e.type === 'delegation.created').length, sent,
+        spoken: done.turn?.transcript ?? '', firstReply: g.in.filter(e => e.type === 'output_transcript.added' && e.at > spokenEnd && e.at < appended.at).map(e => e.item?.text ?? '').join(''),
+        resultMs: appended.at - spokenEnd, tasks: traces.filter(t => t.type === 'run_start').map(t => t.data?.text),
+      });
+      console.log(JSON.stringify(evidence));
+      assert.equal(evidence.delegations, 0, '语音层确实没有委派');
+      assert.ok(traces.some(t => t.type === 'run_start'), '宿主自己开了任务');
+      assert.ok(traces.some(t => t.type === 'tool_execution_end' && t.data?.toolName === 'mark' && !t.data?.isError), '页面上真的标出来了');
+      assert.match(sent + String(evidence.spoken), /标/, '念出的结果说标好了');
     } else if (reading) {
       type Tab = { url: string; title: string; active: boolean };
       type Step = { key: string; question: string; heard: string | null; delegated: boolean; channel: string | null; spoken: string; waitMs: number | null; resultMs: number | null; doneMs: number | null; at: number; end: number; tabs: Tab[] | null; error: string | null };

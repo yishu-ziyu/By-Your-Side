@@ -73,7 +73,14 @@ type Input = { turn: number; snapshot: TaskProgressSnapshot | null; targets?: Vo
 
 /** 一个委派项：任务接下后记住 runId，等这个任务交付给用户的结果。 */
 /** queuedIn：排在别的任务后面、轮到时才在这个会话里开工；那时它的交付按会话认领这次委派。 */
-type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: string; done: boolean };
+/** viaSession：语音层没委派、宿主自己接下的一句；它没有委派编号，回话走会话层。 */
+type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: string; viaSession?: true; done: boolean };
+
+/**
+ * 用户一句话说完后，语音层要委派的话，委派总在这句的结束事件之前就到（实测早 0.4–1.3 秒）。
+ * 过了这么久还没有委派，宿主就自己判这句话：要不要动手由宿主定，不由语音层一个模型说了算。
+ */
+const HOST_GATE_MS = 1_500;
 
 /**
  * 同一句用户话（同一个 user_bidi_turn_id）的委派项归成一组：GPT-Live 会把长句拆成多项送来，
@@ -112,6 +119,7 @@ export class GptLiveSession {
   private readonly dialogue = new Map<string, { role: 'user' | 'assistant'; text: string }>();
   /** 已送去播报的交付：委派编号 → 交付编号；侧栏报告 GPT-Live 念完后标记已播放。 */
   private readonly speaking = new Map<string, string>();
+  private readonly gateTimers = new Set<ReturnType<typeof setTimeout>>();
   constructor(private readonly deps: RealtimeVoiceDependencies) {
   }
   /** `access` 是宿主刚取到的 ChatGPT 登录令牌；只经语音事件交给侧栏建通话，不记录。 */
@@ -151,7 +159,10 @@ export class GptLiveSession {
 
         while (this.dialogue.size > 12) this.dialogue.delete(this.dialogue.keys().next().value!);
 
-        if (command.role === 'user') this.repairWithUserWords(command.turnId, command.text);
+        if (command.role === 'user') {
+          this.repairWithUserWords(command.turnId, command.text);
+          this.gate(command.turnId, command.text);
+        }
 
         return;
       // 侧栏按委派编号报告：送回的结果之后那段回答已念完，且中途没被静音。
@@ -190,10 +201,22 @@ export class GptLiveSession {
     }
   }
   /** 每次委派开一轮：同一句（同一 user_bidi_turn_id）的委派项归成一组、只开一个任务；先经中转补齐页面资料（与套餐语音同一握手），再交给宿主分流。 */
-  private async delegate(id: string, text: string, userTurnId?: string): Promise<void> {
+  /** 语音层没把这句交过来：宿主用同一入口、同一请求编号自己判一次（晚到的委派并进同一组，只开一个任务）。 */
+  private gate(turnId: string, text: string): void {
+    const timer = setTimeout(() => {
+      this.gateTimers.delete(timer);
+
+      if (this.closed || this.groups.has(turnId) || !text.trim()) return;
+      this.deps.diagnostic?.('gpt_live_host_gate', { turnId, chars: text.length });
+      void this.delegate(`host-${turnId}`, text, turnId, true);
+    }, HOST_GATE_MS);
+
+    this.gateTimers.add(timer);
+  }
+  private async delegate(id: string, text: string, userTurnId?: string, viaSession = false): Promise<void> {
     if (this.delegations.has(id) || !this.deps.route) return;
     const group = this.groupFor(id, userTurnId);
-    const record: Delegation = { id, text, done: false };
+    const record: Delegation = { id, text, done: false, ...(viaSession ? { viaSession: true as const } : {}) };
     this.delegations.set(id, record);
     group.texts.push(text);
 
@@ -229,7 +252,10 @@ export class GptLiveSession {
         ? error.code === 'classifier_timeout' ? '处理请求的服务超时，这句话还没有执行，原任务没有改变。'
           : '处理语音请求的服务暂时失败，这句话还没有执行，原任务没有改变。'
         : `这句没有执行：${error instanceof Error ? error.message : String(error)}`;
-      this.answer(record, 'speakable', message);
+
+      // 宿主自己补判的一句判失败了：语音层已经照它的理解回过话，不再另外报错。
+      if (record.viaSession) { this.deps.diagnostic?.('gpt_live_host_gate_failed', { delegationId: id, detail: message.slice(0, 120) }); record.done = true; }
+      else this.answer(record, 'speakable', message);
       group.routed = true;
       this.resolveLate(group);
 
@@ -268,6 +294,17 @@ export class GptLiveSession {
       record.queuedIn = receipt.conversationId;
       this.deps.diagnostic?.('gpt_live_task_queued', { delegationId: id, conversationId: receipt.conversationId });
       this.answer(record, 'commentary', '这件事排在正在做的上一件后面，还没开始做，也还没有结果。可以简短告诉用户上一件做完就接着做；不要说已经做了、已经记下或已经保存。');
+      this.resolveLate(group);
+
+      return;
+    }
+
+    // 宿主补判的一句，语音层已经回过话：闲聊、没说完、不用回答的不再出声；宿主有不同的说法（查到的答案、要追问、没能执行）才送去，由语音层决定要不要更正。
+    if (record.viaSession) {
+      const differs = result.kind === 'action' || result.kind === 'steer' || result.kind === 'clarify' ? result.message : result.kind === 'none' ? result.spokenText : undefined;
+
+      if (differs) this.answer(record, 'commentary', `客户端对用户刚才那句的处理：${differs}。你刚才的回答如果和它不一致，简短更正；一致就不用再说。`);
+      record.done = true;
       this.resolveLate(group);
 
       return;
@@ -337,8 +374,8 @@ export class GptLiveSession {
     if (this.closed || record.done || !text.trim()) return false;
 
     if (channel === 'speakable') record.done = true;
-    this.deps.diagnostic?.('gpt_live_delegation_context', { delegationId: record.id, channel, chars: text.length });
-    this.deps.emit({ kind: 'delegation_context', delegationId: record.id, channel, text });
+    this.deps.diagnostic?.('gpt_live_delegation_context', { delegationId: record.id, channel, chars: text.length, viaSession: !!record.viaSession });
+    this.deps.emit(record.viaSession ? { kind: 'live_context', channel, text } : { kind: 'delegation_context', delegationId: record.id, channel, text });
 
     return true;
   }
@@ -399,12 +436,18 @@ export class GptLiveSession {
     const owner = this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' });
 
     if (!this.answer(record, 'speakable', spokenDeliveryText(delivery, owner, this.deps.getSnapshot()?.conversationId), owner?.goalCheck?.status === 'done' ? undefined : delivery.hostNote)) return;
+
+    // 会话层送去的话没有委派编号，侧栏报告不了念完：只记送出，不标在念。
+    if (record.viaSession) return;
     this.speaking.set(record.id, delivery.id);
     this.deps.onPlayback?.(delivery.id, 'speaking');
   }
   close(emit = true): void {
     if (this.closed) return;
     this.closed = true;
+
+    for (const timer of this.gateTimers) clearTimeout(timer);
+    this.gateTimers.clear();
     this.dialogue.clear();
 
     if (emit) this.deps.emit({ kind: 'state', state: 'closed' });
