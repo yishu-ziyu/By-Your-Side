@@ -91,10 +91,9 @@ export function salvageTranslations(text: string, blocks: TranslationBlock[]): M
 }
 
 /**
- * 同时在途的翻译请求数。109 段长文实测（阶跃 step-3.7-flash）：4 路约 70 s、8 路约 52 s，串行约 250 s；
- * 只测过阶跃，用户自配的服务商可能限并发，默认取 4。
+ * 同时在途的翻译请求数。限并发的服务商回限流时会逐步降路（见 MAX_THROTTLES），按登记限并发的服务商另有排队。
  */
-const PAGE_TRANSLATION_CONCURRENCY = 4;
+const PAGE_TRANSLATION_CONCURRENCY = 8;
 
 /** 没有任何一批写进页面的最长时间；只要还在出译文就不停。单次请求自身 60 s 超时。 */
 const PAGE_TRANSLATION_IDLE_MS = 180_000;
