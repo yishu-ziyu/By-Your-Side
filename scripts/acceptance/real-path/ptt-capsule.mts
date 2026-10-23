@@ -21,7 +21,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
 
 requireHeadless();
@@ -489,6 +489,8 @@ try {
   await failShot?.().catch(() => {});
 } finally {
   if (inprocSession) evidence.speechReplies = await speechReplies(inprocSession).catch(() => []);
+  // 语音记录（含按住说话的分段计时）导出到 downloads/，用 npm run logs -- --voice --file 看。
+  await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads")).catch(() => {});
   await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", evidence, modelRequests: model.requests.map(r => `${r.rule ?? "-"}#${r.step}${r.tools ? "" : " (no tools)"}`), dictationFrames, error }, null, 2));
   await rp.close();
   await rp.remove();

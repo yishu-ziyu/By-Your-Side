@@ -318,7 +318,20 @@ export type VoiceCommand =
   /** 已完成的真实语音话轮，仅作同一通话的上下文，不触发任务。 */
   | { kind: "gpt_live_transcript"; turnId: string; role: 'user' | 'assistant'; text: string }
   /** GPT-Live 委派的一句：模型抄写的用户话，长句会被拆成多项、每项可能只有半截；同一 user_bidi_turn_id 的项归成一次请求，整句原话由 gpt_live_transcript 随后校正。 */
-  | { kind: "delegation"; delegationId: string; text: string; userTurnId?: string };
+  | { kind: "delegation"; delegationId: string; text: string; userTurnId?: string }
+  /**
+   * 侧栏才看得到的一个时间点（本机时钟毫秒），只进语音日常记录，不送往上游会话。
+   * key 是 GPT-Live 的用户话轮编号（user_bidi_turn_id），ref 是委派编号；阶跃星辰按 turn 对齐。
+   */
+  | { kind: "timing"; point: VoiceTimingPoint; at: number; turn?: number; key?: string; ref?: string };
+
+/**
+ * user_done：GPT-Live 收到用户这句的 turn.done；remote_audio：GPT-Live 远端声音从静到响；delegation：收到 delegation.created；
+ * result_sent：把宿主结果写进数据通道；result_audio：结果写进去之后第一次出声；panel_audio：阶跃星辰这一轮第一段声音排进播放器。
+ */
+export const VOICE_TIMING_POINTS = ["user_done", "remote_audio", "delegation", "result_sent", "result_audio", "panel_audio"] as const;
+
+export type VoiceTimingPoint = typeof VOICE_TIMING_POINTS[number];
 
 export interface VoiceClientMessage { type: "voice"; voiceId: string; command: VoiceCommand }
 
@@ -438,6 +451,8 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
       && (c.displayText === undefined || diagTextField(c.displayText))
       && (c.mark === undefined || c.mark === true)
       && (c.note === undefined || typeof c.note === "string" && c.note.length <= VOICE_CAPTURE_NOTE_MAX);
+    case "timing": return VOICE_TIMING_POINTS.includes(c.point) && Number.isSafeInteger(c.at) && c.at > 0
+      && (c.turn === undefined || serverTurn(c.turn)) && (c.key === undefined || id(c.key)) && (c.ref === undefined || id(c.ref));
     default: return false;
   }
 }
