@@ -326,6 +326,22 @@ function closeEntries(ledger: Ledger, tabId: number, reason: Closed["reason"], t
   return changed;
 }
 
+/** 搜索这类只是跳页的提交：这几格没有后果也收不回，不留在账本里，回答下不写「页面已经换了」。跳页检查可能先到，已记成页面变了的也一并去掉。 */
+function forgetEntries(ledger: Ledger, tabId: number, tokens: readonly string[], documentId?: string): boolean {
+  const tab = ledger.tabs.get(tabId);
+  let changed = false;
+
+  if (tab && (!documentId || tab.documentId === documentId)) {
+    for (const token of tokens) changed = tab.entries.delete(token) || changed;
+  }
+
+  const kept = ledger.closed.filter((closed) => !(closed.tabId === tabId && closed.reason === "page_changed" && tokens.includes(closed.token) && (!documentId || closed.documentId === documentId)));
+
+  if (kept.length !== ledger.closed.length) { ledger.closed = kept; changed = true; }
+
+  return changed;
+}
+
 const NOOP = { done: async () => {} };
 
 /**
@@ -484,12 +500,14 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 // 网页上真的提交了表单（content-domops 只转发可信的 submit 事件）：只关掉这张表单里的格子。
-chrome.runtime.onMessage.addListener((raw: { type?: string; tokens?: unknown } | undefined, sender) => {
+chrome.runtime.onMessage.addListener((raw: { type?: string; tokens?: unknown; navigated?: unknown } | undefined, sender) => {
   if (sender.id !== chrome.runtime.id || raw?.type !== FILL_UNDO_SUBMIT || sender.tab?.id === undefined || !Array.isArray(raw.tokens)) return;
   const tokens = raw.tokens.filter((token): token is string => typeof token === "string");
 
   for (const [conversationId, ledger] of ledgers) {
-    if (closeEntries(ledger, sender.tab.id, "submitted", tokens, sender.documentId)) emit(conversationId);
+    const changed = raw.navigated === true ? forgetEntries(ledger, sender.tab.id, tokens, sender.documentId) : closeEntries(ledger, sender.tab.id, "submitted", tokens, sender.documentId);
+
+    if (changed) emit(conversationId);
   }
 });
 

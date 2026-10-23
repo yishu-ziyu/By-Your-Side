@@ -23,7 +23,14 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
     if (!event.isTrusted || !(form instanceof HTMLFormElement)) return;
     const tokens = [...form.elements].flatMap((el) => el.getAttribute("data-sideagent-undo") ?? []);
 
-    if (tokens.length) void chrome.runtime.sendMessage({ type: FILL_UNDO_SUBMIT, tokens }).catch(() => { /* 后台在重启 */ });
+    if (!tokens.length) return;
+    const report = (navigated?: true) => void chrome.runtime.sendMessage({ type: FILL_UNDO_SUBMIT, tokens, ...(navigated ? { navigated } : {}) }).catch(() => { /* 后台在重启 */ });
+    const method = (event as SubmitEvent).submitter?.getAttribute("formmethod")?.toLowerCase() || form.method;
+
+    if (method !== "get") { report(); return; }
+    // 网页没拦下的 GET 提交只是带着参数跳到新地址（搜索框最常见），网站上没有东西被改动：这几格不算「已提交」，也没有可还原的，后台直接忘掉。
+    // 网页拦下后自己发请求的（常见于不写 method 的单页应用表单）照旧算已提交。捕获阶段还看不到网页的处理，等这次派发结束再看。
+    setTimeout(() => report(event.defaultPrevented ? undefined : true), 0);
   }, true);
 
   function mustResolve(target: string): Element {
