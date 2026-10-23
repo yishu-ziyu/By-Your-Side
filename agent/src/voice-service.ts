@@ -2,6 +2,7 @@ import { realtimeBrowserError } from './realtime-browser-tools.js';
 import { projectTaskView } from '../../shared/task-view.js';
 import { RealtimeVoiceSession, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
 import { isLeadSession } from '../../shared/protocol.js';
+import { aboutTask, taskName } from './voice-receipt.js';
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -207,14 +208,14 @@ export class VoiceService {
       if (e.kind === 'user_delivery_stream' && e.stream.runId === snapshot.runId) {
         this.deliveryOwners.set(e.stream.id, owner);
         active.streamedDeliveries.add(e.stream.id);
-        active.session.streamDelivery?.({ ...e.stream, text: `关于${snapshot.goal?.slice(0, 60) ?? '另一项任务'}：${e.stream.text}` });
+        active.session.streamDelivery?.({ ...e.stream, text: aboutTask(taskName(snapshot), e.stream.text) });
       }
       else if (e.kind === 'user_delivery' && e.delivery.runId === snapshot.runId && e.delivery.status !== 'played') {
         this.deliveryOwners.set(e.delivery.id, owner);
 
         if (!active.announcedDeliveries.has(e.delivery.id)) {
           active.announcedDeliveries.add(e.delivery.id);
-          active.session.completeDelivery?.({ ...e.delivery, text: `关于${snapshot.goal?.slice(0, 60) ?? '另一项任务'}：${e.delivery.text}` });
+          active.session.completeDelivery?.({ ...e.delivery, text: aboutTask(taskName(snapshot), e.delivery.text) });
         }
       }
 
