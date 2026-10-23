@@ -8,7 +8,8 @@ import { join } from "node:path";
 import type { ServerMessage } from "../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, parseVoicePersona, STEP_VOICES, voicePersonaText, type TaskProgressSnapshot, type VoiceClientMessage, type VoiceRouteContext, type VoiceTarget } from "../../shared/voice.js";
 
-type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'>;
+/** owner：交付来自另一个会话（排队后另开的任务）时，是那个会话；语音按它认领当初排队的那句话。 */
+type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery'> & { completeDelivery?(delivery: Parameters<RealtimeVoiceSession['completeDelivery']>[0], owner?: string): void };
 
 async function readStepVoiceKey(): Promise<string> {
   const environment = process.env.STEPFUN_API_KEY?.trim();
@@ -204,7 +205,7 @@ export class VoiceService {
 
         if (!active.announcedDeliveries.has(e.delivery.id)) {
           active.announcedDeliveries.add(e.delivery.id);
-          active.session.completeDelivery?.({ ...e.delivery, text: `关于${snapshot.goal?.slice(0, 60) ?? '另一项任务'}：${e.delivery.text}` });
+          active.session.completeDelivery?.({ ...e.delivery, text: `关于${snapshot.goal?.slice(0, 60) ?? '另一项任务'}：${e.delivery.text}` }, owner);
         }
       }
 

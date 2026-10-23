@@ -237,7 +237,7 @@ try {
       evidence.realPages=(await rp.targets()).filter(t=>t.type==='page'&&/^https?:/.test(t.url)).map(t=>({url:t.url,title:t.title}));
       for(const reply of replies.slice(4)){
         assert.match(reply.spoken,/读取|读了|提取|获取|抓取|搜索|检索|查询|抓.{0,5}(内容|正文)|没有.{0,6}脚本/,'脚本追问解释具体做了什么，不只重复任务结论');
-        assert.doesNotMatch(reply.spoken,/还有.{0,15}未完成|执行遇到阻碍|脚本.{0,8}没完成/,'成功后的追问不再被旧错误占据');
+        assert.doesNotMatch(reply.spoken,/还有.{0,15}未完成|执行遇到阻碍|没做成|还没做完|脚本.{0,8}没完成/,'成功后的追问不再被旧错误占据');
       }
       assert.ok(!traces.some(t=>t.type==='tool_execution_start'&&Date.parse(t.time)>=replies[4]!.at),'解释追问不能重新操作网页');
       if (fastModel) {

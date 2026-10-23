@@ -72,7 +72,8 @@ function covers(whole: string, part: string): boolean {
 type Input = { turn: number; snapshot: TaskProgressSnapshot | null; targets?: VoiceTarget[]; input?: VoiceInputContext; error?: string; ready: boolean };
 
 /** 一个委派项：任务接下后记住 runId，等这个任务交付给用户的结果。 */
-type Delegation = { id: string; text: string; runId?: string | null; done: boolean };
+/** queuedIn：排在别的任务后面、轮到时才在这个会话里开工；那时它的交付按会话认领这次委派。 */
+type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: string; done: boolean };
 
 /**
  * 同一句用户话（同一个 user_bidi_turn_id）的委派项归成一组：GPT-Live 会把长句拆成多项送来，
@@ -262,6 +263,16 @@ export class GptLiveSession {
       return;
     }
 
+    // 排队不是做完：「已排队：把要点记下来」照念会被说成「记下来了」。委派先不收尾，等轮到它的那个任务交付了再念。
+    if (result.kind === 'action' && result.ok && result.status === 'queued' && receipt?.conversationId) {
+      record.queuedIn = receipt.conversationId;
+      this.deps.diagnostic?.('gpt_live_task_queued', { delegationId: id, conversationId: receipt.conversationId });
+      this.answer(record, 'commentary', '这件事排在正在做的上一件后面，还没开始做，也还没有结果。可以简短告诉用户上一件做完就接着做；不要说已经做了、已经记下或已经保存。');
+      this.resolveLate(group);
+
+      return;
+    }
+
     if (result.kind === 'action' || result.kind === 'steer') this.answer(record, 'speakable', result.message);
     else if (result.kind === 'clarify') this.answer(record, 'speakable', result.message);
     else if (result.kind === 'none' && result.spokenText) this.answer(record, 'speakable', result.spokenText);
@@ -335,7 +346,10 @@ export class GptLiveSession {
    * 同一个任务的结果只念一次，交给最近那次委派；更早的委派（如对同一任务的补充）也随之结束，
    * 只收到一条静默说明，免得 GPT-Live 一直等。返回要播报的那一次。
    */
-  private settle(runId: string | null | undefined): Delegation | undefined {
+  private settle(runId: string | null | undefined, owner?: string): Delegation | undefined {
+    const queued = owner && runId ? [...this.delegations.values()].find(d => !d.done && !d.runId && d.queuedIn === owner) : undefined;
+
+    if (queued) queued.runId = runId;
     const [latest, ...older] = [...this.delegations.values()].reverse().filter(d => !d.done && !!d.runId && d.runId === runId);
 
     for (const record of older) {
@@ -374,10 +388,10 @@ export class GptLiveSession {
     if (stream.phase === 'cancelled') this.cancelled.add(stream.id);
   }
   /** 只把 GPT-Live 委派出去的那个任务的交付送回；文字规则与套餐语音相同。 */
-  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'>): void {
+  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'>, ownerConversation?: string): void {
     const blocked = this.closed ? 'closed' : delivery.kind === 'ack' ? 'ack' : this.notices.has(delivery.id) ? 'already_sent' : this.cancelled.has(delivery.id) ? 'cancelled' : null;
     if (blocked) { this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:blocked}); return; }
-    const record = this.settle(delivery.runId);
+    const record = this.settle(delivery.runId, ownerConversation);
 
     if (!record) {this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:'no_waiting_delegation'});return;}
     this.notices.add(delivery.id);
