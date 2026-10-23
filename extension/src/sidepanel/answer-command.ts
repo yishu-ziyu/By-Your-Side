@@ -99,6 +99,24 @@ export function mountAnswerCommand(opts: {
     }
   }
 
+  /**
+   * 产生这条回答的用户原话：往回跳过同一轮里助手的过渡句，收集连着的用户消息（中途补的话也算），按发出顺序。
+   * 技能存的是请求；存回答全文的话，下次运行就是把旧回答当新请求发出去。
+   */
+  const requestOf = (answer: HTMLElement): string => {
+    const said: string[] = [];
+
+    for (let node = answer.previousElementSibling; node; node = node.previousElementSibling) {
+      if (node.matches(".msg.user")) {
+        const text = node.querySelector(".user-msg-text")?.textContent?.trim();
+
+        if (text) said.unshift(text);
+      } else if (said.length && node.matches(".msg.assistant")) break;
+    }
+
+    return said.join("\n");
+  };
+
   const extras = (answer: HTMLElement): ResultAction[] => [
     {
       id: "continue",
@@ -114,15 +132,11 @@ export function mountAnswerCommand(opts: {
         opts.continueInNew(answerPlainText(body).slice(0, 400));
       },
     },
-    {
+    ...(requestOf(answer) ? [{
       id: "save-skill",
       label: "存成技能",
-      run: async () => {
-        const body = answer.cloneNode(true) as HTMLElement;
-        body.querySelectorAll(".answer-actions,.answer-panel").forEach((n) => n.remove());
-        opts.saveSkill(answerPlainText(body));
-      },
-    },
+      run: async () => { opts.saveSkill(requestOf(answer)); },
+    }] : []),
   ];
 
   const open = (answer?: HTMLElement | null): void => {
