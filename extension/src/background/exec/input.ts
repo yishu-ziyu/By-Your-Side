@@ -3173,14 +3173,37 @@ async function markText(tabId: number, terms: string[], sessionId: string, befor
           },
         });
 
+        // 一个词常被标签拆开（「72」「ha」是两个链接、「Forbid<b>den</b>」）：同一段落块里相邻的文字拼起来找，跨节点的就画一个跨节点的范围。
+        // 不跨段落、表格格子；不换行空格当普通空格（长度不变，偏移照旧对得上）。
+        const BLOCK = "p,li,td,th,dd,dt,h1,h2,h3,h4,h5,h6,blockquote,pre,figcaption,caption,summary,label,button,div,section,article,header,footer,aside,nav,main,ul,ol,dl,table,tr,form,fieldset,body";
+        const groups: Text[][] = [];
+        let block: Element | null | undefined;
+
         for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-          const text = n.textContent ?? "";
+          if (!(n instanceof Text) || !n.parentElement) continue;
+          const own = n.parentElement.closest(BLOCK);
+
+          if (own !== block || !groups.length) groups.push([]);
+          block = own;
+          groups.at(-1)!.push(n);
+        }
+
+        for (const group of groups) {
+          const starts: number[] = [];
+          let text = "";
+
+          for (const n of group) { starts.push(text.length); text += (n.textContent ?? "").replace(/ /g, " "); }
+          const nodeAt = (pos: number) => { let i = 0; while (i + 1 < starts.length && starts[i + 1]! <= pos) i++; return i; };
 
           words.forEach((word, i) => {
-            for (let at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + word.length)) {
+            const term = word.replace(/ /g, " ");
+
+            for (let at = text.indexOf(term); at >= 0; at = text.indexOf(term, at + term.length)) {
+              const first = nodeAt(at);
+              const last = nodeAt(at + term.length - 1);
               const range = document.createRange();
-              range.setStart(n!, at);
-              range.setEnd(n!, at + word.length);
+              range.setStart(group[first]!, at - starts[first]!);
+              range.setEnd(group[last]!, at + term.length - starts[last]!);
               const r = range.getBoundingClientRect();
 
               if (r.width && r.height) hits[i]!.push(range);
