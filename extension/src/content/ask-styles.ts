@@ -68,6 +68,8 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 
 .head { display: flex; align-items: center; gap: 4px; height: 28px; padding: 4px 4px 0 12px; font-size: var(--t-meta); color: var(--ink-mute); }
 .head .q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head .quote { color: var(--ink-fg-2); }
+.question svg { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; stroke-width: 2; color: var(--ink-mute); }
 .messages { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-hover) transparent; padding: 4px 12px 10px; max-height: min(420px, 52vh); }
 .turn + .turn { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ink-rule); }
 .question { font-size: var(--t-meta); line-height: 1.5; margin-bottom: 6px; color: var(--ink-mute); overflow-wrap: anywhere; white-space: pre-wrap; }
@@ -84,7 +86,6 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .answer a { color: var(--ink-fg); text-decoration: underline; text-decoration-color: var(--pen-soft); text-underline-offset: 3px; }
 .answer blockquote { margin: 8px 0; padding-left: 10px; border-left: 2px solid var(--ink-rule); color: var(--ink-fg-2); }
 .answer table { display: block; max-width: 100%; overflow: auto; border-collapse: collapse; font-size: var(--t-ui); } .answer td, .answer th { padding: 4px 8px; border: 1px solid var(--ink-rule); }
-.turn.folded .answer { max-height: 3.2em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 40%, transparent); mask-image: linear-gradient(#000 40%, transparent); }
 .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; margin-top: 8px; min-height: 24px; font-size: var(--t-meta); color: var(--ink-mute); }
 .meta:empty { display: none; }
 .meta .dot { opacity: .5; }

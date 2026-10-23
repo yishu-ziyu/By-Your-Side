@@ -10,7 +10,7 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
@@ -78,6 +78,9 @@ const BESIDE_GAP = 40;
 const LENS_GAP = 10;
 
 const QUICK_QUESTIONS = [['举个例子', '举个例子'], ['为什么重要？', '这段话为什么重要？'], ['证据是什么？', '作者的证据是什么？']] as const;
+
+/** 卡片顶上引用原文的长度：认得出是哪一段就够。 */
+const QUOTE_CHARS = 36;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, Math.max(min, max)));
 
@@ -183,7 +186,7 @@ function boot(): void {
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
       <div class="bar" role="toolbar" aria-label="划词"><button class="ask" data-act="ask" title="选中后直接打字也能问">问<span class="caret" aria-hidden="true"></span></button><span class="sep" aria-hidden="true"></span><button data-act="explain">解释</button><button data-act="read">朗读</button><button class="icon more" data-act="more" aria-label="更多" title="更多" aria-haspopup="menu" aria-expanded="false"></button></div>
-      <div class="head" hidden><span class="q"></span><button class="icon small" data-act="handoff" aria-label="在侧栏继续" title="在侧栏继续"></button><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
+      <div class="head" hidden><span class="q quote"></span><button class="icon small" data-act="handoff" aria-label="在侧栏继续" title="在侧栏继续"></button><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
       <div class="error" role="status" hidden></div>
       <form class="composer" hidden><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问这段话…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
@@ -233,9 +236,6 @@ function boot(): void {
     detailed: boolean;
     text: string;
   }> = [];
-
-  /** 被改口停下的旧回答默认折叠；这里记用户展开了哪几轮。 */
-  const unfolded = new Set<number>();
 
   /** 哪几轮是用深度模型答的；记录里只存最近一次的档位。 */
   const deepTurns = new Set<number>();
@@ -456,7 +456,6 @@ function boot(): void {
     if (renderedThread !== record?.threadId || renderedTurns > turns.length) {
       messages.replaceChildren();
       answers.length = 0;
-      unfolded.clear();
       deepTurns.clear();
       renderedThread = record?.threadId ?? '';
       renderedTurns = 0;
@@ -480,26 +479,23 @@ function boot(): void {
         meta.className = 'meta';
         wrapper.append(question, summary, node, meta);
         messages.append(wrapper);
-        answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: false, text: '' });
+        // 回答默认整段显示：边听边看的内容写完后不缩成一句，用户自己点「收起」才收。
+        answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: true, text: '' });
       }
 
       const item = answers[index]!;
       const fixed = corrected.includes(index);
-      item.question.textContent = questionLabel(turn.question);
+      item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
 
       if (fixed) {
         const tag = document.createElement('span');
         tag.className = 'tag';
-        tag.textContent = ' · 已按新问题重答';
+        tag.textContent = ' · 已按新要求回答';
         item.question.append(tag);
       }
 
-      // 最新一轮的问题已经写在顶部那一行，正文里不再重复。
-      item.question.hidden = index === lastIndex;
-
-      const foldable = turn.state === 'stopped' && corrected.includes(index + 1) && Boolean(turn.answer.trim());
-      const folded = foldable && !unfolded.has(index);
-      item.turn.classList.toggle('folded', folded);
+      // 被改口停下的旧回答原样留着，新回答接在下面。
+      const interrupted = turn.state === 'stopped' && corrected.includes(index + 1);
 
       if (item.text !== turn.answer) {
         item.node.innerHTML = sanitizeAnswerHtml(renderMarkdownHtml(turn.answer), { images: false });
@@ -518,14 +514,14 @@ function boot(): void {
       const summaryLimit = sentenceEnd >= 0 && sentenceEnd < 100 ? sentenceEnd + 1 : 100;
       const hasMoreText = summaryText.length > summaryLimit;
       const done = turn.state === 'done';
-      const hasDetails = done && !foldable && (item.node.childElementCount > 1 || hasMoreText || Boolean(first && first.tagName !== 'P'));
+      const hasDetails = done && (item.node.childElementCount > 1 || hasMoreText || Boolean(first && first.tagName !== 'P'));
       // 摘要只用纯文字；原回答保留完整结构，收起时也不留下不可见的可聚焦链接。
       item.summary.textContent = summaryText.slice(0, summaryLimit) + (hasMoreText && summaryLimit === 100 ? '…' : '');
       item.summary.hidden = !hasDetails || item.detailed;
       item.node.hidden = hasDetails && !item.detailed;
 
       const deep = deepTurns.has(index) || (index === lastIndex && record?.depth === 'deep');
-      const metaKey = [turn.state, turn.error ?? '', hasDetails, item.detailed, foldable, folded, deep, index === lastIndex, sending].join('|');
+      const metaKey = [turn.state, turn.error ?? '', hasDetails, item.detailed, interrupted, deep, index === lastIndex, sending].join('|');
 
       if (metaKey !== item.metaKey) {
         item.metaKey = metaKey;
@@ -540,9 +536,8 @@ function boot(): void {
 
         if (turn.state === 'pending' || turn.state === 'streaming') say('正在回答…');
         else if (turn.state === 'error') say(turn.error ?? '回答没有完成，可以重试。', true);
+        else if (interrupted) say('已停在这里，按新要求接着答');
         else if (turn.state === 'stopped') say('已中止，内容已保留');
-
-        if (foldable) parts.push(metaButton(folded ? '展开' : '收起', 'fold', index));
 
         if (hasDetails) parts.push(metaButton(item.detailed ? '收起' : '展开全文', 'details', index));
 
@@ -571,8 +566,11 @@ function boot(): void {
       messages.scrollTop = messages.scrollHeight;
     }
 
-    const last = turns.at(-1);
-    el('.head .q').textContent = last ? questionLabel(last.question) : '';
+    // 顶上引用的是这张卡理解的那段原文，换了选段就跟着换。
+    const quoted = record?.source.text.replace(/\s+/g, ' ').trim() ?? '';
+    const quote = el('.head .q');
+    quote.textContent = quoted ? `「${quoted.length > QUOTE_CHARS ? `${quoted.slice(0, QUOTE_CHARS)}…` : quoted}」` : '';
+    quote.title = quoted.slice(0, 400);
     const busy = readingBusy(record);
     // 生成中输入框有字时，按钮是改口；空着时才是停止。
     const stops = busy && !input.value.trim();
@@ -634,8 +632,41 @@ function boot(): void {
     return tracked;
   }
 
-  /** correction 只由输入框发出（打字后回车或点发送）：再点一次「解释」不算改口。 */
-  async function send(question: string, retry = false, correction = false, depth: 'fast' | 'deep' = 'fast'): Promise<void> {
+  /** 按住说话要知道这句话对着哪段：新选的文字优先，其次是开着的阅读卡那段。 */
+  function voiceTarget(): { selection?: string; asked?: string } {
+    const live = selectionSnapshot();
+    const card = visible && expanded && record ? record : undefined;
+
+    if (live && live.source.text !== card?.source.text) return { selection: live.source.text };
+
+    if (!card) return {};
+    const asked = card.turns.at(-1)?.question;
+
+    return { selection: card.source.text, ...(asked ? { asked: questionLabel(asked) } : {}) };
+  }
+
+  /** 说的话交给阅读卡：选了别的段就换到那一段开卡，否则在开着的卡里接着问；还在回答时就是改口。 */
+  async function voiceAsk(question: string): Promise<void> {
+    const live = selectionSnapshot();
+    const onCard = visible && expanded && !!record;
+
+    if (live && (!onCard || live.source.text !== record!.source.text)) {
+      rememberDraft();
+      selectionVersion++;
+      snapshot = live;
+      await openReading();
+    }
+    else if (!onCard) {
+      throw new Error('没有选中的文字。');
+    }
+
+    await send(question, false, readingBusy(record), 'fast', true);
+
+    if (record?.turns.at(-1)?.question !== question) throw new Error('没能交给阅读卡。');
+  }
+
+  /** correction 只由输入框和说话发出（打字后回车、点发送、按住说话）：再点一次「解释」不算改口。spoken：说出来的，回答会被念出来。 */
+  async function send(question: string, retry = false, correction = false, depth: 'fast' | 'deep' = 'fast', spoken = false): Promise<void> {
     if (opening) await opening.catch(() => {});
 
     if (!record || sending || !question.trim()) {
@@ -648,7 +679,7 @@ function boot(): void {
     render();
 
     try {
-      const result = await rpc('reading_send', { question, retry, correction, depth });
+      const result = await rpc('reading_send', { question, retry, correction, depth, spoken });
 
       if (record?.threadId !== threadId) {
         return;
@@ -660,7 +691,8 @@ function boot(): void {
       if (depth === 'deep') deepTurns.add(index);
       else deepTurns.delete(index);
 
-      if (record?.turns.at(-1)?.state !== 'error') {
+      // 说出来的问题不碰输入框里打了一半的字。
+      if (!spoken && record?.turns.at(-1)?.state !== 'error') {
         input.value = '';
         rememberDraft();
       }
@@ -740,15 +772,6 @@ function boot(): void {
         const item = answers[Number(target.dataset.turn)];
 
         if (item) item.detailed = !item.detailed;
-        render();
-      }
-      else if (action === 'fold') {
-        const index = Number(target.dataset.turn);
-
-        if (!unfolded.delete(index)) {
-          unfolded.add(index);
-        }
-
         render();
       }
       else if (action === 'retry') {
@@ -995,6 +1018,22 @@ function boot(): void {
         input.focus();
       }
     }
+  });
+  chrome.runtime.onMessage.addListener((raw, _sender, respond) => {
+    if (raw?.type !== 'reading_voice_probe' && raw?.type !== 'reading_voice_ask') return;
+
+    if (retired()) return;
+
+    if (raw.type === 'reading_voice_probe') {
+      respond(voiceTarget());
+
+      return;
+    }
+
+    // 交不进卡时后台改交给助手，卡上不留错误。
+    void voiceAsk(String(raw.question ?? '').trim()).then(() => respond({ ok: true }), () => respond({ ok: false }));
+
+    return true;
   });
   void rpc('reading_get').then(result => {
     if (result.record && !record) {

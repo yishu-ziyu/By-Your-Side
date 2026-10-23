@@ -1,4 +1,4 @@
-import { isReadingClientMessage, isReadingEvent, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingTranscript } from "./reading.js";
+import { isReadingClientMessage, isReadingEvent, isReadingRouteResult, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingRouteResult, type ReadingTranscript } from "./reading.js";
 import { isNudgeClientMessage, isNudgeResult, type NudgeClientMessage, type NudgeResult } from "./nudge.js";
 import { isBrowseHabitClientMessage, isBrowseHabitResult, type BrowseHabitClientMessage, type BrowseHabitResult } from "./browse-habits.js";
 import { isExecutionFeedback } from "./execution-feedback.js";
@@ -408,6 +408,7 @@ export interface HostFeatures { memory: boolean }
 
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
   | ReadingEvent
+  | ReadingRouteResult
   | NudgeResult
   | BrowseHabitResult
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number;ask?:string;/** hand_to_user 要用户填的栏和点的按钮：交给用户时在页面上圈出来。 */targets?:string[]}
@@ -927,7 +928,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
 
-    if (msg.type === "reading_request" || msg.type === "reading_cancel") return isReadingClientMessage(msg) ? msg : null;
+    if (msg.type === "reading_request" || msg.type === "reading_cancel" || msg.type === "reading_route") return isReadingClientMessage(msg) ? msg : null;
 
     if (msg.type === "nudge_request" || msg.type === "nudge_validate") return isNudgeClientMessage(msg) ? msg : null;
 
@@ -1096,6 +1097,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if(msg.epochs!==undefined&&(!msg.epochs||typeof msg.epochs!=='object'||Array.isArray(msg.epochs)||!Object.entries(msg.epochs).every(([id,n])=>validOptionalSessionId(id)&&Number.isSafeInteger(n)&&n>=0)))return null;
 
     if (msg.type === 'reading_event') return isReadingEvent(msg) ? msg : null;
+
+    if (msg.type === 'reading_route_result') return isReadingRouteResult(msg) ? msg : null;
 
     if (msg.type === 'nudge_result' || msg.type === 'nudge_validation') return isNudgeResult(msg) ? msg : null;
 
