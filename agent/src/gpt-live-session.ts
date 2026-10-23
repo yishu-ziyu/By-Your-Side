@@ -80,7 +80,7 @@ type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: 
  * 用户一句话说完后，语音层要委派的话，委派总在这句的结束事件之前就到（实测早 0.4–1.3 秒）。
  * 过了这么久还没有委派，宿主就自己判这句话：要不要动手由宿主定，不由语音层一个模型说了算。
  */
-const HOST_GATE_MS = 1_500;
+const HOST_GATE_MS = 500;
 
 /**
  * 只靠说话的用户看不到侧栏：委派的事做了这么久还没出声，就念一句正在做哪一步（取任务栏同一个步骤名）。
