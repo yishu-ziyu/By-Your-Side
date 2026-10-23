@@ -289,7 +289,7 @@ try {
       assert.match(sent + String(evidence.spoken), /标/, '念出的结果说标好了');
     } else if (reading) {
       type Tab = { url: string; title: string; active: boolean };
-      type Step = { key: string; question: string; heard: string | null; delegated: boolean; channel: string | null; spoken: string; waitMs: number | null; resultMs: number | null; doneMs: number | null; at: number; end: number; tabs: Tab[] | null; error: string | null };
+      type Step = { key: string; question: string; heard: string | null; delegated: boolean; channel: string | null; spoken: string; waitMs: number | null; resultMs: number | null; doneMs: number | null; maxSilenceMs: number | null; progress: string[]; at: number; end: number; tabs: Tab[] | null; error: string | null };
       const turns = [
         { key: 'mark', text: '这篇文章里讲法律的那一段挺有意思的，你帮我在页面上标出来。' },
         { key: 'explore', text: '那你去别的网站帮我查查，现实里有没有因为逆向工程打官司的例子。' },
@@ -306,7 +306,7 @@ try {
         console.log(`读文章 ${index + 1}/${turns.length}：${turn.text}`);
         const input = await say(await speech(turn.text, `reading-${turn.key}.wav`));
         const spokenEnd = input.at + input.ms;
-        const step: Step = { key: turn.key, question: turn.text, heard: null, delegated: false, channel: null, spoken: '', waitMs: null, resultMs: null, doneMs: null, at: input.at, end: 0, tabs: null, error: null };
+        const step: Step = { key: turn.key, question: turn.text, heard: null, delegated: false, channel: null, spoken: '', waitMs: null, resultMs: null, doneMs: null, maxSilenceMs: null, progress: [], at: input.at, end: 0, tabs: null, error: null };
         steps.push(step);
         try {
           const userTurn = await until(async () => (await read()).in.find(e => e.type === 'turn.done' && e.turn?.role === 'user' && e.at > input.at), 60_000, '本轮原话已被服务完整接收');
@@ -325,6 +325,11 @@ try {
           const firstAudio = (await read()).meter.find(([at, rms]) => at > spokenEnd && rms > 0.01);
           step.waitMs = firstAudio ? firstAudio[0] - spokenEnd : null;
           step.doneMs = completed.at - spokenEnd;
+          // 用户说完到这一轮回答说完：最长一段听不到任何声音有多久（只看侧栏收到的远端声音）。
+          let lastLoud = spokenEnd, longest = 0;
+          for (const [at, rms] of (await read()).meter) if (at > spokenEnd && at <= completed.at && rms > 0.01) { longest = Math.max(longest, at - lastLoud); lastLoud = at; }
+          step.maxSilenceMs = longest;
+          step.progress = (await read()).out.filter(e => e.type === 'session.context.append' && e.channel === 'speakable' && e.at >= input.at && e.at <= completed.at).map(e => e.content?.map(c => c.text).join('') ?? '');
         } catch (e) {
           step.error = e instanceof Error ? e.message : String(e);
         }
@@ -368,6 +373,7 @@ try {
         { name: '去别的网站接着查', pass: !explore.error && (!!explore.tabs?.some(t => !/wikipedia\.org/.test(t.url)) || toolsIn(explore).some(t => /navigate|tabs/.test(t.tool) && /https?:\/\/(?![a-z-]+\.wikipedia\.org)/.test(t.args))) && /案|诉|官司|法院|判/.test(explore.spoken), review: '说出的例子是否来自打开的网页：看 reading-explore-panel.png' },
         { name: '原文还在，没被助手的查询顶掉', pass: !!explore.tabs?.some(t => isArticle(t.url)), review: null },
         { name: '说「记下来了」时真的写进去了', pass: claimsRecorded ? !record.error && wrote(runOf(record)) : null, review: claimsRecorded ? null : '没说记好：人工看记到了哪里，有没有让你自己发文字' },
+        { name: '等结果超过 20 秒时，中间不长时间没声音', pass: steps.some(s => (s.resultMs ?? 0) > 20_000) ? steps.filter(s => (s.resultMs ?? 0) > 20_000).every(s => s.maxSilenceMs !== null && s.maxSilenceMs <= 20_000) : null, review: steps.some(s => (s.resultMs ?? 0) > 20_000) ? null : '这次没有等结果超过 20 秒的一句' },
         { name: '回到原文', pass: !!finalTabs?.some(t => t.active && isArticle(t.url)), review: '阅读位置和标注还在不在：看 reading-final-page-*.png' },
       ];
       evidence.readingChecks = checks;
