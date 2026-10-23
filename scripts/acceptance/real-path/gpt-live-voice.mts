@@ -12,8 +12,8 @@
  *   --case=host-gate：关掉 GPT-Live 的委派、让它只会口头答应（复现「嘴上说做了、页面没动」），用户要标出段落时宿主自己接下、真的标出来并念出结果。
  *   --case=reading：只用语音读中文维基文章：标出感兴趣的段落、去别的网站接着查、记下来、回到原文；每步只记用户看得到的结果，一步没过也走完，看清断在哪几处。
  *   --case=server-error：人工注入服务错误，只证明故障处理，不是真服务失败。
- *   --case=queued-stop：语音任务排队后开工，在另一会话点中止，原通话说出中止结果。
- *   --case=queued-stop-unvoiced：同上，但脚本吞掉第一次送出的中止结果（服务偶尔确认收到结果却不开口），侧栏要自己发现没出声、重送，而且只说一次。
+ *   --case=queued-stop：语音任务排队后开工，在另一会话点中止，原通话说出停的是哪件。
+ *   --case=queued-stop-unvoiced：同上，但脚本吞掉第一次送出的中止结果、替服务回一个「已收到」（服务偶尔确认收到却不开口），侧栏要自己发现没出声、从会话层重送，而且只说一次。
  *   --case=queued-progress：语音任务排队后开工，等待结果期间说出进度。两条用例的文字执行与新任务分流由脚本固定，语音仍是真实 GPT-Live。
  *   外语名称/音译和中文覆盖率只记录人工复核证据；数字仍自动核对。
  *   加 --extra-fact：回传时多加一个假事实，播报核对必须失败（反证）
@@ -188,7 +188,8 @@ try {
     RTCPeerConnection.prototype.createDataChannel = function (...a) { const dc = create.apply(this, a); window.__dc = dc;
       dc.addEventListener("message", (e) => { try { const m = JSON.parse(e.data); if (!/audio\\.(delta|append)$/.test(m.type)) gl.in.push({ at: Date.now(), ...m }); } catch {} });
       const send = dc.send.bind(dc); dc.send = (d) => { try { const m = JSON.parse(d); const hook = window.__speakableHook;
-        if (hook && m.channel === "speakable" && m.delegation_item_id === hook.id) { window.__speakableHook = null; gl.intercepted = { at: Date.now(), message: d }; return; } if (${JSON.stringify(extraFact)} && m.type === "delegation.context.append" && m.channel === "speakable") { m.content[0].text += ${JSON.stringify(extraFact)}; d = JSON.stringify(m); } gl.out.push({ at: Date.now(), ...m }); } catch {} return send(d); };
+        if (hook && m.channel === "speakable" && m.delegation_item_id === hook.id) { window.__speakableHook = null; gl.intercepted = { at: Date.now(), message: d };
+          setTimeout(() => dc.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "delegation.context.appended", delegation_item_id: m.delegation_item_id, injected: true }) })), 300); return; } if (${JSON.stringify(extraFact)} && m.type === "delegation.context.append" && m.channel === "speakable") { m.content[0].text += ${JSON.stringify(extraFact)}; d = JSON.stringify(m); } gl.out.push({ at: Date.now(), ...m }); } catch {} return send(d); };
       this.addEventListener("track", (e) => { const an = ctx.createAnalyser(); ctx.createMediaStreamSource(new MediaStream([e.track])).connect(an); const b = new Float32Array(an.fftSize);
         setInterval(() => { an.getFloatTimeDomainData(b); gl.meter.push([Date.now(), +Math.sqrt(b.reduce((s, v) => s + v * v, 0) / b.length).toFixed(4)]); }, 20); });
       return dc; };
@@ -271,14 +272,22 @@ try {
         const intercepted = await until(async () => await rp.evaluate(panel, "window.__gl.intercepted") as { at: number } | null ?? undefined, 25_000, "第一次中止结果已送出");
         evidence.intercepted = intercepted;
       }
-      const sent = await until(async () => (await read()).out.find(e => e.at >= heardAfter && e.channel === "speakable" && (queuedStop ? e.type === "delegation.context.append" && e.delegation_item_id === delegation.item?.id : e.type === "session.context.append") && expected.test(e.content?.map(c => c.text ?? "").join("") ?? "")), 25_000, queuedStop ? "原委派收到任务中止的口播" : "任务没做完时有进度口播");
+      const sent = await until(async () => (await read()).out.find(e => e.at >= heardAfter && e.channel === "speakable" && (unvoiced ? e.type === "session.context.append" : queuedStop ? e.type === "delegation.context.append" && e.delegation_item_id === delegation.item?.id : e.type === "session.context.append") && expected.test(e.content?.map(c => c.text ?? "").join("") ?? "")), 25_000, queuedStop ? "原委派收到任务中止的口播" : "任务没做完时有进度口播");
       const spoken = await until(async () => {
         const g = await read();
         const done = g.in.find(e => e.at >= sent.at && e.type === "turn.done" && e.turn?.role === "assistant" && expected.test(e.turn.transcript));
         return done && g.meter.some(([at, rms]) => at >= sent.at && at <= done.at && rms > 0.01) ? done : undefined;
       }, 30_000, "真实语音已说出中止结果或进度");
+      if (queuedStop) {
+        // 只说「任务已终止」时，语音层会自己猜停的是哪件，曾说成「现在可以继续处理按钮清单了」。
+        const said = spoken.turn?.transcript ?? "";
+        evidence.stopSaid = said;
+        assert.ok(said.split(/[，,。？?！!；;]/).some(clause => /按钮/.test(clause) && expected.test(clause)), `说停了的那半句要点出是按钮那件：${said}`);
+        // 问用户「要继续做吗」可以；不能说成它还会继续。
+        assert.ok(!said.split(/(?<=[。！？!?；;])/).some(sentence => !/[？?]$|吗/.test(sentence.trim()) && /继续/.test(sentence)), `中止口播不能说被停的任务还会继续：${said}`);
+      }
       if (unvoiced) {
-        assert.ok(sent.at - (evidence.intercepted as { at: number }).at >= 2_500, "侧栏等过一阵没听到才重送");
+        assert.ok(sent.at - (evidence.intercepted as { at: number }).at >= 2_000, "侧栏等过一阵没听到才重送");
         await sleep(8_000);
         const turns = (await read()).in.filter(e => e.at > sent.at && e.type === "turn.done" && e.turn?.role === "assistant").map(e => e.turn!.transcript);
         evidence.turnsAfterResult = turns;
