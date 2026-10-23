@@ -94,6 +94,13 @@ type LiveCall = {
   /** 分段计时：最近一句用户话的编号，和已写进数据通道、还没出声的结果（委派编号，会话层的记 live-context）。 */
   lastUserTurn: string | null;
   resultsAwaitingAudio: string[];
+  /** 已写进数据通道、还没换来助手开口的结果，按委派编号（会话层的按事件编号）；message 是原样的消息，重送用；ref 进分段计时。 */
+  unvoiced: Map<string, { message: Record<string, unknown>; ref: string; sentAt: number; resent: boolean }>;
+  unvoicedTimer: ReturnType<typeof setInterval> | null;
+  /** 助手最近一次开口或出字、上一段说完，用户最近一次出声的时刻。 */
+  assistantAt: number;
+  assistantDoneAt: number;
+  userAt: number;
 };
 
 /** 远端声音高于这个音量，算助手正在出声；插话判定只在出声后 0.5 秒内有效。 */
@@ -103,6 +110,17 @@ const LIVE_AUDIBLE_HOLD_MS = 500;
 
 /** 本地插话后这么久服务端还没听到用户说话，就当是咳嗽或回声，取消静音。 */
 const LIVE_FALSE_BARGE_MS = 2500;
+
+/**
+ * GPT-Live 偶尔对写进去的结果回了「已收到」却一直不开口，数据通道上看不出原因；正常 2 秒内就开口。
+ * 写进去这么久助手既没开口也没出新字，就等它说完满 LIVE_SETTLE_MS 后原样重送一次。
+ */
+const LIVE_UNVOICED_MS = 3000;
+
+const LIVE_SETTLE_MS = 2500;
+
+/** 重送后还是这么久没开口就不再等；完整内容一直在侧栏。 */
+const LIVE_UNVOICED_GIVE_UP_MS = 30_000;
 
 /** WebRTC 短暂 disconnected 常会自己恢复；超过这么久才按断线处理。 */
 const LIVE_DISCONNECT_GRACE_MS = 3000;
@@ -409,7 +427,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     gain.connect(this.analyser); this.analyser.connect(context.destination);
     const sink = new Audio(); sink.muted = true;
     const remoteMeter = context.createAnalyser(); remoteMeter.fftSize = 256;
-    const live: LiveCall = { pc, dc, gain, mic, sink, remoteMeter, remoteTrack: null, sources: [micSource], turns: new Map(), speakables: new Map(), delegated: new Set(), assistantTurn: null, muted: null, audibleAt: 0, bargeTimer: null, pageContextKey: null, pageContextRevision: 0, unwatchPage: null, lastUserTurn: null, resultsAwaitingAudio: [] };
+    const live: LiveCall = { pc, dc, gain, mic, sink, remoteMeter, remoteTrack: null, sources: [micSource], turns: new Map(), speakables: new Map(), delegated: new Set(), assistantTurn: null, muted: null, audibleAt: 0, bargeTimer: null, pageContextKey: null, pageContextRevision: 0, unwatchPage: null, lastUserTurn: null, resultsAwaitingAudio: [], unvoiced: new Map(), unvoicedTimer: null, assistantAt: 0, assistantDoneAt: 0, userAt: 0 };
     this.live = live;
     live.bargeTimer = setInterval(() => this.watchLiveBargeIn(live), 20);
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -516,8 +534,12 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     const turn = e.turn;
 
+    if (e.type === 'input_transcript.added') live.userAt = Date.now();
+
     if (e.type === 'turn.created' && turn?.id) {
       const role = turn.role === 'user' ? 'user' : 'assistant';
+
+      if (role === 'user') live.userAt = Date.now(); else live.assistantAt = Date.now();
 
       if (role === 'user') this.turn++;
 
@@ -541,6 +563,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       const known = live.turns.get(e.turn_id);
 
       if (known?.role !== 'assistant') return;
+      live.assistantAt = Date.now();
       known.text += e.delta ?? '';
       this.showLiveAnswer(live, e.turn_id);
 
@@ -567,6 +590,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       }
 
       if (turn.role === 'assistant') {
+        live.assistantDoneAt = Date.now();
         if (turn.transcript) this.event({ kind: 'text', turn: known?.turn ?? this.turn, role: 'assistant', text: turn.transcript });
 
         // 结果之后那段回答念完：没被静音过才报告已播放；被打断的保持未播完，和阶跃星辰一样。
@@ -610,6 +634,34 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
       if (text) this.command({ kind: 'delegation', delegationId: e.item.id, text, userTurnId: e.item.user_bidi_turn_id });
     }
+  }
+  private awaitVoice(live: LiveCall, key: string, ref: string, message: Record<string, unknown>): void {
+    live.unvoiced.set(key, { message, ref, sentAt: Date.now(), resent: false });
+    live.unvoicedTimer ??= setInterval(() => this.checkUnvoiced(live), 250);
+  }
+  private checkUnvoiced(live: LiveCall): void {
+    const now = Date.now();
+
+    for (const [key, pending] of live.unvoiced) {
+      // 之后助手开口或出了新字：念出来了，或并进了正在说的那段；用户开口：回答跟着用户这句走。
+      if (live.assistantAt > pending.sentAt || live.userAt > pending.sentAt) { live.unvoiced.delete(key); continue; }
+
+      const waited = now - pending.sentAt;
+
+      // 正在说的那段只剩声音没播完，等它说完再看。
+      if (waited < LIVE_UNVOICED_GIVE_UP_MS && (live.assistantTurn || waited < LIVE_UNVOICED_MS || now - live.assistantDoneAt < LIVE_SETTLE_MS)) continue;
+      const resend = !pending.resent && live.dc.readyState === 'open' && waited < LIVE_UNVOICED_GIVE_UP_MS;
+      this.mark(resend ? 'result_resent' : 'result_unvoiced', { ref: pending.ref });
+
+      if (!resend) { live.unvoiced.delete(key); continue; }
+      // 会话层消息的事件编号不能重复。
+      live.dc.send(JSON.stringify(pending.message.event_id ? { ...pending.message, event_id: crypto.randomUUID() } : pending.message));
+      pending.sentAt = now; pending.resent = true;
+    }
+
+    if (live.unvoiced.size && this.live === live) return;
+    if (live.unvoicedTimer) clearInterval(live.unvoicedTimer);
+    live.unvoicedTimer = null;
   }
   private showLiveAnswer(live: LiveCall, turnId: string): void {
     const known = live.turns.get(turnId);
@@ -686,6 +738,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     live.pc.close();
     live.sink.srcObject = null;
     if (live.bargeTimer) clearInterval(live.bargeTimer);
+    if (live.unvoicedTimer) clearInterval(live.unvoicedTimer);
     live.sources.forEach(source => source.disconnect());
     live.gain.disconnect(); live.mic.disconnect(); live.remoteMeter.disconnect();
     this.analyser?.disconnect(); this.analyser = null;
@@ -1041,9 +1094,10 @@ return;}
 
     if(e.kind==='delegation_context'){
       if(this.live?.dc.readyState==='open'){
-        this.live.dc.send(JSON.stringify({type:'delegation.context.append',delegation_item_id:e.delegationId,channel:e.channel,content:[{type:'input_text',text:e.text}]}));
+        const sent={type:'delegation.context.append',delegation_item_id:e.delegationId,channel:e.channel,content:[{type:'input_text',text:e.text}]};
+        this.live.dc.send(JSON.stringify(sent));
 
-        if(e.channel==='speakable'){this.live.speakables.set(e.delegationId,{state:'sent'});this.live.resultsAwaitingAudio.push(e.delegationId);this.mark('result_sent',{ref:e.delegationId});}
+        if(e.channel==='speakable'){this.live.speakables.set(e.delegationId,{state:'sent'});this.live.resultsAwaitingAudio.push(e.delegationId);this.mark('result_sent',{ref:e.delegationId});this.awaitVoice(this.live,e.delegationId,e.delegationId,sent);}
       }
 
       return;
@@ -1051,9 +1105,10 @@ return;}
 
     if(e.kind==='live_context'){
       if(this.live?.dc.readyState==='open'){
-        this.live.dc.send(JSON.stringify({type:'session.context.append',event_id:crypto.randomUUID(),channel:e.channel,content:[{type:'input_text',text:e.text}]}));
+        const sent={type:'session.context.append',event_id:crypto.randomUUID(),channel:e.channel,content:[{type:'input_text',text:e.text}]};
+        this.live.dc.send(JSON.stringify(sent));
 
-        if(e.channel==='speakable'){this.live.resultsAwaitingAudio.push('live-context');this.mark('result_sent',{ref:'live-context'});}
+        if(e.channel==='speakable'){this.live.resultsAwaitingAudio.push('live-context');this.mark('result_sent',{ref:'live-context'});this.awaitVoice(this.live,sent.event_id,'live-context',sent);}
       }
 
       return;
