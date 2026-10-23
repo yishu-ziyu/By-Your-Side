@@ -70,7 +70,7 @@ async function runCase(name: string): Promise<Row> {
   const exitCode = await new Promise<number | null>((done) => {
     const child = spawn("npx", ["--no-install", "tsx", join(HERE, `${name}.mts`), "--headless"], {
       cwd: REPO,
-      env: { ...process.env, SIDEAGENT_ACCEPTANCE_DIST: dist },
+      env: { SIDEAGENT_RECORD: "0", ...process.env, SIDEAGENT_ACCEPTANCE_DIST: dist },
       stdio: ["ignore", log.fd, log.fd],
     });
     child.on("close", (code) => done(code));
