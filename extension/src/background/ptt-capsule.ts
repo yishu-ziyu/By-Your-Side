@@ -235,6 +235,12 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
       if (recordingTab === tabId) recordingTab = null;
       onChange();
     },
+    /** 这句话交给了页面上的阅读卡：回答在卡里，胶囊收起。 */
+    dismiss(tabId: number) {
+      if (recordingTab === tabId) recordingTab = null;
+      show(tabId, null);
+      onChange();
+    },
     /** 念的时候按了 Esc：停下声音，胶囊留着。 */
     hush() { voice.hush(); },
     conversationId: () => tracked?.conversationId ?? null,

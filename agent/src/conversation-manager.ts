@@ -1691,6 +1691,17 @@ return receipt;
       return;
     }
 
+    if (message.type === 'reading_route') {
+      let route: 'reading' | 'task' = 'task';
+      try {
+        const id = normalizeConversationId(message.conversationId);
+        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        route = await entry?.runtime.session.judgeReadingRoute(message) ?? 'task';
+      } catch { route = 'task'; }
+      this.emit({ type: 'reading_route_result', requestId: message.requestId, route });
+      return;
+    }
+
     if (message.type === 'nudge_validate') {
       let valid = false;
       try {
