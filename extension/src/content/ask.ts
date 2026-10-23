@@ -8,7 +8,7 @@ import { installFloatCard } from "./float-card.js";
 import { installSonarPinpoint } from "./sonar-pinpoint.js";
 import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
-import { PTT_WARM } from "../shared/ptt.js";
+import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
 import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic } from 'lucide';
@@ -82,6 +82,9 @@ const QUICK_QUESTIONS = [['举个例子', '举个例子'], ['为什么重要？'
 
 /** 卡片顶上引用原文的长度：认得出是哪一段就够。 */
 const QUOTE_CHARS = 36;
+
+/** 系统默认的双击间隔约 500ms，网页里多数连击在 400ms 内。 */
+const MULTI_CLICK_MS = 420;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, Math.max(min, max)));
 
@@ -168,7 +171,6 @@ function boot(): void {
 
   installSonarPinpoint();
   installMemoryMark();
-  installPushToTalkKeys();
   installDragFeed();
   installMarginaliaTracker();
   installGhostHud();
@@ -243,6 +245,28 @@ function boot(): void {
 
   const drafts = new Map<string, string>();
   let pinned = false;
+
+  /**
+   * 按住说话的这一次交流，只在页面里：按下时抓住的那段字（之后用户点别处、改选都不影响这一句问的是哪），
+   * listening 是还按着，released 是松开后等回答接上。新的一次按下整个换掉旧的。previous：松开前卡片指着的那段，话没交给卡时指回去。
+   */
+  let voice: { phase: 'listening' | 'released'; target: SelectionSnapshot; heard: string; previous: SelectionSnapshot | null } | null = null;
+  /** 光标陪着这张卡：从按住说话起，到卡收起为止。 */
+  let companion = false;
+  /** 正在念哪张卡的回答。 */
+  let speakingThread = '';
+  /** 用户正在滚动读正文：浮在正文上的卡片和光标先让开。 */
+  let quiet = false;
+  let quietTimer: ReturnType<typeof setTimeout> | undefined;
+  let followTimer: ReturnType<typeof setInterval> | undefined;
+  /** 按住说话时按 Esc 只取消这一次说话，不连带收起卡片。 */
+  let swallowEscape = false;
+  /** 卡开着时按下鼠标先不收：可能是去选另一段接着问，松开时没选中文字才收。 */
+  let dismissOnUp = false;
+  let dismissTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 卡开着时新选中的一段：打字问时问的是它。 */
+  let candidate: SelectionSnapshot | null = null;
+  let pendingTurn: HTMLElement | null = null;
   /** 回答放在选区哪一边：打开时定一次，之后回答变长也不换边，免得跳位。右侧空白够放时不用这一边。 */
   let side: 'above' | 'below' | null = null;
   const highlightName = `by-your-side-reading`;
@@ -303,19 +327,22 @@ function boot(): void {
   }
 
   function position(): void {
-    if (!visible || !snapshot) {
+    // 按住说话问另一段时，卡片一按下就让到那段旁边：不压住用户刚选的字。
+    const anchor = voice?.target ?? snapshot;
+
+    if (!visible || !anchor) {
       return;
     }
 
-    const live = snapshot.range?.startContainer.isConnected ? snapshot.range : null;
-    const r = live ? live.getBoundingClientRect() : snapshot.rect;
+    const live = anchor.range?.startContainer.isConnected ? anchor.range : null;
+    const r = live ? live.getBoundingClientRect() : anchor.rect;
     const lines = live ? [...live.getClientRects()].filter(line => line.width > 0 && line.height > 0) : [];
     const first = lines[0] ?? r;
     const last = lines.at(-1) ?? r;
     const margin = PLACE_MARGIN;
 
     // 还没有回答时是一条贴着选区的胶囊：放在第一行上方，小三角指着它；上方放不下才放到最后一行下方。
-    if (!expanded || !record?.turns.length) {
+    if (!expanded || (!record?.turns.length && voice?.phase !== 'released')) {
       surface.style.maxHeight = '';
       const box = surface.getBoundingClientRect();
       const above = first.top - LENS_GAP - box.height >= margin;
@@ -335,11 +362,10 @@ function boot(): void {
 
     delete surface.dataset.tail;
 
-    if (r.bottom < 0 || r.top > innerHeight) {
-      pinned = true;
-    }
+    // 这段滚出视口时卡片靠到右上角，滚回来再回到这段旁边：卡片始终对着能看见的那段，或者让开正文。
+    pinned = r.bottom < 0 || r.top > innerHeight;
 
-    const block = pinned ? null : contentBlockOf(snapshot.range);
+    const block = pinned ? null : contentBlockOf(anchor.range);
     const blockRect = block?.getBoundingClientRect();
     const roomy = !!blockRect && innerWidth - blockRect.right >= CARD_WIDTH + BESIDE_GAP + margin;
     const besideRegion = roomy && block && blockRect ? {
@@ -365,18 +391,20 @@ function boot(): void {
       return;
     }
 
-    surface.dataset.place = 'float';
-    const left = clamp(r.left + r.width / 2 - box.width / 2, margin, innerWidth - box.width - margin);
+    surface.dataset.place = pinned ? 'dock' : 'float';
+    const left = pinned ? innerWidth - box.width - margin : clamp(r.left + r.width / 2 - box.width / 2, margin, innerWidth - box.width - margin);
     const bottomLimit = innerHeight - box.height - margin;
     const top = pinned ? margin : side === 'below' ? clamp(r.bottom + LENS_GAP, margin, bottomLimit) : clamp(r.top - box.height - LENS_GAP, margin, bottomLimit);
     surface.style.left = `${left}px`;
     surface.style.top = `${top}px`;
-    surface.style.setProperty('--origin', side === 'above' ? 'bottom center' : 'top center');
+    surface.style.setProperty('--origin', pinned ? 'right top' : side === 'above' ? 'bottom center' : 'top center');
   }
 
   function highlight(): void {
-    if (snapshot?.range && HighlightClass) {
-      highlights?.set(highlightName, new HighlightClass(snapshot.range));
+    const range = (voice?.target ?? snapshot)?.range;
+
+    if (range && HighlightClass) {
+      highlights?.set(highlightName, new HighlightClass(range));
     }
   }
 
@@ -397,6 +425,10 @@ function boot(): void {
     surface.hidden = true;
     restore.hidden = !record?.turns.length;
     highlights?.delete(highlightName);
+    candidate = null;
+    dismissOnUp = false;
+
+    if (voice?.phase !== 'listening') endCompanion();
 
     if (restoreFocus && lastFocus?.isConnected) {
       lastFocus.focus({ preventScroll: true });
@@ -436,8 +468,9 @@ function boot(): void {
 
   function render(): void {
     const turns = record?.turns ?? [];
-    const answering = expanded && turns.length > 0;
-    const composing = expanded && !turns.length;
+    const waiting = voice?.phase === 'released';
+    const answering = expanded && (turns.length > 0 || waiting);
+    const composing = expanded && !turns.length && !waiting;
     surface.classList.toggle('expanded', expanded);
     surface.classList.toggle('composing', composing);
     el('.bar').hidden = expanded;
@@ -464,6 +497,10 @@ function boot(): void {
 
     const corrected = record?.correctedTurns ?? [];
     const lastIndex = turns.length - 1;
+    const sources = turns.map((_, index) => sourceOf(index));
+    const waitingSource = waiting ? voice!.target.source.text : undefined;
+    // 问过不止一段时，每段第一问上面引用它那段原文：旧回答留着自己的出处，新一轮引用新的一段。
+    const several = new Set([...sources, ...(waitingSource ? [waitingSource] : [])]).size > 1;
 
     for (const [index, turn] of turns.entries()) {
       if (!answers[index]) {
@@ -485,6 +522,7 @@ function boot(): void {
       }
 
       const item = answers[index]!;
+      setSourceQuote(item.turn, several && (index === 0 || sources[index] !== sources[index - 1]) ? sources[index]! : '');
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
 
@@ -562,15 +600,16 @@ function boot(): void {
     }
 
     renderedTurns = turns.length;
+    renderWaitingTurn(several && waitingSource !== sources.at(-1) ? waitingSource! : '');
 
     if (atBottom) {
       messages.scrollTop = messages.scrollHeight;
     }
 
-    // 顶上引用的是这张卡理解的那段原文，换了选段就跟着换。
-    const quoted = record?.source.text.replace(/\s+/g, ' ').trim() ?? '';
+    // 顶上引用的是这张卡现在理解的那段原文：等回答时是刚按住时选的那段，换了选段就跟着换。
+    const quoted = (waitingSource ?? sources.at(-1) ?? snapshot?.source.text ?? '').replace(/\s+/g, ' ').trim();
     const quote = el('.head .q');
-    quote.textContent = quoted ? `「${quoted.length > QUOTE_CHARS ? `${quoted.slice(0, QUOTE_CHARS)}…` : quoted}」` : '';
+    quote.textContent = quoteOf(quoted);
     quote.title = quoted.slice(0, 400);
     const busy = readingBusy(record);
     // 生成中输入框有字时，按钮是改口；空着时才是停止。
@@ -580,13 +619,74 @@ function boot(): void {
     submit.setAttribute('aria-label', label);
     submit.title = label;
     submit.disabled = sending || (!busy && !input.value.trim());
-    input.placeholder = turns.length ? '接着问…' : '问这段话…';
+    input.placeholder = candidate ? '问刚选中的这段…' : turns.length ? '接着问…' : '问这段话…';
     const handoff = el<HTMLButtonElement>('[data-act="handoff"]');
     handoff.disabled = busy || sending;
     const handoffLabel = record?.transferredConversationId ? '回到侧栏' : '在侧栏继续';
     handoff.setAttribute('aria-label', handoffLabel);
     handoff.title = handoffLabel;
     position();
+    pushPointer();
+  }
+
+  const quoteOf = (text: string) => {
+    const flat = text.replace(/\s+/g, ' ').trim();
+
+    return flat ? `「${flat.length > QUOTE_CHARS ? `${flat.slice(0, QUOTE_CHARS)}…` : flat}」` : '';
+  };
+
+  /** 第 index 问针对哪段原文：往前最近一个换过段的轮次，没有就是卡片打开时那段。 */
+  function sourceOf(index: number): string {
+    const turns = record?.turns ?? [];
+
+    for (let i = index; i >= 0; i--) {
+      const own = turns[i]?.source;
+
+      if (own) return own.text;
+    }
+
+    return record?.source.text ?? '';
+  }
+
+  function setSourceQuote(turn: HTMLElement, text: string): void {
+    let quote = turn.querySelector<HTMLElement>(':scope > .source');
+
+    if (!text) {
+      quote?.remove();
+
+      return;
+    }
+
+    if (!quote) {
+      quote = document.createElement('div');
+      quote.className = 'source';
+      turn.prepend(quote);
+    }
+
+    quote.textContent = quoteOf(text);
+    quote.title = text.slice(0, 400);
+  }
+
+  /** 松开后、回答接上前的那一轮：先写「听写中…」，听到后换成听到的话。不进记录，回答接上时换成真的一轮。 */
+  function renderWaitingTurn(sourceText: string): void {
+    if (voice?.phase !== 'released') {
+      pendingTurn?.remove();
+      pendingTurn = null;
+
+      return;
+    }
+
+    if (!pendingTurn) {
+      pendingTurn = document.createElement('article');
+      pendingTurn.className = 'turn voice-pending';
+      pendingTurn.innerHTML = '<div class="question"></div><div class="meta"><span class="status" role="status"></span></div>';
+    }
+
+    setSourceQuote(pendingTurn, sourceText);
+    pendingTurn.querySelector('.question')!.replaceChildren(icon(Mic, { 'aria-label': '说的' }), voice.heard || '听写中…');
+    pendingTurn.querySelector('.status')!.textContent = voice.heard ? '正在回答…' : '正在听写…';
+
+    if (pendingTurn.parentElement !== messages || pendingTurn !== messages.lastElementChild) messages.append(pendingTurn);
   }
 
   /** 先在原地把胶囊变成输入框、拿到焦点，再去后台开阅读记录：选中后直接打字的那个字不能丢。 */
@@ -633,41 +733,256 @@ function boot(): void {
     return tracked;
   }
 
-  /** 按住说话要知道这句话对着哪段：新选的文字优先，其次是开着的阅读卡那段。 */
+  /** 按住说话这句话对着哪段：按下时抓住的那段；卡开着时带上卡上最近一问。 */
   function voiceTarget(): { selection?: string; asked?: string } {
-    const live = selectionSnapshot();
-    const card = visible && expanded && record ? record : undefined;
+    const card = visible && expanded && record?.turns.length ? record : undefined;
+    const target = voice?.target ?? selectionSnapshot() ?? (card ? snapshot : null);
 
-    if (live && live.source.text !== card?.source.text) return { selection: live.source.text };
+    if (!target) return {};
+    const asked = card?.turns.at(-1)?.question;
 
-    if (!card) return {};
-    const asked = card.turns.at(-1)?.question;
-
-    return { selection: card.source.text, ...(asked ? { asked: questionLabel(asked) } : {}) };
+    return { selection: target.source.text, ...(asked ? { asked: questionLabel(asked) } : {}) };
   }
 
-  /** 说的话交给阅读卡：选了别的段就换到那一段开卡，否则在开着的卡里接着问；还在回答时就是改口。 */
+  /** 说的话交给阅读卡：卡开着就接在这张卡里（换了段，这一轮带上新的一段）；没开就在这段旁边开卡。还在回答时就是改口。 */
   async function voiceAsk(question: string): Promise<void> {
-    const live = selectionSnapshot();
-    const onCard = visible && expanded && !!record;
+    const exchange = voice;
+    const target = exchange?.target ?? selectionSnapshot();
 
-    if (live && (!onCard || live.source.text !== record!.source.text)) {
-      rememberDraft();
+    // 等开卡的这段时间里用户可能又按住说话了：那时这一句作废，不能再提交、停掉新的回答。
+    const stale = () => exchange ? voice !== exchange || exchange.phase === 'listening' : !!voice;
+
+    if (stale()) throw new Error('又按住说话了。');
+
+    if (opening) await opening.catch(() => {});
+
+    if (!(visible && expanded && record)) {
+      if (!target) throw new Error('没有选中的文字。');
+      snapshot = target;
       selectionVersion++;
-      snapshot = live;
-      await openReading();
-    }
-    else if (!onCard) {
-      throw new Error('没有选中的文字。');
+      await voiceOpen();
     }
 
-    await send(question, false, readingBusy(record), 'fast', true);
+    if (stale()) throw new Error('又按住说话了。');
+
+    await send(question, false, true, 'fast', true, target?.source, () => {
+      if (voice === exchange) voice = null;
+    });
 
     if (record?.turns.at(-1)?.question !== question) throw new Error('没能交给阅读卡。');
   }
 
+  /** 松开后马上在这段旁边展开卡片：先有引用和「听写中…」，不出现打字用的输入态。卡片从光标所在的位置长出来。 */
+  function voiceOpen(): Promise<void> {
+    if (!snapshot) return Promise.resolve();
+    const version = selectionVersion;
+    const source = snapshot.source;
+    rememberDraft();
+    closeMenu();
+    report();
+    record = undefined;
+    expanded = true;
+    pinned = false;
+    side = null;
+    render();
+
+    if (visible) animate('morph');
+    else show();
+    growFromCursor();
+    highlight();
+
+    const pending = rpc('reading_open', { source }).then(result => {
+      if (version !== selectionVersion) return;
+      record = result.record;
+      render();
+    });
+
+    const tracked: Promise<void> = pending.finally(() => {
+      if (opening === tracked) opening = null;
+    });
+    opening = tracked;
+
+    return tracked;
+  }
+
+  function growFromCursor(): void {
+    const tip = window.__sideagent?.cursorState?.();
+
+    if (!tip || tip.hidden) return;
+    const box = surface.getBoundingClientRect();
+    surface.style.setProperty('--origin', `${Math.round(clamp(tip.x - box.left, 0, box.width))}px ${Math.round(clamp(tip.y - box.top, 0, box.height))}px`);
+  }
+
+  // ── 陪读：光标、高亮和卡片指着同一段字 ─────────────────────────────
+
+  /** 光标该在哪：这段最后一行的末尾边上；这段不在视口里时靠在卡片左上角，不停在别的正文上；都没有就隐去。 */
+  function pointerPoint(): { x: number; y: number } | null {
+    const range = (voice?.target ?? snapshot)?.range;
+    const live = range?.startContainer.isConnected && !range.collapsed ? range : null;
+    const last = live ? [...live.getClientRects()].filter(line => line.width > 0 && line.height > 0).at(-1) : undefined;
+
+    if (last && last.bottom > 0 && last.top < innerHeight && last.right > 0 && last.left < innerWidth) {
+      return { x: Math.round(Math.min(last.right + 3, innerWidth - 12)), y: Math.round(last.bottom - 3) };
+    }
+
+    if (visible && expanded && !surface.hidden) {
+      const box = surface.getBoundingClientRect();
+
+      return { x: Math.round(Math.max(8, box.left - 4)), y: Math.round(box.top + 10) };
+    }
+
+    return null;
+  }
+
+  type CompanionPhase = 'listening' | 'transcribing' | 'thinking' | 'answering' | 'speaking' | 'idle';
+
+  function companionPhase(): CompanionPhase | null {
+    if (!companion) return null;
+
+    if (voice?.phase === 'listening') return 'listening';
+
+    if (voice) return voice.heard ? 'thinking' : 'transcribing';
+
+    if (record && speakingThread === record.threadId) return 'speaking';
+    const last = record?.turns.at(-1);
+
+    if (last?.state === 'pending') return 'thinking';
+
+    return last?.state === 'streaming' ? 'answering' : 'idle';
+  }
+
+  function pushPointer(fly = false): void {
+    if (!companion) return;
+    const phase = companionPhase();
+    const said = phase === 'listening' || phase === 'transcribing' || phase === 'thinking' || phase === 'speaking' ? phase : null;
+    const card = visible && expanded && !surface.hidden ? surface.getBoundingClientRect() : null;
+    // 名牌避开卡片：卡片顶上就是它理解的那段引用，不能被挡住。
+    window.__sideagent?.cursor?.companion?.({ point: pointerPoint(), voice: said, fly, quiet, ...(card ? { avoid: { x: card.x, y: card.y, width: card.width, height: card.height } } : {}) });
+  }
+
+  function endCompanion(): void {
+    if (!companion) return;
+    companion = false;
+    voice = null;
+    quiet = false;
+    clearInterval(followTimer);
+    surface.classList.remove('receding');
+
+    // 卡收起了，念着的回答也停下。
+    if (speakingThread) {
+      speakingThread = '';
+      void chrome.runtime.sendMessage({ type: 'ptt_capsule_action', action: 'hush' } satisfies PttCapsuleAction).catch(() => {});
+    }
+
+    window.__sideagent?.cursor?.companion?.(null);
+  }
+
+  /** 按住右 ⌥：有选中的字或开着的卡，就由光标来听，飞到这段末尾；否则交给底部胶囊。 */
+  function companionStart(): boolean {
+    if (retired()) return false;
+    const live = selectionSnapshot();
+    const card = visible && expanded && !!record?.turns.length;
+    const target = live ?? (card ? snapshot : null);
+
+    if (!target) return false;
+    voice = { phase: 'listening', target, heard: '', previous: card ? snapshot : null };
+    companion = true;
+    closeMenu();
+
+    // 划词工具条先收起：松开后在这里长成卡片。
+    if (visible && !expanded) {
+      visible = false;
+      surface.hidden = true;
+    }
+
+    if (card && target.source.text !== snapshot?.source.text) {
+      side = null;
+      glide();
+      position();
+    }
+
+    highlight();
+    pushPointer(true);
+    clearInterval(followTimer);
+    // 图片晚加载、网页自己改排版时没有滚动事件，隔一会儿重量一次那段字的位置。
+    followTimer = setInterval(() => pushPointer(), 300);
+
+    return true;
+  }
+
+  function companionStop(): boolean {
+    if (voice?.phase !== 'listening') return false;
+    voice.phase = 'released';
+    const target = voice.target;
+    const onCard = visible && expanded && !!record?.turns.length;
+    const moved = target.source.text !== snapshot?.source.text;
+    selectionVersion++;
+    snapshot = target;
+
+    if (onCard) {
+      if (moved) {
+        side = null;
+        glide();
+      }
+
+      render();
+    }
+    else void voiceOpen().catch(err => report(err.message));
+    pushPointer();
+
+    return true;
+  }
+
+  function companionCancel(): void {
+    if (voice?.phase !== 'listening') return;
+    swallowEscape = true;
+    setTimeout(() => { swallowEscape = false; }, 0);
+    retract();
+  }
+
+  /** 这句话没进卡（取消、交给了助手、没听清）：卡上没有回答就收起，有就指回原来那段。 */
+  function retract(): void {
+    if (!voice) return;
+    const previous = voice.previous;
+    voice = null;
+
+    if (!(visible && expanded && record?.turns.length)) {
+      hide();
+      highlights?.delete(highlightName);
+      endCompanion();
+
+      return;
+    }
+
+    if (previous && previous.source.text !== snapshot?.source.text) snapshot = previous;
+    side = null;
+    glide();
+
+    render();
+    highlight();
+    pushPointer(true);
+  }
+
+  /** 换到另一段时卡片滑过去，不瞬移。 */
+  function glide(): void {
+    surface.classList.add('glide');
+    setTimeout(() => surface.classList.remove('glide'), 320);
+  }
+
+  function recede(): void {
+    if (!visible || !expanded) return;
+    quiet = true;
+    surface.classList.toggle('receding', surface.dataset.place !== 'beside');
+    clearTimeout(quietTimer);
+    quietTimer = setTimeout(() => {
+      quiet = false;
+      surface.classList.remove('receding');
+      pushPointer();
+    }, 600);
+  }
+
   /** correction 只由输入框和说话发出（打字后回车、点发送、按住说话）：再点一次「解释」不算改口。spoken：说出来的，回答会被念出来。 */
-  async function send(question: string, retry = false, correction = false, depth: 'fast' | 'deep' = 'fast', spoken = false): Promise<void> {
+  async function send(question: string, retry = false, correction = false, depth: 'fast' | 'deep' = 'fast', spoken = false, source?: ReadingSource, accepted?: () => void): Promise<void> {
     if (opening) await opening.catch(() => {});
 
     if (!record || sending || !question.trim()) {
@@ -680,12 +995,13 @@ function boot(): void {
     render();
 
     try {
-      const result = await rpc('reading_send', { question, retry, correction, depth, spoken });
+      const result = await rpc('reading_send', { question, retry, correction, depth, spoken, ...(source ? { source: { text: source.text, surrounding: source.surrounding, truncated: source.truncated } } : {}) });
 
       if (record?.threadId !== threadId) {
         return;
       }
 
+      accepted?.();
       update(result.record);
       const index = (record?.turns.length ?? 1) - 1;
 
@@ -705,6 +1021,20 @@ function boot(): void {
       sending = false;
       render();
     }
+  }
+
+  /** 打字问：卡开着时新选了一段，问的就是那一段，接在同一张卡里。 */
+  function typed(question: string): Promise<void> {
+    const next = candidate;
+
+    if (!next || !question.trim()) return send(question, false, readingBusy(record));
+    candidate = null;
+    snapshot = next;
+    side = null;
+    glide();
+    highlight();
+
+    return send(question, false, readingBusy(record), 'fast', false, next.source);
   }
 
   root.addEventListener('click', event => {
@@ -763,7 +1093,9 @@ function boot(): void {
         }
 
         record = restored.record;
-        snapshot ??= { source: record!.source, range: null, rect: new DOMRect(innerWidth - 400, 80, 0, 0) };
+        // 问过几段时接着问的是最近那段。
+        const latest = [...record!.turns].reverse().find(turn => turn.source)?.source;
+        snapshot ??= { source: latest ? { ...record!.source, ...latest } : record!.source, range: null, rect: new DOMRect(innerWidth - 400, 80, 0, 0) };
         expanded = true;
         render();
         show();
@@ -820,7 +1152,7 @@ function boot(): void {
       void rpc('reading_stop').then(result => update(result.record)).catch(err => report(err.message));
     }
     else {
-      void send(input.value, false, readingBusy(record));
+      void typed(input.value);
     }
   });
   input.addEventListener('input', () => {
@@ -833,7 +1165,7 @@ function boot(): void {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       // 空回车在生成中什么也不做；有字就发出，生成中即改口。
-      void send(input.value, false, readingBusy(record));
+      void typed(input.value);
     }
   });
 
@@ -866,6 +1198,16 @@ function boot(): void {
     // 选中以后常接着按住右 ⌥ 问这段：先让后台把听写连好，松开后少等一次握手。
     if (next) {
       void chrome.runtime.sendMessage({ type: PTT_WARM }).catch(() => {});
+    }
+
+    // 卡开着时选另一段不收起回答：记下这段，按住说话或打字问时就问它。
+    if (visible && expanded && record?.turns.length) {
+      if (next) {
+        candidate = next.source.text !== snapshot?.source.text ? next : null;
+        render();
+      }
+
+      return;
     }
 
     if (!barEnabled || pageMuted) {
@@ -908,14 +1250,34 @@ function boot(): void {
   }
 
   document.addEventListener('pointerdown', event => {
-    if (!retired() && !event.composedPath().includes(host)) {
-      hide();
-    }
+    if (retired()) return;
+    clearTimeout(dismissTimer);
+    dismissOnUp = false;
+
+    if (event.composedPath().includes(host)) return;
+
+    if (visible && expanded && record?.turns.length) dismissOnUp = true;
+    else hide();
   }, { capture: true, signal });
   // 选字、按键只认用户真实输入：网页脚本伪造的事件不能弹出工具条、抢焦点、停掉本页的回答。
   document.addEventListener('pointerup', event => {
     if (event.isTrusted && !retired() && !event.composedPath().includes(host)) {
-      setTimeout(() => changedSelection(), 0);
+      setTimeout(() => {
+        if (!dismissOnUp || selectionSnapshot()) {
+          dismissOnUp = false;
+          changedSelection();
+
+          return;
+        }
+
+        // 双击、三击选字的第一下松开时还没有选区：过了连击间隔仍没选中文字才收。
+        dismissTimer = setTimeout(() => {
+          dismissOnUp = false;
+
+          if (selectionSnapshot()) changedSelection();
+          else hide();
+        }, MULTI_CLICK_MS);
+      }, 0);
     }
   }, { signal });
   document.addEventListener('keyup', event => {
@@ -929,6 +1291,8 @@ function boot(): void {
     }
 
     if (event.key === 'Escape') {
+      if (swallowEscape) return;
+
       if (!menu.hidden) closeMenu();
       else hide();
 
@@ -958,17 +1322,25 @@ function boot(): void {
 
     if (expanded) {
       position();
+      recede();
     }
     else if (visible) {
       hide();
     }
+
+    pushPointer();
   }, { capture: true, signal });
-  window.addEventListener('resize', () => {
+  const relayout = () => {
     if (!retired()) {
       closeMenu();
       position();
+      pushPointer();
     }
-  }, { signal });
+  };
+  window.addEventListener('resize', relayout, { signal });
+  // 双指缩放只改可视视口，不触发 window 的 resize。
+  visualViewport?.addEventListener('resize', relayout, { signal });
+  visualViewport?.addEventListener('scroll', relayout, { signal });
   resizes.observe(surface);
   window.addEventListener('pagehide', event => {
     if (event.isTrusted && !retired()) {
@@ -1041,6 +1413,51 @@ function boot(): void {
 
     return true;
   });
+  chrome.runtime.onMessage.addListener((raw: { type?: unknown; capsule?: unknown; level?: unknown } | Partial<ReadingVoiceMessage> | undefined, sender) => {
+    if (sender.id !== chrome.runtime.id || retired() || !raw) return;
+
+    if (raw.type === PTT_LEVEL && 'level' in raw && typeof raw.level === 'number' && voice?.phase === 'listening') window.__sideagent?.cursor?.companionLevel?.(raw.level);
+
+    // 底部胶囊出现了：这句话交给了助手，或没听清、没连上。卡片不再等它，光标也交还，助手要用它动手。
+    if (raw.type === PTT_CAPSULE && 'capsule' in raw && raw.capsule && voice) {
+      retract();
+      endCompanion();
+    }
+
+    if (raw.type !== READING_VOICE || !('phase' in raw)) return;
+    const message = raw as ReadingVoiceMessage;
+
+    if (message.phase === 'heard' && voice?.phase === 'released') {
+      voice.heard = message.text.trim();
+      render();
+    }
+    else if (message.phase === 'speaking') speakingThread = message.threadId;
+    else if (message.phase === 'quiet' && speakingThread === message.threadId) speakingThread = '';
+
+    pushPointer();
+  });
+
+  installPushToTalkKeys({ start: companionStart, stop: companionStop, cancel: companionCancel });
+
+  const ns = (window.__sideagent ??= {});
+  ns.companionState = () => {
+    const target = voice?.target ?? snapshot;
+    const range = target?.range?.startContainer.isConnected ? target.range : null;
+    const last = range ? [...range.getClientRects()].filter(line => line.width > 0 && line.height > 0).at(-1) : undefined;
+    const tip = ns.cursorState?.();
+    const point = companion ? pointerPoint() : null;
+
+    return {
+      phase: companionPhase(),
+      pointer: companion && tip ? { x: tip.x, y: tip.y, shown: !tip.hidden && !!point && !quiet } : null,
+      target: companion && target ? {
+        text: target.source.text,
+        rect: last ? { x: last.x, y: last.y, width: last.width, height: last.height } : { x: 0, y: 0, width: 0, height: 0 },
+        inView: !!last && last.bottom > 0 && last.top < innerHeight,
+      } : null,
+    };
+  };
+
   void rpc('reading_get').then(result => {
     if (result.record && !record) {
       record = result.record;

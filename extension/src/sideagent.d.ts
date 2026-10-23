@@ -66,6 +66,13 @@ interface SideAgentCursor {
   /** 绑定这次真实操作与同一个 DOM 元素；id 隔离晚到的结束消息。 */
   beginAction(id: string, kind: "click" | "fill" | "hover", rect?: SideAgentRect, anchor?: Element, label?: string): void;
   endAction(id: string, outcome: "done" | "failed" | "unknown", point?: [number, number]): void;
+  /**
+   * 陪读：阅读卡让光标停在它指着的那段字边上，名牌是声音状态。point 由阅读卡按那段字的位置算，滚动、缩放时重给；
+   * null 表示那段字不在可指的地方，光标隐去。传 null 整体结束，光标回角落。
+   */
+  companion?(view: { point: { x: number; y: number } | null; voice: "listening" | "transcribing" | "thinking" | "speaking" | null; fly?: boolean; quiet?: boolean; avoid?: SideAgentRect } | null): void;
+  /** 按住说话时的音量（0–1），画在「在听」旁的声波上。 */
+  companionLevel?(level: number): void;
   /** 状态层：在等 / 在读 / 完成 / 失败，画在右边缘胶囊上。文案在页面侧，调用方只给状态。 */
   setStatus?(view?: { state: "waiting" | "reading" | "done" | "failed"; text?: string; detail?: string; autoHideMs?: number }): void;
   clearStatus?(): void;
@@ -144,6 +151,14 @@ interface SideAgentNamespace {
   /** 动作效果证据（按需注入 content-effect.js 后可用） */
   effect?: SideAgentEffect;
   cursor?: SideAgentCursor;
+  /** 验收读数：页面上看得见的光标个数。 */
+  cursorBodies?: () => number;
+  /** 验收读数：陪读这一次交流在哪一步、光标指着哪段（阅读卡侧，只读）。 */
+  companionState?: () => {
+    phase: "listening" | "transcribing" | "thinking" | "answering" | "speaking" | "idle" | null;
+    pointer: { x: number; y: number; shown: boolean } | null;
+    target: { text: string; rect: SideAgentRect; inView: boolean } | null;
+  };
   /** overlay 自检：默认光标是否已 hide（生产路径不用） */
   cursorHidden?: () => boolean;
   /** 只读的可视状态自检，不代表页面操作结果。 */

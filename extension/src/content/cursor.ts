@@ -114,7 +114,17 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     /** 注视区正收拢到要点的目标上，箭头等它收完再起飞。 */
     gazeConvergeUntil?: number;
     flyDelay?: ReturnType<typeof setTimeout>;
+    /** 陪读：阅读卡给的指向点和声音状态；point 为 null 时光标隐去，不停在不对的地方。 */
+    companion?: { point: { x: number; y: number } | null; voice: CompanionVoice | null; level: number; avoid?: SideAgentRect };
   }
+
+  type CompanionVoice = "listening" | "transcribing" | "thinking" | "speaking";
+
+  /** 和按住说话胶囊同一套说法。 */
+  const COMPANION_WORD: Record<CompanionVoice, string> = { listening: "在听", transcribing: "听写中", thinking: "在想", speaking: "在念" };
+
+  /** 声波五根条的高低比例：中间高两边低。 */
+  const COMPANION_BARS = [0.4, 0.7, 1, 0.7, 0.4];
 
   type CursorStatusState = "waiting" | "reading" | "done" | "failed";
 
@@ -133,6 +143,16 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     text?: string;
     detail?: string;
     autoHideMs?: number;
+  }
+
+  interface CompanionView {
+    point: { x: number; y: number } | null;
+    voice: CompanionVoice | null;
+    /** 换了指着的那段：沿弧飞过去；否则跟着那段字原地挪。 */
+    fly?: boolean;
+    quiet?: boolean;
+    /** 名牌不压在这块上（开着的阅读卡）。 */
+    avoid?: SideAgentRect;
   }
 
   interface MarkOptions {
@@ -261,7 +281,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         pointer-events: none;
       }
       /* 左上角接近光标，让短句看起来属于当前动作。 */
-      .cursor.acting .label, .cursor.stating .label {
+      .cursor.acting .label, .cursor.stating .label, .cursor.companion .label {
         display: inline-flex; align-items: center; gap: 0;
         background: #f9fafb; color: #3b4650;
         border: 1px solid rgba(20,20,19,.08); border-radius: 4px 12px 12px 12px;
@@ -316,6 +336,25 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       .hold-action.confirm { background:#141413; color:#fff; }
       .hold-action.cancel { background:#f0eee6; color:#514b42; }
       .hold-action:focus-visible { outline:2px solid #2d4a86; outline-offset:2px; }
+      /* 陪读：名牌是声音状态（在听 / 听写中 / 在想 / 在念），和状态名牌同一块浅色牌子。 */
+      .cursor.companion.voicing:not(.holding) .label { display: inline-flex !important; gap: 6px; opacity: 1; white-space: nowrap; }
+      .cursor.companion .think-orb { margin-right: 0; }
+      .cursor.companion.away { opacity: 0; }
+      /* 用户在滚动读正文：光标淡下去让开，停下再回来。 */
+      .cursor.companion.quiet { opacity: .22; }
+      .cursor.companion.quiet .label { opacity: 0; }
+      .voice-bars { display: inline-flex; align-items: center; gap: 2px; height: 12px; }
+      .voice-bars i { width: 2px; height: 3px; border-radius: 1px; background: var(--c); transition: height 90ms linear; }
+      .cursor.companion[data-voice="speaking"] .voice-bars i { animation: voice-bar 900ms ease-in-out infinite; }
+      .cursor.companion[data-voice="speaking"] .voice-bars i:nth-child(2) { animation-delay: -150ms; }
+      .cursor.companion[data-voice="speaking"] .voice-bars i:nth-child(3) { animation-delay: -300ms; }
+      .cursor.companion[data-voice="speaking"] .voice-bars i:nth-child(4) { animation-delay: -450ms; }
+      .cursor.companion[data-voice="speaking"] .voice-bars i:nth-child(5) { animation-delay: -600ms; }
+      @keyframes voice-bar { 0%, 100% { height: 3px; } 50% { height: 11px; } }
+      @media (prefers-reduced-motion: reduce) {
+        .cursor.companion[data-voice="speaking"] .voice-bars i { animation: none; height: 7px; }
+        .voice-bars i { transition: none; }
+      }
       .highlight {
         position: absolute;
         box-sizing: border-box;
@@ -741,9 +780,15 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     }
   }
 
-  /** 优先级：拿住双键 > 动作 > 状态 > 成员名。 */
+  /** 优先级：拿住双键 > 陪读 > 动作 > 状态 > 成员名。 */
   function refreshLabel(inst: Instance): void {
     if (inst.hold) return;
+
+    if (inst.companion) {
+      renderCompanionLabel(inst);
+
+      return;
+    }
 
     if (inst.action) {
       inst.el.classList.remove("stating");
@@ -934,6 +979,138 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     requestAnimationFrame(tick);
 
     return canvas;
+  }
+
+  // ── 陪读：阅读卡指着一段字，光标停在这段的末尾边缘 ────────────────────
+
+  function voiceBars(): HTMLSpanElement {
+    const bars = document.createElement("span");
+    bars.className = "voice-bars";
+
+    for (let i = 0; i < COMPANION_BARS.length; i++) bars.append(document.createElement("i"));
+
+    return bars;
+  }
+
+  function renderCompanionLabel(inst: Instance): void {
+    const voice = inst.companion!.voice;
+    const label = inst.el.querySelector<HTMLDivElement>(".label")!;
+    inst.el.classList.remove("stating", "thinking");
+    inst.el.classList.toggle("voicing", !!voice);
+    label.removeAttribute("style");
+    inst.labelSize = undefined;
+
+    if (!voice) {
+      delete inst.el.dataset.voice;
+      label.textContent = inst.name;
+
+      return;
+    }
+
+    inst.el.dataset.voice = voice;
+    const word = document.createElement("span");
+    word.className = "action-text";
+    word.textContent = COMPANION_WORD[voice];
+    label.replaceChildren(voice === "thinking" || voice === "transcribing" ? thinkOrb() : voiceBars(), word);
+    placeCompanionLabel(inst);
+  }
+
+  /** 选句末尾常贴着正文右缘：按实际尺寸把牌子收进视口。 */
+  function placeCompanionLabel(inst: Instance): void {
+    if (!inst.companion?.voice) return;
+    const label = inst.el.querySelector<HTMLDivElement>(".label")!;
+    const size = inst.labelSize ??= { width: label.offsetWidth, height: label.offsetHeight };
+    const p = cursorLabelPosition(inst.pos, size, { width: window.innerWidth, height: window.innerHeight }, inst.companion.avoid, inst.labelPlacement);
+    inst.labelPlacement = p.placement;
+    label.style.left = `${p.x - inst.pos.x}px`;
+    label.style.top = `${p.y - inst.pos.y}px`;
+  }
+
+  function drawCompanionLevel(inst: Instance, level: number): void {
+    inst.companion!.level = level;
+
+    if (inst.companion!.voice !== "listening") return;
+    const bars = inst.el.querySelectorAll<HTMLElement>(".voice-bars i");
+    bars.forEach((bar, i) => { bar.style.height = `${(3 + 9 * Math.min(1, level * 1.6) * COMPANION_BARS[i]!).toFixed(1)}px`; });
+  }
+
+  /** 飞向会动的目标：每一帧都取阅读卡给的最新指向点，飞行途中用户滚动，落点也跟着那段字。 */
+  function companionFly(inst: Instance): void {
+    cancelFly(inst);
+    const from = inst.pos;
+    const target = () => inst.companion?.point ?? inst.aim ?? from;
+    const first = target();
+    inst.aim = first;
+
+    if (Math.hypot(first.x - from.x, first.y - from.y) < 2 || reducedMotion.matches) {
+      setPos(inst, first);
+
+      return;
+    }
+
+    // 比动手时慢一截：从角落飞到选句，要让人看清它是从哪来、落在哪段。
+    const ms = Math.round(flightMs(from, first) * 1.5);
+    const spring = springFor(ms);
+    let s = 0;
+    let v = 0;
+    let last = performance.now();
+    let elapsed = 0;
+
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      elapsed += dt * 1000;
+      [s, v] = springStep(s, v, dt, spring);
+      const to = target();
+
+      if (!springSettled(s, v) && elapsed < ms * 2) {
+        setPos(inst, pointOnArc(from, to, s));
+        inst.raf = requestAnimationFrame(tick);
+      } else {
+        inst.raf = undefined;
+        setPos(inst, to);
+        placeCompanionLabel(inst);
+      }
+    };
+
+    inst.raf = requestAnimationFrame(tick);
+  }
+
+  function setCompanion(inst: Instance, view: CompanionView | null): void {
+    if (!view) {
+      if (!inst.companion) return;
+      inst.companion = undefined;
+      inst.el.classList.remove("companion", "voicing", "quiet", "away");
+      delete inst.el.dataset.voice;
+      refreshLabel(inst);
+
+      if (inst.visible && !inst.hold) parkNow(inst);
+
+      return;
+    }
+
+    // 就地确认、教学、助手正在点或填：光标归它们，不抢。
+    if (inst.hold || inst.action?.phase === "active") return;
+    const was = inst.companion;
+    inst.companion = { point: view.point, voice: view.voice, level: was?.level ?? 0, avoid: view.avoid };
+    clearTimeout(inst.parkTimer);
+
+    if (!inst.visible) showAtRest(inst);
+    setResting(inst, false);
+    inst.el.classList.remove("hidden", "flip");
+    inst.el.classList.add("companion");
+    inst.el.classList.toggle("quiet", view.quiet === true);
+    inst.el.classList.toggle("away", !view.point);
+
+    if (!was || was.voice !== view.voice) refreshLabel(inst);
+
+    if (!view.point) return;
+
+    if (view.fly) companionFly(inst);
+    else if (inst.raf === undefined) {
+      setPos(inst, view.point);
+      placeCompanionLabel(inst);
+    }
   }
 
   function clearStatusTimers(inst: Instance): void {
@@ -2638,6 +2815,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (!event.persisted) {
       ns.cursor = undefined;
       ns.cursorHidden = undefined;
+      ns.cursorBodies = undefined;
       ns.cursorState = undefined;
       ns.markLayout = undefined;
       ns.markLayerCount = undefined;
@@ -2895,6 +3073,18 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         return clearInspectOverlay();
       },
 
+      companion(view: CompanionView | null): void {
+        const inst = view ? getInstance(id) : instances.get(id);
+
+        if (inst) setCompanion(inst, view);
+      },
+
+      companionLevel(level: number): void {
+        const inst = instances.get(id);
+
+        if (inst?.companion) drawCompanionLevel(inst, level);
+      },
+
       setStatus(view?: CursorStatusView): void {
         if (!view?.state) return;
         setStatusInst(getInstance(id), view);
@@ -3017,6 +3207,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       label: inst.el.querySelector(".label")?.textContent ?? "", labelRect: r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null,
       targetRect: inst.action?.rect ?? null, hidden: !inst.visible, resting: inst.resting, x: inst.pos.x, y: inst.pos.y, size: CURSOR_SVG_SIZE };
   };
+
+  ns.cursorBodies = () => [...instances.values()].filter(inst => inst.visible && !inst.el.classList.contains("hidden") && !inst.el.classList.contains("away") && getComputedStyle(inst.el).visibility !== "hidden").length;
 
   ns.cursorHidden = () => {
     const inst = instances.get(DEFAULT_ID);

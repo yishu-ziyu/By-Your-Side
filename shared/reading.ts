@@ -23,6 +23,13 @@ export interface ReadingTurn {
   error?: string;
   /** 这一问是按住说话说出来的：回答会被念出来。 */
   spoken?: boolean;
+  /** 这一问换了一段原文：这一问和之后的问题针对它，前面的回答仍属于各自的原文。 */
+  source?: ReadingTurnSource;
+}
+
+export interface ReadingTurnSource {
+  text: string;
+  surrounding: string;
 }
 
 /** 阅读卡的回答档。旧记录没有这个字段，按快速处理。 */
@@ -59,6 +66,12 @@ const string = (v: unknown, max: number): v is string => typeof v === 'string' &
 
 const states = ['pending', 'streaming', 'done', 'stopped', 'error'];
 
+export function isReadingTurnSource(v: unknown): v is ReadingTurnSource {
+  const s = v as ReadingTurnSource;
+
+  return !!s && typeof s === 'object' && string(s.text, READING_SELECTION_LIMIT) && !!s.text.trim() && string(s.surrounding, READING_CONTEXT_LIMIT);
+}
+
 export function isReadingTranscript(v: unknown): v is ReadingTranscript {
   if (!v || typeof v !== 'object') return false;
   const t = v as ReadingTranscript, s = t.source;
@@ -71,7 +84,8 @@ export function isReadingTranscript(v: unknown): v is ReadingTranscript {
     && Array.isArray(t.turns) && t.turns.length <= READING_TURN_LIMIT
     && t.turns.every(turn => turn && string(turn.question, 2000) && !!turn.question.trim()
       && string(turn.answer, READING_ANSWER_LIMIT) && states.includes(turn.state)
-      && (turn.error === undefined || string(turn.error, 500)) && (turn.spoken === undefined || typeof turn.spoken === 'boolean'))
+      && (turn.error === undefined || string(turn.error, 500)) && (turn.spoken === undefined || typeof turn.spoken === 'boolean')
+      && (turn.source === undefined || isReadingTurnSource(turn.source)))
     && JSON.stringify(t).length <= 64000;
 }
 
@@ -98,7 +112,7 @@ export function isReadingEvent(v: ReadingEvent): boolean {
 export function readingContext(transcript: ReadingTranscript): string {
   const depth = transcript.depth === 'deep' ? 'deep' : transcript.depth === 'fast' ? 'fast' : undefined;
 
-  return JSON.stringify({ ...(depth ? { depth } : {}), source: transcript.source, conversation: transcript.turns.map(({question, answer, state, spoken}) => ({question, answer, state, ...(spoken ? {spoken} : {})})) });
+  return JSON.stringify({ ...(depth ? { depth } : {}), source: transcript.source, conversation: transcript.turns.map(({question, answer, state, spoken, source}) => ({...(source ? {source: source.text, surrounding: source.surrounding} : {}), question, answer, state, ...(spoken ? {spoken} : {})})) });
 }
 
 export function readingHandoffContext(transcript: ReadingTranscript): string {
