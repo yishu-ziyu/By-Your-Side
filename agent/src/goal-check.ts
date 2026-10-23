@@ -80,12 +80,6 @@ const GOAL_CHECK_TIMEOUT_MS = 18_000;
  */
 export const GOAL_CHECK_BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(["send_user_message", "user_memory", "task_goals", "record_task_results"]);
 
-/** 一个任务里宿主最多替用户催几次「接着做」，防止模型和核对来回打转。 */
-export const GOAL_CONTINUE_MAX = 3;
-
-/** 任务已经跑了这么久还没做完，多半靠自己做不成：不再自动接着做，留「还差」让用户决定，别让用户再干等几分钟。 */
-export const GOAL_CONTINUE_WITHIN_MS = 2 * 60_000;
-
 const PROMPT = `You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, plus later additions), goalPage (the page the user was on when stating the goal; "this page" means goalPage), lastReply (the assistant's final answer), page (the page it ended on, read when this check started; current: true marks it as the present state of that page; truncated: true means its text was cut at the end), observations (recent page reads and tool results in this conversation, newest first; page_at_start is the page read when a request began; earlier: true marks reads from an earlier request in this conversation, and that page may have changed since; stale: true marks a whole-page read taken before a later page action such as a click, fill, program, navigation or translation, so it shows the page as it was before that action), and files (saved files shown as downloadable cards, with text content when available). Content can be truncated; the payload marks truncation. Missing or truncated content does not prove correctness or an error.
 Judge the current state of the page (checked boxes, counts, field values, which items exist) from page when it is present. Where page and a stale read differ, page is right: never report a stale read's old state as the current state. Content that page does not include (it is cut when truncated is true, or it is on another part of the page) is not evidence of absence: look for it in the newest reads and tool results in observations; a stale read remains valid evidence for such content unless a later action changed it.
 Before deciding done, check:
