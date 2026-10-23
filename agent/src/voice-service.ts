@@ -2,14 +2,14 @@ import { realtimeBrowserError } from './realtime-browser-tools.js';
 import { projectTaskView } from '../../shared/task-view.js';
 import { RealtimeVoiceSession, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
 import { isLeadSession } from '../../shared/protocol.js';
-import { aboutTask, taskName } from './voice-receipt.js';
+import { aboutTask, queuedEndSpeech, taskName } from './voice-receipt.js';
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage } from "../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, parseVoicePersona, STEP_VOICES, voicePersonaText, type TaskProgressSnapshot, type VoiceClientMessage, type VoiceRouteContext, type VoiceTarget } from "../../shared/voice.js";
 
-type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'> & { bindQueued?(owner: string, runId: string): boolean };
+type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'> & { bindQueued?(owner: string, runId: string): boolean; endQueued?(owner: string, requestId: string, text: string | null): void };
 
 async function readStepVoiceKey(): Promise<string> {
   const environment = process.env.STEPFUN_API_KEY?.trim();
@@ -168,6 +168,13 @@ export class VoiceService {
   observe(message: ServerMessage): void {
     const active = this.active;
     if (!active) return;
+
+    // 语音排的队没开工就结束（取消、启动失败）：没有 run 可绑，只有这张收条，原委派要靠它收尾。
+    const receipt = message.type === 'agent_event' && message.event.kind === 'notice' ? message.event.receipt : undefined;
+
+    if (receipt?.source === 'voice' && receipt.runId === null && receipt.conversationId !== active.conversationId && (receipt.action === 'abort' ? receipt.status === 'applied' : ['rejected', 'failed', 'unknown'].includes(receipt.status))) {
+      active.session.endQueued?.(receipt.conversationId, receipt.requestId, queuedEndSpeech(receipt));
+    }
 
     const owner = message.conversationId ?? active.conversationId;
 

@@ -1,5 +1,6 @@
 import { projectTaskView } from '../../shared/task-view.js';
 import {deliveryTextWithNote,type TaskProgressSnapshot} from '../../shared/voice.js';
+import type { TaskReceipt } from '../../shared/task-actions.js';
 
 import { answerSpeech } from '../../shared/answer-cards.js';
 export const normalizeSpeech=(text:string)=>text.replace(/[\p{P}\p{Z}\s]/gu,'');
@@ -21,6 +22,22 @@ export function taskName(snapshot: Pick<TaskProgressSnapshot,'goal'>): string {
 }
 
 export const aboutTask=(name:string,text:string)=>`关于${name}：${text}`;
+
+/**
+ * 语音排的队没开工就结束了。取消的不再念：取消是用户自己说的，那一句已经有回话。
+ * 开不了工的（存储写不进、名额满）要说清是哪件、为什么，否则用户一直以为它还在排；
+ * 原因只取宿主说明的第一小句：后面常接浏览器的英文原始报错，整段送去语音层会连原因一起略掉。
+ * 开工结果不明的照宿主原话说，不说成没开始。
+ */
+export function queuedEndSpeech(receipt: Pick<TaskReceipt,'action'|'status'|'text'|'message'>): string | null {
+  if(receipt.action==='abort')return null;
+  const name=taskName({goal:receipt.text});
+
+  if(receipt.status==='unknown')return `${name}：${receipt.message}`;
+  const reason=receipt.message.split(/[，,：:。；;]/)[0]?.trim()||receipt.message;
+
+  return `${name}没能开始，原因是${reason}。`;
+}
 
 /** name：别的会话里的任务才给，状态句就以它为主语。 */
 export function progressSpeech(snapshot: TaskProgressSnapshot, name?: string): string {
