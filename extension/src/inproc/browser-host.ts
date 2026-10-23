@@ -146,10 +146,17 @@ export function startInprocHost(deps: InprocHostDeps): void {
           return true;
         }
 
+        if (msg.command.kind === "timing") {
+          voiceCapture.timing(msg.voiceId, conversationId, msg.command);
+
+          return true;
+        }
+
         if (msg.command.kind === "start") voiceCapture.begin(msg.voiceId, conversationId, { persistAudio: false });
 
         return false;
       },
+      voiceDiagnostic: (event, fields) => voiceCapture.host(event, fields),
       log,
     })).then(value => {
       core = value;

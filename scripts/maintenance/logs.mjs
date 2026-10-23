@@ -6,6 +6,8 @@
  *   npm run logs                              记录里的全部运行，一行一个
  *   npm run logs -- --since today             只看今天（也可以给 ISO 时间）
  *   npm run logs -- --run 4f08c043            这次运行的步骤时间线
+ *   npm run logs -- --voice [--since …]       语音分段计时：每轮一行（GPT-Live、阶跃星辰、按住说话），末尾各段中位数和 90 分位
+ *   npm run logs -- --voice --file <voice.jsonl>   同上，读设置页导出（或验收用例导出）的语音记录，不碰浏览器
  */
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -34,6 +36,14 @@ if (sinceArg === "today") { since = new Date(); since.setHours(0, 0, 0, 0); }
 else if (sinceArg) { since = new Date(sinceArg); if (Number.isNaN(since.getTime())) fail(`--since 看不懂：${sinceArg}`); }
 
 function fail(message) { console.error(message); process.exit(1); }
+
+const voiceFile = option("--file");
+if (voiceFile) {
+  if (!args.includes("--voice")) fail("--file 只和 --voice 一起用。");
+  const lines = readFileSync(voiceFile, "utf8").split("\n").filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
+  voiceTimings(lines.filter((e) => !since || new Date(e.at) >= since));
+  process.exit(0);
+}
 
 const git = (...a) => {
   try { return execFileSync("git", a, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch (error) {
@@ -147,6 +157,96 @@ const modelName = (model) => (typeof model === "string" ? model : model?.id ?? m
 
 console.log(`配置：${pick.profile}（扩展 ${pick.id}）`);
 console.log(`输出：${out}（任务记录 ${traces.length} 行，语音记录 ${voice.length} 行）`);
+
+if (args.includes("--voice")) {
+  voiceTimings(voice);
+  process.exit(0);
+}
+
+/**
+ * 语音分段计时：各段都是相对这一轮起点的毫秒数（本机时钟），量不到的留「-」，不估算。
+ * GPT-Live 起点是侧栏收到用户这句 turn.done；阶跃星辰是服务端判到静音（vad_speech_stopped）；按住说话是后台收到松开。
+ */
+function voiceTimings(lines) {
+  const timing = lines.filter((e) => e.type === "timing" || e.type === "host" || e.type === "asr");
+  const byVoice = new Map();
+  for (const e of timing) {
+    if (!byVoice.has(e.voiceId)) byVoice.set(e.voiceId, []);
+    byVoice.get(e.voiceId).push(e);
+  }
+  for (const list of byVoice.values()) list.sort((a, b) => a.at - b.at);
+  const since = (t0, e) => (e ? Math.round(e.at - t0) : null);
+  const tables = { live: [], step: [], ptt: [] };
+
+  for (const [voiceId, list] of byVoice) {
+    const panel = (point) => list.filter((e) => e.type === "timing" && e.point === point);
+    const host = (event) => list.filter((e) => e.type === "host" && e.event === event);
+
+    if (voiceId?.startsWith("ptt-")) {
+      const first = (point) => list.find((e) => e.point === point);
+      const t0 = first("released")?.at;
+      if (t0 === undefined) continue;
+      tables.ptt.push({ at: t0, cells: {
+        听写到达: since(t0, first("dictated")), 交给助手: since(t0, first("handed")), 确认出声: since(t0, first("ack_audio")),
+        开始做: since(t0, first("task_start")), 任务结束: since(t0, first("task_end")), 结果出声: since(t0, first("result_audio")),
+      }, note: first("dictated_empty") ? "没听到话" : "" });
+      continue;
+    }
+
+    const userDone = panel("user_done");
+    for (const [i, done] of userDone.entries()) {
+      const t0 = done.at;
+      const next = userDone[i + 1]?.at ?? Infinity;
+      const inTurn = (e) => e.at >= t0 && e.at < next;
+      const delegations = panel("delegation").filter((e) => e.key === done.key);
+      const ids = new Set([...delegations.map((e) => e.ref), `host-${done.key}`]);
+      const routed = host("gpt_live_delegation").find((e) => ids.has(e.delegationId)) ?? host("gpt_live_host_gate_failed").find((e) => ids.has(e.delegationId));
+      const result = host("gpt_live_delegation_context").find((e) => ids.has(e.delegationId) && e.channel === "speakable");
+      const resultAudio = result ? panel("result_audio").find((e) => e.at >= result.at && (ids.has(e.ref) || e.ref === "live-context")) : undefined;
+      const gate = host("gpt_live_host_gate").find((e) => e.turnId === done.key);
+      const bound = host("gpt_live_task_bound").find((e) => ids.has(e.delegationId));
+      tables.live.push({ at: t0, cells: {
+        首声: since(t0, panel("remote_audio").find(inTurn)), 委派到达: since(t0, delegations[0]), 宿主判完: since(t0, routed),
+        送回结果: since(t0, result), 结果出声: since(t0, resultAudio),
+      }, note: [gate ? "宿主补判" : "", routed?.kind ?? "", bound ? "开了任务" : ""].filter(Boolean).join(" ") });
+    }
+
+    const stops = host("voice_metric").filter((e) => e.name === "vad_speech_stopped_since_ready");
+    for (const stop of stops) {
+      const t0 = stop.at;
+      const sameTurn = (e) => e.turn === stop.turn;
+      const metric = (name) => host("voice_metric").find((e) => sameTurn(e) && e.name === name)?.ms ?? null;
+      const route = host("voice_route").find(sameTurn);
+      tables.step.push({ at: t0, cells: {
+        转写到达: since(t0, list.find((e) => e.type === "asr" && sameTurn(e) && e.outcome === "current" && e.at >= t0)),
+        等页面资料: route?.waitMs ?? null, 意图判断: route?.routeMs ?? null,
+        首字: metric("first_text_since_vad_stop"), 服务端首音: metric("first_audio_since_vad_stop"),
+        侧栏首音: since(t0, panel("panel_audio").find((e) => sameTurn(e) && e.at >= t0)),
+      }, note: route?.kind ?? "" });
+    }
+  }
+
+  const titles = { live: "GPT-Live（起点：侧栏收到用户这句 turn.done）", step: "阶跃星辰（起点：服务端判到静音）", ptt: "按住说话（起点：后台收到松开）" };
+  const pad = (text, width) => { const value = String(text); const wide = [...value].reduce((n, c) => n + (c.charCodeAt(0) > 0x2e80 ? 2 : 1), 0); return value + " ".repeat(Math.max(1, width - wide)); };
+  const percentile = (values, p) => values.length ? values[Math.max(0, Math.ceil(p * values.length) - 1)] : null;
+  let any = false;
+  for (const [kind, rows] of Object.entries(tables)) {
+    if (!rows.length) continue;
+    any = true;
+    rows.sort((a, b) => a.at - b.at);
+    const columns = Object.keys(rows[0].cells);
+    console.log(`\n${titles[kind]}，${rows.length} 轮，单位毫秒`);
+    console.log(pad("时间", 21) + columns.map((c) => pad(c, 12)).join("") + "备注");
+    for (const row of rows) console.log(pad(new Date(row.at).toLocaleString("sv-SE"), 21) + columns.map((c) => pad(row.cells[c] ?? "-", 12)).join("") + row.note);
+    for (const [label, p] of [["中位数", 0.5], ["90 分位", 0.9]]) {
+      console.log(pad(label, 21) + columns.map((c) => {
+        const values = rows.map((r) => r.cells[c]).filter((v) => typeof v === "number").sort((a, b) => a - b);
+        return pad(values.length ? `${percentile(values, p)} (${values.length})` : "-", 12);
+      }).join(""));
+    }
+  }
+  if (!any) console.log("这段时间没有带分段计时的语音轮次（要用加了计时的扩展说过话才有）。");
+}
 
 if (!runPrefix) {
   const seen = new Set();

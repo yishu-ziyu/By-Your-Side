@@ -22,6 +22,8 @@ import type { ReadingRecord } from "../shared/reading-state.js";
 import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, PageContext, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
 import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
 import { installPttCapsule } from "./ptt-capsule.js";
+import { createVoiceCaptureSink } from "../shared/trace-store.js";
+import { pttTimingLine, voiceCaptureDayKey } from "../../../shared/voice-capture-core.js";
 import { installReinject } from "./reinject.js";
 import { installCursorSpots } from "./cursor-spot.js";
 import { createPttVoice } from "./ptt-voice.js";
@@ -216,7 +218,10 @@ installReinject();
 
 installCursorSpots();
 
-const pttCapsule = installPttCapsule(() => edgePill.refresh(), createPttVoice((conversationId, message) => controller(conversationId).notice(message, "error")));
+// 按住说话的分段计时写进语音日常记录（与语音对话同一个库），npm run logs -- --voice 按次看。
+const pttTimingSink = createVoiceCaptureSink(message => console.debug("[sideagent]", message));
+const pttTiming = (pttId: string, conversationId: string, point: string, at = Date.now()) => pttTimingSink.appendLine(voiceCaptureDayKey(at), pttTimingLine(at, pttId, conversationId, point));
+const pttCapsule = installPttCapsule(() => edgePill.refresh(), createPttVoice((conversationId, message) => controller(conversationId).notice(message, "error")), pttTiming);
 
 const edgePill = installEdgePill(() => pttCapsule.tabId());
 installFloatCard();
@@ -424,6 +429,7 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  const tabId = tab.id!;
  void (async () => {
   const command: PttCommand = { target: PTT_TARGET, phase: raw.phase };
+  const releasedAt = Date.now();
   if (raw.phase === "start") pttCapsule.recording(tabId);
   // SAFETY: 离屏文档对 PttCommand 只回 PttReply；没有接收方时 sendMessage 会抛错。
   const reply = await (chrome.runtime.sendMessage(command) as Promise<PttReply | undefined>).catch(() => undefined);
@@ -446,7 +452,10 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
     pttCapsule.closed(tabId);
    }
   } else if (raw.phase === "stop") {
-   if (reply.text) await handOffSpoken(tab, conversationId, reply.text);
+   const pttId = `ptt-${crypto.randomUUID().slice(0, 8)}`;
+   pttTiming(pttId, conversationId, "released", releasedAt);
+   pttTiming(pttId, conversationId, reply.text ? "dictated" : "dictated_empty");
+   if (reply.text) await handOffSpoken(tab, conversationId, reply.text, pttId);
    else pttCapsule.failed(tabId, pttFailureText({ ok: false, reason: "empty" }));
   }
 
@@ -457,10 +466,13 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
 });
 
 /** 听写出的话交给会话；没送出去（助手没连上）就在胶囊上留着这句话，可以重发。 */
-async function handOffSpoken(tab: chrome.tabs.Tab, conversationId: string, text: string): Promise<void> {
+async function handOffSpoken(tab: chrome.tabs.Tab, conversationId: string, text: string, pttId?: string): Promise<void> {
  const context: PageContext = { tabId: tab.id!, title: tab.title ?? "", url: tab.url ?? "" };
 
- if (await controller(conversationId).spoken(text, context)) pttCapsule.handedOff(tab.id!, conversationId, text);
+ if (await controller(conversationId).spoken(text, context)) {
+  if (pttId) pttTiming(pttId, conversationId, "handed");
+  pttCapsule.handedOff(tab.id!, conversationId, text, pttId);
+ }
  else pttCapsule.failed(tab.id!, "这句话没交给助手：助手没连上。", text);
 }
 
