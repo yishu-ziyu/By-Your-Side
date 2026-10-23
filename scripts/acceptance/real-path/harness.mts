@@ -259,6 +259,16 @@ export async function attachDailyChrome({ port = Number(process.env.CDP_PORT ?? 
     dirs,
     /** 本次新开的工作标签页；用户可能另有 about:blank 标签页，不能按网址找。 */
     workTargetId: String(workTargetId),
+    /**
+     * 发任务前必须调用。侧栏和后台都按「最近获得焦点的窗口」找当前页（真人用时就是他在看的窗口），
+     * 不抢前台的后台窗口永远不是它：任务会落到用户正开着的页面上，曾因此在用户的 flomo 里搜索、读到私人笔记。这时拒绝发送。
+     */
+    assertTasksStayInWorkWindow: async () => {
+      const panel = (await rp.targets()).find((t) => t.type === "page" && t.url.startsWith(`chrome-extension://${id}/sidepanel.html`));
+      const focused = panel ? await rp.evaluate(await rp.attach(panel.targetId), "chrome.windows.getLastFocused({ windowTypes: ['normal'] }).then((w) => w.id)").catch(() => null) : null;
+
+      if (focused !== windowId) throw new Error("日常 Chrome 的测试窗口不是最近获得焦点的窗口，任务会作用到用户正在看的页面：不发送。要发任务的测试请用隔离浏览器。");
+    },
     /** 侧栏开在后台工作窗口里，不开在用户正在用的窗口。 */
     openSidePanel: async () => {
       await rp.openSidePanel(windowId);
