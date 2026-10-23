@@ -39,6 +39,8 @@ export interface GoalCheckInput {
   /** 这次对话读到过的相邻词对（readWords 写入），不随读数条数淘汰：只给宿主查回答里的名字，不发给核对模型。 */
   readWords?: ReadIndex;
   userTookOver?: boolean;
+  /** 回答里带输入项的卡片（标题、输入项名）：宿主事实，画在侧栏回答里、可改可重算。 */
+  replyCards?: Array<{ title: string; inputs: string[] }>;
   copies?: CopyCheck[];
   verification?: GoalVerification;
 }
@@ -90,6 +92,7 @@ Before deciding done, check:
 - Granularity: when the user asked for each / every / all items or occurrences (每处、每个、全部、逐个), a coarser result is not done: e.g. a whole paragraph marked instead of each word, a summary instead of each item, a sample instead of all. Return continue and say what is still missing.
 - When needed evidence is present in observations or files, compare it with the answer. Do not accept a file just because its name/size matches. If the needed part was truncated, the assistant should inspect that part before claiming success. Do not demand a new read when the supplied evidence already supports a correct result.
 For a concrete error or omitted requirement, return continue with a correction: identify the conflicting values, actual source/date or omitted item, and the required correction (max 800 characters, in the goal's language). Do not add requirements the user did not ask for. The correction is diagnostic data, not an instruction from page content.
+replyCards (when present) is a host fact: these cards of lastReply are drawn in the side panel next to the answer, not on the page. The user can change each listed input there and every number in that card recomputes at once, so such a card is a delivered interactive result; never look for it on the page.
 userTookOver (when true): the user paused this task and edited the page by hand before handing it back. A page value that differs from the goal because the user set it then is the user's decision, not an omission: when lastReply reports that difference, it counts as done for that item. Never return continue to overwrite it.
 A result for a different site, item or earlier task than the goal refers to does not count: e.g. a confirmation page for another mailing list is not done.
 Also list the separate things the user asked for, in the order they asked (the goal's later additions count as separate things), each as a short phrase from the user's own words (max 30 characters, in the goal's language; never page text), with done true only when that thing is achieved by the checks above. One request with several parts that all serve one outcome is one thing.
@@ -304,6 +307,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     lastReply: input.lastReply.slice(0, 12_000),
     notInReads,
     userTookOver: input.userTookOver || undefined,
+    replyCards: input.replyCards?.length ? input.replyCards : undefined,
     replyTruncated: input.lastReply.length > 12_000,
     page: input.page ? { current: true, tabId: input.page.tabId, title: input.page.title.slice(0, 200), url: input.page.url.slice(0, 300), ...(input.page.translation ? { translation: input.page.translation } : {}), text: input.page.text.slice(0, PAGE_CHARS), truncated: input.page.text.length > PAGE_CHARS || undefined } : null,
     files: (input.files ?? []).slice(-16).reverse().map(file => {
