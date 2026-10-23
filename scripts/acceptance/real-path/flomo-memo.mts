@@ -17,6 +17,8 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 await mkdir(out, { recursive: true });
 const cases = [
   { id: "saved", mode: "ok", expected: '"status":"observed"', also: ['"memoId":"m3"'], clicks: 1 },
+  // 只出现本地占位、一直没换成正式编号：不能算记上。
+  { id: "unsynced", mode: "local", expected: '"status":"unconfirmed"', also: ["has not synced"], clicks: 1 },
   { id: "lost", mode: "lost", expected: '"status":"unconfirmed"', also: ["Do not send again"], clicks: 1 },
   { id: "signed-out", mode: "out", expected: '"status":"login_required"', also: [], clicks: 0 },
 ].filter(c => !only || c.id === only);
@@ -54,8 +56,9 @@ window.__clicks=0;
 btn.addEventListener('click',()=>{window.__clicks++;const t=ed.innerText.trim();ed.textContent='';btn.style.display='none';
  if(${JSON.stringify(mode)}==='lost')return;
  const list=document.querySelector('.memos-list');const m=document.createElement('div');m.className='memo';
- m.innerHTML='<div class="normal"><div class="header"><a class="time" href="/mine/?memo_id=m3">刚刚</a></div><div class="richText"></div></div>';
- m.querySelector('.richText').textContent=t;list.insertBefore(m,list.children[1]);});
+ m.innerHTML='<div class="normal"><div class="header"><a class="time" href="/mine/?memo_id=local_1">刚刚</a></div><div class="richText"></div></div>';
+ m.querySelector('.richText').textContent=t;list.insertBefore(m,list.children[1]);
+ if(${JSON.stringify(mode)}!=='local')setTimeout(()=>m.querySelector('a.time').setAttribute('href','/mine/?memo_id=m3'),800);});
 </script>`}</body></html>`;
 // 方法会新开 flomo 标签页，新页面不在拦截范围里：用本机 https 练习站（临时自签名证书）加域名映射顶替 v.flomoapp.com。
 execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=v.flomoapp.com", "-keyout", join(out, "key.pem"), "-out", join(out, "cert.pem")], { stdio: "ignore" });

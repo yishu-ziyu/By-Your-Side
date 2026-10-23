@@ -101,12 +101,16 @@ async function addFlomoMemo(params: Fields, method: (typeof SITE_METHODS)[number
   if (typeof page?.save !== "string") return { ...base, status: "partial", reason: "The text is in flomo's editor but its send button did not appear; nothing was sent." };
   await call("click", { tabId, target: `loc=css:${page.save}` });
   const wanted = squash(text).slice(0, 200);
-  for (let i = 0; i < 12; i++) {
+  let shown: Fields | undefined;
+  // flomo 先放一条 local_ 开头的本地占位，同步到服务器后才换成正式编号：换了才算记上。
+  for (let i = 0; i < 20; i++) {
     await pause(500);
     page = await read();
     const added = (Array.isArray(page?.memos) ? page.memos : []).map(fields).find(memo => memo && !before.has(memo.id) && squash(String(memo.text)).includes(wanted));
-    if (added) return { ...base, status: "observed", memoId: added.id, text: String(added.text).slice(0, 500), scope: "Saved to the user's flomo and read back from the memo list. Do not send it again." };
+    if (added) shown = added;
+    if (added && !String(added.id).startsWith("local_")) return { ...base, status: "observed", memoId: added.id, text: String(added.text).slice(0, 500), scope: "Saved to the user's flomo (synced id) and read back from the memo list. Do not send it again." };
   }
+  if (shown) return { ...base, status: "unconfirmed", reason: "The memo shows in flomo's list but has not synced to flomo's server yet. Do not send again; ask the user to check flomo." };
   return { ...base, status: "unconfirmed", reason: "Send was clicked but the new memo did not appear in the memo list. Do not send again; ask the user to check flomo." };
 }
 
