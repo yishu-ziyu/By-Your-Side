@@ -34,6 +34,23 @@ async function assertCompiles(tabId: number, code: string): Promise<void> {
 }
 
 /**
+ * 模型常把 `() => { ... }` 当脚本交来：原样运行只得到一个函数，函数体没跑，还要白跑一轮重写。
+ * 不带参数的函数表达式运行本身没有副作用，编译得过 `(…)()` 就替它调用；其余照原样运行。
+ */
+async function invokeBareFunction(tabId: number, code: string): Promise<string> {
+  // 去掉末尾的分号和行注释：去错了只会编译不过、照原样运行。
+  const body = code.trim().replace(/;*\s*(\/\/[^\n]*)?$/, "");
+
+  if (!/^(async\s+)?(\(\s*\)\s*=>|function\s*[\w$]*\s*\(\s*\))/.test(body)) return code;
+  const called = `(${body}\n)()`;
+  const compiled = await sendCommand(tabId, "Runtime.enable")
+    .then(() => sendCommand<CdpEvalResult>(tabId, "Runtime.compileScript", { expression: called, sourceURL: "", persistScript: false }))
+    .catch(() => undefined);
+
+  return compiled && !compiled.exceptionDetails ? called : code;
+}
+
+/**
  * 脚本运行期间先留住发送动作，结束后走和点击「发送」同一个确认。
  * 点名字以「发送 / Send」开头的按钮（element.click、dispatchEvent）、提交带这种按钮的表单（requestSubmit、form.submit）、
  * 合成的回车（输入框里有字，或表单里有发送按钮）、脚本发起的、路径像发送接口的非 GET 网络请求（fetch、XHR、sendBeacon）。
@@ -181,7 +198,8 @@ export async function evaluateJs(
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
-  await assertCompiles(tab.id, params.code);
+  const code = await invokeBareFunction(tab.id, params.code);
+  await assertCompiles(tab.id, code);
 
   await beforeExecute?.();
 
@@ -196,7 +214,7 @@ export async function evaluateJs(
 
   try {
     res = await sendCommand<CdpEvalResult>(tabId, "Runtime.evaluate", {
-      expression: `${params.code}\n//# sourceURL=${marker}`,
+      expression: `${code}\n//# sourceURL=${marker}`,
       awaitPromise: true,
       returnByValue: true,
     },beforeExecute);
