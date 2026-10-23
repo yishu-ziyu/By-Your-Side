@@ -796,7 +796,7 @@ try {
 
     if (item.id.startsWith("translate")) await rp.evaluate(work, WATCH_PENDING).catch(() => {});
     const sentAtInproc = inproc?.now() ?? 0;
-    await rp.pressEnter(panel);
+    await (daily && "assertTasksStayInWorkWindow" in rp ? rp.assertTasksStayInWorkWindow() : Promise.resolve()).then(() => rp.pressEnter(panel));
     let firstVisibleMs: number | null = null;
     let doneMs: number | null = null;
     let idle = 0;
@@ -819,7 +819,7 @@ try {
       if (state) {
         last = state;
 
-        if (state.inputValue?.includes(item.prompt) && !state.userMessages.length) await rp.pressEnter(panel);
+        if (state.inputValue?.includes(item.prompt) && !state.userMessages.length) await (daily && "assertTasksStayInWorkWindow" in rp ? rp.assertTasksStayInWorkWindow() : Promise.resolve()).then(() => rp.pressEnter(panel));
 
         if (firstVisibleMs === null && state.answers.length) firstVisibleMs = Date.now() - sentAt;
 
