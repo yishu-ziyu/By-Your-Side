@@ -173,7 +173,7 @@ export class TaskResultBook {
    * 复用规则见 selectResultBinding：结果未知的项被重做时，新回执落在原项上。
    */
   private resolveStartItem(input: { name: string; target: string | null; description?: string; effectful?:boolean; recordResult?:boolean }): TaskResultItem | null {
-    const binding = selectResultBinding(this.items, input.name, input.target);
+    const binding = selectResultBinding(this.items, input.name, input.target, input.description);
 
     if (binding.kind === "exact" || binding.kind === "rebind") {
       const item = this.items.find(candidate => candidate.id === binding.itemId);
