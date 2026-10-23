@@ -1,4 +1,5 @@
 import { aboutTask, progressSpeech, taskName } from './voice-receipt.js';
+import { createVoiceDelivery } from './voice-delivery.js';
 import { spokenDeliveryText, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
 import type { VoiceCommand, VoiceInputContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
 import { GPT_LIVE_CONTEXT_BYTES, utf8Bytes } from '../../shared/gpt-live.js';
@@ -74,22 +75,13 @@ type Input = { turn: number; snapshot: TaskProgressSnapshot | null; targets?: Vo
 /** 一个委派项：任务接下后记住 runId，等这个任务交付给用户的结果。 */
 /** queuedIn：排队任务所在的会话；开工后从这个会话取进度。queuedRequest：排队那次请求的编号，认它自己的取消和开工失败。 */
 /** viaSession：语音层没委派、宿主自己接下的一句；它没有委派编号，回话走会话层。 */
-type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: string; queuedRequest?: string; viaSession?: true; done: boolean; boundAt?: number; progress?: { at: number; step: string | null; count: number } };
+type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: string; queuedRequest?: string; viaSession?: true; done: boolean };
 
 /**
  * 用户一句话说完后，语音层要委派的话，委派总在这句的结束事件之前就到（实测早 0.4–1.3 秒）。
  * 过了这么久还没有委派，宿主就自己判这句话：要不要动手由宿主定，不由语音层一个模型说了算。
  */
 const HOST_GATE_MS = 500;
-
-/**
- * 只靠说话的用户看不到侧栏：委派的事做了这么久还没出声，就念一句正在做哪一步（取任务栏同一个步骤名）。
- * 同一步至少隔 REPEAT 才再提，每次委派最多念 MAX 句；用户刚说完话时不插嘴。
- */
-const PROGRESS_AFTER_MS = 10_000;
-const PROGRESS_REPEAT_MS = 15_000;
-const PROGRESS_MAX = 8;
-const PROGRESS_QUIET_AFTER_USER_MS = 4_000;
 
 /**
  * 同一句用户话（同一个 user_bidi_turn_id）的委派项归成一组：GPT-Live 会把长句拆成多项送来，
@@ -130,7 +122,7 @@ export class GptLiveSession {
   private readonly speaking = new Map<string, string>();
   private readonly gateTimers = new Set<ReturnType<typeof setTimeout>>();
   private progressTimer: ReturnType<typeof setInterval> | null = null;
-  private lastUserAt = 0;
+  private readonly delivery = createVoiceDelivery({ now: () => Date.now() });
   constructor(private readonly deps: RealtimeVoiceDependencies) {
   }
   /** `access` 是宿主刚取到的 ChatGPT 登录令牌；只经语音事件交给侧栏建通话，不记录。 */
@@ -171,7 +163,7 @@ export class GptLiveSession {
         while (this.dialogue.size > 12) this.dialogue.delete(this.dialogue.keys().next().value!);
 
         if (command.role === 'user') {
-          this.lastUserAt = Date.now();
+          this.delivery.handle({ type: 'user_spoke' });
           this.repairWithUserWords(command.turnId, command.text);
           this.gate(command.turnId, command.text);
         }
@@ -291,7 +283,7 @@ export class GptLiveSession {
     // 任务已接下：回执只作静默背景，等这个任务交付给用户的结果再播报。
     if ((result.kind === 'action' || result.kind === 'steer') && result.ok && result.status === 'accepted' && receipt?.runId) {
       record.runId = receipt.runId;
-      record.boundAt = Date.now();
+      this.delivery.handle({ type: 'bound', delegationId: id, runId: receipt.runId });
       this.watchProgress();
       group.runId = receipt.runId;
       group.conversationId = receipt.conversationId;
@@ -389,7 +381,7 @@ export class GptLiveSession {
 
     if (this.closed || record.done || !text.trim()) return false;
 
-    if (channel === 'speakable') record.done = true;
+    if (channel === 'speakable') { record.done = true; this.delivery.handle({ type: 'done', delegationId: record.id }); }
     this.deps.diagnostic?.('gpt_live_delegation_context', { delegationId: record.id, channel, chars: text.length, viaSession: !!record.viaSession });
     this.deps.emit(record.viaSession ? { kind: 'live_context', channel, text } : { kind: 'delegation_context', delegationId: record.id, channel, text });
 
@@ -405,6 +397,7 @@ export class GptLiveSession {
     for (const record of older) {
       this.answer(record, 'commentary', '这次委派的结果已随后一次委派送达，不用另外回答。');
       record.done = true;
+      this.delivery.handle({ type: 'done', delegationId: record.id });
     }
 
     return latest;
@@ -426,7 +419,7 @@ export class GptLiveSession {
 
     if (!record) return false;
     record.runId = runId;
-    record.boundAt = Date.now();
+    this.delivery.handle({ type: 'bound', delegationId: record.id, runId });
     this.watchProgress();
 
     return true;
@@ -483,26 +476,19 @@ export class GptLiveSession {
   }
   /** 等结果的委派做了太久还没出声：在会话层念一句进度，不收尾委派（结果到了照常念）。 */
   private tickProgress(): void {
-    const waiting = [...this.delegations.values()].filter(d => !d.done && !!d.runId);
+    const waiting = [...this.delegations.values()].filter((d): d is Delegation & { runId: string } => !d.done && !!d.runId);
 
     if (!waiting.length || this.closed) { if (this.progressTimer) clearInterval(this.progressTimer); this.progressTimer = null; return; }
-    const now = Date.now();
-
-    if (now - this.lastUserAt < PROGRESS_QUIET_AFTER_USER_MS) return;
-    for (const record of waiting) {
+    const tick = waiting.map(record => {
       const snapshot = record.queuedIn ? this.deps.snapshotOf?.(record.queuedIn) : this.deps.getSnapshot();
+      const running = snapshot?.state === 'running' && record.runId === snapshot.runId;
 
-      if (snapshot?.state !== 'running' || record.runId !== snapshot.runId) continue;
-      const said = record.progress ?? { at: record.boundAt ?? now, step: null, count: 0 };
-      const step = snapshot.active.at(-1)?.action ?? null;
-      const quiet = now - said.at;
+      return { delegationId: record.id, runId: record.runId, running, step: running ? snapshot.active.at(-1)?.action ?? null : null };
+    });
 
-      if (said.count >= PROGRESS_MAX || quiet < PROGRESS_AFTER_MS || (step === said.step || !step) && quiet < PROGRESS_REPEAT_MS) continue;
-      const text = !step ? '还在做，稍等。' : step === said.step ? `还在${step}，稍等。` : `还在做，正在${step}。`;
-      this.deps.diagnostic?.('gpt_live_progress', { delegationId: record.id, runId: record.runId ?? null, step, quietMs: quiet });
-      this.deps.emit({ kind: 'live_context', channel: 'speakable', text });
-      record.progress = { at: now, step, count: said.count + 1 };
-      return;
+    for (const action of this.delivery.handle({ type: 'tick', waiting: tick })) {
+      this.deps.diagnostic?.('gpt_live_progress', { delegationId: action.delegationId, runId: action.runId, step: action.step, quietMs: action.quietMs });
+      this.deps.emit({ kind: 'live_context', channel: 'speakable', text: action.text });
     }
   }
   close(emit = true): void {
