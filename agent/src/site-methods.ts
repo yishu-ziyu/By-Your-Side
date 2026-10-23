@@ -79,10 +79,15 @@ const squash = (text: string) => text.replace(/\s+/g, "");
  * 发送走普通的点击通道（权限、停止、外部写入确认都照旧）。读不回时报「未确认」，不再发第二次，免得记重。
  */
 async function addFlomoMemo(params: Fields, method: (typeof SITE_METHODS)[number], tab: Fields, call: (name: ToolName, args: Fields) => Promise<Fields | null>): Promise<Fields> {
-  const text = typeof params.text === "string" ? params.text.trim() : "";
-  if (!text || text.length > 5000) throw new Error("INVALID_ARGUMENT: flomo.add-memo needs text of 1–5000 characters: the memo exactly as the user wants it saved");
+  if (params.source !== undefined && typeof params.source !== "boolean") throw new Error("INVALID_ARGUMENT: source must be true or false");
+  const memo = typeof params.text === "string" ? params.text.trim() : "";
+  if (!memo || memo.length > 5000) throw new Error("INVALID_ARGUMENT: flomo.add-memo needs text of 1–5000 characters: the memo exactly as the user wants it saved");
   let tabId = Number(tab.id);
   let sourceUrl = String(tab.url);
+  // 来源取自用户正在读的标签页本身，不让模型抄写：标题和链接一字不差，以后从 flomo 点得回去。
+  // 接在同一段末尾：编辑器里换段要走段落修正，读回核对更容易失败。
+  const from = params.source === true && siteOfUrl(sourceUrl) !== "flomo" && /^https?:/.test(sourceUrl) && !memo.includes(sourceUrl) ? `（来源：${String(tab.title ?? "").trim().slice(0, 200) || sourceUrl} ${sourceUrl}）` : "";
+  const text = memo + from;
   if (siteOfUrl(sourceUrl) !== "flomo") {
     const opened = await call("open_tab", { url: "https://v.flomoapp.com/mine" });
     if (typeof opened?.tabId !== "number") return { method: method.id, version: method.version, status: "unavailable", reason: "flomo could not be opened." };
@@ -117,7 +122,7 @@ async function addFlomoMemo(params: Fields, method: (typeof SITE_METHODS)[number
 export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Promise<Fields> {
   const method = SITE_METHODS.find(item => item.id === params.id);
   if (!method) throw new Error("INVALID_ARGUMENT: unknown built-in website method; use an id offered for the current site");
-  if (Object.keys(params).some(key => !["id", "query", "tabId", "language", "text"].includes(key))) throw new Error("INVALID_ARGUMENT: siteMethod accepts only id, query, tabId, language and text");
+  if (Object.keys(params).some(key => !["id", "query", "tabId", "language", "text", "source"].includes(key))) throw new Error("INVALID_ARGUMENT: siteMethod accepts only id, query, tabId, language, text and source");
   if (params.tabId !== undefined && (!Number.isSafeInteger(params.tabId) || Number(params.tabId) <= 0)) throw new Error("INVALID_ARGUMENT: tabId must be a positive integer");
   const call = async (name: ToolName, args: Fields) => { runtime.check(); const value = await runtime.call(name, args); runtime.check(); return fields(value); };
   const tabs = await call("list_tabs", {});

@@ -181,6 +181,35 @@ export class MemoryStore {
   }
 
   /**
+   * 「记下来」时记一条「用户对 X 感兴趣」（关于你，所有网站，来源原话 = 用户那句）。
+   * 同一主题以前被忘掉过就不写（forgotten）；已有一模一样的生效条目就不重复写（already）。
+   */
+  async saveInterest(input: { topic: string; sourceQuote: string; sourceConversationId: string; guard: () => boolean }): Promise<{ status: "saved" | "already" | "forgotten"; entry: MemoryEntry | null }> {
+    const text = interestText(input.topic);
+    assertCreateInput({ text, scope: { kind: "all" }, sourceConversationId: input.sourceConversationId });
+    let wrote = false;
+
+    return this.withWriteLock((entries, forgotten) => {
+      if (!input.guard()) throw new Error("Memory save is no longer authorized");
+
+      if (forgotten.includes(interestMark(input.topic))) return { status: "forgotten" as const, entry: null };
+      const same = entries.find(e => e.status === "active" && e.text === text);
+
+      if (same) return { status: "already" as const, entry: cloneEntries([same])[0]! };
+      const now = Date.now();
+      const id = randomUUID();
+      const entry: MemoryEntry = { id, factId: id, version: 1, text, scope: { kind: "all" }, sourceConversationId: input.sourceConversationId, createdAt: now, updatedAt: now, kind: "profile", useCount: 0, status: "active", formatVersion: MEMORY_FORMAT_VERSION };
+      const quote = input.sourceQuote.trim().slice(0, MEMORY_QUOTE_MAX);
+
+      if (quote) entry.sourceQuote = quote;
+      entries.push(entry);
+      wrote = true;
+
+      return { status: "saved" as const, entry: cloneEntries([entry])[0]! };
+    }, input.guard, () => !wrote);
+  }
+
+  /**
    * 用户点「记住」后存一条确认过的「做事的方法」（来源原话 = 用户那句纠正）。返回改动的条目：新条目在前，被替换的旧条目在后。
    * replaces 指向同一件事的旧做法：旧条目版本 +1、标「被替换」并指向新条目，新条目沿用它的 factId。
    * 要替换的那条已被删掉就只存新的；已被改过或不再生效则抛 ReplaceTargetChanged（不悄悄并存两条相反的做法）。
@@ -354,7 +383,7 @@ export class MemoryStore {
       if (entries.some(entry => entry.factId === factId || removed.some(r => r.id === entry.id))) throw new Error("这条记忆已经恢复过，或已有新的值");
       const restored = cloneEntries(removed);
       entries.push(...restored);
-      const runs = new Set(restored.flatMap(entry => (entry.experience ? [entry.experience.runId] : [])));
+      const runs = new Set(restored.flatMap(entry => [...(entry.experience ? [entry.experience.runId] : []), ...interestMarks(entry)]));
 
       for (let i = forgotten.length - 1; i >= 0; i--) if (runs.has(forgotten[i]!)) forgotten.splice(i, 1);
 
@@ -676,8 +705,37 @@ function removeFact(entries: MemoryEntry[], forgotten: string[], factId: string)
     if (entry.factId !== factId) continue;
 
     if (entry.experience) forgotten.push(entry.experience.runId);
+    forgotten.push(...interestMarks(entry));
     entries.splice(i, 1);
   }
+}
+
+/** 记忆里「用户对 X 感兴趣」这一条的写法（用户 10-23 定的「记下来」默认去处之一）。 */
+export function interestText(topic: string): string {
+  return `用户对${topic.trim()}感兴趣`;
+}
+
+/**
+ * 忘掉的兴趣只留一个指纹，存在 forgottenExperiences 里：同一主题以后说「记下来」也不写回去，
+ * 文件里又不留下主题原文。指纹按去掉空白和标点、小写后的主题算。
+ */
+function interestMarks(entry: MemoryEntry): string[] {
+  const topic = /^用户对(.+)感兴趣$/su.exec(entry.text)?.[1];
+
+  return topic ? [interestMark(topic)] : [];
+}
+
+function interestMark(topic: string): string {
+  const key = topic.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+  let a = 0x811c9dc5, b = 0x01000193;
+
+  for (const char of key) {
+    const code = char.codePointAt(0)!;
+    a = Math.imul(a ^ code, 0x01000193) >>> 0;
+    b = Math.imul(b ^ code, 0x85ebca6b) >>> 0;
+  }
+
+  return `interest-${a.toString(16).padStart(8, "0")}${b.toString(16).padStart(8, "0")}`;
 }
 
 function assertCreateInput(input: { text: string; scope: MemoryScope; sourceConversationId: string }): void {
