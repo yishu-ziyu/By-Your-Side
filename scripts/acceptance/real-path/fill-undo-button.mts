@@ -195,7 +195,7 @@ try {
   await sleep(400);
   const note = await seen(DONE.note);
   evidence.noteOnly = note;
-  assert.ok(note.button === "复制" && note.result === "编辑器里的文字没还原。", `5: 只有说明时不出还原按钮，只写说明 ${JSON.stringify(note)}`);
+  assert.ok(note.button === "复制" && note.result === "编辑器里填的字不能一键还原。", `5: 只有说明时不出还原按钮，只写说明 ${JSON.stringify(note)}`);
   assert.ok(note.inView, `5: 说明行在视野里，没落在输入框下面 ${JSON.stringify(note)}`);
   await rp.screenshot(panel, join(artifacts, "5-note-only.png"));
   const noteCard = cardOf(answerOf(DONE.note));

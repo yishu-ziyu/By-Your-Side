@@ -53,6 +53,8 @@ export function onFillUndoChange(fn: (answer: HTMLElement) => void): void {
 const quote = (fields: string[]) => fields.map((f) => `「${f}」`).join("");
 const NOTE_TEXT: Record<FillUndoNote, string> = { rich_text: "编辑器里的文字没还原。", sensitive: "密码这类栏没还原。" };
 const notes = (list: FillUndoNote[]) => list.map((n) => NOTE_TEXT[n]).join("");
+/** 还没还原时只能说这类改动撤不回：「没还原」读起来像试过还原却失败了。 */
+const BEFORE_TEXT: Record<FillUndoNote, string> = { rich_text: "编辑器里填的字不能一键还原。", sensitive: "密码这类栏不能一键还原。" };
 
 /** 灰掉的主按钮上写什么。 */
 export function fillUndoLabel(view: FillUndoView): string {
@@ -67,7 +69,7 @@ export function fillUndoLabel(view: FillUndoView): string {
 /** 文末一排下面那一行；ready 时没有。第一个元素加粗。 */
 function resultLine(view: FillUndoView): [string, string] | null {
   switch (view.state) {
-    case "ready": return view.count === 0 && view.notes.length ? ["", notes(view.notes)] : null;
+    case "ready": return view.count === 0 && view.notes.length ? ["", view.notes.map((n) => BEFORE_TEXT[n]).join("")] : null;
     case "submitted": return ["表单已经交给网站", "，扩展撤不回。要改请在网站上修改或取消。"];
     case "page_changed": return view.fields.length
       ? ["页面已经换了", `，${quote(view.fields)}找不到了，扩展撤不回。`]
