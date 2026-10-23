@@ -24,7 +24,7 @@ const ANSWER_CARD_REMINDER = "\n\nAnswer format (see # Answer cards): follow the
  * 外部脚本、图片、请求、跳转都会被拦，所以要求数据写进程序里；bys.* 是沙箱页注入的几个桥。
  */
 /**
- * 用户说「记下来」没说去处（用户 10-23 定：flomo 和记忆两个都记）。两件事各自由宿主那一层把关（方法读回笔记才算 observed，
+ * 用户说「记下来」没说去处：flomo 和记忆两个都记。两件事各自由宿主那一层把关（方法读回笔记才算 observed，
  * 记忆写不写由用户原话决定），这里只告诉模型这一轮要做哪两件、怎么分开汇报；只在识别到这种说法时出现。
  */
 function recordNote(prompt: string): string {
@@ -106,8 +106,10 @@ export class ProductContext {
       pi.on('before_agent_start',async event=>{
         // 先读站点笔记（读不到 1 秒就不带），再动下面会改状态的 newTurns、onProjection：等待期间不留半截状态。
         const page=this.pageUrl();
+        // 只看用户原话：发给模型的输入前面还拼着当前页面（标签页编号、链接），里面的长数字会被当成个人资料。
+        const asked=this.snapshot()?.goal??String(event.prompt??'');
         // 用户点名的服务（「记进 flomo」）不在当前页上：也带上它的方法和笔记。
-        const named=mentionedServiceUrls(String(event.prompt??'')).filter(url=>!page||siteOfUrl(url)!==siteOfUrl(page));
+        const named=mentionedServiceUrls(asked).filter(url=>!page||siteOfUrl(url)!==siteOfUrl(page));
         const notes=(await Promise.all([page,...named].map(url=>this.siteNotes?.(url).catch(()=>null)??null))).filter(Boolean).join('')||null;
         const apps=await this.miniApps?.().catch(()=>false)??false;
         const current=this.snapshot();
@@ -128,7 +130,7 @@ export class ProductContext {
         // 系统提示词只放每次都一样的内容；日期、对话历史、任务状态、站点提示每次运行都变，作为本次上下文消息。
         return {
           systemPrompt:productSystemPrompt(event.systemPrompt,active),
-          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+recordNote(String(event.prompt??''))+ANSWER_CARD_REMINDER+(apps?MINI_APP_GUIDE:'')},
+          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+recordNote(asked)+ANSWER_CARD_REMINDER+(apps?MINI_APP_GUIDE:'')},
         };
       });
     };
