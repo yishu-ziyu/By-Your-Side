@@ -1,13 +1,12 @@
 /**
  * 按住说话的听写。
- * 用 Step Plan 套餐的 stepaudio-2.5-realtime 只做转写：只开文字、关掉服务端 VAD、松开时手动提交、从不请求回复。
- * 提交后约 1–2 秒得到全文；套餐里的 ASR 接口只能整段上传（1.9–4.1 秒），所以不用它。
- * 计费只由地址决定：这里只连 /step_plan/v1，按量的 /v1/realtime 只留给免按键的 Realtime 3。
+ * 用按量的 Realtime 3 只做转写：关掉服务端 VAD、不给工具、松开时手动提交、从不请求回复。
+ * Step Plan 套餐已不含任何语音模型（实时和 ASR 都回「模型不存在或无权限」），所以只能走按量的 /v1/realtime。
  * 计时从松开算：本机代理会让连接和回应慢上好几秒，
  * 所以连不上和不回话分开判，服务端每回一个事件就重新等，不按一个固定时长丢掉慢而正常的听写。
  */
 
-const DICTATION_URL = "wss://api.stepfun.com/step_plan/v1/realtime?model=stepaudio-2.5-realtime";
+const DICTATION_URL = "wss://api.stepfun.com/v1/realtime?model=stepaudio-3-realtime-preview";
 
 /** 浏览器 WebSocket 的最小子集。 */
 export interface DictationSocket {
@@ -35,7 +34,7 @@ export interface Dictation {
 
 /** 发给服务端的三种事件。 */
 type ClientEvent =
-  | { type: "session.update"; session: { modalities: ["text"]; instructions: string; input_audio_format: "pcm16"; turn_detection: null; input_audio_transcription: { model: string } } }
+  | { type: "session.update"; session: { modalities: ["text", "audio"]; input_audio_format: "pcm16"; output_audio_format: "pcm16"; turn_detection: null; tools: [] } }
   | { type: "input_audio_buffer.append"; audio: string }
   | { type: "input_audio_buffer.commit" };
 
@@ -103,7 +102,8 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
     if (committed) waitIdle();
 
     if (event.type === "session.created") {
-      send({ type: "session.update", session: { modalities: ["text"], instructions: "只转写用户说的话，不回答。", input_audio_format: "pcm16", turn_detection: null, input_audio_transcription: { model: "stepaudio-2.5-asr" } } });
+      // Realtime 3 只收 text+audio 两种都开；不请求回复就不会出声。
+      send({ type: "session.update", session: { modalities: ["text", "audio"], input_audio_format: "pcm16", output_audio_format: "pcm16", turn_detection: null, tools: [] } });
     } else if (event.type === "session.updated" && !ready) {
       ready = true;
 

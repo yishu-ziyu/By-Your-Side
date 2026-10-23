@@ -1,8 +1,29 @@
-import { isReadingTranscript, READING_ANSWER_LIMIT, READING_TURN_LIMIT, type ReadingEvent, type ReadingSource } from '../../../shared/reading.js';
+import { isReadingTranscript, READING_ANSWER_LIMIT, READING_ROUTE_SELECTION_LIMIT, READING_TURN_LIMIT, type ReadingEvent, type ReadingRoute, type ReadingRouteResult, type ReadingSource } from '../../../shared/reading.js';
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
+import type { PttVoice } from './ptt-capsule.js';
 
 const STORE = 'readingRecords';
+
+/** 分流判断最多等这么久；模型那边自己 10 秒放弃，这里多留一点来回。 */
+const ROUTE_WAIT_MS = 12_000;
+
+/** 写完一句才念；英文句点不算，免得把小数和缩写当句尾。 */
+const SENTENCE_END = /[。！？!?；;\n]/g;
+
+function sentencesEnd(text: string): number {
+  let end = 0;
+
+  for (const match of text.matchAll(SENTENCE_END)) end = match.index + 1;
+
+  return end;
+}
+
+/** 念出来的字：去掉 Markdown 记号、代码和链接地址。 */
+function speakable(markdown: string): string {
+  return markdown.replace(/```[\s\S]*?(```|$)/g, ' ').replace(/`([^`]*)`/g, '$1').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, ' ').replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+[.)])\s+/gm, '').replace(/[*_~|]/g, '').replace(/\s+/g, ' ').trim();
+}
 
 type Dependencies = {
   send: (message: ClientMessage) => boolean;
@@ -10,6 +31,8 @@ type Dependencies = {
   import: (conversationId: string, record: ReadingRecord) => Promise<void>;
   /** tabId：读的是哪一页，交给那一页所在窗口里的侧栏。 */
   select: (conversationId: string, tabId: number) => void;
+  /** 说出来的问题，回答用按住说话同一个声音念。 */
+  voice: PttVoice;
 };
 
 /** One document owns each record. No per-conversation listeners or shared output tab. */
@@ -17,6 +40,55 @@ export function installReading(deps: Dependencies) {
   const records = new Map<string, ReadingRecord>();
   let opening = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const routes = new Map<string, (route: ReadingRoute) => void>();
+  /**
+   * 正在念的那一轮，只认这一个请求：said 是回答里已经交去念的字数，下一段从这里接着念。
+   * 按下说话、停止、改口都把它清掉；旧请求晚到的字因此不会再进队，念完的回调发现不是自己也就不再接着念。
+   */
+  let speaking: { threadId: string; requestId: string; said: number; busy: boolean } | null = null;
+
+  const hush = (threadId?: string) => {
+    if (!speaking || (threadId && speaking.threadId !== threadId)) return;
+    speaking = null;
+    deps.voice.hush();
+  };
+
+  /** 念到回答已经写完的最后一句；回答写完时念完剩下的。一次只交一段，念完再接下一段。 */
+  const say = (record: ReadingRecord) => {
+    const s = speaking, turn = record.turns.at(-1);
+
+    if (!s || !turn || s.busy || s.threadId !== record.threadId || s.requestId !== record.requestId) return;
+    const rest = turn.answer.slice(s.said);
+    const end = turn.state === 'done' ? rest.length : turn.state === 'streaming' ? sentencesEnd(rest) : 0;
+
+    if (!end) {
+      if (turn.state !== 'streaming' && turn.state !== 'pending') speaking = null;
+
+      return;
+    }
+
+    s.said += end;
+    const text = speakable(rest.slice(0, end));
+
+    if (!text) return say(record);
+    const playing = deps.voice.speak(text, record.modelConversationId, true);
+
+    if (!playing) { speaking = null;
+
+ return; }
+    s.busy = true;
+    void playing.then(reply => {
+      if (speaking !== s) return;
+      s.busy = false;
+
+      if (!reply.ok) { speaking = null;
+
+ return; }
+      const current = records.get(s.threadId);
+
+      if (current) say(current);
+    });
+  };
 
   const ready = chrome.storage.session.get(STORE).then(saved => {
     for (const value of (Array.isArray(saved[STORE]) ? saved[STORE] : []).slice(-16)) {
@@ -45,6 +117,7 @@ export function installReading(deps: Dependencies) {
     if (!record.requestId || !readingBusy(record)) return;
     deps.send({type: 'reading_cancel', threadId: record.threadId, requestId: record.requestId});
     record.turns.at(-1)!.state = 'stopped';
+    hush(record.threadId);
 
     if (announce) publish(record);
   };
@@ -117,7 +190,8 @@ export function installReading(deps: Dependencies) {
 
         if (previousTurns.length >= READING_TURN_LIMIT) throw new Error('这段问答太长了。点「在侧栏继续」。');
         const depth = raw.depth === 'deep' ? 'deep' as const : 'fast' as const;
-        const turn = {question, answer: '', state: 'pending' as const};
+        const spoken = raw.spoken === true;
+        const turn = {question, answer: '', state: 'pending' as const, ...(spoken ? {spoken} : {})};
         const candidate = {...record, depth, turns: [...previousTurns, turn]};
 
         if (!isReadingTranscript(candidate) || JSON.stringify(candidate).length + READING_ANSWER_LIMIT > 64000) throw new Error('这段问答太长了。点「在侧栏继续」。');
@@ -129,6 +203,9 @@ export function installReading(deps: Dependencies) {
         record.depth = depth;
         record.turns = candidate.turns;
         record.requestId = crypto.randomUUID();
+        hush();
+
+        if (spoken) speaking = {threadId: record.threadId, requestId: record.requestId, said: 0, busy: false};
         record.transferredConversationId = undefined;
         record.handoffRequestId = undefined;
 
@@ -176,6 +253,21 @@ export function installReading(deps: Dependencies) {
   chrome.tabs.onUpdated.addListener((tabId, change) => { if (change.status === 'loading') dropTab(tabId); });
 
   return {
+    /** 按下说话：正在念的阅读回答马上停，已经排着的句子也不再念。 */
+    hushVoice: () => hush(),
+    /** 页面上选着文字时说的一句话该去哪；判断不了或助手没连上就当任务。 */
+    route(utterance: string, selection: string, asked?: string): Promise<ReadingRoute> {
+      const requestId = crypto.randomUUID();
+
+      return new Promise(resolve => {
+        const done = (route: ReadingRoute) => { clearTimeout(wait); routes.delete(requestId); resolve(route); };
+        const wait = setTimeout(() => done('task'), ROUTE_WAIT_MS);
+        routes.set(requestId, done);
+
+        if (!deps.send({type: 'reading_route', requestId, conversationId: deps.selected(), utterance: utterance.slice(0, 2000), selection: selection.slice(0, READING_ROUTE_SELECTION_LIMIT), ...(asked ? {asked: asked.slice(0, 2000)} : {})})) done('task');
+      });
+    },
+    routed(result: ReadingRouteResult) { routes.get(result.requestId)?.(result.route); },
     resumeOnOpen: (id: string) => opening || [...records.values()].some(r => r.transferredConversationId === id),
     receive(event: ReadingEvent) {
       void ready.then(() => {
@@ -190,6 +282,7 @@ export function installReading(deps: Dependencies) {
         if (!record || record.requestId !== event.requestId || !readingBusy(record)) return;
         Object.assign(record.turns.at(-1)!, {state: event.state, answer: event.text, error: event.error});
         publish(record);
+        say(record);
       });
     },
     disconnected() {

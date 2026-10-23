@@ -21,6 +21,8 @@ export interface ReadingTurn {
   answer: string;
   state: 'pending' | 'streaming' | 'done' | 'stopped' | 'error';
   error?: string;
+  /** 这一问是按住说话说出来的：回答会被念出来。 */
+  spoken?: boolean;
 }
 
 /** 阅读卡的回答档。旧记录没有这个字段，按快速处理。 */
@@ -33,9 +35,18 @@ export interface ReadingTranscript {
   depth?: ReadingDepth;
 }
 
+/** 页面上选着文字或开着阅读卡时说的一句话：交给阅读卡回答（reading），还是当成任务交给助手（task）。 */
+export type ReadingRoute = 'reading' | 'task';
+
+export const READING_ROUTE_SELECTION_LIMIT = 600;
+
 export type ReadingClientMessage =
   | { type: 'reading_request'; requestId: string; transcript: ReadingTranscript }
-  | { type: 'reading_cancel'; requestId: string; threadId: string };
+  | { type: 'reading_cancel'; requestId: string; threadId: string }
+  /** asked：阅读卡上最近一问；卡没开时不带。 */
+  | { type: 'reading_route'; requestId: string; utterance: string; selection: string; asked?: string };
+
+export interface ReadingRouteResult { type: 'reading_route_result'; requestId: string; route: ReadingRoute }
 
 export interface ReadingEvent {
   type: 'reading_event'; requestId: string; threadId: string;
@@ -60,7 +71,7 @@ export function isReadingTranscript(v: unknown): v is ReadingTranscript {
     && Array.isArray(t.turns) && t.turns.length <= READING_TURN_LIMIT
     && t.turns.every(turn => turn && string(turn.question, 2000) && !!turn.question.trim()
       && string(turn.answer, READING_ANSWER_LIMIT) && states.includes(turn.state)
-      && (turn.error === undefined || string(turn.error, 500)))
+      && (turn.error === undefined || string(turn.error, 500)) && (turn.spoken === undefined || typeof turn.spoken === 'boolean'))
     && JSON.stringify(t).length <= 64000;
 }
 
@@ -69,8 +80,14 @@ export function isReadingClientMessage(v: ReadingClientMessage): boolean {
 
   if (v.type === 'reading_cancel') return id(v.threadId);
 
+  if (v.type === 'reading_route') return string(v.utterance, 2000) && !!v.utterance.trim() && string(v.selection, READING_ROUTE_SELECTION_LIMIT) && (v.asked === undefined || string(v.asked, 2000));
+
   return isReadingTranscript(v.transcript) && v.transcript.turns.length > 0
     && v.transcript.turns.at(-1)?.state === 'pending' && v.transcript.turns.at(-1)?.answer === '';
+}
+
+export function isReadingRouteResult(v: ReadingRouteResult): boolean {
+  return id(v.requestId) && (v.route === 'reading' || v.route === 'task');
 }
 
 export function isReadingEvent(v: ReadingEvent): boolean {
@@ -81,7 +98,7 @@ export function isReadingEvent(v: ReadingEvent): boolean {
 export function readingContext(transcript: ReadingTranscript): string {
   const depth = transcript.depth === 'deep' ? 'deep' : transcript.depth === 'fast' ? 'fast' : undefined;
 
-  return JSON.stringify({ ...(depth ? { depth } : {}), source: transcript.source, conversation: transcript.turns.map(({question, answer, state}) => ({question, answer, state})) });
+  return JSON.stringify({ ...(depth ? { depth } : {}), source: transcript.source, conversation: transcript.turns.map(({question, answer, state, spoken}) => ({question, answer, state, ...(spoken ? {spoken} : {})})) });
 }
 
 export function readingHandoffContext(transcript: ReadingTranscript): string {

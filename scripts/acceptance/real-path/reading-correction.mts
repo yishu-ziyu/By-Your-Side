@@ -1,6 +1,6 @@
 /**
  * 阅读卡里中途改口：解释还在写时，用户在卡片输入框打一句改口并按回车。
- * 旧回答马上停在原处（折叠、可展开），新回答立刻开始，仍对着同一段。
+ * 旧回答马上停在原处、原样留着，新回答接在同一张卡下面，仍对着同一段。
  *
  * 真扩展、隔离无头 Chrome、本机练习文章、本机脚本模型；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/reading-correction.mts --headless
@@ -9,7 +9,7 @@
  *   请求  回车后 1.5 s 内模型收到含改口原话的请求，请求里有段落标记句、有一轮 state 为 stopped 的旧回答。
  *   取消  回车后 1.5 s 内，模型那边旧请求的连接没写完就关了（产品真的取消了旧请求，不只是界面不再显示）。
  *   停止  旧回答在回车后 1 s 内停止变长，一直看到旧回答在服务端写完为止也不再变长；新回答里没有旧回答的文字。
- *   界面  旧回答显示「已停止回答，内容已保留」并折叠，「展开/收起」能用、点完焦点不丢、不在状态播报区里；新回答带「已按新问题重答」；段落高亮回车前后都在。
+ *   界面  旧回答显示「已停在这里，按新要求接着答」，整段留在卡里（没有折叠、没被裁掉）；新回答带「已按新要求回答」；段落高亮回车前后都在；网页滚动位置不变。
  *   按钮  生成中输入框空时是停止键；输入了文字时是发送键（改口）。
  * 失败方式：生成中回车被吞掉（T1 之前的 main），请求、停止、界面、按钮都失败；改口时不取消旧请求，取消一项失败。
  */
@@ -91,12 +91,12 @@ const check = (name: string, pass: boolean, detail: Json) => {
 
 type DomNode = { nodeName: string; backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
 
-type Turn = { question: string; tag: string; answer: string; status: string; folded: boolean; clipped: boolean; fold: string | null; expanded: string | null; foldInStatus: boolean; foldFocused: boolean };
+type Turn = { question: string; tag: string; answer: string; status: string; hidden: boolean; clipped: boolean };
 
 type CardState = { turns: Turn[]; textarea: string; focused: boolean; sendLabel: string | null; sendIcon: "stop" | "send" | null; text: string };
 
 const CARD_STATE = `function(){
-  const turns=[...this.querySelectorAll('.turn')].map(t=>{const a=t.querySelector('.answer');const f=t.querySelector('.fold');return {question:t.querySelector('.question')?.textContent??'',tag:t.querySelector('.question .tag')?.textContent??'',answer:a?.textContent??'',status:t.querySelector('.status')?.textContent??'',folded:t.classList.contains('folded'),clipped:!!a&&a.scrollHeight>a.clientHeight+4,fold:f&&!f.hidden?f.textContent:null,expanded:f?.getAttribute('aria-expanded')??null,foldInStatus:!!t.querySelector('[role=status] button'),foldFocused:!!f&&this.activeElement===f};});
+  const turns=[...this.querySelectorAll('.turn')].map(t=>{const a=t.querySelector('.answer');return {question:t.querySelector('.question')?.textContent??'',tag:t.querySelector('.question .tag')?.textContent??'',answer:a?.textContent??'',status:t.querySelector('.status')?.textContent??'',hidden:!a||a.hidden,clipped:!!a&&a.scrollHeight>a.clientHeight+4};});
   const ta=this.querySelector('textarea');
   const send=this.querySelector('.send');
   const svg=send?.querySelector('svg');
@@ -171,6 +171,7 @@ try {
   }, 30_000, "阅读卡正在生成且已写出 120 字以上", 100);
   const oldStart = captured.find((c) => c.reading)!.at;
   const highlightBefore = await highlighted();
+  const scrollBefore = await rp.evaluate(work, "scrollY") as number;
   const emptyInput = await card();
   await rp.screenshot(work, join(out, "1-generating.png"));
 
@@ -244,37 +245,15 @@ try {
     { lenAtEnter, lenAt1s, lenMaxAfter1s, oldLenAtEnd: oldFinal.length, newAnswerDone: !!done, newHasOldText: newFinal.includes("旧定义"), oldTailAnywhere: final.text.includes(OLD_TAIL), turns: final.turns.length });
   await rp.screenshot(work, join(out, "4-done.png"));
 
-  // ── 界面：旧回答停住并折叠，展开/收起能用；新回答带「已按新问题重答」；高亮还在 ──
+  // ── 界面：旧回答停住、原样留着；新回答带「已按新要求回答」；高亮还在；网页没滚动 ──
   const old = final.turns[0];
-  const before = { status: old?.status ?? null, folded: old?.folded ?? false, clipped: old?.clipped ?? false, fold: old?.fold ?? null, expanded: old?.expanded ?? null, foldInStatus: old?.foldInStatus ?? null };
-  let opened: Partial<Turn> | null = null;
-  let closed: Partial<Turn> | null = null;
-  const toggle = async () => {
-    const point = await cardPoint(".turn .fold:not([hidden])");
-
-    if (!point) return null;
-    await mouseClick(point);
-    await sleep(200);
-    const t = (await card()).turns[0]!;
-
-    return { folded: t.folded, clipped: t.clipped, fold: t.fold, expanded: t.expanded, foldFocused: t.foldFocused };
-  };
-
-  if (before.fold) {
-    opened = await toggle();
-    await rp.screenshot(work, join(out, "5-unfolded.png"));
-    closed = await toggle();
-  }
-
   const highlightAfter = await highlighted();
-  // 展开键不在状态播报区里（读屏只念「已停止回答，内容已保留」），点完焦点还在它上面，aria-expanded 跟着变。
-  check("界面：旧回答「已停止回答，内容已保留」并折叠，展开/收起能用；新回答带「已按新问题重答」；高亮回车前后都在",
-    before.status === "已停止回答，内容已保留" && before.folded && before.clipped && before.fold === "展开" && before.expanded === "false" && before.foldInStatus === false
-      && opened?.folded === false && opened.clipped === false && opened.fold === "收起" && opened.expanded === "true" && opened.foldFocused === true
-      && closed?.folded === true && closed.fold === "展开" && closed.expanded === "false" && closed.foldFocused === true
-      && final.turns[1]?.tag === "已按新问题重答" && highlightBefore && highlightAfter,
-    { old: before, afterFirstClick: opened, afterSecondClick: closed, newTag: final.turns[1]?.tag ?? null, newQuestion: final.turns[1]?.question ?? null, highlightBefore, highlightAfter });
-  record.finalTurns = final.turns.map((t) => ({ question: t.question, tag: t.tag, answerChars: t.answer.length, answerHead: t.answer.slice(0, 80), status: t.status, folded: t.folded }));
+  const scrollAfter = await rp.evaluate(work, "scrollY") as number;
+  check("界面：旧回答「已停在这里，按新要求接着答」并整段留着；新回答带「已按新要求回答」；高亮回车前后都在；网页滚动位置不变",
+    old?.status === "已停在这里，按新要求接着答" && old.hidden === false && old.clipped === false && oldFinal.length === lenAt1s
+      && final.turns[1]?.tag.includes("已按新要求回答") === true && highlightBefore && highlightAfter && scrollAfter === scrollBefore,
+    { old: old ? { status: old.status, hidden: old.hidden, clipped: old.clipped, chars: old.answer.length } : null, newTag: final.turns[1]?.tag ?? null, newQuestion: final.turns[1]?.question ?? null, highlightBefore, highlightAfter, scrollBefore, scrollAfter });
+  record.finalTurns = final.turns.map((t) => ({ question: t.question, tag: t.tag, answerChars: t.answer.length, answerHead: t.answer.slice(0, 80), status: t.status, hidden: t.hidden }));
   record.timeline = timeline.filter((_, i) => i % 5 === 0).map((p) => `${p.ms}:${p.len}`).join(" ");
 } catch (error) {
   check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
