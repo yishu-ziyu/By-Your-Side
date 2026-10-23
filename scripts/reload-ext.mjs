@@ -68,7 +68,8 @@ function send(method, params = {}, sessionId) {
 // 注意两点（2026-09 实测）：
 // - 外部直接开 chrome-extension:// 页面会被 Chrome 拦（ERR_BLOCKED_BY_CLIENT），不能靠临时扩展页调 chrome.runtime.reload()；
 // - 已开的旧 chrome://extensions 标签常被冻结，evaluate 会挂起——必须新建标签（新渲染进程）。
-const { result: t } = await send("Target.createTarget", { url: "chrome://extensions/", active: false });
+// CDP 只认 background：写成 active:false 会被忽略，新标签页开在前台，把 Chrome 拉到最前面。
+const { result: t } = await send("Target.createTarget", { url: "chrome://extensions/", background: true });
 
 await new Promise((r) => setTimeout(r, 2500));
 
