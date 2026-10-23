@@ -1,7 +1,7 @@
 import { goalsReadyForDelivery } from './task-goals.js';
 import { isWriteTool } from './effect-policy.js';
 import { isHostPageProbe, requiresControlGate } from './effect-policy.js';
-import { extractResultTarget, isSupersededUnknown, selectResultBinding, MAX_TASK_RESULTS } from './task-results.js';
+import { deriveResultDescription, extractResultTarget, isSupersededUnknown, selectResultBinding, MAX_TASK_RESULTS } from './task-results.js';
 import { taskId } from './task-actions.js';
 import type { TaskProgressSnapshot } from './voice.js';
 
@@ -169,7 +169,7 @@ export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, n
   const target = extractResultTarget(params, name);
 
   if ((snapshot.results?.length ?? 0) >= MAX_TASK_RESULTS) {
-    const binding = selectResultBinding(snapshot.results!, name, target);
+    const binding = selectResultBinding(snapshot.results!, name, target, deriveResultDescription(name, params, target));
     const ownsSlot = snapshot.results!.some(item => item.tool === name && item.target === target && item.status === 'pending');
 
     if (!ownsSlot && binding.kind !== 'exact' && binding.kind !== 'rebind') {
