@@ -23,8 +23,10 @@ export type DictationResult =
   | { ok: false; reason: "empty" | "failed" | "timeout" | "cancelled"; message?: string };
 
 export interface Dictation {
-  /** 按下键：马上连上（省掉松开后的握手时间）。 */
+  /** 连上服务端，可以在按下之前就调用：说话时音频随录随送，松开后只等最后一点转写。 */
   start: () => void;
+  /** 还没结束、还没松开：备好的连接能不能接着用。 */
+  alive: () => boolean;
   /** 录到的一帧 24kHz 单声道 pcm16。 */
   push: (frame: ArrayBuffer) => void;
   /** 松开键：提交并等最终转写。 */
@@ -36,7 +38,8 @@ export interface Dictation {
 type ClientEvent =
   | { type: "session.update"; session: { modalities: ["text", "audio"]; input_audio_format: "pcm16"; output_audio_format: "pcm16"; turn_detection: null; tools: [] } }
   | { type: "input_audio_buffer.append"; audio: string }
-  | { type: "input_audio_buffer.commit" };
+  | { type: "input_audio_buffer.commit" }
+  | { type: "input_audio_buffer.clear" };
 
 /** 服务端事件里用到的字段。 */
 interface ServerEvent { type?: string; transcript?: string; error?: { message?: string } }
@@ -59,6 +62,9 @@ const IDLE_MS = 8_000;
 /** 提交后无论如何最多等多久。 */
 const CAP_MS = 30_000;
 
+/** 连好还没开口时多久碰一下服务端：闲置约 60 秒它就以「太久没有操作」断开。清空的是空缓冲，不出声。 */
+const KEEPALIVE_MS = 25_000;
+
 export function createDictation(deps: { open: (url: string) => DictationSocket; connectMs?: number; idleMs?: number; capMs?: number }): Dictation {
   const { connectMs = CONNECT_MS, idleMs = IDLE_MS, capMs = CAP_MS } = deps;
   let socket: DictationSocket | null = null;
@@ -69,6 +75,7 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
   let settle: ((result: DictationResult) => void) | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cap: ReturnType<typeof setTimeout> | undefined;
+  let keepalive: ReturnType<typeof setInterval> | undefined;
   const pending: ArrayBuffer[] = [];
 
   const send = (event: ClientEvent) => socket?.send(JSON.stringify(event));
@@ -76,6 +83,7 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
   const finish = (result: DictationResult) => {
     if (outcome) return;
     outcome = result;
+    clearInterval(keepalive);
     clearTimeout(timer);
     clearTimeout(cap);
     socket?.close();
@@ -107,6 +115,8 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
     } else if (event.type === "session.updated" && !ready) {
       ready = true;
 
+      if (!pending.length && !stopping) keepalive = setInterval(() => send({ type: "input_audio_buffer.clear" }), KEEPALIVE_MS);
+
       for (const frame of pending.splice(0)) send({ type: "input_audio_buffer.append", audio: base64(frame) });
 
       if (stopping) commit();
@@ -133,14 +143,17 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
       socket.onerror = () => finish({ ok: false, reason: "failed", message: "连不上听写服务" });
       socket.onclose = () => finish({ ok: false, reason: "failed", message: "听写连接断开了" });
     },
+    alive: () => !outcome && !stopping,
     push(frame) {
       if (outcome || stopping) return;
+      clearInterval(keepalive);
 
       if (ready) send({ type: "input_audio_buffer.append", audio: base64(frame) });
       else pending.push(frame);
     },
     stop() {
       stopping = true;
+      clearInterval(keepalive);
 
       if (outcome) return Promise.resolve(outcome);
 

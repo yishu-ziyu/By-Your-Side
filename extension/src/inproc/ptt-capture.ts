@@ -1,7 +1,9 @@
 /**
  * 离屏文档里的按住说话录音。
  * 侧栏关着也能录：离屏文档声明了 USER_MEDIA，麦克风权限按扩展来源授一次即可。
- * 按下就连听写服务、开麦；松开停麦、提交，回听写结果。录音复用侧栏语音的 voice-worklet（24kHz、每帧 20ms）。
+ * 按下开麦；松开停麦、提交，回听写结果。录音复用侧栏语音的 voice-worklet（24kHz、每帧 20ms）。
+ * 听写连接要先连好：握手常要 1.5–3 秒，按下才连的话，说话时音频全压在本地，松开后服务端才从头转写；
+ * 连好时音频随录随送，服务端边收边转写，松开后不到 1 秒出字。所以选中文字时、每次说完后都先备好下一条连接。
  */
 import { PTT_LEVEL, PTT_TARGET, type PttCommand, type PttLevelMessage, type PttReply } from "../shared/ptt.js";
 import { createDictation, type Dictation, type DictationSocket } from "./ptt-dictation.js";
@@ -19,6 +21,9 @@ function openSocket(url: string): DictationSocket {
 }
 
 interface Recording { dictation: Dictation; release: () => void }
+
+/** 备好的连接留多久：一直没按就关掉，不长期挂着连接。 */
+const STANDBY_MS = 5 * 60_000;
 
 /** 声波跟上说话就够：每 80ms 报一次，取这段里最大的音量。 */
 const LEVEL_EVERY_MS = 80;
@@ -63,14 +68,46 @@ async function openMicrophone(onFrame: (frame: ArrayBuffer) => void, onLevel: (l
 
 export function installPushToTalk(): void {
   let current: Recording | null = null;
+  let standby: { dictation: Dictation; expire: ReturnType<typeof setTimeout> } | null = null;
+
+  const connect = () => {
+    const dictation = createDictation({ open: openSocket });
+    dictation.start();
+
+    return dictation;
+  };
+
+  const warm = () => {
+    if (standby?.dictation.alive()) return;
+    const dictation = connect();
+    const expire = setTimeout(() => {
+      if (standby?.dictation !== dictation) return;
+      standby = null;
+      dictation.cancel();
+    }, STANDBY_MS);
+    standby = { dictation, expire };
+  };
+
+  /** 有备好的就用它，断了或没备就当场连。 */
+  const take = (): Dictation => {
+    const ready = standby;
+    standby = null;
+
+    if (!ready) return connect();
+    clearTimeout(ready.expire);
+
+    if (ready.dictation.alive()) return ready.dictation;
+    ready.dictation.cancel();
+
+    return connect();
+  };
 
   const start = async (): Promise<PttReply> => {
     current?.dictation.cancel();
     current?.release();
-    const dictation = createDictation({ open: openSocket });
+    const dictation = take();
     const recording: Recording = { dictation, release: () => {} };
     current = recording;
-    dictation.start();
 
     try {
       recording.release = await openMicrophone(frame => dictation.push(frame), level => {
@@ -96,8 +133,11 @@ export function installPushToTalk(): void {
 
     if (!recording) return { ok: false, reason: "cancelled" };
     recording.release();
+    const result = recording.dictation.stop();
+    // 说完一句常常紧接着改口：转写还在等时就连好下一条。
+    warm();
 
-    return recording.dictation.stop();
+    return result;
   };
 
   chrome.runtime.onMessage.addListener((command: Partial<PttCommand> | undefined, sender, sendResponse) => {
@@ -108,6 +148,14 @@ export function installPushToTalk(): void {
       current?.dictation.cancel();
       current?.release();
       current = null;
+      warm();
+      sendResponse({ ok: true });
+
+      return;
+    }
+
+    if (command.phase === "warm") {
+      warm();
       sendResponse({ ok: true });
 
       return;

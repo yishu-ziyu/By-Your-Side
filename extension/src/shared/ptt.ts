@@ -8,8 +8,11 @@ import type { DictationResult } from "../inproc/ptt-dictation.js";
 /** 网页脚本发给后台：按住开始、松开、取消。 */
 export interface PttPageMessage { type: "ptt"; phase: "start" | "stop" | "cancel" }
 
-/** 后台发给离屏文档的命令；target 用来和别的扩展消息分开。 */
-export interface PttCommand { target: "inproc-ptt"; phase: "start" | "stop" | "cancel" }
+/** 后台发给离屏文档的命令；target 用来和别的扩展消息分开。warm：先连好听写，不开麦。 */
+export interface PttCommand { target: "inproc-ptt"; phase: "start" | "stop" | "cancel" | "warm" }
+
+/** 网页 → 后台：用户刚选中文字，接下来可能按住说话，先把听写连好。 */
+export const PTT_WARM = "ptt_warm";
 
 export const PTT_TARGET = "inproc-ptt";
 
