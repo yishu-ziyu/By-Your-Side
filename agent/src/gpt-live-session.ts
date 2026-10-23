@@ -72,7 +72,7 @@ function covers(whole: string, part: string): boolean {
 type Input = { turn: number; snapshot: TaskProgressSnapshot | null; targets?: VoiceTarget[]; input?: VoiceInputContext; error?: string; ready: boolean };
 
 /** 一个委派项：任务接下后记住 runId，等这个任务交付给用户的结果。 */
-/** queuedIn：排在别的任务后面、轮到时才在这个会话里开工；那时它的交付按会话认领这次委派。 */
+/** queuedIn：排队任务所在的会话；开工后从这个会话取进度。 */
 /** viaSession：语音层没委派、宿主自己接下的一句；它没有委派编号，回话走会话层。 */
 type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: string; viaSession?: true; done: boolean; boundAt?: number; progress?: { at: number; step: string | null; count: number } };
 
@@ -398,10 +398,7 @@ export class GptLiveSession {
    * 同一个任务的结果只念一次，交给最近那次委派；更早的委派（如对同一任务的补充）也随之结束，
    * 只收到一条静默说明，免得 GPT-Live 一直等。返回要播报的那一次。
    */
-  private settle(runId: string | null | undefined, owner?: string): Delegation | undefined {
-    const queued = owner && runId ? [...this.delegations.values()].find(d => !d.done && !d.runId && d.queuedIn === owner) : undefined;
-
-    if (queued) queued.runId = runId;
+  private settle(runId: string | null | undefined): Delegation | undefined {
     const [latest, ...older] = [...this.delegations.values()].reverse().filter(d => !d.done && !!d.runId && d.runId === runId);
 
     for (const record of older) {
@@ -410,6 +407,16 @@ export class GptLiveSession {
     }
 
     return latest;
+  }
+  bindQueued(owner: string, runId: string): boolean {
+    const record = [...this.delegations.values()].find(d => !d.done && !d.runId && d.queuedIn === owner);
+
+    if (!record) return false;
+    record.runId = runId;
+    record.boundAt = Date.now();
+    this.watchProgress();
+
+    return true;
   }
   private async waitForInput(origin: Input): Promise<void> {
     const end = Date.now() + 5000;
@@ -440,10 +447,10 @@ export class GptLiveSession {
     if (stream.phase === 'cancelled') this.cancelled.add(stream.id);
   }
   /** 只把 GPT-Live 委派出去的那个任务的交付送回；文字规则与套餐语音相同。 */
-  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'>, ownerConversation?: string): void {
+  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'>): void {
     const blocked = this.closed ? 'closed' : delivery.kind === 'ack' ? 'ack' : this.notices.has(delivery.id) ? 'already_sent' : this.cancelled.has(delivery.id) ? 'cancelled' : null;
     if (blocked) { this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:blocked}); return; }
-    const record = this.settle(delivery.runId, ownerConversation);
+    const record = this.settle(delivery.runId);
 
     if (!record) {this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:'no_waiting_delegation'});return;}
     this.notices.add(delivery.id);
@@ -465,22 +472,24 @@ export class GptLiveSession {
     const waiting = [...this.delegations.values()].filter(d => !d.done && !!d.runId);
 
     if (!waiting.length || this.closed) { if (this.progressTimer) clearInterval(this.progressTimer); this.progressTimer = null; return; }
-    const snapshot = this.deps.getSnapshot();
     const now = Date.now();
 
-    if (snapshot?.state !== 'running' || now - this.lastUserAt < PROGRESS_QUIET_AFTER_USER_MS) return;
-    const record = waiting.find(d => d.runId === snapshot.runId);
+    if (now - this.lastUserAt < PROGRESS_QUIET_AFTER_USER_MS) return;
+    for (const record of waiting) {
+      const snapshot = record.queuedIn ? this.deps.snapshotOf?.(record.queuedIn) : this.deps.getSnapshot();
 
-    if (!record) return;
-    const said = record.progress ?? { at: record.boundAt ?? now, step: null, count: 0 };
-    const step = snapshot.active.at(-1)?.action ?? null;
-    const quiet = now - said.at;
+      if (snapshot?.state !== 'running' || record.runId !== snapshot.runId) continue;
+      const said = record.progress ?? { at: record.boundAt ?? now, step: null, count: 0 };
+      const step = snapshot.active.at(-1)?.action ?? null;
+      const quiet = now - said.at;
 
-    if (said.count >= PROGRESS_MAX || quiet < PROGRESS_AFTER_MS || (step === said.step || !step) && quiet < PROGRESS_REPEAT_MS) return;
-    const text = !step ? '还在做，稍等。' : step === said.step ? `还在${step}，稍等。` : `还在做，正在${step}。`;
-    this.deps.diagnostic?.('gpt_live_progress', { delegationId: record.id, runId: record.runId ?? null, step, quietMs: quiet });
-    this.deps.emit({ kind: 'live_context', channel: 'speakable', text });
-    record.progress = { at: now, step, count: said.count + 1 };
+      if (said.count >= PROGRESS_MAX || quiet < PROGRESS_AFTER_MS || (step === said.step || !step) && quiet < PROGRESS_REPEAT_MS) continue;
+      const text = !step ? '还在做，稍等。' : step === said.step ? `还在${step}，稍等。` : `还在做，正在${step}。`;
+      this.deps.diagnostic?.('gpt_live_progress', { delegationId: record.id, runId: record.runId ?? null, step, quietMs: quiet });
+      this.deps.emit({ kind: 'live_context', channel: 'speakable', text });
+      record.progress = { at: now, step, count: said.count + 1 };
+      return;
+    }
   }
   close(emit = true): void {
     if (this.closed) return;

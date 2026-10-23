@@ -8,8 +8,7 @@ import { join } from "node:path";
 import type { ServerMessage } from "../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, parseVoicePersona, STEP_VOICES, voicePersonaText, type TaskProgressSnapshot, type VoiceClientMessage, type VoiceRouteContext, type VoiceTarget } from "../../shared/voice.js";
 
-/** owner：交付来自另一个会话（排队后另开的任务）时，是那个会话；语音按它认领当初排队的那句话。 */
-type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery'> & { completeDelivery?(delivery: Parameters<RealtimeVoiceSession['completeDelivery']>[0], owner?: string): void };
+type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'> & { bindQueued?(owner: string, runId: string): boolean };
 
 async function readStepVoiceKey(): Promise<string> {
   const environment = process.env.STEPFUN_API_KEY?.trim();
@@ -57,6 +56,8 @@ export class VoiceService {
     notifiedControls: Set<string>;
     announcedDeliveries: Set<string>;
     streamedDeliveries: Set<string>;
+    boundTasks: Set<string>;
+    terminalTasks: Set<string>;
   } | null = null;
   constructor(private readonly snapshot: (id: string) => TaskProgressSnapshot | null, private readonly emit: (msg: ServerMessage) => void, private readonly getKey = readStepVoiceKey, private readonly createSession = (deps: RealtimeVoiceDependencies): VoiceSession => new RealtimeVoiceSession(deps), private readonly route?: (id: string, text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => ReturnType<NonNullable<RealtimeVoiceDependencies["route"]>>, private readonly diagnostic?: RealtimeVoiceDependencies["diagnostic"], private readonly targets?: () => VoiceTarget[], private readonly onPlayback?: (conversationId: string, deliveryId: string, status: "speaking" | "played") => void, private readonly relatedTask: (origin: string, target: string) => boolean = () => false, private readonly readPage?: (conversationId: string, input: import('../../shared/voice.js').VoiceInputContext) => Promise<unknown>, private readonly dispatchTask?: RealtimeVoiceDependencies['dispatchTask'], private readonly browserTool?: (id: string, ...args: Parameters<NonNullable<RealtimeVoiceDependencies['browserTool']>>) => Promise<unknown>) {
   }
@@ -91,12 +92,13 @@ export class VoiceService {
       const persona = voicePersonaText(parseVoicePersona(message.command.persona));
 
       const active = {
-        id: message.voiceId, conversationId, observed: `${initial.runId}:${initial.state}:${initialResultId}:${initialDelivery?.id ?? 'none'}`, startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), session: this.createSession({
+        id: message.voiceId, conversationId, observed: `${initial.runId}:${initial.state}:${initialResultId}:${initialDelivery?.id ?? 'none'}`, startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), boundTasks: new Set<string>(), terminalTasks: new Set<string>(), session: this.createSession({
           voiceId: message.voiceId,
           voice,
           persona,
           ...(diag ? { diagnosticMode: true } : {}),
           getSnapshot: () => this.snapshot(conversationId),
+          snapshotOf: id => this.snapshot(id),
           getDeliverySnapshot: stream => this.snapshot(this.deliveryOwners.get(stream.id) ?? conversationId),
           getTargets: this.targets,
           ...(!diag && this.browserTool ? {browserTool: (...args: Parameters<NonNullable<RealtimeVoiceDependencies['browserTool']>>) => {
@@ -179,6 +181,9 @@ export class VoiceService {
         return;
       }
 
+      const task = `${owner}:${snapshot.runId}`;
+      if (snapshot.runId && !active.boundTasks.has(task) && active.session.bindQueued?.(owner, snapshot.runId)) active.boundTasks.add(task);
+
       if (['aborted', 'error', 'paused'].includes(snapshot.state)) {
         for (const [id, target] of this.deliveryOwners) {
           if (target === owner) {
@@ -186,6 +191,10 @@ export class VoiceService {
           }
         }
 
+        if (snapshot.runId && snapshot.state !== 'paused' && !active.terminalTasks.has(task)) {
+          active.terminalTasks.add(task);
+          active.session.notify(snapshot);
+        }
         return;
       }
 
@@ -205,7 +214,7 @@ export class VoiceService {
 
         if (!active.announcedDeliveries.has(e.delivery.id)) {
           active.announcedDeliveries.add(e.delivery.id);
-          active.session.completeDelivery?.({ ...e.delivery, text: `关于${snapshot.goal?.slice(0, 60) ?? '另一项任务'}：${e.delivery.text}` }, owner);
+          active.session.completeDelivery?.({ ...e.delivery, text: `关于${snapshot.goal?.slice(0, 60) ?? '另一项任务'}：${e.delivery.text}` });
         }
       }
 
