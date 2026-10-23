@@ -232,7 +232,8 @@ function voiceTimings(lines) {
     for (const [i, done] of userDone.entries()) {
       const t0 = done.at;
       const next = userDone[i + 1]?.at ?? Infinity;
-      const inTurn = (e) => e.at >= t0 && e.at < next;
+      // 应答声常比侧栏收到这句的 turn.done 早几十毫秒（那时侧栏还把它记在上一句名下）：从 turn.done 前 1 秒找起，提前的记负数。
+      const answerAudio = (e) => e.at >= Math.max(t0 - 1000, userDone[i - 1]?.at ?? -Infinity) && e.at < next && (e.at >= t0 || !e.ref);
       const delegations = panel("delegation").filter((e) => e.key === done.key);
       const ids = new Set([...delegations.map((e) => e.ref), `host-${done.key}`]);
       const routed = host("gpt_live_delegation").find((e) => ids.has(e.delegationId)) ?? host("gpt_live_host_gate_failed").find((e) => ids.has(e.delegationId));
@@ -242,7 +243,7 @@ function voiceTimings(lines) {
       const bound = host("gpt_live_task_bound").find((e) => ids.has(e.delegationId));
       const ownResult = (point) => result && panel(point).some((e) => e.at >= result.at && (ids.has(e.ref) || e.ref === "live-context"));
       tables.live.push({ at: t0, cells: {
-        首声: since(t0, panel("remote_audio").find(inTurn)), 委派到达: since(t0, delegations[0]), 宿主判完: since(t0, routed),
+        首声: since(t0, panel("remote_audio").find(answerAudio)), 委派到达: since(t0, delegations[0]), 宿主判完: since(t0, routed),
         送回结果: since(t0, result), 结果出声: since(t0, resultAudio),
       }, note: [gate ? "宿主补判" : "", routed?.kind ?? "", bound ? "开了任务" : "", ownResult("result_unvoiced") ? "结果没念出来" : ownResult("result_resent") ? "结果重送过" : ""].filter(Boolean).join(" ") });
     }
