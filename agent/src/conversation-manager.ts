@@ -1373,7 +1373,7 @@ return receipt;
         this.pendingStarts.add(request.conversationId);
 
         try{
-          const options = request.pages?.length ? { ...inputOptions, pages: request.pages } : inputOptions;
+          const options = request.pages?.length || request.source === 'voice' ? { ...inputOptions, ...(request.pages?.length ? { pages: request.pages } : {}), ...(request.source === 'voice' ? { spoken: true } : {}) } : inputOptions;
           if(options)entry.runtime.session.startTask(request.text??'',request.context,request.attachments,options);
           else entry.runtime.session.startTask(request.text??'',request.context,request.attachments);
         }catch(error){this.pendingStarts.delete(request.conversationId);throw error;}
@@ -1439,7 +1439,7 @@ return receipt;
       const revokeRequirement=this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
       await entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
 
-      try{await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments,{rewrite:request.source==='text',pages:request.pages});}
+      try{await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments,{rewrite:request.source==='text',pages:request.pages,spoken:request.source==='voice'||inputOptions?.spoken});}
       catch(error){
         if(error instanceof TaskActionRejected){
           revokeRequirement();
@@ -1971,7 +1971,7 @@ return;
     if(message.type==='steer'&&entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld()){
       // 侧栏文字修改在运行中与语音走同一个调度入口：登记要求、真实回执与请求去重都保留。
       // 空闲/接管仍由原 steer 路径处理（空闲转新任务，接管给提示）。
-      await this.dispatchTaskAction({requestId:`steer-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:this.getTaskProgress(id)?.runId??null,text:message.text,context:message.context,attachments:message.attachments});
+      await this.dispatchTaskAction({requestId:`steer-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:this.getTaskProgress(id)?.runId??null,text:message.text,context:message.context,attachments:message.attachments},undefined,message.spoken?{spoken:true}:undefined);
 
       return;
     }

@@ -70,7 +70,7 @@ import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDige
 import { siteMethodHint, siteMethodsFor } from "../../shared/site-methods.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
-export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[]; voiceHistory?: VoiceConversationContext['recentTurns'] }
+export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[]; voiceHistory?: VoiceConversationContext['recentTurns']; spoken?: boolean }
 
 function withVoiceHistory(text: string, history?: VoiceConversationContext['recentTurns']): string {
   if (!history?.length) return text;
@@ -529,6 +529,8 @@ if(required.includes(key))candidates.set(key,attachment);
    * 扣着等核对时这一轮也不收尾（finish）：任务仍在跑，侧栏过程行不结束、状态不回空闲；放出时才收尾，判继续时不收尾、直接接着做。
    */
   private answerHold: { events: AgentUiEvent[]; settled: boolean; finish?: () => void } = { events: [], settled: false };
+  /** 这一轮是用说的交代或改过：回答会被念出来，念出去就收不回，所以和说了好几件事一样扣到核对之后。 */
+  private spokenAsk = false;
   /** 判继续、回答已丢掉、接着做的那一轮还没开始时，扣着那一轮的收尾：接着做没开起来（模型请求失败）就用它收尾，开起来了就扔掉。 */
   private continueFinish: (() => void) | null = null;
 
@@ -544,7 +546,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
     if (!kind || kind === 'ack' || this.answerHold.settled || this.memberId) return false;
 
-    return this.severalAsksNow();
+    return this.spokenAsk || this.severalAsksNow();
   }
 
   /** 按原来的顺序放出扣着的回答，再给扣着的那一轮收尾（先标已放出：收尾时交付的正文不能又被扣住）。 */
@@ -1263,7 +1265,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
   /** 空闲时发起新任务；运行中自动转为插话。异步不阻塞，错误捕获为 error 事件。 */
   sendUserMessage(text: string, context?: PageContext, attachments?: Attachment[], inputOptions?: UserInputOptions): void {
-    if(this.displayWork){void this.steerCurrentTask(text,context,attachments,{pages:inputOptions?.pages}).catch(error=>this.emitError(error));
+    if(this.displayWork){void this.steerCurrentTask(text,context,attachments,{pages:inputOptions?.pages,spoken:inputOptions?.spoken}).catch(error=>this.emitError(error));
 
 return;}
 
@@ -1297,6 +1299,7 @@ return;}
 
     if (this.runningOrStarting(session)) this.noteSteer(text, context, attachments);
     else {
+      this.spokenAsk = false;
       this.mainEffort.reset(session.model);
       this.activeGoal=text;
       this.activeGoalPage=context?{tabId:context.tabId,url:context.url}:null;
@@ -1309,6 +1312,8 @@ return;}
         goalRevision: task?.goalPlan?.revision,
       });
     }
+
+    if (inputOptions?.spoken) this.spokenAsk = true;
 
     if (this.runningOrStarting(session)) {
       this.memoryRuntime?.invalidateUserTurn("steer");
@@ -1539,7 +1544,9 @@ return;}
   }
 
   /** 运行中插话；若空闲则按普通消息处理。与 prompt 一样带上当前页锚点，避免打断后丢工作标签。 */
-  steer(text: string, context?: PageContext, attachments?: Attachment[]): void {
+  steer(text: string, context?: PageContext, attachments?: Attachment[], spoken = false): void {
+    if (spoken) this.spokenAsk = true;
+
     if (this.hold.isHeld()) {
       this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让 Agent 继续，请交还。" });
 
@@ -1560,7 +1567,7 @@ return;}
       this.noteSteer(text, context, attachments);
       void this.steerCurrentTask(text, context, attachments).catch((err: unknown) => this.emitError(err));
     } else {
-      this.sendUserMessage(text, context, attachments);
+      this.sendUserMessage(text, context, attachments, spoken ? { spoken: true } : undefined);
     }
   }
 
@@ -2282,8 +2289,10 @@ return;}
    * 运行中修改统一入口：先登记（挡住在途旧写入），再按原路交给 Pi。语音与文字都走这里，不另开任务。
    */
   /** rewrite：侧栏文字改方向。模型正在写正文、或还一个字没写时当场截断，同一轮按新要求重写（见 AgentLoop.interruptText）。 */
-  async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[], options?: { rewrite?: boolean; pages?: PageContext[] }): Promise<SteerOutcome> {
+  async steerCurrentTask(text: string, context?: PageContext, attachments?: Attachment[], options?: { rewrite?: boolean; pages?: PageContext[]; spoken?: boolean }): Promise<SteerOutcome> {
     const session = this.session;
+
+    if (options?.spoken) this.spokenAsk = true;
     this.rememberAttachments(attachments);
 
     // 新任务显示路由尚未进入 Pi 时（Pi 还没在流），插话要取消路由并把两段要求合并重提示；
@@ -2799,7 +2808,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           {
             const checkGoal = this.goalCheckEligible(event.messages);
             // 用户说了不止一件事：回答扣到核对之后（最多等 GOAL_GATE_WAIT_MS），没做完就不出回答、接着做。只说一件事的照旧先交付。
-            const gate = checkGoal && !this.answerHold.settled && this.severalAsksNow();
+            const gate = checkGoal && !this.answerHold.settled && (this.spokenAsk || this.severalAsksNow());
 
             // 先说「要核对」，再交付：过往任务等核对结论再记（conversation-manager）。
             if (checkGoal) emit({ kind: "goal_check", status: "checking", ...(gate ? { gate: true } : {}) });
