@@ -117,8 +117,10 @@ export function asksUser(reply: string): boolean {
   // 也认不带问号的请求：「请把你想用来订阅的邮箱发我」、「请提供…」「告诉我…」「回复我…」。
   // 网址里的「?」不是问句：回答结尾带搜索链接时，核对的「继续」会被误改成「等用户」。
   const tail = reply.replace(/https?:\/\/[^\s)）\]」"'<>]+/g, "").trimEnd().slice(-160);
+  // 书名、引文、代码和链接文字里的问号也不是在问用户：回答结尾列出《Are markets efficient?》这类标题时，会被当成等用户回话，下一句新任务被接成旧任务的补充。
+  const asked = tail.replace(/《[^》]*》|“[^”]*”|"[^"\n]*"|「[^」]*」|`[^`]*`|\[[^\]]*\]/g, "");
 
-  return /[?？]/u.test(tail.slice(-100))
+  return /[?？]/u.test(asked.slice(-100))
     || /请(把|提供|告诉|确认|回复|选择|发给?我|输入|填写你)|告诉我|发(给)?我|回复(我|「|“|")|需要你(的|提供|确认|先)|等你(确认|回复|提供)|please (provide|tell|confirm|reply|send)|let me know/iu.test(tail);
 }
 
