@@ -77,6 +77,13 @@ import { siteMethodHint, siteMethodsFor } from "../../shared/site-methods.js";
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[]; voiceHistory?: VoiceConversationContext['recentTurns']; spoken?: boolean }
 
+/** 服务商偶尔回一整页 HTML 错误页：去掉样式、脚本和标签再记，截下来的 600 字才是它说了什么，而不是样式表。 */
+function errorText(message: string): string {
+  return /<(html|head|body|style)[\s>]/i.test(message)
+    ? message.replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+    : message;
+}
+
 function withVoiceHistory(text: string, history?: VoiceConversationContext['recentTurns']): string {
   if (!history?.length) return text;
 
@@ -1848,7 +1855,7 @@ return;}
       // 逐请求记录进导出的诊断记录：下次慢了可以直接从导出文件读出每批用时、停止原因和用量。
       const record = {...meta, phase:'model', attempt, stopReason:reply.stopReason, elapsedMs:Date.now()-startedAt,
         blocks:ask.length, inputChars:JSON.stringify(ask).length, segments:ask.reduce((n,b)=>n+b.segments.length,0), usage:reply.usage,
-        ...(reply.errorMessage ? {error:redactCredentialText(reply.errorMessage).slice(0,600)} : {})};
+        ...(reply.errorMessage ? {error:redactCredentialText(errorText(reply.errorMessage)).slice(0,600)} : {})};
 
       console.error('[page-translation]', JSON.stringify(record));
       this.runTrace?.record('page_translation_request', record);
