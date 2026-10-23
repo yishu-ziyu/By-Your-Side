@@ -327,9 +327,10 @@ export type VoiceCommand =
 
 /**
  * user_done：GPT-Live 收到用户这句的 turn.done；remote_audio：GPT-Live 远端声音从静到响；delegation：收到 delegation.created；
- * result_sent：把宿主结果写进数据通道；result_audio：结果写进去之后第一次出声；panel_audio：阶跃星辰这一轮第一段声音排进播放器。
+ * result_sent：把宿主结果写进数据通道；result_audio：结果写进去之后第一次出声；panel_audio：阶跃星辰这一轮第一段声音排进播放器；
+ * result_resent：结果写进去后助手没开口，原样重送；result_unvoiced：重送后还是没开口，不再等。
  */
-export const VOICE_TIMING_POINTS = ["user_done", "remote_audio", "delegation", "result_sent", "result_audio", "panel_audio"] as const;
+export const VOICE_TIMING_POINTS = ["user_done", "remote_audio", "delegation", "result_sent", "result_audio", "panel_audio", "result_resent", "result_unvoiced"] as const;
 
 export type VoiceTimingPoint = typeof VOICE_TIMING_POINTS[number];
 
