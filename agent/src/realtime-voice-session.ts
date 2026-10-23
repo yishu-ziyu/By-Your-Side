@@ -117,11 +117,14 @@ export class RealtimeVoiceSession {
           }
 
           const snapshot = origin.snapshot;
-
-          return this.deps.route(text, snapshot?.startedAt ?? null, () => !this.closed, {
+          const routeStart = Date.now();
+          const result = await this.deps.route(text, snapshot?.startedAt ?? null, () => !this.closed, {
             requestId: randomUUID(), runId: snapshot?.runId ?? null, controlVersion: snapshot?.controlVersion,
             voiceId: this.deps.voiceId ?? 'realtime3', turn: origin.turn, input: origin.input, targets: this.deps.getTargets?.(),
           });
+          this.deps.diagnostic?.('voice_route', { turn: origin.turn, path: 'browser_request', routeMs: Date.now() - routeStart, kind: result.kind });
+
+          return result;
         },
         read_page: async () => {
           if (this.deps.diagnosticMode || !this.deps.readPage) {
@@ -191,14 +194,17 @@ export class RealtimeVoiceSession {
   private async routePlanTranscript(text: string, connectionCurrent: () => boolean): Promise<{ native: boolean; spokenText?: string }> {
     const origin = this.input;
     const current = () => !this.closed && this.input === origin && connectionCurrent();
+    const waitStart = Date.now();
     await this.waitForInput(origin);
     if (!current() || !this.deps.route) throw new Error('语音任务分流不可用，未执行。');
     const snapshot = origin.snapshot;
+    const routeStart = Date.now();
     const result = await this.deps.route(text, snapshot?.startedAt ?? null, current, {
       nativeChat: true, requestId: randomUUID(), runId: snapshot?.runId ?? null,
       controlVersion: snapshot?.controlVersion, voiceId: this.deps.voiceId ?? 'realtime-plan',
       turn: origin.turn, input: origin.input, targets: origin.targets,
     });
+    this.deps.diagnostic?.('voice_route', { turn: origin.turn, path: 'plan', waitMs: routeStart - waitStart, routeMs: Date.now() - routeStart, kind: result.kind });
     if (!current()) throw new Error('这句话已过期，未执行。');
     if (result.kind === 'none' && result.nativeChat) return { native: true };
     if (result.kind === 'none') return { native: false, spokenText: result.spokenText };
@@ -406,6 +412,11 @@ export class RealtimeVoiceSession {
         return;
       }
 
+      // 连接层的计时（如 first_audio_since_vad_stop）：按当前话轮记进诊断，分段计时靠它和侧栏的时间点对齐。
+      case 'metric':
+        if (typeof event.name === 'string' && typeof event.value === 'number') this.deps.diagnostic?.('voice_metric', { turn: this.turn, name: event.name, ms: event.value });
+
+        return;
       case 'delivery_response':
         this.responses.set(String(event.responseId), String(event.deliveryId));
 

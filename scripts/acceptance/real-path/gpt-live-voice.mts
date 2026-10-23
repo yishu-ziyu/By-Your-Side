@@ -534,6 +534,8 @@ try {
     }
   }
   await rp.screenshot(panel, join(out, "panel.png"));
+  // 语音记录（含分段计时）导出到 timing-downloads/，用 npm run logs -- --voice --file 看。
+  await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "timing-downloads")).catch(() => {});
 } catch (e) {
   error = e instanceof Error ? e.stack ?? e.message : String(e);
   if (panel) await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "failure-downloads")).catch(() => {});

@@ -17,6 +17,7 @@ import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { createCdp, fetchJson, findServiceWorker } from "../cdp.mjs";
 import { trackTempDir } from "../temp-profile.mjs";
+import { recordingDir, render, startRecording } from "./recording.mts";
 import "../runs-ledger.mjs";
 
 export const REPO = resolve(fileURLToPath(new URL(".", import.meta.url)), "../../..");
@@ -589,9 +590,15 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
 
   const controls = browserControls(cdp, id);
 
+  const recordTo = recordingDir();
+  const recording = recordTo ? await startRecording(recordTo, id) : null;
+  recording?.follow(cdp);
+
+  if (recording) console.log(`录屏：${relative(process.cwd(), recording.dir)}`);
+
   const hostLog = () => readFile(join(dirs.data, "agent.log"), "utf8").catch(() => "");
 
-  const close = async () => {
+  const shutdown = async () => {
     await cdp.close().catch(() => {});
 
     if (chrome.exitCode === null && chrome.signalCode === null) {
@@ -605,6 +612,21 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     const none: number[] = [];
 
     return { hostPids: none, exitedWithChrome: true, killed: none };
+  };
+
+  let rendered: Promise<void> | null = null;
+
+  // 先停录屏再关 Chrome；合成放在 Chrome 退出之后，不和用例抢 CPU。
+  const close = async () => {
+    await recording?.stop();
+    const closed = await shutdown();
+
+    if (recording) await (rendered ??= render(recording.dir).then(
+      (made) => console.log(made ? `慢放录屏：${relative(process.cwd(), made.slow)}　总览：${relative(process.cwd(), made.overview)}　逐帧看：npm run frames -- ${relative(process.cwd(), recording.dir)} <起秒> <止秒>` : "录屏：没录到画面或本机没有 ffmpeg，跳过合成"),
+      (error: Error) => console.log(`录屏合成失败：${error.message.split("\n")[0]}`),
+    ));
+
+    return closed;
   };
 
   const result = {
@@ -623,7 +645,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
         await cdp.close().catch(() => {});
         chrome.kill("SIGKILL");
         await Promise.race([new Promise(done => chrome.once("close",done)),sleep(5000)]);
-      } else await close();
+      } else await shutdown();
       await unlink(join(dirs.profile, "DevToolsActivePort")).catch(() => {});
       chrome = spawnChrome();
       tempDir.setChild(chrome);
@@ -640,6 +662,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
       await cdp.ready();
       await loadExtension(cdp);
       await openBackgroundWindow(cdp);
+      recording?.follow(cdp);
       Object.assign(result, { cdp, ...browserControls(cdp, id) });
     },
   };

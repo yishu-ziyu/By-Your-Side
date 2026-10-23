@@ -13,13 +13,23 @@ const VOICE_CAPTURE_PENDING_MAX_BYTES = 8 * 1024 ** 2;
 
 type VoiceCaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
 
+type VoiceTimingCommand = Extract<VoiceCommand, { kind: "timing" }>;
+
+/**
+ * 宿主诊断事件里记进日常记录的只有这些：分段计时要用的时间和编号。
+ * 委派文字、原话、出错原文不在里面：日常记录不新存用户原话。
+ */
+const HOST_TIMING_EVENTS = new Set(["gpt_live_delegation", "gpt_live_task_bound", "gpt_live_task_queued", "gpt_live_delegation_context", "gpt_live_host_gate", "gpt_live_host_gate_failed", "voice_metric", "voice_route"]);
+
+const HOST_TIMING_FIELDS = new Set(["delegationId", "requestId", "kind", "source", "diverged", "delegatedChars", "userWordsChars", "runId", "conversationId", "channel", "chars", "viaSession", "turnId", "turn", "name", "ms", "waitMs", "routeMs", "path"]);
+
 /** Turn may be null for upstream ASR that cannot be attributed. */
 interface VoiceCaptureLine {
   at: number;
   voiceId: string;
   conversationId: string;
   turn: number | null;
-  type: "ready" | "append" | "commit" | "item" | "asr" | "forward" | "gap" | "c0" | "text" | "mark";
+  type: "ready" | "append" | "commit" | "item" | "asr" | "forward" | "gap" | "c0" | "text" | "mark" | "timing" | "host";
   [field: string]: unknown;
 }
 
@@ -61,6 +71,13 @@ const concat = (chunks: Uint8Array[]): Uint8Array => {
 
   return out;
 };
+
+/** 按住说话的一个时间点（后台记）：一次按住说话一个编号，放在 voiceId 位置。 */
+export function pttTimingLine(at: number, pttId: string, conversationId: string, point: string): string {
+  const line: VoiceCaptureLine = { at, voiceId: pttId, conversationId, turn: null, type: "timing", src: "ptt", point };
+
+  return `${JSON.stringify(line)}\n`;
+}
 
 export class VoiceCaptureRecorder {
   private readonly pending = new Map<string, { turn: number; chunks: Uint8Array[]; bytes: number }>();
@@ -178,6 +195,38 @@ export class VoiceCaptureRecorder {
       }
     } catch (error) {
       this.gap(voiceId, conversationId, null, this.text(error));
+    }
+  }
+
+  /** 侧栏看到的一个时间点：at 是侧栏记下的本机时间，不是写入时间。 */
+  timing(voiceId: string, conversationId: string, command: VoiceTimingCommand): void {
+    const line: VoiceCaptureLine = { at: command.at, voiceId, conversationId, turn: command.turn ?? null, type: "timing", src: "panel", point: command.point };
+
+    if (command.key) line.key = command.key;
+
+    if (command.ref) line.ref = command.ref;
+    this.append(line);
+  }
+
+  /** 宿主的诊断事件（如 gpt_live_delegation）：只留分段计时用的字段，别的事件不记。 */
+  host(event: string, fields: Record<string, unknown>): void {
+    if (!HOST_TIMING_EVENTS.has(event)) return;
+
+    try {
+      const voiceId = typeof fields.voiceId === "string" ? fields.voiceId : "unknown";
+      const conversationId = typeof fields.conversationId === "string" ? fields.conversationId : "default";
+      const turn = typeof fields.turn === "number" ? fields.turn : null;
+      const line: VoiceCaptureLine = { at: this.now(), voiceId, conversationId, turn, type: "host", event };
+
+      for (const [key, value] of Object.entries(fields)) {
+        if (!HOST_TIMING_FIELDS.has(key) || key === "turn" || key === "conversationId") continue;
+
+        if (typeof value === "number" || typeof value === "boolean" || typeof value === "string" && value.length <= 160) line[key] = value;
+      }
+
+      this.append(line);
+    } catch (error) {
+      this.log(`[voice-capture] 记录失败：${this.text(error)}`);
     }
   }
 

@@ -51,8 +51,8 @@ export const PTT_SPEECH_TARGET = "inproc-speech";
 
 export type PttSpeechCommand = { target: typeof PTT_SPEECH_TARGET; action: "speak"; text: string; key: string } | { target: typeof PTT_SPEECH_TARGET; action: "hush" };
 
-/** 念完（放了多久）、被打断，或失败。 */
-export type PttSpeechReply = { ok: true; playedMs: number } | { ok: false; reason: "hushed" } | { ok: false; reason: "failed"; message: string };
+/** 念完（放了多久）、被打断，或失败。startedAt：第一段声音排定开始放的本机时间（毫秒），只用于分段计时。 */
+export type PttSpeechReply = { ok: true; playedMs: number; startedAt?: number } | { ok: false; reason: "hushed"; startedAt?: number } | { ok: false; reason: "failed"; message: string };
 
 /** 念结果的 MiniMax 订阅 Key（设置页写）。 */
 export const PTT_SPEECH_KEY = "ptt_speech_key";
