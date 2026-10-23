@@ -6,6 +6,7 @@
  *   npm run lab -- case <用例…> [--force] [--load-limit=20]
  *   npm run lab -- eval guardrail|duplex [--dist 路径] [--force] [--load-limit=20] [其余参数原样转给评测]
  *   npm run lab -- logs [参数原样转给 logs.mjs]
+ *   npm run lab -- methods [--since 日期] [--traces 文件]   （网站方法待修、笔记升级候选的周报）
  *   npm run lab -- sites start|stop|status
  *   npm run lab -- clean          （Ego 只关名字以 bys 开头的任务空间）
  *   npm run lab -- gallery [用例…] [--compare=上次总览目录] [--dist=扩展]   （界面总览；也可 npm run gallery）
@@ -615,6 +616,11 @@ async function main() {
     case "eval": return evaluate();
     case "clean": return clean();
     case "gallery": return gallery();
+    case "methods": {
+      const result = spawnSync(process.execPath, [join(here, "method-report.mjs"), ...rest], { stdio: "inherit" });
+
+      process.exit(result.status ?? 1);
+    }
     case "logs": {
       const result = spawnSync(process.execPath, [join(here, "logs.mjs"), ...rest], { stdio: "inherit" });
 
