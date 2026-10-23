@@ -1018,6 +1018,12 @@ return;}
       return;
     }
 
+    if(e.kind==='live_context'){
+      if(this.live?.dc.readyState==='open')this.live.dc.send(JSON.stringify({type:'session.context.append',event_id:crypto.randomUUID(),channel:e.channel,content:[{type:'input_text',text:e.text}]}));
+
+      return;
+    }
+
     if(e.kind==='input_turn'&&this.live){this.command({kind:'commit',turn:e.turn,input:this.getInput()});
 
 return;}
