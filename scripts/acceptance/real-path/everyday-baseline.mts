@@ -273,7 +273,7 @@ const CASES: Case[] = [
   { id: "translate-real-hamel", path: "https://hamel.dev/blog/posts/evals-faq/", prompt: "把这个页面翻译成中文。",
     check: (c) => (c.untranslated > c.readable * 0.05 ? `还有 ${c.untranslated}/${c.readable} 段英文没有译文` : c.pendingRose ? "占位消失后又成片出现" : c.pendingMarks ? `结束后还留着 ${c.pendingMarks} 个占位` : null) },
   // 翻到一半按停止：没翻的段落要在 3 秒内收掉占位、恢复原样。
-  { id: "translate-long-stop", path: "/long", prompt: "把这个页面翻译成中文。", stopAfterMs: scriptedThrottle ? 5_000 : 30_000,
+  { id: "translate-long-stop", path: "/long", prompt: "把这个页面翻译成中文。", stopAfterMs: scriptedThrottle ? 5_000 : 8_000,
     check: (c) => (c.translatedBlocks >= LONG_BLOCKS ? "停止前已全部译完，没测到停止" : c.stopClearMs === null ? `停止后仍留着 ${c.pendingMarks} 个待翻占位` : c.stopClearMs > 3000 ? `停止后 ${c.stopClearMs} ms 才收掉占位` : null) },
   { id: "mark", path: "/quota", prompt: "在页面上圈出五小时用量。", check: (c) => checkPairMark(c, "五小时用量", "32%") },
   { id: "open-tab", path: "/article", prompt: `在新标签页打开 ${origin}/job`, check: (c) => (c.tabs.some((u) => u.startsWith(`${origin}/job`)) ? null : "没有打开新标签页") },
