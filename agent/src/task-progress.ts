@@ -25,6 +25,21 @@ const labels: Record<string, string> = { capture_page_material: "保存页面原
 
 const label = (name: string) => labels[name] ?? toolAction(name);
 
+/**
+ * 正在做的这一步叫什么：侧栏任务栏、按住说话的胶囊和语音的过程播报都念它，
+ * 所以「执行网页步骤」「打开页面」这种泛称尽量换成具体的事；网址只留站点名，不带路径。
+ */
+function stepLabel(name: string, params: Record<string, unknown>): string {
+  if (name === 'browser_run' && typeof params.label === 'string' && params.label.trim()) return params.label.trim().slice(0, 24);
+  const host = typeof params.url === 'string' && URL.canParse(params.url) ? new URL(params.url).hostname.replace(/^www\./, '') : null;
+
+  if (host && name === 'navigate') return `打开 ${host}`;
+
+  if (host && name === 'fetch') return `读取 ${host}`;
+
+  return label(name);
+}
+
 /** Runtime receipts drive progress; bounded target bindings are retained, page contents are excluded. */
 export class TaskProgress {
   private goal: string | null = null;
@@ -458,7 +473,7 @@ return;}
       if(!this.aborted&&write)this.readback.beginWrite();
 
       if (!this.aborted && this.tools.size < 100) {
-        const entry: Parameters<typeof this.tools.set>[1] = { member, name: e.name, action: label(e.name), since: this.clock(), target,
+        const entry: Parameters<typeof this.tools.set>[1] = { member, name: e.name, action: stepLabel(e.name, e.params), since: this.clock(), target,
         tabId:this.readback.pageFor(member,typeof e.params.tabId==='number'?e.params.tabId:undefined),readVersion:this.readback.version(),write,durableEffect,tabAction };
 
         if (e.name === 'js' && e.params.readonly === true) entry.readOnlyScript = true;
