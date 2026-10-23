@@ -1680,7 +1680,8 @@ return;}
     }
     if (notes.length && !this.siteNotesShown.hosts.has(key)) {
       this.siteNotesShown.hosts.add(key);
-      this.runTrace.record("site_notes", { phase: "used", host, count: notes.length });
+      // 每条笔记一个内容指纹：之后才能按条算它被用了几次、用后任务成没成（诊断记录不留笔记原文）。
+      this.runTrace.record("site_notes", { phase: "used", host, count: notes.length, ids: notes.map(note => createHash("sha256").update(note).digest("hex").slice(0, 12)) });
       parts.push(formatSiteNotes(host, notes));
     }
     return parts.length ? parts.join("\n\n") : null;
