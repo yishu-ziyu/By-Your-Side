@@ -303,22 +303,40 @@ try {
         console.log(JSON.stringify({ ...step, tabs: step.tabs?.map(t => `${t.active ? '*' : ''}${t.url}`) }));
         await sleep(2500);
       }
+      // 每句照真人节奏在回答说完后就接着说；最后一句之后等任务真的停下（停止键消失 3 秒），再看浏览器停在哪。
+      let idleSince = 0;
+      const settledAt = await until(async () => {
+        if (await rp.evaluate(panel, `document.querySelector("#send-btn")?.classList.contains("stopping")`)) { idleSince = 0; return undefined; }
+        idleSince ||= Date.now();
+        return Date.now() - idleSince >= 3000 ? Date.now() : undefined;
+      }, 240_000, '最后一句的任务停下').catch(() => null);
+      const finalTabs = await tabs().catch(() => null);
+      evidence.readingFinal = { settledAt, tabs: finalTabs };
+      await shoot('reading-final');
+      await rp.screenshot(panel, join(out, 'reading-final-panel.png')).catch(() => {});
       await rp.click(panel, '.voice-start').catch(() => {});
       const exported = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, 'downloads'));
-      const traces = String((exported as { traces?: string }).traces ?? '').split('\n').filter(Boolean).map(l => JSON.parse(l)) as Array<{ time: string; type: string; data?: { toolName?: string; args?: unknown; isError?: boolean } }>;
+      const traces = String((exported as { traces?: string }).traces ?? '').split('\n').filter(Boolean).map(l => JSON.parse(l)) as Array<{ time: string; type: string; runId?: string; data?: { toolName?: string; args?: unknown; isError?: boolean; text?: string } }>;
       await writeFile(join(out, 'trace.json'), JSON.stringify(traces, null, 2));
-      const during = (s: Step) => traces.filter(t => Date.parse(t.time) >= s.at && Date.parse(t.time) <= s.end);
+      // 一句的窗口到下一句开口为止；排队的任务会落进后面的窗口，所以按任务原话另取。
+      const during = (s: Step) => { const next = steps[steps.indexOf(s) + 1]?.at ?? settledAt ?? Date.now(); return traces.filter(t => Date.parse(t.time) >= s.at && Date.parse(t.time) < next); };
+      const plain = (t: string) => t.replace(/[\s\p{P}]/gu, '');
+      const runOf = (s: Step) => { const ids = new Set(traces.filter(t => t.type === 'run_start' && s.heard && plain(t.data?.text ?? '') === plain(s.heard)).map(t => t.runId)); return traces.filter(t => ids.has(t.runId)); };
+      const succeeded = (events: typeof traces, tool: string) => events.some(t => t.type === 'tool_execution_end' && t.data?.toolName === tool && !t.data?.isError);
+      const READS = ['snapshot', 'read_element', 'read_elements', 'fetch', 'tabs', 'navigate', 'scroll'];
+      const wrote = (events: typeof traces) => events.some(t => t.type === 'tool_execution_start' && !READS.includes(t.data?.toolName ?? '') && !(t.data?.toolName === 'user_memory' && /"action":"(history|search)"/.test(JSON.stringify(t.data?.args))));
       const toolsIn = (s: Step) => during(s).filter(t => t.type === 'tool_execution_start').map(t => ({ tool: t.data?.toolName ?? '', args: JSON.stringify(t.data?.args ?? null).slice(0, 300) }));
       const failedIn = (s: Step) => during(s).filter(t => t.type === 'tool_execution_end' && t.data?.isError).map(t => t.data?.toolName ?? '');
       evidence.readingTools = steps.map(s => ({ key: s.key, tools: toolsIn(s), failed: failedIn(s) }));
       const isArticle = (url: string) => /^https:\/\/zh\.wikipedia\.org\/[^#]*(%E9%80%86%E5%90%91%E5%B7%A5%E7%A8%8B|逆向工程)/.test(url);
-      const [mark, explore, , back] = steps as [Step, Step, Step, Step];
+      const [mark, explore, record] = steps as [Step, Step, Step, Step];
+      const claimsRecorded = /记下来了|记好了|已记录|已保存|保存好了|记上了/.test(record.spoken);
       const checks = [
-        { name: '标出感兴趣的段落', pass: !mark.error && toolsIn(mark).some(t => t.tool === 'mark') && !failedIn(mark).includes('mark'), review: '标在哪一段：看 reading-mark-page-*.png' },
+        { name: '标出感兴趣的段落，并且说标好了', pass: !mark.error && succeeded(during(mark), 'mark') && !/没法|无法|不能|做不到|查找/.test(mark.spoken), review: '标在哪一段：看 reading-mark-page-*.png' },
         { name: '去别的网站接着查', pass: !explore.error && (!!explore.tabs?.some(t => !/wikipedia\.org/.test(t.url)) || toolsIn(explore).some(t => /navigate|tabs/.test(t.tool) && /https?:\/\/(?![a-z-]+\.wikipedia\.org)/.test(t.args))) && /案|诉|官司|法院|判/.test(explore.spoken), review: '说出的例子是否来自打开的网页：看 reading-explore-panel.png' },
         { name: '原文还在，没被助手的查询顶掉', pass: !!explore.tabs?.some(t => isArticle(t.url)), review: null },
-        { name: '记下来并说清记在哪', pass: null, review: '人工核对：记到了哪里，说「记好了」时是否真的写进去了；看 reading-record-panel.png 和 readingTools' },
-        { name: '回到原文', pass: !back.error && !!back.tabs?.some(t => t.active && isArticle(t.url)), review: null },
+        { name: '说「记下来了」时真的写进去了', pass: claimsRecorded ? !record.error && wrote(runOf(record)) : null, review: claimsRecorded ? null : '没说记好：人工看记到了哪里，有没有让你自己发文字' },
+        { name: '回到原文', pass: !!finalTabs?.some(t => t.active && isArticle(t.url)), review: '阅读位置和标注还在不在：看 reading-final-page-*.png' },
       ];
       evidence.readingChecks = checks;
       for (const c of checks) console.log(`${c.pass === null ? '待人工' : c.pass ? '通过' : '没过'}  ${c.name}${c.review ? `（${c.review}）` : ''}`);
