@@ -72,9 +72,9 @@ function covers(whole: string, part: string): boolean {
 type Input = { turn: number; snapshot: TaskProgressSnapshot | null; targets?: VoiceTarget[]; input?: VoiceInputContext; error?: string; ready: boolean };
 
 /** 一个委派项：任务接下后记住 runId，等这个任务交付给用户的结果。 */
-/** queuedIn：排队任务所在的会话；开工后从这个会话取进度。 */
+/** queuedIn：排队任务所在的会话；开工后从这个会话取进度。queuedRequest：排队那次请求的编号，认它自己的取消和开工失败。 */
 /** viaSession：语音层没委派、宿主自己接下的一句；它没有委派编号，回话走会话层。 */
-type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: string; viaSession?: true; done: boolean; boundAt?: number; progress?: { at: number; step: string | null; count: number } };
+type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: string; queuedRequest?: string; viaSession?: true; done: boolean; boundAt?: number; progress?: { at: number; step: string | null; count: number } };
 
 /**
  * 用户一句话说完后，语音层要委派的话，委派总在这句的结束事件之前就到（实测早 0.4–1.3 秒）。
@@ -307,6 +307,7 @@ export class GptLiveSession {
     // 排队不是做完：「已排队：把要点记下来」照念会被说成「记下来了」。委派先不收尾，等轮到它的那个任务交付了再念。
     if (result.kind === 'action' && result.ok && result.status === 'queued' && receipt?.conversationId) {
       record.queuedIn = receipt.conversationId;
+      record.queuedRequest = receipt.requestId;
       this.deps.diagnostic?.('gpt_live_task_queued', { delegationId: id, conversationId: receipt.conversationId });
       this.answer(record, 'commentary', '这件事排在正在做的上一件后面，还没开始做，也还没有结果。可以简短告诉用户上一件做完就接着做；不要说已经做了、已经记下或已经保存。');
       this.resolveLate(group);
@@ -407,6 +408,18 @@ export class GptLiveSession {
     }
 
     return latest;
+  }
+  /** 排队的委派没开工就结束了：text 为空只悄悄收尾，不让 GPT-Live 一直等。 */
+  endQueued(owner: string, requestId: string, text: string | null): void {
+    // 只认排队那次请求自己的收条：对它说的别的话被拒，不等于它没开工。
+    const record = [...this.delegations.values()].find(d => !d.done && !d.runId && d.queuedIn === owner && d.queuedRequest === requestId);
+
+    if (!record) return;
+    this.deps.diagnostic?.('gpt_live_queued_ended', { delegationId: record.id, spoken: !!text });
+
+    if (text) { this.answer(record, 'speakable', text); return; }
+    this.answer(record, 'commentary', '这件事已经取消，没有开始做；用户已经知道，不用再提。');
+    record.done = true;
   }
   bindQueued(owner: string, runId: string): boolean {
     const record = [...this.delegations.values()].find(d => !d.done && !d.runId && d.queuedIn === owner);

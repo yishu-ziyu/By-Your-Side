@@ -14,6 +14,8 @@
  *   --case=server-error：人工注入服务错误，只证明故障处理，不是真服务失败。
  *   --case=queued-stop：语音任务排队后开工，在另一会话点中止，原通话说出停的是哪件。
  *   --case=queued-stop-unvoiced：同上，但脚本吞掉第一次送出的中止结果、替服务回一个「已收到」（服务偶尔确认收到却不开口），侧栏要自己发现没出声、从会话层重送，而且只说一次。
+ *   --case=queued-start-fail：语音任务排队后，轮到它开工时本机存储写满（只让它那一次开工记录写盘报 QuotaExceededError），宿主回滚、没有运行编号；原通话说出是哪件、为什么没能开始，只说一次。
+ *   --case=queued-cancel：语音任务排队后，用户说「取消检查有哪些按钮那件」：这句的回话说已取消，原委派只悄悄收尾、不再念第二遍，那件也不会开工。
  *   --case=queued-progress：语音任务排队后开工，等待结果期间说出进度。两条用例的文字执行与新任务分流由脚本固定，语音仍是真实 GPT-Live。
  *   外语名称/音译和中文覆盖率只记录人工复核证据；数字仍自动核对。
  *   加 --extra-fact：回传时多加一个假事实，播报核对必须失败（反证）
@@ -32,9 +34,10 @@ import { startScriptedModel, type TextStep } from "./scripted-model.mts";
 
 requireHeadless();
 const caseName = process.argv.find((a) => a.startsWith("--case="))?.slice(7) ?? "main";
-assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup", "reading", "host-gate", "queued-stop", "queued-stop-unvoiced", "queued-progress"].includes(caseName), `未知用例：${caseName}`);
+assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup", "reading", "host-gate", "queued-stop", "queued-stop-unvoiced", "queued-start-fail", "queued-cancel", "queued-progress"].includes(caseName), `未知用例：${caseName}`);
 const unvoiced = caseName === "queued-stop-unvoiced", queuedStop = caseName === "queued-stop" || unvoiced;
-const queuedVoice = queuedStop || caseName === "queued-progress";
+const startFail = caseName === "queued-start-fail", queuedCancel = caseName === "queued-cancel";
+const queuedVoice = queuedStop || startFail || queuedCancel || caseName === "queued-progress";
 const model = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL;
 assert.match(model, /^[^/]+\/.+$/, "--model 需要 provider/model");
 const fastModel = process.argv.find((a) => a.startsWith("--fast-model="))?.slice(13);
@@ -95,6 +98,8 @@ const HOLD_TASK = "把当前页面的文字逐段整理成摘要，先慢慢整�
 const QUEUED_TASK = "另外帮我检查当前页面有哪些按钮，整理一份按钮清单。这是独立的新任务，前面的摘要继续做，让按钮清单排队。";
 const slowAnswer: TextStep = { text: "正在整理。", pieces: Array.from({ length: 18 }, (_, i) => ({ text: `正在整理第 ${i + 1} 部分。`, delayMs: 5_000 })) };
 const queuedModel = queuedVoice ? await startScriptedModel([
+  // 分流由脚本固定：用户说「取消按钮清单…」时按真实格式给出取消那件。
+  ...(queuedCancel ? [{ match: "取消检查", steps: [{ text: '{"steps":[{"action":"abort","target":"有哪些按钮"}]}' }] }] : []),
   { match: '"clauses":', steps: [{ text: '{"steps":[{"action":"start","target":null}]}' }] },
   { match: "按钮清单", steps: [slowAnswer] },
   { match: "逐段整理", steps: [slowAnswer] },
@@ -243,61 +248,142 @@ try {
       evidence.queuedVoice = { input, delegation, queued };
       console.log("排队语音：已经排队，中止原摘要让下一项开工");
       await rp.screenshot(panel, join(out, "queued.png"));
-      await rp.click(panel, "#send-btn");
-      const started = await until(async () => (await frames()).find(f => f.kind === "conversation" && f.conversationId === queued.conversationId && f.state === "running" && f.runId), 25_000, "排队任务轮到并开始执行");
-      await until(async () => queuedModel!.requests.some(r => r.tools && r.rule === "按钮清单") || undefined, 20_000, "排队任务确实开始请求文字模型");
-      Object.assign(evidence.queuedVoice as object, { started });
-      console.log("排队语音：下一项已开工，检查用户能听到的结果");
-      let heardAfter = started.at;
-      if (queuedStop) {
-        // Separate the queue acknowledgement from the stop result so the audible result has an unambiguous cause.
+      if (startFail) {
+        // 本机存储写满：会话记录存在宿主页面的 IndexedDB 里。只让排队这件写入开工记录的那一次报 QuotaExceededError，
+        // 其余写入（包括上一件）照常，宿主走真实的回滚路径。
+        const offscreenTarget = (await rp.targets()).find(t => t.url.endsWith("/inproc.html"))!;
+        const inproc = await rp.attach(offscreenTarget.targetId);
+        const readInjection = async () => (await rp.cdp.send("Runtime.evaluate", { returnByValue: true, expression: "window.__inject ?? null" }, inproc) as { result?: { value?: unknown } }).result?.value;
+        const armed = await rp.cdp.send("Runtime.evaluate", { returnByValue: true, expression: `(() => {
+          const proto = IDBObjectStore.prototype, put = proto.put, target = ${JSON.stringify(queued.conversationId)};
+          const state = window.__inject = { puts: 0, fired: 0, samples: [] };
+          proto.put = function (value, key) {
+            const text = typeof value?.text === "string" ? value.text : "", name = String(key);
+            state.puts++;
+            if (name.includes(target)) state.samples.push({ key: name.slice(-70), length: text.length, acceptance: text.includes("sideagent-task-acceptance-v1") });
+            if (name.includes(target) && text.includes("sideagent-task-acceptance-v1")) {
+              state.fired++;
+              proto.put = put;
+              throw new DOMException("The operation failed because it would cause the application to exceed its storage quota.", "QuotaExceededError");
+            }
+            return put.call(this, value, key);
+          };
+          return true;
+        })()` }, inproc) as { result?: { value?: unknown }; exceptionDetails?: unknown };
+        assert.ok(!armed.exceptionDetails && armed.result?.value === true, `存储故障注入没装上：${JSON.stringify(armed)}`);
+        // 开工失败发生在上一件结束时，远晚于排队确认：先等确认说完，免得两句并成一句。
         await until(async () => {
           const g = await read();
           const done = g.in.find(e => e.type === "turn.done" && e.turn?.role === "assistant" && e.at >= queued.at);
           return done && Date.now() - done.at >= 2_500 ? done : undefined;
         }, 20_000, "排队确认句已播完");
-        const windowId = await rp.evaluate(panel, "chrome.windows.getCurrent().then(w => w.id)");
-        const url = `chrome-extension://${rp.extensionId}/sidepanel.html?window=${windowId}&conversation=${encodeURIComponent(queued.conversationId!)}`;
-        const { targetId } = await rp.cdp.send("Target.createTarget", { url, background: true }) as { targetId: string };
-        const taskPanel = await rp.attach(targetId);
-        await until(async () => await rp.evaluate(taskPanel, 'document.querySelector("#send-btn")?.classList.contains("stopping")') || undefined, 20_000, "另一会话能中止已开工的任务");
-        if (unvoiced) await rp.evaluate(panel, `window.__speakableHook = { id: ${JSON.stringify(delegation.item?.id)} }`);
-        heardAfter = Date.now();
-        await rp.click(taskPanel, "#send-btn");
-        await until(async () => await rp.evaluate(taskPanel, '!document.querySelector("#send-btn")?.classList.contains("stopping")') || undefined, 10_000, "排队任务已中止");
-        await rp.screenshot(taskPanel, join(out, "queued-stopped.png"));
-      }
-      const expected = queuedStop ? /终止|中止|停下|停止|停了|取消/ : /还在做|正在|稍等/;
-      if (unvoiced) {
-        const intercepted = await until(async () => await rp.evaluate(panel, "window.__gl.intercepted") as { at: number } | null ?? undefined, 25_000, "第一次中止结果已送出");
-        evidence.intercepted = intercepted;
-      }
-      const sent = await until(async () => (await read()).out.find(e => e.at >= heardAfter && e.channel === "speakable" && (unvoiced ? e.type === "session.context.append" : queuedStop ? e.type === "delegation.context.append" && e.delegation_item_id === delegation.item?.id : e.type === "session.context.append") && expected.test(e.content?.map(c => c.text ?? "").join("") ?? "")), 25_000, queuedStop ? "原委派收到任务中止的口播" : "任务没做完时有进度口播");
-      const spoken = await until(async () => {
-        const g = await read();
-        const done = g.in.find(e => e.at >= sent.at && e.type === "turn.done" && e.turn?.role === "assistant" && expected.test(e.turn.transcript));
-        return done && g.meter.some(([at, rms]) => at >= sent.at && at <= done.at && rms > 0.01) ? done : undefined;
-      }, 30_000, "真实语音已说出中止结果或进度");
-      if (queuedStop) {
-        // 只说「任务已终止」时，语音层会自己猜停的是哪件，曾说成「现在可以继续处理按钮清单了」。
+        const askedAt = Date.now();
+        try {
+          await rp.click(panel, "#send-btn");
+          evidence.startRefused = await until(async () => (await frames()).find(f => f.kind === "receipt" && f.conversationId === queued.conversationId && ["rejected", "failed", "unknown"].includes(f.status ?? "") && f.at >= askedAt), 60_000, "排队任务开工被拒");
+          assert.equal((evidence.startRefused as { runId?: string | null }).runId ?? null, null, "开工被拒的收条没有运行编号");
+        } finally {
+          evidence.injection = await readInjection().catch(error => String(error));
+        }
+        assert.equal((evidence.injection as { fired?: number } | null)?.fired, 1, "存储故障只在这件的开工记录上触发一次");
+        const sent = await until(async () => (await read()).out.find(e => e.at >= askedAt && e.channel === "speakable" && e.type === "delegation.context.append" && e.delegation_item_id === delegation.item?.id), 25_000, "原委派收到没能开始的口播");
+        // 按意思分三项判：说出是哪件、说出没开工、说出原因（存储写不进）。
+        const notStarted = /没能开始|没法开始|无法开始|没开始|未启动|没启动|没能启动|没成功|没能创建|没建成|失败/;
+        const spoken = await until(async () => {
+          const g = await read();
+          const done = g.in.find(e => e.at >= sent.at && e.type === "turn.done" && e.turn?.role === "assistant" && notStarted.test(e.turn.transcript));
+          return done && g.meter.some(([at, rms]) => at >= sent.at && at <= done.at && rms > 0.01) ? done : undefined;
+        }, 30_000, "真实语音说出没能开始");
         const said = spoken.turn?.transcript ?? "";
-        evidence.stopSaid = said;
-        assert.ok(said.split(/[，,。？?！!；;]/).some(clause => /按钮/.test(clause) && expected.test(clause)), `说停了的那半句要点出是按钮那件：${said}`);
-        // 问用户「要继续做吗」可以；不能说成它还会继续。
-        assert.ok(!said.split(/(?<=[。！？!?；;])/).some(sentence => !/[？?]$|吗/.test(sentence.trim()) && /继续/.test(sentence)), `中止口播不能说被停的任务还会继续：${said}`);
-      }
-      if (unvoiced) {
-        assert.ok(sent.at - (evidence.intercepted as { at: number }).at >= 2_000, "侧栏等过一阵没听到才重送");
+        evidence.startFailSaid = said;
+        assert.ok(said.split(/[，,。？?！!；;]/).some(clause => /按钮/.test(clause)), `要点出没开工的是按钮那件：${said}`);
+        assert.match(said, /保存|存储|空间|存不|写不/, `要说出没开工的原因：${said}`);
         await sleep(8_000);
-        const turns = (await read()).in.filter(e => e.at > sent.at && e.type === "turn.done" && e.turn?.role === "assistant").map(e => e.turn!.transcript);
+        // 上一件被停下时它的结果也会念：只数说到这件的。
+        const turns = (await read()).in.filter(e => e.at > sent.at && e.type === "turn.done" && e.turn?.role === "assistant" && (/按钮/.test(e.turn.transcript) || notStarted.test(e.turn.transcript))).map(e => e.turn!.transcript);
         evidence.turnsAfterResult = turns;
-        assert.equal(turns.length, 1, `中止结果只说一次：${JSON.stringify(turns)}`);
+        assert.equal(turns.length, 1, `没能开始只说一次：${JSON.stringify(turns)}`);
+        await rp.screenshot(panel, join(out, "queued-spoken.png"));
+        assert.equal(calls.length, 1, "开工被拒没有挂断原通话");
+      } else if (queuedCancel) {
+        // 用户改主意，用一句话取消排着的那件：这句自己的回话说已取消，原委派只悄悄收尾。
+        // 等排队那句整句说完、助手回过话再开口，免得两句被拼成一句。
+        await until(async () => Date.now() > input.at + input.ms + 1_000 && (await read()).in.find(e => e.at > input.at + input.ms && e.type === "turn.done" && e.turn?.role === "assistant") || undefined, 30_000, "排队那句已说完并有回话");
+        const cancelInput = await say(await speech("取消检查有哪些按钮那件。", "cancel.wav"));
+        evidence.cancelled = await until(async () => (await frames()).find(f => f.kind === "receipt" && f.conversationId === queued.conversationId && f.action === "abort" && f.status === "applied"), 40_000, "排队那件已取消");
+        const spoken = await until(async () => {
+          const g = await read();
+          const done = g.in.find(e => e.at > cancelInput.at && e.type === "turn.done" && e.turn?.role === "assistant" && /取消|不做|不用做|撤销/.test(e.turn.transcript));
+          return done && g.meter.some(([at, rms]) => at > cancelInput.at && at <= done.at && rms > 0.01) ? done : undefined;
+        }, 30_000, "真实语音说出已取消");
+        evidence.cancelSaid = spoken.turn?.transcript;
+        evidence.originalClosed = await until(async () => (await read()).out.find(e => e.at > cancelInput.at && e.type === "delegation.context.append" && e.delegation_item_id === delegation.item?.id && e.channel === "commentary" && /取消/.test(e.content?.map(c => c.text ?? "").join("") ?? "")), 10_000, "原委派收到已取消的收尾，不再等结果");
+        // 上一件停下后，被取消的那件不开工，语音也不再替它念任何结果。
+        await rp.click(panel, "#send-btn");
+        await sleep(12_000);
+        const g = await read();
+        evidence.turnsAfterResult = g.in.filter(e => e.at > cancelInput.at && e.type === "turn.done" && e.turn?.role === "assistant").map(e => e.turn!.transcript);
+        assert.ok(!queuedModel!.requests.some(r => r.tools && r.rule === "按钮清单"), "取消的那件没有开工");
+        assert.ok(!g.out.some(e => e.at > cancelInput.at && e.channel === "speakable" && e.delegation_item_id === delegation.item?.id), "原委派不再念第二遍");
+        await rp.screenshot(panel, join(out, "queued-spoken.png"));
+        assert.equal(calls.length, 1, "取消没有挂断原通话");
+      } else {
+        await rp.click(panel, "#send-btn");
+        const started = await until(async () => (await frames()).find(f => f.kind === "conversation" && f.conversationId === queued.conversationId && f.state === "running" && f.runId), 25_000, "排队任务轮到并开始执行");
+        await until(async () => queuedModel!.requests.some(r => r.tools && r.rule === "按钮清单") || undefined, 20_000, "排队任务确实开始请求文字模型");
+        Object.assign(evidence.queuedVoice as object, { started });
+        console.log("排队语音：下一项已开工，检查用户能听到的结果");
+        let heardAfter = started.at;
+        if (queuedStop) {
+          // Separate the queue acknowledgement from the stop result so the audible result has an unambiguous cause.
+          await until(async () => {
+            const g = await read();
+            const done = g.in.find(e => e.type === "turn.done" && e.turn?.role === "assistant" && e.at >= queued.at);
+            return done && Date.now() - done.at >= 2_500 ? done : undefined;
+          }, 20_000, "排队确认句已播完");
+          const windowId = await rp.evaluate(panel, "chrome.windows.getCurrent().then(w => w.id)");
+          const url = `chrome-extension://${rp.extensionId}/sidepanel.html?window=${windowId}&conversation=${encodeURIComponent(queued.conversationId!)}`;
+          const { targetId } = await rp.cdp.send("Target.createTarget", { url, background: true }) as { targetId: string };
+          const taskPanel = await rp.attach(targetId);
+          await until(async () => await rp.evaluate(taskPanel, 'document.querySelector("#send-btn")?.classList.contains("stopping")') || undefined, 20_000, "另一会话能中止已开工的任务");
+          if (unvoiced) await rp.evaluate(panel, `window.__speakableHook = { id: ${JSON.stringify(delegation.item?.id)} }`);
+          heardAfter = Date.now();
+          await rp.click(taskPanel, "#send-btn");
+          await until(async () => await rp.evaluate(taskPanel, '!document.querySelector("#send-btn")?.classList.contains("stopping")') || undefined, 10_000, "排队任务已中止");
+          await rp.screenshot(taskPanel, join(out, "queued-stopped.png"));
+        }
+        const expected = queuedStop ? /终止|中止|停下|停止|停了|取消/ : /还在做|正在|稍等/;
+        if (unvoiced) {
+          const intercepted = await until(async () => await rp.evaluate(panel, "window.__gl.intercepted") as { at: number } | null ?? undefined, 25_000, "第一次中止结果已送出");
+          evidence.intercepted = intercepted;
+        }
+        const sent = await until(async () => (await read()).out.find(e => e.at >= heardAfter && e.channel === "speakable" && (unvoiced ? e.type === "session.context.append" : queuedStop ? e.type === "delegation.context.append" && e.delegation_item_id === delegation.item?.id : e.type === "session.context.append") && expected.test(e.content?.map(c => c.text ?? "").join("") ?? "")), 25_000, queuedStop ? "原委派收到任务中止的口播" : "任务没做完时有进度口播");
+        const spoken = await until(async () => {
+          const g = await read();
+          const done = g.in.find(e => e.at >= sent.at && e.type === "turn.done" && e.turn?.role === "assistant" && expected.test(e.turn.transcript));
+          return done && g.meter.some(([at, rms]) => at >= sent.at && at <= done.at && rms > 0.01) ? done : undefined;
+        }, 30_000, "真实语音已说出中止结果或进度");
+        if (queuedStop) {
+          // 只说「任务已终止」时，语音层会自己猜停的是哪件，曾说成「现在可以继续处理按钮清单了」。
+          const said = spoken.turn?.transcript ?? "";
+          evidence.stopSaid = said;
+          assert.ok(said.split(/[，,。？?！!；;]/).some(clause => /按钮/.test(clause) && expected.test(clause)), `说停了的那半句要点出是按钮那件：${said}`);
+          // 问用户「要继续做吗」可以；不能说成它还会继续。
+          assert.ok(!said.split(/(?<=[。！？!?；;])/).some(sentence => !/[？?]$|吗/.test(sentence.trim()) && /继续/.test(sentence)), `中止口播不能说被停的任务还会继续：${said}`);
+        }
+        if (unvoiced) {
+          assert.ok(sent.at - (evidence.intercepted as { at: number }).at >= 2_000, "侧栏等过一阵没听到才重送");
+          await sleep(8_000);
+          const turns = (await read()).in.filter(e => e.at > sent.at && e.type === "turn.done" && e.turn?.role === "assistant").map(e => e.turn!.transcript);
+          evidence.turnsAfterResult = turns;
+          assert.equal(turns.length, 1, `中止结果只说一次：${JSON.stringify(turns)}`);
+        }
+        const taskRequests = queuedModel!.requests.filter(r => r.tools && r.rule === "按钮清单");
+        if (caseName === "queued-progress") assert.ok(taskRequests.some(r => !r.finished && r.closedAt === undefined), "进度口播发生时任务仍在做，不能拿最终回答冒充进度");
+        Object.assign(evidence.queuedVoice as object, { sent, spoken: spoken.turn?.transcript, frames: await frames(), taskRequests });
+        await rp.screenshot(panel, join(out, "queued-spoken.png"));
+        assert.equal(calls.length, 1, "排队和另一会话的中止没有挂断原通话");
       }
-      const taskRequests = queuedModel!.requests.filter(r => r.tools && r.rule === "按钮清单");
-      if (caseName === "queued-progress") assert.ok(taskRequests.some(r => !r.finished && r.closedAt === undefined), "进度口播发生时任务仍在做，不能拿最终回答冒充进度");
-      Object.assign(evidence.queuedVoice as object, { sent, spoken: spoken.turn?.transcript, frames: await frames(), taskRequests });
-      await rp.screenshot(panel, join(out, "queued-spoken.png"));
-      assert.equal(calls.length, 1, "排队和另一会话的中止没有挂断原通话");
     } else if (followup) {
       const replies: Array<{question:string;spoken:string;waitMs:number;at:number}> = [];
       evidence.dialogue = replies;
