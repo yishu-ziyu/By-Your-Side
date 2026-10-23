@@ -86,9 +86,9 @@ const HOST_GATE_MS = 1_500;
  * 只靠说话的用户看不到侧栏：委派的事做了这么久还没出声，就念一句正在做哪一步（取任务栏同一个步骤名）。
  * 同一步至少隔 REPEAT 才再提，每次委派最多念 MAX 句；用户刚说完话时不插嘴。
  */
-const PROGRESS_AFTER_MS = 12_000;
-const PROGRESS_REPEAT_MS = 25_000;
-const PROGRESS_MAX = 4;
+const PROGRESS_AFTER_MS = 10_000;
+const PROGRESS_REPEAT_MS = 15_000;
+const PROGRESS_MAX = 8;
 const PROGRESS_QUIET_AFTER_USER_MS = 4_000;
 
 /**
