@@ -116,7 +116,9 @@ try {
   await rp.close(); await rp.remove();
 }
 
-const done = rows.filter(r => r.finished && !r.error && !r.cardSaysFailed && r.answer.trim());
+// 宿主补的那句「没给出最后的回答就停了」不是回答。
+const noAnswer = (r: Row) => /没给出最后的回答/.test(r.answer);
+const done = rows.filter(r => r.finished && !r.error && !r.cardSaysFailed && r.answer.trim() && !noAnswer(r));
 const median = [...rows].map(r => r.secs).sort((a, b) => a - b)[Math.floor(rows.length / 2)] ?? 0;
 const maxLoad = Math.max(0, ...rows.flatMap(r => r.load));
 await writeFile(join(outDir, `${day}.json`), JSON.stringify({ day, model: MODEL, fastModel: fast.name, rows }, null, 2));
@@ -130,6 +132,6 @@ await writeFile(join(outDir, `${day}.md`), [
   ``,
   `| # | 原话 | 用时 | 核对后 | 往返 | 负载 | 结果 | 回答开头 |`,
   `|---|---|---|---|---|---|---|---|`,
-  ...rows.map(r => `| ${r.n} | ${r.say.replace(/\|/g, "\\|").slice(0, 40)} | ${r.secs}s | +${r.checkSecs}s | ${r.calls} | ${r.load.join("→")} | ${!r.finished ? "没完成" : r.error ? `报错：${r.error.slice(0, 40)}` : r.cardSaysFailed ? "卡片写没做成" : "完成"} | ${r.answer.replace(/\s+/g, " ").replace(/\|/g, "\\|").slice(0, 60)} |`),
+  ...rows.map(r => `| ${r.n} | ${r.say.replace(/\|/g, "\\|").slice(0, 40)} | ${r.secs}s | +${r.checkSecs}s | ${r.calls} | ${r.load.join("→")} | ${!r.finished ? "没完成" : r.error ? `报错：${r.error.slice(0, 40)}` : r.cardSaysFailed ? "卡片写没做成" : noAnswer(r) ? "没给回答就停了" : "完成"} | ${r.answer.replace(/\s+/g, " ").replace(/\|/g, "\\|").slice(0, 60)} |`),
 ].join("\n") + "\n");
 console.log(`报告：${join(outDir, `${day}.md`)}`);
