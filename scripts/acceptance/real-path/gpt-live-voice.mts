@@ -12,6 +12,8 @@
  *   --case=host-gate：关掉 GPT-Live 的委派、让它只会口头答应（复现「嘴上说做了、页面没动」），用户要标出段落时宿主自己接下、真的标出来并念出结果。
  *   --case=reading：只用语音读中文维基文章：标出感兴趣的段落、去别的网站接着查、记下来、回到原文；每步只记用户看得到的结果，一步没过也走完，看清断在哪几处。
  *   --case=server-error：人工注入服务错误，只证明故障处理，不是真服务失败。
+ *   --case=queued-stop：语音任务排队后开工，在另一会话点中止，原通话说出中止结果。
+ *   --case=queued-progress：语音任务排队后开工，等待结果期间说出进度。两条用例的文字执行与新任务分流由脚本固定，语音仍是真实 GPT-Live。
  *   外语名称/音译和中文覆盖率只记录人工复核证据；数字仍自动核对。
  *   加 --extra-fact：回传时多加一个假事实，播报核对必须失败（反证）
  * 麦克风是设备静音与脚本放音混合的一路流：脚本何时放音就是「用户何时开口」，插话能放在播报中途。
@@ -25,10 +27,12 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
+import { startScriptedModel, type TextStep } from "./scripted-model.mts";
 
 requireHeadless();
 const caseName = process.argv.find((a) => a.startsWith("--case="))?.slice(7) ?? "main";
-assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup", "reading", "host-gate"].includes(caseName), `未知用例：${caseName}`);
+assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup", "reading", "host-gate", "queued-stop", "queued-progress"].includes(caseName), `未知用例：${caseName}`);
+const queuedVoice = caseName === "queued-stop" || caseName === "queued-progress";
 const model = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL;
 assert.match(model, /^[^/]+\/.+$/, "--model 需要 provider/model");
 const fastModel = process.argv.find((a) => a.startsWith("--fast-model="))?.slice(13);
@@ -85,6 +89,14 @@ function stopAfter(g: { in: Ev[]; meter: Array<[number, number]> }, at: number) 
 const plan = await loadModelPlan(model);
 const voicePlan = model === DEFAULT_TEST_MODEL ? plan : await loadModelPlan(DEFAULT_TEST_MODEL);
 const fastPlan = fastModel ? await loadModelPlan(fastModel) : null;
+const HOLD_TASK = "把当前页面的文字逐段整理成摘要，先慢慢整理。";
+const QUEUED_TASK = "另外帮我检查当前页面有哪些按钮，整理一份按钮清单。这是独立的新任务，前面的摘要继续做，让按钮清单排队。";
+const slowAnswer: TextStep = { text: "正在整理。", pieces: Array.from({ length: 18 }, (_, i) => ({ text: `正在整理第 ${i + 1} 部分。`, delayMs: 5_000 })) };
+const queuedModel = queuedVoice ? await startScriptedModel([
+  { match: '"clauses":', steps: [{ text: '{"steps":[{"action":"start","target":null}]}' }] },
+  { match: "按钮清单", steps: [slowAnswer] },
+  { match: "逐段整理", steps: [slowAnswer] },
+]) : null;
 
 const site = createServer((_q, r) => r.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<!doctype html><title>语音练习页</title><h1>语音练习页</h1><p>这一页只用来放侧栏。</p>"));
 await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
@@ -133,6 +145,7 @@ try {
   panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   const items = { ...modelStorageItems(plan), "inproc_cred:openai-codex": voicePlan.credential, inproc_voice_model: VOICE_MODEL };
+  if (queuedModel) Object.assign(items, modelStorageItems({ providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "local-fixture" }, baseUrl: queuedModel.baseUrl }), { inproc_fast_model_config: { provider: voicePlan.providerId, modelId: voicePlan.modelId } });
   if (fastPlan) {
     const { inproc_model_config: fastConfig, ...fastCredentials } = modelStorageItems(fastPlan);
     Object.assign(items, fastCredentials, { inproc_fast_model_config: fastConfig });
@@ -143,8 +156,19 @@ try {
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)})`);
   if (followup) { await rp.evaluate(panel, `localStorage.setItem('sideagent.thinkingDeep', '1')`); await rp.cdp.send('Page.reload', {}, panel); }
   // 网络记录：侧栏向 chatgpt.com 建通话；任何页面（含离屏页）开出的语音 WebSocket 都记下，查是否退回别的语音。
-  const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "离屏页");
   const worker=(await rp.targets()).find(t=>t.type==='service_worker'&&t.url.endsWith('/background.js'));
+  const startupErrors: Array<{ text: string; url?: string; line?: number }> = [];
+  evidence.startupErrors = startupErrors;
+  rp.cdp.onEvent('Runtime.exceptionThrown', (m: { params: { exceptionDetails: { text: string; url?: string; lineNumber?: number } } }) => {
+    const detail = m.params.exceptionDetails;
+    startupErrors.push({ text: detail.text, url: detail.url, line: detail.lineNumber });
+  });
+  if (worker) await rp.cdp.send('Runtime.enable', {}, await rp.attach(worker.targetId));
+  const offscreen = await until(async () => {
+    const targets = await rp.targets();
+    evidence.startupTargets = targets.map(t => ({ type: t.type, url: t.url }));
+    return targets.find(t => t.url.endsWith('/inproc.html'));
+  }, 30_000, "离屏页");
   for (const s of [panel, await rp.attach(offscreen.targetId), ...(worker?[await rp.attach(worker.targetId)]:[])]) { await rp.cdp.send("Network.enable", {}, s); await rp.cdp.send('Runtime.enable',{},s); }
   rp.cdp.onEvent('Runtime.consoleAPICalled',(m:any)=>{const text=(m.params.args??[]).map((a:any)=>typeof a.value==='string'?a.value:'').join(' ');if(/\[(?:voice|voice-turn|voice-classifier)\]/u.test(text)){const record={at:Date.now(),text};hostDiagnostics.push(record);void appendFile(join(out,'host-diagnostics.jsonl'),JSON.stringify(record)+'\n');}});
   rp.cdp.onEvent("Network.requestWillBeSent", (m: any) => { if (/chatgpt\.com\/backend-api\/codex\/realtime/.test(m.params.request.url)) calls.push({ url: m.params.request.url }); });
@@ -185,7 +209,72 @@ try {
     await until(async () => (await read()).in.some((e) => e.type === "session.started") || undefined, 30_000, "GPT-Live 连上");
     assert.ok(calls.length === 1 && calls[0]!.status === 201, `向 chatgpt.com 建通话一次并成功：${JSON.stringify(calls)}`);
     assert.ok(!sockets.some((u) => /stepfun/.test(u)), "没有连 StepFun");
-    if (followup) {
+    if (queuedVoice) {
+      type QueueFrame = { at: number; kind: string; conversationId?: string; runId?: string | null; state?: string; status?: string; source?: string; text?: string; action?: string; title?: string };
+      await rp.evaluate(panel, `(() => {
+        const frames = [], port = chrome.runtime.connect({ name: "sideagent-panel" });
+        const keep = frame => frames.push({ at: Date.now(), ...frame });
+        const record = msg => {
+          const r = msg.type === "agent_event" && msg.event.kind === "notice" ? msg.event.receipt : null;
+          if (r) keep({ kind: "receipt", conversationId: r.conversationId, runId: r.runId, status: r.status, source: r.source, text: r.text, action: r.action });
+        };
+        port.onMessage.addListener(message => {
+          if (message.kind === "conversations") for (const c of message.conversations) keep({ kind: "conversation", conversationId: c.id, runId: c.runId, state: c.state, title: c.title });
+          if (message.kind === "history") for (const entry of message.entries) if (entry.item.kind === "server") record(entry.item.msg);
+          if (message.kind === "server") record(message.msg);
+        });
+        window.__queuedVoice = { frames, port };
+        port.postMessage({ kind: "sync", conversationId: "default" });
+        return true;
+      })()`);
+      const frames = async () => await rp.evaluate(panel, "window.__queuedVoice.frames") as QueueFrame[];
+      console.log("排队语音：先让当前页面的摘要任务占用页面");
+      await rp.click(panel, "#input");
+      await rp.typeText(panel, HOLD_TASK);
+      await rp.pressEnter(panel);
+      await until(async () => queuedModel!.requests.some(r => r.tools && r.rule === "逐段整理") || undefined, 30_000, "原任务已经开始执行");
+      const input = await say(await speech(QUEUED_TASK, "queued-request.wav"));
+      const delegation = await until(async () => (await read()).in.find(e => e.type === "delegation.created" && e.at >= input.at), 30_000, "真实语音委派了新任务");
+      const queued = await until(async () => (await frames()).find(f => f.kind === "receipt" && f.source === "voice" && f.status === "queued" && f.text?.includes("按钮")), 35_000, "新语音任务确实在排队");
+      evidence.queuedVoice = { input, delegation, queued };
+      console.log("排队语音：已经排队，中止原摘要让下一项开工");
+      await rp.screenshot(panel, join(out, "queued.png"));
+      await rp.click(panel, "#send-btn");
+      const started = await until(async () => (await frames()).find(f => f.kind === "conversation" && f.conversationId === queued.conversationId && f.state === "running" && f.runId), 25_000, "排队任务轮到并开始执行");
+      await until(async () => queuedModel!.requests.some(r => r.tools && r.rule === "按钮清单") || undefined, 20_000, "排队任务确实开始请求文字模型");
+      Object.assign(evidence.queuedVoice as object, { started });
+      console.log("排队语音：下一项已开工，检查用户能听到的结果");
+      let heardAfter = started.at;
+      if (caseName === "queued-stop") {
+        // Separate the queue acknowledgement from the stop result so the audible result has an unambiguous cause.
+        await until(async () => {
+          const g = await read();
+          const done = g.in.find(e => e.type === "turn.done" && e.turn?.role === "assistant" && e.at >= queued.at);
+          return done && Date.now() - done.at >= 2_500 ? done : undefined;
+        }, 20_000, "排队确认句已播完");
+        const windowId = await rp.evaluate(panel, "chrome.windows.getCurrent().then(w => w.id)");
+        const url = `chrome-extension://${rp.extensionId}/sidepanel.html?window=${windowId}&conversation=${encodeURIComponent(queued.conversationId!)}`;
+        const { targetId } = await rp.cdp.send("Target.createTarget", { url, background: true }) as { targetId: string };
+        const taskPanel = await rp.attach(targetId);
+        await until(async () => await rp.evaluate(taskPanel, 'document.querySelector("#send-btn")?.classList.contains("stopping")') || undefined, 20_000, "另一会话能中止已开工的任务");
+        heardAfter = Date.now();
+        await rp.click(taskPanel, "#send-btn");
+        await until(async () => await rp.evaluate(taskPanel, '!document.querySelector("#send-btn")?.classList.contains("stopping")') || undefined, 10_000, "排队任务已中止");
+        await rp.screenshot(taskPanel, join(out, "queued-stopped.png"));
+      }
+      const expected = caseName === "queued-stop" ? /终止|中止|停下|停止|停了|取消/ : /还在做|正在|稍等/;
+      const sent = await until(async () => (await read()).out.find(e => e.at >= heardAfter && e.channel === "speakable" && (caseName === "queued-stop" ? e.type === "delegation.context.append" && e.delegation_item_id === delegation.item?.id : e.type === "session.context.append") && expected.test(e.content?.map(c => c.text ?? "").join("") ?? "")), 25_000, caseName === "queued-stop" ? "原委派收到任务中止的口播" : "任务没做完时有进度口播");
+      const spoken = await until(async () => {
+        const g = await read();
+        const done = g.in.find(e => e.at >= sent.at && e.type === "turn.done" && e.turn?.role === "assistant" && expected.test(e.turn.transcript));
+        return done && g.meter.some(([at, rms]) => at >= sent.at && at <= done.at && rms > 0.01) ? done : undefined;
+      }, 30_000, "真实语音已说出中止结果或进度");
+      const taskRequests = queuedModel!.requests.filter(r => r.tools && r.rule === "按钮清单");
+      if (caseName === "queued-progress") assert.ok(taskRequests.some(r => !r.finished && r.closedAt === undefined), "进度口播发生时任务仍在做，不能拿最终回答冒充进度");
+      Object.assign(evidence.queuedVoice as object, { sent, spoken: spoken.turn?.transcript, frames: await frames(), taskRequests });
+      await rp.screenshot(panel, join(out, "queued-spoken.png"));
+      assert.equal(calls.length, 1, "排队和另一会话的中止没有挂断原通话");
+    } else if (followup) {
       const replies: Array<{question:string;spoken:string;waitMs:number;at:number}> = [];
       evidence.dialogue = replies;
       const questions = ['你好', '这是什么网站呀', '我想了解一下逆向工程', '你就在这个网站里面查吧', '嗯。具体是什么脚本呢？在执行什么', '我想知道是什么脚本，它在执行什么的'];
@@ -542,10 +631,16 @@ try {
   if (panel) { evidence.view = await rp.evaluate(panel, '({ status: document.querySelector(".voice-state")?.innerText, text: document.body.innerText.slice(0, 2000) })').catch(() => null); await rp.screenshot(panel, join(out, "failure.png")).catch(() => {}); }
 } finally {
   const g = panel ? await readRaw().catch(() => null) : null;
+  if (queuedVoice) {
+    evidence.queueFrames = panel ? await rp.evaluate(panel, "window.__queuedVoice?.frames ?? []").catch(() => []) : [];
+    evidence.scriptedRequests = queuedModel?.requests;
+    evidence.modelSelection = { main: "scripted slow text", intent: "scripted start", voice: VOICE_MODEL };
+  }
   if (handoff && g) evidence.handoffTurnRelations = { note: "原始转写、turn.done与delegation（含user_bidi_turn_id）仅供诊断，不以内部对象关系判产品通过。", events: g.in.filter((e) => ["input_transcript.added", "output_transcript.added", "turn.done", "delegation.created"].includes(e.type)) };
   await writeFile(join(out, "summary.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", case: caseName, model, voiceModel: VOICE_MODEL, extraFact: !!extraFact, evidence, hostDiagnostics, calls, sockets, events: g && { in: g.in, out: g.out.map((e) => ({ ...e })), said: g.said }, error }, null, 2));
   if (g) await writeFile(join(out, "meter.json"), JSON.stringify(g.meter));
   await rp.close(); await rp.remove(); site.close();
+  await queuedModel?.close();
 }
 console.log(JSON.stringify({ status: error ? "FAIL" : "PASS", out, evidence: { ...evidence, view: undefined }, error: error?.split("\n")[0] ?? null }, null, 1));
 if (error) process.exitCode = 1;
