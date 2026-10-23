@@ -483,7 +483,7 @@ try {
   const perRound = roundStarts.map((from, i) => ackRequests(from) - (roundStarts[i + 1] === undefined ? 0 : ackRequests(roundStarts[i + 1]!)));
   assert.deepEqual(perRound, [1, 1, 1, 1, 1, 1], "ack: exactly one ack request per round");
 
-  assert.ok(evidence.sockets.length > 0 && evidence.sockets.every(url => url.startsWith("wss://api.stepfun.com/step_plan/v1/realtime")), `dictation only on the plan URL ${JSON.stringify(evidence.sockets)}`);
+  assert.ok(evidence.sockets.length > 0 && evidence.sockets.every(url => url.startsWith("wss://api.stepfun.com/v1/realtime?model=stepaudio-3-realtime-preview")), `dictation only on Realtime 3 ${JSON.stringify(evidence.sockets)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
   await failShot?.().catch(() => {});
