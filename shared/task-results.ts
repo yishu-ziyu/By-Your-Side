@@ -215,7 +215,7 @@ export const MAX_TASK_RESULTS = 64;
 type ResultBinding =
   /** 已有同工具同目标、尚无证据（或上次失败、结果未知）的待办项：直接绑定。 */
   | { kind: "exact"; itemId: string }
-  /** 登记了意图但还没定位的同工具待办项（target=null，且尚无证据）：可把实际目标改绑到它。 */
+  /** 登记了意图但还没定位的同工具待办项（target=null，且尚无证据），或换了定位器重做的失败自动项：可把实际目标改绑到它。 */
   | { kind: "rebind"; itemId: string }
   /** 没有可复用的待办：调用方决定是否按真实动作新建自动项。 */
   | { kind: "create" }
@@ -228,7 +228,7 @@ type ResultBinding =
  * 新回执落在原项上。satisfied 是历史回执，不参与改绑。已写明 target 的登记项不静默漂移：
  * 实际目标不同时新建自动项，原登记保持待办。歧义（多个未定位待办）不猜，交给调用方新建。
  */
-export function selectResultBinding(items: readonly TaskResultItem[], tool: string, target: string | null): ResultBinding {
+export function selectResultBinding(items: readonly TaskResultItem[], tool: string, target: string | null, description?: string): ResultBinding {
   if (isResultMetaTool(tool)) return { kind: "none" };
 
   const retry = (item: TaskResultItem) => item.status === "blocked" || item.status === "unknown";
@@ -236,6 +236,13 @@ export function selectResultBinding(items: readonly TaskResultItem[], tool: stri
     && resultCanUseExecution(retry(item) ? { ...item, status: "pending" } : item, tool, target));
 
   if (exact) return { kind: "exact", itemId: exact.id };
+
+  // 第一次定位没找到、换个定位器再做同一步（同工具、同一句人话）：blocked 表示上次没造成任何后果，
+  // 这次的回执就是那一步的结果；另建一条会把已做成的事留成「受阻」，交付和语音都会说没做成。
+  // 只认自动项：用户/模型登记过 target 的项不静默漂移；unknown 写入不在此列，仍按原目标核对。
+  const retried = description ? items.find(item => item.status === "blocked" && item.id.startsWith(AUTO_RESULT_ID_PREFIX) && item.tool === tool && item.description === description) : undefined;
+
+  if (retried) return { kind: "rebind", itemId: retried.id };
 
   // A completed receipt describes one invocation, not every later call at that
   // target. The execution gate owns replay permission; an allowed new call must

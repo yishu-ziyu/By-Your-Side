@@ -9,6 +9,7 @@
  *   --case=long-result：真实维基长回答、完整开头与侧栏提示、真实结果音频。
  *   --case=current-page：真实 wikipedia.org 标题与英语、日语、西班牙语入口。
  *   --case=handoff：先约定“那个技术”指逆向工程，再用真实语音请求维基查询。
+ *   --case=reading：只用语音读中文维基文章：标出感兴趣的段落、去别的网站接着查、记下来、回到原文；每步只记用户看得到的结果，一步没过也走完，看清断在哪几处。
  *   --case=server-error：人工注入服务错误，只证明故障处理，不是真服务失败。
  *   外语名称/音译和中文覆盖率只记录人工复核证据；数字仍自动核对。
  *   加 --extra-fact：回传时多加一个假事实，播报核对必须失败（反证）
@@ -26,7 +27,7 @@ import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-c
 
 requireHeadless();
 const caseName = process.argv.find((a) => a.startsWith("--case="))?.slice(7) ?? "main";
-assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup"].includes(caseName), `未知用例：${caseName}`);
+assert.ok(["main", "api-key", "no-login", "barge-result", "long-result", "current-page", "server-error", "handoff", "page-context", "followup", "reading"].includes(caseName), `未知用例：${caseName}`);
 const model = process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL;
 assert.match(model, /^[^/]+\/.+$/, "--model 需要 provider/model");
 const fastModel = process.argv.find((a) => a.startsWith("--fast-model="))?.slice(13);
@@ -34,6 +35,8 @@ if (fastModel) assert.match(fastModel, /^[^/]+\/.+$/, "--fast-model 需要 provi
 const longResult = caseName === "long-result", currentPage = caseName === "current-page", serverError = caseName === "server-error", handoff = caseName === "handoff";
 const pageContext = caseName === 'page-context';
 const followup = caseName === 'followup';
+const reading = caseName === 'reading';
+const ARTICLE = 'https://zh.wikipedia.org/zh-cn/%E9%80%86%E5%90%91%E5%B7%A5%E7%A8%8B';
 const apiKey = process.argv.includes("--case=api-key"), noLogin = apiKey || process.argv.includes("--case=no-login"), bargeResult = process.argv.includes("--case=barge-result");
 const extraFact = process.argv.includes("--extra-fact") ? "另外，全双工技术最早由爱迪生在1873年提出。" : "";
 const VOICE_MODEL = "gpt-live-1-codex";
@@ -114,7 +117,9 @@ const hostDiagnostics: unknown[] = [];
 try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "空白页");
   const work = await rp.attach(blank.targetId);
-  await rp.cdp.send("Page.navigate", { url: currentPage || handoff || pageContext || followup ? "https://www.wikipedia.org/" : `http://127.0.0.1:${siteAddress(site).port}/` }, work);
+  await rp.cdp.send("Page.navigate", { url: reading ? ARTICLE : currentPage || handoff || pageContext || followup ? "https://www.wikipedia.org/" : `http://127.0.0.1:${siteAddress(site).port}/` }, work);
+  // 用户正读到「相关法律」这一节：滚到它，让它在屏幕上。
+  if (reading) evidence.article = await until(async () => await rp.evaluate(work, `(() => { const h = document.getElementById("相关法律"); if (!h) return null; h.scrollIntoView({ block: "start" }); return { url: location.href, title: document.title }; })()`) || undefined, 30_000, "逆向工程条目与「相关法律」一节");
   if (currentPage || handoff || pageContext || followup) {
     const source = await until(async () => await rp.evaluate(work, `(() => {
       const languages = ["en", "ja", "es"].map((lang) => { const a = document.querySelector('a#js-link-box-' + lang); return a && { lang, text: a.innerText, url: a.href }; });
@@ -250,6 +255,93 @@ try {
       }
       assert.equal(calls.length, 1, '六句对话沿用原来的通话，没有挂断重拨');
       console.log('真实对话复验完成');
+    } else if (reading) {
+      type Tab = { url: string; title: string; active: boolean };
+      type Step = { key: string; question: string; heard: string | null; delegated: boolean; channel: string | null; spoken: string; waitMs: number | null; resultMs: number | null; doneMs: number | null; at: number; end: number; tabs: Tab[] | null; error: string | null };
+      const turns = [
+        { key: 'mark', text: '这篇文章里讲法律的那一段挺有意思的，你帮我在页面上标出来。' },
+        { key: 'explore', text: '那你去别的网站帮我查查，现实里有没有因为逆向工程打官司的例子。' },
+        { key: 'record', text: '把这个例子和刚才那段的要点帮我记下来。' },
+        { key: 'back', text: '好，回到刚才那篇文章吧。' },
+      ];
+      const steps: Step[] = [];
+      evidence.reading = steps;
+      const tabs = async () => await rp.evaluate(panel, `chrome.tabs.query({}).then(ts => ts.filter(t => /^https?:/.test(t.url ?? "")).map(t => ({ url: t.url, title: t.title, active: t.active })))`) as Tab[];
+      const shoot = async (name: string) => {
+        for (const [i, t] of (await rp.targets()).filter(t => t.type === 'page' && /^https?:/.test(t.url)).entries()) await rp.screenshot(await rp.attach(t.targetId), join(out, `${name}-page-${i}.png`)).catch(() => {});
+      };
+      for (const [index, turn] of turns.entries()) {
+        console.log(`读文章 ${index + 1}/${turns.length}：${turn.text}`);
+        const input = await say(await speech(turn.text, `reading-${turn.key}.wav`));
+        const spokenEnd = input.at + input.ms;
+        const step: Step = { key: turn.key, question: turn.text, heard: null, delegated: false, channel: null, spoken: '', waitMs: null, resultMs: null, doneMs: null, at: input.at, end: 0, tabs: null, error: null };
+        steps.push(step);
+        try {
+          const userTurn = await until(async () => (await read()).in.find(e => e.type === 'turn.done' && e.turn?.role === 'user' && e.at > input.at), 60_000, '本轮原话已被服务完整接收');
+          step.heard = userTurn.turn?.transcript ?? null;
+          let replyAfter = userTurn.at;
+          const delegated = await until(async () => (await read()).in.find(e => e.type === 'delegation.created' && e.item?.user_bidi_turn_id === userTurn.turn?.id), 8_000, '委派').catch(() => undefined);
+          if (delegated) {
+            step.delegated = true;
+            const delivery = await until(async () => (await read()).out.find(e => e.type === 'delegation.context.append' && e.delegation_item_id === delegated.item?.id && (e.channel === 'speakable' || e.channel === 'commentary' && e.content?.some(part => part.text?.includes('这句是闲聊')))), 300_000, '本轮正式回答');
+            step.channel = delivery.channel ?? null;
+            replyAfter = (await until(async () => (await read()).in.find(e => e.type === 'delegation.context.appended' && e.delegation_item_id === delegated.item?.id && e.at >= delivery.at), 30_000, '服务确认收到本轮回答')).at;
+            step.resultMs = replyAfter - spokenEnd;
+          }
+          const completed = await until(async () => (await read()).in.find(e => e.type === 'turn.done' && e.turn?.role === 'assistant' && e.at >= replyAfter - 100), 150_000, '本轮回答完整结束');
+          step.spoken = completed.turn?.transcript ?? '';
+          const firstAudio = (await read()).meter.find(([at, rms]) => at > spokenEnd && rms > 0.01);
+          step.waitMs = firstAudio ? firstAudio[0] - spokenEnd : null;
+          step.doneMs = completed.at - spokenEnd;
+        } catch (e) {
+          step.error = e instanceof Error ? e.message : String(e);
+        }
+        step.end = Date.now();
+        step.tabs = await tabs().catch(() => null);
+        await shoot(`reading-${turn.key}`);
+        await rp.screenshot(panel, join(out, `reading-${turn.key}-panel.png`)).catch(() => {});
+        console.log(JSON.stringify({ ...step, tabs: step.tabs?.map(t => `${t.active ? '*' : ''}${t.url}`) }));
+        await sleep(2500);
+      }
+      // 每句照真人节奏在回答说完后就接着说；最后一句之后等任务真的停下（停止键消失 3 秒），再看浏览器停在哪。
+      let idleSince = 0;
+      const settledAt = await until(async () => {
+        if (await rp.evaluate(panel, `document.querySelector("#send-btn")?.classList.contains("stopping")`)) { idleSince = 0; return undefined; }
+        idleSince ||= Date.now();
+        return Date.now() - idleSince >= 3000 ? Date.now() : undefined;
+      }, 240_000, '最后一句的任务停下').catch(() => null);
+      const finalTabs = await tabs().catch(() => null);
+      evidence.readingFinal = { settledAt, tabs: finalTabs };
+      await shoot('reading-final');
+      await rp.screenshot(panel, join(out, 'reading-final-panel.png')).catch(() => {});
+      await rp.click(panel, '.voice-start').catch(() => {});
+      const exported = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, 'downloads'));
+      const traces = String((exported as { traces?: string }).traces ?? '').split('\n').filter(Boolean).map(l => JSON.parse(l)) as Array<{ time: string; type: string; runId?: string; data?: { toolName?: string; args?: unknown; isError?: boolean; text?: string } }>;
+      await writeFile(join(out, 'trace.json'), JSON.stringify(traces, null, 2));
+      // 一句的窗口到下一句开口为止；排队的任务会落进后面的窗口，所以按任务原话另取。
+      const during = (s: Step) => { const next = steps[steps.indexOf(s) + 1]?.at ?? settledAt ?? Date.now(); return traces.filter(t => Date.parse(t.time) >= s.at && Date.parse(t.time) < next); };
+      const plain = (t: string) => t.replace(/[\s\p{P}]/gu, '');
+      const runOf = (s: Step) => { const ids = new Set(traces.filter(t => t.type === 'run_start' && s.heard && plain(t.data?.text ?? '') === plain(s.heard)).map(t => t.runId)); return traces.filter(t => ids.has(t.runId)); };
+      const succeeded = (events: typeof traces, tool: string) => events.some(t => t.type === 'tool_execution_end' && t.data?.toolName === tool && !t.data?.isError);
+      const READS = ['snapshot', 'read_element', 'read_elements', 'fetch', 'tabs', 'navigate', 'scroll'];
+      const wrote = (events: typeof traces) => events.some(t => t.type === 'tool_execution_start' && !READS.includes(t.data?.toolName ?? '') && !(t.data?.toolName === 'user_memory' && /"action":"(history|search)"/.test(JSON.stringify(t.data?.args))));
+      const toolsIn = (s: Step) => during(s).filter(t => t.type === 'tool_execution_start').map(t => ({ tool: t.data?.toolName ?? '', args: JSON.stringify(t.data?.args ?? null).slice(0, 300) }));
+      const failedIn = (s: Step) => during(s).filter(t => t.type === 'tool_execution_end' && t.data?.isError).map(t => t.data?.toolName ?? '');
+      evidence.readingTools = steps.map(s => ({ key: s.key, tools: toolsIn(s), failed: failedIn(s) }));
+      const isArticle = (url: string) => /^https:\/\/zh\.wikipedia\.org\/[^#]*(%E9%80%86%E5%90%91%E5%B7%A5%E7%A8%8B|逆向工程)/.test(url);
+      const [mark, explore, record] = steps as [Step, Step, Step, Step];
+      const claimsRecorded = /记下来了|记好了|已记录|已保存|保存好了|记上了/.test(record.spoken);
+      const checks = [
+        { name: '标出感兴趣的段落，并且说标好了', pass: !mark.error && succeeded(during(mark), 'mark') && !/没法|无法|不能|做不到|查找/.test(mark.spoken), review: '标在哪一段：看 reading-mark-page-*.png' },
+        { name: '去别的网站接着查', pass: !explore.error && (!!explore.tabs?.some(t => !/wikipedia\.org/.test(t.url)) || toolsIn(explore).some(t => /navigate|tabs/.test(t.tool) && /https?:\/\/(?![a-z-]+\.wikipedia\.org)/.test(t.args))) && /案|诉|官司|法院|判/.test(explore.spoken), review: '说出的例子是否来自打开的网页：看 reading-explore-panel.png' },
+        { name: '原文还在，没被助手的查询顶掉', pass: !!explore.tabs?.some(t => isArticle(t.url)), review: null },
+        { name: '说「记下来了」时真的写进去了', pass: claimsRecorded ? !record.error && wrote(runOf(record)) : null, review: claimsRecorded ? null : '没说记好：人工看记到了哪里，有没有让你自己发文字' },
+        { name: '回到原文', pass: !!finalTabs?.some(t => t.active && isArticle(t.url)), review: '阅读位置和标注还在不在：看 reading-final-page-*.png' },
+      ];
+      evidence.readingChecks = checks;
+      for (const c of checks) console.log(`${c.pass === null ? '待人工' : c.pass ? '通过' : '没过'}  ${c.name}${c.review ? `（${c.review}）` : ''}`);
+      const broken = checks.filter(c => c.pass === false).map(c => c.name);
+      assert.deepEqual(broken, [], `只用语音读文章，没过的步骤：${broken.join('、')}`);
     } else if (serverError) {
       const injected = { type: "error", error: { type: "invalid_request_error", code: "invalid_value", message: "Context append text must not exceed 500 tokens." } };
       evidence.faultInjection = { synthetic: true, event: injected, note: "人工数据通道事件，不是真服务失败。" };
