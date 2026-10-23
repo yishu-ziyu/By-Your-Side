@@ -36,6 +36,7 @@
     "self-use": "node scripts/maintenance/self-use.mjs",
     "lab": "node scripts/maintenance/lab.mjs",
     "gallery": "node scripts/maintenance/lab.mjs gallery",
+    "frames": "tsx scripts/acceptance/real-path/recording.mts",
     "gym": "tsx scripts/gym/run.mts",
     "gym:report": "node scripts/gym/report.mjs",
     "gym:replay": "node scripts/gym/replay.mjs"
