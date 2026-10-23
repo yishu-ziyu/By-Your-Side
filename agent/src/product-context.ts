@@ -4,7 +4,7 @@ import type {TaskProgressSnapshot, VoiceConversationContext} from '../../shared/
 import {nextStepIgnoringPlaceholder, nextStepInstruction} from '../../shared/task-next-step.js';
 import {localDateOf} from '../../shared/memory.js';
 import {siteHintFor} from './site-hints.js';
-import {mentionedServiceUrls, siteOfUrl} from '../../shared/site-methods.js';
+import {mentionedServiceUrls, recordIntent, siteOfUrl} from '../../shared/site-methods.js';
 
 /** 今天的本地日期和星期几：「下周四」「明天」要从这里算；只给日期时模型会把下周四算成明天。 */
 function today(now = new Date()): string {
@@ -23,6 +23,21 @@ const ANSWER_CARD_REMINDER = "\n\nAnswer format (see # Answer cards): follow the
  * 「回答里的小程序」打开时附在每次运行的上下文后。侧栏把小程序放进不联网的沙箱（mini-app.html）：
  * 外部脚本、图片、请求、跳转都会被拦，所以要求数据写进程序里；bys.* 是沙箱页注入的几个桥。
  */
+/**
+ * 用户说「记下来」没说去处（用户 10-23 定：flomo 和记忆两个都记）。两件事各自由宿主那一层把关（方法读回笔记才算 observed，
+ * 记忆写不写由用户原话决定），这里只告诉模型这一轮要做哪两件、怎么分开汇报；只在识别到这种说法时出现。
+ */
+function recordNote(prompt: string): string {
+  const intent = recordIntent(prompt);
+
+  if (!intent || intent.named) return '';
+  const flomo = 'save it to flomo with browser.siteMethod({id:"flomo.add-memo",text:"<the points the user wants kept, in their language, as one paragraph>",source:true}) (source:true appends the reading page\'s title and link exactly)';
+
+  if (!intent.memory) return `\n\n# Noting something down\nThe user asked to note this down without saying where: ${flomo}. It looks like contact or account details, so do not write it to memory. Say it is in flomo only when the method returns status observed; otherwise say plainly that it was not saved to flomo and why.`;
+
+  return `\n\n# Noting something down\nThe user asked to note this down without saying where. Do both: (1) ${flomo}; (2) user_memory {action:"interest",topic:"<what the user is interested in, a short noun phrase>"}. Do (2) even when (1) fails. Report each from its own result: flomo counts only when the method returns status observed; memory counts only when its receipt says 已记住 or 早已记着. When both worked say e.g. "记进 flomo 了，也记住了你对 X 感兴趣"; when one did not, name which one and why (not signed in, refused, unconfirmed). Never just say "记下来了".`;
+}
+
 const MINI_APP_GUIDE = `
 
 Mini apps (the user turned this experiment on): when the user needs to try things rather than read an answer — explore several conditions at once (a loan with rate, years and down payment), filter or sort many items you read from pages, a small simulation or game, an interactive chart — answer with one conclusion sentence plus <app title="short name">complete HTML</app>. If a card (stats, options, table, inputs, fields) already does it, use the card; one-sentence answers stay plain text.
@@ -113,7 +128,7 @@ export class ProductContext {
         // 系统提示词只放每次都一样的内容；日期、对话历史、任务状态、站点提示每次运行都变，作为本次上下文消息。
         return {
           systemPrompt:productSystemPrompt(event.systemPrompt,active),
-          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+ANSWER_CARD_REMINDER+(apps?MINI_APP_GUIDE:'')},
+          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+recordNote(String(event.prompt??''))+ANSWER_CARD_REMINDER+(apps?MINI_APP_GUIDE:'')},
         };
       });
     };
