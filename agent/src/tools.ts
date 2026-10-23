@@ -1,3 +1,4 @@
+import type { PreparedCopy } from "../../shared/copied-field.js";
 import { runPageTranslation, type TranslateBatch } from "./page-translation.js";
 import type { TranslationReceipt, TranslationRequest } from "../../shared/page-translation.js";
 /**
@@ -234,7 +235,7 @@ interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSign
 /** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; beforeCopy?: () => Promise<(result: unknown) => void>;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 这个网址所在网站的站点笔记（这一轮还没带过时）；附在打开、跳转结果后面。 */ siteNotesFor?: (url: string) => Promise<string | null>; /** 用户这一句就是要打开网页来看：tabs open 开出的页直接放到眼前。 */ openForUser?: () => boolean }, translateBatch?: TranslateBatch): ToolDefinition[] {
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; beforeCopy?: () => Promise<PreparedCopy>;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 这个网址所在网站的站点笔记（这一轮还没带过时）；附在打开、跳转结果后面。 */ siteNotesFor?: (url: string) => Promise<string | null>; /** 用户这一句就是要打开网页来看：tabs open 开出的页直接放到眼前。 */ openForUser?: () => boolean }, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   /** 站点笔记只给主会话；放在页面原文标记之外，取不到就不附。 */
   const siteNotesAfter = async (url: string): Promise<string> => (sid ? null : await execution?.siteNotesFor?.(url).catch(() => null)) ?? "";
@@ -391,11 +392,16 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }
     };
 
-    const recordCopy = name === 'fill' && callParams.from !== undefined ? await execution?.beforeCopy?.() : undefined;
+    const preparedCopy = name === 'fill' && callParams.from !== undefined ? await execution?.beforeCopy?.() : undefined;
+    if (name === 'fill') {
+      // Copy scope comes only from the user's request, never from generated program arguments.
+      delete callParams.copyRange;
+      if (callParams.from !== undefined && preparedCopy?.range) callParams.copyRange = preparedCopy.range;
+    }
     assertNotAborted();
     if (execution && epoch !== undefined && execution.epoch() !== epoch) throw new Error(STALE_STEP_MESSAGE);
     const result = await invokeReleasingIdleOwner(gated ? epoch : undefined);
-    recordCopy?.(result);
+    preparedCopy?.record(result);
     // Private integrity evidence never enters model programs, side-panel text or traces.
     if (name === 'fill' && result && typeof result === 'object' && 'copyProof' in result) {
       const { copyProof: _copyProof, ...publicResult } = result;
@@ -1029,14 +1035,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "fill",
       label: "Fill",
       description:
-        "Replace the entire value of an input, textarea, contenteditable rich-text editor, or native select in the working tab (works with controlled components). When task_goals/capture_page_material returned a fieldValues value for this field, pass that complete value in ONE fill call, including any requested newline and source URL. No prior focus click is needed. For a dropdown, pass the visible option label (for example 杭州), not a click. Do not open the system picker. target accepts the same locator forms as click. To put text that is already on a page into a field verbatim, pass from pointing at the element that holds it instead of retyping it in value, e.g. fill({target:'@12', from:{tabId:A, target:'@40'}}) copies the answer @40 on tab A into the input @12. When new elements or text appear after the fill (suggestions, dependent fields, notices), the result lists them with usable refs.",
+        "Replace a field (input, textarea, contenteditable or native select); no focus click needed. Give value OR from. Use a complete task_goals/capture_page_material fieldValues value in one call, retaining requested newlines and URL. For a select, value is the visible option label. from copies rendered source text without retyping; it copies the whole element unless range selects sentences or paragraphs. Range first is 1-based (negative counts from the end), count is exact. Target supports the same locators as click. New suggestions or dependent fields are returned with refs.",
       parameters: Type.Object({
         target: Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
         value: Type.Optional(Type.String({ description: "Value to set. Give exactly one of value and from." })),
         from: Type.Optional(Type.Object({
           target: Type.String({ description: 'The element that holds the text: "@N" ref or unique CSS selector' }),
-          tabId: Type.Optional(Type.Integer({ description: "Tab of that element; omit when it is on the tab being filled" })),
-        }, { description: "Copy an element's text into the field without retyping it: its text as rendered (innerText: line breaks between paragraphs and list items, hidden parts left out; a field's displayed value; a rich editor's rendered text), trimmed at both ends. Refused on password, code and card-number fields." })),
+          tabId: Type.Optional(Type.Integer({ description: "Source tab; omit for the working tab" })),
+          range: Type.Optional(Type.Object({ unit: Type.Union([Type.Literal('sentence'), Type.Literal('paragraph')]), first: Type.Integer({description:'1-based; -1 is last'}), count: Type.Integer({minimum:1,maximum:1000}) })),
+        }, { description: "Native copy of rendered text, excluding hidden content, trimmed at both ends. Paragraphs are separated by blank lines. Password, code and card-number sources are refused." })),
         submit: Type.Optional(Type.Boolean({ description: "Press Enter after filling (search boxes and single-line text fields only; refused on message boxes, multi-line fields and editors, where Enter may send)" })),
       }),
       execute: async (_id, params) => {

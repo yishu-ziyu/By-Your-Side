@@ -12,6 +12,7 @@ export interface ProgramStep {
   phase: "start" | "end";
   params: Record<string, unknown>;
   result?: unknown;
+  read?: { url: string; text: string };
   error?: string;
   /** 失败的人话原因（给侧栏）；只在宿主能直接判定时写，比如没拿到内容的 fetch。 */
   reason?: string;
@@ -787,9 +788,11 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         handle.dispose();
         // 与直调的 fetch 同一判定：没拿到内容这一步记为失败并带原因；程序照常拿到原始回执、继续往下跑（可以自己看 status），不因此停下。
         const fetchFailed = canonical === "fetch" && result && typeof result === "object" ? fetchFailureReason(result as FetchReply) : null;
+        const read = canonical === "navigate" && value && typeof value === "object" && "text" in value && typeof value.text === "string" && "url" in value && typeof value.url === "string"
+          ? { url: value.url, text: value.text } : undefined;
         emit(fetchFailed
           ? { ...step, phase: "end", result, error: `HTTP ${(result as FetchReply).status} (not ok)`, reason: fetchFailed, elapsedMs: Date.now() - started }
-          : { ...step, phase: "end", result, elapsedMs: Date.now() - started });
+          : { ...step, phase: "end", result, read, elapsedMs: Date.now() - started });
       } catch (error) {
         const text = message(error);
         // A caught RPC error is not a license to keep writing. The host owns this

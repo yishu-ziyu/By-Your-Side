@@ -1,4 +1,5 @@
-import { redactCredentialText } from "../../shared/untrusted.js";
+import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
+import type { ProgramStep } from "./browser-program.js";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 import { GOAL_CHECK_BOOKKEEPING_TOOLS, newReadIndex, readWords, type GoalCheckInput, type GoalVerificationTarget } from "./goal-check.js";
 
@@ -26,6 +27,7 @@ function firstFailureText(result: unknown): string {
 export class GoalLedger {
   private observations: Array<{ at: number; tool: string; text: string }> = [];
   private readonly words = newReadIndex();
+  private readonly programs = new Map<string, { reads: Array<{ url: string; text: string }>; readOnly: boolean }>();
   private elementReads: { scope: string; targets: GoalVerificationTarget[] } | null = null;
   private failures: { runId: string | null; items: Failure[] } = { runId: null, items: [] };
 
@@ -37,6 +39,66 @@ export class GoalLedger {
     const pages = all.filter(item => item.tool.startsWith("page_")).slice(-2);
     const tools = all.filter(item => !item.tool.startsWith("page_")).slice(-6);
     this.observations = all.filter(item => pages.includes(item) || tools.includes(item));
+  }
+
+  observeProgramStep(step: ProgramStep): void {
+    if (step.phase !== 'end') return;
+    if (!this.programs.has(step.parentId) && this.programs.size >= 32) this.programs.delete(this.programs.keys().next().value!);
+    const program = this.programs.get(step.parentId) ?? { reads: [], readOnly: true };
+    this.programs.set(step.parentId, program);
+    const result = step.read;
+    if (step.error || step.name !== 'navigate' || !result || typeof result !== 'object'
+      || !('text' in result) || typeof result.text !== 'string'
+      || !('url' in result) || typeof result.url !== 'string' || program.reads.length >= 8) {
+      program.readOnly = false;
+      return;
+    }
+    program.reads.push({ url: result.url, text: result.text });
+  }
+
+  /** Rebalance only source prefixes that the program actually returned; never replace computed results or write receipts. */
+  recordProgramResult(id: string, text: string, result: unknown, failed: boolean): void {
+    const program = this.programs.get(id);
+    this.programs.delete(id);
+    const details = result && typeof result === 'object' && 'details' in result ? result.details : null;
+    const value = details && typeof details === 'object' && 'value' in details ? details.value : null;
+    const entries = value && typeof value === 'object' && !Array.isArray(value) ? Object.entries(value) : [];
+    const values = entries.map(([, value]) => value);
+    const used = new Set<number>();
+    const sources: Array<{ key: string; url: string; text: string }> = [];
+    if (!failed && text.length > 8_000 && program?.readOnly && values.length >= 2 && values.length <= 8) {
+      for (const value of values) {
+        if (typeof value !== 'string' || !value.trim()) break;
+        const matches = program.reads.flatMap((read, index) => read.text.startsWith(value) ? [index] : []);
+        if (matches.length !== 1 || used.has(matches[0]!)) break;
+        const index = matches[0]!;
+        used.add(index);
+        sources.push({ key: entries[sources.length]![0], url: program.reads[index]!.url, text: redactCredentialText(value) });
+      }
+    }
+    if (sources.length !== values.length || new Set(sources.map(source => source.url)).size < 2) {
+      this.record('browser_run', text);
+      return;
+    }
+    const marker = '\n[source excerpt truncated]';
+    const prefixes = sources.map(source => `Result key: ${JSON.stringify(source.key)}\nSource URL: ${JSON.stringify(source.url)}\n`);
+    let budget = 8_000 - prefixes.reduce((sum, prefix) => sum + prefix.length + wrapPageContent('').length + marker.length + 2, 0);
+    if (budget < 1_000) { this.record('browser_run', text); return; }
+    const shares = new Map<typeof sources[number], number>();
+    const ordered = [...sources].sort((a, b) => a.text.length - b.text.length);
+    for (const [index, source] of ordered.entries()) {
+      const share = Math.min(source.text.length, Math.floor(budget / (ordered.length - index)));
+      shares.set(source, share);
+      budget -= share;
+    }
+    const balanced = sources.map((source, index) => {
+      const length = shares.get(source)!;
+      return wrapPageContent(prefixes[index] + source.text.slice(0, length) + (length < source.text.length ? marker : ''));
+    }).join('\n\n');
+    if (balanced.length > 8_000) { this.record('browser_run', text); return; }
+    // The complete original result still feeds name provenance, independently of the display budget.
+    readWords(redactCredentialText(text), this.words);
+    this.record('browser_run', balanced);
   }
 
   restore(messages: ReadonlyArray<{ role: string; content?: unknown }>): void {
