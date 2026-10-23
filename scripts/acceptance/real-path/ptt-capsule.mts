@@ -6,7 +6,8 @@
  * 第 2 轮：同一句话，脚本模型挂起不回；网页脚本先派发一个 Esc，任务不停；再真按 Esc，任务停下，胶囊写「已停下」。
  * 念结果：设置页先拒绝一个按量格式的 key，再存 MiniMax 订阅 Key（~/.pi/agent/auth.json 的 minimax-cn）；
  * 第 1 轮的结果真的念完（离屏文档的 AudioContext 走完这段时长）；第 2 轮停下的不念；第 3 轮念到一半按 Esc，声音停、胶囊留着；
- * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：先念结果，念完只接着念「留给你的：…」，不从头重念。
+ * 第 4 轮回答说还有一件没做成，目标核对 2 秒后才说「还差」：语音回答等核对完再念，结果和「留给你的：…」连成一句念；
+ *   核对晚于开念时先念结果、念完只接着念「留给你的」。两种都只念一遍结果。
  * 第 5 轮缺少用户提供的数据：胶囊停在「等你」，真实念出具体缺项，不冒充完成。
  * 结果卡片：第 1 轮回答没有卡片，胶囊上方不出现；第 3 轮之后加一轮，回答带一张表格卡片，胶囊上方出现精简卡片（标题、标了「最高」的一行排第一、
  * 共 3 行、「还有 1 项」），念的仍只是正文；卡片在胶囊正上方、同宽、整块在视口里；鼠标停在卡片上时后台刷新一次（念完），
@@ -447,14 +448,15 @@ try {
   const before = resultSpeech().length;
   await holdAndSpeak(work, four, join(artifacts, "8-listening-fourth.png"));
   await waitPhase(work, four, "done", DICTATION_MS + 15_000);
-  await until(async () => resultSpeech().length >= before + 2 || undefined, 20_000, "left-for-you spoken after the result");
+  // 回答等核对完再念：多半连成一句；核对晚于开念时分两段。
+  await until(async () => resultSpeech().slice(before).some(request => request.text.includes(`留给你的：${LEFT}`)) || undefined, 20_000, "left-for-you spoken with or after the result");
   await sleep(600);
   await rp.screenshot(work, join(artifacts, "9-left-speaking.png"));
   await until(async () => (await capsuleState(work))?.speaking === false || undefined, 30_000, "fourth speech finished");
   four.spoken = await lastSpeech(inproc);
   await sleep(500);
   const spokenTexts = resultSpeech().slice(before).map(request => request.text);
-  assert.deepEqual(spokenTexts, [ANSWER4, `留给你的：${LEFT}`], "R1: the result, then only the left-for-you part");
+  assert.ok([[`${ANSWER4} 留给你的：${LEFT}`], [ANSWER4, `留给你的：${LEFT}`]].some(expected => JSON.stringify(expected) === JSON.stringify(spokenTexts)), `R1: the result once, with or then only the left-for-you part ${JSON.stringify(spokenTexts)}`);
   assert.ok((four.spoken as { ok?: boolean }).ok, `R1: left-for-you played ${JSON.stringify(four.spoken)}`);
   // Esc：念完后按 Esc，卡片和胶囊一起收起。
   assert.ok(await capsuleCard(work), "card: round 4 shows its card");
