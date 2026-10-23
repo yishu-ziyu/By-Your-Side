@@ -31,6 +31,8 @@ export interface HostCoreOptions {
   observe?: (msg: ServerMessage) => void;
   /** 客户端发来的语音命令先经这里；返回 true 表示已处理（本机录音的 capture 命令）。 */
   onVoiceCommand?: (msg: Extract<ClientMessage, { type: "voice" }>, conversationId: string) => boolean;
+  /** 语音会话的诊断事件（带 voiceId、conversationId）；扩展把分段计时要的那几条写进语音日常记录。 */
+  voiceDiagnostic?: (event: string, fields: Record<string, unknown>) => void;
   log: (message: string) => void;
 }
 
@@ -76,7 +78,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     options.voiceKey,
     options.voiceSession,
     (id, text, startedAt, stillCurrent, context) => conversations.routeVoiceInput(id, text, startedAt, stillCurrent, context),
-    (event, fields) => options.log(`[voice] ${event} ${JSON.stringify(fields)}`),
+    (event, fields) => { options.log(`[voice] ${event} ${JSON.stringify(fields)}`); options.voiceDiagnostic?.(event, fields); },
     () => conversations.voiceTargets(),
     (id, deliveryId, status) => conversations.markDeliveryPlayback(id, deliveryId, status),
     (origin, target) => conversations.isVoiceTask(origin, target),

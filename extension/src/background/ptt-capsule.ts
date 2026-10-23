@@ -22,7 +22,12 @@ const SETTLE_MS = 800;
 interface Tracked {
   tabId: number; conversationId: string; heard: string; sawRun: boolean; result: string | null; card: CardPreview | null; settle?: ReturnType<typeof setTimeout>;
   spokenText?: string; utterance: number; speaking?: boolean; queue: string[]; last?: Extract<PttCapsule, { phase: 'doing' | 'done' | 'waiting' }>; ack: string | null; ackUtterance?: number;
+  /** 分段计时：这次按住说话的编号，和已经记过的时间点（每个只记第一次）。 */
+  timingId?: string; marked: Set<string>;
 }
+
+/** 按住说话的分段计时：只写语音日常记录，不改变胶囊和念的行为。 */
+export type PttTiming = (pttId: string, conversationId: string, point: string, at?: number) => void;
 
 /** 确认句没把握时的说法；问句用 ACK_QUESTION。 */
 const ACK_FALLBACK = '好，马上做。';
@@ -89,12 +94,18 @@ function speechFor(capsule: PttCapsule): string | null {
   return null;
 }
 
-export function installPttCapsule(onChange: () => void, voice: PttVoice) {
+export function installPttCapsule(onChange: () => void, voice: PttVoice, timing: PttTiming = () => {}) {
   let tracked: Tracked | null = null;
   let recordingTab: number | null = null;
 
   const show = (tabId: number, capsule: PttCapsule | null) => {
     void chrome.tabs.sendMessage(tabId, { type: PTT_CAPSULE, capsule }).catch(() => { /* 网页已关或没有内容脚本 */ });
+  };
+
+  const mark = (t: Tracked, point: string, at = Date.now()) => {
+    if (!t.timingId || t.marked.has(point)) return;
+    t.marked.add(point);
+    timing(t.timingId, t.conversationId, point, at);
   };
 
   const current = (t: Tracked) => t.last ? (t.speaking ? { ...t.last, speaking: true as const } : t.last) : null;
@@ -106,6 +117,8 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     const speaking = voice.speak(text, t.conversationId, ack);
     t.speaking = !!speaking;
     void speaking?.then(reply => {
+      if (reply.ok || reply.reason === 'hushed') if (reply.startedAt) mark(t, ack ? 'ack_audio' : 'result_audio', reply.startedAt);
+
       if (t.utterance !== id) return;
       t.speaking = false;
       const next = reply.ok ? t.queue.shift() : undefined;
@@ -174,6 +187,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
 
     if (view.state === 'running') {
       t.sawRun = true;
+      mark(t, 'task_start');
       silence(t, true);
       t.last = { phase: 'doing', heard: t.heard, step: stepOf(view), ack: t.ack };
       show(t.tabId, current(t)!);
@@ -181,6 +195,8 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
       showAndSay(t, { phase: 'waiting', heard: t.heard, reason: '页面现在归你。操作完，点「交还」。' });
     } else if (t.sawRun && (view.state === 'idle' || view.state === 'aborted' || view.state === 'error')) {
       // 中止、出错马上停声音（多半是确认句听出理解错了），胶囊照旧稍后再换。
+      mark(t, 'task_end');
+
       if (view.state !== 'idle') { silence(t); show(t.tabId, { phase: 'doing', heard: t.heard, step: stepOf(view), ack: t.ack }); }
       t.settle = setTimeout(() => settle(view), SETTLE_MS);
     }
@@ -198,9 +214,9 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice) {
     },
     level(level: number) { if (recordingTab !== null) void chrome.tabs.sendMessage(recordingTab, { type: PTT_LEVEL, level }).catch(() => {}); },
     /** 松开后的结局：交给了助手（开始跟踪），或没成（直接显示原因）。 */
-    handedOff(tabId: number, conversationId: string, heard: string) {
+    handedOff(tabId: number, conversationId: string, heard: string, timingId?: string) {
       recordingTab = null;
-      const t: Tracked = { tabId, conversationId, heard, sawRun: false, result: null, card: null, utterance: 0, queue: [], ack: ackFor(heard) };
+      const t: Tracked = { tabId, conversationId, heard, sawRun: false, result: null, card: null, utterance: 0, queue: [], ack: ackFor(heard), marked: new Set(), ...timingId ? { timingId } : {} };
       tracked = t;
       t.last = { phase: 'doing', heard, step: null, ack: t.ack };
       if (t.ack) start(t, t.ack, true);

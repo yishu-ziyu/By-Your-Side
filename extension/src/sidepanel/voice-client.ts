@@ -1,4 +1,4 @@
-import {GPT_LIVE_MODEL,isVoiceDiagRecord,VOICE_DIAG_TEXT_MAX,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord,type StepVoice,type VoicePersona,DEFAULT_VOICE_PERSONA} from '../../../shared/voice.js';
+import {GPT_LIVE_MODEL,isVoiceDiagRecord,VOICE_DIAG_TEXT_MAX,type VoiceTimingPoint,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord,type StepVoice,type VoicePersona,DEFAULT_VOICE_PERSONA} from '../../../shared/voice.js';
 import { VoicePlayer } from './voice-player.js';
 import { pcmBase64 } from './voice-signal.js';
 import type { VoiceDiagnosticLog, VoiceDiagTrack } from './voice-diagnostic.js';
@@ -91,6 +91,9 @@ type LiveCall = {
   pageContextKey: string | null;
   pageContextRevision: number;
   unwatchPage: (() => void) | null;
+  /** 分段计时：最近一句用户话的编号，和已写进数据通道、还没出声的结果（委派编号，会话层的记 live-context）。 */
+  lastUserTurn: string | null;
+  resultsAwaitingAudio: string[];
 };
 
 /** 远端声音高于这个音量，算助手正在出声；插话判定只在出声后 0.5 秒内有效。 */
@@ -103,6 +106,9 @@ const LIVE_FALSE_BARGE_MS = 2500;
 
 /** WebRTC 短暂 disconnected 常会自己恢复；超过这么久才按断线处理。 */
 const LIVE_DISCONNECT_GRACE_MS = 3000;
+
+/** 时间点里的编号与协议的 id 同一规则；不合规的编号不带，免得整条被宿主丢掉。 */
+const TIMING_ID = /^[\w-]{1,128}$/;
 
 /** 可选字段「存在才带上」时按具名类型分步赋值。 */
 type CaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
@@ -140,6 +146,8 @@ export class VoiceClient {
   private sayAgainAfterRecovery = false;
   /** 回答播放中连续有人声的帧数（20 ms 一帧，静音帧扣回）。 */
   private loudFrames = 0;
+  /** 阶跃星辰：这一轮的第一段声音已经记过时间点。 */
+  private audioMarkedTurn = -1;
 
   /** Diagnostic capture is manual, bounded, and never sends audio before the backend confirms the mode. */
   private diagSession = false;
@@ -188,6 +196,16 @@ export class VoiceClient {
 
     return this.phase === 'listening' ? Math.min(1, this.inputLevel*5) : 0;
   }
+  /** 分段计时的一个时间点：只进语音日常记录，不改变语音行为；诊断会话不记。 */
+  private mark(point: VoiceTimingPoint, fields: { key?: string | null; ref?: string | null } = {}): void {
+    if (!this.id || this.diagSession) return;
+    const command: Extract<VoiceCommand, { kind: 'timing' }> = { kind: 'timing', point, at: Date.now(), turn: this.turn };
+
+    if (fields.key && TIMING_ID.test(fields.key)) command.key = fields.key;
+
+    if (fields.ref && TIMING_ID.test(fields.ref)) command.ref = fields.ref;
+    this.command(command);
+  }
   private setPhase(phase: VoicePhase, detail?: string): void { this.phase = phase; this.change(phase, detail); }
   private command(command: VoiceCommand): boolean {
     if (!this.id) return false;
@@ -216,6 +234,7 @@ export class VoiceClient {
     this.userIntentActive = true;
     this.conversationId = conversationId;
     this.turn = 0;
+    this.audioMarkedTurn = -1;
     this.serverVad = false;
     this.hasInputTurn = false;
     this.diagSession = diagnostic;
@@ -390,7 +409,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     gain.connect(this.analyser); this.analyser.connect(context.destination);
     const sink = new Audio(); sink.muted = true;
     const remoteMeter = context.createAnalyser(); remoteMeter.fftSize = 256;
-    const live: LiveCall = { pc, dc, gain, mic, sink, remoteMeter, remoteTrack: null, sources: [micSource], turns: new Map(), speakables: new Map(), delegated: new Set(), assistantTurn: null, muted: null, audibleAt: 0, bargeTimer: null, pageContextKey: null, pageContextRevision: 0, unwatchPage: null };
+    const live: LiveCall = { pc, dc, gain, mic, sink, remoteMeter, remoteTrack: null, sources: [micSource], turns: new Map(), speakables: new Map(), delegated: new Set(), assistantTurn: null, muted: null, audibleAt: 0, bargeTimer: null, pageContextKey: null, pageContextRevision: 0, unwatchPage: null, lastUserTurn: null, resultsAwaitingAudio: [] };
     this.live = live;
     live.bargeTimer = setInterval(() => this.watchLiveBargeIn(live), 20);
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -538,6 +557,8 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
       if (turn.role === 'user' && turn.transcript) this.event({ kind: 'text', turn: known?.turn ?? this.turn, role: 'user', text: turn.transcript });
 
+      if (turn.role === 'user') { live.lastUserTurn = turn.id; this.mark('user_done', { key: turn.id }); }
+
       if (turn.role === 'user' && live.muted?.reason === 'barge') {
         live.muted.userDone = true;
 
@@ -584,6 +605,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     if (e.type === 'delegation.created' && e.item?.id && !live.delegated.has(e.item.id)) {
       live.delegated.add(e.item.id);
+      this.mark('delegation', { key: e.item.user_bidi_turn_id, ref: e.item.id });
       const text = (e.item.content ?? []).filter(part => part.type === 'input_text').map(part => part.text ?? '').join('').trim();
 
       if (text) this.command({ kind: 'delegation', delegationId: e.item.id, text, userTurnId: e.item.user_bidi_turn_id });
@@ -606,7 +628,16 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
  return Math.sqrt(this.meter.reduce((s, x) => s + x*x, 0)/this.meter.length); };
 
-    if (rms(live.remoteMeter) > LIVE_AUDIBLE_RMS && live.remoteTrack?.enabled !== false) live.audibleAt = Date.now();
+    if (rms(live.remoteMeter) > LIVE_AUDIBLE_RMS && live.remoteTrack?.enabled !== false) {
+      // 静了半秒以上又响：算一次开口，分段计时用。
+      if (Date.now() - live.audibleAt > LIVE_AUDIBLE_HOLD_MS) {
+        this.mark('remote_audio', { key: live.lastUserTurn, ref: live.assistantTurn });
+
+        for (const ref of live.resultsAwaitingAudio.splice(0)) this.mark('result_audio', { ref });
+      }
+
+      live.audibleAt = Date.now();
+    }
 
     // 服务端一直没听到用户说话：本地那次插话是误判，恢复声音。
     if (live.muted?.reason === 'barge' && !live.muted.userHeard && Date.now() - live.muted.at > LIVE_FALSE_BARGE_MS) {
@@ -1012,14 +1043,18 @@ return;}
       if(this.live?.dc.readyState==='open'){
         this.live.dc.send(JSON.stringify({type:'delegation.context.append',delegation_item_id:e.delegationId,channel:e.channel,content:[{type:'input_text',text:e.text}]}));
 
-        if(e.channel==='speakable')this.live.speakables.set(e.delegationId,{state:'sent'});
+        if(e.channel==='speakable'){this.live.speakables.set(e.delegationId,{state:'sent'});this.live.resultsAwaitingAudio.push(e.delegationId);this.mark('result_sent',{ref:e.delegationId});}
       }
 
       return;
     }
 
     if(e.kind==='live_context'){
-      if(this.live?.dc.readyState==='open')this.live.dc.send(JSON.stringify({type:'session.context.append',event_id:crypto.randomUUID(),channel:e.channel,content:[{type:'input_text',text:e.text}]}));
+      if(this.live?.dc.readyState==='open'){
+        this.live.dc.send(JSON.stringify({type:'session.context.append',event_id:crypto.randomUUID(),channel:e.channel,content:[{type:'input_text',text:e.text}]}));
+
+        if(e.channel==='speakable'){this.live.resultsAwaitingAudio.push('live-context');this.mark('result_sent',{ref:'live-context'});}
+      }
 
       return;
     }
@@ -1109,7 +1144,10 @@ return;}
     if(e.turn!==this.turn)return;
 
     if(e.kind==='reset_output'){this.player?.stop();this.player?.begin(this.turn);}
-    else if(e.kind==='audio'){this.player?.enqueue(e);this.setPhase('speaking');}
+    else if(e.kind==='audio'){
+      if(this.audioMarkedTurn!==this.turn){this.audioMarkedTurn=this.turn;this.mark('panel_audio');}
+      this.player?.enqueue(e);this.setPhase('speaking');
+    }
     else if(e.kind==='response_end')this.player?.responseEnd(e.responseId);
     else this.event(e);
   }

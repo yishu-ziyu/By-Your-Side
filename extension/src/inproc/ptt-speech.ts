@@ -35,7 +35,7 @@ function pcmFromHex(hex: string): Float32Array<ArrayBuffer> {
 }
 
 export function installPttSpeech(): void {
-  let current: { abort: AbortController; context: AudioContext; done: (reply: PttSpeechReply) => void } | null = null;
+  let current: { abort: AbortController; context: AudioContext; done: (reply: PttSpeechReply) => void; startedWall: number } | null = null;
 
   const hush = () => {
     const playing = current;
@@ -44,7 +44,7 @@ export function installPttSpeech(): void {
     if (!playing) return;
     playing.abort.abort();
     void playing.context.close();
-    playing.done({ ok: false, reason: "hushed" });
+    playing.done(playing.startedWall ? { ok: false, reason: "hushed", startedAt: playing.startedWall } : { ok: false, reason: "hushed" });
   };
 
   const speak = (text: string, key: string) => new Promise<PttSpeechReply>(resolve => {
@@ -64,7 +64,8 @@ export function installPttSpeech(): void {
       resolve(reply);
     };
 
-    current = { abort, context, done };
+    const playing = { abort, context, done, startedWall: 0 };
+    current = playing;
     timer = setTimeout(() => { done({ ok: false, reason: "failed", message: "念结果超时" }); abort.abort(); }, SPEECH_TIMEOUT_MS);
     let nextAt = 0;
     let startedAt = 0;
@@ -79,7 +80,10 @@ export function installPttSpeech(): void {
       source.buffer = buffer;
       source.connect(context.destination);
 
-      if (!startedAt) startedAt = nextAt = context.currentTime + LEAD_S;
+      if (!startedAt) {
+        startedAt = nextAt = context.currentTime + LEAD_S;
+        playing.startedWall = Math.round(Date.now() + LEAD_S * 1000);
+      }
       source.start(Math.max(nextAt, context.currentTime));
       nextAt = Math.max(nextAt, context.currentTime) + buffer.duration;
     };
@@ -129,8 +133,8 @@ export function installPttSpeech(): void {
       await new Promise(wait => setTimeout(wait, Math.max(0, (nextAt - context.currentTime) * 1000)));
 
       if (context.currentTime < nextAt - 0.2) throw new Error(`浏览器没让声音放出来（${context.state}）`);
-      done({ ok: true, playedMs: Math.round((nextAt - startedAt) * 1000) });
-    })().catch(error => done(abort.signal.aborted ? { ok: false, reason: "hushed" } : { ok: false, reason: "failed", message: error instanceof Error ? error.message : String(error) }));
+      done({ ok: true, playedMs: Math.round((nextAt - startedAt) * 1000), startedAt: playing.startedWall });
+    })().catch(error => done(abort.signal.aborted ? (playing.startedWall ? { ok: false, reason: "hushed", startedAt: playing.startedWall } : { ok: false, reason: "hushed" }) : { ok: false, reason: "failed", message: error instanceof Error ? error.message : String(error) }));
   });
 
   chrome.runtime.onMessage.addListener((command: Partial<PttSpeechCommand> | undefined, sender, sendResponse) => {

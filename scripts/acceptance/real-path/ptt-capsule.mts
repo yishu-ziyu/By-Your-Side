@@ -21,7 +21,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import { REPO, exportDiagnosticsViaSettings, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel, type Rule } from "./scripted-model.mts";
 
 requireHeadless();
@@ -262,7 +262,7 @@ try {
     await rp.evaluate(settings, `(() => { const input = document.querySelector("#speech-key"); input.value = ${JSON.stringify(key)}; document.querySelector("#speech-save").click(); return true; })()`);
     await sleep(500);
     // SAFETY: 表达式返回 { status, stored }。
-    return await rp.evaluate(settings, `chrome.storage.local.get("ptt_speech_key").then(got => ({ status: document.querySelector("#voice-status").textContent, stored: typeof got.ptt_speech_key === "string" }))`) as { status: string; stored: boolean };
+    return await rp.evaluate(settings, `chrome.storage.local.get("ptt_speech_key").then(got => ({ status: document.querySelector("#speech-status").textContent, stored: typeof got.ptt_speech_key === "string" }))`) as { status: string; stored: boolean };
   };
   const rejected = await saveSpeechKey("eyJhbGciOiJSUzI1NiJ9.pay-as-you-go-shaped");
   evidence.payGoKeyRejected = rejected.status;
@@ -489,6 +489,8 @@ try {
   await failShot?.().catch(() => {});
 } finally {
   if (inprocSession) evidence.speechReplies = await speechReplies(inprocSession).catch(() => []);
+  // 语音记录（含按住说话的分段计时）导出到 downloads/，用 npm run logs -- --voice --file 看。
+  await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads")).catch(() => {});
   await writeFile(join(artifacts, "result.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", evidence, modelRequests: model.requests.map(r => `${r.rule ?? "-"}#${r.step}${r.tools ? "" : " (no tools)"}`), dictationFrames, error }, null, 2));
   await rp.close();
   await rp.remove();
