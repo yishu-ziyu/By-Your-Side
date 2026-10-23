@@ -1,5 +1,5 @@
 import { realtimeBrowserError, type ExecuteRealtimeBrowserTool } from './realtime-browser-tools.js';
-import { progressSpeech } from './voice-receipt.js';
+import { aboutTask, progressSpeech, taskName } from './voice-receipt.js';
 import { randomUUID } from 'node:crypto';
 import type WebSocket from 'ws';
 import { RealtimeVoiceConnection, type RealtimeTaskAction } from './realtime-voice-connection.js';
@@ -49,7 +49,7 @@ type Input = {
  */
 export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' | 'facts' | 'hostNote'>, owner: TaskProgressSnapshot | null | undefined, currentConversationId: string | undefined): string {
   const remaining = delivery.facts ? delivery.facts.remaining.length + (delivery.facts.omittedRemaining ?? 0) : 0;
-  const task = owner && owner.conversationId !== currentConversationId ? `「${owner.goal?.slice(0, 40) ?? '另一项任务'}」` : '这项任务';
+  const task = owner && owner.conversationId !== currentConversationId ? taskName(owner) : '这项任务';
 
   if (delivery.kind === 'finding' && delivery.facts && delivery.facts.outcome !== 'complete') {
     return remaining ? `${task}还有 ${remaining} 项结果没完成或还没确认，具体内容在侧栏。` : `${task}的结果还没确认，具体内容在侧栏。`;
@@ -461,12 +461,13 @@ export class RealtimeVoiceSession {
   }
   notify(snapshot: TaskProgressSnapshot): void {
     const delivery = snapshot.conversationContext?.latestDelivery;
+    const name = snapshot.conversationId !== this.deps.getSnapshot()?.conversationId ? taskName(snapshot) : undefined;
 
     if (delivery && delivery.runId === snapshot.runId) {
-      this.completeDelivery(delivery);
+      this.completeDelivery(name ? { ...delivery, text: aboutTask(name, delivery.text) } : delivery);
     }
     else {
-      this.connection?.notifyTask(progressSpeech(snapshot));
+      this.connection?.notifyTask(progressSpeech(snapshot, name));
     }
   }
   streamDelivery(stream: UserDeliveryStream): void {

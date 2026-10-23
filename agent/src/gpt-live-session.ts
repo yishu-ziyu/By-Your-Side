@@ -1,4 +1,4 @@
-import { progressSpeech } from './voice-receipt.js';
+import { aboutTask, progressSpeech, taskName } from './voice-receipt.js';
 import { spokenDeliveryText, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
 import type { VoiceCommand, VoiceInputContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
 import { GPT_LIVE_CONTEXT_BYTES, utf8Bytes } from '../../shared/gpt-live.js';
@@ -431,9 +431,10 @@ export class GptLiveSession {
   }
   notify(snapshot: TaskProgressSnapshot): void {
     const delivery = snapshot.conversationContext?.latestDelivery;
+    const name = snapshot.conversationId !== this.deps.getSnapshot()?.conversationId ? taskName(snapshot) : undefined;
 
     if (delivery && delivery.runId === snapshot.runId) {
-      this.completeDelivery(delivery);
+      this.completeDelivery(name ? { ...delivery, text: aboutTask(name, delivery.text) } : delivery);
 
       return;
     }
@@ -441,7 +442,7 @@ export class GptLiveSession {
     // 任务出错、被终止或停下却没有交付：念宿主自己的状态说明，不让 GPT-Live 一直等。
     const record = ['error', 'aborted', 'idle'].includes(snapshot.state) ? this.settle(snapshot.runId) : undefined;
 
-    if (record) this.answer(record, 'speakable', progressSpeech(snapshot));
+    if (record) this.answer(record, 'speakable', progressSpeech(snapshot, name));
   }
   streamDelivery(stream: UserDeliveryStream): void {
     if (stream.phase === 'cancelled') this.cancelled.add(stream.id);

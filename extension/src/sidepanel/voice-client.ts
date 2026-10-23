@@ -94,8 +94,14 @@ type LiveCall = {
   /** 分段计时：最近一句用户话的编号，和已写进数据通道、还没出声的结果（委派编号，会话层的记 live-context）。 */
   lastUserTurn: string | null;
   resultsAwaitingAudio: string[];
-  /** 已写进数据通道、还没换来助手开口的结果，按委派编号（会话层的按事件编号）；message 是原样的消息，重送用；ref 进分段计时。 */
-  unvoiced: Map<string, { message: Record<string, unknown>; ref: string; sentAt: number; resent: boolean }>;
+  /**
+   * 已写进数据通道、还没换来助手开口的结果，按委派编号（会话层的按事件编号）；message 是原样的消息，重送用；ref 进分段计时。
+   * ackedAt：服务确认收到的时刻。会话层的确认不带编号，按发送顺序对上：seq 是它在会话层消息里的序号。
+   */
+  unvoiced: Map<string, { message: Record<string, unknown>; ref: string; sentAt: number; ackedAt: number | null; seq?: number; resent: boolean }>;
+  /** 会话层消息已发出、已被确认的条数。 */
+  sessionSent: number;
+  sessionAcked: number;
   unvoicedTimer: ReturnType<typeof setInterval> | null;
   /** 助手最近一次开口或出字、上一段说完，用户最近一次出声的时刻。 */
   assistantAt: number;
@@ -112,10 +118,11 @@ const LIVE_AUDIBLE_HOLD_MS = 500;
 const LIVE_FALSE_BARGE_MS = 2500;
 
 /**
- * GPT-Live 偶尔对写进去的结果回了「已收到」却一直不开口，数据通道上看不出原因；正常 2 秒内就开口。
- * 写进去这么久助手既没开口也没出新字，就等它说完满 LIVE_SETTLE_MS 后原样重送一次。
+ * GPT-Live 偶尔对写进去的结果回了「已收到」却一直不开口，数据通道上看不出原因；正常确认收到后 1.5 秒内就开口。
+ * 确认收到这么久助手既没开口也没出新字，就等它说完满 LIVE_SETTLE_MS 后重送一次。
+ * 重送走会话层：同一个委派再写一遍也会被确认后不开口，会话层的播报一直都念出来。
  */
-const LIVE_UNVOICED_MS = 3000;
+const LIVE_UNVOICED_MS = 2600;
 
 const LIVE_SETTLE_MS = 2500;
 
@@ -427,7 +434,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     gain.connect(this.analyser); this.analyser.connect(context.destination);
     const sink = new Audio(); sink.muted = true;
     const remoteMeter = context.createAnalyser(); remoteMeter.fftSize = 256;
-    const live: LiveCall = { pc, dc, gain, mic, sink, remoteMeter, remoteTrack: null, sources: [micSource], turns: new Map(), speakables: new Map(), delegated: new Set(), assistantTurn: null, muted: null, audibleAt: 0, bargeTimer: null, pageContextKey: null, pageContextRevision: 0, unwatchPage: null, lastUserTurn: null, resultsAwaitingAudio: [], unvoiced: new Map(), unvoicedTimer: null, assistantAt: 0, assistantDoneAt: 0, userAt: 0 };
+    const live: LiveCall = { pc, dc, gain, mic, sink, remoteMeter, remoteTrack: null, sources: [micSource], turns: new Map(), speakables: new Map(), delegated: new Set(), assistantTurn: null, muted: null, audibleAt: 0, bargeTimer: null, pageContextKey: null, pageContextRevision: 0, unwatchPage: null, lastUserTurn: null, resultsAwaitingAudio: [], unvoiced: new Map(), unvoicedTimer: null, sessionSent: 0, sessionAcked: 0, assistantAt: 0, assistantDoneAt: 0, userAt: 0 };
     this.live = live;
     live.bargeTimer = setInterval(() => this.watchLiveBargeIn(live), 20);
     stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -511,6 +518,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       if (key === live.pageContextKey) return;
       live.pageContextKey = key;
       live.dc.send(JSON.stringify({ type: 'session.context.append', event_id: crypto.randomUUID(), channel: 'commentary', content: [{ type: 'input_text', text: prefix + key }] }));
+      live.sessionSent++;
     };
     const activated: Parameters<typeof chrome.tabs.onActivated.addListener>[0] = info => { if (info.windowId === windowId) void update(); };
     const changed: Parameters<typeof chrome.tabs.onUpdated.addListener>[0] = (_id, change, tab) => {
@@ -615,8 +623,19 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     if (e.type === 'delegation.context.appended' && e.delegation_item_id) {
       const speakable = live.speakables.get(e.delegation_item_id);
+      const pending = live.unvoiced.get(e.delegation_item_id);
 
       if (speakable?.state === 'sent') speakable.state = 'appended';
+
+      if (pending && pending.ackedAt === null) pending.ackedAt = Date.now();
+
+      return;
+    }
+
+    if (e.type === 'session.context.appended') {
+      live.sessionAcked++;
+
+      for (const pending of live.unvoiced.values()) if (pending.seq !== undefined && pending.seq <= live.sessionAcked && pending.ackedAt === null) pending.ackedAt = Date.now();
 
       return;
     }
@@ -636,7 +655,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     }
   }
   private awaitVoice(live: LiveCall, key: string, ref: string, message: Record<string, unknown>): void {
-    live.unvoiced.set(key, { message, ref, sentAt: Date.now(), resent: false });
+    live.unvoiced.set(key, { message, ref, sentAt: Date.now(), ackedAt: null, ...(message.event_id ? { seq: live.sessionSent } : {}), resent: false });
     live.unvoicedTimer ??= setInterval(() => this.checkUnvoiced(live), 250);
   }
   private checkUnvoiced(live: LiveCall): void {
@@ -646,17 +665,23 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       // 之后助手开口或出了新字：念出来了，或并进了正在说的那段；用户开口：回答跟着用户这句走。
       if (live.assistantAt > pending.sentAt || live.userAt > pending.sentAt) { live.unvoiced.delete(key); continue; }
 
-      const waited = now - pending.sentAt;
+      const gaveUp = now - pending.sentAt >= LIVE_UNVOICED_GIVE_UP_MS;
 
-      // 正在说的那段只剩声音没播完，等它说完再看。
-      if (waited < LIVE_UNVOICED_GIVE_UP_MS && (live.assistantTurn || waited < LIVE_UNVOICED_MS || now - live.assistantDoneAt < LIVE_SETTLE_MS)) continue;
-      const resend = !pending.resent && live.dc.readyState === 'open' && waited < LIVE_UNVOICED_GIVE_UP_MS;
+      if (!gaveUp) {
+        // 还没确认收到多半是服务卡着：这时重送，它缓过来会把两句都念出来。
+        if (pending.ackedAt === null) continue;
+
+        // 正在说的那段只剩声音没播完，等它说完再看。
+        if (live.assistantTurn || now - pending.ackedAt < LIVE_UNVOICED_MS || now - live.assistantDoneAt < LIVE_SETTLE_MS) continue;
+      }
+      const resend = !gaveUp && !pending.resent && live.dc.readyState === 'open';
       this.mark(resend ? 'result_resent' : 'result_unvoiced', { ref: pending.ref });
 
       if (!resend) { live.unvoiced.delete(key); continue; }
-      // 会话层消息的事件编号不能重复。
-      live.dc.send(JSON.stringify(pending.message.event_id ? { ...pending.message, event_id: crypto.randomUUID() } : pending.message));
-      pending.sentAt = now; pending.resent = true;
+      const again = { type: 'session.context.append', event_id: crypto.randomUUID(), channel: 'speakable', content: pending.message.content };
+      live.dc.send(JSON.stringify(again));
+      pending.message = again; pending.seq = ++live.sessionSent;
+      pending.sentAt = now; pending.ackedAt = null; pending.resent = true;
     }
 
     if (live.unvoiced.size && this.live === live) return;
@@ -1107,6 +1132,7 @@ return;}
       if(this.live?.dc.readyState==='open'){
         const sent={type:'session.context.append',event_id:crypto.randomUUID(),channel:e.channel,content:[{type:'input_text',text:e.text}]};
         this.live.dc.send(JSON.stringify(sent));
+        this.live.sessionSent++;
 
         if(e.channel==='speakable'){this.live.resultsAwaitingAudio.push('live-context');this.mark('result_sent',{ref:'live-context'});this.awaitVoice(this.live,sent.event_id,'live-context',sent);}
       }
