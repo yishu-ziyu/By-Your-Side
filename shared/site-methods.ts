@@ -39,7 +39,7 @@ export function siteMethodsFor(value: string): readonly SiteMethod[] {
   return site ? SITE_METHODS.filter(method => method.site === site) : [];
 }
 
-/** 「记下来」记到哪里：flomo 一条笔记、记忆里一条「用户对……感兴趣」，或两个都记。 */
+/** 「记下来」记到哪里：flomo 一条笔记、记忆里一条「对……感兴趣」，或两个都记。 */
 export interface RecordIntent { flomo: boolean; memory: boolean; /** 用户点名了 flomo 或记忆。 */ named: boolean }
 
 const NAMES_FLOMO = /flomo|浮墨/i;

@@ -181,7 +181,7 @@ export class MemoryStore {
   }
 
   /**
-   * 「记下来」时记一条「用户对 X 感兴趣」（关于你，所有网站，来源原话 = 用户那句）。
+   * 「记下来」时记一条「对 X 感兴趣」（关于你，所有网站，来源原话 = 用户那句）。
    * 同一主题以前被忘掉过就不写（forgotten）；已有一模一样的生效条目就不重复写（already）。
    */
   async saveInterest(input: { topic: string; sourceQuote: string; sourceConversationId: string; guard: () => boolean }): Promise<{ status: "saved" | "already" | "forgotten"; entry: MemoryEntry | null }> {
@@ -710,9 +710,9 @@ function removeFact(entries: MemoryEntry[], forgotten: string[], factId: string)
   }
 }
 
-/** 记忆里「用户对 X 感兴趣」这一条的写法（用户 10-23 定的「记下来」默认去处之一）。 */
+/** 记忆里「对 X 感兴趣」这一条的写法：和其他记忆条目一样不带主语。 */
 export function interestText(topic: string): string {
-  return `用户对${topic.trim()}感兴趣`;
+  return `对${topic.trim()}感兴趣`;
 }
 
 /**
@@ -720,7 +720,7 @@ export function interestText(topic: string): string {
  * 文件里又不留下主题原文。指纹按去掉空白和标点、小写后的主题算。
  */
 function interestMarks(entry: MemoryEntry): string[] {
-  const topic = /^用户对(.+)感兴趣$/su.exec(entry.text)?.[1];
+  const topic = /^对(.+)感兴趣$/su.exec(entry.text)?.[1];
 
   return topic ? [interestMark(topic)] : [];
 }

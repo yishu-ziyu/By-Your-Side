@@ -4,7 +4,7 @@
  * 点了发送但列表里没出现时报 unconfirmed 且只点一次；没登录时报 login_required、什么都不写；用户原来的页面不被换走。
  * 「记下来」没说去处（用户 10-23 定：两个都记）：脚本模型照产品给的上下文办事——提供了 flomo.add-memo 才调它，
  * 上下文里有「Noting something down」才写兴趣记忆；判定只看用户看得到的：flomo 列表里的新笔记（要点 + 来源链接）、
- * 记忆面板里的「用户对……感兴趣」、回答里两件各自的结果。flomo 没登录时回答说没记进 flomo、记忆照写；
+ * 记忆面板里的「对……感兴趣」、回答里两件各自的结果。flomo 没登录时回答说没记进 flomo、记忆照写；
  * 点名「记进 flomo」时即使模型多调一次兴趣记忆也不写。
  *   npx tsx scripts/acceptance/real-path/flomo-memo.mts --headless [--case=saved|lost|signed-out|record|record-signed-out|record-named]
  */
@@ -167,7 +167,7 @@ try {
     await rp.click(panel, "#memory-open");
     const memories = String(await until(async () => (await rp.evaluate(panel, `(() => { const t = document.querySelector("#memory-body")?.innerText ?? ""; return t.length > 0 && !t.includes("正在读取") ? t : ""; })()`)) || undefined, 15_000, "记忆面板读完"));
     await rp.screenshot(panel, join(out, "memory-panel.png"));
-    for (const c of recordCases) check(c.id + " 记忆面板", memories.includes(`用户对${c.topic}感兴趣`) === c.memory, { memories: memories.slice(0, 600) });
+    for (const c of recordCases) check(c.id + " 记忆面板", (memories.includes(`对${c.topic}感兴趣`) && !memories.includes(`用户对${c.topic}感兴趣`)) === c.memory, { memories: memories.slice(0, 600) });
   }
 } catch (error) {
   check("流程完成", false, String(error));
