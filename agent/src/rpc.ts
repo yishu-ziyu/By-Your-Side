@@ -111,7 +111,7 @@ const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /** 成功后就明确改变工作目标的调用；失败不改缺省页。 */
-const TARGET_CHANGING_TOOLS: ReadonlySet<string> = new Set(["switch_tab", "open_tab", "worker_tabs", "click", "double_click"]);
+const TARGET_CHANGING_TOOLS: ReadonlySet<string> = new Set(["switch_tab", "open_tab", "worker_tabs", "click", "double_click", "navigate"]);
 
 function numberField(source: unknown, field: string): number | null {
   if (!source || typeof source !== "object") return null;
@@ -235,6 +235,8 @@ export class ToolRpc {
     if (name === "switch_tab") tabId = numberField(params, "tabId");
     else if (name === "worker_tabs") tabId = params?.action === "claim" ? numberField(data, "tabId") : null;
     else if (name === "click" || name === "double_click") tabId = numberField((data as {newTab?:unknown} | undefined)?.newTab, "tabId");
+    // 为保住用户眼前的页，导航改在新开的或已开着的标签里完成：之后的缺省调用跟到那一页。
+    else if (name === "navigate") tabId = numberField(data, "workingTabId");
     // 新标签页打开的地址变成下载、被 Chrome 关掉：缺省页不换到已关的页上。
     else tabId = (data as { tabClosed?: unknown } | undefined)?.tabClosed === true ? null : numberField(data, "tabId");
 
