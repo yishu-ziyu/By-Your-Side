@@ -8,6 +8,7 @@ import { rangeIssueOf, type InputRangeReadout } from "../../../../shared/page-re
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 import { FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback, type FillSource, type PageInteractionMessage, type ToolContract } from "../../../../shared/protocol.js";
 import { textSha256 } from "../../../../shared/copied-field.js";
+import { copyUnitCount, parseCopyTextRange, selectCopyText, type CopyTextRange } from "../../../../shared/copy-range.js";
 import { copyTargetIdentity, readFillSource } from "./read-element.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
@@ -2157,7 +2158,7 @@ async function writeField<T extends { range?: InputRangeReadout | null; select?:
  * 填写本身的值变化不算：没有目标元素的采样只看页面多没多东西。
  */
 export async function fill(
-  params: { target: string; value?: string; from?: FillSource; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; submit?: boolean },
+  params: { target: string; value?: string; from?: FillSource; copyRange?: CopyTextRange; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; submit?: boolean },
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["fill"]["data"]> {
@@ -2172,11 +2173,47 @@ export async function fill(
     throw notExecuted(new Error("fill 的 from 要写成 {target, tabId?}：target 是文字所在元素的 @ref 或 CSS；填写未执行。"));
   }
 
+  const range = params.from?.range === undefined ? undefined : parseCopyTextRange(params.from.range);
+  const requestedRange = params.copyRange === undefined ? undefined : parseCopyTextRange(params.copyRange);
+
+  if (range === null || requestedRange === null) {
+    throw notExecuted(new Error("复制范围无效：range 要写成 {unit: 'sentence' | 'paragraph', first, count}；first 是非零安全整数且绝对值不超过 10000，count 是 1–1000 的安全整数；填写未执行。"));
+  }
+
+  if (requestedRange && !params.from) {
+    throw notExecuted(new Error("本次需要按指定句或段原样复制，请用 from 指定页面文字来源和正确的 range；填写未执行。"));
+  }
+
   // 先读来源再动页面：读不到、是敏感栏时目标栏一点没动。
-  const copied = params.from ? await readFillSource({ tabId: params.from.tabId ?? params.tabId, target: params.from.target }, sessionId).catch((error: unknown) => { throw notExecuted(error); }) : undefined;
+  const source = params.from ? await readFillSource({ tabId: params.from.tabId ?? params.tabId, target: params.from.target }, sessionId).catch((error: unknown) => { throw notExecuted(error); }) : undefined;
+  let copied = source;
+
+  try {
+    if (source !== undefined && range) copied = selectCopyText(source, range);
+
+    if (source !== undefined && copied !== undefined && requestedRange) {
+      const unitName = requestedRange.unit === "sentence" ? "句" : "段";
+      const selectedCount = copyUnitCount(copied, requestedRange.unit);
+
+      if (selectedCount !== requestedRange.count) {
+        throw new Error(`用户要求复制 ${requestedRange.count} ${unitName}，当前来源选区有 ${selectedCount} ${unitName}。请指定正确的 from.range；填写未执行。`);
+      }
+
+      const sourceCount = copyUnitCount(source, requestedRange.unit);
+      const start = requestedRange.first > 0 ? requestedRange.first - 1 : sourceCount + requestedRange.first;
+
+      // A source node can already contain only the requested unit; its ordinal belongs to the surrounding page.
+      if (start >= 0 && start + requestedRange.count <= sourceCount && copied !== selectCopyText(source, requestedRange)) {
+        throw new Error("当前来源选区与用户指定的句或段不一致，请指定正确的 from.range；填写未执行。");
+      }
+    }
+  } catch (error) {
+    throw notExecuted(error);
+  }
+
   const value = copied ?? params.value!;
   const { copiedTarget, ...written } = await withAppeared(params.tabId, sessionId, () => fillField({ ...params, value, ...(copied !== undefined ? { readbackMax: copied.length + 1 } : {}) }, sessionId, beforeDispatch));
-  const copyProof = copied !== undefined && copiedTarget ? { ...copiedTarget, sha256: await textSha256(copied), chars: [...copied].length } : undefined;
+  const copyProof = copied !== undefined && copiedTarget ? { ...copiedTarget, sha256: await textSha256(copied), chars: [...copied].length, ...(range ? { range } : {}), ...(requestedRange ? { requestedRange } : {}) } : undefined;
   // 搬运的文字不回给模型、不进诊断记录：读回只留核对结论，另附长度和首尾几个字让模型确认取对了元素。
   const data = copied === undefined ? written : { ...written, source: sourceSummary(copied), ...(copyProof ? { copyProof } : {}), ...(written.readback ? { readback: withoutText(written.readback) } : {}) };
 

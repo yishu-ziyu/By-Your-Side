@@ -34,6 +34,9 @@ export interface AxNodeLite {
 const MAX_OUTPUT_CHARS = 24_000;
 
 const MAX_LINE_TEXT = 200;
+// Research facts often sit beyond a paragraph's first sentence. Keep a bounded
+// paragraph while the whole snapshot still obeys its existing character budget.
+const MAX_PARAGRAPH_TEXT = 1000;
 
 const MAX_NAME = 60;
 
@@ -110,7 +113,7 @@ function staticTextOf(node: AxNodeLite): string | null {
 }
 
 /** 节点自身是否值得占一行（不含 ref 前缀）。 */
-function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>, nameMax = MAX_NAME): string | null {
+function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: ReadonlyMap<number, InputRangeReadout>, secret: ReadonlySet<number>, nameMax = MAX_NAME, textMax = MAX_LINE_TEXT): string | null {
   const role = node.role?.value ?? "";
 
   if (DROP_SUBTREE_ROLES.has(role)) return null;
@@ -120,7 +123,7 @@ function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: Read
   const fullPart = full ? ` full=${JSON.stringify(clip(full, MAX_LINE_TEXT))}` : "";
 
   if (role === "StaticText") {
-    return name ? `text: ${clip(name, MAX_LINE_TEXT)}${fullPart}` : null;
+    return name ? `text: ${clip(name, textMax)}${fullPart}` : null;
   }
 
   if (COLLAPSE_ROLES.has(role)) return null;
@@ -184,6 +187,7 @@ export interface AxLine {
   ref?: number;
   /** 去掉缩进和 ref 前缀的这一行：比较前后两次读页时，按它认出同一个东西。 */
   body: string;
+  expandedBody?: string;
   depth: number;
   /** 在输入框里面（输入框自己的文字）：比较变化时不算新出现的内容。 */
   inField: boolean;
@@ -197,6 +201,17 @@ const FIELD_ROLES = new Set(["textbox", "searchbox", "combobox"]);
  * 文档顺序不变（模型靠缩进理解结构），只是文本行先被丢弃。
  */
 function renderBudgeted(entries: readonly AxLine[], budget: number): { text: string; truncated: boolean; keptRefs: number[]; kept: AxLine[]; droppedRefs: number; droppedText: number } {
+  // Expand paragraphs only from spare space after every original line fits.
+  // More detail must never evict an existing control, state, or source line.
+  let spare = budget - entries.reduce((sum, entry) => sum + entry.text.length + 1, 0);
+  if (spare > 0) entries = entries.map(entry => {
+    if (!entry.expandedBody) return entry;
+    const extra = entry.expandedBody.length - entry.body.length;
+    if (extra <= 0 || extra > spare) return entry;
+    spare -= extra;
+    const start = entry.text.indexOf(entry.body);
+    return { ...entry, body: entry.expandedBody, text: entry.text.slice(0, start) + entry.expandedBody + entry.text.slice(start + entry.body.length) };
+  });
   const interactiveCost = entries.reduce((sum, entry) => sum + (entry.interactive ? entry.text.length + 1 : 0), 0);
 
   // 极端情况：页面可交互节点本身就超预算（巨型表格/列表）。此时连 ref 也只能按文档顺序截。
@@ -256,7 +271,7 @@ export function axTreeToText(nodes: AxNodeLite[], budget: number = MAX_OUTPUT_CH
       ? `${text}\n... [truncated：这一页超出 ${budget} 字符预算，按文档顺序截掉了后面的 ${droppedRefs + droppedText} 行（其中 ${droppedRefs} 行带 ref），页面后半部分没有给出。${recover}]`
       : `${text}\n... [truncated，带 ref 的行都在；${droppedText} 行不带 ref 的文本超出 ${budget} 字符预算没有给出。${recover}]`;
 
-  return { text: finalText, backendIds: keptRefs, truncated, entries, shown: kept };
+  return { text: finalText, backendIds: keptRefs, truncated, entries: truncated ? entries : kept, shown: kept };
 }
 
 /** 按预算把几行拼成文字（变化摘要用；规则同快照：先保 ref 行）。 */
@@ -355,6 +370,10 @@ function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRange
         const line: AxLine = { text: `${"  ".repeat(depth)}${prefix}${described}${hasRef ? noteFor(backendId) : ""}`, interactive: hasRef, body: described, depth, inField };
 
         if (hasRef) line.ref = backendId;
+        if (role === "StaticText" && name.length > MAX_LINE_TEXT) {
+          const expanded = describe(node, node.parentId ? byId.get(node.parentId) : undefined, inputs, secret, nameMax, MAX_PARAGRAPH_TEXT);
+          if (expanded) line.expandedBody = flatSelf ? `${expanded} zero-size` : expanded;
+        }
         entries.push(line);
 
         if (name) { say(name); words.push(name); }

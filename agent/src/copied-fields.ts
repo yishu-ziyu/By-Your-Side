@@ -1,3 +1,4 @@
+import type { CopyTextRange } from "../../shared/copy-range.js";
 import { copiedFieldProof, textSha256, type CopiedFieldProof } from '../../shared/copied-field.js';
 import type { ToolRpc } from './rpc.js';
 
@@ -7,6 +8,8 @@ export interface CopyCheck {
   expectedChars?: number;
   actualChars?: number;
   reason?: string;
+  range?: CopyTextRange;
+  requestedRange?: CopyTextRange;
 }
 
 /** Kept only for the current user request; neither source text nor replacement selectors are retained. */
@@ -41,7 +44,7 @@ export class CopiedFields {
     const results: CopyCheck[] = this.overflow ? [{id:'copy-overflow',status:'unknown'}] : [];
     const deadline = Date.now() + 4_000;
     for (const { id, proof } of entries) {
-      const report: CopyCheck = { id, status: 'unknown', ...(proof ? { expectedChars: proof.chars } : {}) };
+      const report: CopyCheck = { id, status: 'unknown', ...(proof ? { expectedChars: proof.chars, ...(proof.range ? {range:proof.range} : {}), ...(proof.requestedRange ? {requestedRange:proof.requestedRange} : {}) } : {}) };
       results.push(report);
       if (!proof || !current() || Date.now() >= deadline) { report.reason = !proof ? 'identity_missing' : !current() ? 'request_changed' : 'timeout'; continue; }
       const target = `@${proof.backendNodeId}`;
@@ -58,7 +61,7 @@ export class CopiedFields {
         const sha256 = await textSha256(field.value);
         if (!current()) continue;
         report.actualChars = [...field.value].length;
-        if (rebase) { proof.sha256 = sha256; proof.chars = report.actualChars; }
+        if (rebase) { proof.sha256 = sha256; proof.chars = report.actualChars; delete proof.range; delete proof.requestedRange; delete report.range; delete report.requestedRange; }
         report.status = sha256 === proof.sha256 ? 'same' : 'different';
       } catch (error) { report.reason = error instanceof Error ? error.message.slice(0, 120) : 'read_failed'; }
     }

@@ -1,3 +1,7 @@
+import { parseCopyTextRange, type CopyTextRange } from "./copy-range.js";
+
+export interface PreparedCopy { record(result: unknown): void; range?: CopyTextRange }
+
 /** A native copy binds its text to one document and DOM node, not to a reusable selector. */
 export interface CopiedFieldProof {
   tabId: number;
@@ -5,6 +9,8 @@ export interface CopiedFieldProof {
   backendNodeId: number;
   sha256: string;
   chars: number;
+  range?: CopyTextRange;
+  requestedRange?: CopyTextRange;
 }
 
 export function copiedFieldProof(value: unknown): CopiedFieldProof | null {
@@ -15,7 +21,10 @@ export function copiedFieldProof(value: unknown): CopiedFieldProof | null {
     || !Number.isSafeInteger(p.backendNodeId) || Number(p.backendNodeId) <= 0
     || typeof p.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(p.sha256)
     || !Number.isSafeInteger(p.chars) || Number(p.chars) < 0) return null;
-  return { tabId: Number(p.tabId), documentId: p.documentId, backendNodeId: Number(p.backendNodeId), sha256: p.sha256, chars: Number(p.chars) };
+  const range = p.range === undefined ? undefined : parseCopyTextRange(p.range);
+  const requestedRange = p.requestedRange === undefined ? undefined : parseCopyTextRange(p.requestedRange);
+  if (range === null || requestedRange === null) return null;
+  return { ...(range ? { range } : {}), ...(requestedRange ? { requestedRange } : {}), tabId: Number(p.tabId), documentId: p.documentId, backendNodeId: Number(p.backendNodeId), sha256: p.sha256, chars: Number(p.chars) };
 }
 
 export async function textSha256(text: string): Promise<string> {

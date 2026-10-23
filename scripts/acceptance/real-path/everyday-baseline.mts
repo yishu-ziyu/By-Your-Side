@@ -984,3 +984,5 @@ if (traceCheck) console.log(`traces\t${traceCheck.outcome}\tsessions=${traceChec
 console.log(`\n${summary.passed}/${summary.total} pass · ${artifacts}`);
 
 await rp.remove();
+// 调用方只看退出码：有一条没过就不能报 0。
+if (summary.passed < summary.total) process.exitCode = 1;
