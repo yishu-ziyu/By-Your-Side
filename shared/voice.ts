@@ -365,7 +365,9 @@ export type VoiceEvent =
   /** GPT-Live：宿主刚取到（必要时刷新过）的 ChatGPT 登录令牌和会话说明，只在内存里用，不落盘。 */
   | { kind: "gpt_live_auth"; access: string; accountId: string; instructions: string }
   /** GPT-Live：送回这次委派的结果。speakable 由 GPT-Live 播报，commentary 只作背景。 */
-  | { kind: "delegation_context"; delegationId: string; channel: "speakable" | "commentary"; text: string };
+  | { kind: "delegation_context"; delegationId: string; channel: "speakable" | "commentary"; text: string }
+  /** GPT-Live：不属于任何委派的话（宿主自己接下的一句），写进会话层；speakable 会被照念。 */
+  | { kind: "live_context"; channel: "speakable" | "commentary"; text: string };
 
 export interface VoiceServerMessage { type: "voice"; voiceId: string; event: VoiceEvent }
 
@@ -580,6 +582,7 @@ export function isVoiceServerMessage(v: unknown): v is VoiceServerMessage {
     case "diag": return isVoiceDiagRecord(e.record);
     case "gpt_live_auth": return shortText(e.access, 16384) && shortText(e.accountId, 128) && shortText(e.instructions, 8000);
     case "delegation_context": return id(e.delegationId) && (e.channel === "speakable" || e.channel === "commentary") && shortText(e.text, USER_DELIVERY_TEXT_MAX);
+    case "live_context": return (e.channel === "speakable" || e.channel === "commentary") && shortText(e.text, USER_DELIVERY_TEXT_MAX);
     default: return false;
   }
 }
