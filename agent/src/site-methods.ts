@@ -58,10 +58,62 @@ function transcript(text: string): { text: string; format: string } | null {
   return null;
 }
 
+/** flomo 页面上的编辑器、笔记列表（编号在时间链接上）和当前可见的发送按钮。只读。 */
+const READ_FLOMO = String.raw`(() => {
+  const editor = document.querySelector('#fl_editor .tiptap');
+  const memos = [...document.querySelectorAll('.memos-list .memo')].map(memo => {
+    const link = memo.querySelector('a[href*="memo_id="]');
+    return { id: link ? new URL(link.href, location.href).searchParams.get('memo_id') : null, text: (memo.querySelector('.richText') ?? memo).innerText.trim() };
+  }).filter(memo => memo.id);
+  const bar = document.querySelector('#fl_editor .pin-right');
+  const visible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const index = bar ? [...bar.children].findIndex(el => el.matches('svg.saveBtn') && visible(el)) : -1;
+  return { editor: !!editor, refused: /^(?:403|401|429)\b|forbidden|denied/i.test(document.title), signedOut: /login|signin/i.test(location.pathname) || !!document.querySelector('a[href*="login"], form [type="password"]'), memos, save: index >= 0 ? '#fl_editor .pin-right > :nth-child(' + (index + 1) + ')' : null };
+})()`;
+
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const squash = (text: string) => text.replace(/\s+/g, "");
+
+/**
+ * 记一条 flomo：在 flomo 标签页（没有就新开一个，不动用户正在看的页）填编辑器、点发送，再从笔记列表读回新多出来的那条。
+ * 发送走普通的点击通道（权限、停止、外部写入确认都照旧）。读不回时报「未确认」，不再发第二次，免得记重。
+ */
+async function addFlomoMemo(params: Fields, method: (typeof SITE_METHODS)[number], tab: Fields, call: (name: ToolName, args: Fields) => Promise<Fields | null>): Promise<Fields> {
+  const text = typeof params.text === "string" ? params.text.trim() : "";
+  if (!text || text.length > 5000) throw new Error("INVALID_ARGUMENT: flomo.add-memo needs text of 1–5000 characters: the memo exactly as the user wants it saved");
+  let tabId = Number(tab.id);
+  let sourceUrl = String(tab.url);
+  if (siteOfUrl(sourceUrl) !== "flomo") {
+    const opened = await call("open_tab", { url: "https://v.flomoapp.com/mine" });
+    if (typeof opened?.tabId !== "number") return { method: method.id, version: method.version, status: "unavailable", reason: "flomo could not be opened." };
+    tabId = opened.tabId;
+    sourceUrl = String(opened.url ?? "https://v.flomoapp.com/mine");
+  }
+  const base = { method: method.id, version: method.version, tabId, sourceUrl };
+  const read = async () => fields((await call("js", { tabId, code: READ_FLOMO }))?.value);
+  let page = await read();
+  // flomo 靠脚本渲染：刚打开时编辑器还没出来，等它出现或等满 8 秒再判断是没登录还是读不到。
+  for (let i = 0; i < 16 && !page?.editor; i++) { await pause(500); page = await read(); }
+  if (!page?.editor) return { ...base, status: page?.signedOut ? "login_required" : "unavailable", reason: page?.signedOut ? "flomo is not signed in in this browser; nothing was saved." : page?.refused ? "flomo refused this browser (the page is an access error); nothing was saved." : "flomo's editor did not appear; nothing was saved." };
+  const before = new Set((Array.isArray(page.memos) ? page.memos : []).map(memo => fields(memo)?.id));
+  await call("fill", { tabId, target: "loc=css:#fl_editor .tiptap", value: text });
+  page = await read();
+  if (typeof page?.save !== "string") return { ...base, status: "partial", reason: "The text is in flomo's editor but its send button did not appear; nothing was sent." };
+  await call("click", { tabId, target: `loc=css:${page.save}` });
+  const wanted = squash(text).slice(0, 200);
+  for (let i = 0; i < 12; i++) {
+    await pause(500);
+    page = await read();
+    const added = (Array.isArray(page?.memos) ? page.memos : []).map(fields).find(memo => memo && !before.has(memo.id) && squash(String(memo.text)).includes(wanted));
+    if (added) return { ...base, status: "observed", memoId: added.id, text: String(added.text).slice(0, 500), scope: "Saved to the user's flomo and read back from the memo list. Do not send it again." };
+  }
+  return { ...base, status: "unconfirmed", reason: "Send was clicked but the new memo did not appear in the memo list. Do not send again; ask the user to check flomo." };
+}
+
 export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Promise<Fields> {
   const method = SITE_METHODS.find(item => item.id === params.id);
   if (!method) throw new Error("INVALID_ARGUMENT: unknown built-in website method; use an id offered for the current site");
-  if (Object.keys(params).some(key => !["id", "query", "tabId", "language"].includes(key))) throw new Error("INVALID_ARGUMENT: siteMethod accepts only id, query, tabId and language");
+  if (Object.keys(params).some(key => !["id", "query", "tabId", "language", "text"].includes(key))) throw new Error("INVALID_ARGUMENT: siteMethod accepts only id, query, tabId, language and text");
   if (params.tabId !== undefined && (!Number.isSafeInteger(params.tabId) || Number(params.tabId) <= 0)) throw new Error("INVALID_ARGUMENT: tabId must be a positive integer");
   const call = async (name: ToolName, args: Fields) => { runtime.check(); const value = await runtime.call(name, args); runtime.check(); return fields(value); };
   const tabs = await call("list_tabs", {});
@@ -69,6 +121,7 @@ export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Pro
   const bound = listed.find(item => item && (params.tabId === undefined ? item.working === true : item.id === params.tabId));
   const tab = bound ?? (params.tabId === undefined ? fields((await call("get_active_tab", {}))?.tab) : null);
   if (!tab || typeof tab.id !== "number" || typeof tab.url !== "string") throw new Error("IDENTITY_CHANGED: no matching working tab for the website method");
+  if (method.operation === "write") return addFlomoMemo(params, method, tab, call);
   const tabId = tab.id;
   const sourceUrl = tab.url;
   if (siteOfUrl(sourceUrl) !== method.site) throw new Error("INVALID_ARGUMENT: this website method does not apply to the current page; no page action was performed");
