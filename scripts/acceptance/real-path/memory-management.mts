@@ -2,7 +2,7 @@
  * 记忆入口有名字、抽屉能搜。
  * 只装扩展、隔离构建、本机脚本模型；记忆和过往任务直接写进扩展自己的 IndexedDB（库名、键与 memory-used-line.mts 相同）。
  *   npx tsx scripts/acceptance/real-path/memory-management.mts --headless
- * 失败方式：顶栏只有图标没有字；抽屉没有搜索框；搜索后组头还写过滤前的条数；没有匹配的组还占着位置；什么都搜不到时一片空白。
+ * 失败方式：顶栏只有图标没有字；抽屉没有搜索框；搜索后组头还写过滤前的条数；没有匹配的组还占着位置；什么都搜不到时一片空白；抽屉里有小于 11px、读不清的字。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -114,6 +114,19 @@ try {
   evidence.search = found;
   await rp.screenshot(panel, join(artifacts, "R5-search.png"));
   assert.deepEqual(found.memories, ["10 月 20 日要跑杭州马拉松"], "only the matching memory stays");
+  const tiny = await rp.evaluate(panel, `(() => {
+    const out = [];
+    const walk = document.createTreeWalker(document.querySelector("#memory-drawer") ?? document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+      const el = node.parentElement;
+      if (!el || !node.textContent.trim() || !el.getClientRects().length) continue;
+      const size = parseFloat(getComputedStyle(el).fontSize);
+      if (size < 11) out.push(size + "px " + node.textContent.trim().slice(0, 20));
+    }
+    return out;
+  })()`) as string[];
+  evidence.tinyText = tiny;
+  assert.deepEqual(tiny, [], "no text in the memory drawer is smaller than 11px");
   assert.deepEqual(found.tasks, ["订马拉松前一晚的酒店"], "only the matching past task stays");
   assert.equal(found.methodGroup, false, "a group with no match is hidden");
   assert.match(found.title, /找到 2 条/, "the title counts the matches, not the total");
