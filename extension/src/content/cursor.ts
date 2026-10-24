@@ -60,6 +60,7 @@ import { sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
 import { feedbackLifetimeMs, type FeedbackPillView } from "../shared/feedback-pill.js";
 import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, isEdgePill, type EdgePill } from "../shared/edge-pill.js";
 import { CURSOR_SPOT_SAVE, CURSOR_SPOT_TAKE, isCursorSpots, type CursorSpot } from "../shared/cursor-spot.js";
+import { EDGE_ENTRY_KEY, isEdgeEntryOff } from "../shared/edge-entry.js";
 import { createEdgeTab, type EdgeTab, type EdgeTabOther, type EdgeTabView } from "./edge-tab.js";
 import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
@@ -2576,9 +2577,30 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     try { void chrome.runtime.sendMessage({ type: EDGE_PILL_OPEN }).catch(() => { /* 侧栏已开 */ }); } catch { /* 自检页没有扩展运行时。 */ }
   }
 
+  /** 停靠的胶囊被鼠标碰到、正展开成翻译入口。 */
+  let entryPeek = false;
+  /** 设置里关掉了右边缘的翻译入口：没有任务时整个收起，不停靠。 */
+  let entryOff = false;
+  let entryShown = false;
+  let entryLeave: ReturnType<typeof setTimeout> | undefined;
+
+  /** 这页已有我们的译文时，入口改成还原。 */
+  function entryView(): EdgeTabView {
+    return document.querySelector('[data-bys-translation="true"]') ? { tone: "idle", a: "还原", b: "原文", hint: "⌥T" } : { tone: "idle", a: "翻译", b: "这一页", hint: "⌥T" };
+  }
+
   function tab(): EdgeTab {
     return edgeTab ??= createEdgeTab({
+      peek: on => {
+        clearTimeout(entryLeave);
+
+        if (on) { entryPeek = true; renderAmbient(); return; }
+        // 移开后稍等再收：鼠标从窄条滑到展开的胶囊上时不来回闪。
+        entryLeave = setTimeout(() => { entryPeek = false; renderAmbient(); }, 400);
+      },
       capsule: () => {
+        if (entryShown) { entryPeek = false; void send({ type: "page_translate_click" }); return; }
+
         if (mainRemote) { jumpToMember(mainRemote); return; }
         dismissResults();
         openPanel();
@@ -2681,6 +2703,9 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       mainRemote = remote.shift()!;
       view = { tone: "away", a: "在", b: mainRemote.title, end: "arrow", hint: "切换到那一页" };
     } else if (taskPill) view = pillView(taskPill);
+    else if (entryPeek && !voiceHere) view = entryView();
+
+    entryShown = view?.tone === "idle";
 
     // 结果不确定、没做成会一直留着；这期间助手还在读页面或想下一步，停止键也要在。
     if (view && !view.end && (view.tone === "unk" || view.tone === "err") && (glowing.size || local.some(([, inst]) => inst.status?.state === "waiting" || inst.status?.state === "reading" || inst.status?.state === "translating"))) view = { ...view, end: "stop" };
@@ -2695,7 +2720,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       if (v) others.push({ id, name: inst.name, title: `${v.a}${v.tight ? "" : " "}${v.b}`.trim(), local: true, detail: inst.status?.detail || undefined });
     }
 
-    if (!view && !edgeTab) return;
+    // 没有任务要显示时停靠在右边缘；语音胶囊在这一页时让位。
+    tab().rest(!voiceHere && !pageControl && !entryOff);
     tab().render(view, others);
   }
 
@@ -3368,4 +3394,14 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         labelText: labelEl?.textContent ?? "",
       };
     });
+
+  // 停靠的翻译入口：网页载入后就贴在右边缘，不用等任务事件；设置里关掉就不停靠。
+  const applyEntrySetting = (off: boolean) => { entryOff = off; renderAmbient(); };
+
+  try {
+    void chrome.storage.local.get(EDGE_ENTRY_KEY).then(stored => applyEntrySetting(isEdgeEntryOff(stored[EDGE_ENTRY_KEY])), () => applyEntrySetting(false));
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "local" && EDGE_ENTRY_KEY in changes) applyEntrySetting(isEdgeEntryOff(changes[EDGE_ENTRY_KEY]!.newValue));
+    });
+  } catch { applyEntrySetting(false); /* 自检页没有扩展运行时。 */ }
 })();

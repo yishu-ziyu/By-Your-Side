@@ -22,6 +22,7 @@ import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
+import { EDGE_ENTRY_KEY, isEdgeEntryOff } from "../shared/edge-entry.js";
 import { CUSTOM_TRANSLATION_STYLE_MAX_CHARS, parseTranslationStyle, TRANSLATION_STYLE_KEY, TRANSLATION_STYLES, type TranslationStyle } from "../../../shared/translation-style.js";
 import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
@@ -1208,6 +1209,7 @@ async function reload(): Promise<void> {
   renderColorTones(parseColorTone(stored[COLOR_TONE_KEY]));
   renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
   renderTranslationStyles(parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]));
+  $<HTMLInputElement>("edge-entry").checked = !isEdgeEntryOff(stored[EDGE_ENTRY_KEY]);
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
@@ -1528,6 +1530,7 @@ bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接
 bindToggle(nudgeToggle, NUDGE_KEY, selectionStatus, (on) => (on ? "主动建议已开启。" : "主动建议已关闭。"));
 
 bindToggle($<HTMLInputElement>("browse-habits"), BROWSE_ON_KEY, $("habits-status"), (on) => (on ? "已开启。" : "已暂停，已记的操作保留。"));
+bindToggle($<HTMLInputElement>("edge-entry"), EDGE_ENTRY_KEY, $("translation-status"), (on) => (on ? "已打开，网页右边缘会停着翻译入口。" : "已关闭，⌥T 和侧栏按钮照常可用。"));
 bindToggle($<HTMLInputElement>("mini-apps"), MINI_APPS_KEY, $("labs-status"), (on) => (on ? "已打开，下一个问题起生效。" : "已关闭，已有的小程序不再显示。"));
 
 bindToggle(openThreads, OPEN_THREADS_KEY, $("open-threads-status"), (on) => (on ? "已开启，下次打开新对话时出现。" : "已关闭。"));
@@ -1573,7 +1576,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => (on ? "做完会
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));

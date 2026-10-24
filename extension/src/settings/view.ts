@@ -168,6 +168,7 @@ export function renderSettings(): void {
           </div>
         </div>
       </div>
+      ${toggleRow("edge-entry", "网页右边缘的翻译入口", "平时在网页右边露一条窄边，鼠标靠近就展开「翻译 这一页」。关掉后 ⌥T 和侧栏按钮照常可用。")}
     </div>
     <p id="translation-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>

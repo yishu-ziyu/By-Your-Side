@@ -484,16 +484,28 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  return true;
 });
 
-// 一键翻译 ⌥T：不经主模型，这页没有译文就整页翻译，有就还原；侧栏开着与否都一样。
-// 快捷键可能刚把扩展后台唤醒，到任务宿主的连接还在建立：等它连上再发，最多 5 秒。
+// 一键翻译（⌥T、侧栏「文A」、右边缘入口都走这里）：不经主模型，这页没有译文就整页翻译，有就还原；侧栏开着与否都一样。
+// 到任务宿主的连接可能还在建立（快捷键刚唤醒扩展后台、侧栏刚打开）：等它连上再发，最多 5 秒，不悄悄丢掉。
+async function translateTab(tab: { id?: number; title?: string; url?: string; windowId?: number }): Promise<boolean> {
+ if (tab.id == null) return false;
+ const msg: ClientMessage = { type: "page_translate", context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }, conversationId: conversationForWindow(tab.windowId) };
+
+ for (const end = Date.now() + 5_000; Date.now() < end; await new Promise(done => setTimeout(done, 200))) if (transport.sendClientMessage(msg)) return true;
+
+ return false;
+}
+
 chrome.commands?.onCommand.addListener((command) => {
  if (command !== "translate-page") return;
- void activeTargetTabs().then(async ([tab]) => {
-  if (tab?.id == null) return;
-  const msg: ClientMessage = { type: "page_translate", context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }, conversationId: conversationForWindow(tab.windowId) };
+ void activeTargetTabs().then(([tab]) => { if (tab) void translateTab(tab); });
+});
 
-  for (const end = Date.now() + 5_000; !transport.sendClientMessage(msg) && Date.now() < end;) await new Promise(done => setTimeout(done, 200));
- });
+// 网页右边缘停靠的胶囊上点「翻译 这一页」：和 ⌥T 同一条路，翻的是点它的那一页。
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+ if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "page_translate_click" || sender.id !== chrome.runtime.id || !sender.tab) return;
+ void translateTab(sender.tab).then(ok => sendResponse({ ok }));
+
+ return true;
 });
 
 // 选中文字以后常常接着问这段（打字或按住说话）：先连上模型服务；配了听写密钥再让离屏文档连好听写，不开麦、不送声音。
@@ -2397,9 +2409,7 @@ function attachPanel(port: chrome.runtime.Port) {
 
         // 侧栏的「翻译这一页」不知道标签页：这里补上活动标签页，再和 ⌥T 走同一条路。
         if (client.type === "page_translate" && !client.context) {
-          void getActiveTab().then(({ tab }) => {
-            if (tab?.id != null) uplink.sendClientMessage({ ...client, context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" } });
-          });
+          void getActiveTab().then(({ tab }) => { if (tab) void translateTab(tab); });
           break;
         }
 
