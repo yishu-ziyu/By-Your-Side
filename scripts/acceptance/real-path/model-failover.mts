@@ -93,7 +93,7 @@ async function runCase(c: Case) {
   const main = createServer(async (req, res) => {
     let body = "";
 
-    for await (const chunk of req) body += String(chunk);
+    req.setEncoding('utf8'); for await (const chunk of req) body += chunk;
 
     const tools = /"tools"\s*:\s*\[\s*\{/.test(body);
 

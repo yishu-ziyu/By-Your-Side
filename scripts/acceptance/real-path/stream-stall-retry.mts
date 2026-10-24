@@ -28,7 +28,7 @@ let stalled = false;
 const proxy = createServer(async (req, res) => {
   let body = "";
 
-  for await (const chunk of req) body += String(chunk);
+  req.setEncoding('utf8'); for await (const chunk of req) body += chunk;
 
   // 空 delta 经过供应商原始事件钩子，但没有推进正文；连接活着不等于回答在推进。
   if (!stalled && req.method === "POST" && body.includes(TASK) && body.includes('"tools"')) {

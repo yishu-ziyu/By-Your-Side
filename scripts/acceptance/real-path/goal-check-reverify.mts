@@ -39,7 +39,7 @@ let work='',panel='',budget:Awaited<ReturnType<typeof installBudget>>|undefined,
 const pageState=()=>rp!.evaluate(work,'({complete:document.querySelector("#complete").value,second:document.querySelector("#second").value,events:window.events,counts:window.counts})');
 const proxy=createServer(async(req,res)=>{
  try{
-  let body='';for await(const chunk of req)body+=String(chunk);
+  const parts:Buffer[]=[];for await(const chunk of req)parts.push(chunk);const body=Buffer.concat(parts).toString('utf8');
   let forward=body;
   if(budgetCase&&!budget&&req.method==='POST'){
    const payload=JSON.parse(body);

@@ -35,7 +35,7 @@ const gate: Array<{ at: number; result: string }> = [];
 const front = createServer(async (req, res) => {
   let body = "";
 
-  for await (const chunk of req) body += String(chunk);
+  req.setEncoding('utf8'); for await (const chunk of req) body += chunk;
 
   if (req.headers.authorization !== "Bearer good-key") {
     gate.push({ at: Date.now(), result: "401" });
