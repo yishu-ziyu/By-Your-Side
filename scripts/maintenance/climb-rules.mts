@@ -19,20 +19,26 @@ export function registrationOf(value: unknown): Registration {
   const r = value as Record<string, unknown>;
   const need = (ok: boolean, what: string) => { if (!ok) throw new Error(`登记文件：${what}`); };
   const metric = (m: unknown) => METRICS.includes(m as Metric);
+  const nonNegative = (v: unknown) => v === undefined || (typeof v === "number" && Number.isFinite(v) && v >= 0);
 
   need(typeof r.name === "string" && /^[\w.-]+$/.test(r.name), "name 只能用字母数字和 .-_");
   need(typeof r.base === "string" && typeof r.cand === "string", "要有 base 和 cand 两份构建目录");
-  need(Array.isArray(r.scenarios) && r.scenarios.every(n => typeof n === "number"), "scenarios 是任务池里的 n");
+  need(Array.isArray(r.scenarios) && r.scenarios.every(n => Number.isInteger(n)), "scenarios 是任务池里的 n");
+  // 同一场景写两遍会把一对样本算成两对。
+  need(new Set(r.scenarios as number[]).size === (r.scenarios as number[]).length, "scenarios 不能重复");
   need(Number.isInteger(r.N) && (r.N as number) >= 1, "N 是正整数");
   need(typeof r.alpha === "number" && r.alpha > 0 && r.alpha < 0.5, "alpha 在 0 到 0.5 之间");
   need(typeof r.budgetMin === "number" && r.budgetMin > 0, "budgetMin 是分钟数");
   need(Number.isInteger(r.seed), "seed 是整数");
   const t = r.target as Record<string, unknown> | undefined;
   need(!!t && typeof t === "object" && (typeof t.case === "string" || metric(t.metric)), "target 要么是 { case }，要么是 { metric }");
-  if (t && "metric" in t && t.metric !== "ok") need(typeof t.delta === "number" || typeof t.deltaRel === "number", "连续目标要登记 delta 或 deltaRel（最小有意义改进）");
-  need(Array.isArray(r.guards) && r.guards.every(g => g && typeof g === "object" && metric((g as Guard).metric) && ((g as Guard).metric === "ok" || typeof (g as Guard).rel === "number" || typeof (g as Guard).abs === "number")), "每个守护要有 metric，连续守护要有 rel 或 abs");
+  if (t && typeof t.case === "string") need(t.runs === undefined || (Number.isInteger(t.runs) && (t.runs as number) >= 1), "机制目标的 runs 是正整数");
+  if (t && "metric" in t && t.metric !== "ok") need((t.delta !== undefined || t.deltaRel !== undefined) && nonNegative(t.delta) && nonNegative(t.deltaRel), "连续目标要登记不小于 0 的 delta 或 deltaRel（最小有意义改进）");
+  need(Array.isArray(r.guards) && r.guards.every(g => g && typeof g === "object" && metric((g as Guard).metric) && nonNegative((g as Guard).rel) && nonNegative((g as Guard).abs) && ((g as Guard).metric === "ok" || (g as Guard).rel !== undefined || (g as Guard).abs !== undefined)), "每个守护要有 metric，连续守护要有不小于 0 的 rel 或 abs");
   need(Array.isArray(r.redLines) && r.redLines.every(c => typeof c === "string"), "redLines 是验收用例名");
-  need(r.scenarios.length > 0 || (!!t && typeof t.case === "string"), "没有场景时目标必须是验收用例");
+  const guards = r.guards as Guard[];
+  if ((r.scenarios as number[]).length) need(guards.some(g => g.metric === "ok"), "有场景时必须登记「做成」守护");
+  else need(!!t && typeof t.case === "string" && guards.length === 0, "没有场景时目标必须是验收用例，也不能登记守护（没有配对可量）");
 
   // SAFETY: 上面逐项核过形状。
   return r as unknown as Registration;
@@ -81,6 +87,8 @@ export function median(values: number[]) {
 /**
  * 场景配对的判定。sentences 是任务池里每个场景的句数。机制目标（case）在外面跑完，结果从 caseTargetPass 传进来。
  * 顺序：显著变坏 → 否决；配对不全、模型不一致 → 证据不足；目标没证明变好或任一守护没证明没变差 → 证据不足；都过 → 通过。
+ * 符号检验只看方向不看大小（九次快一点、一次慢一百倍也能过），所以每个连续指标另加一条总量约束：
+ * 目标的总量要好过登记的改进之和，守护的总量变差不能超过允许变差之和。
  */
 export function judge(reg: Registration, passes: Pass[], sentences: Map<number, number>, caseTargetPass: boolean | null): { verdict: Verdict; reasons: string[]; lines: string[] } {
   const reasons: string[] = [];
@@ -116,6 +124,13 @@ export function judge(reg: Registration, passes: Pass[], sentences: Map<number, 
   const harmful = broke.length > 0 && harmP <= reg.alpha;
   if (harmful) reasons.push(`改后做成显著变少（新增失败 ${broke.length}、修好 ${fixed.length}，p=${harmP.toFixed(3)}）`);
 
+  // 连续指标不能悄悄丢掉没跑完的配对：样本不足登记的数就判不了。
+  const full = (metric: Metric, values: PairValue[]) => {
+    if (values.length < expected) reasons.push(`${metric} 只有 ${values.length}/${expected} 对两边都跑完，样本不够`);
+    return values.length >= expected;
+  };
+  const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+
   const guardsPass = reg.guards.map(guard => {
     if (guard.metric === "ok") {
       if (broke.length) reasons.push(`守护「做成」：有 ${broke.length} 次新增失败`);
@@ -126,8 +141,11 @@ export function judge(reg: Registration, passes: Pass[], sentences: Map<number, 
     const p = values.length ? signP(values.map(v => allowed(v) - (v.cand - v.base))) : 1;
     const worse = values.filter(v => v.cand - v.base >= allowed(v)).length;
     lines.push(`守护 ${guard.metric}（每对允许变差 ${[guard.rel ? `${guard.rel * 100}%` : "", guard.abs ? String(guard.abs) : ""].filter(Boolean).join(" 或 ")}，取大）：${values.length} 对里 ${worse} 对越界，p=${p.toFixed(3)}；改前/改后中位 ${median(values.map(v => v.base))} / ${median(values.map(v => v.cand))}`);
+    const totalWorse = sum(values.map(v => v.cand - v.base));
+    const totalAllowed = sum(values.map(allowed));
     if (p > reg.alpha) reasons.push(`守护 ${guard.metric} 没能证明没变差（p=${p.toFixed(3)}）`);
-    return p <= reg.alpha;
+    if (totalWorse > totalAllowed) reasons.push(`守护 ${guard.metric} 总量变差 ${totalWorse}，超过允许的 ${totalAllowed}`);
+    return full(guard.metric, values) && p <= reg.alpha && totalWorse <= totalAllowed;
   });
 
   let targetPass = caseTargetPass ?? false;
@@ -141,7 +159,10 @@ export function judge(reg: Registration, passes: Pass[], sentences: Map<number, 
       const values = pairsFor(target.metric);
       const need = (v: PairValue) => target.delta ?? (target.deltaRel ?? 0) * v.base;
       const p = values.length ? signP(values.map(v => v.base - v.cand - need(v))) : 1;
-      targetPass = values.length > 0 && p <= reg.alpha;
+      const gain = sum(values.map(v => v.base - v.cand));
+      const needed = sum(values.map(need));
+      targetPass = full(target.metric, values) && p <= reg.alpha && gain > needed;
+      if (gain <= needed) reasons.push(`目标 ${target.metric} 总量只好了 ${gain}，没超过登记的 ${needed}`);
       lines.push(`目标 ${target.metric}（每对至少好 ${target.delta ?? `${(target.deltaRel ?? 0) * 100}%`}）：${values.filter(v => v.base - v.cand > need(v)).length}/${values.length} 对达到，p=${p.toFixed(3)}；改前/改后中位 ${median(values.map(v => v.base))} / ${median(values.map(v => v.cand))}`);
     }
   }

@@ -15,7 +15,7 @@
  * 连续指标用精确符号检验：只看每对的差有没有严格越过登记的界线，不假设分布，也不拿中位数代替均值或长尾。
  * 「做成」守护要求一次新增失败都没有；N 对里没见到新增失败，只说明新增失败概率的单侧 95% 上界是 1−0.05^(1/N)，报告里写出这个数。
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
@@ -45,12 +45,16 @@ const reg = registrationOf(JSON.parse(readFileSync(file, "utf8")));
 const registrationHash = createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 12);
 const dists: Record<Arm, string> = { base: resolve(REPO, reg.base), cand: resolve(REPO, reg.cand) };
 for (const arm of ["base", "cand"] as const) if (!existsSync(join(dists[arm], "manifest.json"))) throw new Error(`${arm} 构建目录里没有 manifest.json：${dists[arm]}`);
-const pool = poolOf(JSON.parse(readFileSync(reg.pool ?? join(REPO, "out/self-use/pool.json"), "utf8")));
+// 只对验收用例时不需要任务池。
+const pool = reg.scenarios.length ? poolOf(JSON.parse(readFileSync(reg.pool ?? join(REPO, "out/self-use/pool.json"), "utf8"))) : [];
 const sentences = new Map(reg.scenarios.map(n => {
   const task = pool.find(t => t.n === n);
   if (!task) throw new Error(`任务池里没有场景 ${n}`);
   return [n, task.say.length] as const;
 }));
+// 尺子（回放和判定脚本）也要冻结：记下版本，工作区里改过就写进报告，这次的结论只对这份尺子成立。
+const rulerHead = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim();
+const rulerDirty = execFileSync("git", ["status", "--porcelain", "--", "scripts/maintenance", "scripts/acceptance"], { cwd: REPO, encoding: "utf8" }).trim().length > 0;
 const outDir = join(REPO, "out/hill-climb", reg.name);
 await mkdir(outDir, { recursive: true });
 const started = Date.now();
@@ -108,7 +112,7 @@ const aa = dists.base === dists.cand;
 const report = [
   `# 爬山判定 ${reg.name}：${verdict}`,
   ``,
-  `改前 ${dists.base}；改后 ${dists.cand}${aa ? "（同一份构建：A/A 检验，应当判「证据不足」）" : ""}。场景 ${reg.scenarios.join("、") || "无"}，${reg.N} 对，α=${reg.alpha}，用时 ${minutes} 分钟，登记 ${registrationHash}。`,
+  `改前 ${dists.base}；改后 ${dists.cand}${aa ? "（同一份构建：A/A 检验，应当判「证据不足」）" : ""}。场景 ${reg.scenarios.join("、") || "无"}，${reg.N} 对，α=${reg.alpha}，用时 ${minutes} 分钟，登记 ${registrationHash}，尺子 ${rulerHead}${rulerDirty ? "（开跑时回放或验收脚本有未提交的改动）" : ""}。`,
   ``,
   ...(allReasons.length ? ["没通过的原因：", ...allReasons.map(r => `- ${r}`), ""] : []),
   ...[...notes, ...judged.lines].map(l => `- ${l}`),
@@ -117,8 +121,9 @@ const report = [
   ...passes.map(p => `- 第 ${p.pair + 1} 对 ${p.arm}：${p.report}`),
 ].join("\n") + "\n";
 await writeFile(join(outDir, "report.md"), report);
-await writeFile(join(outDir, "passes.json"), JSON.stringify({ registration: registrationHash, passes }, null, 2));
-await appendFile(join(REPO, "out/hill-climb/ledger.jsonl"), JSON.stringify({ time: new Date().toISOString(), name: reg.name, registration: registrationHash, verdict, reasons: allReasons, lines: judged.lines, notes, minutes, aa }) + "\n");
+// 里面有完整回答，只给本机用户读。
+await writeFile(join(outDir, "passes.json"), JSON.stringify({ registration: registrationHash, passes }, null, 2), { mode: 0o600 });
+await appendFile(join(REPO, "out/hill-climb/ledger.jsonl"), JSON.stringify({ time: new Date().toISOString(), name: reg.name, registration: registrationHash, ruler: rulerHead, rulerDirty, verdict, reasons: allReasons, lines: judged.lines, notes, minutes, aa }) + "\n");
 console.log(report);
 console.log(`报告：${join(outDir, "report.md")}`);
 process.exit(verdict === "通过" ? 0 : verdict === "否决" ? 2 : 3);
