@@ -27,7 +27,7 @@ export interface TranslationReceipt {
 
 export interface TranslationCommand {
   tabId?: number;
-  /** settle: the translation run ended (done, failed or stopped); remove every pending-paragraph mark. peek: read the paragraphs a fresh translate would collect first, without touching the page. */
+  /** settle: the translation run ended (done, failed or stopped); remove every pending-paragraph mark. peek: read the paragraphs a fresh translate would collect first (or, when the page already has translations, their state), without touching the page. */
   action: 'begin' | 'collect' | 'apply' | 'display' | 'restore' | 'settle' | 'peek';
   document?: string;
   language?: string;

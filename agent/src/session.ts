@@ -1152,6 +1152,34 @@ if(required.includes(key))candidates.set(key,attachment);
   }
 
   /** Execute the already-registered browser tool; no Pi prompt or routing model. */
+  /**
+   * 一键翻译（快捷键、侧栏按钮、边缘胶囊）：不经主模型，这页没有译文就整页翻译，有就还原。
+   * 走直接工具同一条路：运行状态、停止键和侧栏步骤都和语音直接操作网页一样，用户按键本身就是授权。
+   */
+  async togglePageTranslation(context: PageContext): Promise<void> {
+    const { emit } = this.callbacks;
+
+    if (this.hold.isHeld()) { emit({ kind: "notice", message: "现在页面归你，交还后再翻译这一页。" }); return; }
+
+    if (this.isStreaming()) { emit({ kind: "notice", message: "助手正在做事，做完再翻译这一页。" }); return; }
+
+    if (!this.rpc) return;
+    let translated = 0;
+
+    try {
+      // display- 身份：这是用户的新请求，扩展不按上一次（可能已停止的）任务身份拒掉它。
+      const state = await this.rpc.call("page_translation", { action: "peek", tabId: context.tabId, maxBlocks: 1 }, PRE_OBSERVATION_TIMEOUT_MS, undefined, undefined, undefined, `display-${randomUUID()}`) as TranslationReceipt;
+      translated = state.document ? state.translated : 0;
+    } catch { /* 读不到状态就按没有译文处理：translate 会自己重新认页面。 */ }
+    const action = translated > 0 ? "restore" : "translate";
+
+    try {
+      await this.executeRealtimeBrowserTool("page_translation", { action, tabId: context.tabId }, new AbortController().signal, { runId: null });
+    } catch (error) {
+      emit({ kind: "notice", message: `${action === "restore" ? "还原" : "翻译"}没有完成：${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+
   async executeRealtimeBrowserTool(name: string, args: Record<string, unknown>, signal: AbortSignal, identity?: {inputId?: string; runId?: string | null}): Promise<unknown> {
     let toolCallId: string | undefined;
     let readback: RealtimeFillReadback | undefined;

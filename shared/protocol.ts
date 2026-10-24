@@ -361,6 +361,8 @@ export type ClientMessage = ConversationEnvelope & (
   /** 用户点进输入框或开始打字：先把到当前模型服务的连接建好，并预取当前页正文与标签页列表，发出去的第一句不再等建连接和慢读页。 */
   /** connection：只建连接，不预取页面、不预热提示缓存（选中文字时可能要按住说话，不值得为它发模型请求）。 */
   | { type: "warm_up"; context?: PageContext; connection?: true }
+  /** 一键翻译（快捷键、侧栏按钮、边缘胶囊）：这页没有译文就整页翻译，有就还原；不经主模型。 */
+  | { type: "page_translate"; context: PageContext }
   /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做。key：刚换的 key，先用上再接着做。auto：错误卡倒计时到点自己发的。 */
   | { type: "retry_after_error"; key?: string; auto?: true }
   /** 换 key 面板的「测试连接」：用这个 key 向当前主模型发一句话，结果见 model_key_test_result。 */
@@ -1027,6 +1029,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     ) {
       return null;
     }
+
+    if (msg.type === "page_translate" && !isPageContext(msg.context)) return null;
 
     if (msg.type === "takeover") {
       if (!validRequestId(msg.requestId)) return null;

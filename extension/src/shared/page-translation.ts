@@ -56,10 +56,17 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   // Read-only: the paragraphs a fresh translate would collect first, in the same order, so they can be translated
   // while the model is still deciding. No state, marks or ids are left on the page.
+  // When this page already has translations, report them instead: a one-key toggle restores them.
   if (command.action === 'peek') {
     const found: TranslationReceipt['blocks'] = [];
 
-    // Any existing state (even a stale one from an earlier URL) is handled by the real call, which may restore it first.
+    if (state && state.url === documentUrl()) {
+      const done = [...state.blocks.values()].filter(b => b.segments.every(s => s.translation !== undefined)).length;
+
+      return {document: state.token, language: state.language, mode: state.mode, fontSize: state.fontSize, fontFamily: state.fontFamily, translated: done, remaining: state.blocks.size - done, unsupported: 0, blocks: []};
+    }
+
+    // A stale state from an earlier URL is handled by the real call, which restores it first.
     if (!state) {
       const paragraphs = [...readParagraphs()].filter(([, nodes]) => !tooLarge(nodes)).sort(([a], [b]) => fromViewport(a) - fromViewport(b));
 

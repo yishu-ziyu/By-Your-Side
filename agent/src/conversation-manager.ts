@@ -1818,6 +1818,14 @@ return;}
       return;
     }
 
+    // 一键翻译不属于哪个任务：侧栏关着时这个会话可能还没载入，先载入存着的会话（找不到就交给默认会话）。
+    if (message.type === "page_translate") {
+      const fallback = this.entries.get(id) ? undefined : await this.ensureDefault();
+      (this.entries.get(id) ?? fallback)?.runtime.handleMessage(message);
+
+      return;
+    }
+
     const entry = this.entries.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
 
     if (!entry) throw new Error(`CONVERSATION_NOT_FOUND: ${id}`);
