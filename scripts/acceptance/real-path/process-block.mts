@@ -7,6 +7,7 @@
  *   c) 回执「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式，换了做法的那步在展开的过程里）；380px 和 300px 宽都是一行。
  *   d) 展开的记录：「想了 N 秒」只列三段长的（4 秒、8 秒左右，和最后一轮），末行「共 N 秒，其中想了 M 秒」，N 与发送到结束差 ≤1 秒。
  *   e) 重开侧栏（回放历史）后，过程块的文字和回放前一样；回放没有时钟时不写任何秒数。
+ *   d0) 点开过程行 220ms 内展开到位：一天点很多次，等久了像卡。
  *   f) 最后一轮的思考块标题从上一步结束数到回答出第一个字（约 6 秒），不从第一个思考字数到这一轮结束（约 5 秒）（#261）。
  * 失败方式：标题仍拼「· 已做 N 步」、秒数数整轮、回执只写步数或写了耗时，对应的项失败。反例结果见验收文件。
  */
@@ -125,7 +126,22 @@ try {
   check("c2 300px 宽：回执仍是一行", narrow.oneLine && /^做了 3 步 · \d[^·]*秒 · (核对中…|已核对页面)$/.test(narrow.title), { title: narrow.title, oneLine: narrow.oneLine });
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 380, height: 760, deviceScaleFactor: 2, mobile: false }, panel);
 
-  await rp.evaluate(panel, '[...document.querySelectorAll("#messages details.run-steps")].at(-1).open = true; true');
+  // 量用户看到的：从点下到过程块高度不再变化（连续 5 帧不动）用了多久。
+  const openMs = await rp.evaluate(panel, `new Promise(done => {
+    const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
+    const start = performance.now();
+    const startHeight = d.getBoundingClientRect().height;
+    let last = -1, still = 0, settledAt = start;
+    d.querySelector(":scope > summary").click();
+    const tick = () => {
+      const h = d.getBoundingClientRect().height;
+      if (Math.abs(h - last) < 0.5) still++; else { still = 0; settledAt = performance.now(); }
+      last = h;
+      if (still >= 5 || performance.now() - start > 2000) done({ ms: Math.round(settledAt - start), open: d.open, grew: h - startHeight, visible: !!d.querySelector(".run-body")?.getClientRects().length }); else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  })`) as { ms: number; open: boolean; grew: number; visible: boolean };
+  check("d0 点开过程行，220ms 内展开到位", openMs.open && openMs.visible && openMs.grew > 20 && openMs.ms > 0 && openMs.ms <= 220, openMs);
   await sleep(600);
   const opened = (await read())!;
   await rp.screenshot(panel, join(out, "d-record.png"));

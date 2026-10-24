@@ -1326,7 +1326,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #starter.starter-enter > #starter-sub { animation-delay: calc(var(--m-starter-step) * 2); }
 #starter.starter-enter > #starter-connect { animation-delay: calc(var(--m-starter-step) * 3); }
 @keyframes starterGlowIn { from { opacity: 0; } }
-@keyframes starterOrbIn { from { opacity: 0; transform: scale(.82); } }
+@keyframes starterOrbIn { from { opacity: 0; transform: scale(.95); } }
 @keyframes starterRise { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) { #starter.starter-enter :is(#starter-glow, #starter-orb, #starter-title, #starter-sub, #starter-connect) { animation: none; } }
 /* 第一次打开：产品名逐字展开，之后光带、光球、文字依次出现。只播一次，播完名字留在光球上方。 */
@@ -1499,7 +1499,7 @@ details.run-steps.done .chip.error { background: transparent; }
   transform-origin: bottom left;
   opacity: 1;
   transform: none;
-  transition: opacity var(--d-layout) var(--e-enter), transform var(--d-layout) var(--spring-bounce),
+  transition: opacity var(--d-layout) var(--e-enter), transform var(--d-layout) var(--e-enter),
               display var(--d-layout) allow-discrete;
   z-index: 15;
 }
@@ -1868,6 +1868,8 @@ details.run-steps.done .chip.error { background: transparent; }
   position: absolute;
   bottom: 46px;
   left: 12px;
+  /* 从下方的「+」按钮处长出来。 */
+  transform-origin: 18px calc(100% + 28px);
   width: 190px;
   background: var(--glass-surface-elevated);
   border: 1px solid var(--glass-border);
@@ -2067,7 +2069,7 @@ details.run-steps.done .chip.error { background: transparent; }
   /* 形变走 morph，底色走 move，松手回弹走 spring */
   transition: border-radius var(--m-morph) var(--e-spring),
               background var(--m-move) var(--e-swift),
-              transform var(--m-move) var(--e-spring);
+              transform var(--d-micro) var(--e-enter);
 }
 
 #send-btn.kinetic-morph-button:hover {
@@ -2510,7 +2512,8 @@ details.run-steps.done .chip.error { background: transparent; }
   box-shadow: var(--glass-specular), var(--popover-shadow, var(--glass-shadow));
   color: var(--text-primary);
   font-size: var(--fs-meta);
-  animation: readingPanelIn var(--m-move) var(--e-swift);
+  transform-origin: top right;
+  animation: readingPanelIn var(--d-state) var(--e-enter);
 }
 .reading-settings-panel[hidden] { display: none; }
 @keyframes readingPanelIn {
@@ -2686,7 +2689,7 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 
 /* 原生 details 保留键盘语义；内容包裹层允许自然高度折叠。 */
 @supports selector(details::details-content) {
-  /* 过程行 A：打开走弹簧（stiffness 420 / damping 34，约 var(--d-emph)），收起 var(--d-state)。曲线由弹簧方程采样成 linear()，不引入动效库。 */
+  /* 过程行一天点很多次：开合都用 var(--d-state)，不回弹。 */
   details.run-steps::details-content {
     display: grid;
     grid-template-rows: 0fr;
@@ -2696,7 +2699,7 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
   details.run-steps[open]::details-content {
     grid-template-rows: 1fr;
     content-visibility: visible;
-    transition: grid-template-rows var(--d-emph) var(--e-spring-run), content-visibility var(--d-emph) allow-discrete;
+    transition: grid-template-rows var(--d-state) var(--e-enter), content-visibility var(--d-state) allow-discrete;
   }
   .run-reveal { min-height: 0; overflow: hidden; }
   @media (prefers-reduced-motion: reduce) {
@@ -3420,11 +3423,6 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 .msg.receipt.notice { color: var(--text-tertiary); }
 
 /* ── 侧栏选定版（顶栏 B / chip C / 过程行 A / 记忆展开 A） ── */
-:root {
-  /* 弹簧方程采样：过程行 stiffness 420 / damping 34；记忆 380 / 30。 */
-  --e-spring-run: linear(0, 0.053, 0.171, 0.304, 0.438, 0.562, 0.676, 0.765, 0.835, 0.889, 0.932, 0.96, 0.98, 0.993, 1.001, 1.006, 1.008, 1.008, 1.008, 1.007, 1.006, 1.005, 1.004, 1.003, 1);
-  --e-spring-memory: linear(0, 0.055, 0.176, 0.316, 0.459, 0.59, 0.71, 0.802, 0.874, 0.931, 0.968, 0.993, 1.009, 1.017, 1.021, 1.021, 1.019, 1.016, 1.013, 1.01, 1.008, 1.005, 1.004, 1.002, 1);
-}
 
 /* 过程行 A：一行灰字，不放图标；动词深、对象浅沿用 .act-verb / .act-object。 */
 details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-icon { display: none; }
@@ -3437,7 +3435,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .ctx-chip .cg svg { stroke-width: 1.9; }
 .ctx-chip .cl { min-width: 0; max-width: 22em; overflow: hidden; text-overflow: ellipsis; }
 
-/* 记忆 D + X1：句尾灰字淡入，点开在首段下面弹簧撑开小条（Dia 密度：14px 图标 + 12px 灰字）。 */
+/* 记忆 D + X1：句尾灰字淡入，点开在首段下面撑开小条（Dia 密度：14px 图标 + 12px 灰字）。 */
 .msg.assistant .memory-used-toggle { animation: citePop var(--d-layout) var(--e-swift) both; }
 @keyframes citePop { from { opacity: 0; filter: blur(2px); } }
 .msg.assistant .memory-used-line {
@@ -3451,7 +3449,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   grid-template-rows: 1fr;
   visibility: visible;
   margin-bottom: 12px;
-  transition: grid-template-rows var(--d-emph) var(--e-spring-memory), margin var(--d-emph) var(--e-spring-memory), visibility 0s;
+  transition: grid-template-rows var(--d-state) var(--e-enter), margin var(--d-state) var(--e-enter), visibility 0s;
 }
 .msg.assistant.markdown :is(p, h1, h2, h3, h4, h5, h6):has(+ .memory-used-line[data-open=true]) { margin-bottom: 6px; }
 .msg.assistant .memory-used-line > .memory-used-list { min-height: 0; overflow: hidden; margin: 0; display: flex; flex-direction: column; gap: 5px; }
@@ -3474,7 +3472,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   border: 0; border-radius: var(--r);
   background: var(--err-tint);
   box-shadow: inset 0 0 0 1px var(--err-line), inset 0 1px 0 var(--err-hi);
-  font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in var(--d-state) var(--e-spring);
+  font: var(--fs-ui)/var(--lh-ui) var(--font); position: relative; animation: error-card-in var(--d-state) var(--e-enter);
 }
 @media (prefers-color-scheme: dark) {
   .error-card {
@@ -3669,7 +3667,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .msg.user.card-turn .pc-obj { cursor: default; }
 .msg.user.card-turn .pc-obj:hover { text-decoration: none; }
 .pc-verb.done { cursor: default; background: var(--text-primary); color: var(--content-bg); box-shadow: none; }
-.msg.user.card-turn.growing { transition: height var(--m-morph) var(--e-out); }
+.msg.user.card-turn.growing { transition: height var(--d-state) var(--e-out); }
 @keyframes pc-in { from { opacity: 0; filter: blur(2px); } }
 @media (prefers-reduced-motion: reduce) {
   .pc-face, .pc-face > *, .pc.gone, .pc.collapse { transition: none; }
@@ -3704,9 +3702,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .tab-mention-remove:hover { color: var(--text-primary); }
 .tab-mention-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 27; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; padding: 5px; border: 1px solid var(--glass-border); border-radius: 14px; background: var(--glass-surface-elevated); box-shadow: var(--popover-shadow); }
 .tab-mention-menu[hidden] { display: none; }
-.tab-mention-menu.tab-mention-in { animation: tabMentionIn var(--d-micro) var(--e-enter); }
 .tab-mention-menu.tab-mention-out { animation: tabMentionOut var(--d-tap) var(--e-exit) both; }
-@keyframes tabMentionIn { from { opacity: 0; transform: translateY(6px); } }
 @keyframes tabMentionOut { to { opacity: 0; transform: translateY(4px); } }
 .tab-mention-item { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
 .tab-mention-item[aria-selected="true"] { background: var(--content-subtle); }
@@ -3800,7 +3796,6 @@ details.run-steps.plan-card.plan-done summary:hover .plan-details { color: var(-
 .answer-command-btn { width: 28px; height: 28px; }
 .answer-command-menu { position: fixed; left: 16px; right: 16px; bottom: 88px; z-index: 30; max-height: 320px; display: flex; flex-direction: column; padding: 8px; border: 1px solid var(--glass-border); border-radius: 14px; background: var(--glass-surface-elevated); box-shadow: var(--popover-shadow); }
 .answer-command-menu[hidden] { display: none; }
-.answer-command-menu.answer-command-in { animation: tabMentionIn var(--d-micro) var(--e-enter); }
 .answer-command-menu.answer-command-out { animation: tabMentionOut var(--d-tap) var(--e-exit) both; }
 .answer-command-search { border: 0; border-bottom: 1px solid var(--content-border); background: transparent; padding: 8px 10px; font: inherit; font-size: var(--fs-ui); outline: none; color: var(--text-primary); }
 .answer-command-list { overflow-y: auto; }
@@ -4002,9 +3997,9 @@ details.run-steps.run-quieting .run-time { animation: none; }
 .run-done-mark svg { width: 14px; height: 14px; overflow: visible; }
 .run-done-mark path { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
 .run-done-mark.fresh path { stroke-dashoffset: 1; animation: doneMarkDraw var(--d-emph) var(--e-enter) var(--d-micro) forwards; }
-.run-done-mark.fresh svg { animation: doneMarkPop var(--m-read) var(--e-spring); }
+.run-done-mark.fresh svg { animation: doneMarkPop var(--d-state) var(--e-enter); }
 @keyframes doneMarkDraw { to { stroke-dashoffset: 0; } }
-@keyframes doneMarkPop { 0% { transform: scale(0.6); } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes doneMarkPop { from { opacity: 0; transform: scale(.9); } }
 
 /* 新的一章：当场开的那条分隔线从中间向两边展开，章名随后浮上来；从记录重画的不动。 */
 .chapter-divider.fresh::before { transform-origin: 100% 50%; animation: chapterLine var(--m-read) var(--e-move) both; }
@@ -4015,8 +4010,8 @@ details.run-steps.run-quieting .run-time { animation: none; }
 
 /* 往上翻着读时下面写出了新内容：「到最新」带一个墨蓝小点，轻跳两下。 */
 #to-bottom { overflow: visible; }
-#to-bottom .to-bottom-dot { position: absolute; top: -1px; right: -1px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--content-bg); transform: scale(0); transition: transform var(--d-layout) var(--e-spring); pointer-events: none; }
-#to-bottom.has-new .to-bottom-dot { transform: scale(1); }
+#to-bottom .to-bottom-dot { position: absolute; top: -1px; right: -1px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--content-bg); opacity: 0; transform: scale(.9); transition: opacity var(--d-state) var(--e-enter), transform var(--d-state) var(--e-enter); pointer-events: none; }
+#to-bottom.has-new .to-bottom-dot { opacity: 1; transform: scale(1); }
 #to-bottom.has-new svg { animation: toBottomNudge var(--d-emph) var(--e-spring) 2; }
 @keyframes toBottomNudge { 30% { transform: translateY(3px); } 60% { transform: translateY(-1px); } }
 

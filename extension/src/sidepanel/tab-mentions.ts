@@ -28,7 +28,6 @@ interface TabMentions {
 }
 
 const MAX = 6;
-const ENTER_MS = 140;
 const FLIP_MS = 200;
 const EXIT_MS = 110;
 
@@ -164,12 +163,6 @@ export function mountTabMentions(opts: {
     menu.hidden = false;
     inputEl.setAttribute("aria-expanded", "true");
     highlight();
-    if (!reducedMotion()) {
-      menu.classList.remove("tab-mention-in");
-      void menu.offsetWidth;
-      menu.classList.add("tab-mention-in");
-      window.setTimeout(() => menu.classList.remove("tab-mention-in"), ENTER_MS);
-    }
   }
 
   function highlight(): void {

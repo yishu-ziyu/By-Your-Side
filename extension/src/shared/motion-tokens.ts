@@ -9,7 +9,7 @@ export const D_LAYOUT = 280;
 export const D_EMPH = 420;
 
 export const E_ENTER = "cubic-bezier(0.23, 1, 0.32, 1)";
-export const E_EXIT = "cubic-bezier(0.4, 0, 1, 1)";
+export const E_EXIT = "cubic-bezier(0.23, 1, 0.32, 1)";
 export const E_MOVE = "cubic-bezier(0.16, 1, 0.3, 1)";
 const E_SPRING = "cubic-bezier(0.34, 1.4, 0.64, 1)";
 
