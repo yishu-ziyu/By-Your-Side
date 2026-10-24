@@ -452,7 +452,7 @@ export async function exportDiagnosticsViaSettings(
  * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
  * dist / SIDEAGENT_ACCEPTANCE_DIST：明确指定已准备的扩展包；复制到隔离目录，不重建或修改原包。同一进程里交错跑两版代码时用 dist。
  */
-export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false, dist }: { microphoneWav?: string; chromeArgs?: string[]; headed?: boolean; dist?: string } = {}) {
+export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false, dist, recordFps }: { microphoneWav?: string; chromeArgs?: string[]; headed?: boolean; dist?: string; recordFps?: number } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
   // Removed by remove(), or at process end if the case fails or is interrupted before that.
   const tempDir = trackTempDir(root);
@@ -591,7 +591,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
   const controls = browserControls(cdp, id);
 
   const recordTo = recordingDir();
-  const recording = recordTo ? await startRecording(recordTo, id) : null;
+  const recording = recordTo ? await startRecording(recordTo, id, { fps: recordFps }) : null;
   recording?.follow(cdp);
 
   if (recording) console.log(`录屏：${relative(process.cwd(), recording.dir)}`);
@@ -622,7 +622,11 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     const closed = await shutdown();
 
     if (recording) await (rendered ??= render(recording.dir).then(
-      (made) => console.log(made ? `慢放录屏：${relative(process.cwd(), made.slow)}　总览：${relative(process.cwd(), made.overview)}　逐帧看：npm run frames -- ${relative(process.cwd(), recording.dir)} <起秒> <止秒>` : "录屏：没录到画面或本机没有 ffmpeg，跳过合成"),
+      (made) => console.log(
+        made === "no-frames" ? "录屏：没录到画面，跳过合成"
+        : made === "no-ffmpeg" ? `录屏：找不到 ffmpeg 和 ffprobe（PATH=${process.env.PATH ?? ""}），跳过合成；帧留在 ${relative(process.cwd(), recording.dir)}，装好后 npm run frames -- 这个目录`
+        : `慢放录屏：${relative(process.cwd(), made.slow)}　总览：${relative(process.cwd(), made.overview)}　逐帧看：npm run frames -- ${relative(process.cwd(), recording.dir)} <起秒> <止秒>`,
+      ),
       (error: Error) => console.log(`录屏合成失败：${error.message.split("\n")[0]}`),
     ));
 
