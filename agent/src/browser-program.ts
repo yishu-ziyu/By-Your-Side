@@ -1,5 +1,7 @@
 import { getQuickJS, type QuickJSDeferredPromise, type QuickJSHandle } from "quickjs-emscripten";
 import { TOOL_NAMES, type ToolName } from "../../shared/protocol.js";
+import { FETCH_MAX_BYTES } from "../../shared/fetch.js";
+import { redactUrlCredentials } from "../../shared/network.js";
 import { HOST_PAGE_PROBES } from "../../shared/effect-policy.js";
 import { isSaveFileParams, rejectSaveFileParams, type SaveFileParams, type SavedFileReceipt } from "./artifacts-tool.js";
 import { fetchFailureReason, type FetchReply } from "./fetch-result.js";
@@ -106,6 +108,12 @@ function programMethods(offer: { saveFile: boolean }): string[] {
 }
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+/**
+ * 一步结果进沙箱前的长度上限。扩展的 fetch 最多读 FETCH_MAX_BYTES 正文，网页里的引号转义后 JSON 会比正文长；
+ * 上限低于它时，大网页的 fetch 在程序里必然失败，而程序没法让 fetch 的回执变小。
+ */
+const MAX_STEP_RESULT_CHARS = 2 * FETCH_MAX_BYTES + 16_384;
 
 /** Page/web globals models reach for inside the sandbox; QuickJS has none of them. */
 const PAGE_GLOBALS = new Set(["window", "document", "Blob", "File", "FileReader", "fetch", "XMLHttpRequest", "location", "history", "localStorage", "sessionStorage", "navigator", "setTimeout", "setInterval", "console", "alert", "URL", "atob", "btoa", "DOMParser", "TextEncoder", "TextDecoder", "performance"]);
@@ -756,6 +764,12 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
         if (typeof note === "string") notes.add(note);
 
+        // 程序常只 return 从正文里抽出的几项；没写明读到哪里为止，抽不到会被当成网页上没有。
+        if (canonical === "fetch" && result && typeof result === "object" && (result as FetchReply).truncated) {
+          const reply = result as FetchReply;
+          notes.add(`fetch ${redactUrlCredentials(reply.url).slice(0, 120)} read only the first ${reply.bytes} bytes; text past that point was not read, so something missing from it is not evidence that the page lacks it.`);
+        }
+
         // 与模型直调的 navigate 一致：新页面就绪后顺手读一次，text 即新页面快照，程序里不必再调 snapshot。地址变成下载或 Chrome 显示错误页时不读。
         if (canonical === "navigate" && result && typeof result === "object" && !["timeout", "download", "error_page"].includes(String((result as { readiness?: unknown }).readiness))) {
           try {
@@ -782,7 +796,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
         const json = JSON.stringify(value ?? null);
 
-        if (json.length > 512_000) throw new Error("Browser result too large; extract a smaller result");
+        if (json.length > MAX_STEP_RESULT_CHARS) throw new Error("Browser result too large; extract a smaller result");
         const handle = vm.newString(json);
         deferred.resolve(handle);
         handle.dispose();
