@@ -80,6 +80,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   const STATUS_COPY: Record<CursorStatusState, { text: string; sub?: string; color: string; autoHideMs?: number }> = {
     waiting: { text: "正在思考", color: "#f59e0b" },
     reading: { text: "正在读这个页面", color: "#2d4a86" },
+    translating: { text: "正在翻译这一页", color: "#2d4a86" },
     done: { text: "本轮已结束", color: "#16a34a", autoHideMs: 1500 },
     failed: { text: "这一步没做成", sub: "可以让我重试", color: "#e2554f" },
   };
@@ -126,7 +127,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   /** 声波五根条的高低比例：中间高两边低。 */
   const COMPANION_BARS = [0.4, 0.7, 1, 0.7, 0.4];
 
-  type CursorStatusState = "waiting" | "reading" | "done" | "failed";
+  type CursorStatusState = "waiting" | "reading" | "translating" | "done" | "failed";
 
   interface CursorStatus {
     state: CursorStatusState;
@@ -2636,6 +2637,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (status.state === "reading") return { tone: "work", a: "在读", b: "这个页面", end: "stop" };
 
+    if (status.state === "translating") return { tone: "work", a: "在翻译", b: "这一页", end: "stop" };
+
     return { tone: "work", a: "正在思考", b: "", end: "stop" };
   }
 
@@ -2680,7 +2683,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     } else if (taskPill) view = pillView(taskPill);
 
     // 结果不确定、没做成会一直留着；这期间助手还在读页面或想下一步，停止键也要在。
-    if (view && !view.end && (view.tone === "unk" || view.tone === "err") && (glowing.size || local.some(([, inst]) => inst.status?.state === "waiting" || inst.status?.state === "reading"))) view = { ...view, end: "stop" };
+    if (view && !view.end && (view.tone === "unk" || view.tone === "err") && (glowing.size || local.some(([, inst]) => inst.status?.state === "waiting" || inst.status?.state === "reading" || inst.status?.state === "translating"))) view = { ...view, end: "stop" };
 
     const others: EdgeTabOther[] = remote.map(m => ({ id: m.sessionId, name: displayNameFor(m.sessionId), title: m.title, local: false }));
 

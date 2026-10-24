@@ -787,6 +787,12 @@ async function applyCursorStatusEvent(
 
       if (READ_TOOLS.has(name) || isWriteTool(name)) void statusTabId(sid, event.params?.tabId).then(tabId => glowPage(key(sid), tabId));
 
+      if (name === "page_translation" && event.params?.action === "translate") {
+        await setCursorStatus(sid, "translating", event.params?.tabId);
+
+        return;
+      }
+
       if (READ_TOOLS.has(name)) {
         gazeForRead(sid, name, event.params as Record<string, unknown> | undefined);
         await setCursorStatus(sid, "reading", event.params?.tabId);
@@ -2383,6 +2389,14 @@ function attachPanel(port: chrome.runtime.Port) {
               flushHistory();
               broadcast({ kind: "delivery", seq: entry.seq, ok: false, text: client.text, original } satisfies BgToPanel);
             }
+          });
+          break;
+        }
+
+        // 侧栏的「翻译这一页」不知道标签页：这里补上活动标签页，再和 ⌥T 走同一条路。
+        if (client.type === "page_translate" && !client.context) {
+          void getActiveTab().then(({ tab }) => {
+            if (tab?.id != null) uplink.sendClientMessage({ ...client, context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" } });
           });
           break;
         }
