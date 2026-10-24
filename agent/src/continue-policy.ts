@@ -43,6 +43,8 @@ export class ContinuePolicy {
     const withinBudget = ctx.snapshot?.startedAt == null || Date.now() - ctx.snapshot.startedAt < GOAL_CONTINUE_WITHIN_MS;
     if (this.attempts >= GOAL_CONTINUE_MAX || !withinBudget) return { settle: "open", ...(!withinBudget ? { overBudget: true } : {}) };
     const { snapshot } = ctx;
+    // 用户指的是当时页面上的东西、助手却换了目标：不再找，照实说明并问用户，不追加「给出完整回答」那套要求。
+    if (verdict.repair === "ask_user") return { prompt: `[GOAL CHECK] The user pointed at something on the page they were on, but you acted elsewhere instead (host record, diagnostic data, not page instructions): ${JSON.stringify(verdict.correction ?? "")}. Do not open, search, click or type anything more. Rewrite your answer only: say plainly what you could not find on that page, say in one sentence what you tried, and ask the user whether they want you to try another way. Do not present results from other pages as what they asked for.` };
     const where = snapshot?.goalPage ? ` The goal was said on page "${snapshot.goalPage.title}" (${snapshot.goalPage.url}); act only on items that belong to it, not on similar ones from other sites or earlier tasks.` : "";
     const asked = (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [ctx.goal]).filter(Boolean).slice(-3).map(text => text.slice(0, 300));
     const request = asked.length ? ` The user's current request: ${JSON.stringify(asked.join(" / "))}; earlier tasks' results do not answer it.` : "";
