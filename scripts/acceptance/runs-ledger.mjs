@@ -1,7 +1,7 @@
 /**
  * 真实路径用例的运行流水，harness.mts 导入时生效。
  *
- * - 每次运行在 out/acceptance/real-path/runs.jsonl 记一行：用例、参数、代码状态、通过与否、耗时。`npm run runs` 汇总。
+ * - 每次运行在 out/acceptance/real-path/runs.jsonl 记一行：用例、参数、代码状态、构建角色、通过与否、耗时。`npm run runs` 汇总。
  * - 同一用例、同样参数、同样代码已经失败 2 次，就拒绝第 3 次：再跑只是在测模型的随机性。确实要跑时加 BYS_RERUN=1。
  *   Ctrl-C 或被杀掉的运行不进流水，所以也不计入失败。
  * - 清理 7 天前、没被 docs/scripts/eval 引用的运行目录。
@@ -93,11 +93,21 @@ function prune(out, cited) {
   if (removed) console.log(`[runs] 清理了 ${out} 里 ${removed} 个 ${KEEP_DAYS} 天前、没被文档引用的运行目录`);
 }
 
+// 跑的是哪份构建：A/B 脚本用 SIDEAGENT_BUILD_ROLE 标改前（base）、改后（cand）；指定的就是主目录的 extension/dist 时，是日常装着的那份（daily）。
+// 用预先构建的扩展时，代码状态只说明脚本和用例，扩展本身靠它分。
+function buildRole() {
+  const dist = process.env.SIDEAGENT_ACCEPTANCE_DIST;
+
+  return process.env.SIDEAGENT_BUILD_ROLE || (dist && resolve(dist) === join(MAIN, "extension/dist") ? "daily" : undefined);
+}
+
 function start() {
   mkdirSync(MAIN_OUT, { recursive: true });
   const args = process.argv.slice(2).filter((arg) => arg !== "--headless");
   const state = codeState();
-  const same = (row) => row.case === name && row.args.join(" ") === args.join(" ") && row.code === state;
+  const role = buildRole();
+  const tag = role ? { role } : {};
+  const same = (row) => row.case === name && row.args.join(" ") === args.join(" ") && row.code === state && row.role === role;
   const failures = readLedger().filter((row) => same(row) && row.ok === false).length;
 
   if (failures >= MAX_SAME_FAILURES && process.env.BYS_RERUN !== "1") {
@@ -105,7 +115,7 @@ function start() {
       `[runs] ${name} 在同样的代码上已经失败 ${failures} 次，这次不跑：再跑只是在测模型的随机性。\n` +
         `       先看上两次的失败原因（npm run runs，或 out/acceptance/real-path/ 里最新的 *-${name}*）。确实要再跑：BYS_RERUN=1。`,
     );
-    appendFileSync(LEDGER, `${JSON.stringify({ case: name, args, code: state, at: new Date().toISOString(), ok: null, blocked: true, seconds: 0 })}\n`);
+    appendFileSync(LEDGER, `${JSON.stringify({ case: name, args, code: state, ...tag, at: new Date().toISOString(), ok: null, blocked: true, seconds: 0 })}\n`);
     process.exit(2);
   }
 
@@ -121,6 +131,6 @@ function start() {
     const exit = code ?? process.exitCode ?? 0;
     // 退出码 2 是用法错误或前提不满足（没加 --headless、缺凭据），用例没真正跑，不算失败。
     const ok = exit === 0 ? true : exit === 2 ? null : false;
-    appendFileSync(LEDGER, `${JSON.stringify({ case: name, args, code: state, at: new Date(startedAt).toISOString(), ok, seconds: Math.round((Date.now() - startedAt) / 1000) })}\n`);
+    appendFileSync(LEDGER, `${JSON.stringify({ case: name, args, code: state, ...tag, at: new Date(startedAt).toISOString(), ok, seconds: Math.round((Date.now() - startedAt) / 1000) })}\n`);
   });
 }

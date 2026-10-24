@@ -66,7 +66,7 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { BrowseDay, BrowseHabit } from "../../shared/browse-habits.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
-import { asksUser, checkGoal, goalReadEvidence, defersWork, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_GATE_WAIT_MS, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, goalCheckRecord, goalReadEvidence, defersWork, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_GATE_WAIT_MS, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerdict } from "./goal-check.js";
 import { GoalLedger } from "./goal-ledger.js";
 import { ContinuePolicy } from "./continue-policy.js";
 import type { TaskHistoryStore } from "./task-history.js";
@@ -377,6 +377,11 @@ export class BrowserAgentSession {
   /** 直接工具调用的参数暂存，用于只读读数事件（tool_execution_end 不带 args）。 */
   private readonly toolArgs = new Map<string, Record<string, unknown>>();
   bindConversationContext(snapshot:()=>TaskProgressSnapshot|null):void { this.conversationSnapshot = snapshot; this.productContext?.bind(snapshot); }
+  /** 浏览器调用执行完：记动作落在哪页、输入了什么，给核对当宿主事实。 */
+  observeBrowserCall(name: string, params: Record<string, unknown>, result: unknown): void {
+    this.goalLedger.observeCall(name, params, result);
+  }
+
   /** browser_run 子步骤对外事件；读数只进结果账本（tool_observation 不下发侧栏）。 */
   observeProgramStep(step: ProgramStep): void {
     this.noProgressPolicy?.noteProgramStep(step);
@@ -850,6 +855,7 @@ if(required.includes(key))candidates.set(key,attachment);
             memoryForValue: value => memoryRuntime?.memoryForValue(value),
             siteNotesFor: url => resultHost?.siteNotesFor(url) ?? Promise.resolve(null),
             openForUser: () => resultHost?.userAskedToOpen() ?? false,
+            observeCall: (name, params, result) => resultHost?.observeBrowserCall(name, params, result),
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -1438,6 +1444,7 @@ return;}
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
     this.requestStartedAt = Date.now();
+    this.goalLedger.beginRequest(context ?? null);
     this.prefetchPageTranslation(finalText, context);
     const [observation, openTabs, mentioned, savedOpen] = await Promise.all([
       this.readUserPageForPrompt(context, "task"),
@@ -2361,6 +2368,7 @@ return;}
 
     const prompt = `${withPageContext(continuation, context)}${mentioned}\n\n${freshPageObservationText(context, clipped)}`;
     this.requestStartedAt = Date.now();
+    this.goalLedger.beginRequest(context);
     this.goalLedger.record("page_at_start", freshPageObservationText(context, clipped));
     const images = extractImages(restoredAttachments);
     void session.prompt(prompt, images.length > 0 ? { images } : undefined).catch((error: unknown) => this.emitError(error));
@@ -3225,6 +3233,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         if (copies.length) this.runTrace.record("copy_check", { copies });
         copyPolicyUnavailable = intent === 'unavailable';
         const checkInput = this.goalLedger.input({ snapshot, goal: this.activeGoal ?? "", requestStartedAt: this.requestStartedAt, copies, files: this.runFiles(), lastReply, tabId, page, userTookOver: runId !== null && this.handbackRunId === runId });
+        this.runTrace.record("goal_check_input", goalCheckRecord(checkInput));
         const headers = opencodeSessionHeaders(model, sessionId);
         verdict = await checkGoal(this.sideHost()!, model, checkInput, AbortSignal.timeout(20_000), headers);
         if (verdict.status === 'continue') {
