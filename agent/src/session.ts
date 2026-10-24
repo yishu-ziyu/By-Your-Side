@@ -9,7 +9,7 @@ import { isTransientModelError } from "../../shared/provider-busy.js";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { elementText, redactObservedText } from './task-evidence.js';
 import { TRANSLATION_PROMPT, isProviderThrottle, salvageTranslations, needsTranslation, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
-import type { TranslationBlock, TranslationSegment } from "../../shared/page-translation.js";
+import type { TranslationBlock, TranslationReceipt, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
 import {createTaskResultsTool} from "./task-results.js";
 import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration} from "../../shared/task-results.js";
@@ -55,6 +55,7 @@ import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryIn
 import { SessionHold, handbackContinueText } from "../../shared/control.js";
 import { leadSystemPrompt } from "./prompt.js";
 import { createBrowserTools, STALE_STEP_MESSAGE } from "./tools.js";
+import { translationMemory } from "./translation-memory.js";
 import { isUserCorrection } from "./memory-correction.js";
 import type { ToolRpc } from "./rpc.js";
 import { RunTrace } from "./run-trace.js";
@@ -144,6 +145,21 @@ const RESULT_TEXT_MAX = 500;
 const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
 
 const PRE_OBSERVATION_TEXT_MAX = 12_000;
+/** 这句话可能是要翻译网页：只决定要不要预取首屏，猜错只多花几次快速模型请求，页面不受影响。 */
+const TRANSLATE_INTENT = /翻译|译成|译为|\btranslate\b/i;
+/** 说了译成别的语言：模型会传那个语言，预取的简体中文用不上。 */
+const OTHER_TARGET = /(?:翻译|译)(?:成|为|到)\s*(?!中文|简体|汉语|普通话)[\p{L}]|\binto\s+(?!chinese)[a-z]/iu;
+/** 预取首屏多少段：与翻译开头几批（并发 8、每批 2 段）取的段数相同。 */
+const TRANSLATION_PREFETCH_BLOCKS = 16;
+/**
+ * 预取同时至多几个请求，并且等主模型这一轮的请求发出后才发：经本机 http 代理时浏览器对同一地址只开 6 个连接，
+ * 预取抢在前面会让主模型请求排队，模型决定反而更晚。
+ */
+const TRANSLATION_PREFETCH_LANES = 4;
+/** 主模型请求发出后再等这么久才发预取，让它先拿到连接。 */
+const TRANSLATION_PREFETCH_AFTER_MAIN_MS = 100;
+/** 这么久主模型还没发请求（开工失败、被停下），就不预取了。 */
+const TRANSLATION_PREFETCH_WAIT_MAIN_MS = 5_000;
 
 /** 交还 prompt 发出后等待同 epoch agent_start 的窗口；超时按恢复失败处理，hold 归还 user。 */
 const HANDBACK_RESTORE_TIMEOUT_MS = 30_000;
@@ -709,6 +725,10 @@ if(required.includes(key))candidates.set(key,attachment);
     if (!isError && steps > 0) this.pageChangeTally.changes += 1;
   }
 
+  /** 整页翻译预取：用户停下或开始下一句时取消还没回来的预取请求。 */
+  private translationPrefetch: AbortController | null = null;
+  private mainRequestWaiters: Array<() => void> = [];
+
   private warmedObservation: {
     tabId: number;
     url: string;
@@ -856,7 +876,10 @@ if(required.includes(key))candidates.set(key,attachment);
         extensionFactories: extensionFactories.map(entry => entry.factory),
         openStorage: options.loop.openStorage,
         onHookError: (event, message) => console.error(`[sideagent] 钩子 ${event} 出错：${message}`),
-        onModelRequest: request => resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined, origin: resultHost.modelOrigin() }),
+        onModelRequest: request => {
+          resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined, origin: resultHost.modelOrigin() });
+          resultHost?.mainRequestStarted();
+        },
         onModelResponse: status => resultHost?.modelRequestTrace.response(status),
         onModelHedge: ({ type, ...data }) => resultHost?.runTrace.record(type, data),
         effort: model => resultHost?.mainEffort.level(model) ?? "off",
@@ -1384,6 +1407,7 @@ return;}
     // 大页面读一次要几秒；先让侧栏显示已开工（停止键、过程行），不等模型开始。
     this.callbacks.setStatus("running");
     this.requestStartedAt = Date.now();
+    this.prefetchPageTranslation(finalText, context);
     const [observation, openTabs, mentioned, savedOpen] = await Promise.all([
       this.readUserPageForPrompt(context, "task"),
       this.readOpenTabsForPrompt(context),
@@ -1830,8 +1854,108 @@ return;}
     return (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""]).filter(Boolean);
   }
 
-  /** Separate no-tool completion; shares only model configuration, not task state/history. */
+  /**
+   * 用户这句话像是要翻译网页时，趁主模型还在决定，只读地取出首屏段落先译好、记进译文记忆（页面不变）。
+   * 模型随后调用翻译时，开头几批的段落原文对得上就直接写入，第一屏不再等翻译请求。
+   */
+  private prefetchPageTranslation(text: string, context: PageContext | undefined): void {
+    this.dropTranslationPrefetch();
+    const tabId = context?.tabId;
+    const model = this.translationModel();
+
+    if (!this.rpc || !model || typeof tabId !== "number" || !TRANSLATE_INTENT.test(text) || OTHER_TARGET.test(text)) return;
+    const language = "简体中文";
+    const abort = new AbortController();
+    this.translationPrefetch = abort;
+    const startedAt = Date.now();
+
+    const mainSent = new Promise<boolean>(resolve => {
+      const timer = setTimeout(() => resolve(false), TRANSLATION_PREFETCH_WAIT_MAIN_MS);
+      this.mainRequestWaiters.push(() => { clearTimeout(timer); setTimeout(() => resolve(true), TRANSLATION_PREFETCH_AFTER_MAIN_MS); });
+    });
+    const peek = this.rpc.call("page_translation", { action: "peek", tabId, language, maxBlocks: TRANSLATION_PREFETCH_BLOCKS }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<TranslationReceipt>;
+
+    void Promise.all([peek, mainSent]).then(([peeked, sent]) => {
+      if (this.translationPrefetch !== abort || !sent || !Array.isArray(peeked?.blocks)) return;
+      const unknown = (block: TranslationBlock) => !translationMemory.get(translationMemory.key(model, language, block));
+      const fresh = peeked.blocks.filter(unknown);
+      // 与翻译开头几批同样的分法（每批至多 2 段），请求内容一样，译文也就一样。
+      const batches: TranslationBlock[][] = [];
+
+      for (let at = 0; at < fresh.length; at += 2) batches.push(fresh.slice(at, at + 2));
+      let next = 0;
+
+      const lane = async () => {
+        while (next < batches.length && !abort.signal.aborted) {
+          // 排在后面的批次轮到时，真翻译可能已经在请求这几段：那就不再重复请求。
+          const batch = batches[next++]!.filter(unknown);
+
+          if (batch.length) await this.translateAndRemember(batch, language, abort.signal, { batch: 0, depth: 0, retry: false, prefetch: true }).catch(() => {});
+        }
+      };
+
+      for (let i = 0; i < TRANSLATION_PREFETCH_LANES; i += 1) void lane();
+      this.runTrace.record("page_translation_prefetch", { tabId, blocks: peeked.blocks.length, remembered: peeked.blocks.length - fresh.length, ms: Date.now() - startedAt });
+    }, () => {});
+  }
+
+  /** 主模型这一轮的请求要发出了：放行等着它的预取。 */
+  mainRequestStarted(): void {
+    for (const release of this.mainRequestWaiters.splice(0)) release();
+  }
+
+  private dropTranslationPrefetch(): void {
+    this.translationPrefetch?.abort();
+    this.translationPrefetch = null;
+  }
+
+  private translationModel(): string | null {
+    const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+
+    return model ? `${model.provider}/${model.id}` : null;
+  }
+
+  /** 请求这些段落的译文，并按段落记进译文记忆：请求还在路上时，同样的段落等它，不另发。 */
+  private translateAndRemember(blocks: TranslationBlock[], language: string, signal: AbortSignal, meta: TranslateMeta): Promise<TranslationSegment[]> {
+    const model = this.translationModel();
+    const request = this.requestPageTranslation(blocks, language, signal, meta);
+
+    if (model) {
+      const texts = request.then(segments => new Map(segments.map(segment => [segment.id, segment.text])), () => new Map<string, string>());
+
+      for (const block of blocks) translationMemory.remember(translationMemory.key(model, language, block), texts.then(got => block.segments.every(segment => got.has(segment.id)) ? block.segments.map(segment => got.get(segment.id)!) : null));
+    }
+
+    return request;
+  }
+
   async translatePageBatch(blocks: TranslationBlock[], language: string, signal: AbortSignal, meta?: TranslateMeta): Promise<TranslationSegment[]> {
+    const model = this.translationModel();
+    const known = model ? blocks.map(block => translationMemory.get(translationMemory.key(model, language, block))) : [];
+    const startedAt = Date.now();
+    const remembered = new Map<TranslationBlock, string[]>();
+
+    if (known.some(Boolean)) {
+      const texts = await Promise.race([Promise.all(known.map(item => item ?? Promise.resolve(null))), new Promise<never>((_, reject) => {
+        if (signal.aborted) reject(signal.reason);
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      })]);
+
+      blocks.forEach((block, i) => { const got = texts[i]; if (got && got.length === block.segments.length) remembered.set(block, got); });
+    }
+
+    const missing = blocks.filter(block => !remembered.has(block));
+    const fromMemory = [...remembered].flatMap(([block, texts]) => block.segments.map((segment, j) => ({ id: segment.id, text: texts[j]! })));
+
+    if (remembered.size) this.runTrace?.record("page_translation_request", { ...meta, phase: "remembered", blocks: remembered.size, waitedMs: Date.now() - startedAt });
+
+    if (!missing.length) return fromMemory;
+
+    return [...fromMemory, ...await this.translateAndRemember(missing, language, signal, meta ?? { batch: 0, depth: 0, retry: false })];
+  }
+
+  /** Separate no-tool completion; shares only model configuration, not task state/history. */
+  private async requestPageTranslation(blocks: TranslationBlock[], language: string, signal: AbortSignal, meta?: TranslateMeta): Promise<TranslationSegment[]> {
     const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
 
     if (!model || !this.modelRuntime || !this.session) throw new Error('当前翻译模型不可用。');
@@ -2389,6 +2513,7 @@ return {kind:'model'};
     this.abandonUnconsumedCorrections("stopped");
     this.deferredSteers=[];
     this.runTrace.record("abort");
+    this.dropTranslationPrefetch();
     this.controlEpoch += 1;
     // 开工中停下：立即回到空闲，停止后马上发的新任务才不会被当成插话；开工期间排进 Pi 的插话一并丢掉。
     if (this.starting !== null) { this.starting = null; if (!this.session?.isStreaming) this.session?.clearQueue(); }

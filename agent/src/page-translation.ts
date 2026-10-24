@@ -1,7 +1,7 @@
 import type { TranslationBlock, TranslationCommand, TranslationReceipt, TranslationRequest, TranslationSegment } from '../../shared/page-translation.js';
 
-/** batch: pool order; depth: how many times a `length` stop split this batch; retry: same-batch retry after an interruption. */
-export interface TranslateMeta { batch: number; depth: number; retry: boolean }
+/** batch: pool order; depth: how many times a `length` stop split this batch; retry: same-batch retry after an interruption; prefetch: translated before the model asked. */
+export interface TranslateMeta { batch: number; depth: number; retry: boolean; prefetch?: true }
 
 export type TranslateBatch = (blocks: TranslationBlock[], language: string, signal: AbortSignal, meta?: TranslateMeta) => Promise<TranslationSegment[]>;
 
