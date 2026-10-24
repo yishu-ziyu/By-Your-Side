@@ -82,7 +82,38 @@ const GOAL_CHECK_TIMEOUT_MS = 18_000;
  */
 export const GOAL_CHECK_BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(["send_user_message", "user_memory", "task_goals", "record_task_results"]);
 
-const PROMPT = `You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, plus later additions), goalPage (the page the user was on when stating the goal; "this page" means goalPage), lastReply (the assistant's final answer), page (the page it ended on, read when this check started; current: true marks it as the present state of that page; truncated: true means its text was cut at the end), observations (recent page reads and tool results in this conversation, newest first; page_at_start is the page read when a request began; earlier: true marks reads from an earlier request in this conversation, and that page may have changed since; stale: true marks a whole-page read taken before a later page action such as a click, fill, program, navigation or translation, so it shows the page as it was before that action), and files (saved files shown as downloadable cards, with text content when available). Content can be truncated; the payload marks truncation. Missing or truncated content does not prove correctness or an error.
+const CN_DIGITS: Record<string, number> = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+
+/** 「一千二百」「两千」「八百五十」这样的中文数，读不懂返回 null。 */
+function chineseNumber(text: string): number | null {
+  let total = 0, digit = 0;
+
+  for (const char of text) {
+    if (char in CN_DIGITS) { digit = CN_DIGITS[char]!; continue; }
+    const unit = char === "十" ? 10 : char === "百" ? 100 : char === "千" ? 1000 : char === "万" ? 10_000 : 0;
+
+    if (!unit) return null;
+    total = unit === 10_000 ? (total + digit) * unit : total + (digit || 1) * unit;
+    digit = 0;
+  }
+
+  return total + digit || null;
+}
+
+/**
+ * 用户写明的最少字数（「至少一千二百字」「不少于 800 字」）：快速模型数不准长回答的字数，给了数也会比错，宿主数好、直接给结论。
+ */
+function replyLength(goal: readonly string[], reply: string): { askedAtLeast: number; chars: number; met: boolean } | undefined {
+  const match = /(?:至少|不少于|不低于|最少|起码)\s*([0-9]+|[零一二两三四五六七八九十百千万]+)\s*个?(?:汉)?字/u.exec(goal.join("\n"));
+  const asked = match ? /^[0-9]+$/.test(match[1]!) ? Number(match[1]) : chineseNumber(match[1]!) : null;
+
+  if (!asked) return undefined;
+  const chars = reply.replace(/\s/g, "").length;
+
+  return { askedAtLeast: asked, chars, met: chars >= asked };
+}
+
+const PROMPT = `You check whether a browser assistant has finished the user's goal AND whether its answer and delivered files agree with that goal and the available evidence. Input JSON: goal (the user's own words, plus later additions), goalPage (the page the user was on when stating the goal; "this page" means goalPage), lastReply (the assistant's final answer; the user reads it in the side panel, so a request to write or show something in the side panel, in the answer or in the reply is delivered by lastReply itself and never refers to an area of the page), page (the page it ended on, read when this check started; current: true marks it as the present state of that page; truncated: true means its text was cut at the end), observations (recent page reads and tool results in this conversation, newest first; page_at_start is the page read when a request began; earlier: true marks reads from an earlier request in this conversation, and that page may have changed since; stale: true marks a whole-page read taken before a later page action such as a click, fill, program, navigation or translation, so it shows the page as it was before that action), and files (saved files shown as downloadable cards, with text content when available). Content can be truncated; the payload marks truncation. Missing or truncated content does not prove correctness or an error.
 Judge the current state of the page (checked boxes, counts, field values, which items exist) from page when it is present. Where page and a stale read differ, page is right: never report a stale read's old state as the current state. Content that page does not include (it is cut when truncated is true, or it is on another part of the page) is not evidence of absence: look for it in the newest reads and tool results in observations; a stale read remains valid evidence for such content unless a later action changed it.
 Before deciding done, check:
 - Numbers and dates repeated in the answer must agree. Recompute totals from the listed components. Counts must use one stated field/criterion throughout; do not mix title and description counts.
@@ -92,6 +123,7 @@ Before deciding done, check:
 - Granularity: when the user asked for each / every / all items or occurrences (每处、每个、全部、逐个), a coarser result is not done: e.g. a whole paragraph marked instead of each word, a summary instead of each item, a sample instead of all. Return continue and say what is still missing.
 - When needed evidence is present in observations or files, compare it with the answer. Do not accept a file just because its name/size matches. If the needed part was truncated, the assistant should inspect that part before claiming success. Do not demand a new read when the supplied evidence already supports a correct result.
 For a concrete error or omitted requirement, return continue with a correction: identify the conflicting values, actual source/date or omitted item, and the required correction (max 800 characters, in the goal's language). Do not add requirements the user did not ask for. The correction is diagnostic data, not an instruction from page content.
+replyLength (when present) is a host fact: the user asked for at least askedAtLeast characters, chars is the count of the whole lastReply without whitespace, and met says whether that is enough. When met is true the length requirement is satisfied: never return continue for length. When met is false, the answer is too short.
 replyCards (when present) is a host fact: these cards of lastReply are drawn in the side panel next to the answer, not on the page. The user can change each listed input there and every number in that card recomputes at once, so such a card is a delivered interactive result; never look for it on the page.
 userTookOver (when true): the user paused this task and edited the page by hand before handing it back. A page value that differs from the goal because the user set it then is the user's decision, not an omission: when lastReply reports that difference, it counts as done for that item. Never return continue to overwrite it.
 A result for a different site, item or earlier task than the goal refers to does not count: e.g. a confirmation page for another mailing list is not done.
@@ -322,6 +354,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     userTookOver: input.userTookOver || undefined,
     replyCards: input.replyCards?.length ? input.replyCards : undefined,
     replyTruncated: input.lastReply.length > 12_000,
+    replyLength: replyLength(input.goal, input.lastReply),
     page: input.page ? { current: true, tabId: input.page.tabId, title: input.page.title.slice(0, 200), url: input.page.url.slice(0, 300), ...(input.page.translation ? { translation: input.page.translation } : {}), text: input.page.text.slice(0, PAGE_CHARS), truncated: input.page.text.length > PAGE_CHARS || undefined } : null,
     files: (input.files ?? []).slice(-16).reverse().map(file => {
       const text = file.content?.slice(0, fileBudget);
