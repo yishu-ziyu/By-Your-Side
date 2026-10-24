@@ -1051,6 +1051,8 @@ function resetConversationRender(): void {
   running = false;
   steerRibbon.reset();
   lastUserHasPage = false;
+  // 「你在操作」只在收到这个会话的交接事件时更新；换会话不清，就会挂到别的会话上。
+  applyHandoffPhase("agent");
   lastHistorySeq = 0;
   userBubbles.clear();
   clearPendingRedelivers();
@@ -2893,6 +2895,11 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
     currentRun?.graph.user(flags.userHasPage);
 
     if (!flags.userHasPage) collapseHandoffCard(running ? "你已交还 · 我从你所在的页面接着做" : "任务已中止");
+    // 交接事件只在切换那一刻发：切回一个页面仍归用户的会话时，按它的状态补画这一行；光标退场和重读页面这两段照事件来。
+    const phase = document.getElementById("handoff-banner")?.dataset.phase;
+
+    if (flags.userHasPage && phase !== "user" && phase !== "leaving") applyHandoffPhase("user");
+    else if (!flags.userHasPage && phase === "user") applyHandoffPhase("agent");
   }
 
   // 同一个位置：Agent 在做时是「我来」，页面归你时是「你继续」。
