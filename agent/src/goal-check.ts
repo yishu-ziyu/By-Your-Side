@@ -42,6 +42,8 @@ export interface GoalCheckInput {
   userTookOver?: boolean;
   /** 回答里带输入项的卡片（标题、输入项名）：宿主事实，画在侧栏回答里、可改可重算。 */
   replyCards?: Array<{ title: string; inputs: string[] }>;
+  /** 回答里有一张请用户填的小表单（侧栏里一键发回）：这就是在问用户，哪怕问句不在结尾。 */
+  replyForm?: boolean;
   copies?: CopyCheck[];
   verification?: GoalVerification;
   /** 宿主记下的动作落点和助手自己输入的文字（goal-facts.ts）。 */
@@ -493,7 +495,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   // 「指的是这一页上的东西」由模型判（只看用户原话），落点和搜索词是宿主记下的事实；用户自己说了要打开、搜索的，不在此列。
   const strayed = strayedFrom(input);
   if (strayed && parsed.goalOnPage === true && !input.verification) {
-    if (asksUser(input.lastReply)) return { status: "needs_user", remaining: "等你决定要不要换个做法" };
+    if (asksUser(input.lastReply) || input.replyForm) return { status: "needs_user", remaining: "等你决定要不要换个做法" };
     return { status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: strayed.finding, correction: strayed.correction };
   }
 
@@ -512,7 +514,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   }
 
   // 在问用户就等用户，哪怕模型判成 continue；回答自己说还没做成，就不能算做完（模型会把「确认邮件还没送达」判成做完）。
-  const status = parsed.status === "continue" && asksUser(input.lastReply) ? "needs_user"
+  const status = parsed.status === "continue" && (asksUser(input.lastReply) || input.replyForm) ? "needs_user"
     : parsed.status === "done" && claimsUnfinished(input.lastReply) ? (asksUser(input.lastReply) ? "needs_user" : "open")
       : parsed.status;
 
