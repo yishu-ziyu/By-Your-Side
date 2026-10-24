@@ -27,8 +27,8 @@ export interface TranslationReceipt {
 
 export interface TranslationCommand {
   tabId?: number;
-  /** settle: the translation run ended (done, failed or stopped); remove every pending-paragraph mark. */
-  action: 'begin' | 'collect' | 'apply' | 'display' | 'restore' | 'settle';
+  /** settle: the translation run ended (done, failed or stopped); remove every pending-paragraph mark. peek: read the paragraphs a fresh translate would collect first, without touching the page. */
+  action: 'begin' | 'collect' | 'apply' | 'display' | 'restore' | 'settle' | 'peek';
   document?: string;
   language?: string;
   mode?: TranslationMode;
@@ -39,7 +39,7 @@ export interface TranslationCommand {
   delayMs?: number;
   /** collect only: block ids already being translated elsewhere; skip them so concurrent batches never overlap. */
   exclude?: string[];
-  /** collect only: at most this many blocks (1–8). The first batches stay small so the visible paragraphs land first. */
+  /** collect: at most this many blocks (1–8); the first batches stay small so the visible paragraphs land first. peek: at most this many blocks (1–32). */
   maxBlocks?: number;
 }
 
@@ -55,7 +55,7 @@ export interface TranslationRequest {
 }
 
 export function validateTranslationCommand(p: TranslationCommand): void {
-  if (!p || !['begin', 'collect', 'apply', 'display', 'restore', 'settle'].includes(p.action)) throw new Error('未知翻译操作');
+  if (!p || !['begin', 'collect', 'apply', 'display', 'restore', 'settle', 'peek'].includes(p.action)) throw new Error('未知翻译操作');
 
   if (p.mode !== undefined && !['bilingual', 'translated'].includes(p.mode)) throw new Error('无效的翻译显示方式');
 
@@ -71,7 +71,7 @@ export function validateTranslationCommand(p: TranslationCommand): void {
 
   if (p.exclude !== undefined && (p.action !== 'collect' || !Array.isArray(p.exclude) || p.exclude.length > 512 || p.exclude.some(id => String(id) !== id || !/^\d{1,20}$/.test(id)))) throw new Error('无效的排除段落');
 
-  if (p.maxBlocks !== undefined && (p.action !== 'collect' || !Number.isInteger(p.maxBlocks) || p.maxBlocks < 1 || p.maxBlocks > 8)) throw new Error('无效的批次上限');
+  if (p.maxBlocks !== undefined && ((p.action !== 'collect' && p.action !== 'peek') || !Number.isInteger(p.maxBlocks) || p.maxBlocks < 1 || p.maxBlocks > (p.action === 'peek' ? 32 : 8))) throw new Error('无效的批次上限');
 
   if (p.action === 'apply' && (!p.document || !Array.isArray(p.translations) || p.translations.length > 64 || p.translations.some(s => !s || typeof s.id !== 'string' || s.id.length > 80 || typeof s.text !== 'string' || s.text.length > 24000))) throw new Error('无效的译文批次');
 }

@@ -26,6 +26,52 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   const world = globalThis as typeof globalThis & {__bysTranslation?: State};
   let state = world.__bysTranslation;
 
+  // Text nodes are grouped by paragraph, including inline links/emphasis as one context.
+  const readParagraphs = () => {
+    const excluded = 'script,style,noscript,textarea,input,select,button,pre,code,svg,canvas,iframe,[contenteditable]:not([contenteditable="false"]),[translate="no"],.notranslate,[data-bys-translation],[hidden],[aria-hidden="true"],[id^="__sideagent"],[id^="sideagent-"]';
+    const groups = new Map<HTMLElement, Text[]>();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
+
+    while ((node = walker.nextNode())) {
+      const text = node as Text, parent = text.parentElement;
+
+      if (!parent || !text.data.length || parent.closest(excluded)) continue;
+      const element = (parent.closest('p,h1,h2,h3,h4,h5,h6,li,td,th,blockquote,figcaption,dt,dd,div,section,article,main') ?? parent) as HTMLElement;
+
+      if (parent.getClientRects().length === 0 || getComputedStyle(parent).visibility === 'hidden') continue;
+      const list = groups.get(element) ?? []; list.push(text); groups.set(element, list);
+    }
+
+    for (const [element, nodes] of groups) if (!nodes.some(node => /\p{L}/u.test(node.data))) groups.delete(element);
+
+    return groups;
+  };
+
+  const tooLarge = (nodes: Text[]) => nodes.length > 64 || nodes.reduce((n, s) => n + s.length, 0) > 12000;
+
+  const fromViewport = (el: HTMLElement) => { const r = el.getBoundingClientRect();
+
+ return r.bottom >= 0 && r.top < innerHeight ? 0 : Math.abs(r.top); };
+
+  // Read-only: the paragraphs a fresh translate would collect first, in the same order, so they can be translated
+  // while the model is still deciding. No state, marks or ids are left on the page.
+  if (command.action === 'peek') {
+    const found: TranslationReceipt['blocks'] = [];
+
+    // Any existing state (even a stale one from an earlier URL) is handled by the real call, which may restore it first.
+    if (!state) {
+      const paragraphs = [...readParagraphs()].filter(([, nodes]) => !tooLarge(nodes)).sort(([a], [b]) => fromViewport(a) - fromViewport(b));
+
+      for (const [, nodes] of paragraphs.slice(0, command.maxBlocks ?? 8)) {
+        const id = String(found.length + 1);
+        found.push({id, segments: nodes.map((node, i) => ({id: `${id}:${i}`, text: node.data}))});
+      }
+    }
+
+    return {document: '', language: command.language ?? '简体中文', mode: 'bilingual', fontSize: null, fontFamily: 'original', translated: 0, remaining: found.length, unsupported: 0, blocks: found};
+  }
+
   if (state && state.url !== documentUrl()) { mutated = true; state.restore(); delete world.__bysTranslation; state = undefined; }
 
   if (command.document && command.document !== state?.token) throw new Error('网页已变化，这批译文未写入。请在当前页面重新翻译。');
@@ -227,27 +273,10 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     }
   }
 
-  // Text nodes are grouped by paragraph, including inline links/emphasis as one context.
-  const excluded = 'script,style,noscript,textarea,input,select,button,pre,code,svg,canvas,iframe,[contenteditable]:not([contenteditable="false"]),[translate="no"],.notranslate,[data-bys-translation],[hidden],[aria-hidden="true"],[id^="__sideagent"],[id^="sideagent-"]';
-  const groups = new Map<HTMLElement, Text[]>();
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  let node: Node | null;
-
-  while ((node = walker.nextNode())) {
-    const text = node as Text, parent = text.parentElement;
-
-    if (!parent || !text.data.length || parent.closest(excluded)) continue;
-    const element = (parent.closest('p,h1,h2,h3,h4,h5,h6,li,td,th,blockquote,figcaption,dt,dd,div,section,article,main') ?? parent) as HTMLElement;
-
-    if (parent.getClientRects().length === 0 || getComputedStyle(parent).visibility === 'hidden') continue;
-    const list = groups.get(element) ?? []; list.push(text); groups.set(element, list);
-  }
-
+  const groups = readParagraphs();
   let unsupported = 0;
 
   for (const [element, nodes] of groups) {
-    if (!nodes.some(node => /\p{L}/u.test(node.data))) { groups.delete(element); continue; }
-
     let block = current.blocks.get(element);
 
     if (block && (block.segments.length !== nodes.length || block.segments.some((s, i) => s.node !== nodes[i] || s.node.data !== (current.mode === 'translated' ? s.translation ?? s.original : s.original)))) {
@@ -256,7 +285,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
     if (block) continue;
 
-    if (nodes.length > 64 || nodes.reduce((n, s) => n + s.length, 0) > 12000) { unsupported++; continue; }
+    if (tooLarge(nodes)) { unsupported++; continue; }
 
     const id = String(++current.next);
     current.blocks.set(element, {id, element, segments: nodes.map((node, i) => ({id: `${id}:${i}`, node, original: node.data}))});
@@ -266,13 +295,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   const pending = [...current.blocks.values()].filter(b => !b.segments.every(s => s.translation !== undefined));
   // Read the user's visible paragraphs first; do not scroll the page to translate it.
-  pending.sort((a, b) => {
-    const distance = (el: HTMLElement) => { const r = el.getBoundingClientRect();
-
- return r.bottom >= 0 && r.top < innerHeight ? 0 : Math.abs(r.top); };
-
-    return distance(a.element) - distance(b.element);
-  });
+  pending.sort((a, b) => fromViewport(a.element) - fromViewport(b.element));
 
   if (command.action === 'begin' || command.action === 'collect' || command.action === 'apply') {
     // A paragraph waiting for its translation shows a quiet placeholder where the text will land.
