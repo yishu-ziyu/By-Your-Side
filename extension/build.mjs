@@ -35,6 +35,7 @@ await esbuild.build({
     "voice-permission": "src/sidepanel/voice-permission-page.ts",
     "artifact-viewer": "src/sidepanel/artifact-viewer-page.ts",
     "diagram-engine": "src/sidepanel/diagram-engine.ts",
+    "diagram-engine-more": "src/sidepanel/diagram-engine-more.ts",
     // 附件解析（pdf.js、Office 读取）：侧栏附上文件时才 import，不随侧栏加载。
     "file-read": "src/sidepanel/file-read/index.ts",
   },
