@@ -66,7 +66,7 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { BrowseDay, BrowseHabit } from "../../shared/browse-habits.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
-import { asksUser, checkGoal, goalCheckRecord, goalReadEvidence, defersWork, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_GATE_WAIT_MS, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalVerification, type GoalVerdict } from "./goal-check.js";
+import { asksUser, checkGoal, goalReadEvidence, defersWork, recordHostGoalCheck, recordUnavailableGoalCheck, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CHECK_PROMPT, GOAL_CHECK_PROMPT_SHA, GOAL_GATE_WAIT_MS, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalCheckTrace, type GoalCheckTraceContext, type GoalVerification, type GoalVerdict } from "./goal-check.js";
 import { GoalLedger } from "./goal-ledger.js";
 import { ContinuePolicy } from "./continue-policy.js";
 import type { TaskHistoryStore } from "./task-history.js";
@@ -3119,7 +3119,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
   }
 
-  private async reverifyGoal(original: GoalVerdict, checkInput: GoalCheckInput, model: Parameters<typeof checkGoal>[1], headers: Parameters<typeof checkGoal>[4], context: { runId: string | null; tabId: number | null; pageText: string; endedOn: string; pageMissing: boolean; current: () => boolean }): Promise<{ verdict: GoalVerdict; retryFingerprint: string | null } | null> {
+  private async reverifyGoal(original: GoalVerdict, checkInput: GoalCheckInput, model: Parameters<typeof checkGoal>[1], headers: Parameters<typeof checkGoal>[4], trace: GoalCheckTraceContext, context: { runId: string | null; tabId: number | null; pageText: string; endedOn: string; pageMissing: boolean; current: () => boolean }): Promise<{ verdict: GoalVerdict; retryFingerprint: string | null } | null> {
     const { runId, tabId, pageText, endedOn, pageMissing, current } = context;
     const lastReply = checkInput.lastReply;
     let verdict = original;
@@ -3164,9 +3164,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         readContents.push(item.content);
       }
     }
-    if (!current()) return null;
+    const contentMatches = readContents.flatMap((text, left) => readContents.flatMap((other, right) => right > left && text && other ? [{ left, right, equal: text === other }] : []));
+    const verificationInput = { ...checkInput, verification: { finding: original, reads, contentMatches } };
+    if (!current()) {
+      recordUnavailableGoalCheck(model, verificationInput, trace, "cancelled", "host:cancelled");
+      return null;
+    }
     if (readFailed || (targets.length > 0 && !reads.length)) {
       verdict = { ...original, status: 'open', cause: 'retry_read_unavailable' };
+      recordHostGoalCheck(model, verificationInput, "retry_read_unavailable", verdict, trace, { readFailed, targets: targets.map(read => read.target), reads: reads.length });
     } else {
       const scope = JSON.stringify([runId, checkInput.goal]);
       const proof = original.verificationSubject === 'file' ? checkInput.files?.map(file => [file.filename, file.content])
@@ -3175,9 +3181,10 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const fingerprint = createHash('sha256').update(JSON.stringify([original.verificationSubject ?? 'page', proof])).digest('hex');
       if (this.continuePolicy.seenEvidence(scope, fingerprint)) {
         verdict = { ...original, status: 'open', cause: 'retry_evidence_unchanged' };
+        recordHostGoalCheck(model, verificationInput, "retry_evidence_unchanged", verdict, trace, { fingerprint, seenEvidence: true });
       } else {
-        const contentMatches = readContents.flatMap((text, left) => readContents.flatMap((other, right) => right > left && text && other ? [{ left, right, equal: text === other }] : []));
-        verdict = !needsPageReread ? original : await checkGoal(this.sideHost()!, model, { ...checkInput, verification: { finding: original, reads, contentMatches } }, AbortSignal.timeout(20_000), headers);
+        if (needsPageReread) verdict = await checkGoal(this.sideHost()!, model, verificationInput, AbortSignal.timeout(20_000), headers, trace);
+        else recordHostGoalCheck(model, verificationInput, "retry_not_needed", original, trace, { needsPageReread });
         if (verdict.status === 'continue') retryFingerprint = fingerprint;
       }
     }
@@ -3193,7 +3200,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const current = () => this.deliveryRunId() === runId && epoch === this.controlEpoch && !this.hold.isHeld();
     const snapshot = this.conversationSnapshot();
     let verdict: GoalVerdict | null = null;
-    let unavailable: string | undefined;
+    let model: Parameters<typeof checkGoal>[1] | null = null;
+    let checkInput: GoalCheckInput | null = null;
     const tabId = this.rpc?.getPageTarget?.(this.memberId) ?? null;
     /** 交付时标签页所在的网页；续做前据此判断用户有没有换走。 */
     let endedOn = "";
@@ -3202,9 +3210,36 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     let retryFingerprint: string | null = null;
     /** 核对自己读页的结果，只进诊断记录：读到没有、哪个标签页、地址和字数，不带网页内容。 */
     let pageRead: { ok: boolean; tabId: number | null; url?: string; chars?: number; error?: string } | null = null;
+    const checkCorrelation = this.runTrace.traceCorrelation();
+    const pendingChecks: GoalCheckTrace[] = [];
+    let rootCheckId: string | null = null;
+    let writtenChecks = 0;
+    const newCheck = (parentCheckId?: string, startedAt = Date.now()): GoalCheckTraceContext => {
+      const checkId = randomUUID();
+      if (!parentCheckId && !rootCheckId) rootCheckId = checkId;
+      return { checkId, ...(parentCheckId ? { parentCheckId } : {}), startedAt, savePrompt: (hash, text) => this.runTrace.prompt(hash, text), record: check => { pendingChecks.push(check); } };
+    };
+    const adjustLastCheck = (rule: string, next: GoalCheckTrace["verdict"]) => {
+      const check = pendingChecks.at(-1);
+      if (!check) return;
+      check.decidedBy = `host:${rule}`;
+      check.adjustedBy = check.adjustedBy ? `${check.adjustedBy}+${rule}` : rule;
+      check.verdict = next;
+    };
+    const flushChecks = (extra: { attempt?: number; pageMovedTo?: string; overBudget?: boolean } = {}) => {
+      const pending = pendingChecks.slice(writtenChecks);
+      for (const [index, check] of pending.entries()) {
+        const last = index === pending.length - 1;
+        this.runTrace.recordAt(checkCorrelation, "goal_check", { ...check, ...check.verdict, attempt: last && extra.attempt !== undefined ? extra.attempt : null, ...(pageRead ? { pageRead } : {}),
+          ...(last && extra.pageMovedTo ? { pageMovedTo: extra.pageMovedTo } : {}), ...(last && extra.overBudget ? { overBudget: true } : {}) });
+      }
+      writtenChecks = pendingChecks.length;
+    };
+    this.runTrace.prompt(GOAL_CHECK_PROMPT_SHA, GOAL_CHECK_PROMPT);
 
     try {
-      const model = this.modelRuntime!.fastModel?.() ?? this.session!.model;
+      const checkStarted = Date.now();
+      model = this.modelRuntime!.fastModel?.() ?? this.session!.model ?? null;
 
       let readError: string | undefined;
       // SAFETY: snapshot 工具回 { text, url, title?, translation? }；读不到就不带页面，只按回答判断。
@@ -3223,8 +3258,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       pageNow = page ? `${endedOn}\n${pageText}` : null;
       const delivery = this.heldDelivery() ?? snapshot?.conversationContext?.latestDelivery;
       const partial = !!delivery && delivery.runId === runId && deliveryTextWithNote(delivery) === lastReply && (delivery.facts?.outcome === "partial" || !!delivery.unfinished?.length);
+      const inputFor = (copies: GoalCheckInput["copies"]) => this.goalLedger.input({ snapshot, goal: this.activeGoal ?? "", requestStartedAt: this.requestStartedAt, copies, files: this.runFiles(), lastReply, tabId, page, userTookOver: runId !== null && this.handbackRunId === runId });
+      checkInput = model ? inputFor([]) : null;
 
-      verdict = this.continuePolicy.beforeCheck({ runId, reply: lastReply, partial, pageNow, pageText, goalPage: snapshot?.goalPage });
+      let beforeRule = "email_step";
+      let beforeFacts: Record<string, unknown> | undefined;
+      verdict = this.continuePolicy.beforeCheck({ runId, reply: lastReply, partial, pageNow, pageText, goalPage: snapshot?.goalPage }, (rule, facts) => { beforeRule = rule; beforeFacts = facts; });
+      if (verdict && model && checkInput) recordHostGoalCheck(model, checkInput, beforeRule, verdict, newCheck(undefined, checkStarted), beforeFacts);
       if (!verdict && model) {
         const sessionId = `${this.session!.sessionId}-goal-check`;
         const intent = this.copiedFields.has(this.copyScope()) ? (await this.copyIntentForRequest(true)).mode : null;
@@ -3232,30 +3272,38 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         const copies = this.rpc && intent !== 'change' && intent !== 'consume' && intent !== 'unavailable' ? await this.copiedFields.check(this.rpc, this.copyScope(), this.memberId, current) : [];
         if (copies.length) this.runTrace.record("copy_check", { copies });
         copyPolicyUnavailable = intent === 'unavailable';
-        const checkInput = this.goalLedger.input({ snapshot, goal: this.activeGoal ?? "", requestStartedAt: this.requestStartedAt, copies, files: this.runFiles(), lastReply, tabId, page, userTookOver: runId !== null && this.handbackRunId === runId });
-        this.runTrace.record("goal_check_input", goalCheckRecord(checkInput));
+        checkInput = inputFor(copies);
         const headers = opencodeSessionHeaders(model, sessionId);
-        verdict = await checkGoal(this.sideHost()!, model, checkInput, AbortSignal.timeout(20_000), headers);
+        verdict = await checkGoal(this.sideHost()!, model, checkInput, AbortSignal.timeout(20_000), headers, newCheck(undefined, checkStarted));
         if (verdict.status === 'continue') {
-          const reverified = await this.reverifyGoal(verdict, checkInput, model, headers, { runId, tabId, pageText, endedOn, pageMissing: page === null, current });
-          if (!reverified) { letGo(); return; }
+          const reverified = await this.reverifyGoal(verdict, checkInput, model, headers, newCheck(rootCheckId ?? undefined), { runId, tabId, pageText, endedOn, pageMissing: page === null, current });
+          if (!reverified) { flushChecks(); letGo(); return; }
           ({ verdict, retryFingerprint } = reverified);
         }
-        if (copyPolicyUnavailable && verdict.status === 'done') verdict = null;
+        if (copyPolicyUnavailable && verdict.status === 'done') {
+          verdict = null;
+          adjustLastCheck("copy_policy", { status: "unavailable" });
+        }
       }
     } catch (error) {
       verdict = null;
-      unavailable = error instanceof SideCallError ? error.reason : undefined;
+      if (model && checkInput && pendingChecks.at(-1)?.verdict.status !== "unavailable") {
+        const reason = error instanceof SideCallError ? error.reason : undefined;
+        if (pendingChecks.length) adjustLastCheck("check_error", { status: "unavailable", ...(reason ? { reason } : {}) });
+        else recordUnavailableGoalCheck(model, checkInput, newCheck(undefined), reason, "host:check_setup");
+      }
     }
 
-    if (!verdict) this.runTrace.record("goal_check", { status: "unavailable", ...(unavailable ? { reason: unavailable } : {}), ...(pageRead ? { pageRead } : {}) });
-
     // 核对拿不到结论（快速模型超时、出错）时的保底：助手最后在问用户，就按「等用户」处理，下一句仍接到这个任务上。
-    if (!verdict && asksUser(this.runReplyText(event.messages))) verdict = { status: "needs_user", remaining: "回复助手的问题" };
+    if (!verdict && asksUser(this.runReplyText(event.messages))) {
+      verdict = { status: "needs_user", remaining: "回复助手的问题" };
+      adjustLastCheck("asksUser", verdict);
+    }
+    if (!verdict) flushChecks();
 
     // 核对期间用户停止、接管、补充或另发了任务：这次核对作废，不再碰已交付的这一轮。
     // 还是这一轮（接管、停止）时说一声没结论，侧栏放出扣着的回答；已开新一轮时侧栏在新一轮开始时已放出。
-    const abandon = () => { letGo(); if (this.deliveryRunId() === runId) emit({ kind: "goal_check", status: "unavailable" }); };
+    const abandon = () => { flushChecks(); letGo(); if (this.deliveryRunId() === runId) emit({ kind: "goal_check", status: "unavailable" }); };
 
     if (!current()) { abandon(); return; }
     if (copyPolicyUnavailable) emit({ kind: 'notice', message: '原样搬运要求暂时无法判断，复制结果没有完成独立核对。' });
@@ -3308,7 +3356,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         if (items.length >= 2 && at >= 0) continuing.step = { at: at + 1, of: items.length };
       }
       emit(continuing);
-      this.runTrace.record("goal_check", { ...verdict, attempt, ...(pageRead ? { pageRead } : {}) });
+      flushChecks({ attempt });
       this.mainEffort.raise(session.model, "goal_unfinished");
       this.deliveredResultThisRun = false;
       void session.prompt(continuation.prompt)
@@ -3336,7 +3384,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       letGo();
       emit(settled);
       if (verdict.cause === 'copy_changed' || verdict.cause === 'copy_unverified') emit({ kind: "notice", message: verdict.cause === 'copy_changed' ? "核对发现：复制后的内容已变化，尚未确认符合你的要求。" : "复制结果暂时无法核对，不能确认已完成。" });
-      this.runTrace.record("goal_check", { ...verdict, ...(movedTo ? { pageMovedTo: movedTo } : {}), ...(continuation && "overBudget" in continuation ? { overBudget: true } : {}), ...(pageRead ? { pageRead } : {}) });
+      flushChecks({ ...(movedTo ? { pageMovedTo: movedTo } : {}), ...(continuation && "overBudget" in continuation ? { overBudget: true } : {}) });
     }
   }
 

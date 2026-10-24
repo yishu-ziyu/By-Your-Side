@@ -55,9 +55,14 @@ function goalStatuses(report: string): string[] {
 
   if (!existsSync(dir)) return [];
 
-  return readdirSync(dir).filter(name => name.endsWith(".trace.jsonl")).flatMap(name => readFileSync(join(dir, name), "utf8").split("\n")
-    .filter(line => line.includes('"type":"goal_check"'))
-    .flatMap(line => { try { const status: unknown = JSON.parse(line).data?.status; return typeof status === "string" ? [status] : []; } catch { return []; } }));
+  return readdirSync(dir).filter(name => name.endsWith(".trace.jsonl")).flatMap(name => {
+    const events = readFileSync(join(dir, name), "utf8").split("\n").filter(line => line.includes('"type":"goal_check"'))
+      .flatMap(line => { try { return [JSON.parse(line) as { data?: { status?: unknown; v?: unknown; checkId?: unknown; parentCheckId?: unknown } }]; } catch { return []; } });
+    // 复核现在有独立完整事件；汇总仍看每条核对链的最终结论，旧事件没有 checkId，全部照原样保留。
+    const parents = new Set(events.filter(event => event.data?.v === 1 && typeof event.data.parentCheckId === "string").map(event => event.data!.parentCheckId));
+    return events.filter(event => event.data?.v !== 1 || !parents.has(event.data.checkId))
+      .flatMap(event => typeof event.data?.status === "string" ? [event.data.status] : []);
+  });
 }
 
 /** 一次验收用例：退出码 0 算过。对照本来就要把同一份代码跑好几次，所以不受「同样代码失败两次就拦」限制。 */

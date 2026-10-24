@@ -8,9 +8,11 @@
  *   npx tsx scripts/maintenance/goal-check-labels.mts merge <导出的.json>                把页面里改过的标注并回 labels.json
  *
  * 标注集只放在 out/goal-check-labels/，不进仓库。日常记录没脱敏：终端只打印编号、结论和去掉网址、标题的文字，网页原文只进本机那一页。
- * 只收记录里有完整核对输入的；10-24 之前的记录没存核对当时读到的页面，还原不了，不收。
+ * 收两种记录：完整核对事件（goal_check 带 replayInput，限 checkGoal 自己判的），和更早的 goal_check_input 配下一条结论。
+ * 其余还原不了，不收，只报条数。
  */
 import { execFileSync } from "node:child_process";
+import { homedir } from "node:os";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -38,9 +40,16 @@ function load(): Entry[] {
 
 const save = async (entries: Entry[]) => { await mkdir(DIR, { recursive: true }); await writeFile(FILE, JSON.stringify(entries, null, 1)); };
 
-/** 一份诊断记录里的核对：每条 goal_check_input 配上同一次运行里紧接着的 goal_check 结论。 */
-function checksIn(file: string, source: string): Entry[] {
+/**
+ * 尺子把 replayInput 交给 checkGoal 重判，只有 checkGoal 里面的判定能这样还原。
+ * 会话层的宿主判定（复核没重读、证据没变、取消、核对前的规则、事后改判）重跑 checkGoal 会得出别的结论，不进标注集。
+ */
+const REPLAYABLE = new Set(["model", "host:copies", "host:csv_escaped_newlines", "host:csv_total_mismatch", "host:dead_clicks", "host:no_captions", "host:single_search_wording"]);
+
+/** 一份诊断记录里能重放的核对，和不能重放的核对条数。 */
+function checksIn(file: string, source: string): { found: Entry[]; unreplayable: number } {
   const found: Entry[] = [];
+  let unreplayable = 0;
   const pending = new Map<string, Entry>();
 
   for (const line of readFileSync(file, "utf8").split("\n")) {
@@ -54,13 +63,20 @@ function checksIn(file: string, source: string): Entry[] {
       const entry: Entry = { id, source, at: String(record.time ?? ""), input: record.data, recorded: null, expected: null, reason: "", tags: [] };
       found.push(entry);
       pending.set(run, entry);
-    } else if (record.type === "goal_check" && pending.has(run)) {
-      pending.get(run)!.recorded = typeof record.data?.status === "string" ? record.data.status : null;
-      pending.delete(run);
+    } else if (record.type === "goal_check") {
+      const data = record.data;
+      const replayInput = data?.replayInput;
+
+      if (data?.v === 1 && typeof data.checkId === "string" && REPLAYABLE.has(String(data.decidedBy)) && replayInput && typeof replayInput === "object" && !Array.isArray(replayInput)) {
+        found.push({ id: data.checkId.slice(0, 8), source, at: String(record.time ?? ""), input: replayInput as Record<string, unknown>, recorded: typeof data.status === "string" ? data.status : null, expected: null, reason: "", tags: [] });
+      } else if (pending.has(run)) {
+        pending.get(run)!.recorded = typeof data?.status === "string" ? data.status : null;
+        pending.delete(run);
+      } else unreplayable += 1;
     }
   }
 
-  return found;
+  return { found, unreplayable };
 }
 
 function sources(): Array<{ file: string; source: string }> {
@@ -73,8 +89,10 @@ function sources(): Array<{ file: string; source: string }> {
   const logs = join(MAIN, "out/daily-logs");
   const latest = existsSync(logs) ? readdirSync(logs).filter(name => existsSync(join(logs, name, "traces.jsonl"))).sort().at(-1) : undefined;
   const replays = join(MAIN, "out/self-use");
+  const local = join(homedir(), ".sideagent/traces");
 
   return [
+    ...(existsSync(local) ? readdirSync(local).filter(name => name.endsWith(".jsonl")).map(name => ({ file: join(local, name), source: "local" })) : []),
     ...(latest ? [{ file: join(logs, latest, "traces.jsonl"), source: "daily" }] : []),
     ...(existsSync(replays) ? files(replays).filter(file => file.endsWith(".trace.jsonl")).map(file => ({ file, source: named(file) })) : []),
   ];
@@ -85,7 +103,7 @@ const hideUrls = (text: string) => text.replace(/https?:\/\/[^\s"'<>)\]）」]+/
 /** 终端里看的摘要：不带网址、标题和网页正文，只够判该判什么。 */
 function brief(entry: Entry): string {
   const input = entry.input as { goal?: string[]; lastReply?: string; facts?: { actions?: Array<{ tools: string[]; onGoalPage: boolean; openedByAssistant: boolean; page: string | null }>; typedNotFromUser?: string[]; searchedNotFromUser?: string[] }; observations?: Array<{ tool: string; text: string; earlier?: boolean }>; files?: unknown[]; replyCards?: unknown[]; page?: { text?: string } | null };
-  const daily = entry.source === "daily";
+  const daily = entry.source === "daily" || entry.source === "local";
   const facts = input.facts;
 
   return [
@@ -137,9 +155,13 @@ if (!entries) {
 } else if (command === "collect") {
   const known = new Map(entries.map(entry => [entry.id, entry]));
   let added = 0;
+  let unreplayable = 0;
 
   for (const { file, source } of sources()) {
-    for (const entry of checksIn(file, source)) {
+    const checks = checksIn(file, source);
+    unreplayable += checks.unreplayable;
+
+    for (const entry of checks.found) {
       if (known.has(entry.id)) continue;
       known.set(entry.id, entry);
       added += 1;
@@ -149,7 +171,7 @@ if (!entries) {
   const all = [...known.values()];
   await save(all);
   const tally = (pick: (e: Entry) => string | null) => Object.entries(all.reduce<Record<string, number>>((count, e) => ({ ...count, [pick(e) ?? "无"]: (count[pick(e) ?? "无"] ?? 0) + 1 }), {})).map(([k, v]) => `${k} ${v}`).join("、");
-  console.log(`新收 ${added} 条，共 ${all.length} 条（${FILE}）。\n来源：${tally(e => e.source.split(":")[0]!)}\n当时判：${tally(e => e.recorded)}\n已标注：${all.filter(e => e.expected).length}`);
+  console.log(`新收 ${added} 条，共 ${all.length} 条（${FILE}）。\n来源：${tally(e => e.source.split(":")[0]!)}\n当时判：${tally(e => e.recorded)}\n已标注：${all.filter(e => e.expected).length}\n不能重放（旧记录没存核对输入，或是核对之外的宿主判定）：${unreplayable} 条`);
 } else if (command === "show") {
   for (const id of rest) { const entry = entries.find(e => e.id === id); console.log(entry ? brief(entry) : `没有 ${id}`); }
   if (!rest.length) for (const entry of entries) console.log(brief(entry));

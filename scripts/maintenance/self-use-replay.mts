@@ -66,6 +66,16 @@ await mkdir(shots, { recursive: true });
 const rp = await launchRealPath({ dist: process.env.SIDEAGENT_ACCEPTANCE_DIST ?? join(REPO, "extension/dist"), recordFps: 10 });
 const rows: Row[] = [];
 const traceExpression = `new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-lines')){db.close();resolve([]);return}const tx=db.transaction('trace-lines');const q=tx.objectStore('trace-lines').getAll();q.onsuccess=()=>resolve(q.result.map(x=>x.line));tx.oncomplete=()=>db.close()}})`;
+const promptExpression = `new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-prompts')){db.close();resolve([]);return}const tx=db.transaction('trace-prompts');const q=tx.objectStore('trace-prompts').getAll();q.onsuccess=()=>resolve(q.result);tx.oncomplete=()=>db.close()}})`;
+const savePrompts = async (panel: string) => {
+  const values = await rp.evaluate(panel, promptExpression).catch(() => []) as unknown;
+  if (!Array.isArray(values)) return;
+  await mkdir(join(shots, "prompts"), { recursive: true });
+  for (const value of values) {
+    if (!value || typeof value !== "object" || !("hash" in value) || typeof value.hash !== "string" || !/^[a-f0-9]{64}$/.test(value.hash) || !("text" in value) || typeof value.text !== "string") continue;
+    await writeFile(join(shots, "prompts", `${value.hash}.txt`), value.text, { mode: 0o600 }).catch(() => {});
+  }
+};
 const load = () => Math.round(loadavg()[0] * 10) / 10;
 let traceSeen = 0;
 
@@ -126,10 +136,11 @@ try {
       const lines = (await rp.evaluate(panel, traceExpression).catch(() => []) as string[]).slice(traceSeen);
       traceSeen += lines.length;
       await writeFile(join(shots, `${task.n}-${task.say.indexOf(say) + 1}.trace.jsonl`), lines.map(line => `${line.trimEnd()}\n`).join("")).catch(() => {});
+      await savePrompts(panel);
       const calls = lines.filter(line => line.includes('"type":"model_request"')).length;
-      const records = lines.flatMap(line => { try { return [JSON.parse(line) as { type?: unknown; data?: { facts?: unknown; status?: unknown } }]; } catch { return []; } });
+      const records = lines.flatMap(line => { try { return [JSON.parse(line) as { type?: unknown; data?: { facts?: unknown; hostFacts?: { goalFacts?: unknown }; status?: unknown } }]; } catch { return []; } });
       // 和核对用同一份宿主事实：这句话指的是当时页面上的东西，动作却落在助手自己打开的别的页、或搜了用户没说过的词。落点没读到地址的不算。
-      const facts = factsOf(records.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
+      const facts = factsOf(records.filter(r => r.type === "goal_check").at(-1)?.data?.hostFacts?.goalFacts ?? records.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
       const changedGoal = !!task.onPage?.includes(task.say.indexOf(say) + 1) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
       const verdict = records.filter(r => r.type === "goal_check").map(r => r.data?.status).filter((s): s is string => typeof s === "string").at(-1) ?? null;
       rows.push({ n: task.n, say, secs: Math.round((answered - start) / 1000), checkSecs: Math.round((Date.now() - answered) / 1000), calls, load: [loadStart, load()], finished, error: error ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal, verdict, answer: seen.answer });

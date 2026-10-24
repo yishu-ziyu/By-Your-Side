@@ -1,4 +1,4 @@
-import { appendFile, chmod, mkdir, readdir, unlink } from "node:fs/promises";
+import { appendFile, chmod, mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expiredSessions, TraceRecorder } from "../../shared/run-trace-core.js";
 import { dataDir } from "./config.js";
@@ -22,6 +22,12 @@ export class RunTrace extends TraceRecorder {
           await Promise.all(expiredSessions(files).map((name) => unlink(join(directory, name)).catch(() => {})));
         },
         append: (line) => appendFile(path, line, { mode: 0o600 }),
+        savePrompt: async (hash, text) => {
+          const prompts = join(directory, "prompts");
+          await mkdir(prompts, { recursive: true, mode: 0o700 });
+          await chmod(prompts, 0o700);
+          await writeFile(join(prompts, `${hash}.txt`), text, { mode: 0o600 });
+        },
       };
     }, maxBytes);
     this.path = path;

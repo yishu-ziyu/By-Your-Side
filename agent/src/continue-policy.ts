@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 import { emailStepIsNext, gaveUpWithoutChange, type GoalVerdict } from "./goal-check.js";
 
@@ -23,11 +24,15 @@ export class ContinuePolicy {
     return this.runId !== runId || this.attempts <= GOAL_CONTINUE_MAX;
   }
 
-  beforeCheck(input: { runId: string | null; reply: string; partial: boolean; pageNow: string | null; pageText: string; goalPage: TaskProgressSnapshot["goalPage"] }): GoalVerdict | null {
-    if (gaveUpWithoutChange({ ...input, pageAtNudge: this.nudgePage?.runId === input.runId ? this.nudgePage.page : null })) {
+  beforeCheck(input: { runId: string | null; reply: string; partial: boolean; pageNow: string | null; pageText: string; goalPage: TaskProgressSnapshot["goalPage"] }, observe?: (rule: string, facts: Record<string, unknown>) => void): GoalVerdict | null {
+    const pageAtNudge = this.nudgePage?.runId === input.runId ? this.nudgePage.page : null;
+    const hash = (page: string | null) => page === null ? null : createHash("sha256").update(page).digest("hex");
+    if (gaveUpWithoutChange({ ...input, pageAtNudge })) {
+      observe?.("gave_up_without_change", { partial: input.partial, pageUnchanged: true, pageAtNudgeSha: hash(pageAtNudge), pageNowSha: hash(input.pageNow) });
       return { status: "open", remaining: null, cause: "gave_up_page_unchanged" };
     }
     if (!emailStepIsNext(input.pageText, input.reply)) return null;
+    observe?.("email_step", { goalPage: input.goalPage ?? null });
     const site = input.goalPage ? (input.goalPage.title.split(/\s[—–|-]\s/)[0]!.trim() || new URL(input.goalPage.url).hostname) : "";
     return { status: "continue", remaining: site ? `去邮箱找「${site.slice(0, 40)}」的确认邮件，点里面的确认链接（别点其他网站的）` : "去邮箱打开确认邮件，点里面的确认链接" };
   }

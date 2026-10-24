@@ -1,12 +1,12 @@
 # 由 logs.mjs 调用：读一份 IndexedDB 副本里的 sideagent-diagnostics 库，每条记录写成一行 {"store", "key", "value"}。
-# 只读这一个库的三张表；不碰别的库。
+# 只读这一个库的诊断表；不碰别的库。
 #   python -I logs-decode.py <leveldb 副本> <blob 副本或 -> <输出 jsonl>
 import json
 import sys
 
 from ccl_chromium_reader import ccl_chromium_indexeddb as idb
 
-STORES = ("trace-sessions", "trace-lines", "voice-lines")
+STORES = ("trace-sessions", "trace-lines", "voice-lines", "trace-prompts")
 
 
 def plain(value):

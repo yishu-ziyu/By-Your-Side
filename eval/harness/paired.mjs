@@ -30,7 +30,7 @@ function metrics(dir, task) {
   const sum = (k) => usage.reduce((a, u) => a + (u[k] ?? 0), 0);
   const tools = of("tool_execution_end").map((e) => e.data ?? {});
   const browser = tools.filter((t) => BROWSER_TOOLS.has(t.toolName));
-  const checks = of("goal_check").map((e) => e.data?.status);
+  const checks = of("goal_check").map((e) => e.data ?? {});
   // judge.mjs already turns a fail caused by proved site unavailability into "environment"; a pass stays a pass
   const verdict = judge?.verdict ?? (rec.status === "environment" ? "environment" : judge?.judge_error ? "judge_error" : "unjudged");
   const answer = rec.final_answer_verbatim ?? "";
@@ -42,7 +42,7 @@ function metrics(dir, task) {
     input: sum("input"), output: sum("output"), cache_read: sum("cacheRead"),
     tool_calls: tools.length, browser_calls: browser.length, browser_errors: browser.filter((t) => t.isError).length,
     snapshots: browser.filter((t) => t.toolName === "snapshot").length,
-    goal_continues: checks.filter((s) => s === "continue").length, last_check: checks.at(-1) ?? null,
+    goal_continues: checks.filter((data) => data.status === "continue" && typeof data.attempt === "number").length, last_check: checks.at(-1)?.status ?? null,
     claimed, false_complete: verdict === "fail" && claimed,
   };
 }

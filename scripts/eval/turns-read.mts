@@ -28,7 +28,7 @@ const result = rows.map(row => {
   const busy = own.filter(l => l.type === "tool_execution_start" && heard && at(l) < at(heard)).map(l => l.data?.toolName);
   const running = lines.filter(l => l.sessionId === session && l.type === "tool_execution_start" && at(l) <= row.turnAt).at(-1);
   // 目标核对判「继续」并真的多跑了一轮：用户先看到了一个没做完或做错的回答。记下核对说还差什么，好分出抓对的和白跑的。
-  const continues = own.filter(l => l.type === "goal_check" && l.data?.status === "continue" && l.data.attempt !== undefined).map(l => l.data?.remaining ?? "");
+  const continues = own.filter(l => l.type === "goal_check" && l.data?.status === "continue" && typeof l.data.attempt === "number").map(l => l.data?.remaining ?? "");
   const corrections = continues.length;
   // 最后一段回答取诊断记录里助手最后写的正文，不读侧栏（侧栏里链接和「按上次做过的」会粘在同一行）。
   const answer = own.filter(l => l.type === "message_end" && l.data?.message?.role === "assistant").map(l => (l.data?.message?.content ?? []).filter(p => p.type === "text").map(p => p.text).join("").trim()).filter(Boolean).at(-1) ?? "";
