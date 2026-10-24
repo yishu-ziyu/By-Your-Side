@@ -37,7 +37,7 @@ const STYLE = `
 .rows{display:flex;flex-direction:column;gap:2px;margin:0 -6px}
 .row{display:flex;gap:10px;align-items:baseline;min-width:0;padding:3px 6px;border-radius:8px;color:rgba(255,255,255,.86)}
 .row.tagged{background:rgba(255,255,255,.1);color:#fff}
-.row .label{flex:none;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .label{flex:0 1 auto;max-width:55%;min-width:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .row.solo .label{flex:1;max-width:none}
 .row .tag{flex:none;font-size:11px;font-weight:600;color:#141413;background:#f2c27b;border-radius:99px;padding:0 6px}
 .row .value{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
@@ -48,7 +48,7 @@ canvas{width:36px;height:36px;flex:none}
 .word{font-weight:600;flex:none}
 .detail{color:rgba(255,255,255,.86);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cap[data-phase=done] .detail,.cap[data-phase=waiting] .detail,.cap[data-phase=failed] .detail{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.heard,.left{font-size:12px;-webkit-user-select:text;user-select:text;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.heard,.left{font-size:12px;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .heard{color:rgba(255,255,255,.58)}
 .left{color:rgba(255,255,255,.86)}
 .left b{color:#f2c27b;font-weight:600}

@@ -5,6 +5,7 @@
  * 心算的错金额换掉、不合格的组件不画；再点三个按钮：替我说一句、切到那一页、切到已关掉的页。
  * --live（R4）：主模型换成真实模型（默认 gpt-6-luna，本机 ChatGPT 登录；--model= 换别的），在练习页上问一道比价题（应画出带标记的卡片）
  * 和一道一句话题（不应画卡片）。只证明这一个模型在这两道题上的表现，不代表其他模型。
+ * R5：侧栏 320px 宽时，商品全名、8 位数金额不把卡片撑坏，模型写的「¥2459」显示成「¥2,459」。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -48,9 +49,23 @@ const card = (tabId: number) => `一年共花 {=total}；心算的 ¥2,714 不�
 <button action="tab" target="987654">切到已关掉的页</button>
 </card>`;
 
+// R5：极端数据——商品全名、8 位数金额、模型没加千分位的价。
+const EXTREME = "三款降噪耳机怎么选";
+
+const LONG_NAME = "Sony WH-1000XM6 Wireless Noise Canceling Headphones (Midnight Blue)";
+
+const extremeCard = `按三年总花费比。
+<card title="三款降噪耳机怎么选">
+<stat label="三年总花费" value="¥12,345,678.90" note="含配件" />
+<stat label="天猫" value="¥2459" note="包邮" />
+<option name="${LONG_NAME}" value="¥2459" why="降噪最强，通勤够用" pick />
+<option name="Bose QuietComfort Ultra" value="¥3199" why="佩戴更轻" />
+</card>`;
+
 const rules: Rule[] = [
   { match: TASK, steps: [{ text: "", chunkDelayMs: 120 }] },
   { match: FOLLOW, steps: [{ text: "好的，只看月付的。" }] },
+  { match: EXTREME, steps: [{ text: extremeCard }] },
 ];
 
 const asked: string[] = [];
@@ -159,6 +174,29 @@ try {
   evidence.asked = asked;
   assert.ok(asked.some(t => t.includes(FOLLOW)), `R3: model received the button text: ${JSON.stringify(asked)}`);
   await rp.screenshot(panel, join(artifacts, "after-say.png"));
+
+  // R5：侧栏收到最窄（320px）时，极端数据不把卡片撑坏：没有横向溢出，商品全名看得全，价格写法和算出来的数一致。
+  await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 720, deviceScaleFactor: 2, mobile: false }, panel);
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, EXTREME);
+  await rp.pressEnter(panel);
+  await until(async () => await rp.evaluate(panel, `(() => { const c = [...document.querySelectorAll("#messages .gen-card")].find(c => c.textContent.includes("三款降噪耳机")); return !!c?.querySelector(".gc-actions, .gc-option") && !document.querySelector("#messages .msg.assistant.streaming"); })()`) || undefined, 60_000, "R5: extreme card drawn");
+  await sleep(800);
+  // SAFETY: 表达式返回下面这个形状的对象。
+  const extreme = await rp.evaluate(panel, `(() => {
+    const card = [...document.querySelectorAll("#messages .gen-card")].find(c => c.textContent.includes("三款降噪耳机"));
+    card.scrollIntoView({ block: "start" });
+    const box = card.getBoundingClientRect();
+    const overflow = [card, ...card.querySelectorAll("*")].filter(el => el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX !== "auto" || el.getBoundingClientRect().right > box.right + 1).map(el => el.className || el.tagName).slice(0, 5);
+    const name = card.querySelector(".gc-option .name");
+    return { overflow, nameShown: !!name && name.scrollWidth <= name.clientWidth + 1 && name.getBoundingClientRect().right <= box.right + 1 && name.innerText.includes(${JSON.stringify(LONG_NAME)}), values: [...card.querySelectorAll(".gc-stat .v")].map(v => v.textContent), prices: [...card.querySelectorAll(".gc-option .price")].map(p => p.textContent) };
+  })()`) as { overflow: string[]; nameShown: boolean; values: string[]; prices: string[] };
+  evidence.extreme = extreme;
+  await rp.screenshot(panel, join(artifacts, "extreme-320.png"));
+  assert.deepEqual(extreme.overflow, [], `R5: nothing in the card overflows sideways: ${JSON.stringify(extreme.overflow)}`);
+  assert.ok(extreme.nameShown, "R5: the long product name is shown in full");
+  assert.deepEqual(extreme.values, ["¥12,345,678.90", "¥2,459"], `R5: model-written amounts get the same separators: ${JSON.stringify(extreme.values)}`);
+  assert.deepEqual(extreme.prices, ["¥2,459", "¥3,199"], `R5: option prices too: ${JSON.stringify(extreme.prices)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
 } finally {
