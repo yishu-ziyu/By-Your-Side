@@ -2576,9 +2576,28 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     try { void chrome.runtime.sendMessage({ type: EDGE_PILL_OPEN }).catch(() => { /* 侧栏已开 */ }); } catch { /* 自检页没有扩展运行时。 */ }
   }
 
+  /** 停靠的胶囊被鼠标碰到、正展开成翻译入口。 */
+  let entryPeek = false;
+  let entryShown = false;
+  let entryLeave: ReturnType<typeof setTimeout> | undefined;
+
+  /** 这页已有我们的译文时，入口改成还原。 */
+  function entryView(): EdgeTabView {
+    return document.querySelector('[data-bys-translation="true"]') ? { tone: "idle", a: "还原", b: "原文", hint: "⌥T" } : { tone: "idle", a: "翻译", b: "这一页", hint: "⌥T" };
+  }
+
   function tab(): EdgeTab {
     return edgeTab ??= createEdgeTab({
+      peek: on => {
+        clearTimeout(entryLeave);
+
+        if (on) { entryPeek = true; renderAmbient(); return; }
+        // 移开后稍等再收：鼠标从窄条滑到展开的胶囊上时不来回闪。
+        entryLeave = setTimeout(() => { entryPeek = false; renderAmbient(); }, 400);
+      },
       capsule: () => {
+        if (entryShown) { entryPeek = false; void send({ type: "page_translate_click" }); return; }
+
         if (mainRemote) { jumpToMember(mainRemote); return; }
         dismissResults();
         openPanel();
@@ -2681,6 +2700,9 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       mainRemote = remote.shift()!;
       view = { tone: "away", a: "在", b: mainRemote.title, end: "arrow", hint: "切换到那一页" };
     } else if (taskPill) view = pillView(taskPill);
+    else if (entryPeek && !voiceHere) view = entryView();
+
+    entryShown = view?.tone === "idle";
 
     // 结果不确定、没做成会一直留着；这期间助手还在读页面或想下一步，停止键也要在。
     if (view && !view.end && (view.tone === "unk" || view.tone === "err") && (glowing.size || local.some(([, inst]) => inst.status?.state === "waiting" || inst.status?.state === "reading" || inst.status?.state === "translating"))) view = { ...view, end: "stop" };
@@ -2695,7 +2717,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       if (v) others.push({ id, name: inst.name, title: `${v.a}${v.tight ? "" : " "}${v.b}`.trim(), local: true, detail: inst.status?.detail || undefined });
     }
 
-    if (!view && !edgeTab) return;
+    // 没有任务要显示时停靠在右边缘；语音胶囊在这一页时让位。
+    tab().rest(!voiceHere && !pageControl);
     tab().render(view, others);
   }
 
@@ -3368,4 +3391,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         labelText: labelEl?.textContent ?? "",
       };
     });
+
+  // 停靠的翻译入口：网页载入后就贴在右边缘，不用等任务事件。
+  renderAmbient();
 })();

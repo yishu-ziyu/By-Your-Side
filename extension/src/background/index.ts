@@ -486,14 +486,26 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
 
 // 一键翻译 ⌥T：不经主模型，这页没有译文就整页翻译，有就还原；侧栏开着与否都一样。
 // 快捷键可能刚把扩展后台唤醒，到任务宿主的连接还在建立：等它连上再发，最多 5 秒。
+async function translateTab(tab: chrome.tabs.Tab): Promise<boolean> {
+ if (tab.id == null) return false;
+ const msg: ClientMessage = { type: "page_translate", context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }, conversationId: conversationForWindow(tab.windowId) };
+
+ for (const end = Date.now() + 5_000; Date.now() < end; await new Promise(done => setTimeout(done, 200))) if (transport.sendClientMessage(msg)) return true;
+
+ return false;
+}
+
 chrome.commands?.onCommand.addListener((command) => {
  if (command !== "translate-page") return;
- void activeTargetTabs().then(async ([tab]) => {
-  if (tab?.id == null) return;
-  const msg: ClientMessage = { type: "page_translate", context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }, conversationId: conversationForWindow(tab.windowId) };
+ void activeTargetTabs().then(([tab]) => { if (tab) void translateTab(tab); });
+});
 
-  for (const end = Date.now() + 5_000; !transport.sendClientMessage(msg) && Date.now() < end;) await new Promise(done => setTimeout(done, 200));
- });
+// 网页右边缘停靠的胶囊上点「翻译 这一页」：和 ⌥T 同一条路，翻的是点它的那一页。
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+ if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "page_translate_click" || sender.id !== chrome.runtime.id || !sender.tab) return;
+ void translateTab(sender.tab).then(ok => sendResponse({ ok }));
+
+ return true;
 });
 
 // 选中文字以后常常接着问这段（打字或按住说话）：先连上模型服务；配了听写密钥再让离屏文档连好听写，不开麦、不送声音。
@@ -759,11 +771,11 @@ function settleGaze(sid: string, kind: "rest" | "off"): void {
 }
 
 async function setCursorStatus(sid: string, state: CursorStatusState, explicitTabId?: unknown): Promise<void> {
-  await showCursorStatus({
-    key: key(sid),
-    state,
-    tabId: await statusTabId(sid, explicitTabId),
-  });
+  const tabId = await statusTabId(sid, explicitTabId);
+
+  // 直接执行的工具（⌥T 翻译）结束时，工具结束和回到空闲几乎同时到：已经空闲就不再挂「正在思考」这类过程状态。
+  if ((state === "waiting" || state === "reading" || state === "translating") && statusBySession.get(sid) === "idle") return;
+  await showCursorStatus({ key: key(sid), state, tabId });
 }
 
 /**
@@ -1529,6 +1541,8 @@ return;}
         void suppressCursorStatus(key(sid));
       } else if (msg.state === "idle") {
         void clearAmbientCursorStatus(key(sid));
+        // 直接执行的工具（⌥T 翻译、语音直接操作）没有一轮任务的结束事件：回到空闲时同样收掉页面光晕，不然胶囊一直写「正在思考」。
+        void dimPage(key(sid));
       }
     } else if (msg.type === "agent_event") {
       const sid = msg.sessionId ?? LEAD_SESSION_ID;
