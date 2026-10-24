@@ -43,7 +43,6 @@ export function mountAnswerCommand(opts: {
   let items: ResultAction[] = [];
   let shown: ResultAction[] = [];
   let active = 0;
-  let openedOnce = false;
   let target: HTMLElement | null = null;
 
   const isOpen = (): boolean => !menu.hidden;
@@ -146,11 +145,6 @@ export function mountAnswerCommand(opts: {
     items = [...listResultActions(latest), ...extras(latest)];
     menu.hidden = false;
     paint();
-    if (!openedOnce && !reducedMotion()) {
-      menu.classList.add("answer-command-in");
-      window.setTimeout(() => menu.classList.remove("answer-command-in"), 140);
-      openedOnce = true;
-    }
     search.focus({ preventScroll: true });
   };
 
