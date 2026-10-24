@@ -43,10 +43,11 @@ const fromAttrs = (from?: RowSource) => (from ? ` data-gc-tab="${esc(from.tab)}"
 
 const cellHtml = (c: Cell, tag: string, cls = "") => `<${tag}${cls}${live(c)}>${esc(c.value)}</${tag}>`;
 
-/** 模型原样写的数和程序算出的数写法对齐：带货币符号的金额、5 位以上的整数加千分位；4 位不带符号的多半是年份，不动。只改显示。 */
+/** 模型原样写的数和程序算出的数写法对齐：带货币符号的金额加千分位；不带符号的只有整格就是一个 5–10 位的数（可带常见单位）才加，
+ *  电话、单号这类长串、夹在文字里的数和 4 位的年份不动。只改显示。 */
 const tidyNumber = (text: string) => text
   .replace(/([¥$€£]\s?)([1-9]\d{3,14})(?![\d,])/g, (_, sign: string, digits: string) => sign + Number(digits).toLocaleString("zh-CN"))
-  .replace(/(?<![\d,.¥$€£])([1-9]\d{4,14})(?![\d,])/g, (digits: string) => Number(digits).toLocaleString("zh-CN"));
+  .replace(/^([1-9]\d{4,9})(?=(?:\.\d+)?\s*(?:[元万亿人个次件份台%]|km|kg)?$)/, (digits: string) => Number(digits).toLocaleString("zh-CN"));
 
 /** 数字格里放不下一格的长数：这一组改成每格一行，不再切掉或贴边。 */
 const WIDE_STAT = 10;
