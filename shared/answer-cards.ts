@@ -496,11 +496,14 @@ export function cardEvidence(card: Card): EvidenceRow[] {
   return stats.map((s, i) => ({ label: s.label, value: s.value, formula: s.formula, expr: s.expr, unit: s.unit, source: card.source, tab: named[i] && named.filter((t) => t?.name === named[i]!.name).length === 1 ? named[i]!.tab : undefined }));
 }
 
+/** 可能有卡片（含卡片外的结构图）：快速判断，确定要再走 splitAnswer。 */
+const MAY_HAVE_CARD = /<card[\s>]|(?:^|\n)<diagram>/;
+
 /** 代码块和行内代码的范围：里面的 <card、{=…}、金额都按原文处理。 */
 function codeRanges(text: string): Array<[number, number]> {
-  return [...text.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*`/g)]
+  return [...text.matchAll(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`/g)]
     // 一对反引号里有 <card、后面又有真的 </card>：是正文里落单的反引号碰上了卡片属性里的反引号，不当代码。
-    .filter((m) => m[0].startsWith("```") || !/<card[\s>]/.test(m[0]) || m[0].includes("</card>") || text.indexOf("</card>", m.index + m[0].length) < 0)
+    .filter((m) => m[0].startsWith("```") || m[0].startsWith("~~~") || !/<card[\s>]/.test(m[0]) || m[0].includes("</card>") || text.indexOf("</card>", m.index + m[0].length) < 0)
     .map((m) => [m.index, m.index + m[0].length]);
 }
 
@@ -510,7 +513,7 @@ function codeRanges(text: string): Array<[number, number]> {
  * 模型有时把结构图 <diagram> 和它的 <cite> 直接写在正文里、不包 <card>：独占一行开头的这种也算一张卡片（bare），
  * 否则图的代码和原文会当正文显示出来。
  */
-export function cardSpans(text: string): Array<{ tag: "card" | "app"; start: number; end: number; closed: boolean; bare?: true }> {
+export function cardSpans(text: string): CardSpan[] {
   let masked = text;
   const plainCode = codeRanges(text);
 
@@ -523,16 +526,16 @@ export function cardSpans(text: string): Array<{ tag: "card" | "app"; start: num
     masked = masked.slice(0, m.index + 4) + " ".repeat(Math.max(0, end - m.index - 4)) + masked.slice(end);
   }
   const code = codeRanges(masked);
-  const spans: Array<{ tag: "card" | "app"; start: number; end: number; closed: boolean; bare?: true }> = [];
+  const spans: CardSpan[] = [];
   let at = 0;
 
-  for (const m of masked.matchAll(/<(card|app)[\s>]|(?<=^|\n)<diagram[\s>]/g)) {
+  for (const m of masked.matchAll(/<(card|app)[\s>]|(?<=^|\n)<diagram>/g)) {
     if (m.index < at || code.some(([a, b]) => m.index >= a && m.index < b)) continue;
 
     if (!m[1]) {
       const span = bareDiagram(text, m.index);
       at = span.end;
-      spans.push({ tag: "card", ...span, bare: true });
+      spans.push({ tag: "card", ...span });
       continue;
     }
     // SAFETY: 正则只认 card、app 两个名字。
@@ -546,21 +549,26 @@ export function cardSpans(text: string): Array<{ tag: "card" | "app"; start: num
   return spans;
 }
 
-/** 卡片外的结构图：到 </diagram> 为止，再带上紧跟着的 <cite>。图或最后一条 cite 还没写完时算没写完，到全文结尾。 */
-function bareDiagram(text: string, start: number): { start: number; end: number; closed: boolean } {
+export type CardSpan = { tag: "card" | "app"; start: number; end: number; closed: boolean; bare?: { bodyEnd: number } };
+
+/**
+ * 卡片外的结构图：到 </diagram> 为止，再带上紧跟着的 <cite>。图写完就算写完；
+ * 写到一半的那条 cite 先藏起来（end 到全文结尾），但不算进卡片（bodyEnd 停在上一条写完的 cite），免得已经画好的图又消失。
+ */
+function bareDiagram(text: string, start: number): Omit<CardSpan, "tag"> {
   const close = text.indexOf("</diagram>", start);
 
-  if (close < 0) return { start, end: text.length, closed: false };
+  if (close < 0) return { start, end: text.length, closed: false, bare: { bodyEnd: text.length } };
   let end = close + "</diagram>".length;
 
   for (;;) {
     const cite = /^\s*<cite\b[\s\S]*?<\/cite>/.exec(text.slice(end));
 
     if (cite) { end += cite[0].length; continue; }
-    // 下一条 cite 写到一半。
-    if (/^\s*<(?:c(?:i(?:t(?:e)?)?)?)?$|^\s*<cite\b/.test(text.slice(end)) && /\S/.test(text.slice(end))) return { start, end: text.length, closed: false };
+    const rest = text.slice(end);
+    const writing = /^\s*<(?:c(?:i(?:t(?:e)?)?)?)?$|^\s*<cite\b/.test(rest) && /\S/.test(rest);
 
-    return { start, end, closed: true };
+    return { start, end: writing ? text.length : end, closed: true, bare: { bodyEnd: end } };
   }
 }
 
@@ -580,14 +588,14 @@ export function splitAnswer(text: string): AnswerPart[] {
 
   for (const span of cardSpans(text)) {
     parts.push({ prose: text.slice(at, span.start) });
-    const body = span.bare ? `<card>\n${text.slice(span.start, span.end)}` : text.slice(span.start, span.closed ? span.end - span.tag.length - 3 : span.end);
+    const body = span.bare ? `<card>\n${text.slice(span.start, span.bare.bodyEnd)}` : text.slice(span.start, span.closed ? span.end - span.tag.length - 3 : span.end);
 
     parts.push({ card: span.tag === "app" ? parseApp(body, span.closed) : parseCard(body, span.closed) });
     at = span.end;
   }
 
-  // 结尾写到一半的「<car」「<ap」「{=to」不露出来。
-  if (at < text.length) parts.push({ prose: text.slice(at).replace(/(?:<(?:c(?:a(?:r(?:d)?)?)?|a(?:p(?:p)?)?)?|\{=[\w-]*)$/, "") });
+  // 结尾写到一半的「<car」「<ap」「{=to」、行首的「<diag」不露出来。
+  if (at < text.length) parts.push({ prose: text.slice(at).replace(/(?:<(?:c(?:a(?:r(?:d)?)?)?|a(?:p(?:p)?)?)?|(?<=^|\n)<d(?:i(?:a(?:g(?:r(?:a(?:m)?)?)?)?)?)?|\{=[\w-]*)$/, "") });
 
   return parts;
 }
@@ -639,7 +647,7 @@ export function fillRefs(text: string, values: ReadonlyMap<string, string>, mark
 
 /** 念出来、写进结果摘要用的文字：只要卡片外的正文；正文为空时用卡片标题。 */
 export function answerSpeech(text: string): string {
-  if (!/<card[\s>]|\{=/.test(text)) return text;
+  if (!MAY_HAVE_CARD.test(text) && !text.includes("{=")) return text;
   const parts = splitAnswer(text);
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
   const prose = parts.map((p) => ("prose" in p ? resolveProse(p.prose, cards) : "")).join("").replace(/\n{3,}/g, "\n\n").trim();
@@ -656,7 +664,7 @@ function diagramLabel(source: string, node: string): string {
 
 /** 复制为 Markdown：卡片换成等价的 Markdown（数字格、步骤、选项、表格、清单），按钮不复制。 */
 export function answerMarkdown(text: string): string {
-  if (!/<card[\s>]|\{=/.test(text)) return text;
+  if (!MAY_HAVE_CARD.test(text) && !text.includes("{=")) return text;
   const parts = splitAnswer(text);
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
   const values = new Map(cards.flatMap((c) => [...c.values]).reverse());
@@ -687,8 +695,9 @@ export type CardPreview = { title: string; rows: Array<{ label: string; value?: 
  * 取第一个列出来非空的块：选项、表格、数字格、步骤、清单；只有提示条时就用提示条那一句。标题和行都空时为 null，不画空框。
  */
 export function cardPreview(text: string, maxRows = 3): CardPreview | null {
-  if (!/<card[\s>]/.test(text)) return null;
-  const card = splitAnswer(text).flatMap((p) => ("card" in p && p.card?.closed ? [p.card] : []))[0];
+  if (!MAY_HAVE_CARD.test(text)) return null;
+  // 第一张能摘出东西的卡片：卡片外的结构图没有标题、也没有可列的行，跳过它。
+  const card = splitAnswer(text).flatMap((p) => ("card" in p && p.card?.closed && (p.card.title || p.card.blocks.some((b) => !["diagram", "app", "inputs"].includes(b.kind))) ? [p.card] : []))[0];
 
   if (!card) return null;
   type Row = CardPreview["rows"][number];

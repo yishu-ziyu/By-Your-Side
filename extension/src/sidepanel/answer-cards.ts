@@ -306,8 +306,10 @@ async function drawDiagram(figure: HTMLElement): Promise<void> {
 
   try {
     // 断行和换横竖排都按流程图的语法改写，别的图种原样画。
-    const flow = /^\s*(?:flowchart|graph)\b/.test(source);
-    figure.dataset.kind = /^\s*([A-Za-z-]+)/.exec(source)?.[1] ?? "";
+    // 图种看第一行关键字；开头的 %% 注释行和空行不算。
+    const kind = /^(?:\s*%%[^\n]*\n)*\s*([A-Za-z-]+)/.exec(source)?.[1] ?? "";
+    const flow = kind === "flowchart" || kind === "graph";
+    figure.dataset.kind = kind;
     const { mount, render } = await loadEngine(flow ? "flow" : "more");
 
     // 等加载的这会儿图可能已经被换掉了。
