@@ -64,8 +64,8 @@ function breakdown(lines: Line[]): Array<Row & { runId: string; text: string }> 
       // 10-11 以前的导出 turn_end 不带 usage：calls 留空，表里显示「—」。
       if (l.type === "turn_end" && l.data?.usage) { const u = l.data.usage; row.calls.push({ context: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), cached: u.cacheRead ?? 0 }); }
 
-      // 催满次数或换了网页时，收尾记录里 status 仍是 continue，但没有多跑；只有带 attempt 的那条才开了新一轮。
-      if (l.type === "goal_check" && l.data?.status === "continue" && l.data.attempt !== undefined) row.continues++;
+      // 催满次数或换了网页时，收尾记录里 status 仍是 continue，但没有多跑；只有数值 attempt 的那条才开了新一轮。
+      if (l.type === "goal_check" && l.data?.status === "continue" && typeof l.data.attempt === "number") row.continues++;
 
       if (l.type === "tool_execution_start" && running++ === 0) busySince = ms(l);
 

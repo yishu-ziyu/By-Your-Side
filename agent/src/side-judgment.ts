@@ -10,6 +10,7 @@
  */
 import type { Api, AssistantMessage, ImageContent, Model, ModelThinkingLevel, SimpleStreamOptions, TextContent } from "@earendil-works/pi-ai";
 import { thinkingProfile } from "../../shared/model-capabilities.js";
+import { GOAL_CHECK_FORMAT_SUFFIX } from "../../shared/trace-sanitize.js";
 import type { ModelPort } from "./agent-loop.js";
 
 type SideFailureReason = "rejected_params" | "bad_format" | "timeout" | "provider_error" | "cancelled";
@@ -79,11 +80,17 @@ interface SideCallSpec<T> {
   retryPrompt?: (parseError: Error | undefined) => string;
   /** 每次尝试结束时回调（语音的逐次诊断用）。 */
   onAttempt?: (attempt: AttemptReport) => void;
+  /** 与 side_call 同一份实际模型、档位和重试结果。 */
+  onRecord?: (line: SideCallRecord) => void;
+  /** 每次真正发给服务商前回调；格式重试会改变提示词和用户输入。 */
+  onRequest?: (request: SideCallRequest) => void;
 }
+
+interface SideCallRequest { attempt: number; systemPrompt: string; content: SideCallSpec<never>["content"]; maxTokens: number; effort: ModelThinkingLevel }
 
 interface AttemptReport { attempt: number; elapsedMs: number; outcome: AttemptOutcome; parseError?: Error }
 
-const STRICT_JSON = "\n\nYour previous reply could not be used. Reply with ONLY the JSON object described above: no other text, no markdown fences, no questions.";
+const STRICT_JSON = GOAL_CHECK_FORMAT_SUFFIX;
 
 /** 只有思考没有正文时，下一次的输出额度放大到这个倍数。 */
 const EMPTY_REPLY_BUDGET_FACTOR = 5;
@@ -170,6 +177,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
     if (reason) line.reason = reason;
 
     if (outcome === "failed" && lastError) line.detail = lastError.slice(0, 160);
+    spec.onRecord?.(line);
     host.record?.("side_call", line);
   };
 
@@ -220,9 +228,11 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
     if (spec.headers !== undefined) options.headers = spec.headers;
 
     try {
+      const content = userSuffix ? appendText(spec.content, userSuffix) : spec.content;
+      spec.onRequest?.({ attempt: attempts, systemPrompt: spec.systemPrompt + suffix, content, maxTokens, effort });
       reply = await host.models.completeSimple(model, {
         systemPrompt: spec.systemPrompt + suffix,
-        messages: [{ role: "user", content: userSuffix ? appendText(spec.content, userSuffix) : spec.content, timestamp: Date.now() }],
+        messages: [{ role: "user", content, timestamp: Date.now() }],
       }, options);
     } catch (caught) {
       lastError = caught instanceof Error ? caught.message : String(caught);

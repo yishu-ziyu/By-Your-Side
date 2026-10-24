@@ -24,6 +24,7 @@ export function expiredSessions(older: readonly string[], now = Date.now()): str
 
 /** 单行上限；超过只留摘要。 */
 const LINE_MAX_BYTES = 256 * 1024;
+const GOAL_CHECK_LINE_MAX_BYTES = 2 * 1024 * 1024;
 
 /** 写入排队上限；排满后丢事件并在下一行记数，诊断永远不拖慢任务。 */
 const QUEUE_MAX = 128;
@@ -32,9 +33,10 @@ const QUEUE_MAX = 128;
 export interface TraceSink {
   prepare(): Promise<void>;
   append(line: string): Promise<void>;
+  savePrompt?(hash: string, text: string): Promise<void>;
 }
 
-type Correlation = { runId: string | null; goalRevision: string | null; turn: number };
+export type TraceCorrelation = { runId: string | null; goalRevision: string | null; turn: number };
 
 export class TraceRecorder {
   readonly sessionId = crypto.randomUUID();
@@ -49,6 +51,7 @@ export class TraceRecorder {
   private firstResponse = false;
   private firstText = false;
   private tools = new Map<string, number>();
+  private prompts = new Set<string>();
   private queue = Promise.resolve();
   private prepared = false;
   private bytes = 0;
@@ -179,15 +182,33 @@ export class TraceRecorder {
     this.record(event.type, data);
   }
 
-  record(type: string, data: Record<string, unknown> = {}): void {
-    this.write(type, data, {
-      runId: this.runId,
-      goalRevision: this.goalRevision,
-      turn: this.turn,
-    });
+  prompt(hash: string, text: string): void {
+    const save = this.sink.savePrompt;
+    if (!save || this.prompts.has(hash) || !/^[a-f0-9]{64}$/.test(hash)) return;
+    this.prompts.add(hash);
+    this.queued++;
+    this.queue = this.queue.then(async () => {
+      if (!this.prepared) {
+        await this.sink.prepare();
+        this.prepared = true;
+      }
+      await save.call(this.sink, hash, text);
+    }).catch(() => { this.prompts.delete(hash); }).finally(() => { this.queued--; });
   }
 
-  private write(type: string, data: Record<string, unknown>, correlation: Correlation): void {
+  traceCorrelation(): TraceCorrelation {
+    return { runId: this.runId, goalRevision: this.goalRevision, turn: this.turn };
+  }
+
+  recordAt(correlation: TraceCorrelation, type: string, data: Record<string, unknown> = {}): void {
+    this.write(type, data, correlation);
+  }
+
+  record(type: string, data: Record<string, unknown> = {}): void {
+    this.write(type, data, this.traceCorrelation());
+  }
+
+  private write(type: string, data: Record<string, unknown>, correlation: TraceCorrelation): void {
     if (this.closed) return;
 
     if (this.queued >= QUEUE_MAX) {
@@ -203,7 +224,8 @@ export class TraceRecorder {
 
       this.dropped = 0;
 
-      if (utf8ByteLength(line) > LINE_MAX_BYTES) {
+      // 核对包含完整输入和复核读数；合法中文内容需要比普通事件更大的单行额度。
+      if (utf8ByteLength(line) > (type === "goal_check" ? GOAL_CHECK_LINE_MAX_BYTES : LINE_MAX_BYTES)) {
         line = JSON.stringify({ time: new Date().toISOString(), sessionId: this.sessionId, runId: correlation.runId, goalRevision: correlation.goalRevision, turn: correlation.turn,
           type, toolCallId: data.toolCallId, truncated: true, originalBytes: utf8ByteLength(line), reason: "record size limit" }) + "\n";
       }

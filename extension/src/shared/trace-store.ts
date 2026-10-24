@@ -18,18 +18,22 @@ const LINES = "trace-lines";
 
 const VOICE = "voice-lines";
 
+const PROMPTS = "trace-prompts";
+
 interface VoiceRow { day: string; line: string }
 
 interface SessionRow { name: string }
 
 interface LineRow { session: string; line: string }
 
+interface PromptRow { hash: string; text: string }
+
 let opening: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   opening ??= new Promise<IDBDatabase>((resolve, reject) => {
-    // 版本 1：任务记录；版本 2：加语音记录。按表名补建，旧库升级不丢任务记录。
-    const request = indexedDB.open(DB_NAME, 2);
+    // 按表名补建，旧库升级不丢任务记录。
+    const request = indexedDB.open(DB_NAME, 3);
     request.onupgradeneeded = () => {
       const db = request.result;
 
@@ -38,6 +42,8 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(LINES)) db.createObjectStore(LINES, { autoIncrement: true }).createIndex("session", "session");
 
       if (!db.objectStoreNames.contains(VOICE)) db.createObjectStore(VOICE, { autoIncrement: true }).createIndex("day", "day");
+
+      if (!db.objectStoreNames.contains(PROMPTS)) db.createObjectStore(PROMPTS, { keyPath: "hash" });
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -105,6 +111,12 @@ export function createTraceSink(sessionName: string): TraceSink {
       const tx = (await openDb()).transaction(LINES, "readwrite");
       const row: LineRow = { session: sessionName, line };
       tx.objectStore(LINES).add(row);
+      await done(tx);
+    },
+    async savePrompt(hash, text) {
+      const tx = (await openDb()).transaction(PROMPTS, "readwrite");
+      const row: PromptRow = { hash, text };
+      tx.objectStore(PROMPTS).put(row);
       await done(tx);
     },
   };
@@ -185,9 +197,10 @@ export async function exportDiagnostics(): Promise<DiagnosticsExport> {
 }
 
 export async function clearDiagnostics(): Promise<void> {
-  const tx = (await openDb()).transaction([SESSIONS, LINES, VOICE], "readwrite");
+  const tx = (await openDb()).transaction([SESSIONS, LINES, VOICE, PROMPTS], "readwrite");
   tx.objectStore(SESSIONS).clear();
   tx.objectStore(LINES).clear();
   tx.objectStore(VOICE).clear();
+  tx.objectStore(PROMPTS).clear();
   await done(tx);
 }
