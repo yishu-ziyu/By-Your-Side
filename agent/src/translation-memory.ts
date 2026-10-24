@@ -9,15 +9,15 @@ const MEMORY_MAX_CHARS = 4_000_000;
 const PROMPT_VERSION = createHash("sha256").update(TRANSLATION_PROMPT).digest("hex").slice(0, 12);
 
 /**
- * 段落译文的记忆：同一模型、同一目标语言、同一段原文（逐个文本节点）只翻一次。
+ * 段落译文的记忆：同一模型、同一目标语言、同一风格、同一段原文（逐个文本节点）只翻一次。
  * 值是进行中的请求也算：预取还没回来时，真翻译等它，不再另发一次。null 表示这段没拿到，下次照常请求。
  */
 export class TranslationMemory {
   private readonly entries = new Map<string, { texts: Promise<string[] | null>; chars: number }>();
   private chars = 0;
 
-  key(model: string, language: string, block: TranslationBlock): string {
-    return JSON.stringify([PROMPT_VERSION, model, language, block.segments.map(segment => segment.text)]);
+  key(model: string, language: string, style: string, block: TranslationBlock): string {
+    return JSON.stringify([PROMPT_VERSION, model, language, style, block.segments.map(segment => segment.text)]);
   }
 
   get(key: string): Promise<string[] | null> | undefined {

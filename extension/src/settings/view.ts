@@ -2,6 +2,7 @@ import { dictationSettingsView } from "./dictation.js";
 import { TRACE_MAX_AGE_DAYS } from '../../../shared/run-trace-core.js';
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from '../../../shared/voice-capture-core.js';
 import { CUSTOM_PERSONA_MAX_CHARS } from '../../../shared/voice.js';
+import { CUSTOM_TRANSLATION_STYLE_MAX_CHARS } from '../../../shared/translation-style.js';
 
 const toggleRow = (id: string, title: string, desc: string) => `
   <label class="row">
@@ -151,6 +152,24 @@ export function renderSettings(): void {
     </div>
     <details class="settings-detail"><summary>主动建议会读取什么？</summary><p>如果助手能帮上忙，就在页面右下角显示一张小卡。点小卡，侧栏就开始做。每次判断会把当前页面和最近页面的摘录发给快速模型，没设快速模型时发给主模型。同一个页面只判断一次。</p></details>
     <p id="selection-status" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="sx" aria-labelledby="translation-title">
+    <div class="sx-head"><h2 id="translation-title">翻译</h2><p class="sx-sub">在网页上按 ⌥T 整页翻译，再按一次还原。</p></div>
+    <div class="surface rows">
+      <div class="row stack">
+        <span class="row-main"><span id="translation-style-title" class="row-title">翻译风格</span><span class="row-desc">整页翻译用的语气和措辞。换了风格，再翻时按新风格重译。</span></span>
+        <div id="translation-style-list" class="radio-rows" role="radiogroup" aria-labelledby="translation-style-title"></div>
+        <div id="translation-style-custom" class="persona-custom" hidden>
+          <textarea id="translation-style-text" class="d-input" rows="3" maxlength="${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}" placeholder="用一两句话说你想要的译文，比如：术语保留英文，语气口语一点"></textarea>
+          <div class="d-actions">
+            <span id="translation-style-count" class="d-hint"></span>
+            <span class="grow"></span>
+            <button id="translation-style-save" type="button" class="btn btn-primary">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p id="translation-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="sx" aria-labelledby="open-threads-title">
     <div class="sx-head"><h2 id="open-threads-title">继续上次的事</h2></div>
