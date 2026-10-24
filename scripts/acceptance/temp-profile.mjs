@@ -80,8 +80,15 @@ export function trackTempDir(dir, child) {
   return {
     setChild(next) { if (live.has(dir)) live.set(dir, next); },
     release() {
+      const current = live.get(dir);
       live.delete(dir);
-      remove(dir);
+      try {
+        remove(dir);
+      } catch {
+        // Chrome's helper processes can still be writing the profile right after close (seen under load: ENOTEMPTY).
+        // Leave it for the exit cleanup instead of throwing: a failed tidy-up must not lose the run's report.
+        live.set(dir, current);
+      }
     },
   };
 }
