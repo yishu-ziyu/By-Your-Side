@@ -6,7 +6,8 @@ import { OVERLAY_ATTR, OVERLAY_KIND_EDGE_TAB } from "../shared/overlay.js";
  * 形状和内容用弹簧积分驱动（不是按时间算的闭式曲线），新状态随时打断，从当前形状接着变。
  */
 
-export type EdgeTabTone = "work" | "wait" | "ok" | "unk" | "err" | "hand" | "away";
+/** idle：没有任务时停靠在右边缘，鼠标碰到才展开的翻译入口。 */
+export type EdgeTabTone = "work" | "wait" | "ok" | "unk" | "err" | "hand" | "away" | "idle";
 
 export type EdgeTabEnd = "stop" | "arrow" | { label: string; enabled: boolean };
 
@@ -33,6 +34,8 @@ export interface EdgeTabOther {
 
 interface EdgeTabHandlers {
   capsule(): void;
+  /** 停靠时鼠标碰到窄条（true）或离开展开后的胶囊（false）。 */
+  peek?(on: boolean): void;
   stop(): Promise<boolean>;
   action(): void;
   other(other: EdgeTabOther): void;
@@ -43,6 +46,8 @@ const TOP = 64;
 const H = 40;
 const MID = TOP + H / 2;
 const CLOSED = { w: 10, h: 30 };
+/** 停靠时露在右边缘的窄条。 */
+const REST = { w: 14, h: 36 };
 const PADL = 14;
 const GAP = 8;
 const WGAP = 4;
@@ -83,6 +88,7 @@ const STYLE = `
 .canvas{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 .clip{position:absolute;overflow:hidden;pointer-events:auto;cursor:pointer;outline:none;border-radius:20px 0 0 20px}
 .clip:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+.grip{position:absolute;width:3px;height:14px;border-radius:2px;background:var(--ink2);opacity:0;pointer-events:none}
 .el{position:absolute;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;will-change:transform,opacity,filter}
 .t{overflow:hidden;text-overflow:ellipsis;line-height:1.25}
 .a .t{max-width:150px}.b .t{max-width:210px}
@@ -191,6 +197,7 @@ function iconFor(tone: EdgeTabTone): string {
   switch (tone) {
     case "ok": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7.5" fill="none" stroke="var(--btn)" stroke-width="2"/><circle class="rg" cx="9" cy="9" r="7.5" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" transform="rotate(-90 9 9)"/><path class="ck" d="M5.6 9.2 L8 11.4 L12.4 6.8" fill="none" stroke="var(--ok)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     case "unk": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7.5" fill="none" stroke="var(--warn)" stroke-width="2"/><text x="9" y="13" text-anchor="middle" font-size="11" font-weight="700" fill="var(--warn)" font-family="-apple-system,sans-serif">?</text></svg>`;
+    case "idle": return `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="var(--ink2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>`;
     case "err": return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="var(--err)"/><path d="M9 4.8 V10" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="13" r="1.2" fill="#fff"/></svg>`;
     default: return `<svg class="ic" viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="var(--warn)"/><path d="M9 4.5 V9.5 M6.5 7.5 L9 10 L11.5 7.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 9 9)"/></svg>`;
   }
@@ -242,7 +249,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1"><stop class="h" offset="0"/><stop class="h" offset=".5"/><stop class="h" offset="1"/></linearGradient>
 </defs><path class="shape" filter="url(#sh)" style="fill:var(--panel)"/><path class="hl" fill="none" stroke="url(#hair)" stroke-width=".75"/>
 <path class="shape" filter="url(#sh)" style="fill:var(--panel)"/><path class="hl" fill="none" stroke="url(#hair)" stroke-width=".75"/></svg>
-<div class="clip" role="button" tabindex="0"></div><div class="bub"><div class="bhead" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"></div><div class="rows"></div></div><span class="sr" role="status" aria-live="polite"></span></div>`;
+<div class="clip" role="button" tabindex="0"></div><i class="grip" aria-hidden="true"></i><div class="bub"><div class="bhead" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"></div><div class="rows"></div></div><span class="sr" role="status" aria-live="polite"></span></div>`;
   const root = shadow.querySelector<HTMLDivElement>(".root")!;
   const [mainShape, bubShape] = Array.from(shadow.querySelectorAll<SVGPathElement>("path.shape"));
   const [mainHair, bubHair] = Array.from(shadow.querySelectorAll<SVGPathElement>("path.hl"));
@@ -253,6 +260,9 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   const bhead = shadow.querySelector<HTMLDivElement>(".bhead")!;
   const list = shadow.querySelector<HTMLDivElement>(".rows")!;
   const live = shadow.querySelector<HTMLSpanElement>(".sr")!;
+  const grip = shadow.querySelector<HTMLElement>(".grip")!;
+  /** 没有任务要显示时停靠在右边缘（只露窄条），而不是整个收起。 */
+  let resting = false;
   const X = CANVAS_W;
 
   const W = new Spring(CLOSED.w);
@@ -305,6 +315,9 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   const clickedButton = (ev: Event) => ev.composedPath().some(n => n instanceof HTMLButtonElement);
 
   clip.addEventListener("click", ev => { ev.stopPropagation(); if (!clickedButton(ev)) handlers.capsule(); });
+  // 键盘也一样：Tab 到窄条上就展开，离开就收回。
+  for (const enter of ["pointerenter", "focus"] as const) clip.addEventListener(enter, () => { if (resting && (!open || view?.tone === "idle")) handlers.peek?.(true); });
+  for (const leave of ["pointerleave", "blur"] as const) clip.addEventListener(leave, () => { if (view?.tone === "idle" && !(leave === "pointerleave" && shadow.activeElement === clip)) handlers.peek?.(false); });
   clip.addEventListener("keydown", ev => {
     if (ev.target !== clip || (ev.key !== "Enter" && ev.key !== " ")) return;
     ev.preventDefault();
@@ -630,8 +643,8 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
     if (!open && closeAt && now >= closeAt) {
       closeAt = 0;
-      W.aim(CLOSED.w, CLOSE);
-      Hs.aim(CLOSED.h, CLOSE);
+      W.aim(resting ? REST.w : CLOSED.w, CLOSE);
+      Hs.aim(resting ? REST.h : CLOSED.h, CLOSE);
     }
 
     W.step(dt); Hs.step(dt); BW.step(dt); BH.step(dt);
@@ -641,13 +654,15 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     // 减少动态效果：形状不伸缩，只整体淡入淡出。
     if (reduced.matches) {
       const step = dt / (FADE_MS / 1000);
-      fade = open ? Math.min(1, fade + step) : Math.max(0, fade - step);
+      fade = open || resting ? Math.min(1, fade + step) : Math.max(0, fade - step);
     } else {
-      fade = clamp01((W.x - CLOSED.w) / 14);
+      fade = !open && resting ? 1 : clamp01((W.x - CLOSED.w) / 14);
     }
 
     paint();
-    const settled = W.still && Hs.still && BW.still && BH.still && items.every(i => i.x.still) && !closeAt && fade === (open ? 1 : 0);
+    const settled = W.still && Hs.still && BW.still && BH.still && items.every(i => i.x.still) && !closeAt && fade === (open || resting ? 1 : 0);
+
+    if (!open && settled && resting) return;
 
     if (!open && settled) {
       W.snap(CLOSED.w);
@@ -670,7 +685,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     const w = W.x;
     const h = Hs.x;
     const isDark = dark.matches;
-    const k = clamp01((w - 20) / 120);
+    const k = !open && resting ? 0.5 : clamp01((w - 20) / 120);
     mainShape!.setAttribute("d", shapePath(X, w, h, MID, 9));
     mainHair!.setAttribute("d", hairPath(X, w, h, MID));
     root.style.opacity = reduced.matches ? String(fade) : "";
@@ -684,6 +699,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     hairStops.forEach((s, i) => { s.setAttribute("stop-color", hairColor); s.setAttribute("stop-opacity", String(ho[i]! * k)); });
 
     Object.assign(clip.style, { left: `${X - w}px`, top: `${MID - h / 2}px`, width: `${Math.max(0, w - 1)}px`, height: `${h}px` });
+    Object.assign(grip.style, { left: `${X - 8}px`, top: `${MID - 7}px`, opacity: String(!open && resting ? 0.45 * clamp01((28 - w) / 10) : 0) });
 
     for (const it of items) it.el.style.right = `${it.x.x}px`;
 
@@ -707,8 +723,29 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     return { x: r.x, y: r.y, width: r.width, height: r.height };
   }
 
+  /** 停靠：没有任务时缩成右边缘的窄条留着；关掉时和原来一样整个收起。 */
+  function rest(on: boolean): void {
+    if (resting === on) return;
+    resting = on;
+
+    if (open) return;
+
+    if (on) {
+      if (!attach()) return;
+      root.hidden = false;
+      W.aim(REST.w, CLOSE);
+      Hs.aim(REST.h, CLOSE);
+    } else {
+      W.aim(CLOSED.w, CLOSE);
+      Hs.aim(CLOSED.h, CLOSE);
+    }
+
+    kick();
+  }
+
   return {
     render,
+    rest,
     uncoverTarget,
     restoreTarget(token: string): void {
       avoidedTargets.delete(token);
