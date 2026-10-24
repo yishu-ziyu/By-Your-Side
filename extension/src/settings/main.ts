@@ -22,6 +22,7 @@ import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
+import { CUSTOM_TRANSLATION_STYLE_MAX_CHARS, parseTranslationStyle, TRANSLATION_STYLE_KEY, TRANSLATION_STYLES, type TranslationStyle } from "../../../shared/translation-style.js";
 import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { ATTENTION_CUES_KEY, isCuesOn } from "../shared/cues.js";
@@ -1206,6 +1207,7 @@ async function reload(): Promise<void> {
   renderOrbStyles(parseOrbStyle(stored[ORB_STYLE_STORAGE_KEY]));
   renderColorTones(parseColorTone(stored[COLOR_TONE_KEY]));
   renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
+  renderTranslationStyles(parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]));
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
@@ -1431,6 +1433,60 @@ $("persona-save").addEventListener("click", () => {
   void savePersona({ id: "custom", text });
 });
 
+const translationStyleList = $("translation-style-list");
+
+const translationStyleCustom = $("translation-style-custom");
+
+const translationStyleInput = $<HTMLTextAreaElement>("translation-style-text");
+
+const translationStatus = $("translation-status");
+
+const translationStyleCount = $("translation-style-count");
+
+const TRANSLATION_STYLE_OPTIONS = [...TRANSLATION_STYLES.map(({ id, label, summary }) => ({ id, label, summary })), { id: "custom", label: "自定义", summary: "用你自己的话说想要的译文" }] as const;
+
+/** 预设点一下就保存；自定义先展开输入框，点保存才生效。 */
+function renderTranslationStyles(saved: TranslationStyle, picked: TranslationStyle["id"] = saved.id): void {
+  translationStyleList.replaceChildren(...TRANSLATION_STYLE_OPTIONS.map((option) => {
+    const row = document.createElement("div");
+    row.className = "radio-row";
+    const pick = radioRow("translation-style-option", option.label, option.id === picked, option.summary);
+    pick.dataset.translationStyle = option.id;
+    pick.addEventListener("click", () => {
+      if (option.id === "custom") {
+        renderTranslationStyles(saved, "custom");
+        translationStyleInput.focus();
+
+        return;
+      }
+
+      void saveTranslationStyle({ id: option.id });
+    });
+    row.append(pick);
+
+    return row;
+  }));
+  translationStyleCustom.hidden = picked !== "custom";
+
+  if (saved.id === "custom" && document.activeElement !== translationStyleInput) translationStyleInput.value = saved.text;
+  translationStyleCount.textContent = `${translationStyleInput.value.length}/${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}`;
+}
+
+async function saveTranslationStyle(style: TranslationStyle): Promise<void> {
+  await chrome.storage.local.set({ [TRANSLATION_STYLE_KEY]: style });
+  renderTranslationStyles(style);
+  setStatus(translationStatus, "已保存，下次翻译起生效。", "ok");
+}
+
+translationStyleInput.addEventListener("input", () => { translationStyleCount.textContent = `${translationStyleInput.value.length}/${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}`; });
+
+$("translation-style-save").addEventListener("click", () => {
+  const text = translationStyleInput.value.trim();
+
+  if (!text) return setStatus(translationStatus, "先写一两句你想要的译文。", "err");
+  void saveTranslationStyle({ id: "custom", text });
+});
+
 /** 开关一改就存；存失败时拨回去并说明。 */
 function bindToggle(input: HTMLInputElement, key: string, status: HTMLElement, said: (on: boolean) => string): void {
   input.addEventListener("change", () => {
@@ -1517,7 +1573,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => (on ? "做完会
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));

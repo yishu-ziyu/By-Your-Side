@@ -8,7 +8,7 @@ import { isPageTextEvidence } from '../../shared/page-text-evidence.js';
 import { isTransientModelError } from "../../shared/provider-busy.js";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { elementText, redactObservedText } from './task-evidence.js';
-import { TRANSLATION_PROMPT, isProviderThrottle, salvageTranslations, needsTranslation, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
+import { translationPrompt, isProviderThrottle, salvageTranslations, needsTranslation, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
 import type { TranslationBlock, TranslationReceipt, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, READING_ANSWER_LIMIT, type ReadingTranscript } from "../../shared/reading.js";
 import {createTaskResultsTool} from "./task-results.js";
@@ -131,6 +131,8 @@ export interface SessionCreateOptions {
   siteNotes?: SiteNotesStore;
   /** 用户打开了「回答里的小程序」实验功能：打开时每次运行的上下文附上小程序写法。 */
   miniApps?: () => Promise<boolean>;
+  /** 设置页选的翻译风格（接在翻译提示词后的说明）；默认风格为空字符串。 */
+  translationStyle?: () => string;
   conversationId?: string;
   /** 共享同一 RPC 的成员身份；Lead 不传，worker 传自己的 sessionId。 */
   memberId?: string;
@@ -945,6 +947,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
       if(productContext)productContext.onProjection=data=>wrapper.runTrace.record("harness_context",data);
       wrapper.siteNotes = options?.memberId ? null : options?.siteNotes ?? null;
+      wrapper.translationStyle = options?.translationStyle ?? null;
 
       if (productContext && wrapper.siteNotes) productContext.siteNotes = url => wrapper.siteNotesFor(url, 1_000);
 
@@ -1719,6 +1722,11 @@ return;}
 
   /** 站点笔记的存放处；工人会话没有。 */
   private siteNotes: SiteNotesStore | null = null;
+  private translationStyle: (() => string) | null = null;
+
+  private translationStyleText(): string {
+    return this.translationStyle?.() ?? "";
+  }
   /** 这一轮已经带过笔记的网站：每个网站每轮只带一次。 */
   private siteNotesShown: { runId: string | null; hosts: Set<string> } = { runId: null, hosts: new Set() };
   private siteMethodsShown: { runId: string | null; hosts: Set<string> } = { runId: null, hosts: new Set() };
@@ -1905,7 +1913,7 @@ return;}
 
     void Promise.all([peek, mainSent]).then(([peeked, sent]) => {
       if (this.translationPrefetch !== abort || !sent || !Array.isArray(peeked?.blocks)) return;
-      const unknown = (block: TranslationBlock) => !translationMemory.get(translationMemory.key(model, language, block));
+      const unknown = (block: TranslationBlock) => !translationMemory.get(translationMemory.key(model, language, this.translationStyleText(), block));
       const fresh = peeked.blocks.filter(unknown);
       // 与翻译开头几批同样的分法（每批至多 2 段），请求内容一样，译文也就一样。
       const batches: TranslationBlock[][] = [];
@@ -1951,7 +1959,7 @@ return;}
     if (model) {
       const texts = request.then(segments => new Map(segments.map(segment => [segment.id, segment.text])), () => new Map<string, string>());
 
-      for (const block of blocks) translationMemory.remember(translationMemory.key(model, language, block), texts.then(got => block.segments.every(segment => got.has(segment.id)) ? block.segments.map(segment => got.get(segment.id)!) : null));
+      for (const block of blocks) translationMemory.remember(translationMemory.key(model, language, this.translationStyleText(), block), texts.then(got => block.segments.every(segment => got.has(segment.id)) ? block.segments.map(segment => got.get(segment.id)!) : null));
     }
 
     return request;
@@ -1959,7 +1967,7 @@ return;}
 
   async translatePageBatch(blocks: TranslationBlock[], language: string, signal: AbortSignal, meta?: TranslateMeta): Promise<TranslationSegment[]> {
     const model = this.translationModel();
-    const known = model ? blocks.map(block => translationMemory.get(translationMemory.key(model, language, block))) : [];
+    const known = model ? blocks.map(block => translationMemory.get(translationMemory.key(model, language, this.translationStyleText(), block))) : [];
     const startedAt = Date.now();
     const remembered = new Map<TranslationBlock, string[]>();
 
@@ -2002,7 +2010,7 @@ return;}
       const startedAt = Date.now();
 
       const reply = await this.modelRuntime.completeSimple(model, {
-        systemPrompt: TRANSLATION_PROMPT + (attempt ? '\nThe previous answer was malformed. Return one complete JSON array only, with every supplied segment id, no prose or extra JSON.' : ''),
+        systemPrompt: translationPrompt(this.translationStyleText()) + (attempt ? '\nThe previous answer was malformed. Return one complete JSON array only, with every supplied segment id, no prose or extra JSON.' : ''),
         messages: [{role: 'user', content: JSON.stringify({language, blocks:ask}), timestamp: Date.now()}],
       }, {signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]), maxTokens: 10000, sessionId, headers: opencodeSessionHeaders(model, sessionId), ...(effort === 'off' ? {} : {reasoning: effort})});
 

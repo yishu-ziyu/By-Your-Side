@@ -15,7 +15,7 @@ import { listArtifacts, writeArtifact, deleteArtifact } from "../shared/durable-
 import { openPiSession } from "./pi-session-idb.js";
 import { openDurableStorage } from "./durable-storage.js";
 import { IdbDocument } from "./document-idb.js";
-import { pushedMiniApps, pushedSelfUse, receiveCoreSettings } from "../shared/core-settings.js";
+import { pushedMiniApps, pushedSelfUse, pushedTranslationStyle, receiveCoreSettings } from "../shared/core-settings.js";
 
 type Inbound = ClientMessage
   | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials }
@@ -114,6 +114,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         taskHistory,
         siteNotes,
         miniApps: async () => pushedMiniApps(),
+        translationStyle: () => pushedTranslationStyle(),
         });
       },
       voiceKey: async () => {
