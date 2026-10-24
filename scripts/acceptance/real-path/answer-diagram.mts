@@ -12,7 +12,7 @@
  * 5. 重开侧栏：回放出来的回答里图又画出来，点方块照样出原文。
  * 6. 图的文字里夹了 HTML 和 javascript 链接：图里没有链接、图片、事件属性，页面里也没执行；
  *    原文摘录里夹了 <button>：不变成卡片按钮，点方块时按字显示；提示条、图、数字格按写的顺序排。
- * 7. 不是流程图（mindmap）：原样显示图的文字，不留空框。
+ * 7. 侧栏画不出的图种（zenuml）：原样显示图的文字，不留空框。
  * --live：脚本模型换成真实模型（默认 gpt-6-luna，--model= 换别的），在真实网页 paulgraham.com/ds.html 上问论证结构（应画出图，
  *   每条原文都能在网页正文里逐字找到），再问一句话能答的问题（不画图）。
  * 产物：out/acceptance/real-path/<时间>-answer-diagram/result.json 与截图。
@@ -64,7 +64,7 @@ const rules: Rule[] = [
   },
   {
     match: "不是流程图",
-    steps: [{ text: `换一种图。\n<card title="思维导图">\n<diagram>\nmindmap\n  root((中心))\n    分支一\n    分支二\n</diagram>\n</card>` }],
+    steps: [{ text: `换一种图。\n<card title="思维导图">\n<diagram>\nzenuml\n  分支一.调用()\n  分支二.返回()\n</diagram>\n</card>` }],
   },
 ];
 
@@ -225,7 +225,7 @@ try {
   // SAFETY: 表达式返回这个形状。
   const fallback = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); const pre = fig?.querySelector(".gc-diagram-source"); return { svg: !!fig?.querySelector("svg"), text: pre?.textContent ?? null, height: fig ? Math.round(fig.getBoundingClientRect().height) : 0 }; })()`) as { svg: boolean; text: string | null; height: number };
   evidence.fallback = fallback;
-  ok(!fallback.svg && !!fallback.text?.includes("mindmap") && fallback.text.includes("分支一") && fallback.height > 40, `7 画不出的图原样显示文字：${JSON.stringify(fallback)}`);
+  ok(!fallback.svg && !!fallback.text?.includes("zenuml") && fallback.text.includes("分支一") && fallback.height > 40, `7 画不出的图原样显示文字：${JSON.stringify(fallback)}`);
   await rp.screenshot(panel, join(artifacts, "7-fallback.png"));
 
   // 五、重开侧栏：回放出来的第一张图又画出来，点方块照样出原文。
