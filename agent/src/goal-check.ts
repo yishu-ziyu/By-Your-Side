@@ -318,6 +318,12 @@ const SAYS_NO_CAPTIONS = /没有(任何)?(可用的|可加载的|可读的)?字�
 /** 回答一开头就说要找的东西没有、没找到（只看开头：「这页没有，但在别处找到了」不算）。 */
 const NOT_FOUND = /(没有|不存在|没找到|未找到|找不到|查不到|没能找到)[^。！？\n]{0,16}(条目|词条|页面|结果|记录)|目前没有[^。！？\n]{0,24}(条目|词条)|\b(no (article|results?|entry|page)|does not exist|not found)\b/i;
 
+/**
+ * 用户原话是在找、查、搜某个东西。只有这时「没有」才是在说没找到：
+ * 「只读当前条目……不要打开其他网页」的回答写「我没有打开别的页面」，会被当成没找到，白白再找一轮。
+ */
+const ASKS_TO_FIND = /找|查|搜|有没有|是否有|\b(find|search|look up|is there)\b/i;
+
 /** 工具落到的页面地址（打开、跳转、程序结束时所在的页），不是页面里列出的链接。 */
 const LANDED = /(?:Created tab \d+: [^\n]*? — |Navigation result: |working tab \d+ shows "[^"\n]*" — )(https?:\/\/[^\s;"'<>]+)/g;
 
@@ -401,7 +407,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   // 换过说法之后不再拦，由模型判断是否真的没有。
   const wordings = input.verification ? [] : searchedWordings(input.observations);
 
-  if (wordings.length === 1 && NOT_FOUND.test(input.lastReply.slice(0, 120)) && !asksUser(input.lastReply)) {
+  if (wordings.length === 1 && ASKS_TO_FIND.test(input.goal.join("\n")) && NOT_FOUND.test(input.lastReply.slice(0, 120)) && !asksUser(input.lastReply)) {
     return { status: "continue", verifiedByHost: true, verificationSubject: 'answer', remaining: "换个说法再找", correction: `只用「${wordings[0]!.slice(0, 40)}」找过一次就说没有。换近义说法、常见别名、英文名或更宽的词再找；找到对应的条目或页面就打开读完，再讲它的内容；都找不到再说没有，并说清试过哪些说法。` };
   }
   const notInReads = namesNotRead(input);
