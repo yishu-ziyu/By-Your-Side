@@ -130,17 +130,18 @@ try {
   const openMs = await rp.evaluate(panel, `new Promise(done => {
     const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
     const start = performance.now();
+    const startHeight = d.getBoundingClientRect().height;
     let last = -1, still = 0, settledAt = start;
     d.querySelector(":scope > summary").click();
     const tick = () => {
       const h = d.getBoundingClientRect().height;
       if (Math.abs(h - last) < 0.5) still++; else { still = 0; settledAt = performance.now(); }
       last = h;
-      if (still >= 5 || performance.now() - start > 2000) done(Math.round(settledAt - start)); else requestAnimationFrame(tick);
+      if (still >= 5 || performance.now() - start > 2000) done({ ms: Math.round(settledAt - start), open: d.open, grew: h - startHeight, visible: !!d.querySelector(".run-body")?.getClientRects().length }); else requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  })`) as number;
-  check("d0 点开过程行，220ms 内展开到位", openMs > 0 && openMs <= 220, { openMs });
+  })`) as { ms: number; open: boolean; grew: number; visible: boolean };
+  check("d0 点开过程行，220ms 内展开到位", openMs.open && openMs.visible && openMs.grew > 20 && openMs.ms > 0 && openMs.ms <= 220, openMs);
   await sleep(600);
   const opened = (await read())!;
   await rp.screenshot(panel, join(out, "d-record.png"));
