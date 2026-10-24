@@ -47,7 +47,7 @@ const model = await startScriptedModel([
 let netDown = false;
 const front = createServer(async (req, res) => {
   let body = "";
-  for await (const chunk of req) body += String(chunk);
+  req.setEncoding('utf8'); for await (const chunk of req) body += chunk;
   if (netDown && /"tools"\s*:\s*\[\s*\{/.test(body)) { req.socket.destroy(); return; }
   const up = await fetch(`${model.baseUrl.replace(/\/$/, "")}${(req.url ?? "").replace(/^\/v1/, "")}`, { method: req.method, headers: { "content-type": "application/json" }, body: req.method === "POST" ? body : undefined });
   res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "application/json" }).end(Buffer.from(await up.arrayBuffer()));

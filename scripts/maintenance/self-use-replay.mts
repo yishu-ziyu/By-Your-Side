@@ -117,24 +117,36 @@ try {
       const answered = Date.now();
       // 回答写完后还在核对，判「继续」时助手会接着做：既不在跑、也不在核对、连着 3 秒都这样，而且诊断记录里每次核对都有了结论，这一句才算做完。
       // 回答等不到核对、先放出来以后，侧栏不再显示「核对中」，快速模型还要几秒才判完：只看侧栏会在结论之前收工，最后一句的结论和它引出的续做都会漏掉。
-      // 核对开始、结束各有一条 goal_check_span；更早的构建没有它，退回按 goal_check_input 配结论数。
-      const verdictsPending = async () => {
-        let spans = 0;
+      // 核对开始、结束各有一条 goal_check_span，按 runId 配对：上一句晚到的结束不能抵掉这一句的开始。
+      // 更早的构建没有它，退回按 goal_check_input 配结论数。记录写满（trace_limit）后结束标记会被丢掉，不再等。
+      const verdictsPending = async (): Promise<"pending" | "done" | "truncated"> => {
+        const open = new Map<unknown, number>();
         let inputs = 0;
+        let truncated = false;
 
         for (const line of (await rp.evaluate(panel, traceExpression).catch(() => []) as string[]).slice(traceSeen)) {
-          if (line.includes('"type":"goal_check_span"')) spans += line.includes('"phase":"start"') ? 1 : -1;
-          else if (line.includes('"type":"goal_check_input"')) inputs += 1;
-          else if (line.includes('"type":"goal_check"') && inputs) inputs -= 1;
+          if (line.includes('"type":"trace_limit"')) truncated = true;
+          if (!line.includes('"type":"goal_check')) continue;
+          let record: { type?: unknown; runId?: unknown; data?: { phase?: unknown } };
+          try { record = JSON.parse(line); } catch { continue; }
+          if (record.type === "goal_check_span" && record.data?.phase === "start") open.set(record.runId, (open.get(record.runId) ?? 0) + 1);
+          else if (record.type === "goal_check_span" && open.get(record.runId)) open.set(record.runId, open.get(record.runId)! - 1);
+          else if (record.type === "goal_check_input") inputs += 1;
+          else if (record.type === "goal_check" && inputs) inputs -= 1;
         }
 
-        return spans > 0 || inputs > 0;
+        const pending = [...open.values()].some(n => n > 0) || inputs > 0;
+        return pending && truncated ? "truncated" : pending ? "pending" : "done";
       };
       let calm = 0;
+      let unsettled: string | null = null;
       await until(async () => {
         calm = await rp.evaluate(panel, ready) && !(await rp.evaluate(panel, `document.body.innerText.includes("核对中")`)) ? calm + 1 : 0;
-        return (calm >= 3 && !await verdictsPending()) || undefined;
-      }, 300_000, "核对和续做结束", 1_000).catch(() => {});
+        if (calm < 3) return undefined;
+        const state = await verdictsPending();
+        if (state === "truncated") unsettled = "诊断记录写满，核对结论无法确认";
+        return state !== "pending" || undefined;
+      }, 300_000, "核对和续做结束", 1_000).catch(() => { unsettled = "等核对结论超时，结论无法确认"; });
       const seen = await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); const err = [...document.querySelectorAll(".msg.error")].at(-1); const card = [...document.querySelectorAll(".ai-task-card")].at(-1); return { answer: (a?.innerText ?? "").slice(0, 300), error: err?.innerText?.slice(0, 200) ?? null, cardFailed: /有 \\d+ 步没做成|还没做成/.test(card?.innerText ?? "") }; })()`).catch(() => ({ answer: "", error: "读不到侧栏", cardFailed: false })) as { answer: string; error: string | null; cardFailed: boolean };
       const lines = (await rp.evaluate(panel, traceExpression).catch(() => []) as string[]).slice(traceSeen);
       traceSeen += lines.length;
@@ -149,7 +161,7 @@ try {
       const facts = factsOf(records.filter(r => r.type === "goal_check").at(-1)?.data?.hostFacts?.goalFacts ?? records.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
       const changedGoal = !!task.onPage?.includes(task.say.indexOf(say) + 1) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
       const verdict = records.filter(r => r.type === "goal_check").map(r => r.data?.status).filter((s): s is string => typeof s === "string").at(-1) ?? null;
-      rows.push({ n: task.n, say, secs: Math.round((answered - start) / 1000), checkSecs: Math.round((Date.now() - answered) / 1000), calls, load: [loadStart, load()], finished, error: error ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal, verdict, answer: seen.answer });
+      rows.push({ n: task.n, say, secs: Math.round((answered - start) / 1000), checkSecs: Math.round((Date.now() - answered) / 1000), calls, load: [loadStart, load()], finished, error: error ?? unsettled ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal, verdict, answer: seen.answer });
       await rp.screenshot(panel, join(shots, `${task.n}-${task.say.indexOf(say) + 1}.png`)).catch(() => {});
       console.log(`${task.n} ${finished ? "完成" : "没完成"} ${rows.at(-1)!.secs}s ${say.slice(0, 30)}`);
 

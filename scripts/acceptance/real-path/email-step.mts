@@ -49,7 +49,7 @@ async function run(scenario:Scenario){
  const checks:any[]=[];
  const proxy=createServer(async(req,res)=>{
   try{
-   let body='';for await(const chunk of req)body+=String(chunk);
+   let body='';req.setEncoding('utf8'); for await (const chunk of req) body += chunk;
    if(req.method==='POST'&&body.includes(PREFIX)){
     const payload=JSON.parse(body);
     checks.push(JSON.parse(messageText(payload.messages.filter((m:any)=>m.role==='user').at(-1)?.content)));
