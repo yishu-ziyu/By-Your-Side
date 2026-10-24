@@ -43,6 +43,16 @@ const fromAttrs = (from?: RowSource) => (from ? ` data-gc-tab="${esc(from.tab)}"
 
 const cellHtml = (c: Cell, tag: string, cls = "") => `<${tag}${cls}${live(c)}>${esc(c.value)}</${tag}>`;
 
+/** 模型原样写的数和程序算出的数写法对齐：带货币符号的金额加千分位；不带符号的只有整格就是一个 5–10 位的数（可带常见单位）才加，
+ *  电话、单号这类长串、夹在文字里的数和 4 位的年份不动。只改显示。 */
+const tidyNumber = (text: string) => text
+  .replace(/([¥$€£]\s?)([1-9]\d{3,14})(?![\d,])/g, (_, sign: string, digits: string) => sign + Number(digits).toLocaleString("zh-CN"))
+  .replace(/^([1-9]\d{4,9})(?=(?:\.\d+)?\s*(?:[元万亿人个次件份台%]|km|kg)?$)/, (digits: string) => Number(digits).toLocaleString("zh-CN"));
+
+/** 数字格里放不下一格的长数：这一组改成每格一行，不再切掉或贴边。 */
+const WIDE_STAT = 10;
+const wideStats = (values: string[]) => values.some((v) => v.length > WIDE_STAT);
+
 /** 档位多于这个数时，加减之外再给一条滑块。 */
 const SLIDER_STEPS = 20;
 
@@ -101,11 +111,11 @@ function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<strin
     case "inputs":
       return `<div class="gc-inputs" data-gc-key="b${i}">${b.items.map((v, j) => keyed(key(j), inputHtml(v))).join("")}</div>`;
     case "stats":
-      return `<div class="gc-stats" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${t(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(s.value)}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-stats${wideStats(b.items.map((s) => tidyNumber(s.value))) ? " wide" : ""}" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${t(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(tidyNumber(s.value))}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
     case "steps":
       return `<ol class="gc-steps" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<li class="gc-step"><span class="num">${j + 1}</span><div><div class="t">${t(s.title)}</div>${s.detail ? `<div class="d">${t(s.detail)}</div>` : ""}</div></li>`)).join("")}${extra}</ol>`;
     case "options":
-      return `<div class="gc-options" data-gc-key="b${i}">${b.items.map((o, j) => keyed(key(j), `<div class="gc-option${o.pick ? " pick" : ""}"${fromAttrs(o.from)}><div class="gc-row"><span class="name">${t(o.name)}</span>${o.pick ? '<span class="badge">推荐</span>' : ""}${o.value ? cellHtml(o.value, "span", ' class="price"') : ""}${o.meta ? `<span class="meta">${t(o.meta)}</span>` : ""}</div><div class="gc-why">${t(o.why)}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-options" data-gc-key="b${i}">${b.items.map((o, j) => keyed(key(j), `<div class="gc-option${o.pick ? " pick" : ""}"${fromAttrs(o.from)}><div class="gc-row"><span class="name">${t(o.name)}</span>${o.pick ? '<span class="badge">推荐</span>' : ""}${o.value ? cellHtml({ ...o.value, value: tidyNumber(o.value.value) }, "span", ' class="price"') : ""}${o.meta ? `<span class="meta">${t(o.meta)}</span>` : ""}</div><div class="gc-why">${t(o.why)}</div></div>`)).join("")}${extra}</div>`;
     case "table":
       return `<table class="gc-table" data-gc-key="b${i}"><thead><tr>${b.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${b.rows.map((r, j) => keyed(key(j), `<tr${r.tag ? ' class="best"' : ""}${fromAttrs(r.from)}>${r.cells.map((c) => cellHtml(c, "td")).join("")}</tr>`)).join("")}${extra}</tbody></table>`;
     case "checks":
@@ -752,6 +762,8 @@ function recompute(card: HTMLElement): void {
   }
 
   for (const el of card.querySelectorAll<HTMLElement>("[data-gc-formula]")) set(el, showFormula(el.dataset.gcFormula!, vars));
+
+  for (const group of card.querySelectorAll(".gc-stats")) group.classList.toggle("wide", wideStats([...group.querySelectorAll(".gc-stat .v")].map((v) => v.textContent ?? "")));
   const answer = card.parentElement;
   // 正文里的名字归回答中第一张定义它的卡：两张卡同名时不轮流改写同一处正文。
   const refs = (id: string, text: string) => {

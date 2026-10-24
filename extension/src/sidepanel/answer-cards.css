@@ -68,6 +68,7 @@
 
 /* 数字格 */
 .gc-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; container-type: inline-size; }
+.gc-stats.wide { grid-template-columns: 1fr; }
 .gc-stat { display: flex; flex-direction: column; padding: var(--s-2) 10px 9px; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline); }
 .gc-stat .k { flex: 1; display: flex; align-items: flex-start; gap: var(--s-1); font-size: var(--fs-micro); color: var(--text-tertiary); }
 .gc-stat .k > span:first-child { min-width: 0; }
@@ -94,7 +95,7 @@
 .gc-options { display: flex; flex-direction: column; gap: 6px; }
 .gc-option { padding: 9px 11px; border-radius: var(--r); border: 1px solid var(--well-outline); }
 .gc-option .gc-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--s-2); }
-.gc-option .name { white-space: nowrap; font-weight: 600; color: var(--text-primary); }
+.gc-option .name { min-width: 0; overflow-wrap: anywhere; font-weight: 600; color: var(--text-primary); }
 .gc-option .badge { font-size: 10.5px; font-weight: 600; color: var(--text-primary); }
 .gc-option .price { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .gc-option .meta { flex-basis: 100%; font-size: var(--fs-meta); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
@@ -155,7 +156,7 @@
 .msg.assistant.markdown .gc-evidence th { padding: 0 6px var(--s-1) 0; text-align: left; font-weight: 500; color: var(--text-tertiary); border-bottom: 1px solid var(--content-border); }
 .msg.assistant.markdown .gc-evidence td { padding: 5px 6px 5px 0; vertical-align: top; color: var(--text-secondary); border-bottom: 1px solid var(--content-border); }
 .msg.assistant.markdown .gc-evidence tr:last-child td { border-bottom: 0; }
-.msg.assistant.markdown .gc-evidence td.r { white-space: nowrap; font-weight: 600; color: var(--text-primary); }
+.msg.assistant.markdown .gc-evidence td.r { overflow-wrap: anywhere; font-weight: 600; color: var(--text-primary); }
 .msg.assistant.markdown .gc-evidence td.f { color: var(--text-primary); }
 .msg.assistant.markdown .gc-evidence td.s { padding-right: 0; border-bottom: 0; color: var(--text-tertiary); }
 .gc-btn.gc-point { display: flex; min-height: 0; margin-top: 2px; padding: 1px 6px; border-radius: var(--r-tail); font-size: var(--fs-micro); color: var(--accent); }
