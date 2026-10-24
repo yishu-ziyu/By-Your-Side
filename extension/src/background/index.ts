@@ -484,9 +484,9 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  return true;
 });
 
-// 一键翻译 ⌥T：不经主模型，这页没有译文就整页翻译，有就还原；侧栏开着与否都一样。
-// 快捷键可能刚把扩展后台唤醒，到任务宿主的连接还在建立：等它连上再发，最多 5 秒。
-async function translateTab(tab: chrome.tabs.Tab): Promise<boolean> {
+// 一键翻译（⌥T、侧栏「文A」、右边缘入口都走这里）：不经主模型，这页没有译文就整页翻译，有就还原；侧栏开着与否都一样。
+// 到任务宿主的连接可能还在建立（快捷键刚唤醒扩展后台、侧栏刚打开）：等它连上再发，最多 5 秒，不悄悄丢掉。
+async function translateTab(tab: { id?: number; title?: string; url?: string; windowId?: number }): Promise<boolean> {
  if (tab.id == null) return false;
  const msg: ClientMessage = { type: "page_translate", context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }, conversationId: conversationForWindow(tab.windowId) };
 
@@ -2409,9 +2409,7 @@ function attachPanel(port: chrome.runtime.Port) {
 
         // 侧栏的「翻译这一页」不知道标签页：这里补上活动标签页，再和 ⌥T 走同一条路。
         if (client.type === "page_translate" && !client.context) {
-          void getActiveTab().then(({ tab }) => {
-            if (tab?.id != null) uplink.sendClientMessage({ ...client, context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" } });
-          });
+          void getActiveTab().then(({ tab }) => { if (tab) void translateTab(tab); });
           break;
         }
 

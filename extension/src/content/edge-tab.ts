@@ -315,8 +315,9 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   const clickedButton = (ev: Event) => ev.composedPath().some(n => n instanceof HTMLButtonElement);
 
   clip.addEventListener("click", ev => { ev.stopPropagation(); if (!clickedButton(ev)) handlers.capsule(); });
-  clip.addEventListener("pointerenter", () => { if (resting && (!open || view?.tone === "idle")) handlers.peek?.(true); });
-  clip.addEventListener("pointerleave", () => { if (view?.tone === "idle") handlers.peek?.(false); });
+  // 键盘也一样：Tab 到窄条上就展开，离开就收回。
+  for (const enter of ["pointerenter", "focus"] as const) clip.addEventListener(enter, () => { if (resting && (!open || view?.tone === "idle")) handlers.peek?.(true); });
+  for (const leave of ["pointerleave", "blur"] as const) clip.addEventListener(leave, () => { if (view?.tone === "idle" && !(leave === "pointerleave" && shadow.activeElement === clip)) handlers.peek?.(false); });
   clip.addEventListener("keydown", ev => {
     if (ev.target !== clip || (ev.key !== "Enter" && ev.key !== " ")) return;
     ev.preventDefault();
@@ -653,13 +654,13 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     // 减少动态效果：形状不伸缩，只整体淡入淡出。
     if (reduced.matches) {
       const step = dt / (FADE_MS / 1000);
-      fade = open ? Math.min(1, fade + step) : Math.max(0, fade - step);
+      fade = open || resting ? Math.min(1, fade + step) : Math.max(0, fade - step);
     } else {
       fade = !open && resting ? 1 : clamp01((W.x - CLOSED.w) / 14);
     }
 
     paint();
-    const settled = W.still && Hs.still && BW.still && BH.still && items.every(i => i.x.still) && !closeAt && fade === (open ? 1 : 0);
+    const settled = W.still && Hs.still && BW.still && BH.still && items.every(i => i.x.still) && !closeAt && fade === (open || resting ? 1 : 0);
 
     if (!open && settled && resting) return;
 

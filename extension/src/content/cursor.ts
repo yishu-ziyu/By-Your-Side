@@ -60,6 +60,7 @@ import { sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
 import { feedbackLifetimeMs, type FeedbackPillView } from "../shared/feedback-pill.js";
 import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, isEdgePill, type EdgePill } from "../shared/edge-pill.js";
 import { CURSOR_SPOT_SAVE, CURSOR_SPOT_TAKE, isCursorSpots, type CursorSpot } from "../shared/cursor-spot.js";
+import { EDGE_ENTRY_KEY, isEdgeEntryOff } from "../shared/edge-entry.js";
 import { createEdgeTab, type EdgeTab, type EdgeTabOther, type EdgeTabView } from "./edge-tab.js";
 import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
@@ -2578,6 +2579,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   /** 停靠的胶囊被鼠标碰到、正展开成翻译入口。 */
   let entryPeek = false;
+  /** 设置里关掉了右边缘的翻译入口：没有任务时整个收起，不停靠。 */
+  let entryOff = false;
   let entryShown = false;
   let entryLeave: ReturnType<typeof setTimeout> | undefined;
 
@@ -2718,7 +2721,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     }
 
     // 没有任务要显示时停靠在右边缘；语音胶囊在这一页时让位。
-    tab().rest(!voiceHere && !pageControl);
+    tab().rest(!voiceHere && !pageControl && !entryOff);
     tab().render(view, others);
   }
 
@@ -3392,6 +3395,13 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       };
     });
 
-  // 停靠的翻译入口：网页载入后就贴在右边缘，不用等任务事件。
-  renderAmbient();
+  // 停靠的翻译入口：网页载入后就贴在右边缘，不用等任务事件；设置里关掉就不停靠。
+  const applyEntrySetting = (off: boolean) => { entryOff = off; renderAmbient(); };
+
+  try {
+    void chrome.storage.local.get(EDGE_ENTRY_KEY).then(stored => applyEntrySetting(isEdgeEntryOff(stored[EDGE_ENTRY_KEY])), () => applyEntrySetting(false));
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "local" && EDGE_ENTRY_KEY in changes) applyEntrySetting(isEdgeEntryOff(changes[EDGE_ENTRY_KEY]!.newValue));
+    });
+  } catch { applyEntrySetting(false); /* 自检页没有扩展运行时。 */ }
 })();
