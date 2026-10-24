@@ -195,13 +195,14 @@ const FACE_BUTTONS = `<button type="button" class="gc-face" data-face="answer" a
 
 type Engine = typeof import("./diagram-engine.js");
 
-// 路径写成变量，esbuild 就不把 Pele 打进侧栏主包；构建产物里它是同目录下单独的 diagram-engine.js。
-const ENGINE_URL = "./diagram-engine.js";
+// 路径写成变量，esbuild 就不把 Pele 打进侧栏主包；构建产物里它们是同目录下单独的 diagram-engine.js 和 diagram-engine-more.js。
+const ENGINE_URL = { flow: "./diagram-engine.js", more: "./diagram-engine-more.js" };
 
-let engine: Promise<Engine> | undefined;
+const engines: Partial<Record<keyof typeof ENGINE_URL, Promise<Engine>>> = {};
 
-// SAFETY: ENGINE_URL 就是 diagram-engine.ts 的构建产物。
-const loadEngine = () => (engine ??= import(ENGINE_URL) as Promise<Engine>);
+/** 流程图只加载小包；别的图种才加载另一包。两包各带一份 Pele 核心，导出的形状一样。 */
+// SAFETY: ENGINE_URL 里就是 diagram-engine.ts、diagram-engine-more.ts 的构建产物，导出同样的 mount、render。
+const loadEngine = (kind: keyof typeof ENGINE_URL) => (engines[kind] ??= import(ENGINE_URL[kind]) as Promise<Engine>);
 
 /**
  * Pele 已转义图里的字、关掉了链接和图片；图的原文出自模型，可能被网页内容带偏，所以再按 SVG 白名单消毒一遍。
@@ -304,11 +305,14 @@ async function drawDiagram(figure: HTMLElement): Promise<void> {
   const cited = new Set([...figure.querySelectorAll<HTMLElement>(":scope > .gc-cites > li")].map((li) => li.dataset.node));
 
   try {
-    const { mount, render } = await loadEngine();
+    // 断行和换横竖排都按流程图的语法改写，别的图种原样画。
+    const flow = /^\s*(?:flowchart|graph)\b/.test(source);
+    figure.dataset.kind = /^\s*([A-Za-z-]+)/.exec(source)?.[1] ?? "";
+    const { mount, render } = await loadEngine(flow ? "flow" : "more");
 
     // 等加载的这会儿图可能已经被换掉了。
     if (!figure.isConnected) return;
-    mounted.set(figure, mount(canvas, narrower(wrapLabels(source), render), {
+    mounted.set(figure, mount(canvas, flow ? narrower(wrapLabels(source), render) : source, {
       fontSize: 13, zoom: false, links: false, images: false, sanitize: cleanSvg, onError: fail,
       onRender: (result) => {
         canvas.dataset.natural = String(result.width);
@@ -360,8 +364,8 @@ export function renderAnswerHtml(text: string, renderProse: (markdown: string) =
   return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "") : p.card ? cardHtml(p.card) : "")).join("");
 }
 
-/** 写完的 ```mermaid 流程图代码块：只有侧栏画得出的流程图（flowchart / graph）才换。 */
-const MERMAID_FENCE = /^```mermaid[ \t]*\n((?:flowchart|graph)\b[\s\S]*?)\n```[ \t]*$/gm;
+/** 写完的 ```mermaid 代码块：只有侧栏画得出的图种才换（和 diagram-engine.ts、diagram-engine-more.ts 注册的一一对应）。 */
+const MERMAID_FENCE = /^```mermaid[ \t]*\n((?:flowchart|graph|timeline|sequenceDiagram|mindmap|pie|gantt|stateDiagram(?:-v2)?|classDiagram|erDiagram|journey|quadrantChart|xychart(?:-beta)?)\b[\s\S]*?)\n```[ \t]*$/gm;
 
 /**
  * 模型把结构图写成 ```mermaid 代码块时，用户看到的是一段代码，不是图：照卡片里的结构图画出来，代码收在下面，要复制还在。

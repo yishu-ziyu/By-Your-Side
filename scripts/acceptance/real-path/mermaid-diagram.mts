@@ -1,11 +1,13 @@
 /**
- * 回答里写成 ```mermaid 代码块的流程图，侧栏画成图；代码收在「Mermaid 代码」里，要复制还在。画不了的图种照旧显示代码。
+ * 回答里写成 ```mermaid 代码块的图，侧栏画成图；代码收在「Mermaid 代码」里，要复制还在。侧栏不认识的图种照旧显示代码。
  * 只装扩展、隔离构建、本机脚本模型。
  *   npx tsx scripts/acceptance/real-path/mermaid-diagram.mts --headless
  *   a) flowchart（带分组）画成了图，图里有节点文字。
  *   b) 图下面有「Mermaid 代码」，展开是原来的代码。
- *   c) sequenceDiagram（侧栏画不了）照旧是一段代码。
- * 失败方式：renderAnswerHtml 不经 withMermaidDiagrams，a、b 失败。
+ *   c) timeline（用户说「在mermaid中呈现」时真模型写出的那种）画成了图，图里有事件文字。
+ *   d) sequenceDiagram 画成了图。
+ *   e) zenuml（侧栏不认识）照旧是一段代码。
+ * 失败方式：renderAnswerHtml 不经 withMermaidDiagrams，a、b 失败；只认流程图时 c、d 失败。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -32,11 +34,28 @@ flowchart TB
   A1 --> B1
 \`\`\`
 
-另一种图：
+时间线：
+
+\`\`\`mermaid
+timeline
+    title 10月25日：历史上的今天
+    1415 : 阿金库尔战役，英格兰击败法国
+    1971 : 联合国大会通过第2758号决议
+    2001 : Windows XP 正式发布
+\`\`\`
+
+时序：
 
 \`\`\`mermaid
 sequenceDiagram
   用户->>助手: 打开页面
+\`\`\`
+
+另一种图：
+
+\`\`\`mermaid
+zenuml
+  用户.打开页面()
 \`\`\`
 `;
 
@@ -55,14 +74,21 @@ try {
   await rp.pressEnter(panel);
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes("另一种图"))`) || undefined, 60_000, "回答出现");
   await until(async () => await rp.evaluate(panel, ready), 60_000, "这一轮结束");
+  type Seen = { svgs: string[]; code: string | null; pres: string[] };
+  const read = `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); return { svgs: [...a.querySelectorAll(".gc-diagram svg")].map(s => s.textContent), code: a.querySelector(".gc-diagram-code")?.textContent ?? null, pres: [...a.querySelectorAll("pre code")].map(c => c.className + ":" + c.textContent.trim().split("\\n")[0]) }; })()`;
   const seen = await until(async () => {
-    const state = await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); const svg = a.querySelector(".gc-diagram svg"); return { svg: !!svg, nodes: svg ? svg.textContent : "", code: a.querySelector(".gc-diagram-code")?.textContent ?? null, pres: [...a.querySelectorAll("pre code")].map(c => c.className + ":" + c.textContent.trim().split("\\n")[0]) }; })()`) as { svg: boolean; nodes: string; code: string | null; pres: string[] };
-    return state.svg ? state : null;
-  }, 15_000, "图画出来").catch(async () => await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); return { svg: false, nodes: "", code: a.querySelector(".gc-diagram-code")?.textContent ?? null, pres: [...a.querySelectorAll("pre code")].map(c => c.className + ":" + c.textContent.trim().split("\\n")[0]) }; })()`) as { svg: boolean; nodes: string; code: string | null; pres: string[] });
+    const state = await rp.evaluate(panel, read) as Seen;
+    return state.svgs.length >= 3 ? state : null;
+  }, 15_000, "图画出来").catch(async () => await rp.evaluate(panel, read) as Seen);
   await rp.screenshot(panel, join(out, "answer.png"));
-  check("a flowchart 画成了图，图里有节点文字", seen.svg && seen.nodes.includes("迁都平安京") && seen.nodes.includes("苏联原子弹"), { svg: seen.svg, nodes: seen.nodes.slice(0, 120) });
+  await rp.evaluate(panel, `(() => { const figures = [...document.querySelectorAll(".msg.assistant .gc-diagram")]; figures.find(f => f.textContent.includes("阿金库尔") || f.querySelector("svg")?.textContent.includes("阿金库尔"))?.scrollIntoView({ block: "start" }); return true; })()`);
+  await rp.screenshot(panel, join(out, "timeline.png"));
+  const drawn = (text: string) => seen.svgs.some(svg => svg.includes(text));
+  check("a flowchart 画成了图，图里有节点文字", drawn("迁都平安京") && drawn("苏联原子弹"), seen.svgs.map(s => s.slice(0, 60)));
   check("b 图下面收着原来的 Mermaid 代码", !!seen.code && seen.code.includes("Mermaid 代码") && seen.code.includes("flowchart TB"), seen.code?.slice(0, 120) ?? null);
-  check("c sequenceDiagram 照旧是一段代码", seen.pres.some(p => p.includes("sequenceDiagram")), seen.pres);
+  check("c timeline 画成了图，图里有事件文字", drawn("阿金库尔战役") && drawn("Windows XP"), seen.svgs.map(s => s.slice(0, 60)));
+  check("d sequenceDiagram 画成了图", drawn("打开页面"), seen.svgs.map(s => s.slice(0, 60)));
+  check("e zenuml 照旧是一段代码", seen.pres.some(p => p.includes("zenuml")) && seen.svgs.length === 3, { pres: seen.pres, svgs: seen.svgs.length });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.length > 0 && checks.every(c => c.pass) ? "PASS" : "FAIL", checks }, null, 2));
   await rp.close(); await rp.remove(); await model.close();

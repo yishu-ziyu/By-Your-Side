@@ -168,6 +168,11 @@
   --pele-surface: var(--content-subtle); --pele-surface-alt: var(--content-bg); --pele-border: var(--content-border);
   --pele-accent: var(--accent); --pele-font: var(--font); --pele-radius: 8px;
 }
+/* 时间线每段一种颜色只为好看，不带意思：统一用强调色，和流程图一样克制。饼图这类靠颜色区分的图种保留 Pele 的配色。 */
+.gc-diagram[data-kind="timeline"] {
+  --pele-series-1: var(--accent); --pele-series-2: var(--accent); --pele-series-3: var(--accent); --pele-series-4: var(--accent);
+  --pele-series-5: var(--accent); --pele-series-6: var(--accent); --pele-series-7: var(--accent); --pele-series-8: var(--accent);
+}
 .gc-diagram-canvas svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .gc-diagram-canvas.gc-diagram-wide { overflow-x: auto; overscroll-behavior-x: contain; }
 /* Pele 把 max-width:100% 写在 SVG 的 style 上，只有 !important 盖得过。 */

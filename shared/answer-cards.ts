@@ -507,8 +507,10 @@ function codeRanges(text: string): Array<[number, number]> {
 /**
  * 回答里的卡片和小程序各在哪：start 是开头，end 是收尾标签之后（没写完时是全文结尾）。代码块里讲写法的 <card 不算。
  * 小程序里是整段网页，常有反引号（JS 模板字符串）：先把小程序的内容盖掉再找代码块，免得一个反引号把后面的卡片都算成代码。
+ * 模型有时把结构图 <diagram> 和它的 <cite> 直接写在正文里、不包 <card>：独占一行开头的这种也算一张卡片（bare），
+ * 否则图的代码和原文会当正文显示出来。
  */
-export function cardSpans(text: string): Array<{ tag: "card" | "app"; start: number; end: number; closed: boolean }> {
+export function cardSpans(text: string): Array<{ tag: "card" | "app"; start: number; end: number; closed: boolean; bare?: true }> {
   let masked = text;
   const plainCode = codeRanges(text);
 
@@ -521,11 +523,18 @@ export function cardSpans(text: string): Array<{ tag: "card" | "app"; start: num
     masked = masked.slice(0, m.index + 4) + " ".repeat(Math.max(0, end - m.index - 4)) + masked.slice(end);
   }
   const code = codeRanges(masked);
-  const spans: Array<{ tag: "card" | "app"; start: number; end: number; closed: boolean }> = [];
+  const spans: Array<{ tag: "card" | "app"; start: number; end: number; closed: boolean; bare?: true }> = [];
   let at = 0;
 
-  for (const m of masked.matchAll(/<(card|app)[\s>]/g)) {
+  for (const m of masked.matchAll(/<(card|app)[\s>]|(?<=^|\n)<diagram[\s>]/g)) {
     if (m.index < at || code.some(([a, b]) => m.index >= a && m.index < b)) continue;
+
+    if (!m[1]) {
+      const span = bareDiagram(text, m.index);
+      at = span.end;
+      spans.push({ tag: "card", ...span, bare: true });
+      continue;
+    }
     // SAFETY: 正则只认 card、app 两个名字。
     const tag = m[1] as "card" | "app";
     const close = text.indexOf(`</${tag}>`, m.index);
@@ -535,6 +544,24 @@ export function cardSpans(text: string): Array<{ tag: "card" | "app"; start: num
   }
 
   return spans;
+}
+
+/** 卡片外的结构图：到 </diagram> 为止，再带上紧跟着的 <cite>。图或最后一条 cite 还没写完时算没写完，到全文结尾。 */
+function bareDiagram(text: string, start: number): { start: number; end: number; closed: boolean } {
+  const close = text.indexOf("</diagram>", start);
+
+  if (close < 0) return { start, end: text.length, closed: false };
+  let end = close + "</diagram>".length;
+
+  for (;;) {
+    const cite = /^\s*<cite\b[\s\S]*?<\/cite>/.exec(text.slice(end));
+
+    if (cite) { end += cite[0].length; continue; }
+    // 下一条 cite 写到一半。
+    if (/^\s*<(?:c(?:i(?:t(?:e)?)?)?)?$|^\s*<cite\b/.test(text.slice(end)) && /\S/.test(text.slice(end))) return { start, end: text.length, closed: false };
+
+    return { start, end, closed: true };
+  }
 }
 
 function parseApp(source: string, closed: boolean): Card | undefined {
@@ -553,7 +580,7 @@ export function splitAnswer(text: string): AnswerPart[] {
 
   for (const span of cardSpans(text)) {
     parts.push({ prose: text.slice(at, span.start) });
-    const body = text.slice(span.start, span.closed ? span.end - span.tag.length - 3 : span.end);
+    const body = span.bare ? `<card>\n${text.slice(span.start, span.end)}` : text.slice(span.start, span.closed ? span.end - span.tag.length - 3 : span.end);
 
     parts.push({ card: span.tag === "app" ? parseApp(body, span.closed) : parseCard(body, span.closed) });
     at = span.end;
