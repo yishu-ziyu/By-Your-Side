@@ -40,7 +40,8 @@ export class ContinuePolicy {
   next(verdict: GoalVerdict, ctx: RunContext): Continuation {
     this.selectRun(ctx.runId);
     if (verdict.status !== "continue") return { settle: verdict.status };
-    const withinBudget = ctx.snapshot?.startedAt == null || Date.now() - ctx.snapshot.startedAt < GOAL_CONTINUE_WITHIN_MS;
+    // 只改写回答、问用户的那一轮不动网页，一轮就完：换目标本身常已用掉两分钟，不能因此把没说实话的回答留给用户。
+    const withinBudget = verdict.repair === "ask_user" || ctx.snapshot?.startedAt == null || Date.now() - ctx.snapshot.startedAt < GOAL_CONTINUE_WITHIN_MS;
     if (this.attempts >= GOAL_CONTINUE_MAX || !withinBudget) return { settle: "open", ...(!withinBudget ? { overBudget: true } : {}) };
     const { snapshot } = ctx;
     // 用户指的是当时页面上的东西、助手却换了目标：不再找，照实说明并问用户，不追加「给出完整回答」那套要求。
