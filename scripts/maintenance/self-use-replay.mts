@@ -117,15 +117,18 @@ try {
       const answered = Date.now();
       // 回答写完后还在核对，判「继续」时助手会接着做：既不在跑、也不在核对、连着 3 秒都这样，而且诊断记录里每次核对都有了结论，这一句才算做完。
       // 回答等不到核对、先放出来以后，侧栏不再显示「核对中」，快速模型还要几秒才判完：只看侧栏会在结论之前收工，最后一句的结论和它引出的续做都会漏掉。
+      // 核对开始、结束各有一条 goal_check_span；更早的构建没有它，退回按 goal_check_input 配结论数。
       const verdictsPending = async () => {
-        let open = 0;
+        let spans = 0;
+        let inputs = 0;
 
         for (const line of (await rp.evaluate(panel, traceExpression).catch(() => []) as string[]).slice(traceSeen)) {
-          if (line.includes('"type":"goal_check_input"')) open += 1;
-          else if (line.includes('"type":"goal_check"') && open) open -= 1;
+          if (line.includes('"type":"goal_check_span"')) spans += line.includes('"phase":"start"') ? 1 : -1;
+          else if (line.includes('"type":"goal_check_input"')) inputs += 1;
+          else if (line.includes('"type":"goal_check"') && inputs) inputs -= 1;
         }
 
-        return open > 0;
+        return spans > 0 || inputs > 0;
       };
       let calm = 0;
       await until(async () => {
@@ -138,7 +141,10 @@ try {
       await writeFile(join(shots, `${task.n}-${task.say.indexOf(say) + 1}.trace.jsonl`), lines.map(line => `${line.trimEnd()}\n`).join("")).catch(() => {});
       await savePrompts(panel);
       const calls = lines.filter(line => line.includes('"type":"model_request"')).length;
-      const records = lines.flatMap(line => { try { return [JSON.parse(line) as { type?: unknown; data?: { facts?: unknown; hostFacts?: { goalFacts?: unknown }; status?: unknown } }]; } catch { return []; } });
+      const parsed = lines.flatMap(line => { try { return [JSON.parse(line) as { type?: unknown; runId?: unknown; data?: { facts?: unknown; hostFacts?: { goalFacts?: unknown }; status?: unknown } }]; } catch { return []; } });
+      // 只认这一句自己开的几轮：上一句晚到的核对也会落进这一段记录，不能算成这一句的结论。
+      const runs = new Set(parsed.filter(r => r.type === "run_start").map(r => r.runId));
+      const records = parsed.filter(r => r.type !== "goal_check" && r.type !== "goal_check_input" || runs.has(r.runId));
       // 和核对用同一份宿主事实：这句话指的是当时页面上的东西，动作却落在助手自己打开的别的页、或搜了用户没说过的词。落点没读到地址的不算。
       const facts = factsOf(records.filter(r => r.type === "goal_check").at(-1)?.data?.hostFacts?.goalFacts ?? records.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
       const changedGoal = !!task.onPage?.includes(task.say.indexOf(say) + 1) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
