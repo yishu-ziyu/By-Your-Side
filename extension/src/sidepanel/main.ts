@@ -386,6 +386,7 @@ app.innerHTML = `
       <div id="composer-bar">
         <div id="composer-bar-inner">
           <button id="attach-btn" class="composer-icon-btn" type="button" title="添加文件、截图或圈出来问" aria-haspopup="true">+</button>
+          <button id="translate-btn" class="composer-icon-btn" type="button" title="翻译这一页（⌥T），再点一次还原" aria-label="翻译这一页"></button>
           <span id="composer-spacer"></span>
         </div>
         <button id="takeover-btn" type="button" title="接管：助手暂停，由你操作页面。操作完，点「交还」。" hidden>接管</button>
@@ -1324,6 +1325,10 @@ if (morphStop) morphStop.appendChild(icon(Square));
 const steerSendBtn = document.getElementById("steer-send-btn") as HTMLButtonElement;
 
 steerSendBtn.append(icon(ArrowUp));
+const translateBtn = document.getElementById("translate-btn") as HTMLButtonElement;
+translateBtn.append(icon(Languages));
+// 和网页上按 ⌥T 同一条路：不经主模型，这页有译文就还原，没有就整页翻译。
+translateBtn.addEventListener("click", () => { send({ type: "page_translate" }); });
 
 steerSendBtn.onclick = () => sendInput();
 
