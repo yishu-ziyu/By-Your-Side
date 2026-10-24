@@ -22,7 +22,7 @@ const DURATION = {
 
 const EASING = {
   enter: "cubic-bezier(0.23, 1, 0.32, 1)",
-  exit: "cubic-bezier(0.4, 0, 1, 1)",
+  exit: "cubic-bezier(0.23, 1, 0.32, 1)",
   move: "cubic-bezier(0.16, 1, 0.3, 1)",
   spring: "cubic-bezier(0.34, 1.4, 0.64, 1)",
 };

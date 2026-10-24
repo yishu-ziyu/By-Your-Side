@@ -8,7 +8,7 @@
   --d-layout: 280ms;
   --d-emph: 420ms;
   --e-enter: cubic-bezier(0.23, 1, 0.32, 1);
-  --e-exit: cubic-bezier(0.4, 0, 1, 1);
+  --e-exit: cubic-bezier(0.23, 1, 0.32, 1);
   --e-move: cubic-bezier(0.16, 1, 0.3, 1);
   --e-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 
