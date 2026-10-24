@@ -167,7 +167,10 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     const where = document.createElement("span");
     where.className = "answer-source-host";
     where.dataset.hover = "在旁边打开";
-    where.append(host);
+    const hostText = document.createElement("span");
+    hostText.className = "answer-source-host-text";
+    hostText.textContent = host;
+    where.append(hostText);
     const external = icon(ExternalLink, { width: 12, height: 12, "stroke-width": 1.8, "aria-hidden": "true" });
     external.classList.add("answer-source-external");
     where.append(external);
