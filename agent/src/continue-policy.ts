@@ -50,7 +50,7 @@ export class ContinuePolicy {
     const completed = (verdict.items ?? []).filter(item => item.done);
     const preserve = completed.length ? ` These requirements are already satisfied: ${JSON.stringify(completed.map(item => item.text))}. Preserve their existing results; do not refill, save or send them again.` : "";
     const repairScope = verdict.verificationSubject === "answer"
-      ? " The discrepancy is only in your written answer: correct the answer without changing files or the page, or repeating browser writes."
+      ? " The discrepancy is in your written answer, not in the page or files: do not change files, write to pages or repeat browser writes. If correcting it needs information you have not read, read or search for it first (opening and reading pages is fine), then correct the answer."
       : verdict.verificationSubject === "file"
         ? " Correct only the affected saved file and explain the correction. Do not change the page or repeat browser writes."
         : " Correct only the affected page result and explain the correction. If you can do it in this browser, do it now instead of telling the user to.";

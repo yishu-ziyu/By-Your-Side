@@ -310,6 +310,38 @@ const NO_CAPTIONS = "the player's own caption list for this video is empty";
 /** 回答说这个视频没有字幕。 */
 const SAYS_NO_CAPTIONS = /没有(任何)?(可用的|可加载的|可读的)?字幕|无字幕|拿不到字幕|字幕(列表|清单|轨)?(是|为)?空|no (subtitles|captions)/i;
 
+/** 回答一开头就说要找的东西没有、没找到（只看开头：「这页没有，但在别处找到了」不算）。 */
+const NOT_FOUND = /(没有|不存在|没找到|未找到|找不到|查不到|没能找到)[^。！？\n]{0,16}(条目|词条|页面|结果|记录)|目前没有[^。！？\n]{0,24}(条目|词条)|\b(no (article|results?|entry|page)|does not exist|not found)\b/i;
+
+/** 工具落到的页面地址（打开、跳转、程序结束时所在的页），不是页面里列出的链接。 */
+const LANDED = /(?:Created tab \d+: [^\n]*? — |Navigation result: |working tab \d+ shows "[^"\n]*" — )(https?:\/\/[^\s;"'<>]+)/g;
+
+/** 这一轮找过的说法：落到的维基条目名，和落到的网址里的搜索词。 */
+function searchedWordings(observations: GoalCheckInput["observations"]): string[] {
+  const terms = new Set<string>();
+
+  for (const item of observations ?? []) {
+    if (item.earlier) continue;
+
+    for (const [, address] of item.text.matchAll(LANDED)) {
+      let url: URL;
+      try { url = new URL(address!); } catch { continue; }
+      const page = /\/wiki\/([^/?#]+)/.exec(url.pathname)?.[1];
+      const decode = (text: string) => { try { return decodeURIComponent(text); } catch { return text; } };
+
+      if (page && !/^(Special|Wikipedia|Help|File|Category|Portal)[:：]/i.test(decode(page))) terms.add(decode(page).replace(/_/g, " ").trim().toLowerCase());
+
+      for (const key of ["search", "q", "query", "wd", "keyword"]) {
+        const value = url.searchParams.get(key)?.trim();
+
+        if (value) terms.add(value.toLowerCase());
+      }
+    }
+  }
+
+  return [...terms];
+}
+
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
 export async function checkGoal(host: SideCallHost, model: Model<Api>, input: GoalCheckInput, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
   // 实测模型把多行 CSV 写成一行字面 \n；不自动解码文件，以免改变用户要求的转义示例。
@@ -338,6 +370,13 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   const captionsAbsent = (input.observations ?? []).some(item => !item.earlier && item.text.includes(NO_CAPTIONS));
 
   if (captionsAbsent && /字幕|captions?|subtitles?/i.test(input.goal.join(" ")) && SAYS_NO_CAPTIONS.test(input.lastReply) && !asksUser(input.lastReply)) return { status: "blocked", remaining: plainBlockedReason("missing"), cause: "missing" };
+  // 只用一种说法找过就说「没有」：提示词里的同一条规则核对模型守得不稳，由宿主按这一轮落到的页面判继续；
+  // 换过说法之后不再拦，由模型判断是否真的没有。
+  const wordings = input.verification ? [] : searchedWordings(input.observations);
+
+  if (wordings.length === 1 && NOT_FOUND.test(input.lastReply.slice(0, 120)) && !asksUser(input.lastReply)) {
+    return { status: "continue", verifiedByHost: true, verificationSubject: 'answer', remaining: "换个说法再找", correction: `只用「${wordings[0]!.slice(0, 40)}」找过一次就说没有。换近义说法、常见别名、英文名或更宽的词再找；找到对应的条目或页面就打开读完，再讲它的内容；都找不到再说没有，并说清试过哪些说法。` };
+  }
   const seen = { pairs: new Set(input.readWords?.pairs), complete: input.readWords?.complete ?? true };
   for (const text of [...input.goal, input.goalPage?.title ?? "", input.page?.title ?? "", input.page?.text ?? "", ...(input.observations ?? []).map(item => item.text), ...(input.files ?? []).map(file => file.content ?? "")]) readWords(text, seen);
   const notInReads = unreadNames(input.lastReply, seen);
