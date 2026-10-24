@@ -244,6 +244,9 @@ export async function createConversationRuntime(
         break;
       }
 
+      case "page_translate":
+        void session.togglePageTranslation(msg.context);
+        break;
       case "set_model":
         void handleSetModel(msg.model);
         break;

@@ -484,6 +484,18 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  return true;
 });
 
+// 一键翻译 ⌥T：不经主模型，这页没有译文就整页翻译，有就还原；侧栏开着与否都一样。
+// 快捷键可能刚把扩展后台唤醒，到任务宿主的连接还在建立：等它连上再发，最多 5 秒。
+chrome.commands?.onCommand.addListener((command) => {
+ if (command !== "translate-page") return;
+ void activeTargetTabs().then(async ([tab]) => {
+  if (tab?.id == null) return;
+  const msg: ClientMessage = { type: "page_translate", context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }, conversationId: conversationForWindow(tab.windowId) };
+
+  for (const end = Date.now() + 5_000; !transport.sendClientMessage(msg) && Date.now() < end;) await new Promise(done => setTimeout(done, 200));
+ });
+});
+
 // 选中文字以后常常接着问这段（打字或按住说话）：先连上模型服务；配了听写密钥再让离屏文档连好听写，不开麦、不送声音。
 chrome.runtime.onMessage.addListener((raw: { type?: unknown } | undefined, sender) => {
  if (raw?.type !== PTT_WARM || sender.id !== chrome.runtime.id || sender.tab?.id == null) return;

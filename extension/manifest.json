@@ -35,6 +35,13 @@
     "128": "icons/icon-128.png"
   },
   "commands": {
+    "translate-page": {
+      "suggested_key": {
+        "default": "Alt+T",
+        "mac": "Alt+T"
+      },
+      "description": "翻译这一页（再按一次还原）"
+    },
     "ask-selection": {
       "suggested_key": {
         "default": "Ctrl+J",
