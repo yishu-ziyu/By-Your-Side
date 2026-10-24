@@ -35,6 +35,7 @@
     "logs": "node scripts/maintenance/logs.mjs",
     "memory:report": "node scripts/maintenance/memory-report.mjs",
     "self-use": "node scripts/maintenance/self-use.mjs",
+    "climb": "tsx scripts/maintenance/climb.mts",
     "lab": "node scripts/maintenance/lab.mjs",
     "gallery": "node scripts/maintenance/lab.mjs gallery",
     "frames": "tsx scripts/acceptance/real-path/recording.mts",

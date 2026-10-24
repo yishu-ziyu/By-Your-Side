@@ -1,13 +1,15 @@
 /**
  * 每晚的自用回放：把用户自己说过的任务（out/self-use/pool.json）在隔离的无头 Chrome 里用真扩展、真模型重做一遍，
- * 写一份报告（out/self-use/<日期>.json 和 .md）：每条用时（到第一次回答写完）、之后核对和续做又用了多久、模型往返、开始与结束时的机器负载、有没有出错、卡片和回答对不对得上、回答开头；
+ * 写一份报告（out/self-use/<日期>.json 和 .md）：每条用时（到第一次回答写完）、之后核对和续做又用了多久、到最终交付的总用时、模型往返、开始与结束时的机器负载、有没有出错、卡片和回答对不对得上、结果断言、回答开头；
+ * 核对结论、续做和模型往返按这一句自己开的 runId 从整份记录里归：核对晚到、落进下一句那段记录时，也算回原句。
  * 每句的诊断记录另存为 <日期>/<n>-<第几句>.trace.jsonl，没做好的那句可以直接读出卡在哪。
  * 主模型和快速模型（翻译、核对、起名等）都用 ChatGPT 登录的 gpt-6-luna，思考起始档用高档；--model=<服务商/模型> 换主模型（如照日常用 minimax-cn/MiniMax-M3.1-Flash-Preview）。快速模型拿不到登录时退回主模型，报告开头写明。
  * 不碰用户的日常浏览器和记忆；模型凭据只在运行时读，不打印、不落盘；ChatGPT 登录只交访问令牌，不交刷新令牌。
  *   npx tsx scripts/maintenance/self-use-replay.mts [--limit N] [--only=1,5] [--label=名字] [--pool=另一份任务池]
  * --label 把报告写成 <日期>-<名字>，改前改后对照时不覆盖当晚的报告；对照的那份构建用 SIDEAGENT_ACCEPTANCE_DIST 指定。
- * 任务池是用户的原话，只放在本机 out/ 下，不进仓库。格式：[{ "n": 1, "url": "https://…", "say": ["第一句", "接着说的第二句"], "onPage": [2] }]
+ * 任务池是用户的原话，只放在本机 out/ 下，不进仓库。格式：[{ "n": 1, "url": "https://…", "say": ["第一句", "接着说的第二句"], "onPage": [2], "expect": { "1": { "answer": ["57\\.1%"] } } }]
  * onPage 标出哪几句（从 1 数）指的是当时页面上的东西：这几句的动作落在别的页、或用了用户原话里没有的搜索词，记「换了目标」，不算完成。
+ * expect 是每句的结果断言（见 replay-row.mts）：流程跑完、有回答不等于答对，登记了断言的句子要断言也过才算做成。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -15,21 +17,7 @@ import { loadavg } from "node:os";
 import { join } from "node:path";
 import { REPO, launchRealPath, sleep, until } from "../acceptance/real-path/harness.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "../acceptance/real-path/inproc-config.mts";
-import type { GoalFacts } from "../../agent/src/goal-facts.ts";
-
-type PoolTask = { n: number; url: string; say: string[]; onPage?: number[] };
-type Row = { n: number; say: string; secs: number; checkSecs: number; calls: number; load: [number, number]; finished: boolean; error: string | null; cardSaysFailed: boolean; changedGoal: boolean; verdict: string | null; answer: string };
-
-/** 诊断记录里宿主写下的核对事实（agent/src/goal-facts.ts）；形状不对就当没有。 */
-function factsOf(value: unknown): GoalFacts | null {
-  if (!value || typeof value !== "object") return null;
-  const { actions, searchedNotFromUser } = value as { actions?: unknown; searchedNotFromUser?: unknown };
-
-  if (!Array.isArray(actions) || !Array.isArray(searchedNotFromUser)) return null;
-
-  // SAFETY: 两个数组已核过是数组；下面只读 page、onGoalPage 和长度。
-  return value as GoalFacts;
-}
+import { type Row, attribute, missedOf, ok, outcome, poolOf } from "./replay-row.mts";
 
 const outDir = join(REPO, "out/self-use");
 const poolFile = process.argv.find(a => a.startsWith("--pool="))?.slice(7) ?? join(outDir, "pool.json");
@@ -42,7 +30,7 @@ if (!existsSync(poolFile)) {
 const limitArg = process.argv.indexOf("--limit");
 const only = process.argv.find(a => a.startsWith("--only="))?.slice(7).split(",").map(Number);
 const label = process.argv.find(a => a.startsWith("--label="))?.slice(8);
-const pool = (JSON.parse(readFileSync(poolFile, "utf8")) as PoolTask[]).filter(t => !only || only.includes(t.n)).slice(0, limitArg > 0 ? Number(process.argv[limitArg + 1]) : undefined);
+const pool = poolOf(JSON.parse(readFileSync(poolFile, "utf8"))).filter(t => !only || only.includes(t.n)).slice(0, limitArg > 0 ? Number(process.argv[limitArg + 1]) : undefined);
 // 主模型默认和快速模型同一家，回放不受两家服务各自波动的影响。
 const main = await loadModelPlan(process.argv.find(a => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL);
 if (main.credential.type === "oauth") main.credential.refresh = "";
@@ -65,6 +53,9 @@ await mkdir(shots, { recursive: true });
 // 用日常扩展同一份构建（不现场构建，不动 extension/dist）。整轮回放要录二三十分钟，录屏每条画面每秒存 10 帧就够看清过程。
 const rp = await launchRealPath({ dist: process.env.SIDEAGENT_ACCEPTANCE_DIST ?? join(REPO, "extension/dist"), recordFps: 10 });
 const rows: Row[] = [];
+/** 每句自己开的 runId，和它在 rows 里同一位置；收尾时按它从整份记录里归核对、续做和往返。 */
+const rowRuns: Set<unknown>[] = [];
+const allLines: string[] = [];
 const traceExpression = `new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-lines')){db.close();resolve([]);return}const tx=db.transaction('trace-lines');const q=tx.objectStore('trace-lines').getAll();q.onsuccess=()=>resolve(q.result.map(x=>x.line));tx.oncomplete=()=>db.close()}})`;
 const promptExpression = `new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-prompts')){db.close();resolve([]);return}const tx=db.transaction('trace-prompts');const q=tx.objectStore('trace-prompts').getAll();q.onsuccess=()=>resolve(q.result);tx.oncomplete=()=>db.close()}})`;
 const savePrompts = async (panel: string) => {
@@ -147,23 +138,24 @@ try {
         if (state === "truncated") unsettled = "诊断记录写满，核对结论无法确认";
         return state !== "pending" || undefined;
       }, 300_000, "核对和续做结束", 1_000).catch(() => { unsettled = "等核对结论超时，结论无法确认"; });
-      const seen = await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); const err = [...document.querySelectorAll(".msg.error")].at(-1); const card = [...document.querySelectorAll(".ai-task-card")].at(-1); return { answer: (a?.innerText ?? "").slice(0, 300), error: err?.innerText?.slice(0, 200) ?? null, cardFailed: /有 \\d+ 步没做成|还没做成/.test(card?.innerText ?? "") }; })()`).catch(() => ({ answer: "", error: "读不到侧栏", cardFailed: false })) as { answer: string; error: string | null; cardFailed: boolean };
+      const seen = await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); const err = [...document.querySelectorAll(".msg.error")].at(-1); const card = [...document.querySelectorAll(".ai-task-card")].at(-1); return { answer: a?.innerText ?? "", error: err?.innerText?.slice(0, 200) ?? null, cardFailed: /有 \\d+ 步没做成|还没做成/.test(card?.innerText ?? "") }; })()`).catch(() => ({ answer: "", error: "读不到侧栏", cardFailed: false })) as { answer: string; error: string | null; cardFailed: boolean };
       const lines = (await rp.evaluate(panel, traceExpression).catch(() => []) as string[]).slice(traceSeen);
       traceSeen += lines.length;
+      allLines.push(...lines);
       await writeFile(join(shots, `${task.n}-${task.say.indexOf(say) + 1}.trace.jsonl`), lines.map(line => `${line.trimEnd()}\n`).join("")).catch(() => {});
       await savePrompts(panel);
-      const calls = lines.filter(line => line.includes('"type":"model_request"')).length;
-      const parsed = lines.flatMap(line => { try { return [JSON.parse(line) as { type?: unknown; runId?: unknown; data?: { facts?: unknown; hostFacts?: { goalFacts?: unknown }; status?: unknown } }]; } catch { return []; } });
-      // 只认这一句自己开的几轮：上一句晚到的核对也会落进这一段记录，不能算成这一句的结论。
-      const runs = new Set(parsed.filter(r => r.type === "run_start").map(r => r.runId));
-      const records = parsed.filter(r => r.type !== "goal_check" && r.type !== "goal_check_input" || runs.has(r.runId));
-      // 和核对用同一份宿主事实：这句话指的是当时页面上的东西，动作却落在助手自己打开的别的页、或搜了用户没说过的词。落点没读到地址的不算。
-      const facts = factsOf(records.filter(r => r.type === "goal_check").at(-1)?.data?.hostFacts?.goalFacts ?? records.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
-      const changedGoal = !!task.onPage?.includes(task.say.indexOf(say) + 1) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
-      const verdict = records.filter(r => r.type === "goal_check").map(r => r.data?.status).filter((s): s is string => typeof s === "string").at(-1) ?? null;
-      rows.push({ n: task.n, say, secs: Math.round((answered - start) / 1000), checkSecs: Math.round((Date.now() - answered) / 1000), calls, load: [loadStart, load()], finished, error: error ?? unsettled ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal, verdict, answer: seen.answer });
+      rowRuns.push(new Set(lines.flatMap(line => { try { const r = JSON.parse(line) as { type?: unknown; runId?: unknown }; return r.type === "run_start" ? [r.runId] : []; } catch { return []; } })));
+      const rule = task.expect?.[String(task.say.indexOf(say) + 1)];
+      const missed = rule ? missedOf(rule, {
+        answer: seen.answer,
+        page: String(await rp.evaluate(workSession, "document.body?.innerText ?? ''").catch(() => "")),
+        tabs: (await rp.targets()).filter(t => t.type === "page").map(t => t.url),
+      }) : [];
+      const secs = Math.round((answered - start) / 1000);
+      const checkSecs = Math.round((Date.now() - answered) / 1000);
+      rows.push({ n: task.n, say, secs, checkSecs, totalSecs: secs + checkSecs, calls: 0, load: [loadStart, load()], finished, error: error ?? unsettled ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal: false, verdict: null, expect: rule ? (missed.length ? "fail" : "pass") : null, missed, answer: seen.answer });
       await rp.screenshot(panel, join(shots, `${task.n}-${task.say.indexOf(say) + 1}.png`)).catch(() => {});
-      console.log(`${task.n} ${finished ? "完成" : "没完成"} ${rows.at(-1)!.secs}s ${say.slice(0, 30)}`);
+      console.log(`${task.n} ${finished ? "完成" : "没完成"} ${rows.at(-1)!.totalSecs}s ${say.slice(0, 30)}`);
 
       // 上一句没做完就不接着说：后一句是接着前一句说的。
       if (!finished) break;
@@ -173,10 +165,10 @@ try {
   await rp.close(); await rp.remove();
 }
 
-// 宿主补的那句「没给出最后的回答就停了」不是回答。
-const noAnswer = (r: Row) => /没给出最后的回答/.test(r.answer);
-const done = rows.filter(r => r.finished && !r.error && !r.cardSaysFailed && !r.changedGoal && r.answer.trim() && !noAnswer(r));
-const median = [...rows].map(r => r.secs).sort((a, b) => a - b)[Math.floor(rows.length / 2)] ?? 0;
+attribute(rows, rowRuns, allLines, pool);
+
+const done = rows.filter(ok);
+const median = [...rows].map(r => r.totalSecs).sort((a, b) => a - b)[Math.floor(rows.length / 2)] ?? 0;
 const maxLoad = Math.max(0, ...rows.flatMap(r => r.load));
 const role = process.env.SIDEAGENT_BUILD_ROLE ?? (!process.env.SIDEAGENT_ACCEPTANCE_DIST ? "daily" : undefined);
 await writeFile(join(outDir, `${day}.json`), JSON.stringify({ day, model: MODEL, fastModel: fast.name, ...(role ? { role } : {}), rows }, null, 2));
@@ -185,11 +177,11 @@ await writeFile(join(outDir, `${day}.md`), [
   ``,
   `主模型 ${MODEL.provider}/${MODEL.modelId}（起始档 ${EFFORT}），快速模型 ${fast.name}。`,
   ``,
-  `${rows.length} 句，顺利完成 ${done.length} 句（按完成、没报错、卡片没写「没做成」、没换目标、有回答算），用时中位数 ${median} 秒。截图和每句的诊断记录在 out/self-use/${day}/。`,
+  `${rows.length} 句，顺利完成 ${done.length} 句（按完成、没报错、卡片没写「没做成」、没换目标、有回答、结果断言没落空算），到最终交付的用时中位数 ${median} 秒。截图和每句的诊断记录在 out/self-use/${day}/。`,
   ...(maxLoad > 20 ? [``, `机器 1 分钟负载最高 ${maxLoad}，超过 20：这一晚的用时不能和别的晚上比。`] : []),
   ``,
   `| # | 原话 | 用时 | 核对后 | 往返 | 负载 | 核对 | 结果 | 回答开头 |`,
   `|---|---|---|---|---|---|---|---|---|`,
-  ...rows.map(r => `| ${r.n} | ${r.say.replace(/\|/g, "\\|").slice(0, 40)} | ${r.secs}s | +${r.checkSecs}s | ${r.calls} | ${r.load.join("→")} | ${r.verdict ?? "-"} | ${!r.finished ? "没完成" : r.error ? `报错：${r.error.slice(0, 40)}` : r.cardSaysFailed ? "卡片写没做成" : r.changedGoal ? "换了目标" : noAnswer(r) ? "没给回答就停了" : "完成"} | ${r.answer.replace(/\s+/g, " ").replace(/\|/g, "\\|").slice(0, 60)} |`),
+  ...rows.map(r => `| ${r.n} | ${r.say.replace(/\|/g, "\\|").slice(0, 40)} | ${r.secs}s | +${r.checkSecs}s | ${r.calls} | ${r.load.join("→")} | ${r.verdict ?? "-"} | ${outcome(r)} | ${r.answer.replace(/\s+/g, " ").replace(/\|/g, "\\|").slice(0, 60)} |`),
 ].join("\n") + "\n");
 console.log(`报告：${join(outDir, `${day}.md`)}`);
