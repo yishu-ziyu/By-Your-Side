@@ -8,8 +8,8 @@
  *   npx tsx scripts/maintenance/goal-check-labels.mts merge <导出的.json>                把页面里改过的标注并回 labels.json
  *
  * 标注集只放在 out/goal-check-labels/，不进仓库。日常记录没脱敏：终端只打印编号、结论和去掉网址、标题的文字，网页原文只进本机那一页。
- * 收两种记录：完整核对事件（goal_check 带 replayInput，宿主规则判的、复核和没拿到结论的都在内），和更早的 goal_check_input 配下一条结论。
- * 两样都没有的旧核对还原不了，不收，只报条数。
+ * 收两种记录：完整核对事件（goal_check 带 replayInput，限 checkGoal 自己判的），和更早的 goal_check_input 配下一条结论。
+ * 其余还原不了，不收，只报条数。
  */
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
@@ -40,7 +40,13 @@ function load(): Entry[] {
 
 const save = async (entries: Entry[]) => { await mkdir(DIR, { recursive: true }); await writeFile(FILE, JSON.stringify(entries, null, 1)); };
 
-/** 一份诊断记录里能重放的核对，和不能重放的旧核对条数。 */
+/**
+ * 尺子把 replayInput 交给 checkGoal 重判，只有 checkGoal 里面的判定能这样还原。
+ * 会话层的宿主判定（复核没重读、证据没变、取消、核对前的规则、事后改判）重跑 checkGoal 会得出别的结论，不进标注集。
+ */
+const REPLAYABLE = new Set(["model", "host:copies", "host:csv_escaped_newlines", "host:csv_total_mismatch", "host:dead_clicks", "host:no_captions", "host:single_search_wording"]);
+
+/** 一份诊断记录里能重放的核对，和不能重放的核对条数。 */
 function checksIn(file: string, source: string): { found: Entry[]; unreplayable: number } {
   const found: Entry[] = [];
   let unreplayable = 0;
@@ -61,7 +67,7 @@ function checksIn(file: string, source: string): { found: Entry[]; unreplayable:
       const data = record.data;
       const replayInput = data?.replayInput;
 
-      if (data?.v === 1 && typeof data.checkId === "string" && replayInput && typeof replayInput === "object" && !Array.isArray(replayInput)) {
+      if (data?.v === 1 && typeof data.checkId === "string" && REPLAYABLE.has(String(data.decidedBy)) && replayInput && typeof replayInput === "object" && !Array.isArray(replayInput)) {
         found.push({ id: data.checkId.slice(0, 8), source, at: String(record.time ?? ""), input: replayInput as Record<string, unknown>, recorded: typeof data.status === "string" ? data.status : null, expected: null, reason: "", tags: [] });
       } else if (pending.has(run)) {
         pending.get(run)!.recorded = typeof data?.status === "string" ? data.status : null;
@@ -165,7 +171,7 @@ if (!entries) {
   const all = [...known.values()];
   await save(all);
   const tally = (pick: (e: Entry) => string | null) => Object.entries(all.reduce<Record<string, number>>((count, e) => ({ ...count, [pick(e) ?? "无"]: (count[pick(e) ?? "无"] ?? 0) + 1 }), {})).map(([k, v]) => `${k} ${v}`).join("、");
-  console.log(`新收 ${added} 条，共 ${all.length} 条（${FILE}）。\n来源：${tally(e => e.source.split(":")[0]!)}\n当时判：${tally(e => e.recorded)}\n已标注：${all.filter(e => e.expected).length}\n不能重放（旧记录没存核对输入）：${unreplayable} 条`);
+  console.log(`新收 ${added} 条，共 ${all.length} 条（${FILE}）。\n来源：${tally(e => e.source.split(":")[0]!)}\n当时判：${tally(e => e.recorded)}\n已标注：${all.filter(e => e.expected).length}\n不能重放（旧记录没存核对输入，或是核对之外的宿主判定）：${unreplayable} 条`);
 } else if (command === "show") {
   for (const id of rest) { const entry = entries.find(e => e.id === id); console.log(entry ? brief(entry) : `没有 ${id}`); }
   if (!rest.length) for (const entry of entries) console.log(brief(entry));
