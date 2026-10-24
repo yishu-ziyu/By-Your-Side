@@ -77,8 +77,13 @@ for (const item of labels) {
 
   for (let i = 0; i < runs; i++) {
     // 记录里的读数索引已换成算好的名字清单（notInReads），这里不再需要整段对话。
-    lastDetail = "";
-    const verdict = await checkGoal(host, model, item.input, AbortSignal.timeout(30_000)).then(v => v.status, error => `unavailable(${error instanceof Error ? error.message.slice(0, 40) : "?"}${lastDetail ? `：${lastDetail.replace(/\s+/g, " ").slice(0, 120)}` : ""})`);
+    // 连不上服务（fetch failed）是网络的事，不是核对的判断：重试一次，仍不行才记没结论。
+    let verdict = "";
+
+    for (let attempt = 0; attempt < 2 && !STATUSES.includes(verdict); attempt++) {
+      lastDetail = "";
+      verdict = await checkGoal(host, model, item.input, AbortSignal.timeout(30_000)).then(v => v.status, error => `unavailable(${error instanceof Error ? error.message.slice(0, 40) : "?"}${lastDetail ? `：${lastDetail.replace(/\s+/g, " ").slice(0, 120)}` : ""})`);
+    }
     got.push(verdict);
   }
 
