@@ -6,7 +6,8 @@
  * 不碰用户的日常浏览器和记忆；模型密钥（~/.pi/agent/auth.json 的 minimax-cn）只在运行时读，不打印、不落盘；ChatGPT 登录只交访问令牌，不交刷新令牌。
  *   npx tsx scripts/maintenance/self-use-replay.mts [--limit N] [--only=1,5] [--label=名字] [--pool=另一份任务池]
  * --label 把报告写成 <日期>-<名字>，改前改后对照时不覆盖当晚的报告；对照的那份构建用 SIDEAGENT_ACCEPTANCE_DIST 指定。
- * 任务池是用户的原话，只放在本机 out/ 下，不进仓库。格式：[{ "n": 1, "url": "https://…", "say": ["第一句", "接着说的第二句"] }]
+ * 任务池是用户的原话，只放在本机 out/ 下，不进仓库。格式：[{ "n": 1, "url": "https://…", "say": ["第一句", "接着说的第二句"], "onPage": [2] }]
+ * onPage 标出哪几句（从 1 数）指的是当时页面上的东西：这几句的动作落在别的页、或用了用户原话里没有的搜索词，记「换了目标」，不算完成。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -14,9 +15,21 @@ import { homedir, loadavg } from "node:os";
 import { join } from "node:path";
 import { REPO, launchRealPath, sleep, until } from "../acceptance/real-path/harness.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "../acceptance/real-path/inproc-config.mts";
+import type { GoalFacts } from "../../agent/src/goal-facts.ts";
 
-type PoolTask = { n: number; url: string; say: string[] };
-type Row = { n: number; say: string; secs: number; checkSecs: number; calls: number; load: [number, number]; finished: boolean; error: string | null; cardSaysFailed: boolean; answer: string };
+type PoolTask = { n: number; url: string; say: string[]; onPage?: number[] };
+type Row = { n: number; say: string; secs: number; checkSecs: number; calls: number; load: [number, number]; finished: boolean; error: string | null; cardSaysFailed: boolean; changedGoal: boolean; verdict: string | null; answer: string };
+
+/** 诊断记录里宿主写下的核对事实（agent/src/goal-facts.ts）；形状不对就当没有。 */
+function factsOf(value: unknown): GoalFacts | null {
+  if (!value || typeof value !== "object") return null;
+  const { actions, searchedNotFromUser } = value as { actions?: unknown; searchedNotFromUser?: unknown };
+
+  if (!Array.isArray(actions) || !Array.isArray(searchedNotFromUser)) return null;
+
+  // SAFETY: 两个数组已核过是数组；下面只读 page、onGoalPage 和长度。
+  return value as GoalFacts;
+}
 
 const outDir = join(REPO, "out/self-use");
 const poolFile = process.argv.find(a => a.startsWith("--pool="))?.slice(7) ?? join(outDir, "pool.json");
@@ -104,7 +117,12 @@ try {
       traceSeen += lines.length;
       await writeFile(join(shots, `${task.n}-${task.say.indexOf(say) + 1}.trace.jsonl`), lines.map(line => `${line.trimEnd()}\n`).join("")).catch(() => {});
       const calls = lines.filter(line => line.includes('"type":"model_request"')).length;
-      rows.push({ n: task.n, say, secs: Math.round((answered - start) / 1000), checkSecs: Math.round((Date.now() - answered) / 1000), calls, load: [loadStart, load()], finished, error: error ?? seen.error, cardSaysFailed: seen.cardFailed, answer: seen.answer });
+      const records = lines.flatMap(line => { try { return [JSON.parse(line) as { type?: unknown; data?: { facts?: unknown; status?: unknown } }]; } catch { return []; } });
+      // 和核对用同一份宿主事实：这句话指的是当时页面上的东西，动作却落在助手自己打开的别的页、或搜了用户没说过的词。落点没读到地址的不算。
+      const facts = factsOf(records.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
+      const changedGoal = !!task.onPage?.includes(task.say.indexOf(say) + 1) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
+      const verdict = records.filter(r => r.type === "goal_check").map(r => r.data?.status).filter((s): s is string => typeof s === "string").at(-1) ?? null;
+      rows.push({ n: task.n, say, secs: Math.round((answered - start) / 1000), checkSecs: Math.round((Date.now() - answered) / 1000), calls, load: [loadStart, load()], finished, error: error ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal, verdict, answer: seen.answer });
       await rp.screenshot(panel, join(shots, `${task.n}-${task.say.indexOf(say) + 1}.png`)).catch(() => {});
       console.log(`${task.n} ${finished ? "完成" : "没完成"} ${rows.at(-1)!.secs}s ${say.slice(0, 30)}`);
 
@@ -118,20 +136,21 @@ try {
 
 // 宿主补的那句「没给出最后的回答就停了」不是回答。
 const noAnswer = (r: Row) => /没给出最后的回答/.test(r.answer);
-const done = rows.filter(r => r.finished && !r.error && !r.cardSaysFailed && r.answer.trim() && !noAnswer(r));
+const done = rows.filter(r => r.finished && !r.error && !r.cardSaysFailed && !r.changedGoal && r.answer.trim() && !noAnswer(r));
 const median = [...rows].map(r => r.secs).sort((a, b) => a - b)[Math.floor(rows.length / 2)] ?? 0;
 const maxLoad = Math.max(0, ...rows.flatMap(r => r.load));
-await writeFile(join(outDir, `${day}.json`), JSON.stringify({ day, model: MODEL, fastModel: fast.name, rows }, null, 2));
+const role = process.env.SIDEAGENT_BUILD_ROLE ?? (!process.env.SIDEAGENT_ACCEPTANCE_DIST ? "daily" : undefined);
+await writeFile(join(outDir, `${day}.json`), JSON.stringify({ day, model: MODEL, fastModel: fast.name, ...(role ? { role } : {}), rows }, null, 2));
 await writeFile(join(outDir, `${day}.md`), [
   `# 自用回放 ${day}`,
   ``,
   `主模型 ${MODEL.provider}/${MODEL.modelId}（起始档 ${EFFORT}），快速模型 ${fast.name}。`,
   ``,
-  `${rows.length} 句，顺利完成 ${done.length} 句（按完成、没报错、卡片没写「没做成」、有回答算），用时中位数 ${median} 秒。截图和每句的诊断记录在 out/self-use/${day}/。`,
+  `${rows.length} 句，顺利完成 ${done.length} 句（按完成、没报错、卡片没写「没做成」、没换目标、有回答算），用时中位数 ${median} 秒。截图和每句的诊断记录在 out/self-use/${day}/。`,
   ...(maxLoad > 20 ? [``, `机器 1 分钟负载最高 ${maxLoad}，超过 20：这一晚的用时不能和别的晚上比。`] : []),
   ``,
-  `| # | 原话 | 用时 | 核对后 | 往返 | 负载 | 结果 | 回答开头 |`,
-  `|---|---|---|---|---|---|---|---|`,
-  ...rows.map(r => `| ${r.n} | ${r.say.replace(/\|/g, "\\|").slice(0, 40)} | ${r.secs}s | +${r.checkSecs}s | ${r.calls} | ${r.load.join("→")} | ${!r.finished ? "没完成" : r.error ? `报错：${r.error.slice(0, 40)}` : r.cardSaysFailed ? "卡片写没做成" : noAnswer(r) ? "没给回答就停了" : "完成"} | ${r.answer.replace(/\s+/g, " ").replace(/\|/g, "\\|").slice(0, 60)} |`),
+  `| # | 原话 | 用时 | 核对后 | 往返 | 负载 | 核对 | 结果 | 回答开头 |`,
+  `|---|---|---|---|---|---|---|---|---|`,
+  ...rows.map(r => `| ${r.n} | ${r.say.replace(/\|/g, "\\|").slice(0, 40)} | ${r.secs}s | +${r.checkSecs}s | ${r.calls} | ${r.load.join("→")} | ${r.verdict ?? "-"} | ${!r.finished ? "没完成" : r.error ? `报错：${r.error.slice(0, 40)}` : r.cardSaysFailed ? "卡片写没做成" : r.changedGoal ? "换了目标" : noAnswer(r) ? "没给回答就停了" : "完成"} | ${r.answer.replace(/\s+/g, " ").replace(/\|/g, "\\|").slice(0, 60)} |`),
 ].join("\n") + "\n");
 console.log(`报告：${join(outDir, `${day}.md`)}`);

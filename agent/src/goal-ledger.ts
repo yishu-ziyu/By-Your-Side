@@ -3,6 +3,7 @@ import { answerMarkdown, splitAnswer } from "../../shared/answer-cards.js";
 import type { ProgramStep } from "./browser-program.js";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 import { GOAL_CHECK_BOOKKEEPING_TOOLS, newReadIndex, readWords, type GoalCheckInput, type GoalVerificationTarget } from "./goal-check.js";
+import { PageTrail } from "./goal-facts.js";
 
 /**
  * 核对看到的回答和用户在侧栏看到的一样：{=名字} 换成卡片算出的数，卡片换成文字。
@@ -44,10 +45,20 @@ export class GoalLedger {
   private readonly programs = new Map<string, { reads: Array<{ url: string; text: string }>; readOnly: boolean }>();
   private elementReads: { scope: string; targets: GoalVerificationTarget[] } | null = null;
   private failures: { runId: string | null; items: Failure[] } = { runId: null, items: [] };
+  private readonly trail = new PageTrail();
+
+  beginRequest(page: { tabId?: number; url?: string } | null): void {
+    this.trail.begin(page);
+  }
+
+  observeCall(name: string, params: Record<string, unknown>, result: unknown): void {
+    this.trail.observe(name, params, result);
+  }
 
   /** Keep earlier page facts across follow-ups; recent tools must not evict the pages they act on. */
   record(tool: string, text: string): void {
     if (tool.startsWith("page_") && text.includes("is unchanged since your earlier observation")) return;
+    if (tool === "page_at_start") this.trail.noteStartPage(text);
     const all = [...this.observations, { at: Date.now(), tool, text: redactCredentialText(text.slice(0, 8_000)) + (text.length > 8_000 ? "\n[truncated tool result]" : "") }];
     readWords(redactCredentialText(text), this.words);
     const pages = all.filter(item => item.tool.startsWith("page_")).slice(-2);
@@ -156,10 +167,12 @@ export class GoalLedger {
 
   input(run: GoalRun): GoalCheckInput {
     const { snapshot, page, tabId } = run;
+    const goal = snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [run.goal];
     return {
       copies: run.copies,
-      goal: snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [run.goal],
+      goal,
       goalPage: snapshot?.goalPage ?? null,
+      facts: this.trail.facts(goal, snapshot?.goalPage ?? null),
       files: run.files,
       observations: this.observations.map(item => ({ tool: item.tool, text: item.text, ...(item.at < run.requestStartedAt ? { earlier: true } : {}) })),
       readWords: this.words,
