@@ -18,6 +18,17 @@ const transcriptKey = (record: ReadingRecord) => JSON.stringify({...record, requ
 /** 写完一句才念；英文句点不算，免得把小数和缩写当句尾。 */
 const SENTENCE_END = /[。！？!?；;\n]/g;
 
+/** 第一段不等整句：回答开头那句常很长，写到逗号、冒号且已有这么多字就先念（顿号多在列举中间，停在那里听着别扭），第一声早出来；之后照常按整句念。 */
+const FIRST_CLAUSE_MIN = 10;
+
+const CLAUSE_END = /[，：]/g;
+
+function firstClauseEnd(text: string): number {
+  for (const match of text.matchAll(CLAUSE_END)) if (match.index + 1 >= FIRST_CLAUSE_MIN) return match.index + 1;
+
+  return 0;
+}
+
 /** 换段时每轮带的相邻段落短一些：一张卡换几段也放得进问答总长。 */
 const TURN_SURROUNDING_LIMIT = 1000;
 
@@ -161,7 +172,7 @@ export function installReading(deps: Dependencies) {
 
     if (!s || !turn || s.busy || s.threadId !== record.threadId || s.requestId !== record.requestId) return;
     const rest = turn.answer.slice(s.said);
-    const end = turn.state === 'done' ? rest.length : turn.state === 'streaming' ? sentencesEnd(rest) : 0;
+    const end = turn.state === 'done' ? rest.length : turn.state === 'streaming' ? sentencesEnd(rest) || (s.said === 0 ? firstClauseEnd(rest) : 0) : 0;
 
     if (!end) {
       if (turn.state !== 'streaming' && turn.state !== 'pending') endSpeaking();
