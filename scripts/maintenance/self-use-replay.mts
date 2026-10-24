@@ -2,8 +2,8 @@
  * 每晚的自用回放：把用户自己说过的任务（out/self-use/pool.json）在隔离的无头 Chrome 里用真扩展、真模型重做一遍，
  * 写一份报告（out/self-use/<日期>.json 和 .md）：每条用时（到第一次回答写完）、之后核对和续做又用了多久、模型往返、开始与结束时的机器负载、有没有出错、卡片和回答对不对得上、回答开头；
  * 每句的诊断记录另存为 <日期>/<n>-<第几句>.trace.jsonl，没做好的那句可以直接读出卡在哪。
- * 模型和日常扩展一样：主模型 MiniMax（思考档位用日常选的高档），快速模型（翻译、核对、起名等）ChatGPT 登录的 gpt-6-luna；登录快过期时快速模型退回 MiniMax，报告开头写明。
- * 不碰用户的日常浏览器和记忆；模型密钥（~/.pi/agent/auth.json 的 minimax-cn）只在运行时读，不打印、不落盘；ChatGPT 登录只交访问令牌，不交刷新令牌。
+ * 主模型和快速模型（翻译、核对、起名等）都用 ChatGPT 登录的 gpt-6-luna，思考起始档用高档；--model=<服务商/模型> 换主模型（如照日常用 minimax-cn/MiniMax-M3.1-Flash-Preview）。快速模型拿不到登录时退回主模型，报告开头写明。
+ * 不碰用户的日常浏览器和记忆；模型凭据只在运行时读，不打印、不落盘；ChatGPT 登录只交访问令牌，不交刷新令牌。
  *   npx tsx scripts/maintenance/self-use-replay.mts [--limit N] [--only=1,5] [--label=名字] [--pool=另一份任务池]
  * --label 把报告写成 <日期>-<名字>，改前改后对照时不覆盖当晚的报告；对照的那份构建用 SIDEAGENT_ACCEPTANCE_DIST 指定。
  * 任务池是用户的原话，只放在本机 out/ 下，不进仓库。格式：[{ "n": 1, "url": "https://…", "say": ["第一句", "接着说的第二句"], "onPage": [2] }]
@@ -11,7 +11,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir, loadavg } from "node:os";
+import { loadavg } from "node:os";
 import { join } from "node:path";
 import { REPO, launchRealPath, sleep, until } from "../acceptance/real-path/harness.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "../acceptance/real-path/inproc-config.mts";
@@ -43,11 +43,11 @@ const limitArg = process.argv.indexOf("--limit");
 const only = process.argv.find(a => a.startsWith("--only="))?.slice(7).split(",").map(Number);
 const label = process.argv.find(a => a.startsWith("--label="))?.slice(8);
 const pool = (JSON.parse(readFileSync(poolFile, "utf8")) as PoolTask[]).filter(t => !only || only.includes(t.n)).slice(0, limitArg > 0 ? Number(process.argv[limitArg + 1]) : undefined);
-const field = (value: unknown, name: string): unknown => (typeof value === "object" && value !== null ? Object.getOwnPropertyDescriptor(value, name)?.value : undefined);
-const key = field(field(JSON.parse(readFileSync(join(homedir(), ".pi/agent/auth.json"), "utf8")), "minimax-cn"), "key");
-
-if (typeof key !== "string" || !key) throw new Error("~/.pi/agent/auth.json 里没有 minimax-cn 的密钥");
-const MODEL = { provider: "minimax-cn", modelId: "MiniMax-M3.1-Flash-Preview" };
+// 主模型默认和快速模型同一家，回放不受两家服务各自波动的影响。
+const main = await loadModelPlan(process.argv.find(a => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL);
+if (main.credential.type === "oauth") main.credential.refresh = "";
+const mainItems = modelStorageItems(main);
+const MODEL = { provider: main.providerId, modelId: main.modelId };
 // 日常 10-20 至 10-23 的主模型请求八成在高档：侧栏模型菜单里选的起始档存在侧栏的 localStorage。
 const EFFORT = "high";
 // 快速模型照日常扩展配；拿不到登录就退回主模型，并写进报告，免得把配置差异当成产品变慢。
@@ -71,8 +71,7 @@ let traceSeen = 0;
 
 try {
   const panel = await rp.attach(await rp.openSidePanel());
-  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: MODEL, ...fast.items, sideagent_self_use: { until: Date.now() + 6 * 3600_000 } })}).then(() => true)`);
-  await rp.evaluate(panel, `chrome.storage.local.set({["inproc_cred:" + ${JSON.stringify(MODEL.provider)}]: {type: "api_key", key: ${JSON.stringify(key)}}}).then(() => true)`);
+  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ ...fast.items, ...mainItems, sideagent_self_use: { until: Date.now() + 6 * 3600_000 } })}).then(() => true)`);
   const ready = 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';
   await until(async () => await rp.evaluate(panel, ready), 60_000, "侧栏就绪");
   // 起始档存在侧栏的 localStorage、侧栏连上时交给宿主：写好后重开侧栏。
