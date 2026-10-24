@@ -570,6 +570,8 @@ if(required.includes(key))candidates.set(key,attachment);
   private spokenAsk = false;
   /** 判继续、回答已丢掉、接着做的那一轮还没开始时，扣着那一轮的收尾：接着做没开起来（模型请求失败）就用它收尾，开起来了就扔掉。 */
   private continueFinish: (() => void) | null = null;
+  /** 判继续时丢下的那份回答：接着做没交出新回答就结束（出错、停止、交给用户、没开起来）时放出来，交出了就扔掉。 */
+  private keptAnswer: (() => void) | null = null;
 
   private severalAsksNow(): boolean {
     const snapshot = this.conversationSnapshot();
@@ -2942,6 +2944,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           // 避免进度状态与结果被误当作最终（状态保持 running）。
           if (event.willRetry) break;
 
+          {
+            const kept = this.keptAnswer;
+            this.keptAnswer = null;
+            const answered = !this.expectedStoppedAgentEnd && !this.pendingToolFailure && !this.hold.isHeld() && !lastAssistantError(event.messages)
+              && (this.deliveredResultThisRun || !!finalAssistantText(event.messages));
+
+            if (kept && !answered) kept();
+          }
+
           void this.showOpenedPage();
 
           // 目标核对（不拖住回答）：回答先交付、状态回到空闲，快速模型随后核对用户要的结果达成没有。
@@ -3235,6 +3246,14 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       // 没被模型读到的补充留给接着做的这一轮读。
       if (this.answerHold === hold && !hold.settled) {
         this.continueFinish = hold.finish ?? null;
+        // 扣着的这一轮还没收尾，用普通正文作答时那份回答要到收尾才交付：一并留下。
+        const dropped = hold.events;
+        const finalText = !this.deliveredResultThisRun && !lastAssistantError(event.messages) ? finalAssistantText(event.messages) : "";
+        this.keptAnswer = () => {
+          for (const kept of dropped) this.emitGatedUiEvent(kept);
+          if (dropped.some(kept => kept.kind === "user_delivery" && kept.delivery.kind !== "ack")) this.deliveredResultThisRun = true;
+          if (finalText) this.deliverFinalText(finalText);
+        };
         this.answerHold = { events: [], settled: true };
         this.runTrace.record("goal_gate", { released: "continue" });
         continuing.held = true;
@@ -3249,9 +3268,12 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       this.deliveredResultThisRun = false;
       void session.prompt(continuation.prompt)
         .catch(error => {
-          // 接着做没开起来：给扣着的那一轮收尾，任务不会一直显示在跑。
+          // 接着做没开起来：放出丢下的回答，给扣着的那一轮收尾，任务不会一直显示在跑。
           const finish = this.continueFinish;
+          const kept = this.keptAnswer;
           this.continueFinish = null;
+          this.keptAnswer = null;
+          kept?.();
           finish?.();
           this.emitError(error);
         });
@@ -3306,6 +3328,17 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return now && withoutHash(now) !== withoutHash(url) ? now : null;
   }
 
+  private deliverFinalText(text: string): void {
+    if (!this.sendOptions) return;
+
+    try {
+      deliverUserMessage(this.sendOptions, { id: toolDeliveryId(`final-${randomUUID()}`), kind: "finding", content: text });
+      this.deliveredResultThisRun = true;
+    } catch (error) {
+      console.error(`[sideagent] 最终正文交付失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   /** 一轮真正结束后的收尾（原 agent_end 处理）：交付最终正文、状态回到空闲、技能学习与异常说明。 */
   private finishAgentEnd(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): void {
     const { emit, setStatus } = this.callbacks;
@@ -3331,14 +3364,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     if (!toolFailure && !stoppedByUser && !this.hold.isHeld() && this.sendOptions && !this.deliveredResultThisRun && !lastAssistantError(event.messages)) {
       const finalText = finalAssistantText(event.messages);
 
-      if (finalText) {
-        try {
-          deliverUserMessage(this.sendOptions, { id: toolDeliveryId(`final-${randomUUID()}`), kind: "finding", content: finalText });
-          this.deliveredResultThisRun = true;
-        } catch (error) {
-          console.error(`[sideagent] 最终正文交付失败：${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
+      if (finalText) this.deliverFinalText(finalText);
     }
 
     emit({ kind: "agent_end" });

@@ -5,8 +5,8 @@
  *
  * 前端 → handle():
  *   {type:'audio', data} base64 PCM16 24kHz 单声道 | {type:'text', text}
- *   {type:'stop_speech'} 只停当前语音（cancel + 清播放队列）；response.created 还没到也拦住这一轮，
- *   下一次真实用户输入（开口/发文字）才解锁；不取消后台任务
+ *   {type:'stop_speech'} 只停当前语音（cancel + 清播放队列）；已请求、created 还没到的那次回复也拦住，
+ *   这一轮在途工具回来后不再续答；之后的任务通知照常播报，不取消后台任务
  *   {type:'playback_done', responseId} 前端确实把该轮播完 | {type:'stop'} 结束通话（只关语音）
  * 本模块 → send():
  *   ready{model} status{text} transcript{role,text,final,responseId?} audio{data,responseId}
@@ -187,6 +187,8 @@ interface PendingToolCall {
   feedback?: ExecutionFeedback;
   /** 工具回执 ok:false：即使无反馈也必须正常续答。 */
   failed?: boolean;
+  /** 发起它的那一轮已被停声：输出照常交回，但不为它请求续答。 */
+  muted?: boolean;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -314,7 +316,7 @@ export class RealtimeVoiceConnection {
   private localCancelResponseId: string | null = null;
   /** 用户开口时已在播的回复：之后迟到的音频不再下发，回复本身与工具调用照常。 */
   private readonly silencedResponses = new Set<string>();
-  /** stop 时 response.created 还没到：迟到的 created 立即取消、音频不下发，下一次真实用户输入解锁。 */
+  /** stop 时已请求的回复 created 还没到：迟到的 created 立即取消、音频不下发；取消后或下一次真实用户输入时解锁。 */
   private pendingStop = false;
   private browserAbort = new AbortController();
   private browserQueue: Promise<unknown> = Promise.resolve();
@@ -534,6 +536,7 @@ export class RealtimeVoiceConnection {
           // stop_speech 时 response.create 已发、created 未到：这时才等到，立即取消并抑制这轮音频。
           this.socketSend({type: 'response.cancel'});
           this.localCancelResponseId = id;
+          this.pendingStop = false; // 只拦这一次请求；之后的任务通知照常播报
           this.log({type: 'late_response_cancelled', responseId: id});
         } else if (this.planMode && !this.options.diagnostic && !noticeResponse) this.gatePlanResponse(id);
         else if (autoForSpeech && !this.options.diagnostic && this.options.holdForTranscript?.()) this.gateResponse(id);
@@ -627,6 +630,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
           this.armTimer('auto-response-watchdog', AUTO_RESPONSE_WATCHDOG_MS, () => {
             this.log({type: 'auto_response_watchdog', speechSeq: this.autoResponsePending});
             this.autoResponsePending = null;
+            if (!this.sendingResponse) this.pendingStop = false; // 停声要拦的自动回复没来
             this.maybeFlush();
           });
         }
@@ -1047,7 +1051,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       this.sendingResponse = false;
       this.clearTimer('create-watch');
 
-      if (this.pendingStop) return; // 已停声：不把被拒的这一轮排回来
+      if (this.pendingStop) { this.pendingStop = false; return; } // 已停声：不把被拒的这一轮排回来，拦的那次也没了
       this.wantResponse = true; // 被拒的那次 response.create 已带走的输出还等在对话里，稍后重来
       const retrying = this.busyRetries++ < MAX_BUSY_RETRIES;
 
@@ -1270,7 +1274,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       this.socketSend({type: 'conversation.item.create', item: {type: 'function_call_output', call_id: call.callId, output: call.output}});
       call.settled = true;
       batch.push(call);
-      replyNeeded ||= !call.deferReply;
+      replyNeeded ||= !call.deferReply && !call.muted;
       this.log({type: 'tool_output_sent', callId: call.callId, name: call.name});
     }
 
@@ -1354,9 +1358,11 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
   private stopSpeech(): void {
     const responseId = this.activeResponseId;
 
-    // response.create 已发、created 未到（或 provider 自动响应在路上）时 responseId 还是 null；
-    // 也要拦住这轮，等下一次真实用户输入解锁。
-    if (responseId === null) this.pendingStop = true;
+    // response.create 已发、created 未到（或 provider 自动响应在路上）时 responseId 还是 null，要拦住那一次；
+    // 生成已结束、只剩声音在播时没有在路上的回复，挂上标记会把之后的任务通知全部挡掉。
+    if (responseId === null && (this.sendingResponse || this.autoResponsePending === this.speechSeq)) this.pendingStop = true;
+
+    for (const call of this.pendingToolCalls.values()) if (!call.settled) call.muted = true;
     this.wantResponse = false;
     this.busyRetries = 0;
     this.clearTimer('busy-retry');
@@ -1367,10 +1373,14 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     else if (responseId) {
       this.socketSend({type: 'response.cancel'});
       this.localCancelResponseId = responseId;
-      this.clearTimer(`playback:${responseId}`);
     }
 
-    for (const id of this.audioBytes.keys()) this.playedResponses.add(id);
+    // 侧栏清掉播放队列后不会再为这些回复回 playback_done，等它的计时器会把通话判死。
+    for (const id of this.audioBytes.keys()) {
+      this.playedResponses.add(id);
+      this.clearTimer(`playback:${id}`);
+    }
+
     this.sendToClient({type: 'clear_audio'});
     this.sendToClient({type: 'status', phase:'idle',text: '已停止播报'});
     this.log({type: 'stop_speech', responseId});
