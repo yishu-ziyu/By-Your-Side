@@ -759,11 +759,11 @@ function settleGaze(sid: string, kind: "rest" | "off"): void {
 }
 
 async function setCursorStatus(sid: string, state: CursorStatusState, explicitTabId?: unknown): Promise<void> {
-  await showCursorStatus({
-    key: key(sid),
-    state,
-    tabId: await statusTabId(sid, explicitTabId),
-  });
+  const tabId = await statusTabId(sid, explicitTabId);
+
+  // 直接执行的工具（⌥T 翻译）结束时，工具结束和回到空闲几乎同时到：已经空闲就不再挂「正在思考」这类过程状态。
+  if ((state === "waiting" || state === "reading" || state === "translating") && statusBySession.get(sid) === "idle") return;
+  await showCursorStatus({ key: key(sid), state, tabId });
 }
 
 /**
@@ -1529,6 +1529,8 @@ return;}
         void suppressCursorStatus(key(sid));
       } else if (msg.state === "idle") {
         void clearAmbientCursorStatus(key(sid));
+        // 直接执行的工具（⌥T 翻译、语音直接操作）没有一轮任务的结束事件：回到空闲时同样收掉页面光晕，不然胶囊一直写「正在思考」。
+        void dimPage(key(sid));
       }
     } else if (msg.type === "agent_event") {
       const sid = msg.sessionId ?? LEAD_SESSION_ID;
