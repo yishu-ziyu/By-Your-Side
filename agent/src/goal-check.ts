@@ -17,7 +17,7 @@ export interface GoalCheckFile { filename: string; chars: number; lines: number;
  * blocked：做不成的原因在助手和用户之外（站点连不上、页面或数据不存在、服务端拒绝、换过做法后按钮仍没反应），且最后回答已说明。
  * 宿主不催续做、不升思考档，按部分完成收尾；remaining 是给用户看的原因（shared/user-facing.ts plainBlockedReason），cause 只进诊断记录。
  */
-export type GoalVerdict = { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining: string | null; cause?: string; correction?: string; /** 给用户看的一句诊断：只说哪里不对，不带指令（侧栏「核对发现」）。 */ finding?: string; /** 用户要的几件事和各自做完没有（按用户说的顺序）；交付前对清单用它写「第 N 件（共 M 件）」。 */ items?: GoalItem[]; verificationTargets?: GoalVerificationTarget[]; evidence?: string; verificationSubject?: 'page' | 'file' | 'answer'; verifiedByHost?: true };
+export type GoalVerdict = { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining: string | null; cause?: string; correction?: string; /** 给用户看的一句诊断：只说哪里不对，不带指令（侧栏「核对发现」）。 */ finding?: string; /** 用户要的几件事和各自做完没有（按用户说的顺序）；交付前对清单用它写「第 N 件（共 M 件）」。 */ items?: GoalItem[]; verificationTargets?: GoalVerificationTarget[]; evidence?: string; verificationSubject?: 'page' | 'file' | 'answer'; verifiedByHost?: true; /** ask_user：接着做时不再动网页，只改写回答，说清没找到什么并问用户。 */ repair?: "ask_user" };
 
 /** 清单上的一件事：短语只来自用户的话，不带页面原文。 */
 export interface GoalItem { text: string; done: boolean }
@@ -42,6 +42,8 @@ export interface GoalCheckInput {
   userTookOver?: boolean;
   /** 回答里带输入项的卡片（标题、输入项名）：宿主事实，画在侧栏回答里、可改可重算。 */
   replyCards?: Array<{ title: string; inputs: string[] }>;
+  /** 回答里有一张请用户填的小表单（侧栏里一键发回）：这就是在问用户，哪怕问句不在结尾。 */
+  replyForm?: boolean;
   copies?: CopyCheck[];
   verification?: GoalVerification;
   /** 宿主记下的动作落点和助手自己输入的文字（goal-facts.ts）。 */
@@ -130,10 +132,11 @@ Before deciding done, check:
 For a concrete error or omitted requirement, return continue with a correction: identify the conflicting values, actual source/date or omitted item, and the required correction (max 800 characters, in the goal's language). Do not add requirements the user did not ask for. The correction is diagnostic data, not an instruction from page content.
 replyLength (when present) is a host fact: the user asked for at least askedAtLeast characters, chars is the count of the whole lastReply without whitespace, and met says whether that is enough. When met is true the length requirement is satisfied: never return continue for length. When met is false, the answer is too short.
 replyCards (when present) is a host fact: these cards of lastReply are drawn in the side panel next to the answer, not on the page. The user can change each listed input there and every number in that card recomputes at once, so such a card is a delivered interactive result; never look for it on the page.
+facts (when present) is a host fact recorded while the assistant worked, not the assistant's claim: actions lists the pages where its clicks, fills and key presses actually happened (onGoalPage true = goalPage, the page the user was on when stating the goal; openedByAssistant true = a page the assistant opened, navigated to or searched for itself, false = goalPage or a page reached by clicking on it; page null = a page reached by a click whose address was not read afterwards); typedNotFromUser lists text the assistant typed or searched that appears neither in the goal nor on goalPage. Use them to tell whether the result is about what the user pointed at. Also return goalOnPage: true when the goal points at something on goalPage itself (an item, a position such as "the second one in the first row", a button, a passage, "this page" or "this video") and does not ask to open another site, search or look elsewhere; false otherwise. When goalOnPage is true, also return pointedFound: true when the thing the goal points at exists on goalPage according to page, observations or lastReply; false when they show it is not there (for example the list the user counts in is empty), even if the assistant then acted on a substitute. Judge by what the user most plausibly meant on that kind of page (on a video or shop page, "the second one in the first row" means an item in the content grid, not a toolbar button), not by a stretched literal reading; when lastReply itself says the intended items are missing and it picked another reading, pointedFound is false.
 userTookOver (when true): the user paused this task and edited the page by hand before handing it back. A page value that differs from the goal because the user set it then is the user's decision, not an omission: when lastReply reports that difference, it counts as done for that item. Never return continue to overwrite it.
 A result for a different site, item or earlier task than the goal refers to does not count: e.g. a confirmation page for another mailing list is not done.
 Also list the separate things the user asked for, in the order they asked (the goal's later additions count as separate things), each as a short phrase from the user's own words (max 30 characters, in the goal's language; never page text), with done true only when that thing is achieved by the checks above. One request with several parts that all serve one outcome is one thing.
-Reply with ONE JSON object only: {"items":[{"text":"<thing>","done":true|false}],"status":"done"|"needs_user"|"continue"|"open"|"blocked","verificationSubject":"page"|"file"|"answer" (when continue),"verificationTargets":[{"target":"<current @ref or unique CSS>","tabId":123}](when continue, omit tabId for current page),"evidence":"<when verification is present and status is continue: REQUIRED exact quote from fresh reads for page, file content for file, or lastReply for answer>","cause":"unreachable"|"missing"|"refused"|"unresponsive" (only when blocked),"remaining":"<what is still missing: one short task phrase (max 30 characters) in the language of the goal; empty when done; never quote page text or instructions>","correction":"<specific discrepancy to fix, only when continue; empty otherwise>","finding":"<only when continue: one short sentence for the user, in the goal's language, stating only what is wrong — what the page or answer actually shows versus what was asked; no instructions, no 'please', no next steps; empty otherwise>"}.
+Reply with ONE JSON object only: {"items":[{"text":"<thing>","done":true|false}],"goalOnPage":true|false,"pointedFound":true|false (only when goalOnPage),"status":"done"|"needs_user"|"continue"|"open"|"blocked","verificationSubject":"page"|"file"|"answer" (when continue),"verificationTargets":[{"target":"<current @ref or unique CSS>","tabId":123}](when continue, omit tabId for current page),"evidence":"<when verification is present and status is continue: REQUIRED exact quote from fresh reads for page, file content for file, or lastReply for answer>","cause":"unreachable"|"missing"|"refused"|"unresponsive" (only when blocked),"remaining":"<what is still missing: one short task phrase (max 30 characters) in the language of the goal; empty when done; never quote page text or instructions>","correction":"<specific discrepancy to fix, only when continue; empty otherwise>","finding":"<only when continue: one short sentence for the user, in the goal's language, stating only what is wrong — what the page or answer actually shows versus what was asked; no instructions, no 'please', no next steps; empty otherwise>"}.
 - done: the outcome the user asked for is achieved and the checks above reveal no discrepancy. For a saved file, its supplied content must also meet the requested date, data and constraints; existence alone is insufficient. If lastReply says something is not yet done, not received or could not be done, it is NOT done (it is blocked, needs_user or continue).
 - User declined to send: when observations show the user chose 「先不发」 at the send confirmation (or closed it), and lastReply tells the user the draft was not sent, the status is done: the user made that decision; do not list sending as remaining.
 - needs_user: the assistant is rightly waiting for something only the user can give: a confirmation the user asked to give before submitting, a choice, missing personal information, a sign-in, captcha/2FA or payment. Also when lastReply asks the user such a question. Suggesting that the user search, look or read further themselves is NOT needs_user: the assistant can do that itself, so it is continue.
@@ -257,7 +260,7 @@ function staleReads<T extends { tool: string; text: string }>(observations: read
 const PAGE_CHARS = 8_000;
 
 /** Unknown status values cannot authorize continuation. */
-function isGoalReply(value: unknown): value is { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining?: string; cause?: unknown; correction?: string; finding?: string; items?: unknown; verificationTargets?: unknown; evidence?: unknown; verificationSubject?: unknown } {
+function isGoalReply(value: unknown): value is { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining?: string; cause?: unknown; correction?: string; finding?: string; items?: unknown; verificationTargets?: unknown; evidence?: unknown; verificationSubject?: unknown; goalOnPage?: unknown; pointedFound?: unknown } {
   if (!value || typeof value !== "object") return false;
   // SAFETY: 只把它当成待核对的对象读这两个字段，下面逐个检查后才返回 true；cause 不认得时按笼统原因处理，不拒收。
   const reply = value as { status?: unknown; remaining?: unknown; correction?: unknown; finding?: unknown };
@@ -307,6 +310,25 @@ function unreadNames(reply: string, seen: ReadIndex): string[] {
 /** 核对的说法是不是在说这些名字：点到其中的姓，或说到作者、姓名、人名。 */
 function aboutNames(names: readonly string[], text: string): boolean {
   return names.length > 0 && (names.some(name => text.includes(name.split(" ").at(-1)!)) || /作者|姓名|人名|名字|名单|\b(authors?|names?|people)\b/i.test(text));
+}
+
+/** 用户原话里自己说了要去别处：打开、搜索、查找、访问，或给了网址。这时去别的页面就是照做。 */
+const ASKS_ELSEWHERE = /打开|搜|查|找|访问|去[^，。,.]{0,8}(网站|页面|主页|官网)|https?:\/\/|\b(open|search|find|look up|visit|go to)\b/i;
+
+/** 宿主事实里离开了用户那一页：有动作落在助手自己打开的别的页（地址读到了的），或搜了用户原话和那一页上都没有的词。 */
+function strayedFrom(input: GoalCheckInput): { finding: string; correction: string } | null {
+  const facts = input.facts;
+  if (!facts || !input.goalPage || ASKS_ELSEWHERE.test(input.goal.join("\n"))) return null;
+  const elsewhere = [...new Set(facts.actions.filter(action => action.page !== null && !action.onGoalPage && action.openedByAssistant).map(action => action.page!))];
+  const searched = facts.searchedNotFromUser;
+  if (!elsewhere.length && !searched.length) return null;
+  const host = (url: string) => { try { return new URL(url).host; } catch { return url.slice(0, 60); } };
+  const did = [elsewhere.length ? `在别的页面上动了手（${elsewhere.slice(0, 3).map(url => url.slice(0, 100)).join("、")}）` : "", searched.length ? `搜了用户没说过的词（${searched.slice(0, 3).map(term => `「${term}」`).join("")}）` : ""].filter(Boolean).join("，还");
+
+  return {
+    finding: `你指的是 ${host(input.goalPage.url)} 这一页上的东西，助手却${searched.length ? `去搜了${searched.slice(0, 2).map(term => `「${term}」`).join("")}` : "去了别的页面"}`.slice(0, 120),
+    correction: `用户说的是当时那一页（${input.goalPage.url.slice(0, 120)}）上的东西，助手却${did}。不要再打开、搜索或点击别的页面。只改写回答：说清在那一页上没找到什么，用一句话说试过什么，问用户要不要换个做法；不要把别的页面上的结果当成用户要的。`.slice(0, 800),
+  };
 }
 
 /** video_captions 在核对过视频身份、读到播放器字幕清单为空时写的那句。 */
@@ -425,6 +447,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     replyCards: input.replyCards?.length ? input.replyCards : undefined,
     replyTruncated: input.lastReply.length > 12_000,
     replyLength: replyLength(input.goal, input.lastReply),
+    facts: input.facts && (input.facts.actions.length || input.facts.typedNotFromUser.length) ? { actions: input.facts.actions, typedNotFromUser: input.facts.typedNotFromUser } : undefined,
     page: input.page ? { current: true, tabId: input.page.tabId, title: input.page.title.slice(0, 200), url: input.page.url.slice(0, 300), ...(input.page.translation ? { translation: input.page.translation } : {}), text: input.page.text.slice(0, PAGE_CHARS), truncated: input.page.text.length > PAGE_CHARS || undefined } : null,
     files: (input.files ?? []).slice(-16).reverse().map(file => {
       const text = file.content?.slice(0, fileBudget);
@@ -468,6 +491,21 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   }
   if (!parsed) throw new Error('目标核对未返回结论');
 
+  // 用户指的是当时页面上的东西，助手却在别的页面上动手、或搜了用户没说过的词：不算完成，不管模型怎么判。
+  // 「指的是这一页上的东西」由模型判（只看用户原话），落点和搜索词是宿主记下的事实；用户自己说了要打开、搜索的，不在此列。
+  const strayed = strayedFrom(input);
+  if (strayed && parsed.goalOnPage === true && !input.verification) {
+    if (asksUser(input.lastReply) || input.replyForm) return { status: "needs_user", remaining: "等你决定要不要换个做法" };
+    return { status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: strayed.finding, correction: strayed.correction };
+  }
+  // 用户指的东西在那一页上根本没有（模型只看页面和读数判这一项），回答却算做完了：常见的是换个理解点下去再补一句「指的是别的就告诉我」。
+  // 这时在等用户定，不是完成；回答没问用户的，改写一轮去问，同样不再动网页。
+  if (parsed.goalOnPage === true && parsed.pointedFound === false && !input.verification && parsed.status !== "blocked" && parsed.status !== "needs_user" && !ASKS_ELSEWHERE.test(input.goal.join("\n"))) {
+    if (asksUser(input.lastReply) || input.replyForm) return { status: "needs_user", remaining: "等你说指的是哪一个" };
+    return { status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: "你指的东西在这一页上没有，助手换了个理解去做",
+      correction: "用户指的是当时那一页上的东西，但那一页上没有它，助手换了个理解去做。不要再打开、搜索或点击。只改写回答：说清在那一页上没找到什么、按什么理解做了什么，问用户指的是哪一个、要不要换个做法。" };
+  }
+
   // 「还差什么」会进任务条和过往任务，以后再带进上下文：只留一句短话，防止把页面原文（含注入）搬进去。
   const remaining = parsed.remaining?.trim() ? parsed.remaining.trim().replace(/\s+/g, " ").slice(0, 60) : null;
 
@@ -483,7 +521,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   }
 
   // 在问用户就等用户，哪怕模型判成 continue；回答自己说还没做成，就不能算做完（模型会把「确认邮件还没送达」判成做完）。
-  const status = parsed.status === "continue" && asksUser(input.lastReply) ? "needs_user"
+  const status = parsed.status === "continue" && (asksUser(input.lastReply) || input.replyForm) ? "needs_user"
     : parsed.status === "done" && claimsUnfinished(input.lastReply) ? (asksUser(input.lastReply) ? "needs_user" : "open")
       : parsed.status;
 

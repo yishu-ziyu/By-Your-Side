@@ -110,7 +110,14 @@ export class PageTrail {
 
   facts(goal: readonly string[], goalPage: { url: string } | null): GoalFacts {
     const known = plain([...goal, this.startText].join("\n"));
-    const fromUser = (value: string) => known.includes(plain(value));
+    // 西文和数字按整词比：「AI」不能因为页面上有 email、domain 就算用户那一页上有。中文没有词界，按片段比。
+    const fromUser = (value: string) => {
+      const term = plain(value);
+
+      return /^[\p{Script=Latin}\p{N}\s'.+-]+$/u.test(term)
+        ? new RegExp(`(?<![\\p{L}\\p{N}])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "u").test(known)
+        : known.includes(term);
+    };
     const home = goalPage ? pageKey(goalPage.url) : null;
     const pages = new Map<string, GoalFacts["actions"][number]>();
 

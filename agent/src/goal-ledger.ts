@@ -178,6 +178,7 @@ export class GoalLedger {
       readWords: this.words,
       lastReply: replyAsShown(run.lastReply),
       replyCards: replyCards(run.lastReply),
+      replyForm: splitAnswer(run.lastReply).some(part => "card" in part && !!part.card?.blocks.some(block => block.kind === "fields")) || undefined,
       page: page ? { ...(tabId === null ? {} : { tabId }), title: String(page.title ?? ""), url: String(page.url ?? ""), ...(page.translation ? { translation: page.translation } : {}), text: redactCredentialText(String(page.text ?? "")) } : null,
       userTookOver: run.userTookOver,
     };
