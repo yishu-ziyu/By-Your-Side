@@ -67,8 +67,6 @@ interface SideCallSpec<T> {
   sessionId?: string;
   headers?: Record<string, string>;
   temperature?: number;
-  /** 离线重放要固定事件里的档；在线判断缺省仍取当前最低可用档。 */
-  effort?: ModelThinkingLevel;
   /** 从正文得到结果；抛错算格式不对。 */
   parse: (text: string) => T;
   /**
@@ -164,7 +162,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
   const budget = AbortSignal.timeout(spec.timeoutMs);
   const total = spec.signal ? AbortSignal.any([spec.signal, budget]) : budget;
   const retry = spec.retry ?? "format";
-  let effort = spec.effort ?? lowestEffort(model, host.rejected);
+  let effort = lowestEffort(model, host.rejected);
   let attempts = 0;
   let retried = false;
   let effortRetried = false;

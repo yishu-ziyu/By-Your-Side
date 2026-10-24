@@ -69,13 +69,15 @@ const host = {
   record: (_type: "side_call", data: { detail?: string; reason?: string }) => { lastDetail = data.detail ?? data.reason ?? ""; },
 };
 
-type Outcome = { id: string; expected: Status; got: string[] };
+type Outcome = { id: string; expected: Status; got: string[]; ms: number[] };
 const outcomes: Outcome[] = [];
 
 for (const item of labels) {
   const got: string[] = [];
+  const ms: number[] = [];
 
   for (let i = 0; i < runs; i++) {
+    const started = Date.now();
     // 记录里的读数索引已换成算好的名字清单（notInReads），这里不再需要整段对话。
     // 连不上服务（fetch failed）是网络的事，不是核对的判断：重试一次，仍不行才记没结论。
     let verdict = "";
@@ -85,10 +87,11 @@ for (const item of labels) {
       verdict = await checkGoal(host, model, item.input, AbortSignal.timeout(30_000)).then(v => v.status, error => `unavailable(${error instanceof Error ? error.message.slice(0, 40) : "?"}${lastDetail ? `：${lastDetail.replace(/\s+/g, " ").slice(0, 120)}` : ""})`);
     }
     got.push(verdict);
+    ms.push(Date.now() - started);
   }
 
-  outcomes.push({ id: item.id, expected: item.expected, got });
-  console.log(`${item.id}  该判 ${item.expected}  判 ${got.join("/")}`);
+  outcomes.push({ id: item.id, expected: item.expected, got, ms });
+  console.log(`${item.id}  该判 ${item.expected}  判 ${got.join("/")}  ${ms.map(n => (n / 1000).toFixed(1)).join("/")} 秒`);
 }
 
 const judged = (filter: (o: Outcome) => boolean) => outcomes.filter(filter).flatMap(o => o.got.filter(g => STATUSES.includes(g)).map(g => ({ o, g })));
@@ -102,6 +105,10 @@ const falseDone = notDone.filter(x => x.g === "done").length;
 const changedDone = changed.filter(x => x.g === "done").length;
 const agree = judged(() => true).filter(x => x.g === x.o.expected).length;
 const unavailable = outcomes.flatMap(o => o.got).filter(g => !STATUSES.includes(g)).length;
+// 自一致：同一输入几次都拿到结论且结论相同，量的是核对自己的噪声，和标注无关。
+const consistent = outcomes.filter(o => o.got.every(g => STATUSES.includes(g)) && new Set(o.got).size === 1).length;
+const allMs = outcomes.flatMap(o => o.ms).sort((a, b) => a - b);
+const seconds = (n: number | undefined) => (n === undefined ? "—" : `${(n / 1000).toFixed(1)} 秒`);
 
 const report = [
   `# 核对尺子 ${name}`,
@@ -115,10 +122,12 @@ const report = [
   `| 误判完成（该判别的却判 done） | ${rate(falseDone, notDone.length)} |`,
   `| 换了目标的误判完成 | ${rate(changedDone, changed.length)} |`,
   `| 没拿到结论 | ${unavailable} |`,
+  ...(runs > 1 ? [`| 同一输入 ${runs} 次结论一致 | ${rate(consistent, outcomes.length)} |`] : []),
+  `| 每次用时 中位 / 最长 | ${seconds(allMs[Math.floor(allMs.length / 2)])} / ${seconds(allMs.at(-1))} |`,
   ``,
-  `| 编号 | 来源 | 该判 | 判 |`,
-  `|---|---|---|---|`,
-  ...outcomes.map(o => `| ${o.id} | ${labels.find(l => l.id === o.id)?.source ?? ""} | ${o.expected} | ${o.got.join(" / ")} |`),
+  `| 编号 | 来源 | 该判 | 判 | 用时（秒） |`,
+  `|---|---|---|---|---|`,
+  ...outcomes.map(o => `| ${o.id} | ${labels.find(l => l.id === o.id)?.source ?? ""} | ${o.expected} | ${o.got.join(" / ")} | ${o.ms.map(n => (n / 1000).toFixed(1)).join(" / ")} |`),
 ].join("\n") + "\n";
 const out = join(dirname(labelsFile), `bench-${name}`);
 await mkdir(dirname(out), { recursive: true });

@@ -12,7 +12,7 @@ export const SENSITIVE_FIELD_NAME = /password|passwd|pwd|\b(?:otp|pin|ssn)\b|one
 
 const MAX_TEXT = 64_000;
 export const GOAL_CHECK_FORMAT_SUFFIX = "\n\nYour previous reply could not be used. Reply with ONLY the JSON object described above: no other text, no markdown fences, no questions.";
-const GOAL_CHECK_PRIVATE_KEYS = new Set(["input", "modelReply", "verdict", "hostFacts", "remaining", "correction", "finding", "evidence", "items", "verificationTargets", "pageRead", "pageMovedTo"]);
+const GOAL_CHECK_PRIVATE_KEYS = new Set(["input", "replayInput", "modelReply", "verdict", "hostFacts", "remaining", "correction", "finding", "evidence", "items", "verificationTargets", "pageRead", "pageMovedTo"]);
 
 /** 凭据：本机存储时也遮住。 */
 function cleanCredentials(text: string): string {

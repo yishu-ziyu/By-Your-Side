@@ -164,7 +164,7 @@ try{
  for(const event of goalEvents){
   const data=event.data;
   assert.equal(data.v,1);assert.equal(typeof data.checkId,'string');assert.ok(data.attempt===null||typeof data.attempt==='number');
-  assert.ok(data.promptSha&&data.model&&data.effort);assert.equal(typeof data.input,'string');
+  assert.ok(data.promptSha&&data.model&&data.effort);assert.equal(typeof data.input,'string');assert.ok(data.replayInput&&Array.isArray(data.replayInput.goal),'the structured input lets the bench rerun the current check');
   assert.ok(data.decidedBy==='model'||data.decidedBy.startsWith('host:'));assert.equal(data.verdict.status,data.status);
   assert.equal(typeof data.ms,'number');if(scenario!=='format-retry')assert.doesNotThrow(()=>JSON.parse(data.input));
   if(data.parentCheckId)assert.ok(checkIds.has(data.parentCheckId),'reverification links to its parent');
@@ -197,6 +197,7 @@ try{
   assert.equal(data.input,'[redacted]','export removes page text, URLs and file content from the complete input');
   if(data.modelReply!==undefined)assert.equal(data.modelReply,'[redacted]');assert.equal(data.verdict,'[redacted]');
   if(data.hostFacts!==undefined)assert.equal(data.hostFacts,'[redacted]');
+  assert.equal(data.replayInput,'[redacted]');
   assert.ok(!JSON.stringify(data).includes(LONG),'export leaves no page body in any check field');
   assert.ok(!JSON.stringify(data).includes('127.0.0.1'),'export leaves no page URL in any check field');
  }

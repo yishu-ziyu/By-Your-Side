@@ -161,6 +161,8 @@ export type GoalCheckTrace = {
   effort: SideCallRecord["effort"];
   maxTokens?: number;
   input: string;
+  /** goalCheckRecord 的结果：标注集和离线尺子拿它交给当前的 checkGoal 重判（宿主规则也重跑）；input 是当时发给模型的原样文字，两者不能互相还原。 */
+  replayInput: Record<string, unknown>;
   decidedBy: "model" | `host:${string}`;
   hostFacts?: Record<string, unknown>;
   modelReply?: unknown;
@@ -177,7 +179,7 @@ export type GoalCheckTraceContext = {
   record: (event: GoalCheckTrace) => void;
 };
 
-export function parseGoalCheckReply(text: string) {
+function parseGoalCheckReply(text: string) {
   return parseJsonReply(text, isGoalReply);
 }
 
@@ -484,14 +486,14 @@ function hostFacts(input: GoalCheckInput, facts?: Record<string, unknown>): Reco
 export function recordHostGoalCheck(model: Model<Api>, input: GoalCheckInput, rule: string, verdict: GoalVerdict, trace: GoalCheckTraceContext, facts?: Record<string, unknown>): void {
   const { content } = goalCheckContent(input);
   trace.record({ v: 1, checkId: trace.checkId, ...(trace.parentCheckId ? { parentCheckId: trace.parentCheckId } : {}), promptSha: GOAL_CHECK_PROMPT_SHA,
-    model: `${model.provider}/${model.id}`, effort: lowestEffort(model), input: content, decidedBy: `host:${rule}`, ...(hostFacts(input, facts) ? { hostFacts: hostFacts(input, facts) } : {}), verdict,
+    model: `${model.provider}/${model.id}`, effort: lowestEffort(model), input: content, replayInput: goalCheckRecord(input), decidedBy: `host:${rule}`, ...(hostFacts(input, facts) ? { hostFacts: hostFacts(input, facts) } : {}), verdict,
     ms: Date.now() - (trace.startedAt ?? Date.now()) });
 }
 
 export function recordUnavailableGoalCheck(model: Model<Api>, input: GoalCheckInput, trace: GoalCheckTraceContext, reason?: string, decidedBy: GoalCheckTrace["decidedBy"] = "model"): void {
   const { content } = goalCheckContent(input);
   trace.record({ v: 1, checkId: trace.checkId, ...(trace.parentCheckId ? { parentCheckId: trace.parentCheckId } : {}), promptSha: GOAL_CHECK_PROMPT_SHA,
-    model: `${model.provider}/${model.id}`, effort: lowestEffort(model), input: content, decidedBy, ...(hostFacts(input) ? { hostFacts: hostFacts(input) } : {}),
+    model: `${model.provider}/${model.id}`, effort: lowestEffort(model), input: content, replayInput: goalCheckRecord(input), decidedBy, ...(hostFacts(input) ? { hostFacts: hostFacts(input) } : {}),
     verdict: { status: "unavailable", ...(reason ? { reason } : {}) }, ms: Date.now() - (trace.startedAt ?? Date.now()) });
 }
 
@@ -504,7 +506,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   const { content, notInReads } = goalCheckContent(input);
   const write = (verdict: GoalCheckTrace["verdict"], decidedBy: GoalCheckTrace["decidedBy"], facts?: Record<string, unknown>, adjustedBy?: string): void => {
     trace?.record({ v: 1, checkId: trace.checkId, ...(trace.parentCheckId ? { parentCheckId: trace.parentCheckId } : {}), promptSha: actual?.promptSha ?? GOAL_CHECK_PROMPT_SHA,
-      model: side?.model ?? `${model.provider}/${model.id}`, effort: side?.effort ?? actual?.effort ?? lowestEffort(model, host.rejected), ...(actual ? { maxTokens: actual.maxTokens } : {}), input: actual?.content ?? content, decidedBy,
+      model: side?.model ?? `${model.provider}/${model.id}`, effort: side?.effort ?? actual?.effort ?? lowestEffort(model, host.rejected), ...(actual ? { maxTokens: actual.maxTokens } : {}), input: actual?.content ?? content, replayInput: goalCheckRecord(input), decidedBy,
       ...(hostFacts(input, facts) ? { hostFacts: hostFacts(input, facts) } : {}), ...(parsed ? { modelReply: parsed } : {}), ...(adjustedBy ? { adjustedBy } : {}), verdict,
       ms: Date.now() - (trace?.startedAt ?? startedAt) });
   };
