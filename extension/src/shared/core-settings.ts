@@ -4,8 +4,9 @@
  */
 import { isMiniAppsOn, MINI_APPS_KEY } from "./mini-apps.js";
 import { SELF_USE_KEY, selfUseActive } from "./self-use.js";
+import { parseTranslationStyle, TRANSLATION_STYLE_KEY, translationStyleText } from "../../../shared/translation-style.js";
 
-export const CORE_SETTING_KEYS = [SELF_USE_KEY, MINI_APPS_KEY];
+export const CORE_SETTING_KEYS = [SELF_USE_KEY, MINI_APPS_KEY, TRANSLATION_STYLE_KEY];
 
 let pushed: Record<string, unknown> = {};
 
@@ -16,3 +17,5 @@ export function receiveCoreSettings(values: unknown): void {
 export const pushedSelfUse = (): boolean => selfUseActive(pushed[SELF_USE_KEY]);
 
 export const pushedMiniApps = (): boolean => isMiniAppsOn(pushed[MINI_APPS_KEY]);
+
+export const pushedTranslationStyle = (): string => translationStyleText(parseTranslationStyle(pushed[TRANSLATION_STYLE_KEY]));
