@@ -146,11 +146,15 @@ const voice = records.filter((r) => r.store === "voice-lines").sort(byKey).map((
   return event ? { day: r.value.day, ...event } : { day: r.value?.day, unparsed: r.value?.line };
 }).filter((e) => e.unparsed !== undefined || after(e.at));
 
+const prompts = records.filter((r) => r.store === "trace-prompts").map((r) => ({ hash: r.value?.hash ?? r.key, text: r.value?.text }))
+  .filter((r) => typeof r.hash === "string" && /^[a-f0-9]{64}$/.test(r.hash) && typeof r.text === "string");
+
 const stamp = new Date().toLocaleString("sv-SE").replace(/[: ]/g, (c) => (c === " " ? "-" : ""));
 const out = join(repo, "out/daily-logs", stamp);
-mkdirSync(out, { recursive: true });
+mkdirSync(join(out, "prompts"), { recursive: true });
 writeFileSync(join(out, "traces.jsonl"), traces.map((e) => JSON.stringify(e) + "\n").join(""));
 writeFileSync(join(out, "voice.jsonl"), voice.map((e) => JSON.stringify(e) + "\n").join(""));
+for (const prompt of prompts) writeFileSync(join(out, "prompts", `${prompt.hash}.txt`), prompt.text, { mode: 0o600 });
 keepRecentExports(join(repo, "out/daily-logs"));
 
 /**
@@ -161,7 +165,7 @@ function keepRecentExports(root, keep = 3) {
   const archive = join(root, "archive");
   const stamps = readdirSync(root).filter((name) => /^\d{4}-\d{2}-\d{2}-\d{6}$/.test(name)).sort();
   const hash = (line) => createHash("sha1").update(line).digest("base64");
-  mkdirSync(archive, { recursive: true });
+  mkdirSync(join(archive, "prompts"), { recursive: true });
 
   for (const file of ["traces.jsonl", "voice.jsonl"]) {
     const target = join(archive, file);
@@ -183,6 +187,15 @@ function keepRecentExports(root, keep = 3) {
     if (fresh.length) appendFileSync(target, `${fresh.join("\n")}\n`);
   }
 
+  for (const stamp of stamps) {
+    const source = join(root, stamp, "prompts");
+    if (!existsSync(source)) continue;
+    for (const name of readdirSync(source).filter((name) => /^[a-f0-9]{64}\.txt$/.test(name))) {
+      const target = join(archive, "prompts", name);
+      if (!existsSync(target)) cpSync(join(source, name), target);
+    }
+  }
+
   for (const stamp of stamps.slice(0, -keep)) rmSync(join(root, stamp), { recursive: true, force: true });
 }
 
@@ -191,7 +204,7 @@ const oneLine = (text, max) => { const flat = String(text ?? "").replace(/\s+/g,
 const modelName = (model) => (typeof model === "string" ? model : model?.id ?? model?.name ?? "");
 
 console.log(`配置：${pick.profile}（扩展 ${pick.id}）`);
-console.log(`输出：${out}（任务记录 ${traces.length} 行，语音记录 ${voice.length} 行）`);
+console.log(`输出：${out}（任务记录 ${traces.length} 行，语音记录 ${voice.length} 行，提示词 ${prompts.length} 版）`);
 
 if (args.includes("--voice")) {
   voiceTimings(voice);

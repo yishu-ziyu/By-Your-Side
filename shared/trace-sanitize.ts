@@ -11,6 +11,8 @@ const SENSITIVE_TARGET = /password|passwd|pwd|secret|token|api[_-]?key|密码|�
 export const SENSITIVE_FIELD_NAME = /password|passwd|pwd|\b(?:otp|pin|ssn)\b|one-time|(?:verification|security|sms) ?code|验证码|校验码|动态码|密码|口令|cvv|cvc|card ?number|卡号|安全码|身份证|银行卡/i;
 
 const MAX_TEXT = 64_000;
+export const GOAL_CHECK_FORMAT_SUFFIX = "\n\nYour previous reply could not be used. Reply with ONLY the JSON object described above: no other text, no markdown fences, no questions.";
+const GOAL_CHECK_PRIVATE_KEYS = new Set(["input", "modelReply", "verdict", "hostFacts", "remaining", "correction", "finding", "evidence", "items", "verificationTargets", "pageRead", "pageMovedTo"]);
 
 /** 凭据：本机存储时也遮住。 */
 function cleanCredentials(text: string): string {
@@ -53,8 +55,10 @@ export function sanitizeTraceForStore(value: unknown): unknown {
 }
 
 function scrubTrace(value: unknown, full: boolean, limits: boolean): unknown {
-  const budget = limits ? { chars: 96_000, nodes: 1024 } : { chars: Infinity, nodes: Infinity };
-  const max = limits ? { text: MAX_TEXT, depth: 12, entries: 256, key: 256 } : { text: Infinity, depth: Infinity, entries: Infinity, key: Infinity };
+  const goalCheck = !!value && typeof value === "object" && !Array.isArray(value) && "v" in value && value.v === 1
+    && "checkId" in value && typeof value.checkId === "string" && "promptSha" in value && typeof value.promptSha === "string";
+  const budget = limits ? { chars: goalCheck ? 768_000 : 96_000, nodes: goalCheck ? 4096 : 1024 } : { chars: Infinity, nodes: Infinity };
+  const max = limits ? { text: goalCheck ? 512_000 : MAX_TEXT, depth: 12, entries: 256, key: 256 } : { text: Infinity, depth: Infinity, entries: Infinity, key: Infinity };
 
   function visit(value: unknown, depth = 0, redactInput = false, inReadback = false): unknown {
     if (--budget.nodes < 0 || budget.chars <= 0) return "[truncated: shared budget]";
@@ -122,10 +126,22 @@ function scrubTrace(value: unknown, full: boolean, limits: boolean): unknown {
 
       const safeKey = cleanText(key.slice(0, Math.min(max.key, budget.chars)), full);
       budget.chars -= safeKey.length;
-      result[safeKey] = SECRET_KEY.test(key) || key === "signature" ||
-        ((sensitive || redactInput) && /^(text|value|code)$/.test(key)) ||
-        (full && inReadback && /^(requested|observed)$/.test(key))
-        ? "[redacted]" : visit(object[key], depth + 1, inputTool && /^(args|arguments|params)$/.test(key), key === "readback");
+      // 核对把页面、网址和文件内容编在 input 字符串和结论字段里；本机只进字符串遮凭据，导出遮住全部内容字段。
+      const stored = object[key];
+      if (!full && goalCheck && key === "input" && typeof stored === "string") {
+        try {
+          const retried = stored.endsWith(GOAL_CHECK_FORMAT_SUFFIX);
+          const parsed: unknown = JSON.parse(retried ? stored.slice(0, -GOAL_CHECK_FORMAT_SUFFIX.length) : stored);
+          result[safeKey] = JSON.stringify(visit(parsed, depth + 1)) + (retried ? GOAL_CHECK_FORMAT_SUFFIX : "");
+        } catch {
+          result[safeKey] = visit(stored, depth + 1);
+        }
+      } else {
+        result[safeKey] = (full && goalCheck && GOAL_CHECK_PRIVATE_KEYS.has(key)) || SECRET_KEY.test(key) || key === "signature" ||
+          ((sensitive || redactInput) && /^(text|value|code)$/.test(key)) ||
+          (full && inReadback && /^(requested|observed)$/.test(key))
+          ? "[redacted]" : visit(stored, depth + 1, inputTool && /^(args|arguments|params)$/.test(key), key === "readback");
+      }
 
       if (safeKey.length < key.length) result.traceTruncation = { truncated: true, reason: "key length limit" };
     }

@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {REPO,launchRealPath,requireHeadless,siteAddress,until,sleep} from './harness.mts';
+import {REPO,exportDiagnosticsViaSettings,launchRealPath,requireHeadless,siteAddress,until,sleep} from './harness.mts';
 import {startScriptedModel,type Step} from './scripted-model.mts';
 import {installBudget} from '../../gym/instrumentation.mts';
 
 requireHeadless();
 const scenario=process.argv.find(a=>a.startsWith('--case='))?.slice(7)??'correct';
-if(!['correct','wrong','partial','repeat','budget-partial','budget-done'].includes(scenario))throw new Error('Unknown case');
+if(!['correct','wrong','partial','repeat','budget-partial','budget-done','format-retry'].includes(scenario))throw new Error('Unknown case');
 const budgetCase=scenario==='budget-partial'||scenario==='budget-done';
 const out=join(REPO,'out/acceptance/real-path',`${new Date().toISOString().replace(/[:.]/g,'-')}-goal-check-reverify-${scenario}`);
 await mkdir(out,{recursive:true});
@@ -51,7 +52,9 @@ const proxy=createServer(async(req,res)=>{
   }
   if(req.method==='POST'&&body.includes(PREFIX)){
    const payload=JSON.parse(body);
-   const input=JSON.parse(messageText(payload.messages.filter((m:any)=>m.role==='user').at(-1)?.content));
+   const rawInput=messageText(payload.messages.filter((m:any)=>m.role==='user').at(-1)?.content);
+   const input=JSON.parse(rawInput.split('\n\nYour previous reply could not be used.')[0]);
+   const system=messageText(payload.messages.find((m:any)=>m.role==='system')?.content);
    const state=await pageState();
    const verification=!!input.verification;
    const target=scenario==='partial'?'#second':'#complete';
@@ -65,13 +68,14 @@ const proxy=createServer(async(req,res)=>{
     ...(!verification?{verificationTargets:[{target}]}:{evidence:state[target==='#second'?'second':'complete']}),
     items:scenario==='partial'?[{text:'填写完整正文',done:true},{text:'修正第二项',done:false}]:[{text:'填写完整正文',done:false}],
    }:{status:'done',items:[{text:'填写完整正文',done:true},...(scenario==='partial'?[{text:'修正第二项',done:true}]:[])]};
-   checks.push({verification,input,state,verdict});
-   const reply={id:'check-local',object:'chat.completion',created:0,model:'demo-model',choices:[{index:0,message:{role:'assistant',content:JSON.stringify(verdict)},finish_reason:'stop'}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}};
+   checks.push({verification,input,rawInput,system,state,verdict});
+   const responseText=scenario==='format-retry'&&checks.length===1?'not-json':JSON.stringify(verdict);
+   const reply={id:'check-local',object:'chat.completion',created:0,model:'demo-model',choices:[{index:0,message:{role:'assistant',content:responseText},finish_reason:'stop'}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}};
    if(payload.stream===false)res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify(reply));
    else{
     res.writeHead(200,{'content-type':'text/event-stream'});
     const chunk=(delta:any,finish_reason:any=null)=>`data: ${JSON.stringify({id:'check-local',object:'chat.completion.chunk',created:0,model:'demo-model',choices:[{index:0,delta,finish_reason}]})}\n\n`;
-    res.write(chunk({role:'assistant',content:JSON.stringify(verdict)}));res.write(chunk({},'stop'));res.end('data: [DONE]\n\n');
+    res.write(chunk({role:'assistant',content:responseText}));res.write(chunk({},'stop'));res.end('data: [DONE]\n\n');
    }
    return;
   }
@@ -109,7 +113,7 @@ try{
  const reread=checks.find(c=>c.verification);
  evidence.firstState=initialCheck?.state;
  await rp.screenshot(work,join(out,'after.png'));await rp.screenshot(panel,join(out,'sidebar.png'));
- if(!budgetCase){
+ if(!budgetCase&&scenario!=='format-retry'){
   assert.ok(reread,'continue must be independently verified before further writes');
   assert.ok(Array.isArray(reread.input.verification.reads)&&reread.input.verification.reads.length>0,'verification contains actual fresh reads');
   const data=JSON.stringify(reread.input.verification.reads);
@@ -150,7 +154,51 @@ try{
    assert.equal(evidence.final.second,SECOND);assert.deepEqual(evidence.final.counts.complete,initialCheck.state.counts.complete,'completed field must not be rewritten');
    assert.equal(evidence.fillCalls.filter((a:any)=>a.target==='#complete').length,1);
    assert.equal(evidence.fillCalls.filter((a:any)=>a.target==='#second').length,2);
-  }else assert.equal(evidence.fillCalls.length,2,'one initial write and one verified correction');
+  }else assert.equal(evidence.fillCalls.length,scenario==='format-retry'?1:2,'one initial write and a verified correction when required');
+ }
+ const goalEvents=trace.filter(e=>e.type==='goal_check');
+ const checkIds=new Set(goalEvents.map(e=>e.data.checkId));
+ evidence.completeEvents=goalEvents.length;
+ assert.ok(goalEvents.length>0,'every completed goal check is traced');
+ assert.equal(checkIds.size,goalEvents.length,'checkId is unique per check');
+ for(const event of goalEvents){
+  const data=event.data;
+  assert.equal(data.v,1);assert.equal(typeof data.checkId,'string');assert.ok(data.attempt===null||typeof data.attempt==='number');
+  assert.ok(data.promptSha&&data.model&&data.effort);assert.equal(typeof data.input,'string');
+  assert.ok(data.decidedBy==='model'||data.decidedBy.startsWith('host:'));assert.equal(data.verdict.status,data.status);
+  assert.equal(typeof data.ms,'number');if(scenario!=='format-retry')assert.doesNotThrow(()=>JSON.parse(data.input));
+  if(data.parentCheckId)assert.ok(checkIds.has(data.parentCheckId),'reverification links to its parent');
+  if(data.decidedBy==='model'&&data.status!=='unavailable')assert.ok(data.modelReply,'successful model checks keep the raw parsed reply');
+ }
+ const modelChecks=goalEvents.filter(event=>event.data.decidedBy==='model');
+ if(scenario==='format-retry'){
+  assert.equal(modelChecks.length,1);assert.equal(checks.length,2,'the malformed first reply causes one format retry');
+  const last=checks.at(-1);
+  assert.equal(modelChecks[0].data.input,last.rawInput,'the event records the actual retried user content');
+  assert.deepEqual(modelChecks[0].data.modelReply,last.verdict);
+  assert.equal(modelChecks[0].data.promptSha,createHash('sha256').update(last.system).digest('hex'),'the retry system prompt has its own hash');
+  assert.ok(modelChecks[0].data.input.includes('Your previous reply could not be used.'));
+ }else{
+  assert.equal(modelChecks.length,checks.length,'each actual model call has one complete event');
+  for(const [index,check] of checks.entries()){
+   assert.deepEqual(JSON.parse(modelChecks[index].data.input),check.input,'the event input is byte-for-byte equivalent to the actual request JSON');
+   assert.deepEqual(modelChecks[index].data.modelReply,check.verdict,'the event keeps the exact parsed model conclusion');
+  }
+ }
+ const prompts=await rp.evaluate(panel,`new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;const tx=db.transaction('trace-prompts');const q=tx.objectStore('trace-prompts').getAll();q.onsuccess=()=>resolve(q.result);tx.oncomplete=()=>db.close()}})`);
+ evidence.promptArchived=prompts.length;
+ assert.ok(goalEvents.every(event=>prompts.some(prompt=>prompt.hash===event.data.promptSha&&prompt.text.includes("You check whether"))),'the exact prompt is archived by hash');
+ const exported=await exportDiagnosticsViaSettings(rp,rp.extensionId,join(out,'downloads'));
+ evidence.exportStatus=exported.exportStatus;
+ await writeFile(join(out,'exported-traces.jsonl'),exported.traces);
+ const exportedChecks=new Map(exported.traces.split('\n').filter(Boolean).map(line=>JSON.parse(line)).filter(e=>e.type==='goal_check'&&e.data?.checkId).map(e=>[e.data.checkId,e.data]));
+ for(const id of checkIds){
+  const data=exportedChecks.get(id);assert.ok(data,'exported check is present');
+  assert.equal(data.input,'[redacted]','export removes page text, URLs and file content from the complete input');
+  if(data.modelReply!==undefined)assert.equal(data.modelReply,'[redacted]');assert.equal(data.verdict,'[redacted]');
+  if(data.hostFacts!==undefined)assert.equal(data.hostFacts,'[redacted]');
+  assert.ok(!JSON.stringify(data).includes(LONG),'export leaves no page body in any check field');
+  assert.ok(!JSON.stringify(data).includes('127.0.0.1'),'export leaves no page URL in any check field');
  }
 }catch(e){error=e instanceof Error?e.stack:String(e);}finally{
  if(panel&&rp)trace=await rp.evaluate(panel,traceExpr).catch(()=>trace);
