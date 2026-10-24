@@ -49,14 +49,31 @@ function trackOf(target: { type: string; url: string }, extensionId: string): Tr
   return "page";
 }
 
+/** out/ 下所有录屏目录：SIDEAGENT_RECORD_DIR 会把录屏放进 out/recordings 以外的地方。 */
+function recordingsUnder(dir: string): string[] {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  return entries.filter((e) => e.isDirectory() && e.name !== "frames").flatMap((e) => {
+    const path = join(dir, e.name);
+
+    return existsSync(join(path, "recording.json")) ? [path] : recordingsUnder(path);
+  });
+}
+
 /**
  * 边录边写盘，用例中途崩掉也留得下。录屏用自己的 CDP 会话，不碰用例附着的会话。
  * 几个标签页合成「网页」一条，只留各窗口当前标签页的帧：后台标签页加载时也出帧。
+ * fps 限制每条画面每秒最多存几帧；不给就全存（看动效要逐帧）。
  */
-export async function startRecording(dir: string, extensionId: string) {
+export async function startRecording(dir: string, extensionId: string, { fps }: { fps?: number } = {}) {
   // 原始帧占地方，只留三天；视频和总览一直留着。
-  for (const name of existsSync(ROOT) ? readdirSync(ROOT) : []) {
-    const old = join(ROOT, name, "frames");
+  for (const recording of recordingsUnder(join(REPO, "out"))) {
+    const old = join(recording, "frames");
 
     if (existsSync(old) && Date.now() - statSync(old).mtimeMs > 3 * 86_400_000) await rm(old, { recursive: true, force: true });
   }
@@ -90,23 +107,55 @@ export async function startRecording(dir: string, extensionId: string) {
       return targets;
     };
 
+    // 限的是存盘，不是出帧：每帧照样回 ack，不回 Chrome 就不发下一帧。间隔里后到的帧先压着，到点存最新那张，
+    // 画面停下前的最后样子才不会丢。
+    const gap = fps ? 1 / fps : 0;
+    const paced = new Map<string, { last: number; pending?: () => void; timer?: ReturnType<typeof setTimeout> }>();
+    const flush = () => {
+      for (const state of paced.values()) {
+        clearTimeout(state.timer);
+        state.pending?.();
+      }
+    };
+
     const off = cdp.onEvent("Page.screencastFrame", (message: ScreencastFrame) => {
       const source = message.sessionId && sessions.get(message.sessionId);
 
       if (!source) return;
       void cdp.send("Page.screencastFrameAck", { sessionId: message.params.sessionId }, message.sessionId).catch(() => {});
       const at = Math.max(0, (message.params.metadata.timestamp ?? Date.now() / 1000) - started);
-      const write = (async () => {
-        const active = source.track === "page" ? await activeTargets() : null;
+      const save = () => {
+        const write = (async () => {
+          const active = source.track === "page" ? await activeTargets() : null;
 
-        if (active && !active.has(source.target)) return;
+          if (active && !active.has(source.target)) return;
 
-        const file = `${String(count++).padStart(6, "0")}.jpg`;
-        await writeFile(join(dir, "frames", file), Buffer.from(message.params.data, "base64"));
-        await appendFile(join(dir, "frames.jsonl"), `${JSON.stringify({ track: source.track, file, at, target: source.target.slice(0, 8) })}\n`);
-      })().catch(() => {});
-      writes.add(write);
-      void write.then(() => writes.delete(write));
+          const file = `${String(count++).padStart(6, "0")}.jpg`;
+          await writeFile(join(dir, "frames", file), Buffer.from(message.params.data, "base64"));
+          await appendFile(join(dir, "frames.jsonl"), `${JSON.stringify({ track: source.track, file, at, target: source.target.slice(0, 8) })}\n`);
+        })().catch(() => {});
+        writes.add(write);
+        void write.then(() => writes.delete(write));
+      };
+
+      if (!gap || stopped) return save();
+      const state = paced.get(message.sessionId!) ?? { last: -Infinity };
+      paced.set(message.sessionId!, state);
+      clearTimeout(state.timer);
+
+      if (at - state.last >= gap) {
+        state.pending = undefined;
+        state.last = at;
+        return save();
+      }
+
+      const due = state.last + gap;
+      state.pending = () => {
+        state.pending = undefined;
+        state.last = due;
+        save();
+      };
+      state.timer = setTimeout(state.pending, (due - at) * 1000);
     });
 
     const poll = (async () => {
@@ -134,6 +183,7 @@ export async function startRecording(dir: string, extensionId: string) {
 
     unfollow = async () => {
       stopped = true;
+      flush();
       await poll;
       await Promise.all([...sessions.keys()].map(async (sessionId) => {
         await cdp.send("Page.stopScreencast", {}, sessionId, 2000).catch(() => {});
@@ -161,11 +211,13 @@ export async function startRecording(dir: string, extensionId: string) {
 
 type Prepared = { track: Track; frames: Array<{ at: number; file: string; distinct: boolean }>; black: string; width: number; height: number };
 
-function ffmpeg(dir: string, args: string[]) {
-  execFileSync("ffmpeg", ["-y", "-loglevel", "error", ...args], { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });
-}
+// cron 这类精简环境的 PATH 里没有 Homebrew 的目录，夜间回放会因此找不到 ffmpeg。
+let bin: string | null | undefined;
+const ffmpegDir = () => bin !== undefined ? bin : bin = ["", "/opt/homebrew/bin/", "/usr/local/bin/"].find((prefix) => spawnSync(`${prefix}ffmpeg`, ["-version"]).status === 0 && spawnSync(`${prefix}ffprobe`, ["-version"]).status === 0) ?? null;
 
-const hasFfmpeg = () => spawnSync("ffmpeg", ["-version"]).status === 0 && spawnSync("ffprobe", ["-version"]).status === 0;
+function ffmpeg(dir: string, args: string[]) {
+  execFileSync(`${ffmpegDir()}ffmpeg`, ["-y", "-loglevel", "error", ...args], { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });
+}
 
 const FONT = ["/System/Library/Fonts/Menlo.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/dejavu/DejaVuSansMono.ttf"].find((f) => existsSync(f));
 // 时间戳写在画面上方单独一条里，不盖住网页内容。
@@ -225,7 +277,7 @@ async function prepare(dir: string, frames: Frame[]): Promise<Prepared[]> {
     await writeFile(join(dir, out, "list.txt"), own.map((f) => `file '../../frames/${f.file}'\nduration 1`).join("\n"));
     ffmpeg(dir, ["-f", "concat", "-safe", "0", "-i", join(out, "list.txt"), "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${width}:${height}:0:0:color=0x202124,setsar=1`, "-fps_mode", "passthrough", "-q:v", "2", "-start_number", "0", join(out, "%06d.jpg")]);
     ffmpeg(dir, ["-f", "lavfi", "-i", `color=c=black:s=${width}x${height}`, "-frames:v", "1", join(out, "black.jpg")]);
-    const probe = spawnSync("ffmpeg", ["-hide_banner", "-framerate", "1", "-start_number", "0", "-i", join(out, "%06d.jpg"), "-vf", "mpdecimate,showinfo", "-f", "null", "-"], { cwd: dir, encoding: "utf8" });
+    const probe = spawnSync(`${ffmpegDir()}ffmpeg`, ["-hide_banner", "-framerate", "1", "-start_number", "0", "-i", join(out, "%06d.jpg"), "-vf", "mpdecimate,showinfo", "-f", "null", "-"], { cwd: dir, encoding: "utf8" });
     const kept = new Set([...probe.stderr.matchAll(/pts_time:(\d+)/g)].map((m) => Number(m[1])));
     prepared.push({ track, frames: own.map((f, i) => ({ at: f.at, file: join(out, `${String(i).padStart(6, "0")}.jpg`), distinct: kept.has(i) })), black: join(out, "black.jpg"), width, height });
   }
@@ -302,12 +354,12 @@ const times = (prepared: Prepared[], all = false) => [...new Set(prepared.flatMa
 
 const spread = <T,>(items: T[], n: number) => items.length <= n ? items : Array.from({ length: n }, (_, i) => items[Math.round((i * (items.length - 1)) / (n - 1))]);
 
-/** 合成真实速度、慢放和总览。没有 ffmpeg 或没录到画面时返回 null，不影响验收。 */
-export async function render(dir: string): Promise<{ run: string; slow: string; overview: string } | null> {
-  if (!hasFfmpeg()) return null;
+/** 合成真实速度、慢放和总览。没有 ffmpeg 或没录到画面时不合成、说明是哪一种，不影响验收。 */
+export async function render(dir: string): Promise<{ run: string; slow: string; overview: string } | "no-ffmpeg" | "no-frames"> {
+  if (ffmpegDir() === null) return "no-ffmpeg";
   const { frames, end } = await load(dir);
 
-  if (!frames.length) return null;
+  if (!frames.length) return "no-frames";
   const prepared = await prepare(dir, frames);
 
   try {
@@ -353,13 +405,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7) as Track | undefined;
   const dir = args[0] ? resolve(args[0]) : latestRecording();
 
-  if (!hasFfmpeg()) throw new Error("需要本机 ffmpeg 和 ffprobe");
+  if (ffmpegDir() === null) throw new Error("需要本机 ffmpeg 和 ffprobe");
 
   if (args.length >= 3) {
     const { files, total } = await zoom(dir, Number(args[1]), Number(args[2]), { only, all: process.argv.includes("--all") });
     console.log(total ? `${total} 帧${total > 48 ? "（均匀抽 48 帧）" : ""}：\n${files.map((f) => relative(process.cwd(), f)).join("\n")}` : "这段时间里没有看得出的画面变化");
   } else {
     const made = await render(dir);
-    console.log(made ? Object.values(made).map((f) => relative(process.cwd(), f)).join("\n") : "没有录到画面");
+    console.log(typeof made === "object" ? Object.values(made).map((f) => relative(process.cwd(), f)).join("\n") : "没有录到画面");
   }
 }

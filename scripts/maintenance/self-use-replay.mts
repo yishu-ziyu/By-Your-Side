@@ -49,8 +49,8 @@ const shots = join(outDir, day);
 
 await mkdir(shots, { recursive: true });
 
-// 用日常扩展同一份构建（不现场构建，不动 extension/dist）。
-const rp = await launchRealPath({ dist: process.env.SIDEAGENT_ACCEPTANCE_DIST ?? join(REPO, "extension/dist") });
+// 用日常扩展同一份构建（不现场构建，不动 extension/dist）。整轮回放要录二三十分钟，录屏每条画面每秒存 10 帧就够看清过程。
+const rp = await launchRealPath({ dist: process.env.SIDEAGENT_ACCEPTANCE_DIST ?? join(REPO, "extension/dist"), recordFps: 10 });
 const rows: Row[] = [];
 const traceExpression = `new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-lines')){db.close();resolve([]);return}const tx=db.transaction('trace-lines');const q=tx.objectStore('trace-lines').getAll();q.onsuccess=()=>resolve(q.result.map(x=>x.line));tx.oncomplete=()=>db.close()}})`;
 const load = () => Math.round(loadavg()[0] * 10) / 10;
