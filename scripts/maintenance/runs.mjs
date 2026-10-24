@@ -33,7 +33,7 @@ if (!rows.length) {
 
 const byCase = new Map();
 for (const row of rows) {
-  const key = [row.case, ...row.args].join(" ");
+  const key = [row.case, ...row.args].join(" ") + (row.role ? ` [${row.role}]` : "");
   const item = byCase.get(key) ?? { 用例: key, 运行: 0, 通过: 0, 失败: 0, 被拦: 0, 没跑起来: 0, 分钟: 0 };
   item.运行 += 1;
   if (row.blocked) item.被拦 += 1;
@@ -50,4 +50,9 @@ const passed = judged.filter((row) => row.ok).length;
 const minutes = Math.round(rows.reduce((sum, row) => sum + row.seconds, 0) / 60);
 
 console.table(table);
+
+// 日常装着的那份构建现在哪些用例坏着：每个用例只看最近一次。
+const daily = new Map(rows.filter((row) => row.role === "daily" && typeof row.ok === "boolean").map((row) => [[row.case, ...row.args].join(" "), row]));
+const broken = [...daily].filter(([, row]) => !row.ok).map(([key]) => key);
+if (daily.size) console.log(`日常版本：最近一次跑过的 ${daily.size} 个用例里 ${broken.length} 个没过${broken.length ? `：${broken.join("、")}` : ""}。`);
 console.log(`${days === 1 ? "今天" : `${days} 天内`}：运行 ${rows.length} 次，通过 ${passed}/${judged.length}（${judged.length ? Math.round((passed / judged.length) * 100) : 0}%），被拦或没跑起来 ${rows.length - judged.length} 次，累计 ${minutes} 分钟。`);

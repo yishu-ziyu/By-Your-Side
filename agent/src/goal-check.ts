@@ -3,6 +3,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { parseJsonReply, sideJudgment, type SideCallHost } from "./side-judgment.js";
 import { BLOCKED_CAUSES, plainBlockedReason } from "../../shared/user-facing.js";
 import { csvTotalMismatches } from "./csv-total.js";
+import type { GoalFacts } from "./goal-facts.js";
 
 /**
  * 目标核对（也管用过工具的只读任务）：任务一轮结束时，由快速模型判断用户要的结果达成没有。
@@ -43,6 +44,10 @@ export interface GoalCheckInput {
   replyCards?: Array<{ title: string; inputs: string[] }>;
   copies?: CopyCheck[];
   verification?: GoalVerification;
+  /** 宿主记下的动作落点和助手自己输入的文字（goal-facts.ts）。 */
+  facts?: GoalFacts;
+  /** 已经算好的「回答里没读到的名字」：离线重放诊断记录时用，那时没有整段对话的读数索引。 */
+  notInReads?: string[];
 }
 
 /** Only page values enter the recheck, not changing node IDs or layout metadata. */
@@ -342,6 +347,28 @@ function searchedWordings(observations: GoalCheckInput["observations"]): string[
   return [...terms];
 }
 
+function namesNotRead(input: GoalCheckInput): string[] {
+  if (input.notInReads) return input.notInReads;
+  const seen = { pairs: new Set(input.readWords?.pairs), complete: input.readWords?.complete ?? true };
+  for (const text of [...input.goal, input.goalPage?.title ?? "", input.page?.title ?? "", input.page?.text ?? "", ...(input.observations ?? []).map(item => item.text), ...(input.files ?? []).map(file => file.content ?? "")]) readWords(text, seen);
+  return unreadNames(input.lastReply, seen);
+}
+
+/**
+ * 写进本机诊断记录的核对输入：离线重放能照它重建一模一样的核对请求。
+ * 读数索引换成算好的名字清单；各段文字只留核对会用到的长度，多留 1 字，「被截断」的标记照样成立。
+ */
+export function goalCheckRecord(input: GoalCheckInput): Record<string, unknown> {
+  const { readWords: _index, ...rest } = input;
+  return {
+    ...rest,
+    notInReads: namesNotRead(input),
+    lastReply: input.lastReply.slice(0, 12_001),
+    page: input.page ? { ...input.page, text: input.page.text.slice(0, PAGE_CHARS + 1) } : null,
+    files: input.files?.slice(-16).map(file => (file.content === undefined ? file : { ...file, content: file.content.slice(0, 12_001) })),
+  };
+}
+
 /** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
 export async function checkGoal(host: SideCallHost, model: Model<Api>, input: GoalCheckInput, signal: AbortSignal, headers?: Record<string, string>): Promise<GoalVerdict> {
   // 实测模型把多行 CSV 写成一行字面 \n；不自动解码文件，以免改变用户要求的转义示例。
@@ -377,9 +404,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   if (wordings.length === 1 && NOT_FOUND.test(input.lastReply.slice(0, 120)) && !asksUser(input.lastReply)) {
     return { status: "continue", verifiedByHost: true, verificationSubject: 'answer', remaining: "换个说法再找", correction: `只用「${wordings[0]!.slice(0, 40)}」找过一次就说没有。换近义说法、常见别名、英文名或更宽的词再找；找到对应的条目或页面就打开读完，再讲它的内容；都找不到再说没有，并说清试过哪些说法。` };
   }
-  const seen = { pairs: new Set(input.readWords?.pairs), complete: input.readWords?.complete ?? true };
-  for (const text of [...input.goal, input.goalPage?.title ?? "", input.page?.title ?? "", input.page?.text ?? "", ...(input.observations ?? []).map(item => item.text), ...(input.files ?? []).map(file => file.content ?? "")]) readWords(text, seen);
-  const notInReads = unreadNames(input.lastReply, seen);
+  const notInReads = namesNotRead(input);
   let fileBudget = 12_000;
   let observationBudget = 16_000;
 
