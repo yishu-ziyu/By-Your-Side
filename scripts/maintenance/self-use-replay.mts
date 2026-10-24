@@ -88,7 +88,8 @@ try {
     await rp.click(panel, "#conversation-new");
     await until(async () => await rp.evaluate(panel, ready), 60_000, "新对话就绪").catch(() => {});
 
-    for (const say of task.say) {
+    for (const [index, say] of task.say.entries()) {
+      const k = index + 1;
       const start = Date.now();
       const loadStart = load();
       let finished = true;
@@ -142,20 +143,22 @@ try {
       const lines = (await rp.evaluate(panel, traceExpression).catch(() => []) as string[]).slice(traceSeen);
       traceSeen += lines.length;
       allLines.push(...lines);
-      await writeFile(join(shots, `${task.n}-${task.say.indexOf(say) + 1}.trace.jsonl`), lines.map(line => `${line.trimEnd()}\n`).join("")).catch(() => {});
+      await writeFile(join(shots, `${task.n}-${k}.trace.jsonl`), lines.map(line => `${line.trimEnd()}\n`).join("")).catch(() => {});
       await savePrompts(panel);
       rowRuns.push(new Set(lines.flatMap(line => { try { const r = JSON.parse(line) as { type?: unknown; runId?: unknown }; return r.type === "run_start" ? [r.runId] : []; } catch { return []; } })));
-      const rule = task.expect?.[String(task.say.indexOf(say) + 1)];
+      const rule = task.expect?.[String(k)];
       const missed = rule ? missedOf(rule, {
         answer: seen.answer,
         page: String(await rp.evaluate(workSession, "document.body?.innerText ?? ''").catch(() => "")),
         tabs: (await rp.targets()).filter(t => t.type === "page").map(t => t.url),
+        replyHas: rule.replyHas?.length ? await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); return ${JSON.stringify(rule.replyHas)}.filter(s => !!a?.querySelector(s)); })()`).catch(() => []) as string[] : [],
       }) : [];
       const secs = Math.round((answered - start) / 1000);
       const checkSecs = Math.round((Date.now() - answered) / 1000);
-      rows.push({ n: task.n, say, secs, checkSecs, totalSecs: secs + checkSecs, calls: 0, load: [loadStart, load()], finished, error: error ?? unsettled ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal: false, verdict: null, expect: rule ? (missed.length ? "fail" : "pass") : null, missed, answer: seen.answer });
-      await rp.screenshot(panel, join(shots, `${task.n}-${task.say.indexOf(say) + 1}.png`)).catch(() => {});
-      console.log(`${task.n} ${finished ? "完成" : "没完成"} ${rows.at(-1)!.totalSecs}s ${say.slice(0, 30)}`);
+      rows.push({ n: task.n, k, say, secs, checkSecs, totalSecs: secs + checkSecs, calls: 0, load: [loadStart, load()], finished, error: error ?? unsettled ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal: false, verdict: null, expect: rule ? (missed.length ? "fail" : "pass") : null, missed, answer: seen.answer });
+      await rp.screenshot(panel, join(shots, `${task.n}-${k}.png`)).catch(() => {});
+      // 原话只进本机报告，不打到终端：climb 会转发这里的输出。
+      console.log(`${task.n}-${k} ${finished ? "完成" : "没完成"} ${rows.at(-1)!.totalSecs}s`);
 
       // 上一句没做完就不接着说：后一句是接着前一句说的。
       if (!finished) break;

@@ -5,12 +5,17 @@
 
 import type { GoalFacts } from "../../agent/src/goal-facts.ts";
 
-/** 每句的结果断言，按句号（从 1 数）登记。answer 对完整回答、page 对用户那页的正文、tab 对任一打开的网址，都是正则；answerNot 不许出现。 */
-export type Expect = { answer?: string[]; answerNot?: string[]; page?: string[]; tab?: string[] };
+/**
+ * 每句的结果断言，按句号（从 1 数）登记。answer 对完整回答、page 对用户那页的正文、tab 对任一打开的网址，都是正则；answerNot 不许出现。
+ * replyHas 是 CSS 选择器，回答里必须有这样的元素（例如画出来的图 .gc-diagram svg）：画没画出来看文字判不准。
+ */
+export type Expect = { answer?: string[]; answerNot?: string[]; page?: string[]; tab?: string[]; replyHas?: string[] };
 export type PoolTask = { n: number; url: string; say: string[]; onPage?: number[]; expect?: Record<string, Expect> };
 
 export type Row = {
   n: number;
+  /** 场景里的第几句（从 1 数）。 */
+  k: number;
   say: string;
   /** 发出到第一次回答写完。 */
   secs: number;
@@ -58,8 +63,8 @@ export function poolOf(value: unknown): PoolTask[] {
       if (!/^\d+$/.test(key) || Number(key) < 1 || Number(key) > (say as string[]).length) throw new Error(`${where} expect 的键 ${key} 不是句号`);
       if (!rule || typeof rule !== "object") throw new Error(`${where} expect.${key} 应当是对象`);
       for (const [field, patterns] of Object.entries(rule)) {
-        if (!["answer", "answerNot", "page", "tab"].includes(field) || !strings(patterns)) throw new Error(`${where} expect.${key}.${field} 不认识或不是字符串数组`);
-        for (const pattern of patterns as string[]) new RegExp(pattern, "i");
+        if (!["answer", "answerNot", "page", "tab", "replyHas"].includes(field) || !strings(patterns)) throw new Error(`${where} expect.${key}.${field} 不认识或不是字符串数组`);
+        if (field !== "replyHas") for (const pattern of patterns as string[]) new RegExp(pattern, "i");
       }
     }
 
@@ -69,7 +74,7 @@ export function poolOf(value: unknown): PoolTask[] {
 }
 
 /** 按登记的断言判一句：返回落空的那几条，空数组就是过。 */
-export function missedOf(rule: Expect, seen: { answer: string; page: string; tabs: string[] }): string[] {
+export function missedOf(rule: Expect, seen: { answer: string; page: string; tabs: string[]; replyHas: string[] }): string[] {
   const test = (pattern: string, text: string) => new RegExp(pattern, "i").test(text);
 
   return [
@@ -77,6 +82,7 @@ export function missedOf(rule: Expect, seen: { answer: string; page: string; tab
     ...(rule.answerNot ?? []).filter(p => test(p, seen.answer)).map(p => `回答不该有 /${p}/`),
     ...(rule.page ?? []).filter(p => !test(p, seen.page)).map(p => `页面没有 /${p}/`),
     ...(rule.tab ?? []).filter(p => !seen.tabs.some(url => test(p, url))).map(p => `没有打开 /${p}/`),
+    ...(rule.replyHas ?? []).filter(selector => !seen.replyHas.includes(selector)).map(selector => `回答里没有 ${selector}`),
   ];
 }
 
@@ -102,11 +108,13 @@ export function attribute(rows: Row[], rowRuns: Set<unknown>[], lines: string[],
 
   rows.forEach((row, index) => {
     const task = pool.find(t => t.n === row.n);
-    const mine = parsed.filter(r => rowRuns[index]?.has(r.runId));
+    // 记录里找不到这一句的开始（记录写满、侧栏没起跑）：往返和换目标都无从归属，不能当成 0 次、没换目标。
+    if (!rowRuns[index]?.size) { row.error ??= "诊断记录里没有这一句的开始，往返和换目标无法归属"; return; }
+    const mine = parsed.filter(r => rowRuns[index]!.has(r.runId));
     // 和核对用同一份宿主事实：这句话指的是当时页面上的东西，动作却落在助手自己打开的别的页、或搜了用户没说过的词。落点没读到地址的不算。
     const facts = factsOf(mine.filter(r => r.type === "goal_check").at(-1)?.data?.hostFacts?.goalFacts ?? mine.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
     row.calls = mine.filter(r => r.type === "model_request").length;
-    row.changedGoal = !!task?.onPage?.includes(task.say.indexOf(row.say) + 1) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
+    row.changedGoal = !!task?.onPage?.includes(row.k) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
     row.verdict = mine.filter(r => r.type === "goal_check").map(r => r.data?.status).filter((s): s is string => typeof s === "string").at(-1) ?? null;
   });
 }
