@@ -55,7 +55,7 @@ interface MarkOptions {
 }
 
 interface CrossPageMember {
-  sessionId: string; title: string; tabId?: number; state?: "waiting" | "reading" | "done" | "failed";
+  sessionId: string; title: string; tabId?: number; state?: "waiting" | "reading" | "translating" | "done" | "failed";
 }
 
 interface CrossPageView {
@@ -74,7 +74,7 @@ interface SideAgentCursor {
   /** 按住说话时的音量（0–1），画在「在听」旁的声波上。 */
   companionLevel?(level: number): void;
   /** 状态层：在等 / 在读 / 完成 / 失败，画在右边缘胶囊上。文案在页面侧，调用方只给状态。 */
-  setStatus?(view?: { state: "waiting" | "reading" | "done" | "failed"; text?: string; detail?: string; autoHideMs?: number }): void;
+  setStatus?(view?: { state: "waiting" | "reading" | "translating" | "done" | "failed"; text?: string; detail?: string; autoHideMs?: number }): void;
   clearStatus?(): void;
   /** 跨页：它在别的标签页干活时，当前页右边缘胶囊指向那一页（点了切过去） */
   showCrossPage?(view?: CrossPageView): void;

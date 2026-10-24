@@ -245,7 +245,7 @@ export async function createConversationRuntime(
       }
 
       case "page_translate":
-        void session.togglePageTranslation(msg.context);
+        if (msg.context) void session.togglePageTranslation(msg.context);
         break;
       case "set_model":
         void handleSetModel(msg.model);

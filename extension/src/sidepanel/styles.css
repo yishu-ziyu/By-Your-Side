@@ -1834,7 +1834,7 @@ details.run-steps.done .chip.error { background: transparent; }
   animation: tileLand var(--d-emph) var(--e-spring) backwards;
 }
 
-#attach-btn {
+#attach-btn, #translate-btn {
   width: 26px;
   height: 26px;
   border-radius: var(--r-tail);
@@ -1852,16 +1852,17 @@ details.run-steps.done .chip.error { background: transparent; }
   transition: background var(--m-quick) ease, transform var(--m-quick) ease;
   flex-shrink: 0;
 }
-#attach-btn:hover {
+#attach-btn:hover, #translate-btn:hover {
   color: var(--text-primary);
   background: var(--content-subtle);
 }
-#attach-btn:active { transform: scale(.95); }
+#attach-btn:active, #translate-btn:active { transform: scale(.95); }
+#translate-btn svg { width: 16px; height: 16px; }
 #attach-btn.active {
   color: var(--apple-blue);
   background: var(--apple-blue-soft);
 }
-#attach-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#attach-btn:focus-visible, #translate-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .action-menu-popover {
   position: absolute;
@@ -3368,7 +3369,7 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 #composer.steering-active { border-color: var(--well-outline); box-shadow: inset 0 1px 0 var(--well-highlight); }
 #steer-ribbon { display: none !important; }
 #composer-bar { gap: 4px; }
-#attach-btn, #composer .voice-start, #steer-send-btn { width: 32px; height: 32px; border-radius: 999px; flex-shrink: 0; }
+#attach-btn, #translate-btn, #composer .voice-start, #steer-send-btn { width: 32px; height: 32px; border-radius: 999px; flex-shrink: 0; }
 #attach-btn { font-size: 18px; font-weight: 400; }
 #attach-btn.active { color: var(--text-primary); background: var(--content-subtle); }
 #composer .voice-start { display: inline-grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--text-secondary); }
@@ -3561,7 +3562,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 }
 @container panel (max-width: 280px) {
   #composer-bar { gap: 2px; }
-  #composer-bar :is(#attach-btn, #dictate-btn, .voice-start, #steer-send-btn) { width: 28px; height: 28px; }
+  #composer-bar :is(#attach-btn, #translate-btn, #dictate-btn, .voice-start, #steer-send-btn) { width: 28px; height: 28px; }
   #composer-bar #takeover-btn { padding: 0 4px; }
   #think-chip { padding: 0 4px; }
 }

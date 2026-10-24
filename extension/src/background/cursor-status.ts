@@ -11,7 +11,7 @@ import { parseExecutionKey } from "./tab-bindings.js";
 import { feedbackIsStale, type FeedbackPillView } from "../shared/feedback-pill.js";
 import type { ExecutionFeedback } from "../../../shared/execution-feedback.js";
 
-export type CursorStatusState = "waiting" | "reading" | "done" | "failed";
+export type CursorStatusState = "waiting" | "reading" | "translating" | "done" | "failed";
 
 type LivingStatus = {
   /** 执行键（会话 + 成员）：跨会话并行时同名成员各记各的 */
@@ -148,7 +148,7 @@ function isCurrentEntry(entry: LivingStatus): boolean {
 
 /** 只在它真的在别的标签页干活时留胶囊；等待/读页面之外的阶段、和页面相同的情况都收起。 */
 async function syncPill(entry: LivingStatus): Promise<void> {
-  const ambient = entry.state === "waiting" || entry.state === "reading";
+  const ambient = entry.state === "waiting" || entry.state === "reading" || entry.state === "translating";
 
   if (entry.tabId == null || !ambient) {
     if (isCurrentEntry(entry)) await dropPill(entry);
