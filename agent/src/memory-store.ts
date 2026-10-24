@@ -22,6 +22,7 @@ import {
   type MemoryValidity,
 } from "../../shared/memory.js";
 import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
+import { parseSavedOpen } from "./saved-opens.js";
 import { placeMemory, sameMemoryScope, validateMemoryDecision, type MemoryDecision } from "./memory-decision.js";
 import type { DocumentPersistence } from "./document-persistence.js";
 
@@ -313,13 +314,21 @@ export class MemoryStore {
 
       if (current.status !== "active") throw new Error("只能修改生效的记忆");
 
+      const text = input.text.trim();
       const entry: MemoryEntry = {
         ...current,
         version: current.version + 1,
-        text: input.text.trim(),
+        text,
         scope: cloneScope(input.scope),
         updatedAt: Math.max(Date.now(), current.updatedAt + 1),
       };
+
+      // 「说 X 就打开」只认原话里的那句话和网址；用户在面板里改了这条，原话就不再是它说的事。
+      // 改后的文字是用户自己写的：还写着那句话和网址就按它打开，否则不再自动打开。
+      if (current.sourceQuote && text !== current.text && parseSavedOpen(current.sourceQuote)) {
+        if (parseSavedOpen(text)) entry.sourceQuote = text.slice(0, MEMORY_QUOTE_MAX);
+        else delete entry.sourceQuote;
+      }
 
       entries[index] = entry;
 
