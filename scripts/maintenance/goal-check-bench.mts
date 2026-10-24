@@ -23,9 +23,9 @@ import { MAIN } from "./goal-check-labels.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan } from "../acceptance/real-path/inproc-config.mts";
 
 type Status = "done" | "continue" | "needs_user" | "open" | "blocked";
-type Label = { id: string; source: string; tags?: string[]; input: GoalCheckInput; recorded: string | null; expected: Status; reason: string };
+type Label = { id: string; source: string; tags?: string[]; input: GoalCheckInput; recorded: string | null; expected: Status | null; reason: string };
 
-/** 标注集由 goal-check-labels.mts 生成；还没填「该判」的不进尺子。 */
+/** 标注集由 goal-check-labels.mts 生成；还没填「该判」的只在 --only 点名时跑，只算自一致和用时。 */
 
 const arg = (name: string) => process.argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const labelsFile = resolve(arg("labels") ?? join(MAIN, "out/goal-check-labels/labels.json"));
@@ -44,8 +44,8 @@ const { checkGoal } = await import(`${pathToFileURL(bundle).href}?${Date.now()}`
 function labelsOf(value: unknown): Label[] {
   if (!Array.isArray(value)) throw new Error(`${labelsFile} 不是数组`);
 
-  return value.filter((item): item is Label => !!item && typeof item === "object" && typeof (item as Label).id === "string" && (item as Label).expected !== null
-    && STATUSES.includes((item as Label).expected) && !!(item as Label).input && Array.isArray((item as Label).input.goal));
+  return value.filter((item): item is Label => !!item && typeof item === "object" && typeof (item as Label).id === "string"
+    && ((item as Label).expected === null ? !!only?.includes((item as Label).id) : STATUSES.includes((item as Label).expected!)) && !!(item as Label).input && Array.isArray((item as Label).input.goal));
 }
 
 const labels = labelsOf(JSON.parse(readFileSync(labelsFile, "utf8"))).filter(item => !only || only.includes(item.id));
@@ -69,7 +69,7 @@ const host = {
   record: (_type: "side_call", data: { detail?: string; reason?: string }) => { lastDetail = data.detail ?? data.reason ?? ""; },
 };
 
-type Outcome = { id: string; expected: Status; got: string[]; ms: number[] };
+type Outcome = { id: string; expected: Status | null; got: string[]; ms: number[] };
 const outcomes: Outcome[] = [];
 
 for (const item of labels) {
@@ -91,10 +91,10 @@ for (const item of labels) {
   }
 
   outcomes.push({ id: item.id, expected: item.expected, got, ms });
-  console.log(`${item.id}  该判 ${item.expected}  判 ${got.join("/")}  ${ms.map(n => (n / 1000).toFixed(1)).join("/")} 秒`);
+  console.log(`${item.id}  该判 ${item.expected ?? "未标注"}  判 ${got.join("/")}  ${ms.map(n => (n / 1000).toFixed(1)).join("/")} 秒`);
 }
 
-const judged = (filter: (o: Outcome) => boolean) => outcomes.filter(filter).flatMap(o => o.got.filter(g => STATUSES.includes(g)).map(g => ({ o, g })));
+const judged = (filter: (o: Outcome) => boolean) => outcomes.filter(o => o.expected !== null).filter(filter).flatMap(o => o.got.filter(g => STATUSES.includes(g)).map(g => ({ o, g })));
 // 误判续做：该判的不是 continue，却判了 continue（白跑一轮）。误判完成：该判的不是 done，却判了 done（放过没做完或换了目标的回答）。
 const notContinue = judged(o => o.expected !== "continue");
 const notDone = judged(o => o.expected !== "done");
@@ -127,7 +127,7 @@ const report = [
   ``,
   `| 编号 | 来源 | 该判 | 判 | 用时（秒） |`,
   `|---|---|---|---|---|`,
-  ...outcomes.map(o => `| ${o.id} | ${labels.find(l => l.id === o.id)?.source ?? ""} | ${o.expected} | ${o.got.join(" / ")} | ${o.ms.map(n => (n / 1000).toFixed(1)).join(" / ")} |`),
+  ...outcomes.map(o => `| ${o.id} | ${labels.find(l => l.id === o.id)?.source ?? ""} | ${o.expected ?? "未标注"} | ${o.got.join(" / ")} | ${o.ms.map(n => (n / 1000).toFixed(1)).join(" / ")} |`),
 ].join("\n") + "\n";
 const out = join(dirname(labelsFile), `bench-${name}`);
 await mkdir(dirname(out), { recursive: true });
