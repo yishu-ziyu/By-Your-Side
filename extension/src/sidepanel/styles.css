@@ -3058,7 +3058,7 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .msg.assistant .answer-source-external { width: 12px; height: 12px; flex: none; }
 .msg.assistant .answer-source.untitled .answer-source-host { visibility: hidden; }
 .msg.assistant .answer-source.untitled:hover .answer-source-host { visibility: visible; }
-.msg.assistant .answer-source:hover .answer-source-host { font-size: 0; }
+.msg.assistant .answer-source:hover .answer-source-host-text { display: none; }
 .msg.assistant .answer-source:hover .answer-source-host::after { content: attr(data-hover); font-size: var(--fs-micro); color: var(--text-tertiary); }
 .msg.assistant .answer-source:focus-visible, .msg.assistant .answer-sources > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 .source-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 50; padding: 6px 12px; border-radius: 999px; background: var(--text-primary); color: var(--content-subtle); font-size: var(--fs-meta); box-shadow: 0 4px 14px rgba(0,0,0,.12); pointer-events: none; }
@@ -3176,7 +3176,7 @@ details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer
   animation: runBeat calc(var(--d-emph) * 2) linear infinite;
 }
 .run-tab-tile[data-state="dead"] { opacity: .45; filter: grayscale(1); }
-.run-tab-status { margin-top: 2px; max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; line-height: 12px; color: var(--text-tertiary); }
+.run-tab-status { margin-top: 2px; max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-micro); line-height: 13px; color: var(--text-tertiary); }
 .run-tab-badge { position: absolute; right: -3px; top: 20px; width: 11px; height: 11px; border-radius: 50%; background: var(--content-bg); color: var(--text-tertiary); font-size: 9px; line-height: 11px; text-align: center; }
 .run-tab-tile[data-state="done"] .run-tab-badge::before { content: ""; display: block; width: 4.5px; height: 2.4px; margin: 3px 0 0 2.5px; border: solid var(--text-tertiary); border-width: 0 0 1.3px 1.3px; transform: rotate(-45deg); }
 .run-tab-tile[data-state="dead"] .run-tab-badge::before { content: "×"; color: var(--text-quaternary); }
