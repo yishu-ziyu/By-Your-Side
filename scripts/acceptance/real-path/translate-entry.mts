@@ -25,8 +25,19 @@ const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
 
 /** 整棵 DOM（含封闭的 shadow root，边缘胶囊就在里面）里有没有这段字。 */
-type DomNode = { nodeValue?: string; children?: DomNode[]; shadowRoots?: DomNode[] };
+type DomNode = { nodeValue?: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
 const hasText = (node: DomNode, text: string): boolean => !!node.nodeValue?.includes(text) || [...(node.children ?? []), ...(node.shadowRoots ?? [])].some(child => hasText(child, text));
+/** 只在边缘胶囊里找：光标浮层收起后节点里还留着旧字，但用户看不到。 */
+const edgeTab = (node: DomNode): DomNode | null => {
+  const at = node.attributes?.indexOf("data-sideagent-overlay") ?? -1;
+
+  if (at >= 0 && node.attributes?.[at + 1] === "edge-tab") return node;
+
+  for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) { const found = edgeTab(child); if (found) return found; }
+
+  return null;
+};
+const capsuleHas = (root: DomNode, text: string): boolean => { const tab = edgeTab(root); return !!tab && hasText(tab, text); };
 
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
@@ -49,7 +60,7 @@ try {
     if (!capsule) {
       // SAFETY: DOM.getDocument 回的是 CDP 节点树，这里只读 nodeValue、children、shadowRoots。
       const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
-      capsule = hasText(root, "在翻译");
+      capsule = capsuleHas(root, "在翻译");
 
       if (capsule) await rp.screenshot(work, join(out, "a-translating.png"));
     }
@@ -68,7 +79,7 @@ try {
     // SAFETY: DOM.getDocument 回的是 CDP 节点树，这里只读 nodeValue、children、shadowRoots。
     const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
 
-    return !hasText(root, "正在思考") || null;
+    return !capsuleHas(root, "正在思考") || null;
   }, 3000, "胶囊不再写正在思考").then(() => true, () => false);
   check("b 译完后 3 秒内胶囊不再写「正在思考」", settled, { settled });
   await rp.screenshot(work, join(out, "b-settled.png"));
