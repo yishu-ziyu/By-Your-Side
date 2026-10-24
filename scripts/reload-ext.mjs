@@ -71,11 +71,9 @@ function send(method, params = {}, sessionId) {
 // CDP 只认 background：写成 active:false 会被忽略，新标签页开在前台，把 Chrome 拉到最前面。
 const { result: t } = await send("Target.createTarget", { url: "chrome://extensions/", background: true });
 
-await new Promise((r) => setTimeout(r, 2500));
-
 const { result: att } = await send("Target.attachToTarget", { targetId: t.targetId, flatten: true });
 
-const r = await send("Runtime.evaluate", {
+const click = () => send("Runtime.evaluate", {
   expression: `(() => {
     const mgr = document.querySelector('extensions-manager');
     if (!mgr || !mgr.shadowRoot) return 'extensions 页面未就绪';
@@ -96,7 +94,16 @@ const r = await send("Runtime.evaluate", {
   returnByValue: true,
 }, att.sessionId);
 
-const outcome = r.result?.result?.value ?? JSON.stringify(r.result);
+// 机器忙时（负载 20 以上）扩展页要好几秒才画出来：等到列表就绪再点，最多 20 秒。
+let outcome = "";
+
+for (const until = Date.now() + 20_000; ;) {
+  await new Promise((r2) => setTimeout(r2, 500));
+  const r = await click();
+  outcome = r.result?.result?.value ?? JSON.stringify(r.result);
+
+  if (!/未就绪|未安装/.test(outcome) || Date.now() > until) break;
+}
 
 await new Promise((r2) => setTimeout(r2, 800));
 
