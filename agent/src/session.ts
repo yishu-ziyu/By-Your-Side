@@ -3203,7 +3203,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return now && withoutHash(now) !== withoutHash(url) ? now : null;
   }
 
-  /** 一轮真正结束后的收尾（原 agent_end 处理）：交付最终正文、状态回到空闲、技能学习与异常说明。 */
   private deliverFinalText(text: string): void {
     if (!this.sendOptions) return;
 
@@ -3215,6 +3214,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
   }
 
+  /** 一轮真正结束后的收尾（原 agent_end 处理）：交付最终正文、状态回到空闲、技能学习与异常说明。 */
   private finishAgentEnd(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): void {
     const { emit, setStatus } = this.callbacks;
     // 这一轮真的结束了：运行中显示直达已没有归属，中止在途调用，不再写入。
