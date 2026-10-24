@@ -67,7 +67,7 @@ let failNext = 0;
 const front = createServer(async (req, res) => {
   let body = "";
 
-  for await (const chunk of req) body += String(chunk);
+  req.setEncoding('utf8'); for await (const chunk of req) body += chunk;
 
   if (failNext > 0 && /"tools"\s*:\s*\[\s*\{/.test(body)) {
     failNext -= 1;

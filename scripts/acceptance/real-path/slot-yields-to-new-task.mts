@@ -37,7 +37,7 @@ const model = await startScriptedModel([
 const proxy = createServer(async (req, res) => {
   let body = "";
 
-  for await (const chunk of req) body += String(chunk);
+  req.setEncoding('utf8'); for await (const chunk of req) body += chunk;
   let forward = body;
 
   if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {

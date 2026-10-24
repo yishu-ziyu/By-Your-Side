@@ -3111,11 +3111,16 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     // 核对太慢就先放出回答、收尾，核对照旧跑完：判继续时侧栏照原来的做法收起这份回答（交付前对清单的上限）。
     const timer = gate ? setTimeout(() => { if (this.answerHold === hold && !hold.settled) { this.runTrace.record("goal_gate", { released: "timeout" }); letGo(); } }, GOAL_GATE_WAIT_MS) : null;
 
+    // 开始和结束两条标记带开始时这一轮的 runId：回答先放出、用户已开下一轮时，诊断仍能知道这一轮还有核对没判完、结论归哪一轮。
+    const correlation = this.runTrace.traceCorrelation();
+    this.runTrace.recordAt(correlation, "goal_check_span", { phase: "start" });
+
     try {
       await this.checkGoalThenAct(event, gate, letGo);
     } finally {
       if (timer) clearTimeout(timer);
       letGo();
+      this.runTrace.recordAt(correlation, "goal_check_span", { phase: "end" });
     }
   }
 
