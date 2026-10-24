@@ -106,11 +106,22 @@ try {
       }
 
       const answered = Date.now();
-      // 回答写完后还在核对（「核对中…」），判「继续」时助手会接着做：既不在跑、也不在核对、连着 3 秒都这样，这一句才算做完。
+      // 回答写完后还在核对，判「继续」时助手会接着做：既不在跑、也不在核对、连着 3 秒都这样，而且诊断记录里每次核对都有了结论，这一句才算做完。
+      // 回答等不到核对、先放出来以后，侧栏不再显示「核对中」，快速模型还要几秒才判完：只看侧栏会在结论之前收工，最后一句的结论和它引出的续做都会漏掉。
+      const verdictsPending = async () => {
+        let open = 0;
+
+        for (const line of (await rp.evaluate(panel, traceExpression).catch(() => []) as string[]).slice(traceSeen)) {
+          if (line.includes('"type":"goal_check_input"')) open += 1;
+          else if (line.includes('"type":"goal_check"') && open) open -= 1;
+        }
+
+        return open > 0;
+      };
       let calm = 0;
       await until(async () => {
         calm = await rp.evaluate(panel, ready) && !(await rp.evaluate(panel, `document.body.innerText.includes("核对中")`)) ? calm + 1 : 0;
-        return calm >= 3 || undefined;
+        return (calm >= 3 && !await verdictsPending()) || undefined;
       }, 300_000, "核对和续做结束", 1_000).catch(() => {});
       const seen = await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); const err = [...document.querySelectorAll(".msg.error")].at(-1); const card = [...document.querySelectorAll(".ai-task-card")].at(-1); return { answer: (a?.innerText ?? "").slice(0, 300), error: err?.innerText?.slice(0, 200) ?? null, cardFailed: /有 \\d+ 步没做成|还没做成/.test(card?.innerText ?? "") }; })()`).catch(() => ({ answer: "", error: "读不到侧栏", cardFailed: false })) as { answer: string; error: string | null; cardFailed: boolean };
       const lines = (await rp.evaluate(panel, traceExpression).catch(() => []) as string[]).slice(traceSeen);
