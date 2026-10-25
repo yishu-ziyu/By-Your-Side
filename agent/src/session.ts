@@ -1610,12 +1610,13 @@ return;}
       const total = typeof main?.totalChars === "number" ? main.totalChars : text.length;
       const clip = (value: string, what: string) => value.length > PRE_OBSERVATION_TEXT_MAX ? `${value.slice(0, PRE_OBSERVATION_TEXT_MAX)}\n[${what} shortened to its first ${PRE_OBSERVATION_TEXT_MAX} characters.]` : value;
 
-      this.quoteSources.add(text, typeof main?.url === "string" ? main.url : treeUrl ?? context.url);
-      const citedText = this.quoteSources.mark(text);
+      const completeSource = typeof main?.totalChars === "number" && total <= text.length;
+      if (completeSource) this.quoteSources.add(text, typeof main?.url === "string" ? main.url : treeUrl ?? context.url);
+      const citedText = completeSource ? this.quoteSources.mark(text) : text;
       await this.persistQuoteSources();
       if (epoch !== this.controlEpoch || run !== this.deliveryRunId() || this.hold.isHeld()) return null;
       const body = [
-        text && (total > text.length ? `${citedText}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part.]` : citedText),
+        text && (total > text.length ? `${citedText}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part. Source catalog: unavailable for this partial read; read_element on the complete intended source registers source IDs.]` : citedText),
         ax && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${clip(ax, "Accessibility tree")}`,
       ].filter(Boolean).join("\n\n");
 
@@ -3533,16 +3534,11 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       if (details && typeof details === "object" && "page" in details) this.collectQuoteSources("snapshot", details.page);
       return;
     }
-    if (name !== "snapshot" && name !== "read_element") return;
+    if (name !== "read_element") return;
     const read = readObservationOf(name, result);
     if (!read) return;
     const from = read.url ?? "读取的页面片段";
-    if (name === "snapshot") {
-      // Only actual text fragments are quotable; AX role/ref syntax is not source text.
-      if (read.fragments) {
-        for (const fragment of read.fragments.fragments) if (fragment.kind === "text") this.quoteSources.add(fragment.text, from);
-      }
-    } else this.quoteSources.add(read.text, from);
+    this.quoteSources.add(read.text, from);
   }
 
   private async persistQuoteSources(): Promise<void> {
@@ -3554,7 +3550,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   }
 
   private async referenceReadResult(name: string, result: Awaited<ReturnType<ToolDefinition["execute"]>>): Promise<Awaited<ReturnType<ToolDefinition["execute"]>>> {
-    if (!["snapshot", "read_element", "navigate", "tabs", "browser_run"].includes(name) || ("isError" in result && result.isError)) return result;
+    if (!["read_element", "browser_run"].includes(name) || ("isError" in result && result.isError)) return result;
     this.collectQuoteSources(name, result);
     const content = result.content.map(part => part.type === "text" ? { ...part, text: this.quoteSources.mark(part.text) } : part);
     await this.persistQuoteSources();
