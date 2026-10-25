@@ -5,6 +5,7 @@ import type { ProgramStep } from "./browser-program.js";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 import { GOAL_CHECK_BOOKKEEPING_TOOLS, newReadIndex, readWords, type GoalCheckInput, type GoalVerificationTarget } from "./goal-check.js";
 import { PageTrail } from "./goal-facts.js";
+import { citationEvidence } from './answer-sources.js';
 
 /**
  * 核对看到的回答和用户在侧栏看到的一样：{=名字} 换成卡片算出的数，卡片换成文字。
@@ -48,9 +49,15 @@ export class GoalLedger {
   private elementReads: { scope: string; targets: GoalVerificationTarget[] } | null = null;
   private failures: { runId: string | null; items: Failure[] } = { runId: null, items: [] };
   private readonly trail = new PageTrail();
+  private wholeSource: { url: string; text: string } | null = null;
 
   beginRequest(page: { tabId?: number; url?: string } | null): void {
     this.trail.begin(page);
+    this.wholeSource = null;
+  }
+
+  recordWholeSource(url: string, text: string): void {
+    this.wholeSource = { url, text: redactCredentialText(text) };
   }
 
   observeCall(name: string, params: Record<string, unknown>, result: unknown): void {
@@ -180,6 +187,8 @@ export class GoalLedger {
       readWords: this.words,
       lastReply: replyAsShown(run.lastReply, this.sources),
       replyCards: replyCards(run.lastReply),
+      sourceCitations: citationEvidence(run.lastReply, this.sources),
+      wholeSource: this.wholeSource ?? undefined,
       replyForm: splitAnswer(run.lastReply).some(part => "card" in part && !!part.card?.blocks.some(block => block.kind === "fields")) || undefined,
       page: page ? { ...(tabId === null ? {} : { tabId }), title: String(page.title ?? ""), url: String(page.url ?? ""), ...(page.translation ? { translation: page.translation } : {}), text: redactCredentialText(String(page.text ?? "")) } : null,
       userTookOver: run.userTookOver,

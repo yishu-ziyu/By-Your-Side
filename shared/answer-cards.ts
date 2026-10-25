@@ -357,7 +357,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       const a = attrsOf(rawAttrs);
       const node = str(a.node);
 
-      if (node && str(a.ref)) cites.push({ node, cite: { ref: str(a.ref)! } });
+      if (node && str(a.anchor)) cites.push({ node, cite: { source: str(a.source) ?? '', anchor: str(a.anchor)! } });
       else if (node && inner?.trim()) cites.push({ node, cite: { text: inner.trim(), from: str(a.from) } });
 
       return "";
@@ -658,7 +658,7 @@ export function answerSpeech(text: string): string {
 }
 
 /** 图里某个方块上写的字（复制时给原文配上方块名）；找不到就用方块的 id。 */
-function diagramLabel(source: string, node: string): string {
+export function diagramLabel(source: string, node: string): string {
   const label = new RegExp(String.raw`(?:^|[\s&;>])${node.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\s*[[({>]+\s*"([^"]*)"`, "m").exec(source)?.[1];
 
   return label ? label.replace(/<br\s*\/?>/gi, " ").trim() : node;
@@ -682,7 +682,7 @@ export function answerMarkdown(text: string, sources?: AnswerSourceMap): string 
       case "inputs": return b.items.map((v) => `- ${v.label}：${showValue(v.value, v.unit)}`).join("\n");
       case "app": return `（小程序：${b.title}）`;
       case "fields": return b.items.map((f) => `- ${f.label}：${f.value || "（待填）"}${f.options ? `（可选：${f.options.join(" / ")}）` : ""}`).join("\n");
-      case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, cite]) => { const c = resolveDiagramCite(cite, sources); return c ? ("ref" in cite ? `- ${diagramLabel(b.source, node)}：${c.url ? `[查看原文](${c.url})` : c.from ?? "已读取的页面"}` : `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`) : `- ${diagramLabel(b.source, node)}：来源未能核对`; })].join("\n");
+      case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, cite]) => { const c = resolveDiagramCite(cite, sources); return c ? (!("text" in cite) ? `- ${diagramLabel(b.source, node)}：${c.url ? `[查看原文](${c.url})` : c.from ?? "已读取的页面"}` : `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`) : `- ${diagramLabel(b.source, node)}：来源未能核对`; })].join("\n");
     }
   }), c.source ? `来源：${c.source}` : ""].filter(Boolean).join("\n\n");
 

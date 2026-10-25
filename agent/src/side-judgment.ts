@@ -2,7 +2,7 @@
  * 后台判断（目标核对、续接、记忆、找词/翻译意图、目标复核、语音判断、经验提取）的唯一入口。
  *
  * 一次判断：
- * 1. 取该模型允许的最低思考档（能力只从 shared/model-capabilities.ts 读）；本会话被服务端拒绝过的档跳过；
+ * 1. 使用调用方指定的可用思考档，未指定时取最低档（能力只从 shared/model-capabilities.ts 读）；本会话被服务端拒绝过的档跳过；
  * 2. 服务端因档位/思考参数拒绝（400 参数错误）时，换下一个允许的档重试一次，并在本会话记住被拒的档；
  * 3. 回复不合要求（不是要求的 JSON、只有思考没有正文）时，带更严格的要求重试一次；只有思考时放大输出额度；
  * 4. 仍失败抛 SideCallError，只带原因类别（不带服务商原文，不会带出凭据）；
@@ -60,6 +60,8 @@ interface SideCallSpec<T> {
   systemPrompt: string;
   content: string | (TextContent | ImageContent)[];
   maxTokens: number;
+  /** Evidence comparisons may need reasoning; quick routing keeps the default lowest effort. */
+  effort?: ModelThinkingLevel;
   /** 整次判断（含重试）的总时限。 */
   timeoutMs: number;
   /** 调用方的取消信号；它中止算「已取消」，除非它本身是超时信号。 */
@@ -162,7 +164,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
   const budget = AbortSignal.timeout(spec.timeoutMs);
   const total = spec.signal ? AbortSignal.any([spec.signal, budget]) : budget;
   const retry = spec.retry ?? "format";
-  let effort = lowestEffort(model, host.rejected);
+  let effort = thinkingProfile(model).levels.find(level => level === spec.effort && !host.rejected?.get(modelKey(model))?.has(level)) ?? lowestEffort(model, host.rejected);
   let attempts = 0;
   let retried = false;
   let effortRetried = false;

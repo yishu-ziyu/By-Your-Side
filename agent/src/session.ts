@@ -1,4 +1,5 @@
-import { AnswerSources } from "./answer-sources.js";
+import { AnswerSources, citationEvidence } from "./answer-sources.js";
+import { pageReading, pageReadScope, IncompletePageSource, WHOLE_SOURCE_MAX_CHARS, type PageReadScope } from './page-reading.js';
 import { parseCopyTextRange, type CopyTextRange } from "../../shared/copy-range.js";
 import type { PreparedCopy } from "../../shared/copied-field.js";
 type CopyIntent = { mode: 'preserve' | 'change' | 'consume' | 'unknown' | 'unavailable'; range?: CopyTextRange };
@@ -357,6 +358,7 @@ export class BrowserAgentSession {
   }
 
   private readonly quoteSources = new AnswerSources();
+  private sourceScope: { key: string; result: Promise<PageReadScope> } | null = null;
   private readonly sentQuoteSources = new Set<string>();
   private readonly goalLedger = new GoalLedger(this.quoteSources.records);
   private readonly continuePolicy = new ContinuePolicy();
@@ -1597,13 +1599,42 @@ return;}
         (this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; url?: unknown }>).catch(() => null),
       ]);
       const treeUrl = typeof tree?.url === "string" ? tree.url : undefined;
-      const main = warmMain && warmedOrFreshMain && ((typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== context.url) || (treeUrl && typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== treeUrl))
+      let main = warmMain && warmedOrFreshMain && ((typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== context.url) || (treeUrl && typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== treeUrl))
         ? await freshMain()
         : warmedOrFreshMain;
 
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
+      const preview = pageReading(main);
+      let wholeRead = false;
+      if (preview && preview.totalChars > preview.text.length) {
+        const requests = this.copyRequirements();
+        const key = JSON.stringify([run, requests]);
+        if (this.sourceScope?.key !== key) {
+          const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+          const result = host && model ? pageReadScope(host, model, requests).catch(() => 'whole' as const) : Promise.resolve('whole' as const);
+          this.sourceScope = { key, result };
+        }
+        const scope = await this.sourceScope.result;
+        if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
+        this.runTrace.record('page_read_scope', { scope, tabId, previewChars: preview.text.length, totalChars: preview.totalChars });
+        if (scope === 'whole') {
+          const full = preview.totalChars <= WHOLE_SOURCE_MAX_CHARS
+            ? pageReading(await this.rpc.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS).catch(() => null)) : null;
+          if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
+          if (!full || full.url !== preview.url || full.totalChars !== full.text.length) {
+            this.callbacks.setStatus('idle');
+            throw new IncompletePageSource(preview.totalChars > WHOLE_SOURCE_MAX_CHARS
+              ? '这篇内容超过了单次完整读取的长度，暂时无法给出整篇分析。请指定要分析的章节。'
+              : '没有读到同一页面的完整正文，整篇分析尚未开始。请等页面加载完成后重试。');
+          }
+          main = full;
+          wholeRead = true;
+          if (role === 'current') this.goalLedger.recordWholeSource(full.url, full.text);
+          this.runTrace.record('page_source_complete', { tabId, url: full.url, chars: full.text.length });
+        }
+      }
       const text = typeof main?.text === "string" ? main.text.trim() : "";
-      const ax = typeof tree?.text === "string" ? tree.text.trim() : "";
+      const ax = !wholeRead && typeof tree?.text === "string" ? tree.text.trim() : "";
 
       if (!text && !ax) throw new Error("读不到这个页面");
       this.emitReadObservation(id, 'snapshot', { tabId }, ax ? tree : main, false);
@@ -1633,6 +1664,8 @@ return;}
         ms: Date.now() - startedAt,
         error: error instanceof Error ? error.message : String(error),
       });
+
+      if (error instanceof IncompletePageSource) throw error;
 
       return null;
     }
@@ -3068,7 +3101,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return delivery && delivery.runId === snapshot?.runId ? deliveryTextWithNote(delivery) : "";
   }
 
-  /** 目标核对只看主会话里用过工具（交付、记忆、目标记账除外）、最后在问用户或说还没查的任务：纯聊天、用户停止、接管、出错都不核对。 */
+  /** 页面引用也要核对：预读已提供全文时主模型可以不调工具，但引用仍可能指错段落。 */
   private goalCheckEligible(messages: ReadonlyArray<{ role: string; content?: unknown }>): boolean {
     if (this.memberId || !this.session || !this.modelRuntime || !this.activeGoal) return false;
 
@@ -3080,7 +3113,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     // 只读任务也核对：只读任务也会答非所问（交付了上一个任务的结果）却自称做完。快速模型核对约 2–8 秒。
     // 宿主按记下的做法打开了页面的一轮：要做的已经做完，被拦下的工具调用不算做过事。
     if (snapshot?.runId && this.savedOpenRun === snapshot.runId) return false;
-    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)))) return false;
+    const reply = this.runReplyText(messages);
+    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(reply) && !defersWork(reply) && !citationEvidence(reply, this.quoteSources.records).items.length)) return false;
 
     return this.continuePolicy.mayCheck(snapshot.runId);
   }
@@ -3380,11 +3414,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         if (items.length >= 2 && at >= 0) continuing.step = { at: at + 1, of: items.length };
       }
       emit(continuing);
+      this.callbacks.setStatus('running');
       flushChecks({ attempt });
       this.mainEffort.raise(session.model, "goal_unfinished");
       this.deliveredResultThisRun = false;
       void session.prompt(continuation.prompt)
         .catch(error => {
+          if (this.deliveryRunId() === runId && !session.isStreaming) this.callbacks.setStatus(this.hold.isHeld() ? 'user' : 'idle');
           // 接着做没开起来：放出丢下的回答，给扣着的那一轮收尾，任务不会一直显示在跑。
           const finish = this.continueFinish;
           const kept = this.keptAnswer;
