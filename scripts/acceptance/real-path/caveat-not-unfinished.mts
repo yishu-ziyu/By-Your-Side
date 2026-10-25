@@ -1,11 +1,11 @@
 /**
  * 回答里一句「另两个服务限流，未能交叉验证」只是多核对一遍没做到：任务做完了，过程行不写「还没做成」。
  * 回答说「订单还没能提交」才是没做成：过程行照旧写「还没做成」。
- * 只装扩展、隔离构建、本机脚本模型（目标核对也由脚本回「做完了」）。
+ * 只装扩展、隔离构建、本机脚本模型（目标核对也由脚本返回目标清单）。
  *   npx tsx scripts/acceptance/real-path/caveat-not-unfinished.mts --headless
  *   a) 回答带「未能交叉验证」，核对判做完：过程行是「已核对页面」，不是「还没做成」。
- *   b) 回答说「订单还没能提交」，核对仍判做完：过程行写「还没做成」。
- * 失败方式：claimsUnfinished 认任何「未能」，a 失败。
+ *   b) 回答说「订单还没能提交」，核对状态与未完成清单矛盾：过程行写「还没做成」。
+ * 完成状态与目标清单一致；不能仅凭回答里的否定词改判。
  */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -31,6 +31,7 @@ const OPEN = { tool: { name: "navigate", args: { url: `http://127.0.0.1:${siteAd
 
 const model = await startScriptedModel([
   // 目标核对的输入是带 lastReply 字段的 JSON，排在前面先匹配。
+  { match: `"goal":["${UNDONE}"]`, steps: [{ text: JSON.stringify({ status: "done", items: [{ text: "提交订单", done: false }] }) }] },
   { match: `"lastReply"`, steps: [{ text: DONE_JSON("任务") }] },
   { match: CAVEAT, steps: [OPEN, { text: "这个地址在美国加州，属于 Vercel 的服务器。来源 ip-api（另两个查询服务当时限流，未能交叉验证）。" }] },
   { match: UNDONE, steps: [OPEN, { text: "订单还没能提交：页面一直报错，我先停在这里。" }] },

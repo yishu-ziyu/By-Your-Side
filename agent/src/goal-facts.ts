@@ -5,6 +5,7 @@ import { typedValuesOf } from "./site-notes.js";
  * 只记宿主执行时经手的调用和回执，不听模型怎么说：核对模型只看得到回答和几次读数，分不出「点的是自己搜出来的结果页，不是用户说话时那一页」。
  */
 export interface GoalFacts {
+  navigation?: { originTabId: number | null; tabs: Array<{ tabId: number; url: string | null; created: boolean }>; truncated: boolean };
   /**
    * 改页面的动作按页归并。page 为 null：那一页是点击后跳过去的，之后还没读到地址。onGoalPage：就是用户说这句话时所在的那一页。
    * openedByAssistant：这一页是助手自己打开、跳转或搜出来的（从这种页再点过去的、网址里带着用户没说过的搜索词的也算）；从用户那一页点过去的不算，那是照用户的话点出来的。
@@ -55,6 +56,8 @@ type Visit = { url: string | null; byAssistant: boolean };
 
 export class PageTrail {
   private urls = new Map<number, Visit>();
+  private originTabId: number | null = null;
+  private createdTabs = new Set<number>();
   private actions: Array<{ tool: string } & Visit> = [];
   private typed: string[] = [];
   private searched: string[] = [];
@@ -63,6 +66,8 @@ export class PageTrail {
   /** 一句新请求开始：用户说话时所在的标签页和地址。 */
   begin(page: { tabId?: number; url?: string } | null): void {
     this.urls = new Map();
+    this.originTabId = page?.tabId ?? null;
+    this.createdTabs.clear();
     this.actions = [];
     this.typed = [];
     this.searched = [];
@@ -94,6 +99,8 @@ export class PageTrail {
 
     this.typed.push(...typedValuesOf(name, params));
 
+    if (name === "open_tab" && typeof data.tabId === "number" && !data.tabClosed) this.createdTabs.add(data.tabId);
+    if (name === "navigate" && tab >= 0 && typeof data.workingTabId === "number" && data.workingTabId !== tab) this.createdTabs.add(data.workingTabId);
     if (name === "navigate") landed(typeof data.workingTabId === "number" ? data.workingTabId : tab, data.url, true);
     else if (name === "open_tab" && typeof data.tabId === "number") landed(data.tabId, data.url, true);
     // 读页只补上地址，这一页是怎么到的不变。
@@ -102,6 +109,7 @@ export class PageTrail {
       const newTab = record(data.newTab);
 
       if (typeof newTab.tabId === "number") {
+        this.createdTabs.add(newTab.tabId);
         if (typeof newTab.url === "string") landed(newTab.tabId, newTab.url, before.byAssistant);
         else this.urls.set(newTab.tabId, { url: null, byAssistant: before.byAssistant });
       } else if (record(data.effect).documentChanged) this.urls.set(tab, { url: null, byAssistant: before.byAssistant });
@@ -133,6 +141,10 @@ export class PageTrail {
 
     const foreign = (values: readonly string[]) => [...new Set(values.map(value => value.trim()))].filter(value => [...value].length >= 2 && !fromUser(value)).slice(0, 8).map(value => value.slice(0, 80));
 
-    return { actions: [...pages.values()].slice(0, 12), typedNotFromUser: foreign([...this.typed, ...this.searched]), searchedNotFromUser: foreign(this.searched) };
+    const visits = [...this.urls.entries()];
+    const recent = visits.filter(([tabId]) => tabId !== this.originTabId).slice(-15);
+    const tabs = [...visits.filter(([tabId]) => tabId === this.originTabId), ...recent]
+      .map(([tabId, visit]) => ({ tabId, url: visit.url, created: this.createdTabs.has(tabId) }));
+    return { navigation: { originTabId: this.originTabId, tabs, truncated: tabs.length < visits.length }, actions: [...pages.values()].slice(0, 12), typedNotFromUser: foreign([...this.typed, ...this.searched]), searchedNotFromUser: foreign(this.searched) };
   }
 }

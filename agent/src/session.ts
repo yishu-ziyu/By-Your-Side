@@ -1,3 +1,4 @@
+import { goalEvidence, GOAL_PAGE_EVIDENCE_CHARS } from "./goal-evidence.js";
 import { parseCopyTextRange, type CopyTextRange } from "../../shared/copy-range.js";
 import type { PreparedCopy } from "../../shared/copied-field.js";
 type CopyIntent = { mode: 'preserve' | 'change' | 'consume' | 'unknown' | 'unavailable'; range?: CopyTextRange };
@@ -3132,8 +3133,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const reads: GoalVerification['reads'] = [];
     const readContents: string[] = [];
     let readFailed = false;
-    const needsPageReread = !original.verifiedByHost && original.verificationSubject !== 'file' && original.verificationSubject !== 'answer'
-      && (Boolean(original.verificationTargets?.length) || pageMissing);
+    const needsPageReread = !original.verifiedByHost && original.verificationSubject !== 'file' && original.verificationSubject !== 'answer';
     const requested = original.verificationTargets?.length ? original.verificationTargets : [{ target: 'body' }];
     const priorReads = this.goalLedger.targets(this.copyScope());
     const targets = !needsPageReread
@@ -3170,7 +3170,22 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       }
     }
     const contentMatches = readContents.flatMap((text, left) => readContents.flatMap((other, right) => right > left && text && other ? [{ left, right, equal: text === other }] : []));
-    const verificationInput = { ...checkInput, verification: { finding: original, reads, contentMatches } };
+    let freshPage = checkInput.page;
+    // A control and its result message can be separate nodes. Re-read the same page as well as the requested elements.
+    if (needsPageReread && tabId !== null && this.rpc && current()) {
+      try {
+        const fresh = await this.rpc.call('snapshot', { tabId }, 4_000, this.memberId);
+        if (!fresh || typeof fresh !== 'object' || !('text' in fresh) || typeof fresh.text !== 'string'
+          || !('url' in fresh) || typeof fresh.url !== 'string' || (endedOn && fresh.url !== endedOn)) {
+          readFailed = true;
+        } else {
+          const text = redactCredentialText(fresh.text);
+          freshPage = { title: checkInput.page?.title ?? '', url: fresh.url, tabId, text };
+          reads.push({ target: 'body', tabId, source: 'page_snapshot', truncated: text.length > GOAL_PAGE_EVIDENCE_CHARS, data: goalEvidence(text, GOAL_PAGE_EVIDENCE_CHARS, [...checkInput.goal, original.evidence ?? '', original.correction ?? ''].join('\n')) });
+        }
+      } catch { readFailed = true; }
+    }
+    const verificationInput = { ...checkInput, page: freshPage, verification: { finding: original, reads, contentMatches } };
     if (!current()) {
       recordUnavailableGoalCheck(model, verificationInput, trace, "cancelled", "host:cancelled");
       return null;
@@ -3182,13 +3197,24 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const scope = JSON.stringify([runId, checkInput.goal]);
       const proof = original.verificationSubject === 'file' ? checkInput.files?.map(file => [file.filename, file.content])
         : original.verificationSubject === 'answer' ? lastReply
-          : reads.length ? [endedOn, reads.map(read => [read.tabId, read.target, read.data])] : [endedOn, pageText];
+          : reads.length ? [endedOn, reads.map(read => [read.tabId, read.target, (read.source === "page_snapshot" ? freshPage?.text ?? read.data : read.data).replace(/\[ref=\d+\]/g, "")])] : [endedOn, pageText];
       const fingerprint = createHash('sha256').update(JSON.stringify([original.verificationSubject ?? 'page', proof])).digest('hex');
       if (this.continuePolicy.seenEvidence(scope, fingerprint)) {
         verdict = { ...original, status: 'open', cause: 'retry_evidence_unchanged' };
         recordHostGoalCheck(model, verificationInput, "retry_evidence_unchanged", verdict, trace, { fingerprint, seenEvidence: true });
       } else {
-        if (needsPageReread) verdict = await checkGoal(this.sideHost()!, model, verificationInput, AbortSignal.timeout(20_000), headers, trace);
+        const samePageText = (text: string) => text.replace(/\[ref=\d+\]/g, "");
+        const confirmsOriginal = needsPageReread && checkInput.page !== null && freshPage !== null
+          && checkInput.page.text.length <= GOAL_PAGE_EVIDENCE_CHARS
+          && samePageText(checkInput.page.text) === samePageText(freshPage.text)
+          && !!original.evidence && reads.some(read => read.data.includes(original.evidence!))
+          && reads.every(read => read.tabId === tabId)
+          && readContents.length > 0 && readContents.every((content, index) => content.length > 0
+            && reads[index]?.data === `text:\n${content}` && checkInput.page!.text.includes(content))
+          && !contentMatches.some(match => match.equal);
+        // Fresh reads that add no information confirm the original judgment; comparison or expanded evidence still needs reconsideration.
+        if (confirmsOriginal) recordHostGoalCheck(model, verificationInput, "fresh_evidence_unchanged", original, trace, { needsPageReread, confirmsOriginal });
+        else if (needsPageReread) verdict = await checkGoal(this.sideHost()!, model, verificationInput, AbortSignal.timeout(20_000), headers, trace);
         else recordHostGoalCheck(model, verificationInput, "retry_not_needed", original, trace, { needsPageReread });
         if (verdict.status === 'continue') retryFingerprint = fingerprint;
       }
