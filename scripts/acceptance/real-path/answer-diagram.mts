@@ -290,7 +290,11 @@ async function live(): Promise<never> {
     const work = await rp.attach(blank.targetId);
     await rp.cdp.send("Page.enable", {}, work);
     await rp.cdp.send("Page.navigate", { url: "https://paulgraham.com/ds.html" }, work);
-    await until(async () => await rp.evaluate(work, `document.readyState === "complete" && document.body.innerText.includes("Collison")`) || undefined, 30_000, "网页加载");
+    await until(async () => await rp.evaluate(work, `document.readyState === "complete" && document.body.innerText.includes("Collison")`) || undefined, 30_000, "网页加载").catch(async error => {
+      out.pageLoad = await rp.evaluate(work, `({url:location.href,state:document.readyState,title:document.title,text:document.body?.innerText.slice(0,500)})`).catch(() => null);
+      await rp.screenshot(work, join(artifacts, "page-load-failure.png")).catch(() => {});
+      throw error;
+    });
     const norm = (t: string) => t.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
     const pageText = norm(String(await rp.evaluate(work, "document.body.innerText")));
     const panel = await rp.attach(await rp.openSidePanel());
