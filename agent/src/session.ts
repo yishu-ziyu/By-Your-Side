@@ -1,3 +1,4 @@
+import { AnswerSources } from "./answer-sources.js";
 import { parseCopyTextRange, type CopyTextRange } from "../../shared/copy-range.js";
 import type { PreparedCopy } from "../../shared/copied-field.js";
 type CopyIntent = { mode: 'preserve' | 'change' | 'consume' | 'unknown' | 'unavailable'; range?: CopyTextRange };
@@ -355,7 +356,9 @@ export class BrowserAgentSession {
     }};
   }
 
-  private readonly goalLedger = new GoalLedger();
+  private readonly quoteSources = new AnswerSources();
+  private readonly sentQuoteSources = new Set<string>();
+  private readonly goalLedger = new GoalLedger(this.quoteSources.records);
   private readonly continuePolicy = new ContinuePolicy();
   /** 用户这一次请求从什么时候开始（开始任务、接着做、插话）：之前记的读数交给核对时标「更早」。 */
   private requestStartedAt = 0;
@@ -551,6 +554,7 @@ if(required.includes(key))candidates.set(key,attachment);
       this.emitDeliveryStream({id:event.delivery.id,runId:event.delivery.runId,kind:'finding',text:event.delivery.text,phase:'streaming'});
     }
 
+    if (event.kind === "user_delivery") this.publishQuoteSources(event.delivery.text);
     this.emitGatedUiEvent(event);
   }
   /**
@@ -638,6 +642,7 @@ if(required.includes(key))candidates.set(key,attachment);
   }
   /** 交付流只有被闸门放行才落线。 */
   private emitDeliveryStream(stream: UserDeliveryStream): void {
+    if (stream.phase !== "cancelled") this.publishQuoteSources(stream.text);
     this.emitGatedUiEvent({kind: 'user_delivery_stream', stream});
   }
   private startEvent(): Extract<AgentUiEvent, { kind: "agent_start" }> {
@@ -879,7 +884,10 @@ if(required.includes(key))candidates.set(key,attachment);
 
       let session: AgentLoop = await DurableAgentLoop.open({
         persistence: restored?.persistence, messages: restored?.messages, sessionId: options.conversationId,
-        models, model: loopModel(models, options.modelPattern), tools: customTools, systemPrompt,
+        models, model: loopModel(models, options.modelPattern), tools: customTools.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
+          const result = await tool.execute(...args);
+          return resultHost ? resultHost.referenceReadResult(tool.name, result) : result;
+        } })), systemPrompt,
         appendPrompt: () => appendPrompt([]), cwd: options.loop.cwd,
         extensionFactories: extensionFactories.map(entry => entry.factory),
         openStorage: options.loop.openStorage,
@@ -912,6 +920,9 @@ if(required.includes(key))candidates.set(key,attachment);
       // 记忆的两个决定点（记成哪种 / 这一轮带哪些）各写一条决定记录进诊断记录。
       if (memoryRuntime) memoryRuntime.onRecord = (type, data) => wrapper.runTrace.record(type, data);
       resultHost = wrapper;
+      for (const entry of session.sessionManager?.getBranch() ?? []) {
+        if (entry.type === "custom" && entry.customType === "sideagent-answer-sources-v1") wrapper.quoteSources.restore(entry.data);
+      }
       wrapper.goalLedger.restore(restored?.messages ?? []);
       wrapper.explicitDelivery = !!leadConversationId;
       wrapper.sendOptions = sendOptions;
@@ -1599,8 +1610,12 @@ return;}
       const total = typeof main?.totalChars === "number" ? main.totalChars : text.length;
       const clip = (value: string, what: string) => value.length > PRE_OBSERVATION_TEXT_MAX ? `${value.slice(0, PRE_OBSERVATION_TEXT_MAX)}\n[${what} shortened to its first ${PRE_OBSERVATION_TEXT_MAX} characters.]` : value;
 
+      this.quoteSources.add(text, typeof main?.url === "string" ? main.url : treeUrl ?? context.url);
+      const citedText = this.quoteSources.mark(text);
+      await this.persistQuoteSources();
+      if (epoch !== this.controlEpoch || run !== this.deliveryRunId() || this.hold.isHeld()) return null;
       const body = [
-        text && (total > text.length ? `${text}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part.]` : text),
+        text && (total > text.length ? `${citedText}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part.]` : citedText),
         ax && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${clip(ax, "Accessibility tree")}`,
       ].filter(Boolean).join("\n\n");
 
@@ -2827,6 +2842,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       switch (event.type) {
         case "message_start": {
+          if (event.message.role === "assistant") this.sentQuoteSources.clear();
           if (event.message.role === "user") {
             const content = event.message.content;
             const text = typeof content === "string" ? content : content.filter(p => p.type === "text").map(p => p.text).join("\n");
@@ -2840,6 +2856,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           const ev = event.assistantMessageEvent;
 
           if (ev.type === "text_delta") {
+            const text = ev.partial.content.filter(part => part.type === "text").map(part => part.text).join("");
+            this.publishQuoteSources(text);
             if (ev.delta.trim() && !this.explicitDelivery) this.deliveredResultThisRun = true;
             emit({ kind: "text_delta", delta: ev.delta });
           }
@@ -3502,6 +3520,47 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
   }
 
+  private publishQuoteSources(text: string): void {
+    const sources = this.quoteSources.cited(text).filter(source => !this.sentQuoteSources.has(source.id));
+    if (!sources.length) return;
+    for (const source of sources) this.sentQuoteSources.add(source.id);
+    this.callbacks.emit({ kind: "answer_sources", sources });
+  }
+
+  private collectQuoteSources(name: string, result: unknown): void {
+    const details = result && typeof result === "object" && "details" in result ? result.details : result;
+    if (["navigate", "tabs", "browser_run"].includes(name)) {
+      if (details && typeof details === "object" && "page" in details) this.collectQuoteSources("snapshot", details.page);
+      return;
+    }
+    if (name !== "snapshot" && name !== "read_element") return;
+    const read = readObservationOf(name, result);
+    if (!read) return;
+    const from = read.url ?? "读取的页面片段";
+    if (name === "snapshot") {
+      // Only actual text fragments are quotable; AX role/ref syntax is not source text.
+      if (read.fragments) {
+        for (const fragment of read.fragments.fragments) if (fragment.kind === "text") this.quoteSources.add(fragment.text, from);
+      }
+    } else this.quoteSources.add(read.text, from);
+  }
+
+  private async persistQuoteSources(): Promise<void> {
+    const sources = this.quoteSources.takePending();
+    if (!sources.length) return;
+    if (!this.session?.sessionManager) throw new Error("引用来源暂时无法保存");
+    await this.session.sessionManager.appendCustomEntry("sideagent-answer-sources-v1", sources);
+    this.quoteSources.committed(sources);
+  }
+
+  private async referenceReadResult(name: string, result: Awaited<ReturnType<ToolDefinition["execute"]>>): Promise<Awaited<ReturnType<ToolDefinition["execute"]>>> {
+    if (!["snapshot", "read_element", "navigate", "tabs", "browser_run"].includes(name) || ("isError" in result && result.isError)) return result;
+    this.collectQuoteSources(name, result);
+    const content = result.content.map(part => part.type === "text" ? { ...part, text: this.quoteSources.mark(part.text) } : part);
+    await this.persistQuoteSources();
+    return { ...result, content };
+  }
+
   /** 只读工具成功回执产生一条页面读数，供结果账本建立写入前基线；截断的超长读数不可用作基线。 */
   private emitReadObservation(
     toolCallId: string,
@@ -3511,6 +3570,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     isError: boolean,
   ): void {
     if(isError)return;
+    this.collectQuoteSources(name, result);
 
     if(name==='list_tabs'||name==='tabs'&&params?.action==='list'){
       const details=result&&typeof result==='object'&&'details' in result?(result as {details:unknown}).details:result;

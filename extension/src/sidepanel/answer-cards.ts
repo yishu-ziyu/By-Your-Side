@@ -1,3 +1,4 @@
+import { resolveDiagramCite, type AnswerSourceMap } from "../../../shared/answer-source.js";
 /**
  * 侧栏怎么画回答里的卡片（解析和取数在 shared/answer-cards.ts，
  * 流式时按已放出的前缀算出整段 HTML，再由 patchAnswer 按组件对比：已画出的组件节点不动，只补新出现的、刚写完的。
@@ -99,7 +100,7 @@ const STANDALONE = new Set<PendingComponent["tag"]>(["table", "callout", "diagra
 const textHtml = (text: string, values: ReadonlyMap<string, string>) => fillRefs(esc(text), values, (v, id) => `<span data-gc-ref="${esc(id)}">${esc(v)}</span>`, "…");
 
 /** 一个块的 HTML；extra 是排在这个块末尾的空位（写到一半的同类组件）。 */
-function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<string, string>): string {
+function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<string, string>, sources?: AnswerSourceMap): string {
   const key = (j: number) => `b${i}.${j}`;
   const t = (text: string) => textHtml(text, values);
 
@@ -123,11 +124,12 @@ function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<strin
     case "callout":
       return keyed(`b${i}`, `<div class="gc-callout ${b.tone}">${t(b.text)}</div>`);
     case "diagram": {
-      const cites = Object.entries(b.cites);
-      const list = cites.length ? `<ul class="gc-cites" hidden>${cites.map(([node, c]) => `<li data-node="${esc(node)}" data-from="${esc(c.from ?? "")}">${esc(c.text)}</li>`).join("")}</ul><div class="gc-diagram-hint">点方块看原文</div><div class="gc-quote" hidden><div class="gc-quote-from"></div><q></q></div>` : "";
+      const cites = Object.entries(b.cites).flatMap(([node, cite]) => { const value = resolveDiagramCite(cite, sources); return value ? [[node, value] as const] : []; });
+      const missing = Object.keys(b.cites).length - cites.length;
+      const list = cites.length ? `<ul class="gc-cites" hidden>${cites.map(([node, c]) => `<li data-node="${esc(node)}" data-from="${esc(c.from ?? "")}" data-source-url="${esc(c.url ?? "")}">${esc(c.text)}</li>`).join("")}</ul><div class="gc-diagram-hint">点方块看原文</div><div class="gc-quote" hidden><div class="gc-quote-from"></div><q></q>${cites.some(([, c]) => c.url) ? '<div><a class="gc-source-link" hidden target="_blank" rel="noopener noreferrer">查看原文</a></div>' : ""}</div>` : "";
 
       // 编码后再放进属性：DOMPurify 会删掉值里带「-->」的属性，而流程图的每条箭头都是 -->。
-      return keyed(`b${i}`, `<div class="gc-diagram" data-diagram="${encodeURIComponent(b.source)}"><div class="gc-diagram-canvas"></div>${list}</div>`);
+      return keyed(`b${i}`, `<div class="gc-diagram" data-diagram="${encodeURIComponent(b.source)}"><div class="gc-diagram-canvas"></div>${list}${missing ? `<div class="gc-diagram-hint">有 ${missing} 处来源未能核对</div>` : ""}</div>`);
     }
   }
 }
@@ -144,7 +146,7 @@ function appCardHtml(card: Card, app: Extract<Block, { kind: "app" }>): string {
   return `<div class="gen-card gen-app-card" data-gc-card="${card.key}">${keyed("app", `<div class="gc-app" data-app="${encodeURIComponent(app.html)}" data-app-title="${esc(app.title)}">${head}<div class="gc-app-frame"></div><div class="gc-app-bar" hidden></div></div>`)}</div>`;
 }
 
-function cardHtml(card: Card): string {
+function cardHtml(card: Card, sources?: AnswerSourceMap): string {
   const app = card.blocks[0]?.kind === "app" ? card.blocks[0] : undefined;
 
   if (app) return appCardHtml(card, app);
@@ -153,7 +155,7 @@ function cardHtml(card: Card): string {
     const joins = p && i === card.blocks.length - 1 && !STANDALONE.has(p.tag) && KIND[p.tag] === b.kind;
     const items = b.kind === "table" ? b.rows.length : b.kind === "callout" || b.kind === "diagram" || b.kind === "app" ? 0 : b.items.length;
 
-    return blockHtml(b, i, joins ? placeholder(p, `b${i}.${items}`, b.kind === "table" ? b.cols.length : 0) : "", card.values);
+    return blockHtml(b, i, joins ? placeholder(p, `b${i}.${items}`, b.kind === "table" ? b.cols.length : 0) : "", card.values, sources);
   });
   const p = card.pending;
   const n = card.blocks.length;
@@ -195,13 +197,14 @@ const FACE_BUTTONS = `<button type="button" class="gc-face" data-face="answer" a
 
 type Engine = typeof import("./diagram-engine.js");
 
-// 路径写成变量，esbuild 就不把 Pele 打进侧栏主包；构建产物里它是同目录下单独的 diagram-engine.js。
-const ENGINE_URL = "./diagram-engine.js";
+// 路径写成变量，esbuild 就不把 Pele 打进侧栏主包；构建产物里它们是同目录下单独的 diagram-engine.js 和 diagram-engine-more.js。
+const ENGINE_URL = { flow: "./diagram-engine.js", more: "./diagram-engine-more.js" };
 
-let engine: Promise<Engine> | undefined;
+const engines: Partial<Record<keyof typeof ENGINE_URL, Promise<Engine>>> = {};
 
-// SAFETY: ENGINE_URL 就是 diagram-engine.ts 的构建产物。
-const loadEngine = () => (engine ??= import(ENGINE_URL) as Promise<Engine>);
+/** 流程图只加载小包；别的图种才加载另一包。两包各带一份 Pele 核心，导出的形状一样。 */
+// SAFETY: ENGINE_URL 里就是 diagram-engine.ts、diagram-engine-more.ts 的构建产物，导出同样的 mount、render。
+const loadEngine = (kind: keyof typeof ENGINE_URL) => (engines[kind] ??= import(ENGINE_URL[kind]) as Promise<Engine>);
 
 /**
  * Pele 已转义图里的字、关掉了链接和图片；图的原文出自模型，可能被网页内容带偏，所以再按 SVG 白名单消毒一遍。
@@ -304,11 +307,16 @@ async function drawDiagram(figure: HTMLElement): Promise<void> {
   const cited = new Set([...figure.querySelectorAll<HTMLElement>(":scope > .gc-cites > li")].map((li) => li.dataset.node));
 
   try {
-    const { mount, render } = await loadEngine();
+    // 断行和换横竖排都按流程图的语法改写，别的图种原样画。
+    // 图种看第一行关键字；开头的 %% 注释行和空行不算。
+    const kind = /^(?:\s*%%[^\n]*\n)*\s*([A-Za-z-]+)/.exec(source)?.[1] ?? "";
+    const flow = kind === "flowchart" || kind === "graph";
+    figure.dataset.kind = kind;
+    const { mount, render } = await loadEngine(flow ? "flow" : "more");
 
     // 等加载的这会儿图可能已经被换掉了。
     if (!figure.isConnected) return;
-    mounted.set(figure, mount(canvas, narrower(wrapLabels(source), render), {
+    mounted.set(figure, mount(canvas, flow ? narrower(wrapLabels(source), render) : source, {
       fontSize: 13, zoom: false, links: false, images: false, sanitize: cleanSvg, onError: fail,
       onRender: (result) => {
         canvas.dataset.natural = String(result.width);
@@ -344,10 +352,16 @@ function toggleCite(node: SVGElement): void {
   node.classList.add("gc-sel");
   quote.querySelector(".gc-quote-from")!.textContent = cite.dataset.from ? `原文 · ${cite.dataset.from}` : "原文";
   quote.querySelector("q")!.textContent = cite.textContent;
+  const link = quote.querySelector<HTMLAnchorElement>(".gc-source-link");
+  if (link) {
+    link.hidden = !cite.dataset.sourceUrl;
+    if (cite.dataset.sourceUrl) link.href = cite.dataset.sourceUrl;
+    else link.removeAttribute("href");
+  }
 }
 
 /** 回答原文 → HTML。没有卡片时与原来的 Markdown 渲染一样；返回值仍需调用方消毒。 */
-export function renderAnswerHtml(text: string, renderProse: (markdown: string) => string): string {
+export function renderAnswerHtml(text: string, renderProse: (markdown: string) => string, sources?: AnswerSourceMap): string {
   const parts = splitAnswer(text);
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
   // 正文先按 Markdown 渲染、消毒，消毒会删掉属性；先用标记包住 {=名字} 换成的数，渲染后再换成带名字的加粗，改数时能找到它。
@@ -357,17 +371,17 @@ export function renderAnswerHtml(text: string, renderProse: (markdown: string) =
   const ref = new RegExp(`\uE000${nonce}([A-Za-z_][\\w-]*)\uE001([^\uE002<]*)\uE002`, "g");
   const refs = (html: string) => html.replace(ref, (_all, id: string, value: string) => `<span data-gc-ref="${esc(id)}">${value}</span>`);
 
-  return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "") : p.card ? cardHtml(p.card) : "")).join("");
+  return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "") : p.card ? cardHtml(p.card, sources) : "")).join("");
 }
 
-/** 写完的 ```mermaid 流程图代码块：只有侧栏画得出的流程图（flowchart / graph）才换。 */
-const MERMAID_FENCE = /^```mermaid[ \t]*\n((?:flowchart|graph)\b[\s\S]*?)\n```[ \t]*$/gm;
+/** 写完的 ```mermaid 代码块：只有侧栏画得出的图种才换（和 diagram-engine.ts、diagram-engine-more.ts 注册的一一对应）。 */
+const MERMAID_FENCE = /^```mermaid[ \t]*\n((?:flowchart|graph|timeline|sequenceDiagram|mindmap|pie|gantt|stateDiagram(?:-v2)?|classDiagram|erDiagram|journey|quadrantChart|xychart(?:-beta)?)\b[\s\S]*?)\n```[ \t]*$/gm;
 
 /**
  * 模型把结构图写成 ```mermaid 代码块时，用户看到的是一段代码，不是图：照卡片里的结构图画出来，代码收在下面，要复制还在。
  * 代码块先换成占位段落，正文按 Markdown 渲染后再换回图和折起来的代码。
  */
-function withMermaidDiagrams(prose: string, renderProse: (markdown: string) => string): string {
+function withMermaidDiagrams(prose: string, renderProse: (markdown: string) => string, sources?: AnswerSourceMap): string {
   const blocks: string[] = [];
   const marked = prose.replace(MERMAID_FENCE, (fence: string, source: string) => {
     blocks.push(`<div class="gc-diagram" data-diagram="${encodeURIComponent(source)}"><div class="gc-diagram-canvas"></div></div><details class="gc-diagram-code"><summary>Mermaid 代码</summary>${renderProse(fence)}</details>`);

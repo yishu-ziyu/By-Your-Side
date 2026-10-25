@@ -268,7 +268,7 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       if(name?.trim())scopeLabels.push(`${role}: ${name.trim().slice(0,180)}`);
     }
 
-    const data: ElementData = {tagName,textContent};
+    const data: ElementData = {tagName,textContent,url:element.ownerDocument?.location.href ?? location.href};
 
     if(fullText!==undefined)data.fullText=fullText;
 

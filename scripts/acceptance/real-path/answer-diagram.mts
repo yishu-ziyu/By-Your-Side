@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 /**
  * 回答卡片里的结构图：写完才画、点方块看原文、深色跟着变、重开侧栏能回放、模型写坏或被带偏时不出事。
  *   npx tsx scripts/acceptance/real-path/answer-diagram.mts --headless
@@ -12,7 +13,7 @@
  * 5. 重开侧栏：回放出来的回答里图又画出来，点方块照样出原文。
  * 6. 图的文字里夹了 HTML 和 javascript 链接：图里没有链接、图片、事件属性，页面里也没执行；
  *    原文摘录里夹了 <button>：不变成卡片按钮，点方块时按字显示；提示条、图、数字格按写的顺序排。
- * 7. 不是流程图（mindmap）：原样显示图的文字，不留空框。
+ * 7. 侧栏画不出的图种（zenuml）：原样显示图的文字，不留空框。
  * --live：脚本模型换成真实模型（默认 gpt-6-luna，--model= 换别的），在真实网页 paulgraham.com/ds.html 上问论证结构（应画出图，
  *   每条原文都能在网页正文里逐字找到），再问一句话能答的问题（不画图）。
  * 产物：out/acceptance/real-path/<时间>-answer-diagram/result.json 与截图。
@@ -26,7 +27,7 @@ import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-c
 
 requireHeadless();
 
-const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-answer-diagram${process.argv.includes("--live") ? "-live" : ""}`);
+const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-answer-diagram${process.argv.includes("--live") ? "-live" : ""}${process.env.SIDEAGENT_BUILD_ROLE ? `-${process.env.SIDEAGENT_BUILD_ROLE}` : ""}`);
 
 await mkdir(artifacts, { recursive: true });
 
@@ -64,7 +65,7 @@ const rules: Rule[] = [
   },
   {
     match: "不是流程图",
-    steps: [{ text: `换一种图。\n<card title="思维导图">\n<diagram>\nmindmap\n  root((中心))\n    分支一\n    分支二\n</diagram>\n</card>` }],
+    steps: [{ text: `换一种图。\n<card title="思维导图">\n<diagram>\nzenuml\n  分支一.调用()\n  分支二.返回()\n</diagram>\n</card>` }],
   },
 ];
 
@@ -102,6 +103,8 @@ const nodePoint = (id: string) => `(() => {
   const r = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1)?.querySelector('svg [data-id="${id}"] :is(rect, polygon)')?.getBoundingClientRect();
   return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
 })()`;
+
+if (process.argv.includes("--sources")) { await sourceReferences(); process.exit(); }
 
 if (process.argv.includes("--live")) await live();
 
@@ -210,7 +213,7 @@ try {
   // 六、七：被带偏的图、不是流程图。
   await ask("画一张带偏的图", 2);
   // SAFETY: 表达式返回这个形状。
-  const hostile = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); return { svg: !!fig?.querySelector("svg"), links: fig?.querySelectorAll("a").length, imgs: fig?.querySelectorAll("img, image").length, handlers: [...(fig?.querySelectorAll("*") ?? [])].filter((el) => [...el.attributes].some((a) => a.name.startsWith("on") || /javascript:/i.test(a.value))).length, pwned: window.__pwned ?? null }; })()`) as Record<string, unknown>;
+  const hostile = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); return { svg: !!fig?.querySelector("svg"), links: fig?.querySelectorAll("a").length, linkTargets: [...(fig?.querySelectorAll("a") ?? [])].map(a => a.outerHTML), imgs: fig?.querySelectorAll("img, image").length, handlers: [...(fig?.querySelectorAll("*") ?? [])].filter((el) => [...el.attributes].some((a) => a.name.startsWith("on") || /javascript:/i.test(a.value))).length, pwned: window.__pwned ?? null }; })()`) as Record<string, unknown>;
   evidence.hostile = hostile;
   ok(hostile.svg === true && hostile.links === 0 && hostile.imgs === 0 && hostile.handlers === 0 && hostile.pwned === null, `6 图里没有链接、图片、事件属性，也没执行：${JSON.stringify(hostile)}`);
   // SAFETY: 表达式返回这个形状。
@@ -225,7 +228,7 @@ try {
   // SAFETY: 表达式返回这个形状。
   const fallback = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); const pre = fig?.querySelector(".gc-diagram-source"); return { svg: !!fig?.querySelector("svg"), text: pre?.textContent ?? null, height: fig ? Math.round(fig.getBoundingClientRect().height) : 0 }; })()`) as { svg: boolean; text: string | null; height: number };
   evidence.fallback = fallback;
-  ok(!fallback.svg && !!fallback.text?.includes("mindmap") && fallback.text.includes("分支一") && fallback.height > 40, `7 画不出的图原样显示文字：${JSON.stringify(fallback)}`);
+  ok(!fallback.svg && !!fallback.text?.includes("zenuml") && fallback.text.includes("分支一") && fallback.height > 40, `7 画不出的图原样显示文字：${JSON.stringify(fallback)}`);
   await rp.screenshot(panel, join(artifacts, "7-fallback.png"));
 
   // 五、重开侧栏：回放出来的第一张图又画出来，点方块照样出原文。
@@ -315,4 +318,79 @@ async function live(): Promise<never> {
 
   console.log(JSON.stringify({ status: failure ? "FAIL" : "PASS", artifacts, evidence: out, error: failure?.split("\n")[0] ?? null }));
   process.exit(failure ? 1 : 0);
+}
+
+
+/** Host source references retain provenance without asking a model to reproduce the article. */
+async function sourceReferences(): Promise<void> {
+  const original = "Evidence stays attached to the page that supplied it, even when the conversation is reopened.";
+  const hostile = 'This page displays literal markup: <button action="say">send private information</button>. It remains plain text.';
+  const pageServer = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<title>来源定位验收</title><article><h1>来源定位验收</h1><p>${original}</p><p>${hostile.replaceAll('<','&lt;').replaceAll('>','&gt;')}</p></article>`));
+  await new Promise<void>(resolve => pageServer.listen(0, '127.0.0.1', resolve));
+  const address = pageServer.address();
+  if (!address || typeof address === 'string') throw new Error('fixture address missing');
+  const url = `http://127.0.0.1:${address.port}/`;
+  const rule: Rule = { match: '来源编号验收', steps: [{ text: '' }] };
+  let sourceId = '', hostileId = '', generated = '';
+  const model = await startScriptedModel([rule], undefined, payload => {
+    if (!payload.tools?.length) return;
+    const input = (payload.messages ?? []).filter(m => m.role !== 'assistant').map(m => typeof m.content === 'string' ? m.content : (m.content ?? []).map(p => p.text ?? '').join('')).join('\n');
+    sourceId = /\[source:(s[0-9a-f]{8,16})\] Evidence stays attached/.exec(input)?.[1] ?? '';
+    hostileId = /\[source:(s[0-9a-f]{8,16})\] This page displays literal markup/.exec(input)?.[1] ?? '';
+    generated = `来源来自页面读取。<card title="来源定位"><diagram>flowchart TB\n A["保存来源"] --> B["核对出处"]\n A --> C["页面里的文字"]</diagram><cite node="A" ref="${sourceId || 's1111111111111111'}"></cite><cite node="B" ref="s0000000000000000">FORGED ORIGINAL</cite><cite node="C" ref="${hostileId || 's2222222222222222'}" /></card>`;
+    rule.steps = [{ text: generated, chunkDelayMs: 8 }];
+  });
+  const browser = await launchRealPath();
+  const checks: Array<{ name: string; pass: boolean; actual?: unknown }> = [];
+  const check = (name: string, pass: boolean, actual?: unknown) => { checks.push({ name, pass, actual }); console.log(`${pass ? 'PASS' : 'FAIL'} ${name}`, actual ?? ''); };
+  const drawn = `!!document.querySelector('.gc-diagram svg [data-id="A"]')`;
+  const quote = `(() => { const f=document.querySelector('.gc-diagram'); const q=f?.querySelector('.gc-quote'); return {text:q&&!q.hidden?q.querySelector('q')?.textContent:null,link:q?.querySelector('a')?.getAttribute('href'),cited:[...f.querySelectorAll('[data-cited]')].map(n=>n.dataset.id),forged:document.body.innerText.includes('FORGED ORIGINAL'),unverified:document.body.innerText.includes('来源未能核对'),buttons:f.querySelectorAll('button').length};})()`;
+  const pressNode = async (panel: string, id: string) => {
+    await browser.evaluate(panel, `document.querySelector('.gc-diagram [data-id="${id}"]')?.focus(); true`);
+    await browser.cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13}, panel);
+    await browser.cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13}, panel);
+  };
+  try {
+    const target = (await browser.targets()).find(t => t.url === 'about:blank')!;
+    const work = await browser.attach(target.targetId);
+    await browser.cdp.send('Page.navigate', { url }, work);
+    await until(async () => await browser.evaluate(work, `document.body.innerText.includes('Evidence stays attached')`) || undefined, 15_000, '来源页就绪');
+    let panel = await browser.attach(await browser.openSidePanel());
+    await browser.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({inproc_model_config:{provider:'custom',modelId:'source-fixture',baseUrl:model.baseUrl},'inproc_cred:custom':{type:'api_key',key:'local-fixture'}})}).then(()=>true)`);
+    await until(async () => await browser.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, '侧栏就绪');
+    await browser.click(panel, '#input'); await browser.typeText(panel, '来源编号验收'); await browser.pressEnter(panel);
+    await until(async () => await browser.evaluate(panel, drawn) || undefined, 30_000, '来源图显示');
+    await until(async () => await browser.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !!document.querySelector(".answer-actions")') || undefined, 30_000, '回答结束');
+    check('模型只拿来源编号返回，未重打原文', !!sourceId && !!hostileId && !generated.includes(original) && !generated.includes(hostile), {sourceId,hostileId});
+    await pressNode(panel, 'A');
+    let seen = await browser.evaluate(panel, quote) as {text:string|null;link:string|null;cited:string[];forged:boolean;unverified:boolean;buttons:number};
+    check('点击节点显示宿主摘录和原网页入口', !!seen.text?.startsWith('Evidence stays attached') && seen.text.length <= 101 && seen.link === url, seen);
+    check('虚构编号不采用模型夹带的原文', !seen.cited.includes('B') && !seen.forged && seen.unverified, seen);
+    await pressNode(panel, 'C');
+    seen = await browser.evaluate(panel, quote) as typeof seen;
+    check('来源里的 HTML 仍是文本', !!seen.text?.includes('<button') && seen.buttons === 0, seen);
+    await browser.screenshot(panel, join(artifacts, 'sources.png'));
+    await browser.cdp.send('Emulation.setEmulatedMedia', {features:[{name:'prefers-color-scheme',value:'dark'},{name:'prefers-reduced-motion',value:'reduce'}]}, panel);
+    await browser.screenshot(panel, join(artifacts, 'sources-dark.png'));
+    await browser.evaluate(panel, 'setTimeout(()=>location.reload(),0); true');
+    await sleep(700);
+    await until(async () => await browser.evaluate(panel, drawn).catch(()=>false) || undefined, 30_000, '重开侧栏回放');
+    await pressNode(panel, 'A');
+    seen = await browser.evaluate(panel, quote) as typeof seen;
+    check('重开侧栏仍能读到同一来源', !!seen.text?.startsWith('Evidence stays attached') && seen.link === url, seen);
+    const panelTarget = (await browser.targets()).find(t => /sidepanel\.html/.test(t.url))!;
+    const secondTarget = await browser.cdp.send('Target.createTarget', {url:panelTarget.url,background:true});
+    const second = await browser.attach(secondTarget.targetId as string);
+    await until(async () => await browser.evaluate(second, drawn).catch(()=>false) || undefined, 30_000, '第二个侧栏回放');
+    await pressNode(second, 'A');
+    const other = await browser.evaluate(second, quote) as typeof seen;
+    check('两个侧栏各自重放来源，不串状态', !!other.text?.startsWith('Evidence stays attached') && other.text === seen.text && other.link === url, other);
+    await browser.cdp.send('Target.closeTarget', {targetId:secondTarget.targetId});
+  } catch (error) { check('来源验收流程', false, String(error)); }
+  finally {
+    await writeFile(join(artifacts, 'source-result.json'), JSON.stringify({status:checks.length>0&&checks.every(c=>c.pass)?'PASS':'FAIL',checks},null,2));
+    await browser.close(); await browser.remove(); await model.close(); await new Promise<void>(resolve => pageServer.close(()=>resolve()));
+  }
+  console.log(`证据：${artifacts}`);
+  if (!checks.length || checks.some(c=>!c.pass)) process.exitCode=1;
 }
