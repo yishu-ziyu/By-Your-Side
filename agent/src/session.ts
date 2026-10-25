@@ -1606,7 +1606,7 @@ return;}
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
       const preview = pageReading(main);
       let wholeRead = false;
-      if (preview && preview.totalChars > preview.text.length) {
+      if (!preview?.text.trim() || preview.totalChars > preview.text.length) {
         const requests = this.copyRequirements();
         const key = JSON.stringify([run, requests]);
         if (this.sourceScope?.key !== key) {
@@ -1616,14 +1616,15 @@ return;}
         }
         const scope = await this.sourceScope.result;
         if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
-        this.runTrace.record('page_read_scope', { scope, tabId, previewChars: preview.text.length, totalChars: preview.totalChars });
+        this.runTrace.record('page_read_scope', { scope, tabId, previewChars: preview?.text.length ?? 0, totalChars: preview?.totalChars ?? null });
         if (scope === 'whole') {
-          const full = preview.totalChars <= WHOLE_SOURCE_MAX_CHARS
+          const exceedsLimit = (preview?.totalChars ?? 0) > WHOLE_SOURCE_MAX_CHARS;
+          const full = !exceedsLimit
             ? pageReading(await this.rpc.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS).catch(() => null)) : null;
           if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
-          if (!full || full.url !== preview.url || full.totalChars !== full.text.length) {
+          if (!full?.text.trim() || full.url !== (preview?.url ?? context.url) || full.totalChars !== full.text.length) {
             this.callbacks.setStatus('idle');
-            throw new IncompletePageSource(preview.totalChars > WHOLE_SOURCE_MAX_CHARS
+            throw new IncompletePageSource(exceedsLimit
               ? '这篇内容超过了单次完整读取的长度，暂时无法给出整篇分析。请指定要分析的章节。'
               : '没有读到同一页面的完整正文，整篇分析尚未开始。请等页面加载完成后重试。');
           }
