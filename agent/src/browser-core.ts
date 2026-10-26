@@ -25,6 +25,8 @@ export { TaskHistoryStore } from "./task-history.js";
 
 export { SiteNotesStore } from "./site-notes.js";
 
+export { LearnedOperationStore } from "./learned-operations.js";
+
 export type { ArtifactPersistence } from "./artifacts-tool.js";
 
 export { SessionLog, type SessionLogPort } from "./session-log.js";

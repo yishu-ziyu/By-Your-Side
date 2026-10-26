@@ -75,6 +75,8 @@ import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
 import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, siteTitle, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
 import { siteMethodHint, siteMethodsFor } from "../../shared/site-methods.js";
+import { LearnedOperationStore, learnedOperationHint, runLearnedOperation, validateLearnedCandidate, type LearnedOperationRuntime } from "./learned-operations.js";
+import type { LearnedOperation, LearnedOperationResult } from "../../shared/learned-operations.js";
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[]; voiceHistory?: VoiceConversationContext['recentTurns']; spoken?: boolean }
@@ -130,6 +132,8 @@ export interface SessionCreateOptions {
   taskHistory?: TaskHistoryStore;
   /** 站点笔记：只给主会话；做成的任务写，打开这个网站时带上。 */
   siteNotes?: SiteNotesStore;
+  /** 用户明确保存的只读可执行做法；工人会话没有。 */
+  learnedOperations?: LearnedOperationStore;
   /** 用户打开了「回答里的小程序」实验功能：打开时每次运行的上下文附上小程序写法。 */
   miniApps?: () => Promise<boolean>;
   /** 设置页选的翻译风格（接在翻译提示词后的说明）；默认风格为空字符串。 */
@@ -215,7 +219,7 @@ function loopModel(models: ModelPort, pattern: string | undefined) {
 const PAGE_CHANGE_TOOLS = new Set(["page_translation", "navigate", "open_tab", "click", "double_click", "fill", "type_text", "press_key", "js", "mark", "accept_dialog", "dismiss_dialog"]);
 
 /** 由多个浏览器步骤组成的工具：步骤作为子步骤上报，结果里带实际执行的步数。 */
-const PROGRAM_TOOLS = new Set(["browser_run"]);
+const PROGRAM_TOOLS = new Set(["browser_run", "learned_operation"]);
 
 export class BrowserAgentSession {
   private activeGoal:string|null=null;
@@ -857,6 +861,11 @@ if(required.includes(key))candidates.set(key,attachment);
             siteNotesFor: url => resultHost?.siteNotesFor(url) ?? Promise.resolve(null),
             openForUser: () => resultHost?.userAskedToOpen() ?? false,
             observeCall: (name, params, result) => resultHost?.observeBrowserCall(name, params, result),
+            learnedOperations: {
+              save: (candidate, runtime) => resultHost!.saveLearnedOperation(candidate, runtime),
+              run: (id, input, runtime) => resultHost!.runSavedLearnedOperation(id, input, runtime),
+              delete: id => resultHost!.deleteLearnedOperation(id),
+            },
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -954,9 +963,10 @@ if(required.includes(key))candidates.set(key,attachment);
 
       if(productContext)productContext.onProjection=data=>wrapper.runTrace.record("harness_context",data);
       wrapper.siteNotes = options?.memberId ? null : options?.siteNotes ?? null;
+      wrapper.learnedOperations = options?.memberId ? null : options?.learnedOperations ?? null;
       wrapper.translationStyle = options?.translationStyle ?? null;
 
-      if (productContext && wrapper.siteNotes) productContext.siteNotes = url => wrapper.siteNotesFor(url, 1_000);
+      if (productContext && (wrapper.siteNotes || wrapper.learnedOperations)) productContext.siteNotes = url => wrapper.siteNotesFor(url, 1_000);
 
       if (productContext && !options?.memberId && options?.miniApps) productContext.miniApps = options.miniApps;
       wrapper.bindDeliveryRun = (getRunId) => { runIdSlot.current = getRunId; wrapper.deliveryRunId = getRunId; };
@@ -1730,6 +1740,9 @@ return;}
 
   /** 站点笔记的存放处；工人会话没有。 */
   private siteNotes: SiteNotesStore | null = null;
+  private learnedOperations: LearnedOperationStore | null = null;
+  private learnedOperationsShown: { runId: string | null; ids: Set<string> } = { runId: null, ids: new Set() };
+  private lastVerifiedOperationSource: { runId: string; goal: string[]; goalPage: GoalCheckInput["goalPage"]; endedOn: string } | null = null;
   private translationStyle: (() => string) | null = null;
 
   private translationStyleText(): string {
@@ -1752,23 +1765,32 @@ return;}
     const methodHint = siteMethodHint(url);
     const empty = { host: "", notes: [] as string[] };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const read = this.siteNotes?.notesFor(url).catch(() => empty) ?? Promise.resolve(empty);
+    const notesRead = this.siteNotes?.notesFor(url).catch(() => empty) ?? Promise.resolve(empty);
+    const operationsRead = this.learnedOperations?.operationsFor(url).catch(() => [] as LearnedOperation[]) ?? Promise.resolve([] as LearnedOperation[]);
+    const read = Promise.all([notesRead, operationsRead]);
     // 限时读（任务开始时用）：超时就当没有笔记，也不记成「这一轮带过」，之后打开这个网站时还能带上。
-    const stored = timeoutMs === undefined ? await read : await Promise.race([read, new Promise<typeof empty>(resolve => { timer = setTimeout(() => resolve(empty), timeoutMs); })]).finally(() => clearTimeout(timer));
+    const [stored, operations] = timeoutMs === undefined ? await read : await Promise.race([read, new Promise<[typeof empty, LearnedOperation[]]>(resolve => { timer = setTimeout(() => resolve([empty, []]), timeoutMs); })]).finally(() => clearTimeout(timer));
     const { notes } = stored;
-    const host = stored.host || (methodHint ? new URL(url).hostname : "");
+    const host = stored.host || (methodHint || operations.length ? new URL(url).hostname : "");
 
-    if (!host || (!notes.length && !methodHint)) return null;
+    if (!host || (!notes.length && !methodHint && !operations.length)) return null;
     const runId = this.deliveryRunId();
 
     if (this.siteNotesShown.runId !== runId) this.siteNotesShown = { runId, hosts: new Set() };
     if (this.siteMethodsShown.runId !== runId) this.siteMethodsShown = { runId, hosts: new Set() };
+    if (this.learnedOperationsShown.runId !== runId) this.learnedOperationsShown = { runId, ids: new Set() };
     const key = siteKey(host);
     const parts: string[] = [];
     if (methodHint && !this.siteMethodsShown.hosts.has(key)) {
       this.siteMethodsShown.hosts.add(key);
       this.runTrace.record("site_methods", { phase: "offered", host, methods: siteMethodsFor(url).map(method => ({ id: method.id, version: method.version })) });
       parts.push(methodHint);
+    }
+    const freshOperations = operations.filter(operation => !this.learnedOperationsShown.ids.has(operation.id));
+    if (freshOperations.length) {
+      for (const operation of freshOperations) this.learnedOperationsShown.ids.add(operation.id);
+      this.runTrace.record("learned_operations", { phase: "offered", host, operations: freshOperations.map(operation => ({ id: operation.id, version: operation.format })) });
+      parts.push(learnedOperationHint(freshOperations));
     }
     if (notes.length && !this.siteNotesShown.hosts.has(key)) {
       this.siteNotesShown.hosts.add(key);
@@ -1777,6 +1799,91 @@ return;}
       parts.push(formatSiteNotes(host, notes));
     }
     return parts.length ? parts.join("\n\n") : null;
+  }
+
+  async saveLearnedOperation(candidate: unknown, runtime: LearnedOperationRuntime): Promise<{ status: "saved"; operationId: string; name: string; steps: number }> {
+    const source = this.lastVerifiedOperationSource, store = this.learnedOperations;
+    if (!source) throw new Error("最近一个任务还没有核对做成；等核对完成后再保存做法。");
+    if (!store) throw new Error("保存的网站做法当前不可用。");
+
+    try {
+      validateLearnedCandidate(candidate);
+      const site = siteKey(new URL(source.endedOn).hostname);
+      const draft = {
+        site,
+        name: candidate.name.trim(),
+        purpose: candidate.purpose.trim(),
+        inputSchema: candidate.inputSchema,
+        outputSchema: candidate.outputSchema,
+        code: candidate.code,
+        sourceRunId: source.runId,
+      };
+      const now = Date.now();
+      const operation: LearnedOperation = {
+        format: 1,
+        id: randomUUID(),
+        effect: "read",
+        ...draft,
+        createdAt: now,
+        lastVerifiedAt: now,
+        stats: { successes: 0, failures: 0 },
+      };
+      const steps: ProgramStep[] = [];
+      const exampleRuntime = { ...runtime, onStep: (step: ProgramStep) => { steps.push(step); runtime.onStep?.(step); } };
+      const example = await runLearnedOperation(operation, candidate.exampleInput, exampleRuntime);
+      if (example.status !== "observed" && example.status !== "empty") throw new Error(`原输入验证失败（${example.status}）：${"reason" in example ? example.reason : example.status}`);
+      const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+      const side = this.sideHost();
+      if (!model || !side || !this.rpc) throw new Error("保存前的目标核对模型不可用，做法没有保存。");
+      const page = await this.rpc.call("snapshot", {}, 4_000) as { title?: unknown; url?: unknown; text?: unknown; tabId?: number };
+      if (typeof page.url !== "string" || typeof page.text !== "string") throw new Error("保存前无法读取当前页面，做法没有保存。");
+      const observations = steps.filter(step => step.phase === "end").slice(-8).map(step => ({
+        tool: step.name,
+        text: redactCredentialText(step.read?.text ?? JSON.stringify(step.result ?? step.error ?? "")).slice(0, 4_000),
+      }));
+      const verdict = await checkGoal(side, model, {
+        goal: source.goal,
+        goalPage: source.goalPage,
+        lastReply: JSON.stringify({ data: example.data, appliedInput: example.appliedInput, sourceUrl: example.sourceUrl }),
+        page: { title: String(page.title ?? ""), url: page.url, text: page.text, ...(typeof page.tabId === "number" ? { tabId: page.tabId } : {}) },
+        observations,
+      }, runtime.signal ?? AbortSignal.timeout(20_000));
+      if (verdict.status !== "done") throw new Error(`原输入没有通过原目标核对（${verdict.status}）：${verdict.remaining ?? "结果与最近任务不一致"}`);
+      const validation = await runLearnedOperation(operation, candidate.validationInput, runtime);
+      if (validation.status !== candidate.validationExpect) {
+        const reason = validation.status === "observed" || validation.status === "empty" ? `预期 ${candidate.validationExpect}，实际 ${validation.status}` : ("reason" in validation ? validation.reason : validation.status);
+        throw new Error(`第二组输入验证失败（${validation.status}）：${reason}`);
+      }
+      const saved = await store.add(draft);
+      this.runTrace.record("learned_operations", { phase: "saved", operationId: saved.id, version: saved.format, site: saved.site });
+
+      return { status: "saved", operationId: saved.id, name: saved.name, steps: example.steps + validation.steps };
+    } catch (error) {
+      this.runTrace.record("learned_operations", { phase: "failed", reason: redactCredentialText(error instanceof Error ? error.message : String(error)).slice(0, 80) });
+      throw error;
+    }
+  }
+
+  async runSavedLearnedOperation(id: string, input: unknown, runtime: LearnedOperationRuntime): Promise<LearnedOperationResult> {
+    const store = this.learnedOperations;
+    if (!store) return { status: "invalid_input", operationId: id, reason: "保存的网站做法当前不可用。", steps: 0 };
+    const operation = await store.get(id);
+    if (!operation) return { status: "invalid_input", operationId: id, reason: "没有找到这个已保存做法；请使用当前站点提供的编号。", steps: 0 };
+    this.runTrace.record("learned_operations", { phase: "used", operationId: id, version: operation.format });
+    const result = await runLearnedOperation(operation, input, runtime);
+    await store.recordRun(id, result).catch(() => {
+      this.runTrace.record("learned_operations", { phase: "stats_failed", operationId: id });
+    });
+
+    return result;
+  }
+
+  async deleteLearnedOperation(id: string): Promise<{ status: "deleted" | "not_found"; operationId: string; steps: 0 }> {
+    if (!this.learnedOperations) throw new Error("保存的网站做法当前不可用。");
+    const deleted = await this.learnedOperations.delete(id);
+    this.runTrace.record("learned_operations", { phase: "deleted", operationId: id, deleted });
+
+    return { status: deleted ? "deleted" : "not_found", operationId: id, steps: 0 };
   }
 
   /**
@@ -3406,6 +3513,14 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
 
     if (verdict) {
+      if (verdict.status === "done" && snapshot?.runId && snapshot.goal && endedOn) {
+        this.lastVerifiedOperationSource = {
+          runId: snapshot.runId,
+          goal: snapshot.recoveryInput?.requirements ?? [snapshot.goal],
+          goalPage: snapshot.goalPage ?? null,
+          endedOn,
+        };
+      }
       // 催满次数或跑得太久仍判「没做完」：留作「还差」，交给用户决定；不再自动接着做。
       const settled: Extract<AgentUiEvent, { kind: "goal_check" }> = { kind: "goal_check", status: continuation && "settle" in continuation ? continuation.settle : "open" };
 
