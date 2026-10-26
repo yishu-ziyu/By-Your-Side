@@ -1,10 +1,13 @@
 /** Only browser/page evidence can exclude a result; the assistant's explanation is not evidence. */
 export function siteBlock(page) {
   if (!page) return null;
-  const { url = '', title = '', text = '', errorText = '', status = null, challenge = false } = page;
+  const { url = '', title = '', text = '', errorText = '', status = null, challenge = false, requestedUrl = '' } = page;
+  let sameDocument = false;
+  try { sameDocument = !!requestedUrl && new URL(url).href === new URL(requestedUrl).href; } catch {}
+  const readableResponse = sameDocument && status >= 200 && status < 300 && /^https?:/.test(url) && text.trim().length > 0 && !/无法访问此网站|This site can.t be reached/i.test(title);
   let kind = null;
 
-  if (/^net::ERR_(CONNECTION_(CLOSED|REFUSED|RESET|TIMED_OUT)|NAME_NOT_RESOLVED|TIMED_OUT|INTERNET_DISCONNECTED|EMPTY_RESPONSE)/.test(errorText)
+  if (!readableResponse && /^net::ERR_(CONNECTION_(CLOSED|REFUSED|RESET|TIMED_OUT)|NAME_NOT_RESOLVED|TIMED_OUT|INTERNET_DISCONNECTED|EMPTY_RESPONSE)/.test(errorText)
       || (url.startsWith('chrome-error:') || /无法访问此网站|This site can.t be reached/i.test(title)) && /ERR_(CONNECTION|NAME_NOT_RESOLVED|TIMED_OUT|INTERNET_DISCONNECTED|EMPTY_RESPONSE)/.test(text)) kind = 'connection';
   else if (status === 429 || /^https?:\/\/news\.ycombinator\.com\//.test(url) && text.length < 3000 && /^Sorry(?:[.!\s]|$)/.test(text.trim())) kind = 'rate_limit';
   else if ((status === 402 || status == null && !title && text.length < 1000) && /^If you are a reader experiencing an access issue,/i.test(text)) kind = 'refused';
