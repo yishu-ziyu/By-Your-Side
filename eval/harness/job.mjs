@@ -59,11 +59,12 @@ const PANEL_PROBE = `(() => {
 
 /** Old process rows can retain their checking label after a new run starts. */
 export function runProgress(trace, run) {
-  const events = run?.runId ? trace.filter(e => e.runId === run.runId) : [];
+  const runId = trace.findLast(e => e.type === "run_start")?.runId ?? run?.runId ?? null;
+  const events = runId ? trace.filter(e => e.runId === runId) : [];
   const check = events.findLast(e => e.type === "goal_check_span");
 
   return {
-    runId: run?.runId ?? null,
+    runId,
     checking: check ? check.data?.phase === "start" : run?.checking ?? false,
     settled: events.some(e => e.type === "agent_settled"),
   };
@@ -508,7 +509,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
         if (got) { traceKey = got.last; trace.push(...parseLines(got.lines)); }
       }
 
-      const progress = runProgress(trace, snap.runs.at(-1));
+      const progress = runProgress(trace, snap.runs.at(-1) ?? { checking: snap.checking });
       const settled = progress.settled;
       const sig = JSON.stringify([snap.msgs.map((m) => m.text.length), snap.runs.map((r) => [r.title, r.chips.length]), snap.abortVisible, snap.running, snap.streaming]);
 
