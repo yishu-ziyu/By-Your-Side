@@ -31,6 +31,7 @@ try {
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } })}).then(() => true)`);
   const ready = 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';
   await until(async () => await rp.evaluate(panel, ready), 60_000, "侧栏就绪");
+  await rp.evaluate(panel, `(() => { window.__diagramFrames = []; const watch = () => { window.__diagramFrames.push(document.querySelectorAll('.msg.assistant .gc-diagram svg').length); requestAnimationFrame(watch); }; requestAnimationFrame(watch); return true; })()`);
   await rp.click(panel, "#input");
   await rp.typeText(panel, ASK);
   await rp.pressEnter(panel);
@@ -43,6 +44,15 @@ try {
   check("a 结构图画成了图，图里有节点文字", seen.svg.includes("阿金库尔战役") && seen.svg.includes("联合国大会通过2758号决议"), seen.svg.slice(0, 120));
   check("b 图下有「点方块看原文」，原文不在正文里", seen.hint && !seen.text.includes("亨利五世"), { hint: seen.hint, text: seen.text.slice(0, 200) });
   check("c 正文里没有 flowchart 代码", !/flowchart|-->/.test(seen.text), seen.text.slice(0, 200));
+  const frames = await rp.evaluate(panel, "window.__diagramFrames") as number[];
+  const first = frames.findIndex(n => n > 0);
+  check("d 图画出后不会在引用输出期间消失", first >= 0 && frames.slice(first).every(n => n > 0), { first, frames: frames.length });
+  await rp.evaluate(panel, `document.querySelector('.msg.assistant .gc-diagram svg [data-id="A"]')?.scrollIntoView({ block: 'center', behavior: 'instant' }), true`);
+  await rp.click(panel, '.msg.assistant .gc-diagram svg [data-id="A"] rect');
+  const quote = await until(async () => await rp.evaluate(panel, `document.querySelector('.gc-quote:not([hidden])')?.textContent ?? ''`) as string || null, 3000, "点方块显示原文");
+  check("e 点方块能看到对应原文", quote.includes("亨利五世"), quote);
+  await rp.evaluate(panel, `document.querySelector('.gc-quote:not([hidden])')?.scrollIntoView({ block: 'center', behavior: 'instant' }), true`);
+  await rp.screenshot(panel, join(out, "quote.png"));
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.length > 0 && checks.every(c => c.pass) ? "PASS" : "FAIL", checks }, null, 2));
   await rp.close(); await rp.remove(); await model.close();
