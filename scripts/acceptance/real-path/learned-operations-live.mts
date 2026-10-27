@@ -47,12 +47,13 @@ if ("error" in plan) {
     check("真实模型生成并保存一个做法", stored?.operations?.length === 1 && typeof operation?.code === "string" && !operation.code.includes("故宫"), { count: stored?.operations?.length ?? 0, operation: operation ? { id: operation.id, name: operation.name, site: operation.site, stats: operation.stats } : null });
     await rp.screenshot(panel, join(out, "saved.png"));
 
+    const successesBefore = Number((operation?.stats as { successes?: number } | undefined)?.successes ?? 0);
     await send("换成长城，再列出前 3 个结果标题");
     const reused = await readOperations() as { operations?: Array<Record<string, unknown>> } | null;
     const stats = reused?.operations?.[0]?.stats as { successes?: number; failures?: number } | undefined;
     const page = await rp.evaluate(work, "({url:location.href,text:document.body.innerText.slice(0,12000)})") as { url: string; text: string };
     const answer = await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].at(-1)?.textContent??""') as string;
-    check("真实模型换查询词复用并读到新结果", Number(stats?.successes ?? 0) >= 1 && /search=.*长城|长城.*search=/.test(page.url) && page.text.includes("长城") && answer.includes("长城"), { stats, url: page.url, answer: answer.slice(0, 800), pageContains: page.text.includes("长城") });
+    check("真实模型换查询词复用并读到新结果", Number(stats?.successes ?? 0) > successesBefore && /search=.*长城|长城.*search=/.test(decodeURIComponent(page.url)) && page.text.includes("长城") && answer.includes("长城"), { successesBefore, stats, url: decodeURIComponent(page.url), answer: answer.slice(0, 800), pageContains: page.text.includes("长城") });
     await rp.screenshot(panel, join(out, "reused.png"));
   } catch (error) {
     check("真实模型公开网站流程", false, String(error));
