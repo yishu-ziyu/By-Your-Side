@@ -1,4 +1,5 @@
 import { AnswerSources, citationEvidence } from "./answer-sources.js";
+import { isAnswerSource } from "../../shared/answer-source.js";
 import { pageReading, pageReadScope, IncompletePageSource, WHOLE_SOURCE_MAX_CHARS, type PageReadScope } from './page-reading.js';
 import { goalEvidence, GOAL_PAGE_EVIDENCE_CHARS } from "./goal-evidence.js";
 import { parseCopyTextRange, type CopyTextRange } from "../../shared/copy-range.js";
@@ -940,6 +941,14 @@ if(required.includes(key))candidates.set(key,attachment);
       for (const entry of session.sessionManager?.getBranch() ?? []) {
         if (entry.type === "custom" && entry.customType === "sideagent-answer-sources-v1") wrapper.quoteSources.restore(entry.data);
       }
+      wrapper.quoteSources.archive = id => {
+        for (const entry of session.sessionManager?.getBranch() ?? []) {
+          if (entry.type !== "custom" || entry.customType !== "sideagent-answer-sources-v1" || !Array.isArray(entry.data)) continue;
+          const source = entry.data.find(item => isAnswerSource(item) && item.id === id);
+          if (source) return source;
+        }
+        return undefined;
+      };
       wrapper.goalLedger.restore(restored?.messages ?? []);
       wrapper.explicitDelivery = !!leadConversationId;
       wrapper.sendOptions = sendOptions;
@@ -1622,7 +1631,9 @@ return;}
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
       const preview = pageReading(main);
       let wholeRead = false;
-      if (!preview?.text.trim() || preview.totalChars > preview.text.length) {
+      // about:blank、新标签页这类没有网页正文可读，问题本就不针对它；只有 http(s) 网页才要求先读全。
+      const readablePage = /^https?:/i.test(preview?.url ?? context.url ?? '');
+      if (readablePage && (!preview?.text.trim() || preview.totalChars > preview.text.length)) {
         const requests = this.copyRequirements();
         const key = JSON.stringify([run, requests]);
         if (this.sourceScope?.key !== key) {

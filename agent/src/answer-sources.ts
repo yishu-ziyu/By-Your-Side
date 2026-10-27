@@ -27,12 +27,22 @@ export function citationEvidence(text: string, sources?: ReadonlyMap<string, Ans
   return { items: items.slice(0, 32), documents:selected, truncated: items.length > 32 || selected.length < documents.size };
 }
 
+/** The in-memory cache is bounded, but an id already shown to the model must stay resolvable: misses fall back to the saved session. */
+class ArchivedSources extends Map<string, AnswerSource> {
+  archive?: (id: string) => AnswerSource | undefined;
+  override get(id: string): AnswerSource | undefined { return super.get(id) ?? this.archive?.(id); }
+  override has(id: string): boolean { return this.get(id) !== undefined; }
+  cached(id: string): AnswerSource | undefined { return super.get(id); }
+}
+
 /** Source ids belong to captured text, never a live DOM ref or a model-supplied quote. */
 export class AnswerSources {
-  readonly records = new Map<string, AnswerSource>();
+  readonly records = new ArchivedSources();
   private readonly candidates = new Map<string, AnswerSource>();
   private readonly pending = new Map<string, AnswerSource>();
   private readonly persisted = new Set<string>();
+
+  set archive(lookup: (id: string) => AnswerSource | undefined) { this.records.archive = lookup; }
 
   restore(value: unknown): void {
     if (!Array.isArray(value) || value.length > 512) return;
@@ -46,7 +56,7 @@ export class AnswerSources {
     if (safe.length < 12 || safe.length > ANSWER_SOURCE_MAX_CHARS) return;
     const digest = createHash('sha256').update(`${origin}\0${safe}`).digest('hex');
     let id = `s${digest.slice(0,8)}`;
-    const existing = this.candidates.get(id) ?? this.records.get(id);
+    const existing = this.candidates.get(id) ?? this.records.cached(id);
     if (existing && (existing.text !== safe || existing.from !== origin)) id = `s${digest.slice(0,16)}`;
     if (!this.candidates.has(id)) this.candidates.set(id,{id,text:safe,from:origin});
     this.trim();
