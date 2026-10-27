@@ -296,7 +296,7 @@ export type ToolExecutionFact = "not_executed" | "unknown" | "executed";
  * guide_*：教学一步没完成（用户停下、离开、点了两次页面都没变化、2 分钟没点），也不是助手出错。
  * 由做出这个决定的地方给出，侧栏按它选给用户看的那句话，不读给助手的文字。
  */
-const HELD_REASONS = ["pay", "declined", "repeat", "busy", "stopped", "left", "timeout", "guide_stopped", "guide_left", "guide_no_change", "guide_timeout"] as const;
+const HELD_REASONS = ["pay", "declined", "repeat", "busy", "stopped", "left", "timeout", "send_changed", "send_unverified", "guide_stopped", "guide_left", "guide_no_change", "guide_timeout"] as const;
 export type HeldReason = typeof HELD_REASONS[number];
 
 export function isHeldReason(v: unknown): v is HeldReason {
@@ -325,6 +325,9 @@ export type ClientMessage = ConversationEnvelope & (
   /** 过往任务的「这里别用」与撤销「忘掉」（放回删掉的那条）。结果都是 task_history_result。 */
   | { type: "task_history_site"; requestId: string; id: string; hostname: string; off: boolean }
   | { type: "task_history_restore"; requestId: string; task: TaskHistoryEntry }
+  /** 可直接运行的技能（核对做成后存下的只读程序）：列出，或删一条。结果都是 skill_operations_result。 */
+  | { type: "skill_operations_list"; requestId: string }
+  | { type: "skill_operation_delete"; requestId: string; id: string }
   | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
@@ -379,7 +382,28 @@ export type SendConfirmOutcome = "send" | "decline" | "stopped" | "left" | "time
  * 侧栏确认卡要显示的内容：网站、按钮名、按钮附近的草稿，都由扩展从网页读出。
  * id 是后台这次等待的身份，侧栏回答时带回；outcome 只在不等了时有，clicked 只在确认后点完时有。草稿只在开始等的那条里带。
  */
-export interface SendConfirmView { id: string; host: string; label: string; content?: string; /** 发给谁：从网页读（收件人栏、聊天标题），读不到不写。 */ recipient?: string; /** 怎么发出去的：脚本、回车、网络请求都走同一个确认。 */ route?: "click" | "script" | "enter" | "request"; outcome?: SendConfirmOutcome; /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */ clicked?: "yes" | "no" | "unknown" }
+export interface SendConfirmView {
+  id: string;
+  host: string;
+  label: string;
+  content?: string;
+  /** 发给谁：从网页读（收件人栏、聊天标题），读不到不写。 */
+  recipient?: string;
+  /** 怎么发出去的：脚本、回车、网络请求都走同一个确认。 */
+  route?: "click" | "script" | "enter" | "request";
+  outcome?: SendConfirmOutcome;
+  /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */
+  clicked?: "yes" | "no" | "unknown" | "changed" | "unverified";
+  /** 请求类确认的人话分类：搜索放行或写进标题；缺省按 route 猜。 */
+  kind?: "search" | "send" | "request";
+  /** 从请求体读出的搜索词或正文；读不到不写。 */
+  query?: string;
+  path?: string;
+  method?: string;
+  body?: string;
+  startedAt?: number;
+  expiresAt?: number;
+}
 
 export interface ConversationEnvelope { conversationId?: string }
 
@@ -424,6 +448,8 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask" | "site" | "unforget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number; alreadySaved?: true; /** action=ask 失败且这条询问已作废（不在了、替换目标被改过）：侧栏不再给按钮。 */ askClosed?: true }
   /** 过往任务列表（删除后返回剩下的），从新到旧。 */
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
+  /** 可直接运行的技能列表（删除后返回剩下的）。只给侧栏显示用的字段，不带程序。 */
+  | { type: "skill_operations_result"; requestId: string; ok: boolean; operations?: SkillOperationSummary[]; error?: string }
   /** reason 是人话；detail 是服务商原文，只进「技术详情」。 */
   | { type: "model_key_test_result"; requestId: string; ok: boolean; ms?: number; reason?: string; detail?: string }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
@@ -471,7 +497,7 @@ export type AgentUiEvent =
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 失败的人话原因（≤16 字，「连不上这个地址」「要登录才能下」）：侧栏直接显示，没有就写「没做成」。 */ reason?: string; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback; /** 点/填/看过的页面元素：侧栏步骤对照用，模型看不见。 */ pageTarget?: { target: string; label: string; tabId: number; url: string } }
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 失败的人话原因（≤16 字，「连不上这个地址」「要登录才能下」）：侧栏直接显示，没有就写「没做成」。 */ reason?: string; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback; /** 点/填/看过的页面元素：侧栏步骤对照用，模型看不见。 */ pageTarget?: { target: string; label: string; tabId: number; url: string }; /** 这一步存成、用上或没用上可直接运行的技能：侧栏过程行写技能名。 */ skill?: { id: string; name: string; outcome: "saved" | "used" | "unused" } }
   /** 成功的只读页面读数，供结果账本建立写入前基线；只在 agent 内使用，不下发侧栏。 */
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
   /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
@@ -665,7 +691,7 @@ export interface ToolContract {
   /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回 agent，不回侧栏。 */
   fetch: {
     params: { url: string; method?: "GET" | "POST"; headers?: Record<string, string>; body?: string; savePath?: string; pages?: { from: number; to: number; step?: number } };
-    data: { url: string; status: number; ok: boolean; contentType: string; bytes: number; truncated: boolean; text: string; readBytes?: number; totalBytes?: number | null; stoppedReason?: "complete" | "limit" | "deadline" | "abort" };
+    data: { url: string; status: number; ok: boolean; contentType: string; bytes: number; truncated: boolean; text: string; readBytes?: number; totalBytes?: number | null; stoppedReason?: "complete" | "limit" | "deadline" | "abort"; timingsMs?: { confirmation: number; dispatch: number; response: number; body: number } };
   };
   /** 被动看当前工作页真实发出过哪些请求（CDP Network 域环形缓冲）；只读，不改页面。 */
   network: {
@@ -923,6 +949,15 @@ export interface GuideStepResult {
 // ── 编解码守卫 ─────────────────────────────────────────────────────
 
 /** 协议里的可选说明文字（错误原因等）。 */
+export interface SkillOperationSummary { id: string; name: string; purpose: string; site: string }
+
+function isSkillOperationSummary(value: unknown): value is SkillOperationSummary {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+
+  return validMemoryId(item.id) && isShortText(item.name) && isShortText(item.purpose) && isShortText(item.site);
+}
+
 function isShortText(value: unknown): value is string {
   return typeof value === "string" && value.length <= 2000;
 }
@@ -993,6 +1028,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     }
 
     if (msg.type === "task_history_list" && !validRequestId(msg.requestId)) return null;
+
+    if (msg.type === "skill_operations_list" && !validRequestId(msg.requestId)) return null;
+
+    if (msg.type === "skill_operation_delete" && !(validRequestId(msg.requestId) && validMemoryId(msg.id))) return null;
 
     if (msg.type === "task_history_forget" && (!validRequestId(msg.requestId) || (msg.id !== null && !validMemoryId(msg.id)))) return null;
 
@@ -1158,6 +1197,14 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
     if (msg.type === "model_key_test_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean"
       && (msg.ms === undefined || Number.isFinite(msg.ms)) && (msg.reason === undefined || isShortText(msg.reason)) && (msg.detail === undefined || isShortText(msg.detail)))) return null;
+
+    if (msg.type === "skill_operations_result") {
+      if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return null;
+
+      if (msg.operations !== undefined && (!Array.isArray(msg.operations) || !msg.operations.every(isSkillOperationSummary))) return null;
+
+      if (msg.error !== undefined && !isShortText(msg.error)) return null;
+    }
 
     if (msg.type === "task_history_result") {
       if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return null;

@@ -22,6 +22,7 @@ import { isProviderBusyError } from "../../../shared/user-facing.js";
 import { measuredModelIds, providerConcurrency, thinkingProfile, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
 import { gatedCall, gatedStream, ProviderGate, type ModelQueueWait, type QueuePurpose } from "./provider-gate.js";
 import { COMMANDCODE_PROVIDER_ID, CUSTOM_PROVIDER_ID, CUSTOM_ENDPOINT_ENV, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
+import { codexIdentity, readCodexCatalog } from "./codex-catalog.js";
 
 // Pi 默认用变量路径按需加载订阅登录模块，打包后找不到文件；这里把设备码类登录直接打进来。
 // 需要本机回调服务的（Claude 订阅、OpenRouter）浏览器里用不了，明确报错。
@@ -126,6 +127,7 @@ export interface ModelRuntime {
   providerChoices(): ProviderChoice[];
   /** 从服务商的公开清单补全模型列表（目前是 Command Code）；失败时保留内置的几个。 */
   loadProviderModels(signal?: AbortSignal): Promise<void>;
+  applyCodexCatalog(value: unknown): Promise<void>;
 }
 
 /** OpenAI 兼容服务：自定义地址和 pi-ai 目录里没有的阶跃星辰都用它注册。能力（思考档、能否看图）取实测登记，没有登记按保守默认。 */
@@ -267,6 +269,11 @@ const STEPFUN_STEP_PLAN_BASE_URL = "https://api.stepfun.com/step_plan/v1";
 export function createModelRuntime(persist: (providerId: string, credential: Credential | undefined) => Promise<void> | void): ModelRuntime {
   const credentials = new MirroredCredentialStore(persist);
   const models = builtinModels({ credentials });
+  const codexProvider = models.getProvider("openai-codex");
+  const codexBuiltins = models.getModels("openai-codex");
+  let codexOnline = false;
+  let codexCandidates = new Map<string, Model<Api>>();
+  let codexCatalogGeneration = 0;
   models.setProvider(openAICompatible(STEPFUN_PROVIDER_ID, "阶跃星辰", STEPFUN_STEP_PLAN_BASE_URL, STEPFUN_MODELS).provider);
   const anthropicCatalog = models.getModels("anthropic");
   models.setProvider(commandCodeProvider(COMMANDCODE_FALLBACK, anthropicCatalog));
@@ -284,7 +291,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
       return model!;
     }
 
-    const known = models.getModel(config.provider, config.modelId);
+    const known = models.getModel(config.provider, config.modelId) ?? (config.provider === "openai-codex" ? codexCandidates.get(config.modelId) : undefined);
 
     if (known) return withMeasuredCapability(known);
     // Command Code 的模型接口不同，沿用同服务商的连接参数会把 Claude 发到 OpenAI 兼容接口。
@@ -312,6 +319,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   /** 目录里的模型加上实测登记过、目录还没收的（如 MiniMax-M3.1-Flash-Preview）；登记的模型要靠同服务商目录模型解析，目录为空的不加。 */
   function listedModels(providerId: string): string[] {
     const catalog = models.getModels(providerId).map((m) => m.id);
+    if (providerId === "openai-codex" && codexOnline) return catalog;
     const hidden = HIDDEN_MODELS.get(providerId);
     const all = catalog.length ? [...new Set([...catalog, ...measuredModelIds(providerId)])] : catalog;
 
@@ -340,8 +348,42 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     if (listings.length) models.setProvider(commandCodeProvider(listings, anthropicCatalog));
   }
 
+  async function applyCodexCatalog(value: unknown): Promise<void> {
+    if (!codexProvider) return;
+    const generation = ++codexCatalogGeneration;
+    const credential = await credentials.read("openai-codex");
+    // SAFETY: credential is the checked pi-ai credential, matching StoredCredential's OAuth shape.
+    const identity = await codexIdentity(credential as StoredCredentials[string] | undefined);
+    if (generation !== codexCatalogGeneration) return;
+    const catalog = readCodexCatalog(value, identity);
+    codexOnline = !!catalog;
+    codexCandidates = new Map();
+    if (!catalog) { models.setProvider(codexProvider); return; }
+    const template = codexBuiltins[0];
+    if (!template) { models.setProvider(codexProvider); codexOnline = false; return; }
+    const levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+    const entries = catalog.models.map(entry => {
+      const known = codexBuiltins.find(model => model.id === entry.id);
+      const base = known ? withMeasuredCapability(known) : template;
+      const measuredLevels = known ? new Set(thinkingProfile(base).levels) : undefined;
+      const thinkingLevelMap = Object.fromEntries(levels.map(level => {
+        const remote = level === "off" ? "none" : level;
+        return [level, entry.efforts.includes(remote) && (!measuredLevels || measuredLevels.has(level)) ? remote : null];
+      }));
+      return {
+        ...base, id: entry.id, name: entry.name, reasoning: true,
+        input: entry.input.filter(input => !known || base.input.includes(input)),
+        contextWindow: entry.contextWindow, maxTokens: Math.min(base.maxTokens, entry.contextWindow, known ? base.maxTokens : 32_768),
+        thinkingLevelMap, codexCatalogCapability: true,
+      } satisfies Model<Api> & { codexCatalogCapability: true };
+    });
+    codexCandidates = new Map(entries.filter((_, i) => catalog.models[i]?.discoveryOnly).map(model => [model.id, model]));
+    const available = entries.filter((_, i) => !catalog.models[i]?.discoveryOnly);
+    models.setProvider({ ...codexProvider, getModels: () => available, getAllModels: () => available });
+  }
+
   const runtime: ModelRuntime = {
-    sessionId, credentials, models, resolveModel, headersFor, providerChoices, loadProviderModels,
+    sessionId, credentials, models, resolveModel, headersFor, providerChoices, loadProviderModels, applyCodexCatalog,
     createCoreModels: (selectedConfig, fastConfig, backupConfig) => createCoreModelPort(runtime, selectedConfig, fastConfig, backupConfig),
   };
 

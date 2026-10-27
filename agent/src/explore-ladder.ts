@@ -25,6 +25,7 @@ const RISKY = /付款|支付|付钱|购买|下单|结账|转账|删除(?!线)|�
 /** 翻过这么多个菜单，才把「交半成品」当作放弃得太早。 */
 const GIVE_UP_AFTER_MENUS = 2;
 
+const VISIBLE_SOURCE = 'If the page already shows a concrete 原文, PDF, publisher or source link for what the user asked, click that link now. Do not search the same title or call a JSON API first.';
 const ANOTHER_WAY = 'Try another way: syntax typed into the content itself (#tag, @mention, /command, Markdown), a keyboard shortcut, or the right-click menu.';
 const HELP = "Read this site's official help without touching the user's page: in browser_run, const r = await browser.fetch({url: <its help or docs page>}); strip the HTML tags in the program and return only the lines about this feature. Then do it the documented way.";
 const ASK = 'Stop and ask the user in one short message: what you looked for and where, and the exact way you plan to do it, so they only have to reply 可以.';
@@ -38,7 +39,7 @@ function ladderHint(deadEnds:number, risky:boolean):string {
 
   if(deadEnds>=LADDER_STEPS[0])return `[Next step] ${deadEnds} places tried without the control. Stop opening more menus; the site may not have one. ${ANOTHER_WAY}`;
 
-  return '[Next step] Not here. Read the whole page first (scroll, hover to reveal, expand collapsed parts), then open at most the two or three most likely menus.';
+  return `[Next step] Not here. ${VISIBLE_SOURCE} Then read the whole page (scroll, hover to reveal, expand collapsed parts), then open at most the two or three most likely menus.`;
 }
 
 /** 只看工具自己写的第一行：后面跟着页面快照和新出现的页面文字，是不可信数据，不能让网页替模型数死路或冒充付款。 */

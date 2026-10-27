@@ -1,5 +1,5 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
-import { createConversationRuntime, GptLiveSession, MemoryStore, RealtimeVoiceSession, SiteNotesStore, TaskHistoryStore, startHostCore, useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useStyleSignals, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
+import { createConversationRuntime, GptLiveSession, LearnedOperationStore, MemoryStore, RealtimeVoiceSession, SiteNotesStore, TaskHistoryStore, startHostCore, useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useStyleSignals, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
 import type { SessionLogPort } from "@sideagent/agent/browser-core";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import { describeModelError } from "../../../shared/user-facing.js";
@@ -18,7 +18,8 @@ import { IdbDocument } from "./document-idb.js";
 import { pushedMiniApps, pushedSelfUse, pushedTranslationStyle, receiveCoreSettings } from "../shared/core-settings.js";
 
 type Inbound = ClientMessage
-  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials }
+  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials; codexCatalog?: unknown }
+  | { type: "inproc_catalog"; codexCatalog?: unknown }
   | { type: "inproc_settings"; values: unknown }
   | { type: "inproc_voice"; configured: boolean; model?: unknown };
 
@@ -27,7 +28,7 @@ interface InprocHostDeps {
   /** Tests explicitly inject a session backend; production always uses IndexedDB. */
   sessionData?: (id: string) => Promise<{ session: SessionLogPort; files?: ArtifactPersistence }>;
   /** Node entry-contract tests inject durable documents; production uses IndexedDB. */
-  document?: (name: "memories" | "pending-memory" | "tasks" | "habits" | "site-notes" | "style-signals") => DocumentPersistence;
+  document?: (name: "memories" | "pending-memory" | "tasks" | "habits" | "site-notes" | "style-signals" | "learned-operations") => DocumentPersistence;
   onConnect: (listener: (port: chrome.runtime.Port) => void) => void;
 }
 
@@ -96,10 +97,12 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const taskHistory = new TaskHistoryStore(personal("tasks"));
     // 站点笔记：关于网站的做法，不是关于用户的记忆，单独一份。
     const siteNotes = new SiteNotesStore(document("site-notes"));
+    const learnedOperations = new LearnedOperationStore(document("learned-operations"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
       store,
       memoryStore,
       taskHistory,
+      learnedOperations,
       createRuntime: async (id, emit, summary) => {
         const data = deps.sessionData ? await deps.sessionData(id) : {
           session: await openPiSession(id),
@@ -113,6 +116,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         memoryStore,
         taskHistory,
         siteNotes,
+        learnedOperations,
         miniApps: async () => pushedMiniApps(),
         translationStyle: () => pushedTranslationStyle(),
         });
@@ -240,6 +244,11 @@ export function startInprocHost(deps: InprocHostDeps): void {
   }
 
   async function handle(message: Inbound): Promise<void> {
+    if (message.type === "inproc_catalog") {
+      await models.applyCodexCatalog(message.codexCatalog);
+      if (core && connection) connection.send({ type: "model_info", models: await core.session.availableModels() });
+      return;
+    }
     if (message.type === "inproc_voice") {
       voiceConfigured = message.configured;
       voiceModel = message.model;
@@ -259,6 +268,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
       backupSelected = message.backup ?? null;
       storedCredentials = message.credentials ?? {};
       await models.credentials.load(storedCredentials);
+      await models.applyCodexCatalog(message.codexCatalog);
 
       if (!selected) return;
       const model = models.resolveModel(selected);

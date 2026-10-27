@@ -9,10 +9,9 @@ import { readCurrentDocument } from "./exec/page-readiness.js";
 import { bringForwardForUser } from "./foreground.js";
 import { SEND_ARM_MS, SEND_CONFIRM_PANEL_PORT } from "../relay.js";
 import type { GuideWait, HeldReason, SendConfirmView } from "../../../shared/protocol.js";
+import { classifyRequest } from "../../../shared/request-confirm.js";
+import { SEND_CONFIRM_MS } from "../../../shared/timeouts.js";
 import { isPanelUrl } from "./target-window.js";
-
-/** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
-const SEND_CONFIRM_MS = 120_000;
 
 const PORT_PREFIX = "send-confirm:";
 
@@ -39,10 +38,10 @@ function sendSentence(host: string, label: string, content?: string, recipient?:
 }
 
 /** 网页上读「发给谁」：同一表单/容器里的收件人栏，否则页面的主标题。序列化进页面，必须自包含。 */
-export function readRecipientInPage(x: number | null, y: number | null): string | null {
-  const at = x === null || y === null ? document.activeElement : document.elementFromPoint(x, y);
+export function readRecipientInPage(x: number | null, y: number | null, maxLength = 40, target?: Element | null): string | null {
+  const at = target ?? (x === null || y === null ? document.activeElement : document.elementFromPoint(x, y));
   const scope = at?.closest("form,[role=dialog],[role=form],main") ?? document;
-  const clip = (t: string | null | undefined) => { const v = (t ?? "").replace(/\s+/g, " ").trim(); return v ? (v.length > 40 ? v.slice(0, 40) + "…" : v) : null; };
+  const clip = (t: string | null | undefined) => { const v = (t ?? "").replace(/\s+/g, " ").trim(); return v ? (v.length > maxLength ? v.slice(0, maxLength) + "…" : v) : null; };
   for (const el of scope.querySelectorAll<HTMLInputElement>("input,[contenteditable=true]")) {
     const name = [el.name, el.id, el.getAttribute("aria-label"), el.labels?.[0]?.textContent, el.placeholder].join(" ");
     if (/(^|\s)(to|recipients?|收件人|发给)\b/i.test(name) || /收件人|发给/.test(name)) { const v = clip(el.value ?? el.textContent); if (v) return v; }
@@ -55,7 +54,20 @@ export function readRecipientInPage(x: number | null, y: number | null): string 
   return where && where !== name && !where.includes(name) ? `${name}（${where}）` : name;
 }
 
-export interface SendDetails { content?: string; recipient?: string; rect?: { left: number; top: number; width: number; height: number }; route?: SendConfirmView["route"]; /** 请求发往的网站：和所在网页不是同一个时，卡上写请求真正去的地方。 */ host?: string }
+export interface SendDetails {
+  content?: string;
+  recipient?: string;
+  binding?: string;
+  rect?: { left: number; top: number; width: number; height: number };
+  route?: SendConfirmView["route"];
+  /** 请求发往的网站：和所在网页不是同一个时，卡上写请求真正去的地方。 */
+  host?: string;
+  kind?: SendConfirmView["kind"];
+  query?: string;
+  path?: string;
+  method?: string;
+  body?: string;
+}
 
 type Outcome = NonNullable<SendConfirmView["outcome"]>;
 
@@ -103,13 +115,19 @@ const panelPorts = new Set<chrome.runtime.Port>();
 
 /** 用户确认过、还没点下去的那次发送（按这次调用的 guard）：点完再补报真实结果。 */
 const confirmedViews = new WeakMap<SendGuard, SendConfirmView>();
+const confirmedChecks = new WeakMap<SendGuard, () => Promise<void>>();
+
+export async function recheckConfirmedSend(guard: SendGuard): Promise<void> {
+  await confirmedChecks.get(guard)?.();
+}
 
 /**
  * 包住一次 click：用户确认过发送时，点完再告诉侧栏真的点下去没有，卡上的「已发送」只在点下去以后写。
  * 结果是「没执行」时没点到；其余出错不知道点下去没有。
  */
-export async function reportSendClick<T extends { sendConfirmed?: true }>(guard: SendGuard, run: Promise<T>): Promise<T> {
+export async function reportSendClick<T extends { sendConfirmed?: true; heldReason?: HeldReason }>(guard: SendGuard, run: Promise<T>): Promise<T> {
   const report = (clicked: NonNullable<SendConfirmView["clicked"]>) => {
+    confirmedChecks.delete(guard);
     const view = confirmedViews.get(guard);
 
     if (!view) return;
@@ -119,12 +137,12 @@ export async function reportSendClick<T extends { sendConfirmed?: true }>(guard:
 
   try {
     const result = await run;
-    report(result?.sendConfirmed ? "yes" : "unknown");
+    report(result?.sendConfirmed ? "yes" : result?.heldReason === "send_changed" ? "changed" : result?.heldReason === "send_unverified" ? "unverified" : "unknown");
 
     return result;
   } catch (error) {
-    const fact = error as { sendConfirmed?: unknown; executionFact?: unknown };
-    report(fact?.sendConfirmed === true ? "yes" : fact?.executionFact === "not_executed" ? "no" : "unknown");
+    const fact = error as { sendConfirmed?: unknown; executionFact?: unknown; heldReason?: HeldReason };
+    report(fact?.sendConfirmed === true ? "yes" : fact?.heldReason === "send_changed" ? "changed" : fact?.heldReason === "send_unverified" ? "unverified" : fact?.executionFact === "not_executed" ? "no" : "unknown");
     throw error;
   }
 }
@@ -219,8 +237,20 @@ export async function confirmSend(tabId: number, label: string, guard: SendGuard
     await bringForwardForUser(tabId, "send_confirm");
 
     const read = await readContent().catch(() => undefined);
-
-    return await askUser(tabId, guard, key, label, typeof read === "string" ? { content: read } : read ?? {});
+    const original = typeof read === "string" ? { content: read } : read ?? {};
+    if (original.binding === "unavailable") throw notSent("无法核对发送内容：没有发送。请检查网页后重试。", "send_unverified");
+    const approved = await askUser(tabId, guard, key, label, original);
+    if (approved && original.binding !== undefined) {
+      const recheck = async () => {
+        const next = await readContent().catch(() => undefined);
+        if (!next || typeof next === "string" || next.binding !== original.binding || next.recipient !== original.recipient) {
+          throw notSent("确认期间发送内容、收件人或目标发生变化，或无法重新核对：没有发送。请重新检查后确认。", "send_changed");
+        }
+      };
+      await recheck();
+      confirmedChecks.set(guard, recheck);
+    }
+    return approved;
   } finally { pendingTabs.delete(tabId); }
 }
 
@@ -228,17 +258,21 @@ export async function confirmSend(tabId: number, label: string, guard: SendGuard
 function secretField(name: string): boolean {
   const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 
-  return words.some((word, i) => /^(?:pass|passwd|password|passcode|pwd|token|secret|otp|cvv|cvc|cvn|pin|auth|authorization|session|sessionid|cookie|credentials?|signature|apikey|accesskey|privatekey|secretkey|cardnumber|cardno)$/.test(word)
+  return words.some((word, i) => /^(?:pass|passwd|password|passcode|pwd|token|secret|otp|cvv|cvc|cvn|pin|auth|authorization|session|sessionid|cookie|credentials?|signature|apikey|accesskey|privatekey|secretkey|cardnumber|cardno|jwt|bearer|csrf|xsrf|nonce)\d*$/.test(word)
     || (word === "key" && /^(?:api|access|private|secret|client|app|signing)$/.test(words[i - 1] ?? ""))
     || (word === "card" && /^(?:number|no|num|nr)$/.test(words[i + 1] ?? "")));
 }
 
+/** 写在字符串里的凭据（GraphQL 参数、拼好的查询串）：整段遮住。 */
+const INLINE_SECRET = /(pass(?:word|wd|code)?|pwd|token|secret|authorization|api[_-]?key)\d*["']?\s*[:=]/i;
+
 /** 确认卡上的内容随侧栏记录存进本机：JSON 和表单按字段遮住凭据；认不出格式就不写内容，只写去哪。 */
-function requestSummary(body: string | undefined): string | undefined {
+export function requestSummary(body: string | undefined): string | undefined {
   if (!body?.trim()) return undefined;
   const scrub = (value: unknown, hidden: boolean): unknown => hidden ? "••••"
     : Array.isArray(value) ? value.map(item => scrub(item, false))
-      : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrub(item, secretField(key))])) : value;
+      : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrub(item, secretField(key))]))
+        : typeof value === "string" && INLINE_SECRET.test(value) ? "••••" : value;
   let text: string | undefined;
 
   try { text = JSON.stringify(scrub(JSON.parse(body), false)); } catch {
@@ -248,12 +282,22 @@ function requestSummary(body: string | undefined): string | undefined {
   return text?.replace(/\s+/g, " ").trim().slice(0, 120) || undefined;
 }
 
-/** 请求工具带着登录态发 POST：服务器那边可能就是发出、下单或付款，和点「发送」走同一张确认卡，卡上写请求去哪个网站、哪个路径和内容开头。 */
+/** 请求工具带着登录态发 POST：写入、发信、付款和点「发送」走同一张确认卡；搜索、查询按同一份判定放行。 */
 export async function confirmRequest(tabId: number, request: { url: string; body?: string }, guard: SendGuard): Promise<void> {
-  let host = "", path = request.url;
+  const classified = classifyRequest({ method: "POST", url: request.url, body: request.body });
+  if (!classified.confirm) return;
+  let host = classified.host, path = classified.path || request.url;
   try { const url = new URL(request.url); host = url.host; path = url.pathname; } catch { /* 原样显示 */ }
   const content = requestSummary(request.body);
-  await confirmSend(tabId, `POST ${path}`.slice(0, 60), guard, async () => ({ ...(content ? { content } : {}), ...(host ? { host } : {}), route: "request" }));
+  await confirmSend(tabId, `${classified.method} ${path}`.slice(0, 60), guard, async () => ({
+    ...(content ? { content } : {}),
+    ...(host ? { host } : {}),
+    route: "request",
+    kind: classified.intent === "search" ? "search" : "request",
+    path,
+    method: classified.method,
+    ...(content ? { body: content } : {}),
+  }));
 }
 
 async function askUser(tabId: number, guard: SendGuard, key: string | null, label: string, details: SendDetails): Promise<boolean> {
@@ -271,9 +315,24 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
 
   waitingPorts.delete(portName);
 
-  if (!port) throw notSent("确认框没能显示在网页上，所以没有点「发送」。");
+  if (!port) throw notSent("确认框没能显示在网页上，所以没有点「发送」。先看一眼侧栏，或再打开这个网页后重试。");
   const shown = port;
-  const view: SendConfirmView = { id: crypto.randomUUID(), host: details.host ?? hostOf(shown.sender?.url), label: label.trim(), ...(content ? { content } : {}), ...(recipient ? { recipient } : {}), ...(route ? { route } : {}) };
+  const now = Date.now();
+  const view: SendConfirmView = {
+    id: crypto.randomUUID(),
+    host: details.host ?? hostOf(shown.sender?.url),
+    label: label.trim(),
+    ...(content ? { content } : {}),
+    ...(recipient ? { recipient } : {}),
+    ...(route ? { route } : {}),
+    ...(details.kind ? { kind: details.kind } : {}),
+    ...(details.query ? { query: details.query } : {}),
+    ...(details.path ? { path: details.path } : {}),
+    ...(details.method ? { method: details.method } : {}),
+    ...(details.body ? { body: details.body } : {}),
+    startedAt: now,
+    expiresAt: now + SEND_CONFIRM_MS,
+  };
   const cleanups: Array<() => void> = [];
 
   const outcome = await new Promise<Outcome>(done => {

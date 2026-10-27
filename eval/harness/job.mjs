@@ -40,6 +40,8 @@ const PANEL_PROBE = `(() => {
     return { id: el.dataset.evalId, kind: el.dataset.deliveryKind ?? "", cls: el.className, text: txt(el) };
   });
   const runs = [...document.querySelectorAll("details.run-steps")].map((d) => ({
+    runId: d.dataset.runId ?? null,
+    checking: d.querySelector(".run-check")?.textContent.includes("核对中") ?? false,
     title: txt(d.querySelector(".run-title")), chain: txt(d.querySelector(".run-chain")), time: txt(d.querySelector(".run-time")),
     chips: [...d.querySelectorAll(".chip")].map((c) => ({ label: txt(c.querySelector(".chip-label")) || txt(c), detail: txt(c.querySelector(".chip-detail")), cls: c.className })),
     thinking: [...d.querySelectorAll(".thinking")].map(txt).join("\\n").slice(0, 2000),
@@ -54,6 +56,19 @@ const PANEL_PROBE = `(() => {
     checking: [...document.querySelectorAll(".run-check")].some((el) => el.textContent.includes("核对中")),
     inputReady: !!q("#input") };
 })()`;
+
+/** Old process rows can retain their checking label after a new run starts. */
+export function runProgress(trace, run) {
+  const runId = trace.findLast(e => e.type === "run_start")?.runId ?? run?.runId ?? null;
+  const events = runId ? trace.filter(e => e.runId === runId) : [];
+  const check = events.findLast(e => e.type === "goal_check_span");
+
+  return {
+    runId,
+    checking: check ? check.data?.phase === "start" : run?.checking ?? false,
+    settled: events.some(e => e.type === "agent_settled"),
+  };
+}
 
 /**
  * Trace lines written since primary key `after`, read from the panel (same extension origin as the offscreen
@@ -168,7 +183,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     const observeSite = async (errorText = "") => {
       const page = await evalIn(pageSid, `({url:location.href,title:document.title,text:(document.body?.innerText??'').slice(0,5000),challenge:!!document.querySelector('.g-recaptcha,.h-captcha,.cf-turnstile,iframe[src*="challenges.cloudflare.com"]')})`).catch(() => ({ url: task.site_url, title: "", text: "" }));
-      const observed = { ...page, errorText, status: documentResponse?.url === page.url ? documentResponse.status : null };
+      const observed = { ...page, requestedUrl: siteUrl(task.site_url), errorText, status: documentResponse?.url === page.url ? documentResponse.status : null };
       rec.site_observations.push(observed);
 
       return observed;
@@ -494,13 +509,15 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
         if (got) { traceKey = got.last; trace.push(...parseLines(got.lines)); }
       }
 
-      const settled = trace.some((e) => e.type === "agent_settled" && Date.parse(e.time) >= rec._t0 - 1000);
+      const progress = runProgress(trace, snap.runs.at(-1) ?? { checking: snap.checking });
+      const settled = progress.settled;
       const sig = JSON.stringify([snap.msgs.map((m) => m.text.length), snap.runs.map((r) => [r.title, r.chips.length]), snap.abortVisible, snap.running, snap.streaming]);
 
       if (sig !== lastSig) { lastSig = sig; lastChange = now; }
 
       const othersRunning = task.parallel && (await evalIn(ps, CONVERSATIONS).catch(() => [])).some((c) => c.state === "运行中");
-      const idle = !snap.abortVisible && !snap.running && !snap.streaming && !snap.checking && !othersRunning;
+      const idle = !snap.abortVisible && !snap.running && !snap.streaming && !progress.checking && !othersRunning;
+      rec.settle_probe = { at_s: t(now), ...progress, rawChecking: snap.checking, running: snap.running, streaming: snap.streaming, abortVisible: snap.abortVisible };
       const answered = afterUser.some((m) => /assistant/.test(m.cls) && m.text);
 
       if (idle && visible && ((settled && answered && now - lastChange > 4000) || (answered && now - lastChange > 8000) || (settled && now - lastChange > 12000))) { ended = lastChange; break; }

@@ -9,7 +9,7 @@ import { answerSkeleton } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { observeForCue } from "./cue.js";
-import { sendConfirmCard } from "./send-confirm-card.js";
+import { resetSendConfirmCards, sendConfirmCard } from "./send-confirm-card.js";
 import { mountDictation } from "./dictation.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -45,6 +45,7 @@ import {
   historyEventTime,
   recordedDuration,
   finishedRunTitle,
+  skillStepText,
   spokenDuration,
   loaderSubtitle,
   openedPageTitle,
@@ -79,7 +80,9 @@ import { normalizeMemoryHostname,} from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { isWriteTool } from "../../../shared/effect-policy.js";
-import { conversationBackgroundLabel, conversationDayGroup, conversationOutcome, conversationRelativeTime, resultCardCopy } from "./selectors.js";
+import { conversationDayGroup, conversationOutcome, conversationRelativeTime, otherTaskCopy, resultCardCopy } from "./selectors.js";
+import { liveStatus, runMetaLine, STEER_OTHER_WAY, STEER_SKIP } from "../../../shared/run-status.js";
+import { describeTimeout } from "../../../shared/timeouts.js";
 import { TaskBar, stateHeadline } from "./task-bar.js";
 import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
@@ -101,6 +104,7 @@ import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
+import { connectSkillOperations, deleteSkillOperation, knownSkillOperations, onSkillOperationsChange, receiveSkillOperations, refreshSkillOperations, skillOperationsLoaded } from "./skill-operations.js";
 import { mountChapters } from "./chapters.js";
 import { activeTargetTab, isFloat, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
 import { FLOAT_CARD_DEFAULT_RECT, FLOAT_CARD_KEY, readFloatCard } from "../shared/float-card.js";
@@ -198,6 +202,9 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
     answer.insertAdjacentHTML("beforeend", DECLINED_ANSWER);
   }
   attachCopyActions(answer);
+  const run = currentRun ?? lastRun;
+
+  if (run) attachSkillUndo(run, answer);
   linkifyCircleRefs(answer);
   memoryInline.adoptUsedLine(answer);
   placeTaskCardAfter(answer);
@@ -368,6 +375,7 @@ app.innerHTML = `
     </div>
     <input type="file" id="file-input" multiple hidden />
     <select id="marginalia-mode" aria-label="段落提示模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">解释段落 · 会发给模型</option></select>
+    <div id="confirm-dock" hidden></div>
     <div id="task-bar-root"></div>
     <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
       <span id="tab-icon-sq" class="tab-icon-sq"></span>
@@ -468,7 +476,40 @@ const steerRibbon = createSteerRibbon(composerEl, inputEl, (text) => sendInput(t
 const slashSkills = mountSlashSkills({
   composerEl, inputEl,
   run: (text) => { inputEl.value = text; inputEl.dispatchEvent(new Event("input")); sendInput(); },
+  verifiedRequest: isLatestVerifiedRequest,
 });
+connectSkillOperations(msg => send(msg));
+// 「撤销」跟着后台那一份列表走：撤销过、在别的窗口删掉、重开侧栏重放记录时，都按技能还在不在来显示。
+onSkillOperationsChange(() => {
+  for (const button of messagesEl.querySelectorAll<HTMLButtonElement>(".skill-undo[data-skill-id]")) paintSkillUndo(button);
+});
+
+function paintSkillUndo(button: HTMLButtonElement): void {
+  if (!skillOperationsLoaded()) return;
+  const kept = knownSkillOperations().some(item => item.id === button.dataset.skillId);
+  button.textContent = kept ? "撤销" : "已撤销";
+  button.disabled = !kept;
+}
+
+/**
+ * 这条用户消息是不是最近一个核对做成的任务的请求。宿主只拿最近一个核对做成的任务存成直接运行的技能，
+ * 侧栏按同一条规则决定「存成技能」里给不给这个选项。
+ */
+function isLatestVerifiedRequest(bubble: HTMLElement): boolean {
+  // 宿主只认半小时内做成的任务（session.ts LEARNED_SOURCE_TTL_MS）。
+  const runs = [...messagesEl.querySelectorAll<HTMLElement>("details.run-steps")]
+    .filter(item => item.querySelector('.run-check[data-tone="ok"]') && !item.querySelector(".chip[data-skill-write]"));
+  const endedAt = Number(runs.at(-1)?.dataset.endedAt);
+
+  if (!Number.isFinite(endedAt) || Date.now() - endedAt > 30 * 60_000) return false;
+  const run = runs.at(-1);
+
+  for (let node = run?.previousElementSibling; node; node = node.previousElementSibling) {
+    if (node.matches(".msg.user")) return node === bubble;
+  }
+
+  return false;
+}
 
 const tabMentions = mountTabMentions({
   composerEl,
@@ -1028,17 +1069,47 @@ function renderConversations(): void {
     ?? list.find((c) => elsewhere(c) && c.checkpoint === "interrupted")
     ?? list.find((c) => elsewhere(c) && completedConversations.has(c.id));
 
-  conversationBackground.hidden = !other;
+  conversationBackground.hidden = true;
+  conversationBackground.replaceChildren();
+  conversationSwitcher.dataset.other = "";
+  conversationSwitcher.removeAttribute("data-other");
 
-  if (other) {
-    conversationBackground.textContent = `${conversationBackgroundLabel(other)}：${other.title} ↗`;
-    conversationBackground.onclick = () => selectConversation(other.id);
+  const waiting = list.filter((c) => elsewhere(c) && (c.state === "running" || c.state === "user" || c.checkpoint === "interrupted"));
+  const cue = waiting[0] ?? other;
+  const otherKey = cue && waiting.length ? `${waiting.length}:${cue.id}:${cue.title}` : "";
+  const existingOther = document.getElementById("conversation-other");
+
+  if (cue && waiting.length) {
+    conversationSwitcher.dataset.other = String(waiting.length);
+    conversationSwitcher.title = otherTaskCopy(waiting.length, cue.title).line;
+  }
+
+  // 菜单开着时不能反复移动这一行，否则下面正在按下的会话会错位。
+  if ((existingOther?.dataset.other ?? "") !== otherKey) {
+    existingOther?.remove();
+
+    if (cue && waiting.length) {
+      const row = document.createElement("div");
+      row.id = "conversation-other";
+      row.dataset.other = otherKey;
+      row.className = "conversation-other";
+      const copy = otherTaskCopy(waiting.length, cue.title);
+      const line = document.createElement("p");
+      line.textContent = copy.line;
+      const go = document.createElement("button");
+      go.type = "button";
+      go.textContent = copy.action;
+      go.onclick = (event) => { event.stopPropagation(); selectConversation(cue.id); };
+      row.append(line, go);
+      conversationMenu.prepend(row);
+    }
   }
 }
 
 function resetConversationRender(): void {
   sourceExcerpts.clear();
   resetFillUndo();
+  resetSendConfirmCards();
   planCardRun = null;
   planUndo = null;
   if (currentRun) { clearInterval(currentRun.timer); currentRun.orb.dispose(); }
@@ -1046,6 +1117,7 @@ function resetConversationRender(): void {
   closeBlocks();
   currentRun = null;
   lastRun = null;
+  sendChangedRuns.clear();
   runStartAt = 0;
   toolChips.clear();
   sessionRun.clear();
@@ -1809,6 +1881,7 @@ let currentRun: RunHost | null = null;
 
 /** finishRun 刚收掉的那一块。全员 idle 后到达的 agent_end 复用它，禁止再开 loader。 */
 let lastRun: RunHost | null = null;
+const sendChangedRuns = new Set<string>();
 
 /** 显式交付气泡：按 delivery.id 只渲染一次，状态更新不重复生成。 */
 const deliveredBubbles = new Map<string, HTMLElement>();
@@ -2239,12 +2312,13 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
 
   const pageTitle = [context.title, context.url].filter(Boolean).join("\n");
 
-  // 和上一句是同一页时不再带页面卡：只在换了页面时说一次。
-  if ((context.title || host) && previousPageChipTitle(bubble) !== pageTitle) {
+  // 和上一句是同一页时不再带页面卡：只在换了页面时说一次。标题太长又和问句对不上就不写，免得看成任务分类。
+  const pageName = context.title || host;
+  if (pageName && previousPageChipTitle(bubble) !== pageTitle && pageSourceVisible(pageName, bubble)) {
     const glyph = siteGlyph(context.url, host);
     glyph.className = "cg";
-    const chip = ctxChip(glyph, context.title || host, pageTitle);
-    chip.classList.add("page");
+    const chip = ctxChip(glyph, `来自页面：${clipTitle(pageName, 22)}`, pageTitle);
+    chip.classList.add("page", "page-from");
     chips.push(chip);
   }
 
@@ -2273,6 +2347,16 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
   row.replaceChildren(...chips);
 
   if (chips.length && row !== next) bubble.after(row);
+}
+
+/** 标题短就写；太长时只在和问句有几个相同的字时写，避免像任务分类。 */
+function pageSourceVisible(title: string, bubble: HTMLElement): boolean {
+  const name = title.trim();
+  if (!name) return false;
+  if ([...name].length <= 24) return true;
+  const ask = bubble.querySelector(".user-msg-text")?.textContent ?? bubble.textContent ?? "";
+  const askChars = new Set([...ask].filter((ch) => /[\u4e00-\u9fffA-Za-z0-9]/.test(ch)));
+  return [...name].filter((ch) => askChars.has(ch)).length >= 4;
 }
 
 /** 前面最近一张页面卡的 title（「标题\n网址」）；中间几句没带卡说明还是同一页，接着往前找。 */
@@ -2384,14 +2468,22 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
   // 收到提示紧跟在气泡（或它的页面标签）后面。
   let note = lastUserBubbleFor(receipt.text)?.nextElementSibling;
   if (note?.matches(".ctx-chips")) note = note.nextElementSibling;
-  if (note instanceof HTMLElement && note.matches(".steer-received")) note.textContent = receipt.status === "applied" ? "已收到 · 并回上一件处理" : "另开一件 · 不打断当前任务";
+  if (note instanceof HTMLElement && note.matches(".steer-received")) {
+    const label = note.querySelector(".steer-received-label");
+    if (label) label.textContent = receipt.status === "applied" ? "已收到 · 并回上一件处理" : "另开一件 · 不打断当前任务";
+  }
 }
 
 /** 任务进行中发出的话会交给正在做的这一轮：在气泡下说一声收到了，免得看不出它是在排队还是被忽略了。 */
 function markSteerReceived(bubble: HTMLElement): void {
   const note = document.createElement("div");
   note.className = "steer-received";
-  note.textContent = "已收到 · 接在当前任务里处理";
+  const label = document.createElement("span");
+  label.className = "steer-received-label";
+  label.textContent = "已收到 · 接在当前任务里处理";
+  note.append(label);
+  const saveButton = bubble.querySelector<HTMLButtonElement>(".pskill-save");
+  if (saveButton) note.append(saveButton);
   const chips = bubble.nextElementSibling;
   (chips instanceof HTMLElement && chips.matches(".ctx-chips") ? chips : bubble).after(note);
 }
@@ -2522,7 +2614,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   beat.append(orb.el);
   const title = document.createElement("span");
   title.className = "run-title";
-  paintAction(title, `正在${loaderSubtitle(null)}`);
+  paintAction(title, `正在：${loaderSubtitle(null)}`);
   const chainEl = document.createElement("span");
   chainEl.className = "run-chain";
   const timeEl = document.createElement("span");
@@ -2648,7 +2740,7 @@ function stopLiveSeconds(run: RunHost): void {
 /** 首字前挂这么久还没回音，只换标题，不改秒数和墨点。 */
 const WAIT_STALE_MS = 15_000;
 const WAIT_STALE_TITLE = "还没有回音";
-const THINKING_TITLE = "正在思考";
+const THINKING_TITLE = "正在：思考";
 
 /** 每秒刷新一次秒数，刷新时刻对齐 from 之后的整秒（多留一点余量，免得早到几毫秒少数一秒）：显示的秒数最多比真实慢 1 秒。 */
 function startLiveSeconds(run: RunHost, from = Date.now()): void {
@@ -2667,25 +2759,59 @@ function startLiveSeconds(run: RunHost, from = Date.now()): void {
   run.timer = align;
 }
 
-/** 第一行的秒数：贴在动词后面。在想就数这段（≥1 秒才写），在跑一步就数这一步（≥3 秒才写）。历史回放没有时钟时不写。 */
+/** 第一行的秒数：贴在动词后面。有动作就从 1 秒写；超过 10 秒改成「仍在处理」。 */
 function liveSeconds(run: RunHost): string {
-  const now = Date.now();
-
-  if (Number.isFinite(run.thinkFrom)) {
-    if (now - run.thinkFrom < 1_000) return "";
-    return spokenDuration(run.thinkFrom, now) ?? "";
-  }
-  const running = [...toolChips.values()].find(entry => entry.chip.isConnected && run.body.contains(entry.chip));
-
-  return running && Number.isFinite(running.start) && now - running.start >= SHOW_SECS_MS ? spokenDuration(running.start, now) ?? "" : "";
+  return refreshLiveStatus(run);
 }
 
-/** 「还没有回音」只顶替「正在思考」：重试、压缩、接着做这些标题说的是更具体的事，不能盖掉。思考摘要也算回音。 */
+function runningTool(run: RunHost) {
+  return [...toolChips.values()].find(entry => entry.chip.isConnected && run.body.contains(entry.chip));
+}
+
+function refreshLiveStatus(run: RunHost): string {
+  if (run.root.hasAttribute("data-wait-user") || applyingHistory) {
+    paintEscalate(run, false);
+    return "";
+  }
+  const tool = runningTool(run);
+  const from = Number.isFinite(run.thinkFrom) ? run.thinkFrom : tool && Number.isFinite(tool.start) ? tool.start : Number.NaN;
+  const step = Number.isFinite(run.thinkFrom) ? "思考" : (tool?.chip.dataset.past || run.lastToolShort || "这一步");
+  const status = liveStatus({ step: plainStep(step), from, now: Date.now() });
+  if (!status) {
+    paintEscalate(run, false);
+    return "";
+  }
+  // 只换通用的那句：续做、核对、重试这类更具体的状态留着，下一个动作开始时自然换掉。
+  const shown = run.titleEl.textContent ?? "";
+  if (shown !== status.title && (shown === "" || shown.startsWith("正在：") || shown === "仍在处理")) setRunTitle(run, status.title, true, Number.isFinite(run.thinkFrom) ? "think" : undefined);
+  paintEscalate(run, status.escalated);
+  return status.time;
+}
+
+function paintEscalate(run: RunHost, on: boolean): void {
+  const existing = run.root.querySelector<HTMLElement>(":scope > summary .run-escalate");
+  if (!on) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
+  const acts = document.createElement("span");
+  acts.className = "run-escalate";
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.textContent = "跳过";
+  skip.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_SKIP); };
+  const other = document.createElement("button");
+  other.type = "button";
+  other.textContent = "换个方法";
+  other.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_OTHER_WAY); };
+  acts.append(skip, other);
+  run.metaEl.after(acts);
+}
+
+/** 超过 10 秒由 refreshLiveStatus 升级成「仍在处理」；这里不再单独换标题。 */
 function maybeStaleWait(run: RunHost): void {
-  if (!Number.isFinite(run.thinkFrom) || run.body.querySelector(".chip, details.thinking")) return;
-  if (Date.now() - run.thinkFrom < WAIT_STALE_MS) return;
-  if (run.titleTimer || run.titleEl.textContent !== THINKING_TITLE) return;
-  setRunTitle(run, WAIT_STALE_TITLE, true, "think");
+  refreshLiveStatus(run);
 }
 
 /** 结束正在算的这段思考：≥3 秒的在记录里单列一行「想了 N 秒」。 */
@@ -2731,11 +2857,11 @@ function doneSteps(run: RunHost): HTMLElement[] {
   return Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep):not(.note):not(.running)"));
 }
 
-/** 第二行小字：「已做 N 步 ›」，有换了做法的步骤时跟一句。一步还没做完时不显示。 */
+/** 第二行小字：默认识「试了几步、几次没做成」；步数少或没有失败时不占地方。 */
 function renderRunMeta(run: RunHost): void {
   const done = doneSteps(run);
   const failed = done.filter(chip => chip.classList.contains("error")).length;
-  const steps = done.length ? `已做 ${done.length - failed} 步${failed ? ` · ${failed} 步换了做法` : ""}` : "";
+  const steps = runMetaLine(done.length, failed) ?? "";
   const text = [run.checkNote, steps].filter(Boolean).join(" · ");
 
   if (run.metaEl.textContent !== text) run.metaEl.textContent = text;
@@ -3011,6 +3137,8 @@ function finishRun(): void {
   runStartAt = 0;
 
   if (!run) return;
+  // 跳过、换个方法、中止都只对还在跑的这一轮有意义，收尾就收掉。
+  for (const acts of run.root.querySelectorAll(".run-escalate")) acts.remove();
   // 计划那一行只陪这一轮任务；做完、停下、出错都收掉，不挂到下一件事上。
   taskPlan.endRun();
   lastRun = run;
@@ -3067,17 +3195,22 @@ function finishRun(): void {
 
     const failed = done.filter(chip => chip.classList.contains("error")).length;
     // 换了做法的那步不算进「做了几步」，单独写在末尾。
+    // 存成或用上技能的一轮：过程行先说技能，步数收在展开的过程里。
+    const skillChip = ended === "completed" ? done.find(chip => chip.dataset.skill === "saved" || chip.dataset.skill === "used") ?? done.find(chip => chip.dataset.skill === "unused") : undefined;
     const head = hasResumeReceipt && done.length === 0 && ended === "completed" ? "恢复记录"
+      : skillChip?.dataset.past ? skillChip.dataset.past
       : only?.dataset.past ? only.dataset.past
       : finishedRunTitle(ended === "completed" ? done.length - failed : done.length, ended, failed);
     run.receipt = { head, total: spokenDuration(run.start, endedAt), steps: done.length, failed, ended };
 
+    if (Number.isFinite(endedAt)) run.root.dataset.endedAt = String(endedAt);
+
     if (hasResumeReceipt && done.length === 0 && ended === "completed") setRunTitle(run, head, true);
-    else if (only?.dataset.past) setRunTitle(run, head, true);
+    else if (skillChip || only?.dataset.past) setRunTitle(run, head, true);
     else {
       // 回执：「做了 6 步：打开词条 → … → 圈出 11 部 · 1 步换了做法」。出错结束只写步数和「有 1 步没做成」。
       const names = ended === "failed" ? [] : done.filter(chip => !chip.classList.contains("error")).map(chip => chip.dataset.short ?? "").filter(Boolean);
-      paintReceipt(title, head, names, ended === "completed" && failed ? ` · ${failed} 步换了做法` : "");
+      paintReceipt(title, head, names, ended === "completed" && failed ? ` · ${failed} 次没做成` : "");
     }
   }
 
@@ -3301,6 +3434,32 @@ function foldAnsweredRun(run: RunHost): void {
   }
 
   paintAnsweredTitle(run);
+  attachSkillUndo(run);
+}
+
+/** 这一轮刚存成技能：回答下面给一个「撤销」，删掉这条技能。 */
+function attachSkillUndo(run: RunHost, answer = run.answer?.el): void {
+  const id = run.body.querySelector<HTMLElement>('.chip[data-skill="saved"]')?.dataset.skillId;
+  const actions = answer?.querySelector<HTMLElement>(":scope > .answer-actions");
+
+  if (!id || !actions || actions.querySelector(".skill-undo")) return;
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.className = "skill-undo";
+  undo.dataset.skillId = id;
+  undo.textContent = "撤销";
+  undo.title = "删掉刚存的这条技能";
+  undo.addEventListener("click", () => {
+    undo.disabled = true;
+
+    if (!deleteSkillOperation(id, ok => { if (!ok) { undo.textContent = "没撤销成，再试一次"; undo.disabled = false; } })) {
+      undo.disabled = false;
+      undo.textContent = "没连上，再试一次";
+    }
+  });
+  actions.prepend(undo);
+  // 手里的列表可能早于这次保存：先要一份最新的，回来后再按技能还在不在决定显示。
+  refreshSkillOperations();
 }
 
 /** 「继续原任务」卡这时在对话里显示着。 */
@@ -3314,6 +3473,7 @@ function resumeCardShown(): boolean {
 function runCheckStatus(run: RunHost): { text: string; tone: "ok" | "warn" | null } | null {
   if (!run.receipt || run.receipt.ended !== "completed") return null;
 
+  if (run.root.dataset.runId && sendChangedRuns.has(run.root.dataset.runId)) return null;
   if (run.check === "checking") return { text: "核对中…", tone: null };
 
   if (run.check === "done") return { text: "已核对页面", tone: "ok" };
@@ -3867,7 +4027,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   run.lastToolName = ev.name;
 
   if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
-    setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`, false, kind);
+    setRunTitle(run, `正在：${actionCardLabel(ev.name, ev.params)}`, false, kind);
   }
 
   const chip = document.createElement("button");
@@ -3876,6 +4036,9 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   chip.dataset.kind = kind;
   chip.dataset.past = pastAction(ev.name, ev.params);
   chip.dataset.short = shortAction(ev.name, ev.params);
+
+  // 保存、删除技能的那一轮不算「做成的任务」：宿主也不拿它当存成技能的来源。
+  if (ev.name === "learned_operation" && (ev.params.action === "save" || ev.params.action === "delete")) chip.dataset.skillWrite = "1";
   chip.setAttribute("aria-expanded", "false");
 
   // A：正在跑的那个 chip 才有蓝边和底色；历史回放不进入运行态
@@ -3928,7 +4091,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true; pageTarget?: { target: string; label: string; tabId: number; url: string } }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true; pageTarget?: { target: string; label: string; tabId: number; url: string }; skill?: { id: string; name: string; outcome: "saved" | "used" | "unused" } }): void {
   // 旧的侧栏历史只有标记 sendDeclined、没有原因：按「不发」画，不画成失败。
   if (!ev.heldReason && (ev as { sendDeclined?: unknown }).sendDeclined === true) ev = { ...ev, heldReason: "declined" };
   const run = currentRun ?? lastRun;
@@ -3948,7 +4111,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   // 这一步做完、下一步还没开始：模型在想下一步。第一行只写「正在思考」并从这里开始数秒，做了几步在第二行。
   if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
     run.lastToolName = null;
-    setRunTitle(run, "正在思考", false, "think");
+    setRunTitle(run, THINKING_TITLE, false, "think");
     openThink(run, eventTime());
   }
 
@@ -3998,6 +4161,18 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     paintAction(label, `打开页面 ${pageTitle}`);
   }
 
+  // 存、删、用技能都会改后台那份列表（用过的统计、助手按用户的话删掉的）：跟着刷新，撤销和菜单才不过期。
+  if (entry.name === "learned_operation") refreshSkillOperations();
+
+  if (ev.skill && label) {
+    const text = skillStepText(ev.skill);
+    entry.chip.dataset.past = text;
+    entry.chip.dataset.short = text;
+    entry.chip.dataset.skill = ev.skill.outcome;
+    entry.chip.dataset.skillId = ev.skill.id;
+    paintAction(label, text);
+  }
+
   if (ev.repeatRefused && label) label.append("（已做过，没再重复）");
 
   // 发送确认：确认过的照常写点了，没让发的写结果。
@@ -4013,10 +4188,31 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   }
 
   if (failed && label) {
+    const timeout = describeTimeout(ev.resultText ?? ev.reason ?? "");
     const note = document.createElement("span");
     note.className = "act-failed";
-    note.textContent = ` · ${ev.reason ?? "没做成"}`;
+    note.textContent = ` · ${timeout?.copy ?? ev.reason ?? "没做成"}`;
     label.append(note);
+    if (timeout) {
+      const acts = document.createElement("span");
+      acts.className = "run-escalate";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "重试";
+      retry.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput("重试刚才没做成的那一步。"); };
+      const other = document.createElement("button");
+      other.type = "button";
+      other.textContent = "换个方法";
+      other.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_OTHER_WAY); };
+      const halt = document.createElement("button");
+      halt.type = "button";
+      halt.textContent = "中止";
+      // 只停产生这次超时的那一轮：回合结束后发送键变回「发送」，不能借它发出草稿或停掉后来的任务。
+      halt.onclick = (event) => { event.preventDefault(); event.stopPropagation(); if (run && currentRun === run && sendBtn.classList.contains("stopping")) stopCurrentTask(); };
+      if (timeout.retry) acts.append(retry);
+      acts.append(other, halt);
+      label.after(acts);
+    }
   }
 
   run?.graph.end(ev.toolCallId, {
@@ -4154,10 +4350,18 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // 所有发送路径都以确认事件为准，脚本工具的结果格式不影响拒绝后的回答入口。
       const run = currentRun;
       if (run && ev.confirm?.outcome === "decline") run.sendDeclined = true;
-      if (run && ev.confirm?.outcome === "send" && ev.confirm.clicked === "yes") run.sendDeclined = false;
+      const resultRun = run ?? lastRun;
+      const resultRunId = runId ?? resultRun?.root.dataset.runId;
+      if (resultRunId && (ev.confirm?.clicked === "changed" || ev.confirm?.clicked === "unverified")) {
+        if (sendChangedRuns.size >= 200) sendChangedRuns.delete(sendChangedRuns.values().next().value!);
+        sendChangedRuns.add(resultRunId);
+      }
+      if (resultRun && ev.confirm?.clicked === "yes") resultRun.sendDeclined = false;
+      if (resultRunId && ev.confirm?.clicked === "yes") sendChangedRuns.delete(resultRunId);
+      if (resultRun?.answer && resultRun.receipt && resultRun.root.classList.contains("done") && ev.confirm?.clicked) paintAnsweredTitle(resultRun);
       const card = sendConfirmCard(ev.confirm);
 
-      if (card) {
+      if (card && !document.getElementById("confirm-dock")?.contains(card)) {
         appendToMessages(card);
         scrollToEnd();
       }
@@ -4165,15 +4369,15 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // 确认之后点没点下去的补报：等待早就结束了，只更新卡。
       if (ev.confirm?.clicked) break;
 
-      // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
-      // 等你确认的时间不算「想了」。
+      // 等确认时状态就是输入框上方那张卡，过程行不再另写「等你确认发送」。
       if (run) {
-        setRunTitle(run, ev.waiting ? "等你确认发送" : "正在思考", true, ev.waiting ? undefined : "think");
-        // 等你的时候过程行不扫光、回答位置不放骨架；这一步的工具还在途，所以 data-phase 仍是 executing。
         run.root.toggleAttribute("data-wait-user", ev.waiting);
 
         if (ev.waiting) closeThink(run, eventTime());
-        else openThink(run, eventTime());
+        else {
+          setRunTitle(run, "正在：思考", true, "think");
+          openThink(run, eventTime());
+        }
       }
 
       // 「不等了」不一定带 guide，到这里的也可能是教学一步结束：橙字一起清掉。
@@ -4190,7 +4394,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
       if (!run) break;
       const waiting = ev.waiting && ev.guide;
-      setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : "正在思考", true, waiting ? undefined : "think");
+      setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : THINKING_TITLE, true, waiting ? undefined : "think");
       run.root.toggleAttribute("data-wait-user", !!waiting);
 
       // 等你自己点的时间不算「想了」。
@@ -4257,6 +4461,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
         if (checked.answer && checked !== currentRun && checked.root.classList.contains("done")) paintAnsweredTitle(checked);
       }
+      if (ev.status === "open" && ev.finding && !resumeCardShown()) addMsg("msg notice", checkNoteForUser(ev.finding, ev.remaining));
 
       // 核对判继续：这份回答不算数了，收进它那一轮的过程（只读的一轮不留过程，直接拿掉）；核对发现写在续做那一轮的过程行上。
       // 续做的过程排在这一刻的对话末尾之后：留一个看不见的定位点，代替原来那行「核对发现」。
@@ -4822,6 +5027,12 @@ function handleServerMessage(raw: string): void {
     return;
   }
 
+  if (msg.type === "skill_operations_result") {
+    receiveSkillOperations(msg);
+
+    return;
+  }
+
   if (msg.type === "task_history_result") {
     if (memoryInline.settleTaskHistory(msg.requestId, msg.ok, msg.error)) {
       if (msg.ok && !memoryDrawer.hidden) requestPastTasks();
@@ -5002,7 +5213,7 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "server") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId
-      && !envelope.msg.type.startsWith("conversation_") && envelope.msg.type !== "memory_result" && envelope.msg.type !== "task_history_result"
+      && !envelope.msg.type.startsWith("conversation_") && envelope.msg.type !== "memory_result" && envelope.msg.type !== "task_history_result" && envelope.msg.type !== "skill_operations_result"
       // 模型目录是全局事实（一次枚举、全部会话通用）：别会话捎来的 model_info 放行进内层，
       // 由内层只收目录、不收模型。live 复现：225 条 models=163 在这里被整条丢弃。
       && envelope.msg.type !== "model_info") return;

@@ -68,7 +68,7 @@ export class GoalLedger {
   record(tool: string, text: string): void {
     if (tool.startsWith("page_") && text.includes("is unchanged since your earlier observation")) return;
     if (tool === "page_at_start") this.trail.noteStartPage(text);
-    const all = [...this.observations, { at: Date.now(), tool, text: redactCredentialText(text.slice(0, 8_000)) + (text.length > 8_000 ? "\n[truncated tool result]" : "") }];
+    const all = [...this.observations, { at: Date.now(), tool, text: redactCredentialText(text) }];
     readWords(redactCredentialText(text), this.words);
     const pages = all.filter(item => item.tool.startsWith("page_")).slice(-2);
     const tools = all.filter(item => !item.tool.startsWith("page_")).slice(-6);
@@ -90,7 +90,7 @@ export class GoalLedger {
     program.reads.push({ url: result.url, text: result.text });
   }
 
-  /** Rebalance only source prefixes that the program actually returned; never replace computed results or write receipts. */
+  /** Preserve URL provenance only for source text the program actually returned, never for computed results or write receipts. */
   recordProgramResult(id: string, text: string, result: unknown, failed: boolean): void {
     const program = this.programs.get(id);
     this.programs.delete(id);
@@ -114,25 +114,10 @@ export class GoalLedger {
       this.record('browser_run', text);
       return;
     }
-    const marker = '\n[source excerpt truncated]';
-    const prefixes = sources.map(source => `Result key: ${JSON.stringify(source.key)}\nSource URL: ${JSON.stringify(source.url)}\n`);
-    let budget = 8_000 - prefixes.reduce((sum, prefix) => sum + prefix.length + wrapPageContent('').length + marker.length + 2, 0);
-    if (budget < 1_000) { this.record('browser_run', text); return; }
-    const shares = new Map<typeof sources[number], number>();
-    const ordered = [...sources].sort((a, b) => a.text.length - b.text.length);
-    for (const [index, source] of ordered.entries()) {
-      const share = Math.min(source.text.length, Math.floor(budget / (ordered.length - index)));
-      shares.set(source, share);
-      budget -= share;
-    }
-    const balanced = sources.map((source, index) => {
-      const length = shares.get(source)!;
-      return wrapPageContent(prefixes[index] + source.text.slice(0, length) + (length < source.text.length ? marker : ''));
-    }).join('\n\n');
-    if (balanced.length > 8_000) { this.record('browser_run', text); return; }
-    // The complete original result still feeds name provenance, independently of the display budget.
+    this.record('browser_run', sources.map(source => wrapPageContent(
+      `Result key: ${JSON.stringify(source.key)}\nSource URL: ${JSON.stringify(source.url)}\n${source.text}`,
+    )).join('\n\n'));
     readWords(redactCredentialText(text), this.words);
-    this.record('browser_run', balanced);
   }
 
   restore(messages: ReadonlyArray<{ role: string; content?: unknown }>): void {

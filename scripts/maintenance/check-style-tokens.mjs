@@ -98,6 +98,40 @@ for (const file of (await Promise.all(TS_DIRS.map(dir => filesUnder(dir, /\.ts$/
 const total = Object.values(counts).reduce((sum, c) => ({ fontSize: sum.fontSize + c.fontSize, radius: sum.radius + c.radius, color: sum.color + c.color, emoji: sum.emoji + c.emoji }), { fontSize: 0, radius: 0, color: 0, emoji: 0 });
 const LABEL = { fontSize: "写死的字号", radius: "写死的圆角", color: "写死的颜色", emoji: "界面里的 emoji" };
 
+/** sRGB 0–1 → 相对亮度。正文灰字在底色上至少 4.5:1。 */
+function luminance(hex) {
+  const n = hex.replace("#", "");
+  const full = n.length === 3 ? [...n].map((c) => c + c).join("") : n;
+  const rgb = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255);
+  const lin = rgb.map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+function contrast(a, b) {
+  const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+
+const styles = await readFile(path.join(repo, "extension/src/sidepanel/styles.css"), "utf8");
+const token = (name) => {
+  const m = styles.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{3,8})`));
+  return m?.[1] ?? "";
+};
+const pairs = [
+  ["--text-tertiary", "--wallpaper"],
+  ["--text-tertiary", "--content-bg"],
+  ["--text-quaternary", "--wallpaper"],
+  ["--text-quaternary", "--content-bg"],
+  ["--text-secondary", "--wallpaper"],
+];
+const contrastFails = pairs.flatMap(([fg, bg]) => {
+  const a = token(fg);
+  const b = token(bg);
+  if (!a || !b) return [];
+  const ratio = contrast(a, b);
+  return ratio + 1e-6 < 4.5 ? [`${fg} 在 ${bg} 上 ${ratio.toFixed(2)}:1`] : [];
+});
+
 if (update) {
   await writeFile(baselineFile, `${JSON.stringify(counts, null, 2)}\n`);
   console.log(`✓ 样式上限已更新：${Object.entries(total).map(([k, v]) => `${LABEL[k]} ${v}`).join("，")}`);
@@ -121,6 +155,11 @@ console.log(`样式现状：${Object.entries(total).map(([k, v]) => `${LABEL[k]}
 
 if (worse.length) {
   console.error(`✗ 新增了写死的值，请改用 styles.css 开头的 token（--fs-*、--r*、颜色变量）：\n  ${worse.join("\n  ")}`);
+  process.exit(1);
+}
+
+if (contrastFails.length) {
+  console.error(`✗ 灰字对比度低于 4.5:1：\n  ${contrastFails.join("\n  ")}`);
   process.exit(1);
 }
 

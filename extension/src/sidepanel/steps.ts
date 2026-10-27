@@ -3,6 +3,7 @@
  * 与 DOM 解耦；main.ts 负责渲染。
  */
 import { displayNameFor, personFor } from "../../../shared/cast.js";
+import { extractSearchQuery } from "../../../shared/request-confirm.js";
 import { toolAction } from "../../../shared/user-facing.js";
 import type { HeldReason } from "../../../shared/protocol.js";
 
@@ -35,8 +36,9 @@ const ACTION_NAMES: Record<string, string> = {
   cdp: "直接操作浏览器",
   hover: "悬停",
   remember_user_preference: "存入记忆",
-  fetch: "抓取",
+  fetch: "读取网页数据",
   browser_run: "连续操作",
+  learned_operation: "技能",
   wait_for: "等页面内容出现",
   check: "核验页面",
   assert: "核验页面状态",
@@ -162,9 +164,10 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
     }
 
     case "fetch": {
-      const host = hostOf(params.url);
-
-      return { short: host ? `抓取 ${host}` : "抓取", full: host ? `抓取 ${host}` : "抓取" };
+      const query = extractSearchQuery(str(params.body) ?? undefined, str(params.url) ?? undefined);
+      if (query) return { short: `搜索「${clip(query, 16)}」`, full: `搜索「${clip(query, 24)}」` };
+      if (/(search|query|graphql|gql)/i.test(str(params.url) ?? "")) return { short: "搜索", full: "搜索" };
+      return { short: "读取网页数据", full: "读取网页数据" };
     }
 
     case "press_key": {
@@ -321,6 +324,17 @@ export function spokenDuration(start: number, end: number): string | null {
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
 
+/** 存成、用上或没用上技能的那一步，过程行和步骤上怎么写。 */
+export function skillStepText(skill: { name: string; outcome: "saved" | "used" | "unused" }): string {
+  const name = `「${clip(skill.name, 24)}」`;
+
+  if (skill.outcome === "saved") return `存成技能${name}`;
+
+  if (skill.outcome === "used") return `用了技能${name}`;
+
+  return `技能${name}这次没用上，改用普通步骤`;
+}
+
 /** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链。 */
 export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed", failed = 1): string {
   const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
@@ -345,6 +359,8 @@ export const HELD_TEXT: Record<HeldReason, string> = {
   declined: "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
   repeat: "你选择不发送：这次没再问，草稿留在页面上",
   busy: "没发：前一个确认还在等你",
+  send_changed: "没发：确认后的内容、收件人或目标已变化",
+  send_unverified: "没发：无法核对发送内容",
   // 教学一步没完成：照实说，不画成失败。
   guide_stopped: "你中止了，这一步没做完",
   guide_left: "你离开了这个页面，这一步没做完",
@@ -395,6 +411,7 @@ const KIND_OF_TOOL: Record<string, ActionKind> = {
   press_key: "key",
   js: "script", cdp: "script",
   browser_run: "run",
+  learned_operation: "run",
   hover: "look", read_attachment: "look",
   select_option: "pick",
   mark: "mark", guide_step: "mark",
@@ -474,7 +491,10 @@ export function shortAction(name: string, params: Parameters<typeof describeTool
   else if (CURSOR_VERBS.has(name)) text = label ? `${CURSOR_VERBS.get(name)!.verb}${label}` : CURSOR_VERBS.get(name)!.unnamed;
   else if (name === "type_text") text = label ? `填${label}` : "输入文字";
   else if (name === "js") text = str(params.purpose) ?? "运行代码";
-  else if (name === "fetch") text = `抓取 ${hostOf(params.url) ?? "接口"}`;
+  else if (name === "fetch") {
+    const query = extractSearchQuery(str(params.body) ?? undefined, str(params.url) ?? undefined);
+    text = query ? `搜索「${clip(query, 12)}」` : /(search|query|graphql|gql)/i.test(str(params.url) ?? "") ? "搜索" : "读取网页数据";
+  }
   else if (name === "browser_run") text = label ?? "连续操作";
   else if (name === "press_key") text = str(params.key) ? `按${str(params.key)}` : "按键";
   else if (name === "mark" && params.clear !== true) {
