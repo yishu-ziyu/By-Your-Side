@@ -98,6 +98,7 @@ const rules: Rule[] = [
   saveRule(LOCKED_CANCEL, { ...common, name: "锁等待取消", code: candidateCode }),
   saveRule(CORRUPT, { ...common, name: "损坏存档" }),
   { match: FIRST, steps: [{ tool: { name: "browser_run", args: { code: codeWith('"alpha"') } } }, { text: FINISH.first }] },
+  { match: "把刚才的做法存成技能", steps: [{ tool: { name: "learned_operation", args: { action: "save", name: "按词查订单", ...common, code: candidateCode } } }, { text: FINISH.saved }] },
   { match: SAVE_AGAIN, steps: [{ tool: { name: "learned_operation", args: { action: "save", name: "查询订单二", ...common, code: candidateCode } } }, { text: FINISH.saved }] },
   { match: SAVE, steps: [{ tool: { name: "learned_operation", args: { action: "save", name: "查询订单", ...common, code: candidateCode } } }, { text: FINISH.saved }] },
   ...[SECOND, AFTER_RESTART].map(ask => ({ match: ask, steps: [{ tool: { name: "learned_operation", args: runArgs } }, { text: FINISH.second }] })),
@@ -199,7 +200,10 @@ try {
   check("原输入与第二组输入都真实运行", siteRequests.some(url => url.includes("q=alpha")) && siteRequests.some(url => url.includes("q=delta")), siteRequests);
   const savedTitle = await runTitleAfter(SAVE);
   check("保存那一轮写明存成了哪个技能", !!savedTitle?.includes("存成技能「查询订单」"), savedTitle);
-  check("保存那一轮给了撤销", await rp.evaluate(panel, `[...document.querySelectorAll(".answer-actions .skill-undo")].some(b => b.textContent === "撤销")`), null);
+  await until(() => rp.evaluate(panel, `!!document.querySelector(".answer-actions .skill-undo")`), 10_000, "撤销按钮出现").catch(() => {});
+  await sleep(1_000);
+  const undoTexts = await rp.evaluate(panel, `[...document.querySelectorAll(".answer-actions .skill-undo")].map(b => b.textContent + (b.disabled ? "(disabled)" : ""))`) as string[];
+  check("保存那一轮给了撤销", undoTexts.includes("撤销"), undoTexts);
   await rp.screenshot(panel, join(out, "saved.png"));
 
   await fetch(`${origin}/fixture?action=fresh`);
@@ -231,7 +235,8 @@ try {
 
   const existingTarget = await rp.cdp.send("Target.createTarget", { url: `${origin}/search?q=gamma`, background: true });
   const existing = await rp.attach(existingTarget.targetId);
-  await until(() => rp.evaluate(existing, "document.readyState === 'complete'"), 15_000, "已开搜索页加载");
+  // 新标签页先是空白页、也会报 complete：要等地址真的到了搜索页。
+  await until(() => rp.evaluate(existing, "location.search === '?q=gamma' && document.readyState === 'complete' && !!document.querySelector('#query')"), 15_000, "已开搜索页加载");
   await rp.evaluate(existing, "document.querySelector('#query')?.remove();true");
   const windows = await rp.evaluate(panel, `(async()=>{const tabs=await chrome.tabs.query({});return ${JSON.stringify([0])}.map(()=>null),tabs.filter(t=>t.url?.includes("127.0.0.1")).map(t=>({id:t.id,url:t.url,windowId:t.windowId}))})()`);
   check("标签页用例确在同一窗口", Array.isArray(windows) && new Set((windows as Array<{windowId:number}>).map(tab => tab.windowId)).size === 1, windows);
@@ -329,6 +334,22 @@ try {
   const afterUndo = await readOperations();
   check("撤销后这条技能被删掉", !afterUndo?.operations.some(item => item.name === "查询订单二"), afterUndo as Json);
   await rp.screenshot(panel, join(out, "undone.png"));
+
+  // 「存成技能」：最近一个核对做成的任务（不算存、删技能的那几轮）上给「直接运行」，勾着保存就让助手验证后存成技能。
+  const saveButtonOf = (ask: string) => `[...document.querySelectorAll(".msg.user")].reverse().find(m => m.textContent.includes(${JSON.stringify(ask)}))?.querySelector(".pskill-save")`;
+  await rp.evaluate(panel, `${saveButtonOf(SAVE_AGAIN)}.click();true`);
+  await until(() => rp.evaluate(panel, `!document.querySelector(".pskill-sheet")?.hidden`), 10_000, "存成技能编辑打开");
+  check("存技能那一轮不给直接运行", await rp.evaluate(panel, `!document.querySelector(".pskill-sheet .pskill-check")`), null);
+  await rp.evaluate(panel, `document.querySelector(".pskill-shade").click();true`);
+  await rp.evaluate(panel, `${saveButtonOf(AFTER_DELETE)}.click();true`);
+  await until(() => rp.evaluate(panel, `!document.querySelector(".pskill-sheet")?.hidden`), 10_000, "存成技能编辑打开");
+  const offered = await rp.evaluate(panel, `document.querySelector(".pskill-sheet .pskill-check input")?.checked === true`);
+  check("最近做成的任务上默认勾着直接运行", offered === true, offered as Json);
+  await rp.screenshot(panel, join(out, "save-as-skill.png"));
+  await rp.evaluate(panel, `(()=>{const name=document.querySelector(".pskill-sheet .pskill-field input[type=text]:not([maxlength])");name.value="按词查订单";name.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector(".pskill-sheet form").requestSubmit();return true})()`);
+  await until(() => rp.evaluate(panel, `[...document.querySelectorAll(".msg.user")].some(m => m.textContent.includes("把刚才的做法存成技能，名字叫「按词查订单」"))`), 10_000, "发出存成技能的请求");
+  await until(async () => (await readOperations())?.operations.some(item => item.name === "按词查订单") || undefined, 60_000, "直接运行的技能落盘");
+  check("勾着直接运行保存后存成了可直接运行的技能", true, null);
 } catch (error) {
   check("流程完成", false, String(error));
   if (panel) {

@@ -481,9 +481,10 @@ onSkillOperationsChange(() => {
 });
 
 function paintSkillUndo(button: HTMLButtonElement): void {
-  if (!skillOperationsLoaded() || knownSkillOperations().some(item => item.id === button.dataset.skillId)) return;
-  button.textContent = "已撤销";
-  button.disabled = true;
+  if (!skillOperationsLoaded()) return;
+  const kept = knownSkillOperations().some(item => item.id === button.dataset.skillId);
+  button.textContent = kept ? "撤销" : "已撤销";
+  button.disabled = !kept;
 }
 
 /**
@@ -491,8 +492,9 @@ function paintSkillUndo(button: HTMLButtonElement): void {
  * 侧栏按同一条规则决定「存成技能」里给不给这个选项。
  */
 function isLatestVerifiedRequest(bubble: HTMLElement): boolean {
-  const checks = messagesEl.querySelectorAll<HTMLElement>('details.run-steps .run-check[data-tone="ok"]');
-  const run = checks[checks.length - 1]?.closest("details.run-steps");
+  const runs = [...messagesEl.querySelectorAll<HTMLElement>("details.run-steps")]
+    .filter(item => item.querySelector('.run-check[data-tone="ok"]') && !item.querySelector(".chip[data-skill-write]"));
+  const run = runs.at(-1);
 
   for (let node = run?.previousElementSibling; node; node = node.previousElementSibling) {
     if (node.matches(".msg.user")) return node === bubble;
@@ -3358,9 +3360,8 @@ function attachSkillUndo(run: RunHost, answer = run.answer?.el): void {
     }
   });
   actions.prepend(undo);
-  paintSkillUndo(undo);
-
-  if (!skillOperationsLoaded()) refreshSkillOperations();
+  // 手里的列表可能早于这次保存：先要一份最新的，回来后再按技能还在不在决定显示。
+  refreshSkillOperations();
 }
 
 /** 「继续原任务」卡这时在对话里显示着。 */
@@ -3936,6 +3937,9 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   chip.dataset.kind = kind;
   chip.dataset.past = pastAction(ev.name, ev.params);
   chip.dataset.short = shortAction(ev.name, ev.params);
+
+  // 保存、删除技能的那一轮不算「做成的任务」：宿主也不拿它当存成技能的来源。
+  if (ev.name === "learned_operation" && (ev.params.action === "save" || ev.params.action === "delete")) chip.dataset.skillWrite = "1";
   chip.setAttribute("aria-expanded", "false");
 
   // A：正在跑的那个 chip 才有蓝边和底色；历史回放不进入运行态

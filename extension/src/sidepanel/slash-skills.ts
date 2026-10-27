@@ -168,6 +168,10 @@ export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: 
     if (next !== pageUrl) { pageUrl = next; refresh(); }
   }
 
+  // 菜单开着时用户切了标签页、或网页跳到别的网站：按眼前的网站重新筛。
+  chrome.tabs?.onActivated?.addListener(() => { if (isOpen()) void syncPage(); });
+  chrome.tabs?.onUpdated?.addListener((_id, change) => { if (change.url && isOpen()) void syncPage(); });
+
   onSkillOperationsChange(() => {
     refresh();
 
