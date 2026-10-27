@@ -1,3 +1,6 @@
+import { AnswerSources, citationEvidence } from "./answer-sources.js";
+import { isAnswerSource } from "../../shared/answer-source.js";
+import { pageReading, pageReadScope, IncompletePageSource, WHOLE_SOURCE_MAX_CHARS, type PageReadScope } from './page-reading.js';
 import { goalEvidence, GOAL_PAGE_EVIDENCE_CHARS } from "./goal-evidence.js";
 import { parseCopyTextRange, type CopyTextRange } from "../../shared/copy-range.js";
 import type { PreparedCopy } from "../../shared/copied-field.js";
@@ -365,7 +368,10 @@ export class BrowserAgentSession {
     }};
   }
 
-  private readonly goalLedger = new GoalLedger();
+  private readonly quoteSources = new AnswerSources();
+  private sourceScope: { key: string; result: Promise<PageReadScope> } | null = null;
+  private readonly sentQuoteSources = new Set<string>();
+  private readonly goalLedger = new GoalLedger(this.quoteSources.records);
   private readonly continuePolicy = new ContinuePolicy();
   /** 用户这一次请求从什么时候开始（开始任务、接着做、插话）：之前记的读数交给核对时标「更早」。 */
   private requestStartedAt = 0;
@@ -561,6 +567,7 @@ if(required.includes(key))candidates.set(key,attachment);
       this.emitDeliveryStream({id:event.delivery.id,runId:event.delivery.runId,kind:'finding',text:event.delivery.text,phase:'streaming'});
     }
 
+    if (event.kind === "user_delivery") this.publishQuoteSources(event.delivery.text);
     this.emitGatedUiEvent(event);
   }
   /**
@@ -648,6 +655,7 @@ if(required.includes(key))candidates.set(key,attachment);
   }
   /** 交付流只有被闸门放行才落线。 */
   private emitDeliveryStream(stream: UserDeliveryStream): void {
+    if (stream.phase !== "cancelled") this.publishQuoteSources(stream.text);
     this.emitGatedUiEvent({kind: 'user_delivery_stream', stream});
   }
   private startEvent(): Extract<AgentUiEvent, { kind: "agent_start" }> {
@@ -894,7 +902,10 @@ if(required.includes(key))candidates.set(key,attachment);
 
       let session: AgentLoop = await DurableAgentLoop.open({
         persistence: restored?.persistence, messages: restored?.messages, sessionId: options.conversationId,
-        models, model: loopModel(models, options.modelPattern), tools: customTools, systemPrompt,
+        models, model: loopModel(models, options.modelPattern), tools: customTools.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
+          const result = await tool.execute(...args);
+          return resultHost ? resultHost.referenceReadResult(tool.name, result) : result;
+        } })), systemPrompt,
         appendPrompt: () => appendPrompt([]), cwd: options.loop.cwd,
         extensionFactories: extensionFactories.map(entry => entry.factory),
         openStorage: options.loop.openStorage,
@@ -927,6 +938,17 @@ if(required.includes(key))candidates.set(key,attachment);
       // 记忆的两个决定点（记成哪种 / 这一轮带哪些）各写一条决定记录进诊断记录。
       if (memoryRuntime) memoryRuntime.onRecord = (type, data) => wrapper.runTrace.record(type, data);
       resultHost = wrapper;
+      for (const entry of session.sessionManager?.getBranch() ?? []) {
+        if (entry.type === "custom" && entry.customType === "sideagent-answer-sources-v1") wrapper.quoteSources.restore(entry.data);
+      }
+      wrapper.quoteSources.archive = id => {
+        for (const entry of session.sessionManager?.getBranch() ?? []) {
+          if (entry.type !== "custom" || entry.customType !== "sideagent-answer-sources-v1" || !Array.isArray(entry.data)) continue;
+          const source = entry.data.find(item => isAnswerSource(item) && item.id === id);
+          if (source) return source;
+        }
+        return undefined;
+      };
       wrapper.goalLedger.restore(restored?.messages ?? []);
       wrapper.explicitDelivery = !!leadConversationId;
       wrapper.sendOptions = sendOptions;
@@ -1602,21 +1624,58 @@ return;}
         (this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; url?: unknown }>).catch(() => null),
       ]);
       const treeUrl = typeof tree?.url === "string" ? tree.url : undefined;
-      const main = warmMain && warmedOrFreshMain && ((typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== context.url) || (treeUrl && typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== treeUrl))
+      let main = warmMain && warmedOrFreshMain && ((typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== context.url) || (treeUrl && typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== treeUrl))
         ? await freshMain()
         : warmedOrFreshMain;
 
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
+      const preview = pageReading(main);
+      let wholeRead = false;
+      // about:blank、新标签页这类没有正文可读，问题本就不针对它；网页和本地文件才要求先读全。
+      const readablePage = /^(?:https?|file):/i.test(preview?.url ?? context.url ?? '');
+      if (readablePage && (!preview?.text.trim() || preview.totalChars > preview.text.length)) {
+        const requests = this.copyRequirements();
+        const key = JSON.stringify([run, requests]);
+        if (this.sourceScope?.key !== key) {
+          const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+          const result = host && model ? pageReadScope(host, model, requests).catch(() => 'whole' as const) : Promise.resolve('whole' as const);
+          this.sourceScope = { key, result };
+        }
+        const scope = await this.sourceScope.result;
+        if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
+        this.runTrace.record('page_read_scope', { scope, tabId, previewChars: preview?.text.length ?? 0, totalChars: preview?.totalChars ?? null });
+        if (scope === 'whole') {
+          const exceedsLimit = (preview?.totalChars ?? 0) > WHOLE_SOURCE_MAX_CHARS;
+          const full = !exceedsLimit
+            ? pageReading(await this.rpc.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS).catch(() => null)) : null;
+          if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
+          if (!full?.text.trim() || full.url !== (preview?.url ?? context.url) || full.totalChars !== full.text.length) {
+            this.callbacks.setStatus('idle');
+            throw new IncompletePageSource(exceedsLimit
+              ? '这篇内容超过了单次完整读取的长度，暂时无法给出整篇分析。请指定要分析的章节。'
+              : '没有读到同一页面的完整正文，整篇分析尚未开始。请等页面加载完成后重试。');
+          }
+          main = full;
+          wholeRead = true;
+          if (role === 'current') this.goalLedger.recordWholeSource(full.url, full.text);
+          this.runTrace.record('page_source_complete', { tabId, url: full.url, chars: full.text.length });
+        }
+      }
       const text = typeof main?.text === "string" ? main.text.trim() : "";
-      const ax = typeof tree?.text === "string" ? tree.text.trim() : "";
+      const ax = !wholeRead && typeof tree?.text === "string" ? tree.text.trim() : "";
 
       if (!text && !ax) throw new Error("读不到这个页面");
       this.emitReadObservation(id, 'snapshot', { tabId }, ax ? tree : main, false);
       const total = typeof main?.totalChars === "number" ? main.totalChars : text.length;
       const clip = (value: string, what: string) => value.length > PRE_OBSERVATION_TEXT_MAX ? `${value.slice(0, PRE_OBSERVATION_TEXT_MAX)}\n[${what} shortened to its first ${PRE_OBSERVATION_TEXT_MAX} characters.]` : value;
 
+      const completeSource = typeof main?.totalChars === "number" && total <= text.length;
+      if (completeSource) this.quoteSources.add(text, typeof main?.url === "string" ? main.url : treeUrl ?? context.url);
+      const citedText = completeSource ? this.quoteSources.mark(text) : text;
+      await this.persistQuoteSources();
+      if (epoch !== this.controlEpoch || run !== this.deliveryRunId() || this.hold.isHeld()) return null;
       const body = [
-        text && (total > text.length ? `${text}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part.]` : text),
+        text && (total > text.length ? `${citedText}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part. Source catalog: unavailable for this partial read; read_element on the complete intended source registers source IDs.]` : citedText),
         ax && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${clip(ax, "Accessibility tree")}`,
       ].filter(Boolean).join("\n\n");
 
@@ -1633,6 +1692,8 @@ return;}
         ms: Date.now() - startedAt,
         error: error instanceof Error ? error.message : String(error),
       });
+
+      if (error instanceof IncompletePageSource) throw error;
 
       return null;
     }
@@ -2972,6 +3033,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       switch (event.type) {
         case "message_start": {
+          if (event.message.role === "assistant") this.sentQuoteSources.clear();
           if (event.message.role === "user") {
             const content = event.message.content;
             const text = typeof content === "string" ? content : content.filter(p => p.type === "text").map(p => p.text).join("\n");
@@ -2985,6 +3047,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           const ev = event.assistantMessageEvent;
 
           if (ev.type === "text_delta") {
+            const text = ev.partial.content.filter(part => part.type === "text").map(part => part.text).join("");
+            this.publishQuoteSources(text);
             if (ev.delta.trim() && !this.explicitDelivery) this.deliveredResultThisRun = true;
             emit({ kind: "text_delta", delta: ev.delta });
           }
@@ -3196,7 +3260,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return delivery && delivery.runId === snapshot?.runId ? deliveryTextWithNote(delivery) : "";
   }
 
-  /** 目标核对只看主会话里用过工具（交付、记忆、目标记账除外）、最后在问用户或说还没查的任务：纯聊天、用户停止、接管、出错都不核对。 */
+  /** 页面引用也要核对：预读已提供全文时主模型可以不调工具，但引用仍可能指错段落。 */
   private goalCheckEligible(messages: ReadonlyArray<{ role: string; content?: unknown }>): boolean {
     if (this.memberId || !this.session || !this.modelRuntime || !this.activeGoal) return false;
 
@@ -3208,7 +3272,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     // 只读任务也核对：只读任务也会答非所问（交付了上一个任务的结果）却自称做完。快速模型核对约 2–8 秒。
     // 宿主按记下的做法打开了页面的一轮：要做的已经做完，被拦下的工具调用不算做过事。
     if (snapshot?.runId && this.savedOpenRun === snapshot.runId) return false;
-    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(this.runReplyText(messages)) && !defersWork(this.runReplyText(messages)))) return false;
+    const reply = this.runReplyText(messages);
+    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(reply) && !defersWork(reply) && !citationEvidence(reply, this.quoteSources.records).items.length)) return false;
 
     return this.continuePolicy.mayCheck(snapshot.runId);
   }
@@ -3533,11 +3598,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         if (items.length >= 2 && at >= 0) continuing.step = { at: at + 1, of: items.length };
       }
       emit(continuing);
+      this.callbacks.setStatus('running');
       flushChecks({ attempt });
       this.mainEffort.raise(session.model, "goal_unfinished");
       this.deliveredResultThisRun = false;
       void session.prompt(continuation.prompt)
         .catch(error => {
+          if (this.deliveryRunId() === runId && !session.isStreaming) this.callbacks.setStatus(this.hold.isHeld() ? 'user' : 'idle');
           // 接着做没开起来：放出丢下的回答，给扣着的那一轮收尾，任务不会一直显示在跑。
           const finish = this.continueFinish;
           const kept = this.keptAnswer;
@@ -3684,6 +3751,42 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
   }
 
+  private publishQuoteSources(text: string): void {
+    const sources = this.quoteSources.cited(text).filter(source => !this.sentQuoteSources.has(source.id));
+    if (!sources.length) return;
+    for (const source of sources) this.sentQuoteSources.add(source.id);
+    this.callbacks.emit({ kind: "answer_sources", sources });
+  }
+
+  private collectQuoteSources(name: string, result: unknown): void {
+    const details = result && typeof result === "object" && "details" in result ? result.details : result;
+    if (["navigate", "tabs", "browser_run"].includes(name)) {
+      if (details && typeof details === "object" && "page" in details) this.collectQuoteSources("snapshot", details.page);
+      return;
+    }
+    if (name !== "read_element") return;
+    const read = readObservationOf(name, result);
+    if (!read) return;
+    const from = read.url ?? "读取的页面片段";
+    this.quoteSources.add(read.text, from);
+  }
+
+  private async persistQuoteSources(): Promise<void> {
+    const sources = this.quoteSources.takePending();
+    if (!sources.length) return;
+    if (!this.session?.sessionManager) throw new Error("引用来源暂时无法保存");
+    await this.session.sessionManager.appendCustomEntry("sideagent-answer-sources-v1", sources);
+    this.quoteSources.committed(sources);
+  }
+
+  private async referenceReadResult(name: string, result: Awaited<ReturnType<ToolDefinition["execute"]>>): Promise<Awaited<ReturnType<ToolDefinition["execute"]>>> {
+    if (!["read_element", "browser_run"].includes(name) || ("isError" in result && result.isError)) return result;
+    this.collectQuoteSources(name, result);
+    const content = result.content.map(part => part.type === "text" ? { ...part, text: this.quoteSources.mark(part.text) } : part);
+    await this.persistQuoteSources();
+    return { ...result, content };
+  }
+
   /** 只读工具成功回执产生一条页面读数，供结果账本建立写入前基线；截断的超长读数不可用作基线。 */
   private emitReadObservation(
     toolCallId: string,
@@ -3693,6 +3796,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     isError: boolean,
   ): void {
     if(isError)return;
+    this.collectQuoteSources(name, result);
 
     if(name==='list_tabs'||name==='tabs'&&params?.action==='list'){
       const details=result&&typeof result==='object'&&'details' in result?(result as {details:unknown}).details:result;

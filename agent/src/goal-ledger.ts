@@ -1,15 +1,17 @@
+import type { AnswerSourceMap } from "../../shared/answer-source.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { answerMarkdown, splitAnswer } from "../../shared/answer-cards.js";
 import type { ProgramStep } from "./browser-program.js";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 import { GOAL_CHECK_BOOKKEEPING_TOOLS, newReadIndex, readWords, type GoalCheckInput, type GoalVerificationTarget } from "./goal-check.js";
 import { PageTrail } from "./goal-facts.js";
+import { citationEvidence } from './answer-sources.js';
 
 /**
  * 核对看到的回答和用户在侧栏看到的一样：{=名字} 换成卡片算出的数，卡片换成文字。
  * 原始标记里的 {=h30}、<input> 在核对模型眼里是「没算出来的占位符」「只描述了输入框」，会误判没做完、再跑几轮。
  */
-const replyAsShown = (text: string): string => answerMarkdown(text);
+const replyAsShown = (text: string, sources?: AnswerSourceMap): string => answerMarkdown(text, sources);
 
 /** 回答里带输入项的卡片：画在侧栏的回答里，用户在那里改数、卡片即时重算。核对不知道这一点时会去网页上找这个工具，找不到就判没交付。 */
 function replyCards(text: string): NonNullable<GoalCheckInput["replyCards"]> {
@@ -40,15 +42,22 @@ function firstFailureText(result: unknown): string {
 }
 
 export class GoalLedger {
+  constructor(private readonly sources?: AnswerSourceMap) {}
   private observations: Array<{ at: number; tool: string; text: string }> = [];
   private readonly words = newReadIndex();
   private readonly programs = new Map<string, { reads: Array<{ url: string; text: string }>; readOnly: boolean }>();
   private elementReads: { scope: string; targets: GoalVerificationTarget[] } | null = null;
   private failures: { runId: string | null; items: Failure[] } = { runId: null, items: [] };
   private readonly trail = new PageTrail();
+  private wholeSource: { url: string; text: string } | null = null;
 
   beginRequest(page: { tabId?: number; url?: string } | null): void {
     this.trail.begin(page);
+    this.wholeSource = null;
+  }
+
+  recordWholeSource(url: string, text: string): void {
+    this.wholeSource = { url, text: redactCredentialText(text) };
   }
 
   observeCall(name: string, params: Record<string, unknown>, result: unknown): void {
@@ -161,8 +170,10 @@ export class GoalLedger {
       files: run.files,
       observations: this.observations.map(item => ({ tool: item.tool, text: item.text, ...(item.at < run.requestStartedAt ? { earlier: true } : {}) })),
       readWords: this.words,
-      lastReply: replyAsShown(run.lastReply),
+      lastReply: replyAsShown(run.lastReply, this.sources),
       replyCards: replyCards(run.lastReply),
+      sourceCitations: citationEvidence(run.lastReply, this.sources),
+      wholeSource: this.wholeSource ?? undefined,
       replyForm: splitAnswer(run.lastReply).some(part => "card" in part && !!part.card?.blocks.some(block => block.kind === "fields")) || undefined,
       page: page ? { ...(tabId === null ? {} : { tabId }), title: String(page.title ?? ""), url: String(page.url ?? ""), ...(page.translation ? { translation: page.translation } : {}), text: redactCredentialText(String(page.text ?? "")) } : null,
       userTookOver: run.userTookOver,

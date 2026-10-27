@@ -1,3 +1,13 @@
+import { isAnswerSource, type AnswerSource } from '../../../shared/answer-source.js';
+
+/** Each panel replays its selected conversation's source events before rendering its replies. */
+export const sourceExcerpts = new Map<string, AnswerSource>();
+
+export function receiveSourceExcerpts(value: unknown): void {
+  if (!Array.isArray(value) || value.length > 512) return;
+  for (const source of value) if (isAnswerSource(source) && !sourceExcerpts.has(source.id)) sourceExcerpts.set(source.id, source);
+}
+
 /**
  * 回答出处：读过的页面列在回答下面「来源」面板里，每个来源一行；正文里引到的已读页面，链接前加站点图标
  * 。

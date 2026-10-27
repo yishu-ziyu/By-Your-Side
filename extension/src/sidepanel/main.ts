@@ -1,3 +1,4 @@
+import { sourceExcerpts, receiveSourceExcerpts } from "./answer-sources.js";
 import { createMarginalia } from "./marginalia.js";
 import { installDropzone } from "./dropzone.js";
 import { attachSourceCitations, captureCitationContext, type CitationContext } from "./sonar-citations.js";
@@ -276,7 +277,7 @@ const PANEL_HTML = { FORBID_TAGS: ["style", "link", "meta", "base", "form", "ifr
 const DECLINED_ANSWER = '<div class="gen-card send-declined-card"><div class="gc-actions"><button type="button" class="gc-btn primary" data-card-say="现在发送吧">现在发送吧</button></div></div>';
 
 function renderMarkdown(text: string): string {
-  return hideTabIdsInHtml(DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml), PANEL_HTML));
+  return hideTabIdsInHtml(DOMPurify.sanitize(renderAnswerHtml(text, renderMarkdownHtml, sourceExcerpts), PANEL_HTML));
 }
 
 const app = document.getElementById("app")!;
@@ -1106,6 +1107,7 @@ function renderConversations(): void {
 }
 
 function resetConversationRender(): void {
+  sourceExcerpts.clear();
   resetFillUndo();
   resetSendConfirmCards();
   planCardRun = null;
@@ -4314,6 +4316,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "site_notes":
       renderSiteNotesReceipt(ev);
+      break;
+    case "answer_sources":
+      receiveSourceExcerpts(ev.sources);
       break;
     case "text_delta":
       // 回答开始出字：这段思考结束。
