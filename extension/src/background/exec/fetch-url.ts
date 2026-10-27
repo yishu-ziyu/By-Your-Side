@@ -14,6 +14,7 @@ import {
   redirectUrl,
 } from "../../../../shared/fetch.js";
 import { oneLine } from "../util.js";
+import { needsRequestConfirm } from "../../../../shared/request-confirm.js";
 
 interface FetchResult {
   url: string;
@@ -31,7 +32,8 @@ interface FetchResult {
 export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?: AbortSignal; beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}; confirmPost?: (request: { url: string; body?: string }) => Promise<void> }): Promise<FetchResult & { sendConfirmed?: true }> {
   const request = normalizeFetchRequest(params);
   // 读取时限要从用户点「发送」之后算：等确认最长 2 分钟，先起计时会让确认过的请求直接超时。
-  const confirmed = request.method === "POST" && opts?.confirmPost ? await opts.confirmPost({ url: request.url, body: request.body }).then(() => true, (error: unknown) => {
+  // 搜索、查询类 POST 不拦；写入和拿不准的才问（判定见 shared/request-confirm.ts）。
+  const confirmed = request.method !== "GET" && opts?.confirmPost && needsRequestConfirm(request) ? await opts.confirmPost({ url: request.url, body: request.body }).then(() => true, (error: unknown) => {
     // 还没发出：确认这一步出什么错都是没执行，不能让宿主当成结果未知去重读。
     throw error && typeof error === "object" && "executionFact" in error ? error : Object.assign(new Error(`POST 请求没能先问用户，没有发出：${oneLine(error)}`), { executionFact: "not_executed" as const });
   }) : false;

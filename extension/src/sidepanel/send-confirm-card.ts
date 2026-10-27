@@ -1,10 +1,11 @@
 /**
  * 侧栏里的发送确认卡。网页上的确认框照旧在，两边回答的是后台同一个等待。
  * 卡上的网站、按钮名、内容都由扩展从网页读出，这里只用 textContent 放进去。
- * 按钮只在后台说这次确认还在等时出现：重开侧栏回放历史时，答过或过期的确认只剩一行结果。
+ * 待确认钉在输入框上方；答过或过期只在对话里留一行结果。
  */
 import { SEND_ARM_MS, SEND_CONFIRM_PANEL_PORT } from "../relay.js";
 import { HELD_TEXT } from "./steps.js";
+import { confirmCopy, confirmCountdown } from "../../../shared/send-confirm-copy.js";
 import type { SendConfirmOutcome, SendConfirmView } from "../../../shared/protocol.js";
 
 const OUTCOMES: readonly SendConfirmOutcome[] = ["send", "decline", "stopped", "left", "timeout"];
@@ -25,19 +26,26 @@ const OUTCOME_TEXT: Record<Exclude<SendConfirmOutcome, "send">, string> = {
   timeout: HELD_TEXT.timeout,
 };
 
+const OPTIONAL_STR = ["content", "recipient", "query", "path", "method", "body"] as const;
+const OPTIONAL_NUM = ["startedAt", "expiresAt"] as const;
+const KINDS = ["search", "send", "request"] as const;
+
 /** 历史和事件都是外部数据：形状不对就不画卡。 */
 function isSendConfirmView(v: unknown): v is SendConfirmView {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
 
   return typeof o.id === "string" && o.id.length > 0 && o.id.length <= 64 && typeof o.host === "string" && typeof o.label === "string"
-    && (o.content === undefined || typeof o.content === "string") && (o.outcome === undefined || (OUTCOMES as readonly unknown[]).includes(o.outcome))
+    && (o.outcome === undefined || (OUTCOMES as readonly unknown[]).includes(o.outcome))
     && (o.clicked === undefined || CLICKS.includes(o.clicked))
-    && (o.recipient === undefined || typeof o.recipient === "string") && (o.route === undefined || ["click", "script", "enter", "request"].includes(o.route as string));
+    && (o.route === undefined || ["click", "script", "enter", "request"].includes(o.route as string))
+    && (o.kind === undefined || (KINDS as readonly unknown[]).includes(o.kind))
+    && OPTIONAL_STR.every(key => o[key] === undefined || typeof o[key] === "string")
+    && OPTIONAL_NUM.every(key => o[key] === undefined || (typeof o[key] === "number" && Number.isFinite(o[key])));
 }
 
 /** armedAt：按钮第一次露出来以后多久起「发送」才算数（performance.now 的时刻）；重画不重新计时。 */
-interface Card { view: SendConfirmView; el: HTMLElement; answering: boolean; armedAt?: number }
+interface Card { view: SendConfirmView; el: HTMLElement; answering: boolean; armedAt?: number; tick?: number }
 
 const cards = new Map<string, Card>();
 
@@ -97,63 +105,111 @@ function refreshAll(): void {
   for (const card of cards.values()) if (card.el.isConnected) paint(card);
 }
 
-function row(list: HTMLElement, name: string, value: string): void {
-  const dt = document.createElement("dt");
-  dt.textContent = name;
-  const dd = document.createElement("dd");
-  dd.textContent = value;
-  list.append(dt, dd);
+function stopTick(card: Card): void {
+  if (!card.tick) return;
+  clearInterval(card.tick);
+  card.tick = 0;
+}
+
+function dock(): HTMLElement | null {
+  return document.getElementById("confirm-dock");
+}
+
+function place(card: Card, live: boolean): void {
+  const shelf = dock();
+  const { el } = card;
+
+  if (live && shelf) {
+    if (el.parentElement !== shelf) shelf.append(el);
+    shelf.hidden = shelf.childElementCount === 0;
+    return;
+  }
+
+  if (shelf?.contains(el)) {
+    const messages = document.getElementById("messages");
+    if (messages && el.parentElement !== messages) messages.append(el);
+    shelf.hidden = shelf.childElementCount === 0;
+  }
+}
+
+function resultLine(card: Card, text: string, state: string): void {
+  const { el, view } = card;
+  stopTick(card);
+  el.replaceChildren();
+  el.dataset.sendConfirm = view.id;
+  el.dataset.state = state;
+  const line = document.createElement("p");
+  line.className = "send-confirm-line";
+  line.textContent = text;
+  el.append(line);
+  place(card, false);
 }
 
 function paint(card: Card): void {
   const { view, el } = card;
-  el.replaceChildren();
-  el.dataset.sendConfirm = view.id;
 
   if (view.outcome) {
-    el.dataset.state = "done";
-    const line = document.createElement("p");
-    line.className = "send-confirm-line";
-    line.textContent = view.outcome === "send" ? view.clicked ? SENT_TEXT[view.clicked] : "你确认了发送" : OUTCOME_TEXT[view.outcome];
-    el.append(line);
-
+    resultLine(card, view.outcome === "send" ? view.clicked ? SENT_TEXT[view.clicked] : "你确认了发送" : OUTCOME_TEXT[view.outcome], "done");
     return;
   }
 
-  // 后台已经不等、又没有结局（例如扩展后台重启，等待丢了）：只剩一行，不留按钮。
   if (ended.has(view.id)) {
-    el.dataset.state = "ended";
-    const line = document.createElement("p");
-    line.className = "send-confirm-line";
-    line.textContent = "这次确认已经结束";
-    el.append(line);
-
+    resultLine(card, "这次确认已经结束", "ended");
     return;
   }
 
   const live = pending.has(view.id);
+  el.dataset.sendConfirm = view.id;
   el.dataset.state = live ? "open" : "checking";
-  const title = document.createElement("p");
+  el.replaceChildren();
+  const copy = confirmCopy(view);
+  const title = document.createElement("h2");
   title.className = "send-confirm-title";
-  const to = view.recipient ? `发给 ${view.recipient}，` : "";
-  title.textContent = view.content ? `把这段 ${[...view.content.replace(/…$/, "")].length} 字的内容${to}在 ${view.host} 上` : `点「${view.label}」${to}在 ${view.host} 上`;
-  const list = document.createElement("dl");
-  list.className = "send-confirm-kv";
-  row(list, "网站", view.host);
-  row(list, "按钮", `「${view.label}」`);
+  title.textContent = copy.headline;
+  el.append(title);
 
-  // 读不到要发的内容就不写这一行，不编。
-  if (view.content) row(list, "内容", `「${view.content}」`);
-  if (view.recipient) row(list, "发给", view.recipient);
-  if (view.route && view.route !== "click") row(list, "方式", { script: "页面脚本", enter: "回车键", request: "网页请求" }[view.route]);
-  el.append(title, list);
+  if (copy.impact) {
+    const impact = document.createElement("p");
+    impact.className = "send-confirm-impact";
+    impact.textContent = copy.impact;
+    el.append(impact);
+  }
 
-  if (!live) return;
-  card.armedAt ??= performance.now() + SEND_ARM_MS;
-  const acts = document.createElement("div");
-  acts.className = "send-confirm-acts";
-  acts.append(button("decline", "先不发", card), button("send", "发送", card));
-  el.append(acts);
+  if (copy.quote) {
+    const quote = document.createElement("blockquote");
+    quote.className = "send-confirm-quote";
+    quote.textContent = copy.quote;
+    el.append(quote);
+  }
+
+  if (copy.tech) {
+    const details = document.createElement("details");
+    details.className = "send-confirm-tech";
+    const summary = document.createElement("summary");
+    summary.textContent = "技术细节";
+    const pre = document.createElement("pre");
+    pre.textContent = [copy.tech.method, copy.tech.path, copy.tech.body].filter(Boolean).join("\n");
+    details.append(summary, pre);
+    el.append(details);
+  }
+
+  if (live) {
+    card.armedAt ??= performance.now() + SEND_ARM_MS;
+    const wait = document.createElement("p");
+    wait.className = "send-confirm-wait";
+    wait.setAttribute("aria-live", "polite");
+    const tick = () => { wait.textContent = confirmCountdown(Date.now(), view.startedAt, view.expiresAt); };
+    tick();
+    stopTick(card);
+    card.tick = window.setInterval(tick, 1000);
+    el.append(wait);
+    const acts = document.createElement("div");
+    acts.className = "send-confirm-acts";
+    acts.append(button("send", copy.yes, card), button("decline", copy.no, card));
+    el.append(acts);
+  }
+
+  place(card, live);
 }
 
 function button(choice: "send" | "decline", text: string, card: Card): HTMLButtonElement {
@@ -168,8 +224,13 @@ function button(choice: "send" | "decline", text: string, card: Card): HTMLButto
     b.tabIndex = -1;
     const wait = (card.armedAt ?? 0) - performance.now();
 
-    if (wait > 0) setTimeout(() => b.toggleAttribute("data-armed", true), wait);
-    else b.toggleAttribute("data-armed", true);
+    if (wait > 0) {
+      b.toggleAttribute("data-arming", true);
+      setTimeout(() => {
+        b.toggleAttribute("data-arming", false);
+        b.toggleAttribute("data-armed", true);
+      }, wait);
+    } else b.toggleAttribute("data-armed", true);
   }
 
   b.addEventListener("click", event => {

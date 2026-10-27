@@ -3,6 +3,7 @@
  * 与 DOM 解耦；main.ts 负责渲染。
  */
 import { displayNameFor, personFor } from "../../../shared/cast.js";
+import { extractSearchQuery } from "../../../shared/request-confirm.js";
 import { toolAction } from "../../../shared/user-facing.js";
 import type { HeldReason } from "../../../shared/protocol.js";
 
@@ -35,7 +36,7 @@ const ACTION_NAMES: Record<string, string> = {
   cdp: "直接操作浏览器",
   hover: "悬停",
   remember_user_preference: "存入记忆",
-  fetch: "抓取",
+  fetch: "读取网页数据",
   browser_run: "连续操作",
   learned_operation: "技能",
   wait_for: "等页面内容出现",
@@ -163,9 +164,10 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
     }
 
     case "fetch": {
-      const host = hostOf(params.url);
-
-      return { short: host ? `抓取 ${host}` : "抓取", full: host ? `抓取 ${host}` : "抓取" };
+      const query = extractSearchQuery(str(params.body) ?? undefined, str(params.url) ?? undefined);
+      if (query) return { short: `搜索「${clip(query, 16)}」`, full: `搜索「${clip(query, 24)}」` };
+      if (/(search|query|graphql|gql)/i.test(str(params.url) ?? "")) return { short: "搜索", full: "搜索" };
+      return { short: "读取网页数据", full: "读取网页数据" };
     }
 
     case "press_key": {
@@ -487,7 +489,10 @@ export function shortAction(name: string, params: Parameters<typeof describeTool
   else if (CURSOR_VERBS.has(name)) text = label ? `${CURSOR_VERBS.get(name)!.verb}${label}` : CURSOR_VERBS.get(name)!.unnamed;
   else if (name === "type_text") text = label ? `填${label}` : "输入文字";
   else if (name === "js") text = str(params.purpose) ?? "运行代码";
-  else if (name === "fetch") text = `抓取 ${hostOf(params.url) ?? "接口"}`;
+  else if (name === "fetch") {
+    const query = extractSearchQuery(str(params.body) ?? undefined, str(params.url) ?? undefined);
+    text = query ? `搜索「${clip(query, 12)}」` : /(search|query|graphql|gql)/i.test(str(params.url) ?? "") ? "搜索" : "读取网页数据";
+  }
   else if (name === "browser_run") text = label ?? "连续操作";
   else if (name === "press_key") text = str(params.key) ? `按${str(params.key)}` : "按键";
   else if (name === "mark" && params.clear !== true) {

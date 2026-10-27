@@ -143,13 +143,28 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
     };
     const meta = new WeakMap<XMLHttpRequest, { method: string; url: string }>();
     // 只拦像发送接口的请求（路径里有 send、message、comment、reply、post 等词）：保存、搜索、读数据的请求照常发。这是按名字猜，名字不像的发送接口拦不到。
-    const sendy = (url: string) => { try { return /(send|message|msg|chat|comment|reply|post|tweet|mail|publish|share|submit|发送)/i.test(new URL(url, location.href).pathname); } catch { return false; } };
+    // 与 shared/request-confirm.ts 同一套：搜索/查询放行，写入要问，拿不准也问。这段跑在页面里，不能 import。
+    const needsConfirm = (method: string, url: string, body?: string) => {
+      if (/^(GET|HEAD|OPTIONS)$/i.test(method)) return false;
+      try {
+        const path = new URL(url, location.href).pathname;
+        const text = String(body ?? "");
+        const write = /(send|message|msg|chat|comment|reply|tweet|mail|publish|share|submit|发送|pay|payment|checkout|purchase|order|delete|trash|buy|create|update)/i.test(path)
+          || /(?:^|\/)(posts?|messages?|comments?|replies)(?:\/|$)/i.test(path)
+          || /\bmutation\b/i.test(text);
+        const search = /(search|query|suggest|autocomplete|lookup|find|graphql|gql)/i.test(path)
+          || (/\bquery\b/i.test(text) && !/\bmutation\b/i.test(text));
+        if (write) return true;
+        if (search) return false;
+        return true;
+      } catch { return true; }
+    };
     const where = (url: string) => { try { const u = new URL(url, location.href); return u.host === location.host ? u.pathname : u.host + u.pathname; } catch { return String(url).slice(0, 60); } };
     HTMLFormElement.prototype.submit = function (this: HTMLFormElement) { const pay = fromScript() ? payIn(this) : null; if (pay) { holdPay(null, pay); return; } const sb = sendIn(this); if (sb && fromScript()) { record({ route: "script", label: btnName(sb).trim().slice(0, 40), content: draftNear(sb), rect: rectOf(sb) }, () => origSubmit.call(this)); return; } return origSubmit.call(this); };
     window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
       const method = String(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
       const url = input instanceof Request ? input.url : String(input);
-      if (method !== "GET" && method !== "HEAD" && sendy(url) && fromScript()) {
+      if (method !== "GET" && method !== "HEAD" && needsConfirm(method, url, typeof init?.body === "string" ? init.body : undefined) && fromScript()) {
         record({ route: "request", label: `${method} ${where(url)}`.slice(0, 60), content: typeof init?.body === "string" ? init.body.replace(/\s+/g, " ").slice(0, 120) : draftNear(document.activeElement), rect: null }, async () => {
           const response = await origFetch.call(window, input, init);
           if (!response.ok) throw new Error(`发送请求返回 HTTP ${response.status}，请核对网页上的结果，不要重复发送。`);
@@ -161,10 +176,10 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean): void {
     XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) { meta.set(this, { method: String(method).toUpperCase(), url: String(url) }); return (origOpen as any).call(this, method, url, ...rest); } as typeof origOpen;
     XMLHttpRequest.prototype.send = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
       const m = meta.get(this);
-      if (m && m.method !== "GET" && m.method !== "HEAD" && sendy(m.url) && fromScript()) { const xhr = this; record({ route: "request", label: `${m.method} ${where(m.url)}`.slice(0, 60), content: typeof body === "string" ? body.replace(/\s+/g, " ").slice(0, 120) : draftNear(document.activeElement), rect: null }, () => origSend.call(xhr, body)); return; }
+      if (m && m.method !== "GET" && m.method !== "HEAD" && needsConfirm(m.method, m.url, typeof body === "string" ? body : undefined) && fromScript()) { const xhr = this; record({ route: "request", label: `${m.method} ${where(m.url)}`.slice(0, 60), content: typeof body === "string" ? body.replace(/\s+/g, " ").slice(0, 120) : draftNear(document.activeElement), rect: null }, () => origSend.call(xhr, body)); return; }
       return origSend.call(this, body);
     };
-    navigator.sendBeacon = function (url: string | URL, data?: BodyInit | null) { if (sendy(String(url)) && fromScript()) { record({ route: "request", label: `POST ${where(String(url))}`.slice(0, 60), content: typeof data === "string" ? data.slice(0, 120) : "", rect: null }, () => origBeacon.call(navigator, url, data)); return false; } return origBeacon.call(navigator, url, data); };
+    navigator.sendBeacon = function (url: string | URL, data?: BodyInit | null) { if (needsConfirm("POST", String(url), typeof data === "string" ? data : undefined) && fromScript()) { record({ route: "request", label: `POST ${where(String(url))}`.slice(0, 60), content: typeof data === "string" ? data.slice(0, 120) : "", rect: null }, () => origBeacon.call(navigator, url, data)); return false; } return origBeacon.call(navigator, url, data); };
     for (const t of PRESS) window.addEventListener(t, onPress, true);
     window.addEventListener("click", onClick, true);
     window.addEventListener("submit", onSubmit, true);

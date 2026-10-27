@@ -7,15 +7,17 @@ import { randomUUID } from "node:crypto";
 import { normalizeResultTarget } from '../../shared/task-results.js';
 import { LEAD_SESSION_ID, isHeldReason, isLeadSession, type HeldReason, type ToolExecutionFact, type ToolName, type ToolContract } from "../../shared/protocol.js";
 
-const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
+import { TOOL_DEFAULT_MS, TOOL_SLOW_MS, TOOL_USER_CONFIRM_MS } from "../../shared/timeouts.js";
 
-const SLOW_TOOL_TIMEOUT_MS = 60_000;
+const DEFAULT_TOOL_TIMEOUT_MS = TOOL_DEFAULT_MS;
+
+const SLOW_TOOL_TIMEOUT_MS = TOOL_SLOW_MS;
 
 /**
  * 扩展报告这次点击在网页上等用户确认「发送」时放宽到的期限。
  * 比扩展自己的 2 分钟等待长，所以总是扩展先回「没点」，不会在这边记成结果未知。
  */
-export const USER_CONFIRM_TIMEOUT_MS = 130_000;
+export const USER_CONFIRM_TIMEOUT_MS = TOOL_USER_CONFIRM_MS;
 
 /** navigate/screenshot 涉及页面加载或渲染，放宽到 60s。 */
 const SLOW_TOOLS: ReadonlySet<string> = new Set(["navigate", "screenshot"]);
@@ -360,7 +362,7 @@ export class ToolRpc {
           disp.fact = "unknown";
         }
 
-        const err: ToolExecutionError = new Error(`Tool call "${name}" timed out after ${timeout}ms`);
+        const err: ToolExecutionError = new Error(`这一步超时了：${name} 等了 ${Math.round(timeout / 1000)} 秒还没有结果`);
         err.executionFact = "unknown";
         reject(err);
       };

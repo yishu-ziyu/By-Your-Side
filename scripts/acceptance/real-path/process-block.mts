@@ -2,7 +2,7 @@
  * 过程块 AC：进行中两行，做完一行回执，展开是记录。
  *   npx tsx scripts/acceptance/real-path/process-block.mts --headless
  * 脚本模型：想 4 秒 → 打开页 B → js（带用途「读出标题」）→ 点一个不存在的按钮（没做成）→ 想 8 秒 → 点「作品」→ 等 4 秒、写思考、2 秒后出字、回答放 3 秒。
- *   a) 想 8 秒那段：第一行只写「正在思考」，秒数从这段开始数（和真实时间差 ≤1.2 秒）；第二行「已做 2 步 · 1 步换了做法」。
+ *   a) 想 8 秒那段：第一行写「正在：思考」，秒数从这段开始数（和真实时间差 ≤1.2 秒）；第二行「已试了 3 步，其中 1 次没做成，已换别的方法」。
  *   b) 侧栏任何时候都没有「执行脚本」「0.0s」「+ 前面」「件事」。
  *   c) 回执「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式，换了做法的那步在展开的过程里）；380px 和 300px 宽都是一行。
  *   d) 展开的记录：「想了 N 秒」只列三段长的（4 秒、8 秒左右，和最后一轮），末行「共 N 秒，其中想了 M 秒」，N 与发送到结束差 ≤1 秒。
@@ -109,8 +109,8 @@ try {
   const elapsed = (Date.now() - thinkingSince) / 1000;
   const liveSecs = Number(/^(\d+) 秒$/.exec(live?.time ?? "")?.[1] ?? NaN);
   await rp.screenshot(panel, join(out, "a-thinking.png"));
-  const think = (title: string) => title === "正在思考";
-  check("a 想的时候第一行只写「正在思考」，秒数从这段开始数，第二行写步数", !!live && think(live.title) && Math.abs(liveSecs - elapsed) <= 1.2 && live.meta === "已做 2 步 · 1 步换了做法", { title: live?.title ?? null, time: live?.time ?? null, elapsed, meta: live?.meta ?? null });
+  const think = (title: string) => title === "正在：思考";
+  check("a 想的时候第一行写「正在：思考」，秒数从这段开始数，第二行写人话步数", !!live && think(live.title) && Math.abs(liveSecs - elapsed) <= 1.2 && live.meta === "已试了 3 步，其中 1 次没做成，已换别的方法", { title: live?.title ?? null, time: live?.time ?? null, elapsed, meta: live?.meta ?? null });
 
   await until(async () => { const r = await read(); if (r) for (const word of FORBIDDEN) if (r.all.includes(word)) seen.add(word); return r?.done && r.all.includes(ANSWER) ? true : undefined; }, 60_000, "收尾", 100);
   const endedAt = Date.now();

@@ -115,9 +115,9 @@ try {
   await rp.screenshot(panel, join(out, "p1-panel-waiting.png"));
   const c1 = await liveCard(panel);
   const c1b = await liveCard(panel2);
-  check("p1 两个侧栏都出卡，写网站、按钮、表单里的草稿，不写备忘", [c1, c1b].every(c => c.text.includes(host) && c.text.includes("「发送」") && c.text.includes(`「${DRAFT}」`) && !c.text.includes("备忘")), { c1, c1b, host });
-  const runTitle = String(await rp.evaluate(panel, '[...document.querySelectorAll(".run-steps")].at(-1)?.querySelector(".run-title")?.textContent ?? ""'));
-  check("p1 过程行标题写「等你确认发送」", runTitle.includes("等你确认发送"), { runTitle });
+  check("p1 两个侧栏都出卡，写网站、按钮、表单里的草稿，不写备忘", [c1, c1b].every(c => c.text.includes(host) && c.text.includes("「发送」") && c.text.includes(DRAFT) && !c.text.includes("备忘") && !/POST\s+\//.test(c.text)), { c1, c1b, host });
+  const docked = await rp.evaluate(panel, `(() => { const dock = document.querySelector("#confirm-dock"); const card = dock?.querySelector(".send-confirm"); return { hidden: dock?.hidden ?? true, inDock: !!card, title: card?.querySelector(".send-confirm-title")?.textContent ?? "", wait: card?.querySelector(".send-confirm-wait")?.textContent ?? "" }; })()`) as { hidden: boolean; inDock: boolean; title: string; wait: string };
+  check("p1 待确认钉在输入框上方，并显示倒计时", docked.inDock && !docked.hidden && /要在/.test(docked.title) && /已等/.test(docked.wait), docked);
   // 脚本合成的点击（isTrusted 为 false）不算用户点的。
   await rp.evaluate(panel, '[...document.querySelectorAll(".send-confirm")].at(-1).querySelector(".send-confirm-yes").click(); true');
   await sleep(1500);
@@ -181,7 +181,7 @@ try {
   await rp.evaluate(panel, `(() => { window.__arm = {}; window.__lines = {}; new MutationObserver(() => {
     for (const c of document.querySelectorAll(".send-confirm")) { const id = c.dataset.sendConfirm; if (c.querySelector(".send-confirm-yes")) window.__arm[id] ??= performance.now();
       const line = c.querySelector(".send-confirm-line")?.textContent; if (line) { const seen = (window.__lines[id] ??= []); if (seen.at(-1) !== line) seen.push(line); } }
-  }).observe(document.querySelector("#messages"), { childList: true, subtree: true, characterData: true });
+  }).observe(document.body, { childList: true, subtree: true, characterData: true });
   document.addEventListener("click", e => { if (e.target.closest?.(".send-confirm-yes")) window.__yesClick = performance.now(); }, true); return true; })()`);
   const before5 = sent();
   await ask(ASK.p5);
