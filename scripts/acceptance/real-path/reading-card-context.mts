@@ -30,6 +30,7 @@ const CLUE = "工坊在一八九零年把铜版换成了更便宜的锌版";
 // 选区旁边用户还没发出的草稿、页面藏起来的标题：都不该进模型请求。
 const DRAFT = "草稿：下周三请假一天";
 const HIDDEN = "内部备注不要公开";
+const ACCOUNT = "账户余额 9,980 元";
 const FILLER = "<div>学徒们每天清晨先擦版，再调墨，最后才开始印刷当天的订单。</div>".repeat(6);
 
 // 像很多资讯站和单页应用：正文全是 div，没有 p。
@@ -43,7 +44,7 @@ const DIVS = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
 // 段落标签齐全，但选区跨了两段：共同祖先是 article，不是某一段。
 const CROSS = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>印刷工坊</title>
 <style>body{margin:0}article{max-width:36rem;margin:56px 72px;font:17px/1.75 serif}</style></head><body>
-<article><h2>${HEADING}</h2><p>${CLUE}，账本上的开销因此少了三成。</p>
+<aside>${ACCOUNT}</aside><article><h2>${HEADING}</h2><p>${CLUE}，账本上的开销因此少了三成。</p>
 <p id="a"><span id="a-text">老师傅们很不满意这个决定</span>，说新版印出的线条发虚。</p>
 <p id="b"><span id="b-text">后来工坊只在贵重订单上用铜版</span>，其余一律用锌版。</p>
 ${"<p>学徒们每天清晨先擦版，再调墨，最后才开始印刷当天的订单。</p>".repeat(6)}</article></body></html>`;
@@ -121,15 +122,15 @@ try {
     const point = await until(explainPoint, 10_000, "解释");
     await sleep(200);
     for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, button: "left", clickCount: 1, ...point }, work);
-    if (LIVE) await until(async () => { const text = await answerText(); return text.length > 20 && !/正在|思考/.test(text.slice(0, 4)) ? text : undefined; }, 90_000, "真模型回答");
+    // 卡上没有「写完了」的标记：回答连续 3 秒不再变长才算写完。
+    if (LIVE) { let last = "", since = Date.now(); await until(async () => { const text = await answerText(); if (text !== last) { last = text; since = Date.now(); } return text.length > 20 && Date.now() - since > 3000 ? text : undefined; }, 120_000, "真模型回答写完", 500); }
     else await until(async () => asked.length > before || undefined, 30_000, "解释请求");
-    await sleep(LIVE ? 3000 : 0);
     await rp.screenshot(work, join(out, `${path.slice(1)}.png`));
     return { selected, sent: asked[asked.length - 1] ?? "", answer: LIVE ? await answerText() : "" };
   };
 
   // 要说清是改用锌版，不能是「没说明」「无法确定」或说反了方向。
-  const understood = (a: string) => /(改用|换成|换用|换为|改为|使用)[^。]{0,6}锌版|锌版[^。]{0,8}(取代|代替|替代)/.test(a) && !/没有说明|未说明|无法确定|不清楚|没有交代/.test(a) && !/锌版换成铜版|改用铜版/.test(a);
+  const understood = (a: string) => /(改用|换成|换用|换为|改为)[^。，]{0,6}锌版/.test(a) && !/没有说明|未说明|无法确定|不清楚|没有交代|不是[^。]{0,8}锌|被铜版[^。]{0,4}(代替|取代|替代)|锌版换成铜版|改用铜版/.test(a);
   const divs = await explain("/divs", "#pick-text", "#pick-text");
   if (LIVE) {
     check("真模型 div 排版：回答说出「这个决定」是换锌版", understood(divs.answer), { answer: divs.answer.slice(0, 300) });
@@ -142,6 +143,7 @@ try {
 
   const cross = await explain("/cross", "#a-text", "#b-text");
   check("跨段选中：请求里有选区之外的前文线索", cross.selected.includes("老师傅") && cross.selected.includes("贵重订单") && cross.sent.includes(CLUE), { selected: cross.selected.slice(0, 80), clue: cross.sent.includes(CLUE) });
+  check("文章外的侧栏（账户余额）不进请求", !cross.sent.includes(ACCOUNT), { account: cross.sent.includes(ACCOUNT) });
 } catch (error) {
   if (!String(error).includes("live-done")) check("流程完成", false, String(error));
 } finally {
