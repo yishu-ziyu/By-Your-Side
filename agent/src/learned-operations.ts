@@ -181,9 +181,29 @@ export function embedsValue(code: string, values: readonly unknown[]): boolean {
   };
   values.forEach(collect);
 
-  const constants = new Set([...code.matchAll(/(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g)].map(match => match[2]!.trim()));
+  const constants = stringConstants(code);
 
   return literals.some(value => constants.has(value));
+}
+
+/** 源码里的字符串常量（跳过注释）：注释里写个示例答案不算写死。 */
+function stringConstants(code: string): Set<string> {
+  const found = new Set<string>();
+  for (let at = 0; at < code.length;) {
+    const char = code[at]!;
+    if (char === "/" && code[at + 1] === "/") { at = code.indexOf("\n", at); if (at < 0) break; continue; }
+    if (char === "/" && code[at + 1] === "*") { at = code.indexOf("*/", at + 2); if (at < 0) break; at += 2; continue; }
+    if (char !== '"' && char !== "'" && char !== "`") { at += 1; continue; }
+    let end = at + 1, text = "";
+    while (end < code.length && code[end] !== char) {
+      if (code[end] === "\\") { text += code[end + 1] ?? ""; end += 2; continue; }
+      text += code[end]; end += 1;
+    }
+    found.add(text.trim());
+    at = end + 1;
+  }
+
+  return found;
 }
 
 const ALLOWED_METHODS = [
