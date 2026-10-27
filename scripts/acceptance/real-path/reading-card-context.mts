@@ -3,7 +3,8 @@
  * 只认 p/li 等段落标签时，这两种页面拿到的上下文是空的，回答只能看着选中的几个字猜（用户反馈「回答不基于页面上下文」）。
  *
  * 真扩展、隔离无头 Chrome、本机练习页、本机脚本模型。脚本模型只证明请求里带了什么，不证明真实回答好坏。
- *   npx tsx scripts/acceptance/real-path/reading-card-context.mts --headless
+ *   npx tsx scripts/acceptance/real-path/reading-card-context.mts --headless [--live] [--model=服务商/模型]
+ * --live：换成真实模型（默认 gpt-6-luna），另判回答本身说出了「这个决定」指的是换锌版——这层意思只写在前一段里。
  *
  * 判据：
  *   div 排版  请求里有选区前一段的线索句和小节标题。
@@ -14,8 +15,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { launchRealPath, requireHeadless, REPO, siteAddress, sleep, until, type Json } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
+import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
+
+const LIVE = process.argv.includes("--live");
+const livePlan = LIVE ? await loadModelPlan(process.argv.find((a) => a.startsWith("--model="))?.slice(8) ?? DEFAULT_TEST_MODEL) : null;
 
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-reading-card-context`);
 await mkdir(out, { recursive: true });
@@ -65,9 +70,9 @@ try {
   await until(async () => (await rp.evaluate(work, `document.readyState === "complete" && !!document.querySelector("[data-sideagent-ask]")`)) || undefined, 15_000, "练习页");
   const panel = await rp.attach(await rp.openSidePanel());
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#conversation-new")?.disabled === false`)) || undefined, 60_000, "侧栏就绪");
-  // 主模型和快速模型都指到脚本模型：这里只看请求里带了什么，不测设置页。
-  const config = { provider: "custom", modelId: "reader", baseUrl: model.baseUrl };
-  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: config, inproc_fast_model_config: config, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } })}).then(() => true)`);
+  // 主模型和快速模型指到同一个：脚本模型只看请求里带了什么；--live 时是真模型。
+  const items = livePlan ? modelStorageItems(livePlan) : { inproc_model_config: { provider: "custom", modelId: "reader", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
+  await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ ...items, inproc_fast_model_config: items.inproc_model_config })}).then(() => true)`);
   await rp.cdp.send("Target.activateTarget", { targetId: workTargetId }).catch(() => {});
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, work);
@@ -88,6 +93,15 @@ try {
     return reply.result.value as { x: number; y: number } | null;
   };
 
+  const answerText = async () => {
+    const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
+    const shadow = findShadow(root);
+    if (!shadow) return "";
+    const objectId = String((await rp.cdp.send("DOM.resolveNode", { backendNodeId: shadow.backendNodeId }, work)).object.objectId);
+    const reply = await rp.cdp.send("Runtime.callFunctionOn", { objectId, functionDeclaration: `function(){const t=this.querySelector(".turn:last-of-type");return t&&!t.querySelector('[data-state="streaming"],[data-state="pending"]')?[...this.querySelectorAll(".answer")].map(a=>a.textContent??"").join("\\n"):""}`, returnByValue: true }, work);
+    return String(reply.result.value ?? "");
+  };
+
   /** 像用户一样从 from 的开头拖到 to 的结尾，点「解释」，返回这次发给模型的内容。 */
   const explain = async (path: string, from: string, to: string) => {
     await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${port}${path}` }, work);
@@ -102,18 +116,26 @@ try {
     const point = await until(explainPoint, 10_000, "解释");
     await sleep(200);
     for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, button: "left", clickCount: 1, ...point }, work);
-    await until(async () => asked.length > before || undefined, 30_000, "解释请求");
+    if (LIVE) await until(async () => { const text = await answerText(); return text.length > 20 && !/正在|思考/.test(text.slice(0, 4)) ? text : undefined; }, 90_000, "真模型回答");
+    else await until(async () => asked.length > before || undefined, 30_000, "解释请求");
+    await sleep(LIVE ? 3000 : 0);
     await rp.screenshot(work, join(out, `${path.slice(1)}.png`));
-    return { selected, sent: asked[asked.length - 1]! };
+    return { selected, sent: asked[asked.length - 1] ?? "", answer: LIVE ? await answerText() : "" };
   };
 
   const divs = await explain("/divs", "#pick-text", "#pick-text");
+  if (LIVE) {
+    check("真模型 div 排版：回答说出「这个决定」是换锌版", /锌/.test(divs.answer), { answer: divs.answer.slice(0, 300) });
+    const cross = await explain("/cross", "#a-text", "#b-text");
+    check("真模型 跨段选中：回答说出「这个决定」是换锌版", /锌/.test(cross.answer), { answer: cross.answer.slice(0, 300) });
+    throw new Error("live-done");
+  }
   check("div 排版：请求里有前一段的线索和小节标题", divs.sent.includes(CLUE) && divs.sent.includes(HEADING), { selected: divs.selected, clue: divs.sent.includes(CLUE), heading: divs.sent.includes(HEADING) });
 
   const cross = await explain("/cross", "#a-text", "#b-text");
   check("跨段选中：请求里有选区之外的前文线索", cross.selected.includes("老师傅") && cross.selected.includes("贵重订单") && cross.sent.includes(CLUE), { selected: cross.selected.slice(0, 80), clue: cross.sent.includes(CLUE) });
 } catch (error) {
-  check("流程完成", false, String(error));
+  if (!String(error).includes("live-done")) check("流程完成", false, String(error));
 } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, dependency: "isolated real extension; scripted local model; local practice pages" }, null, 2));
   await rp.close();

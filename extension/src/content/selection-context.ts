@@ -21,7 +21,12 @@ export function selectionSurrounding(range: Range, text: string, limit: number):
     el = parent;
   }
 
-  const full = squash((el as HTMLElement).innerText ?? el.textContent ?? '');
+  // 输入框的值本来不在 innerText 里；可编辑区（草稿、评论框）在，要去掉：那是用户还没发出的字，不是页面内容。
+  let full = squash((el as HTMLElement).innerText ?? el.textContent ?? '');
+  for (const draft of el.querySelectorAll('[contenteditable="true"],[contenteditable=""]')) {
+    const typed = squash((draft as HTMLElement).innerText ?? '');
+    if (typed) full = full.split(typed).join(' ');
+  }
   const at = full.indexOf(want.slice(0, 60));
   const side = Math.max(0, Math.floor((limit - Math.min(want.length, limit / 3)) / 2));
   const start = at < 0 ? 0 : Math.max(0, at - side);
