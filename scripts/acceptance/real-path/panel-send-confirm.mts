@@ -43,7 +43,7 @@ const sent = () => posts.filter(p => p === "/send").length;
 
 const clickSend = { tool: { name: "click", args: { target: "#send", label: "发送" } } };
 
-const ASK = { p1: "案例P1：把草稿发出去。", p2: "案例P2：把草稿发出去。", p3: "案例P3：把草稿发出去。", p4: "案例P4：把草稿发出去。", p5: "案例P5：把草稿发出去。" };
+const ASK = { p1: "案例P1：把草稿发出去。", p2: "案例P2：把草稿发出去。", p3: "案例P3：把草稿发出去。", p4: "案例P4：把草稿发出去。", p5: "案例P5：把草稿发出去。", p6: "案例P6：把草稿发出去。" };
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
@@ -115,9 +115,9 @@ try {
   await rp.screenshot(panel, join(out, "p1-panel-waiting.png"));
   const c1 = await liveCard(panel);
   const c1b = await liveCard(panel2);
-  check("p1 两个侧栏都出卡，写网站、按钮、表单里的草稿，不写备忘", [c1, c1b].every(c => c.text.includes(host) && c.text.includes("「发送」") && c.text.includes(`「${DRAFT}」`) && !c.text.includes("备忘")), { c1, c1b, host });
-  const runTitle = String(await rp.evaluate(panel, '[...document.querySelectorAll(".run-steps")].at(-1)?.querySelector(".run-title")?.textContent ?? ""'));
-  check("p1 过程行标题写「等你确认发送」", runTitle.includes("等你确认发送"), { runTitle });
+  check("p1 两个侧栏都出卡，写网站、按钮、表单里的草稿，不写备忘", [c1, c1b].every(c => c.text.includes(host) && c.text.includes("「发送」") && c.text.includes(DRAFT) && !c.text.includes("备忘") && !/POST\s+\//.test(c.text)), { c1, c1b, host });
+  const docked = await rp.evaluate(panel, `(() => { const dock = document.querySelector("#confirm-dock"); const card = dock?.querySelector(".send-confirm"); return { hidden: dock?.hidden ?? true, inDock: !!card, title: card?.querySelector(".send-confirm-title")?.textContent ?? "", wait: card?.querySelector(".send-confirm-wait")?.textContent ?? "" }; })()`) as { hidden: boolean; inDock: boolean; title: string; wait: string };
+  check("p1 待确认钉在输入框上方，并显示倒计时", docked.inDock && !docked.hidden && /要在/.test(docked.title) && /已等/.test(docked.wait), docked);
   // 脚本合成的点击（isTrusted 为 false）不算用户点的。
   await rp.evaluate(panel, '[...document.querySelectorAll(".send-confirm")].at(-1).querySelector(".send-confirm-yes").click(); true');
   await sleep(1500);
@@ -181,7 +181,7 @@ try {
   await rp.evaluate(panel, `(() => { window.__arm = {}; window.__lines = {}; new MutationObserver(() => {
     for (const c of document.querySelectorAll(".send-confirm")) { const id = c.dataset.sendConfirm; if (c.querySelector(".send-confirm-yes")) window.__arm[id] ??= performance.now();
       const line = c.querySelector(".send-confirm-line")?.textContent; if (line) { const seen = (window.__lines[id] ??= []); if (seen.at(-1) !== line) seen.push(line); } }
-  }).observe(document.querySelector("#messages"), { childList: true, subtree: true, characterData: true });
+  }).observe(document.body, { childList: true, subtree: true, characterData: true });
   document.addEventListener("click", e => { if (e.target.closest?.(".send-confirm-yes")) window.__yesClick = performance.now(); }, true); return true; })()`);
   const before5 = sent();
   await ask(ASK.p5);
@@ -203,6 +203,28 @@ try {
   await answered("P5 完成。").catch(() => {});
   const lines5 = (await rp.evaluate(panel, `window.__lines[${JSON.stringify(c5.id)}] ?? []`)) as string[];
   check("p5 一秒后再点：恰好 1 条；点下去以前卡上写「你确认了发送」，点下去以后才写「已发送」", sent() - before5 === 1 && !("timedOut" in done5) && lines5[0] === "你确认了发送" && lines5.at(-1) === SENT_LINE, { sentDelta: sent() - before5, lines5, done5 } as Json);
+
+  // ── p6：等确认时切到别的会话，旧卡不能跟过去；切回来仍回答同一个等待 ──
+  const original6 = String(await rp.evaluate(panel, 'document.querySelector("#conversation-menu [aria-checked=true]")?.dataset.conversationId ?? ""'));
+  const before6 = sent();
+  await ask(ASK.p6);
+  const c6 = await liveCard(panel);
+  await rp.click(panel, "#conversation-new");
+  await until(async () => await rp.evaluate(panel, `document.querySelector("#conversation-menu [aria-checked=true]")?.dataset.conversationId !== ${JSON.stringify(original6)}`), 10_000, "切到新会话");
+  const away6 = await rp.evaluate(panel, `(() => ({ visible: [...document.querySelectorAll(".send-confirm")].filter(c => c.getClientRects().length > 0).length, dockHidden: document.querySelector("#confirm-dock")?.hidden ?? true }))()`) as { visible: number; dockHidden: boolean };
+  await rp.screenshot(panel, join(out, "p6-other-conversation.png"));
+  check("p6 等待确认时切到新会话：旧卡消失，确认区收起", away6.visible === 0 && away6.dockHidden, away6);
+  await rp.click(panel, "#conversation-switcher");
+  // 菜单最高占半屏：原会话那行可能在可见范围以外，先滚进来再点，和用户一样。
+  const menu6 = await rp.evaluate(panel, `(() => { const b = document.querySelector('#conversation-menu [data-conversation-id="${original6}"]'); b?.scrollIntoView({ block: "nearest" }); return { found: !!b, ids: [...document.querySelectorAll("#conversation-menu [data-conversation-id]")].map(e => e.dataset.conversationId + ":" + e.getAttribute("aria-checked")) }; })()`) as Json;
+  await rp.click(panel, `#conversation-menu [data-conversation-id="${original6}"]`);
+  const selected6 = await until(async () => await rp.evaluate(panel, `document.querySelector("#conversation-menu [aria-checked=true]")?.dataset.conversationId === ${JSON.stringify(original6)} || undefined`), 10_000, "切回原会话").then(() => true, () => false);
+  check("p6 点菜单切回原会话", selected6, menu6);
+  const back6 = await liveCard(panel);
+  check("p6 切回原会话：恢复同一张待确认卡", back6.id === c6.id, { before: c6, after: back6 });
+  await press(panel, back6.id, "no");
+  const done6 = await settledCard(panel, DECLINED_LINE);
+  check("p6 切回来后选择先不发：没有发送，原会话卡收成结果", sent() === before6 && !("timedOut" in done6), { sent: sent(), before: before6, done6 } as Json);
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, posts, notCovered: ["真实网站、真模型", "2 分钟没理（产品没有缩短等待的开关）", "扩展后台重启时卡收成「这次确认已经结束」"] }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));
