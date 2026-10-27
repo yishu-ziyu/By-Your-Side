@@ -32,6 +32,20 @@ function firstClauseEnd(text: string): number {
 /** 换段时每轮带的相邻段落短一些：一张卡换几段也放得进问答总长。 */
 const TURN_SURROUNDING_LIMIT = 1000;
 
+/** 划词上下文开头可能是「小节：」一行：截短时留住这一行，再以选中文字所在处为中心取，不只留开头。 */
+function aroundSelection(text: string, picked: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const head = text.startsWith('小节：') ? text.slice(0, text.indexOf('\n') + 1) : '';
+  const rest = text.slice(head.length);
+  const room = limit - head.length;
+  const probe = picked.replace(/\s+/g, ' ').trim().slice(0, 40);
+  const at = probe ? rest.indexOf(probe) : -1;
+  const center = at < 0 ? rest.length / 2 : at + Math.min(probe.length, room / 3) / 2;
+  const from = Math.max(0, Math.min(rest.length - room, Math.floor(center - room / 2)));
+
+  return head + rest.slice(from, from + room);
+}
+
 function sentencesEnd(text: string): number {
   let end = 0;
 
@@ -103,7 +117,7 @@ export function installReading(deps: Dependencies) {
     const previousTurns = retry ? record.turns.slice(0, -1) : record.turns;
     const given = raw.source && typeof raw.source === 'object' ? raw.source as Record<string, unknown> : undefined;
     const pointed = given && typeof given.text === 'string' && typeof given.surrounding === 'string'
-      ? {text: given.text, surrounding: given.surrounding.slice(0, TURN_SURROUNDING_LIMIT)} : retry ? last.source : undefined;
+      ? {text: given.text, surrounding: aroundSelection(given.surrounding, given.text, TURN_SURROUNDING_LIMIT)} : retry ? last.source : undefined;
 
     if (pointed && !isReadingTurnSource(pointed)) throw new Error('选中的文字太长，或读不出来。');
     const current = [...previousTurns].reverse().find(t => t.source)?.source?.text ?? record.source.text;
