@@ -39,6 +39,8 @@ function readMainText(max: number): { text: string; totalChars: number; url: str
 
   const walk = (el: Element, inCell: boolean): void => {
     if (SKIP.has(el.tagName) || el.getAttribute("aria-hidden") === "true" || el.getAttribute("role") === "navigation" || !visible(el)) return;
+    // 老式文章只用 <br> 分段、用 <b> 当小节标题：不换行的话标题会粘进上下文，模型看不出文章分节。
+    if (el.tagName === "BR") { out.push("\n"); return; }
     const display = getComputedStyle(el).display;
     // 表格一行一行：单元格之间空格，信息框不会一格一行。
     const cell = display === "table-cell";
