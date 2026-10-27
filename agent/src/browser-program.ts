@@ -36,6 +36,8 @@ export class ProgramAssertError extends Error {
 
 interface ProgramOptions {
   code: string;
+  input?: unknown;
+  allowedMethods?: readonly string[];
   call(name: ToolName, params: Record<string, unknown>, stepId?: string, origin?: "readonly-poll"): Promise<unknown>;
   signal?: AbortSignal;
   id?: string;
@@ -160,7 +162,11 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 /** 用户程序体。 */
 function programSource(options: ProgramOptions): string {
-  return `(async()=>{const value=await(async()=>{\n${options.code}\n})();return JSON.stringify(value===undefined?null:value);})()`;
+  const input = options.input === undefined ? undefined : JSON.stringify(options.input);
+  if (options.input !== undefined && input === undefined) throw new Error("Browser program input must be JSON-serializable");
+  const declaration = input === undefined ? "" : `const input=JSON.parse(${JSON.stringify(input)});`;
+
+  return `(async()=>{${declaration}const value=await(async()=>{\n${options.code}\n})();return JSON.stringify(value===undefined?null:value);})()`;
 }
 
 /** Isolated JS heap. The only host capability is the existing, serialized browser RPC. */
@@ -172,7 +178,9 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   notes: string[];
 }> {
   if (options.code.length > 64_000) throw new Error("Browser program exceeds 64000 characters");
-  const METHODS = programMethods({ saveFile: !!options.saveFile });
+  const allowed = options.allowedMethods ? new Set(options.allowedMethods) : null;
+  const METHODS = programMethods({ saveFile: !!options.saveFile })
+    .filter(name => !allowed || allowed.has(name) || allowed.has(RPC_ALIASES[name] ?? name));
   const SNAKE = Object.fromEntries(Object.entries(HELPER_SNAKE_ALIASES).filter(([, name]) => METHODS.includes(name)));
   const FACADE = [...METHODS, ...Object.keys(SNAKE)];
   const notes = new Set<string>();

@@ -75,6 +75,13 @@ import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
 import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, siteTitle, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
 import { siteMethodHint, siteMethodsFor } from "../../shared/site-methods.js";
+import { Value } from "typebox/value";
+import { LearnedOperationStore, embedsValue, learnedOperationHint, runLearnedOperation, validateLearnedCandidate, type LearnedOperationRuntime } from "./learned-operations.js";
+import { operationOrigin, type LearnedOperation, type LearnedOperationResult } from "../../shared/learned-operations.js";
+
+const SAVE_OPERATION_INTENT = /记住|记下|记录下|保存|存下|存成|存起来|学会|save|remember/i;
+const DELETE_OPERATION_INTENT = /删除|删掉|删了|忘掉|忘记|不要.*做法|移除|delete|remove|forget/i;
+const LEARNED_SOURCE_TTL_MS = 30 * 60_000;
 
 /** Trusted input policy; tools and the original page/attachments stay available. */
 export interface UserInputOptions { conversationOnly?: boolean; pageObservation?: "on-demand"; pages?: PageContext[]; voiceHistory?: VoiceConversationContext['recentTurns']; spoken?: boolean }
@@ -130,6 +137,8 @@ export interface SessionCreateOptions {
   taskHistory?: TaskHistoryStore;
   /** 站点笔记：只给主会话；做成的任务写，打开这个网站时带上。 */
   siteNotes?: SiteNotesStore;
+  /** 用户明确保存的只读可执行做法；工人会话没有。 */
+  learnedOperations?: LearnedOperationStore;
   /** 用户打开了「回答里的小程序」实验功能：打开时每次运行的上下文附上小程序写法。 */
   miniApps?: () => Promise<boolean>;
   /** 设置页选的翻译风格（接在翻译提示词后的说明）；默认风格为空字符串。 */
@@ -215,7 +224,7 @@ function loopModel(models: ModelPort, pattern: string | undefined) {
 const PAGE_CHANGE_TOOLS = new Set(["page_translation", "navigate", "open_tab", "click", "double_click", "fill", "type_text", "press_key", "js", "mark", "accept_dialog", "dismiss_dialog"]);
 
 /** 由多个浏览器步骤组成的工具：步骤作为子步骤上报，结果里带实际执行的步数。 */
-const PROGRAM_TOOLS = new Set(["browser_run"]);
+const PROGRAM_TOOLS = new Set(["browser_run", "learned_operation"]);
 
 export class BrowserAgentSession {
   private activeGoal:string|null=null;
@@ -857,6 +866,11 @@ if(required.includes(key))candidates.set(key,attachment);
             siteNotesFor: url => resultHost?.siteNotesFor(url) ?? Promise.resolve(null),
             openForUser: () => resultHost?.userAskedToOpen() ?? false,
             observeCall: (name, params, result) => resultHost?.observeBrowserCall(name, params, result),
+            learnedOperations: {
+              save: (candidate, runtime) => resultHost!.saveLearnedOperation(candidate, runtime),
+              run: (id, input, runtime) => resultHost!.runSavedLearnedOperation(id, input, runtime),
+              delete: (id, runtime) => resultHost!.deleteLearnedOperation(id, runtime),
+            },
           }, (blocks, language, signal, meta) => { if (!resultHost) throw new Error("翻译会话不可用");
 
  return resultHost.translatePageBatch(blocks, language, signal, meta); })),
@@ -954,9 +968,10 @@ if(required.includes(key))candidates.set(key,attachment);
 
       if(productContext)productContext.onProjection=data=>wrapper.runTrace.record("harness_context",data);
       wrapper.siteNotes = options?.memberId ? null : options?.siteNotes ?? null;
+      wrapper.learnedOperations = options?.memberId ? null : options?.learnedOperations ?? null;
       wrapper.translationStyle = options?.translationStyle ?? null;
 
-      if (productContext && wrapper.siteNotes) productContext.siteNotes = url => wrapper.siteNotesFor(url, 1_000);
+      if (productContext && (wrapper.siteNotes || wrapper.learnedOperations)) productContext.siteNotes = url => wrapper.siteNotesFor(url, 1_000);
 
       if (productContext && !options?.memberId && options?.miniApps) productContext.miniApps = options.miniApps;
       wrapper.bindDeliveryRun = (getRunId) => { runIdSlot.current = getRunId; wrapper.deliveryRunId = getRunId; };
@@ -1730,6 +1745,12 @@ return;}
 
   /** 站点笔记的存放处；工人会话没有。 */
   private siteNotes: SiteNotesStore | null = null;
+  private learnedOperations: LearnedOperationStore | null = null;
+  private learnedOperationsShown: { runId: string | null; ids: Set<string> } = { runId: null, ids: new Set() };
+  private lastVerifiedOperationSource: { runId: string; goal: string[]; goalPage: GoalCheckInput["goalPage"]; endedOn: string; at: number } | null = null;
+  private learnedOperationsFailed: { runId: string | null; ids: Set<string> } = { runId: null, ids: new Set() };
+  /** 调用过保存或删除做法的那一轮：它做成也不能当作下一次保存的来源。 */
+  private learnedOperationWriteRun: string | null = null;
   private translationStyle: (() => string) | null = null;
 
   private translationStyleText(): string {
@@ -1752,23 +1773,32 @@ return;}
     const methodHint = siteMethodHint(url);
     const empty = { host: "", notes: [] as string[] };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const read = this.siteNotes?.notesFor(url).catch(() => empty) ?? Promise.resolve(empty);
+    const notesRead = this.siteNotes?.notesFor(url).catch(() => empty) ?? Promise.resolve(empty);
+    const operationsRead = this.learnedOperations?.operationsFor(url).catch(() => [] as LearnedOperation[]) ?? Promise.resolve([] as LearnedOperation[]);
+    const read = Promise.all([notesRead, operationsRead]);
     // 限时读（任务开始时用）：超时就当没有笔记，也不记成「这一轮带过」，之后打开这个网站时还能带上。
-    const stored = timeoutMs === undefined ? await read : await Promise.race([read, new Promise<typeof empty>(resolve => { timer = setTimeout(() => resolve(empty), timeoutMs); })]).finally(() => clearTimeout(timer));
+    const [stored, operations] = timeoutMs === undefined ? await read : await Promise.race([read, new Promise<[typeof empty, LearnedOperation[]]>(resolve => { timer = setTimeout(() => resolve([empty, []]), timeoutMs); })]).finally(() => clearTimeout(timer));
     const { notes } = stored;
-    const host = stored.host || (methodHint ? new URL(url).hostname : "");
+    const host = stored.host || (methodHint || operations.length ? new URL(url).hostname : "");
 
-    if (!host || (!notes.length && !methodHint)) return null;
+    if (!host || (!notes.length && !methodHint && !operations.length)) return null;
     const runId = this.deliveryRunId();
 
     if (this.siteNotesShown.runId !== runId) this.siteNotesShown = { runId, hosts: new Set() };
     if (this.siteMethodsShown.runId !== runId) this.siteMethodsShown = { runId, hosts: new Set() };
+    if (this.learnedOperationsShown.runId !== runId) this.learnedOperationsShown = { runId, ids: new Set() };
     const key = siteKey(host);
     const parts: string[] = [];
     if (methodHint && !this.siteMethodsShown.hosts.has(key)) {
       this.siteMethodsShown.hosts.add(key);
       this.runTrace.record("site_methods", { phase: "offered", host, methods: siteMethodsFor(url).map(method => ({ id: method.id, version: method.version })) });
       parts.push(methodHint);
+    }
+    const freshOperations = operations.filter(operation => !this.learnedOperationsShown.ids.has(operation.id));
+    if (freshOperations.length) {
+      for (const operation of freshOperations) this.learnedOperationsShown.ids.add(operation.id);
+      this.runTrace.record("learned_operations", { phase: "offered", host, operations: freshOperations.map(operation => ({ id: operation.id, version: operation.format })) });
+      parts.push(learnedOperationHint(freshOperations));
     }
     if (notes.length && !this.siteNotesShown.hosts.has(key)) {
       this.siteNotesShown.hosts.add(key);
@@ -1777,6 +1807,115 @@ return;}
       parts.push(formatSiteNotes(host, notes));
     }
     return parts.length ? parts.join("\n\n") : null;
+  }
+
+  /** 保存、删除只在用户这一句明确要求时才落盘，不靠工具说明让模型自觉；取消或换了一轮就不写。 */
+  private learnedOperationWriteGuard(intent: RegExp, signal: AbortSignal | undefined): () => boolean {
+    if (this.memberId || !intent.test(this.activeGoal ?? "")) throw new Error("用户这一句没有明确要求保存或删除网站做法，没有改动。");
+    const runId = this.deliveryRunId(), epoch = this.controlEpoch;
+    this.learnedOperationWriteRun = runId;
+
+    return () => !signal?.aborted && this.deliveryRunId() === runId && this.controlEpoch === epoch;
+  }
+
+  /** 让核对模型对照当前页面确认做法返回的数据；页面经工具层读取，取消和执行闸门照常生效。 */
+  private async confirmOperationResult(goal: string[], goalPage: GoalCheckInput["goalPage"], result: Extract<LearnedOperationResult, { data: unknown }>, steps: readonly ProgramStep[], site: string, runtime: LearnedOperationRuntime, commit: () => boolean): Promise<string | null> {
+    const model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+    const side = this.sideHost();
+    if (!model || !side) return "保存前的核对模型不可用";
+    const page = await runtime.call("snapshot", {}) as { title?: unknown; url?: unknown; text?: unknown; tabId?: number };
+    if (typeof page.url !== "string" || typeof page.text !== "string" || operationOrigin(page.url) !== site) return "核对时当前页面已不在这个网站";
+    if (!commit()) return "保存已取消";
+    const observations = steps.filter(step => step.phase === "end").slice(-8).map(step => ({
+      tool: step.name,
+      text: redactCredentialText(step.read?.text ?? JSON.stringify(step.result ?? step.error ?? "")).slice(0, 4_000),
+    }));
+    const verdict = await checkGoal(side, model, {
+      goal,
+      goalPage,
+      lastReply: JSON.stringify({ status: result.status, data: result.data, sourceUrl: result.sourceUrl }),
+      page: { title: String(page.title ?? ""), url: page.url, text: page.text, ...(typeof page.tabId === "number" ? { tabId: page.tabId } : {}) },
+      observations,
+    }, runtime.signal ?? AbortSignal.timeout(20_000));
+
+    return verdict.status === "done" ? null : `${verdict.status}：${verdict.remaining ?? "结果与页面不一致"}`;
+  }
+
+  async saveLearnedOperation(candidate: unknown, runtime: LearnedOperationRuntime): Promise<{ status: "saved"; operationId: string; name: string; steps: number }> {
+    const source = this.lastVerifiedOperationSource, store = this.learnedOperations;
+
+    try {
+      if (!store) throw new Error("保存的网站做法当前不可用。");
+      const commit = this.learnedOperationWriteGuard(SAVE_OPERATION_INTENT, runtime.signal);
+      if (!source || source.runId === this.deliveryRunId() || Date.now() - source.at > LEARNED_SOURCE_TTL_MS) throw new Error("最近半小时内没有核对做成的上一个任务；先把任务做成一次，再让我记住做法。");
+      validateLearnedCandidate(candidate);
+      const site = operationOrigin(source.endedOn);
+      if (!site) throw new Error("上一个任务停在的页面不是普通网页，不能保存做法。");
+      const draft = {
+        site,
+        name: candidate.name.trim(),
+        purpose: candidate.purpose.trim(),
+        inputSchema: candidate.inputSchema,
+        outputSchema: candidate.outputSchema,
+        code: candidate.code,
+        sourceRunId: source.runId,
+      };
+      const now = Date.now();
+      const operation: LearnedOperation = { format: 1, id: randomUUID(), effect: "read", ...draft, createdAt: now, lastVerifiedAt: now, stats: { successes: 0, failures: 0 } };
+      const collect = (into: ProgramStep[]): LearnedOperationRuntime => ({ ...runtime, onStep: step => { into.push(step); runtime.onStep?.(step); } });
+      const exampleSteps: ProgramStep[] = [];
+      const example = await runLearnedOperation(operation, candidate.exampleInput, collect(exampleSteps));
+      if (example.status !== "observed") throw new Error(`原输入验证失败（${example.status}）：${"reason" in example ? example.reason : "原任务查到了内容，做法却没有读到"}`);
+      if (embedsValue(candidate.code, [example.data])) throw new Error("程序里直接写着这次读到的答案；做法必须每次从页面读取，没有保存。");
+      const original = await this.confirmOperationResult(source.goal, source.goalPage, example, exampleSteps, site, runtime, commit);
+      if (original) throw new Error(`原输入没有通过原目标核对（${original}）`);
+      const validationSteps: ProgramStep[] = [];
+      const validation = await runLearnedOperation(operation, candidate.validationInput, collect(validationSteps));
+      if (validation.status !== candidate.validationExpect) {
+        const reason = validation.status === "observed" || validation.status === "empty" ? `预期 ${candidate.validationExpect}，实际 ${validation.status}` : ("reason" in validation ? validation.reason : validation.status);
+        throw new Error(`第二组输入验证失败（${validation.status}）：${reason}`);
+      }
+      if (validation.status === "observed" && Value.Equal(validation.data, example.data)) throw new Error("两组不同输入读到了完全相同的数据，像是固定答案；没有保存。");
+      // 核对目标只用用户原话和宿主写的说明：模型写的 purpose 不能当成给核对模型的指令。
+      const fresh = await this.confirmOperationResult([`用户原来的请求：${source.goal.join("；")}。这次把其中的查询条件换成 ${JSON.stringify(candidate.validationInput)}，结果应是按这组条件读出的当前内容。`], null, validation, validationSteps, site, runtime, commit);
+      if (fresh) throw new Error(`第二组输入的结果没有通过页面核对（${fresh}）`);
+      const saved = await store.add(draft, commit);
+      this.runTrace.record("learned_operations", { phase: "saved", operationId: saved.id, version: saved.format, site: saved.site });
+
+      return { status: "saved", operationId: saved.id, name: saved.name, steps: example.steps + validation.steps };
+    } catch (error) {
+      this.runTrace.record("learned_operations", { phase: "failed", reason: redactCredentialText(error instanceof Error ? error.message : String(error)).slice(0, 80) });
+      throw error;
+    }
+  }
+
+  async runSavedLearnedOperation(id: string, input: unknown, runtime: LearnedOperationRuntime): Promise<LearnedOperationResult> {
+    const store = this.learnedOperations;
+    if (!store) return { status: "invalid_input", operationId: id, reason: "保存的网站做法当前不可用。", steps: 0 };
+    // 不按「这一轮提示过」放行：模型也会用历史里见过的编号。站点边界由运行器按当前工作标签页的完整来源检查。
+    const operation = await store.get(id);
+    if (!operation) return { status: "invalid_input", operationId: id, reason: "没有找到这个已保存做法；只能使用当前站点给出的编号。", steps: 0 };
+    if (this.learnedOperationsFailed.runId === this.deliveryRunId() && this.learnedOperationsFailed.ids.has(id)) return { status: "unavailable", operationId: id, reason: "这个做法这一轮已经失败过，不再重试；请改用普通浏览器步骤。", steps: 0 };
+    this.runTrace.record("learned_operations", { phase: "used", operationId: id, version: operation.format });
+    const result = await runLearnedOperation(operation, input, runtime);
+    if (result.status !== "observed" && result.status !== "empty" && result.status !== "invalid_input") {
+      if (this.learnedOperationsFailed.runId !== this.deliveryRunId()) this.learnedOperationsFailed = { runId: this.deliveryRunId(), ids: new Set() };
+      this.learnedOperationsFailed.ids.add(id);
+    }
+    await store.recordRun(id, result).catch(() => {
+      this.runTrace.record("learned_operations", { phase: "stats_failed", operationId: id });
+    });
+
+    return result;
+  }
+
+  async deleteLearnedOperation(id: string, runtime: LearnedOperationRuntime): Promise<{ status: "deleted" | "not_found"; operationId: string; steps: 0 }> {
+    if (!this.learnedOperations) throw new Error("保存的网站做法当前不可用。");
+    const commit = this.learnedOperationWriteGuard(DELETE_OPERATION_INTENT, runtime.signal);
+    const deleted = await this.learnedOperations.delete(id, commit);
+    this.runTrace.record("learned_operations", { phase: "deleted", operationId: id, deleted });
+
+    return { status: deleted ? "deleted" : "not_found", operationId: id, steps: 0 };
   }
 
   /**
@@ -3406,6 +3545,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
 
     if (verdict) {
+      if (verdict.status === "done" && snapshot?.runId && snapshot.goal && endedOn && snapshot.runId !== this.learnedOperationWriteRun) {
+        this.lastVerifiedOperationSource = {
+          runId: snapshot.runId,
+          goal: snapshot.recoveryInput?.requirements ?? [snapshot.goal],
+          goalPage: snapshot.goalPage ?? null,
+          endedOn,
+          at: Date.now(),
+        };
+      }
       // 催满次数或跑得太久仍判「没做完」：留作「还差」，交给用户决定；不再自动接着做。
       const settled: Extract<AgentUiEvent, { kind: "goal_check" }> = { kind: "goal_check", status: continuation && "settle" in continuation ? continuation.settle : "open" };
 
