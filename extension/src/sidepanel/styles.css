@@ -2998,6 +2998,13 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .pskill-row { display: grid; grid-template-columns: 22px 1fr auto auto; align-items: center; gap: 6px; padding: 6px 4px; font-size: var(--fs-ui); color: var(--text-primary); border-bottom: 1px solid var(--glass-border-subtle); }
 .pskill-row .pskill-name { overflow: hidden; text-overflow: ellipsis; }
 .pskill-sheet > .pskill-btn.primary { align-self: flex-start; }
+/* 可直接运行的技能：图标用 lucide，名字后一枚「直接运行」或网站名。 */
+.pskill-item.pskill-op { grid-template-columns: 22px minmax(0, max-content) auto minmax(0, 1fr); }
+.pskill-emoji svg { width: 14px; height: 14px; vertical-align: -2px; color: var(--accent); }
+.pskill-badge { font-size: var(--fs-micro); color: var(--accent); border: 1px solid var(--accent-soft); border-radius: var(--radius-pill); padding: 0 6px; white-space: nowrap; }
+.pskill-check { display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-meta); color: var(--text-secondary); }
+.pskill-check input { margin: 2px 0 0; accent-color: var(--accent); }
+.answer-actions .skill-undo { width: auto; padding: 0 8px; font-size: var(--fs-code); color: var(--text-secondary); }
 .pskill-form { display: flex; flex-direction: column; gap: 10px; }
 .msg.user .pskill-save { display: block; margin: 4px 0 -2px auto; border: 0; background: transparent; padding: 0; font: inherit; font-size: var(--fs-micro); color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity var(--m-quick) var(--e-glide); }
 .msg.user:hover .pskill-save, .msg.user .pskill-save:focus-visible { opacity: 1; }

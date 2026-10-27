@@ -1,7 +1,7 @@
 /** Real model + real public Wikipedia. Requires an existing ChatGPT login; never included in the credential-free suite. */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { REPO, launchRealPath, requireHeadless, until, type Json } from "./harness.mts";
+import { REPO, launchRealPath, requireHeadless, sleep, until, type Json } from "./harness.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 
 requireHeadless();
@@ -45,6 +45,13 @@ if ("error" in plan) {
     const stored = await readOperations() as { operations?: Array<Record<string, unknown>> } | null;
     const operation = stored?.operations?.[0];
     check("真实模型生成并保存一个做法", stored?.operations?.length === 1 && typeof operation?.code === "string" && !operation.code.includes("故宫"), { count: stored?.operations?.length ?? 0, operation: operation ? { id: operation.id, name: operation.name, site: operation.site, stats: operation.stats } : null });
+    const title = (ask: string) => rp.evaluate(panel, `(() => { const user = [...document.querySelectorAll(".msg.user")].reverse().find(m => m.textContent.includes(${JSON.stringify(ask)})); let node = user?.nextElementSibling; while (node && !node.matches("details.run-steps")) node = node.nextElementSibling; return node?.querySelector("summary")?.textContent?.replace(/\\s+/g, " ").trim() ?? null; })()`) as Promise<string | null>;
+    const savedTitle = await title("把刚才搜索维基百科结果的做法记住");
+    check("保存那一轮写明存成了技能", !!savedTitle?.includes("存成技能「"), savedTitle);
+    // 记忆的「要我记住吗」是这一轮结束后在后台判的：多等一会儿再看有没有冒出来。
+    await sleep(8_000);
+    const asks = await rp.evaluate(panel, `[...document.querySelectorAll(".memory-ask")].map(a => a.textContent.trim().slice(0, 80))`) as string[];
+    check("存成技能后不再问要不要记住", asks.length === 0, asks);
     await rp.screenshot(panel, join(out, "saved.png"));
 
     const successesBefore = Number((operation?.stats as { successes?: number } | undefined)?.successes ?? 0);
@@ -54,6 +61,8 @@ if ("error" in plan) {
     const page = await rp.evaluate(work, "({url:location.href,text:document.body.innerText.slice(0,12000)})") as { url: string; text: string };
     const answer = await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].at(-1)?.textContent??""') as string;
     check("真实模型换查询词复用并读到新结果", Number(stats?.successes ?? 0) > successesBefore && /search=.*长城|长城.*search=/.test(decodeURIComponent(page.url)) && page.text.includes("长城") && answer.includes("长城"), { successesBefore, stats, url: decodeURIComponent(page.url), answer: answer.slice(0, 800), pageContains: page.text.includes("长城") });
+    const reusedTitle = await title("换成长城，再列出前 3 个结果标题");
+    check("复用那一轮写明用了哪个技能", !!reusedTitle?.includes("用了技能「"), reusedTitle);
     await rp.screenshot(panel, join(out, "reused.png"));
   } catch (error) {
     check("真实模型公开网站流程", false, String(error));

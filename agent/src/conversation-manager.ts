@@ -34,6 +34,7 @@ import type {VoiceTurnPreparation} from './voice-model.js';
 import {VoiceIntentError} from './voice-errors.js';
 import {pageRecoveryKey} from './task-recovery.js';
 import {redactTaskSecrets, type TaskHistoryStore} from './task-history.js';
+import type { LearnedOperationStore } from './learned-operations.js';
 import {memoryHostOfUrl} from '../../shared/memory.js';
 import type {BrowseHabit} from '../../shared/browse-habits.js';
 import {asksUser} from './goal-check.js';
@@ -833,6 +834,8 @@ return { kind: "silent" };}
   }
   /** 过往任务：宿主在 host-core 里接上；没有就不记。 */
   taskHistory?: TaskHistoryStore;
+  /** 可直接运行的技能（存下的只读程序）：侧栏「/ 技能」和「管理技能」列出、删除。 */
+  learnedOperations?: LearnedOperationStore;
   /** 各模型的手动起始档；自动升档只属于各自正在执行的会话。 */
   private readonly thinkingPreferences = new Map<string, import('../../shared/protocol.js').ThinkingLevel | null>();
 
@@ -1929,6 +1932,19 @@ return;}
         this.emit({ type: "task_history_result", conversationId: id, requestId: message.requestId, ok: true, tasks });
       } catch (error) {
         this.emit({ type: "task_history_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+
+      return;
+    }
+
+    if (message.type === "skill_operations_list" || message.type === "skill_operation_delete") {
+      try {
+        if (!this.learnedOperations) throw new Error("可直接运行的技能不可用");
+        if (message.type === "skill_operation_delete") await this.learnedOperations.delete(message.id);
+        const operations = (await this.learnedOperations.list()).map(({ id, name, purpose, site }) => ({ id, name, purpose, site }));
+        this.emit({ type: "skill_operations_result", conversationId: id, requestId: message.requestId, ok: true, operations });
+      } catch (error) {
+        this.emit({ type: "skill_operations_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
       }
 
       return;
