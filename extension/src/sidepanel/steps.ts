@@ -357,6 +357,8 @@ export const HELD_TEXT: Record<HeldReason, string> = {
   declined: "你选择不发送：草稿留在页面上，不会发出，要发时再跟我说",
   repeat: "你选择不发送：这次没再问，草稿留在页面上",
   busy: "没发：前一个确认还在等你",
+  send_changed: "没发：确认后的内容、收件人或目标已变化",
+  send_unverified: "没发：无法核对发送内容",
   // 教学一步没完成：照实说，不画成失败。
   guide_stopped: "你中止了，这一步没做完",
   guide_left: "你离开了这个页面，这一步没做完",

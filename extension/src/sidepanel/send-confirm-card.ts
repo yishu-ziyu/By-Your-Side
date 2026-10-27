@@ -9,13 +9,15 @@ import type { SendConfirmOutcome, SendConfirmView } from "../../../shared/protoc
 
 const OUTCOMES: readonly SendConfirmOutcome[] = ["send", "decline", "stopped", "left", "timeout"];
 
-const CLICKS: readonly unknown[] = ["yes", "no", "unknown"];
+const CLICKS: readonly unknown[] = ["yes", "no", "unknown", "changed", "unverified"];
 
 /** 「已发送」只在按钮真的点下去以后写；确认了、点击结果还没到时只写确认了。 */
 const SENT_TEXT: Record<NonNullable<SendConfirmView["clicked"]>, string> = {
   yes: "你确认过，已发送",
   no: "你确认了，但没点到发送键，草稿还在",
   unknown: "你确认了发送，没能确认发出去没有，请看一眼网页",
+  changed: "确认后内容、收件人或目标发生变化，未发送；请检查后重新确认",
+  unverified: "无法核对发送内容，未发送；请检查网页",
 };
 
 const OUTCOME_TEXT: Record<Exclude<SendConfirmOutcome, "send">, string> = {

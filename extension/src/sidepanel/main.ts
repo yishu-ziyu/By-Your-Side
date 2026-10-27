@@ -1082,6 +1082,7 @@ function resetConversationRender(): void {
   closeBlocks();
   currentRun = null;
   lastRun = null;
+  sendChangedRuns.clear();
   runStartAt = 0;
   toolChips.clear();
   sessionRun.clear();
@@ -1845,6 +1846,7 @@ let currentRun: RunHost | null = null;
 
 /** finishRun 刚收掉的那一块。全员 idle 后到达的 agent_end 复用它，禁止再开 loader。 */
 let lastRun: RunHost | null = null;
+const sendChangedRuns = new Set<string>();
 
 /** 显式交付气泡：按 delivery.id 只渲染一次，状态更新不重复生成。 */
 const deliveredBubbles = new Map<string, HTMLElement>();
@@ -3389,6 +3391,7 @@ function resumeCardShown(): boolean {
 function runCheckStatus(run: RunHost): { text: string; tone: "ok" | "warn" | null } | null {
   if (!run.receipt || run.receipt.ended !== "completed") return null;
 
+  if (run.root.dataset.runId && sendChangedRuns.has(run.root.dataset.runId)) return null;
   if (run.check === "checking") return { text: "核对中…", tone: null };
 
   if (run.check === "done") return { text: "已核对页面", tone: "ok" };
@@ -4241,7 +4244,15 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // 所有发送路径都以确认事件为准，脚本工具的结果格式不影响拒绝后的回答入口。
       const run = currentRun;
       if (run && ev.confirm?.outcome === "decline") run.sendDeclined = true;
-      if (run && ev.confirm?.outcome === "send" && ev.confirm.clicked === "yes") run.sendDeclined = false;
+      const resultRun = run ?? lastRun;
+      const resultRunId = runId ?? resultRun?.root.dataset.runId;
+      if (resultRunId && (ev.confirm?.clicked === "changed" || ev.confirm?.clicked === "unverified")) {
+        if (sendChangedRuns.size >= 200) sendChangedRuns.delete(sendChangedRuns.values().next().value!);
+        sendChangedRuns.add(resultRunId);
+      }
+      if (resultRun && ev.confirm?.clicked === "yes") resultRun.sendDeclined = false;
+      if (resultRunId && ev.confirm?.clicked === "yes") sendChangedRuns.delete(resultRunId);
+      if (resultRun?.answer && resultRun.receipt && resultRun.root.classList.contains("done") && ev.confirm?.clicked) paintAnsweredTitle(resultRun);
       const card = sendConfirmCard(ev.confirm);
 
       if (card) {

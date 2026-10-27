@@ -39,10 +39,10 @@ function sendSentence(host: string, label: string, content?: string, recipient?:
 }
 
 /** 网页上读「发给谁」：同一表单/容器里的收件人栏，否则页面的主标题。序列化进页面，必须自包含。 */
-export function readRecipientInPage(x: number | null, y: number | null): string | null {
-  const at = x === null || y === null ? document.activeElement : document.elementFromPoint(x, y);
+export function readRecipientInPage(x: number | null, y: number | null, maxLength = 40, target?: Element | null): string | null {
+  const at = target ?? (x === null || y === null ? document.activeElement : document.elementFromPoint(x, y));
   const scope = at?.closest("form,[role=dialog],[role=form],main") ?? document;
-  const clip = (t: string | null | undefined) => { const v = (t ?? "").replace(/\s+/g, " ").trim(); return v ? (v.length > 40 ? v.slice(0, 40) + "…" : v) : null; };
+  const clip = (t: string | null | undefined) => { const v = (t ?? "").replace(/\s+/g, " ").trim(); return v ? (v.length > maxLength ? v.slice(0, maxLength) + "…" : v) : null; };
   for (const el of scope.querySelectorAll<HTMLInputElement>("input,[contenteditable=true]")) {
     const name = [el.name, el.id, el.getAttribute("aria-label"), el.labels?.[0]?.textContent, el.placeholder].join(" ");
     if (/(^|\s)(to|recipients?|收件人|发给)\b/i.test(name) || /收件人|发给/.test(name)) { const v = clip(el.value ?? el.textContent); if (v) return v; }
@@ -55,7 +55,7 @@ export function readRecipientInPage(x: number | null, y: number | null): string 
   return where && where !== name && !where.includes(name) ? `${name}（${where}）` : name;
 }
 
-export interface SendDetails { content?: string; recipient?: string; rect?: { left: number; top: number; width: number; height: number }; route?: SendConfirmView["route"]; /** 请求发往的网站：和所在网页不是同一个时，卡上写请求真正去的地方。 */ host?: string }
+export interface SendDetails { content?: string; recipient?: string; binding?: string; rect?: { left: number; top: number; width: number; height: number }; route?: SendConfirmView["route"]; /** 请求发往的网站：和所在网页不是同一个时，卡上写请求真正去的地方。 */ host?: string }
 
 type Outcome = NonNullable<SendConfirmView["outcome"]>;
 
@@ -103,13 +103,19 @@ const panelPorts = new Set<chrome.runtime.Port>();
 
 /** 用户确认过、还没点下去的那次发送（按这次调用的 guard）：点完再补报真实结果。 */
 const confirmedViews = new WeakMap<SendGuard, SendConfirmView>();
+const confirmedChecks = new WeakMap<SendGuard, () => Promise<void>>();
+
+export async function recheckConfirmedSend(guard: SendGuard): Promise<void> {
+  await confirmedChecks.get(guard)?.();
+}
 
 /**
  * 包住一次 click：用户确认过发送时，点完再告诉侧栏真的点下去没有，卡上的「已发送」只在点下去以后写。
  * 结果是「没执行」时没点到；其余出错不知道点下去没有。
  */
-export async function reportSendClick<T extends { sendConfirmed?: true }>(guard: SendGuard, run: Promise<T>): Promise<T> {
+export async function reportSendClick<T extends { sendConfirmed?: true; heldReason?: HeldReason }>(guard: SendGuard, run: Promise<T>): Promise<T> {
   const report = (clicked: NonNullable<SendConfirmView["clicked"]>) => {
+    confirmedChecks.delete(guard);
     const view = confirmedViews.get(guard);
 
     if (!view) return;
@@ -119,12 +125,12 @@ export async function reportSendClick<T extends { sendConfirmed?: true }>(guard:
 
   try {
     const result = await run;
-    report(result?.sendConfirmed ? "yes" : "unknown");
+    report(result?.sendConfirmed ? "yes" : result?.heldReason === "send_changed" ? "changed" : result?.heldReason === "send_unverified" ? "unverified" : "unknown");
 
     return result;
   } catch (error) {
-    const fact = error as { sendConfirmed?: unknown; executionFact?: unknown };
-    report(fact?.sendConfirmed === true ? "yes" : fact?.executionFact === "not_executed" ? "no" : "unknown");
+    const fact = error as { sendConfirmed?: unknown; executionFact?: unknown; heldReason?: HeldReason };
+    report(fact?.sendConfirmed === true ? "yes" : fact?.heldReason === "send_changed" ? "changed" : fact?.heldReason === "send_unverified" ? "unverified" : fact?.executionFact === "not_executed" ? "no" : "unknown");
     throw error;
   }
 }
@@ -219,8 +225,20 @@ export async function confirmSend(tabId: number, label: string, guard: SendGuard
     await bringForwardForUser(tabId, "send_confirm");
 
     const read = await readContent().catch(() => undefined);
-
-    return await askUser(tabId, guard, key, label, typeof read === "string" ? { content: read } : read ?? {});
+    const original = typeof read === "string" ? { content: read } : read ?? {};
+    if (original.binding === "unavailable") throw notSent("无法核对发送内容：没有发送。请检查网页后重试。", "send_unverified");
+    const approved = await askUser(tabId, guard, key, label, original);
+    if (approved && original.binding !== undefined) {
+      const recheck = async () => {
+        const next = await readContent().catch(() => undefined);
+        if (!next || typeof next === "string" || next.binding !== original.binding || next.recipient !== original.recipient) {
+          throw notSent("确认期间发送内容、收件人或目标发生变化，或无法重新核对：没有发送。请重新检查后确认。", "send_changed");
+        }
+      };
+      await recheck();
+      confirmedChecks.set(guard, recheck);
+    }
+    return approved;
   } finally { pendingTabs.delete(tabId); }
 }
 
