@@ -1749,6 +1749,8 @@ return;}
   private learnedOperationsShown: { runId: string | null; ids: Set<string> } = { runId: null, ids: new Set() };
   private lastVerifiedOperationSource: { runId: string; goal: string[]; goalPage: GoalCheckInput["goalPage"]; endedOn: string; at: number } | null = null;
   private learnedOperationsFailed: { runId: string | null; ids: Set<string> } = { runId: null, ids: new Set() };
+  /** 按工具调用记下存成、用上或没用上的技能，随这一步的 tool_end 交给侧栏。 */
+  private readonly skillFacts = new Map<string, { id: string; name: string; outcome: "saved" | "used" | "unused" }>();
   /** 调用过保存或删除做法的那一轮：它做成也不能当作下一次保存的来源。 */
   private learnedOperationWriteRun: string | null = null;
   private translationStyle: (() => string) | null = null;
@@ -1881,6 +1883,8 @@ return;}
       if (fresh) throw new Error(`第二组输入的结果没有通过页面核对（${fresh}）`);
       const saved = await store.add(draft, commit);
       this.runTrace.record("learned_operations", { phase: "saved", operationId: saved.id, version: saved.format, site: saved.site });
+      this.memoryRuntime?.markSavedAsSkill();
+      if (runtime.id) this.skillFacts.set(runtime.id, { id: saved.id, name: saved.name, outcome: "saved" });
 
       return { status: "saved", operationId: saved.id, name: saved.name, steps: example.steps + validation.steps };
     } catch (error) {
@@ -1898,6 +1902,7 @@ return;}
     if (this.learnedOperationsFailed.runId === this.deliveryRunId() && this.learnedOperationsFailed.ids.has(id)) return { status: "unavailable", operationId: id, reason: "这个做法这一轮已经失败过，不再重试；请改用普通浏览器步骤。", steps: 0 };
     this.runTrace.record("learned_operations", { phase: "used", operationId: id, version: operation.format });
     const result = await runLearnedOperation(operation, input, runtime);
+    if (runtime.id) this.skillFacts.set(runtime.id, { id: operation.id, name: operation.name, outcome: result.status === "observed" || result.status === "empty" ? "used" : "unused" });
     if (result.status !== "observed" && result.status !== "empty" && result.status !== "invalid_input") {
       if (this.learnedOperationsFailed.runId !== this.deliveryRunId()) this.learnedOperationsFailed = { runId: this.deliveryRunId(), ids: new Set() };
       this.learnedOperationsFailed.ids.add(id);
@@ -3078,7 +3083,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             ...(heldReason ? { heldReason } : {}),
             ...(!event.isError && (event.result?.details as { sendConfirmed?: unknown } | undefined)?.sendConfirmed === true ? { sendConfirmed: true as const } : {}),
             ...(event.isError ? {} : fieldReadbackOf(event.result?.details)),
+            ...(this.skillFacts.has(event.toolCallId) ? { skill: this.skillFacts.get(event.toolCallId)! } : {}),
           });
+          this.skillFacts.delete(event.toolCallId);
           this.emitReadObservation(event.toolCallId, event.toolName, this.toolArgs.get(event.toolCallId), event.result, event.isError);
           this.toolArgs.delete(event.toolCallId);
           break;

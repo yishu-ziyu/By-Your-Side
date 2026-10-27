@@ -37,6 +37,7 @@ const ACTION_NAMES: Record<string, string> = {
   remember_user_preference: "存入记忆",
   fetch: "抓取",
   browser_run: "连续操作",
+  learned_operation: "技能",
   wait_for: "等页面内容出现",
   check: "核验页面",
   assert: "核验页面状态",
@@ -321,6 +322,17 @@ export function spokenDuration(start: number, end: number): string | null {
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
 
+/** 存成、用上或没用上技能的那一步，过程行和步骤上怎么写。 */
+export function skillStepText(skill: { name: string; outcome: "saved" | "used" | "unused" }): string {
+  const name = `「${clip(skill.name, 24)}」`;
+
+  if (skill.outcome === "saved") return `存成技能${name}`;
+
+  if (skill.outcome === "used") return `用了技能${name}`;
+
+  return `技能${name}这次没用上，改用普通步骤`;
+}
+
 /** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链。 */
 export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed", failed = 1): string {
   const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
@@ -395,6 +407,7 @@ const KIND_OF_TOOL: Record<string, ActionKind> = {
   press_key: "key",
   js: "script", cdp: "script",
   browser_run: "run",
+  learned_operation: "run",
   hover: "look", read_attachment: "look",
   select_option: "pick",
   mark: "mark", guide_step: "mark",

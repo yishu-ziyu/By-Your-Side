@@ -24,6 +24,8 @@ interface ActiveUserTurn {
   text: string;
   /** 这句话命中「说 X 就打开」、宿主已经打开了页面：这一轮不再动网页，只回一句。 */
   savedOpen?: boolean;
+  /** 这句话已经存成了可直接运行的技能：同一句不再当成做法纠正去问「要我记住吗」。 */
+  savedAsSkill?: boolean;
   query: MemoryQuery;
   abort: AbortController;
   change?: Promise<MemoryToolResult>;
@@ -601,6 +603,7 @@ export class MemoryRuntime {
     const signal = AbortSignal.any([turn.learning?.abort.signal ?? turn.abort.signal, AbortSignal.timeout(AUTO_MEMORY_TIMEOUT_MS)]);
 
     try {
+      if (turn.savedAsSkill) return this.recordAsk(turn, { status: "skipped", reason: "saved-as-skill" });
       // 同一内容已直接记下就不再问；独立个人资料不替代做法确认。
       const auto = turn.auto ? await turn.auto : null;
       const tool = turn.change ? await turn.change.catch(() => null) : null;
@@ -764,6 +767,11 @@ export class MemoryRuntime {
     const visited = this.visitedUrls().map(memoryHostOfUrl).filter((host): host is string => host !== null);
 
     return visited.at(-1) ?? this.lastWebHost;
+  }
+
+  /** 当前这句已存成技能（宿主核对并落盘之后才调）。 */
+  markSavedAsSkill(): void {
+    if (this.active) this.active.savedAsSkill = true;
   }
 
   /** 一轮结束：等这一轮的自动判断落定后在后台补判；这一轮的结束不等补判。 */

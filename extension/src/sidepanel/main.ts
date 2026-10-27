@@ -44,6 +44,7 @@ import {
   historyEventTime,
   recordedDuration,
   finishedRunTitle,
+  skillStepText,
   spokenDuration,
   loaderSubtitle,
   openedPageTitle,
@@ -100,6 +101,7 @@ import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
+import { connectSkillOperations, deleteSkillOperation, receiveSkillOperations } from "./skill-operations.js";
 import { mountChapters } from "./chapters.js";
 import { activeTargetTab, isFloat, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
 import { FLOAT_CARD_DEFAULT_RECT, FLOAT_CARD_KEY, readFloatCard } from "../shared/float-card.js";
@@ -197,6 +199,9 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
     answer.insertAdjacentHTML("beforeend", DECLINED_ANSWER);
   }
   attachCopyActions(answer);
+  const run = currentRun ?? lastRun;
+
+  if (run) attachSkillUndo(run, answer);
   linkifyCircleRefs(answer);
   memoryInline.adoptUsedLine(answer);
   placeTaskCardAfter(answer);
@@ -467,7 +472,24 @@ const steerRibbon = createSteerRibbon(composerEl, inputEl, (text) => sendInput(t
 const slashSkills = mountSlashSkills({
   composerEl, inputEl,
   run: (text) => { inputEl.value = text; inputEl.dispatchEvent(new Event("input")); sendInput(); },
+  verifiedRequest: isLatestVerifiedRequest,
 });
+connectSkillOperations(msg => send(msg));
+
+/**
+ * 这条用户消息是不是最近一个核对做成的任务的请求。宿主只拿最近一个核对做成的任务存成直接运行的技能，
+ * 侧栏按同一条规则决定「存成技能」里给不给这个选项。
+ */
+function isLatestVerifiedRequest(bubble: HTMLElement): boolean {
+  const checks = messagesEl.querySelectorAll<HTMLElement>('details.run-steps .run-check[data-tone="ok"]');
+  const run = checks[checks.length - 1]?.closest("details.run-steps");
+
+  for (let node = run?.previousElementSibling; node; node = node.previousElementSibling) {
+    if (node.matches(".msg.user")) return node === bubble;
+  }
+
+  return false;
+}
 
 const tabMentions = mountTabMentions({
   composerEl,
@@ -3065,13 +3087,16 @@ function finishRun(): void {
 
     const failed = done.filter(chip => chip.classList.contains("error")).length;
     // 换了做法的那步不算进「做了几步」，单独写在末尾。
+    // 存成或用上技能的一轮：过程行先说技能，步数收在展开的过程里。
+    const skillChip = ended === "completed" ? done.find(chip => chip.dataset.skill === "saved" || chip.dataset.skill === "used") : undefined;
     const head = hasResumeReceipt && done.length === 0 && ended === "completed" ? "恢复记录"
+      : skillChip?.dataset.past ? skillChip.dataset.past
       : only?.dataset.past ? only.dataset.past
       : finishedRunTitle(ended === "completed" ? done.length - failed : done.length, ended, failed);
     run.receipt = { head, total: spokenDuration(run.start, endedAt), steps: done.length, failed, ended };
 
     if (hasResumeReceipt && done.length === 0 && ended === "completed") setRunTitle(run, head, true);
-    else if (only?.dataset.past) setRunTitle(run, head, true);
+    else if (skillChip || only?.dataset.past) setRunTitle(run, head, true);
     else {
       // 回执：「做了 6 步：打开词条 → … → 圈出 11 部 · 1 步换了做法」。出错结束只写步数和「有 1 步没做成」。
       const names = ended === "failed" ? [] : done.filter(chip => !chip.classList.contains("error")).map(chip => chip.dataset.short ?? "").filter(Boolean);
@@ -3299,6 +3324,29 @@ function foldAnsweredRun(run: RunHost): void {
   }
 
   paintAnsweredTitle(run);
+  attachSkillUndo(run);
+}
+
+/** 这一轮刚存成技能：回答下面给一个「撤销」，删掉这条技能。 */
+function attachSkillUndo(run: RunHost, answer = run.answer?.el): void {
+  const id = run.body.querySelector<HTMLElement>('.chip[data-skill="saved"]')?.dataset.skillId;
+  const actions = answer?.querySelector<HTMLElement>(":scope > .answer-actions");
+
+  if (!id || !actions || actions.querySelector(".skill-undo")) return;
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.className = "skill-undo";
+  undo.textContent = "撤销";
+  undo.title = "删掉刚存的这条技能";
+  undo.addEventListener("click", () => {
+    undo.disabled = true;
+
+    if (!deleteSkillOperation(id, ok => { undo.textContent = ok ? "已撤销" : "没撤销成，再试一次"; undo.disabled = ok; })) {
+      undo.disabled = false;
+      undo.textContent = "没连上，再试一次";
+    }
+  });
+  actions.prepend(undo);
 }
 
 /** 「继续原任务」卡这时在对话里显示着。 */
@@ -3926,7 +3974,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true; pageTarget?: { target: string; label: string; tabId: number; url: string } }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true; pageTarget?: { target: string; label: string; tabId: number; url: string }; skill?: { id: string; name: string; outcome: "saved" | "used" | "unused" } }): void {
   // 旧的侧栏历史只有标记 sendDeclined、没有原因：按「不发」画，不画成失败。
   if (!ev.heldReason && (ev as { sendDeclined?: unknown }).sendDeclined === true) ev = { ...ev, heldReason: "declined" };
   const run = currentRun ?? lastRun;
@@ -3994,6 +4042,15 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     entry.chip.dataset.past = `打开了 ${pageTitle}`;
     entry.chip.dataset.short = shortAction("navigate", {}, pageTitle);
     paintAction(label, `打开页面 ${pageTitle}`);
+  }
+
+  if (ev.skill && label) {
+    const text = skillStepText(ev.skill);
+    entry.chip.dataset.past = text;
+    entry.chip.dataset.short = text;
+    entry.chip.dataset.skill = ev.skill.outcome;
+    entry.chip.dataset.skillId = ev.skill.id;
+    paintAction(label, text);
   }
 
   if (ev.repeatRefused && label) label.append("（已做过，没再重复）");
@@ -4817,6 +4874,12 @@ function handleServerMessage(raw: string): void {
     return;
   }
 
+  if (msg.type === "skill_operations_result") {
+    receiveSkillOperations(msg);
+
+    return;
+  }
+
   if (msg.type === "task_history_result") {
     if (memoryInline.settleTaskHistory(msg.requestId, msg.ok, msg.error)) {
       if (msg.ok && !memoryDrawer.hidden) requestPastTasks();
@@ -4997,7 +5060,7 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "server") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId
-      && !envelope.msg.type.startsWith("conversation_") && envelope.msg.type !== "memory_result" && envelope.msg.type !== "task_history_result"
+      && !envelope.msg.type.startsWith("conversation_") && envelope.msg.type !== "memory_result" && envelope.msg.type !== "task_history_result" && envelope.msg.type !== "skill_operations_result"
       // 模型目录是全局事实（一次枚举、全部会话通用）：别会话捎来的 model_info 放行进内层，
       // 由内层只收目录、不收模型。live 复现：225 条 models=163 在这里被整条丢弃。
       && envelope.msg.type !== "model_info") return;

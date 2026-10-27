@@ -38,6 +38,7 @@ const otherOrigin = `http://127.0.0.1:${siteAddress(other).port}`;
 const START = `${origin}/?q=alpha`;
 const FIRST = "第一次查询 alpha 并列出订单";
 const SAVE = "记住这个做法";
+const SAVE_AGAIN = "最后再记住这个做法一次";
 const SECOND = "换个说法，查 beta 的订单";
 const AFTER_RESTART = "重启后再次查 beta 的订单";
 const SAME_WINDOW = "同窗口已有搜索页时仍查 gamma";
@@ -97,6 +98,7 @@ const rules: Rule[] = [
   saveRule(LOCKED_CANCEL, { ...common, name: "锁等待取消", code: candidateCode }),
   saveRule(CORRUPT, { ...common, name: "损坏存档" }),
   { match: FIRST, steps: [{ tool: { name: "browser_run", args: { code: codeWith('"alpha"') } } }, { text: FINISH.first }] },
+  { match: SAVE_AGAIN, steps: [{ tool: { name: "learned_operation", args: { action: "save", name: "查询订单二", ...common, code: candidateCode } } }, { text: FINISH.saved }] },
   { match: SAVE, steps: [{ tool: { name: "learned_operation", args: { action: "save", name: "查询订单", ...common, code: candidateCode } } }, { text: FINISH.saved }] },
   ...[SECOND, AFTER_RESTART].map(ask => ({ match: ask, steps: [{ tool: { name: "learned_operation", args: runArgs } }, { text: FINISH.second }] })),
   { match: SAME_WINDOW, steps: [{ tool: { name: "learned_operation", args: { action: "run", id: "", input: { query: "gamma" } } } }, { text: FINISH.afterDelete }] },
@@ -164,6 +166,8 @@ const idb = (value: string) => `new Promise((resolve,reject)=>{const req=indexed
 const readOperationDocument = async () => rp.evaluate(panel, idb('const get=db.transaction("kv").objectStore("kv").get("learned-operations");get.onerror=()=>reject(get.error);get.onsuccess=()=>{db.close();resolve(get.result??null)}'));
 const readOperations = async () => { const raw = await readOperationDocument() as string | null; return raw ? JSON.parse(raw) as { operations: Array<Record<string, unknown>> } : null; };
 const writeOperationDocument = async (raw: string) => rp.evaluate(panel, idb(`const tx=db.transaction("kv","readwrite");tx.objectStore("kv").put(${JSON.stringify(raw)},"learned-operations");tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)`));
+/** 这句用户消息后面那一轮的过程行文字（用户看到的「做了几步 · 耗时 · 核对」那一行）。 */
+const runTitleAfter = (ask: string) => rp.evaluate(panel, `(() => { const user = [...document.querySelectorAll(".msg.user")].reverse().find(m => m.textContent.includes(${JSON.stringify(ask)})); let node = user?.nextElementSibling; while (node && !node.matches("details.run-steps")) node = node.nextElementSibling; return node?.querySelector("summary")?.textContent?.replace(/\\s+/g, " ").trim() ?? null; })()`) as Promise<string | null>;
 const openPanel = async () => {
   panel = await rp.attach(await rp.openSidePanel());
   await until(() => rp.evaluate(panel, idle), 60_000, "侧栏就绪");
@@ -193,6 +197,9 @@ try {
   const operation = stored.operations[0]!;
   check("保存包含程序但不保留验证输入", operation.code === candidateCode && operation.site === origin && !JSON.stringify(stored).includes("delta") && !JSON.stringify(stored).includes('"alpha"'), { operation });
   check("原输入与第二组输入都真实运行", siteRequests.some(url => url.includes("q=alpha")) && siteRequests.some(url => url.includes("q=delta")), siteRequests);
+  const savedTitle = await runTitleAfter(SAVE);
+  check("保存那一轮写明存成了哪个技能", !!savedTitle?.includes("存成技能「查询订单」"), savedTitle);
+  check("保存那一轮给了撤销", await rp.evaluate(panel, `[...document.querySelectorAll(".answer-actions .skill-undo")].some(b => b.textContent === "撤销")`), null);
   await rp.screenshot(panel, join(out, "saved.png"));
 
   await fetch(`${origin}/fixture?action=fresh`);
@@ -201,7 +208,26 @@ try {
   const second = operationResult(SECOND);
   check("换输入复用返回页面上的新数据", second?.status === "observed" && JSON.stringify(second.data) === JSON.stringify(betaRows) && second.appliedInput && (second.appliedInput as Record<string, unknown>).query === "beta" && siteRequests.filter(url => url.includes("q=beta")).length > beforeSecond, { result: second, siteRequests });
   check("复用的是刚保存的做法", (await readOperations())?.operations.find(stored => stored.id === operation.id)?.stats.successes === 1, await readOperations() as Json);
+  const reusedTitle = await runTitleAfter(SECOND);
+  check("复用那一轮写明用了哪个技能", !!reusedTitle?.includes("用了技能「查询订单」"), reusedTitle);
   await rp.screenshot(panel, join(out, "reused.png"));
+
+  // 在这个网站上打 /：技能菜单里有这条可直接运行的技能，选中后输入框填好技能名等用户接着写。
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, "/");
+  await until(() => rp.evaluate(panel, `!document.querySelector("#pskill-menu")?.hidden && [...document.querySelectorAll("#pskill-menu .pskill-op")].some(r => r.textContent.includes("查询订单") && r.textContent.includes("直接运行"))`), 15_000, "/ 菜单出现直接运行的技能");
+  await rp.screenshot(panel, join(out, "slash-menu.png"));
+  await rp.evaluate(panel, `document.querySelector("#pskill-menu .pskill-op").click();true`);
+  const picked = await rp.evaluate(panel, `document.querySelector("#input").value`);
+  check("选中技能后输入框填好技能名", picked === "用技能「查询订单」：", picked as Json);
+  await rp.evaluate(panel, `(()=>{const i=document.querySelector("#input");i.value="/";i.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
+  await until(() => rp.evaluate(panel, `!document.querySelector("#pskill-menu")?.hidden`), 10_000, "/ 菜单再次打开");
+  await rp.evaluate(panel, `document.querySelector("#pskill-menu .pskill-manage-entry").click();true`);
+  await until(() => rp.evaluate(panel, `!document.querySelector(".pskill-sheet")?.hidden && document.querySelector(".pskill-sheet").textContent.includes("查询订单")`), 10_000, "管理技能列出这条技能");
+  const sheet = await rp.evaluate(panel, `document.querySelector(".pskill-sheet").textContent`) as string;
+  check("管理技能里看得到可直接运行的技能和网站", sheet.includes("查询订单") && sheet.includes(new URL(origin).host), sheet);
+  await rp.screenshot(panel, join(out, "manage.png"));
+  await rp.evaluate(panel, `(()=>{document.querySelector(".pskill-shade").click();const i=document.querySelector("#input");i.value="";i.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
 
   const existingTarget = await rp.cdp.send("Target.createTarget", { url: `${origin}/search?q=gamma`, background: true });
   const existing = await rp.attach(existingTarget.targetId);
@@ -291,6 +317,18 @@ try {
   const corruptedDocument = await readOperationDocument();
   check("损坏存档保持原文不被覆盖", corruptedDocument === "{broken", corruptedDocument as Json);
   await writeOperationDocument(originalDocument);
+
+  // 「撤销」：刚存成的技能点一下就删掉，存档里不再有它。
+  await send(SAVE_AGAIN, FINISH.saved, 3);
+  await until(async () => (await readOperations())?.operations.some(item => item.name === "查询订单二") || undefined, 20_000, "再次存成技能");
+  // 只认这一句后面那条回答上的「撤销」：前面那次保存的回答上也有一个。
+  const undoAfter = `(() => { const user = [...document.querySelectorAll(".msg.user")].reverse().find(m => m.textContent.includes(${JSON.stringify(SAVE_AGAIN)})); let node = user?.nextElementSibling; while (node && !node.querySelector(".skill-undo")) node = node.nextElementSibling; return node?.querySelector(".skill-undo") ?? null; })()`;
+  await until(() => rp.evaluate(panel, `${undoAfter}?.textContent === "撤销"`), 15_000, "这次保存的撤销出现");
+  await rp.evaluate(panel, `${undoAfter}.click();true`);
+  await until(() => rp.evaluate(panel, `${undoAfter}?.textContent === "已撤销"`), 15_000, "撤销完成");
+  const afterUndo = await readOperations();
+  check("撤销后这条技能被删掉", !afterUndo?.operations.some(item => item.name === "查询订单二"), afterUndo as Json);
+  await rp.screenshot(panel, join(out, "undone.png"));
 } catch (error) {
   check("流程完成", false, String(error));
   if (panel) {

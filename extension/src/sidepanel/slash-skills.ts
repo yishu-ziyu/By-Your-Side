@@ -1,10 +1,16 @@
 /**
  * 「/ 技能」：用户存下来的常用提示词，在输入框开头敲 `/` 唤起，选中后对当前标签页运行。
  *
- * - 只存在本机 chrome.storage.local，与记忆、旧的操作技能无关。
+ * - 提示词技能只存在本机 chrome.storage.local，与记忆无关。
+ * - 可直接运行的技能（核对做成后存下的只读程序）存在后台，只在存下它的网站上列出，见 skill-operations.ts。
  * - 技能可带 1–2 个澄清问题：先在侧栏里问，答完把回答填进正文（`{1}`、`{2}`）再发；取消就什么都不发。
  * - 发送走侧栏正常发送路径（由调用方传入），当前页面上下文照常附带。
  */
+
+import { Zap, createElement as icon } from "lucide";
+import type { SkillOperationSummary } from "../../../shared/protocol.js";
+import { deleteSkillOperation, knownSkillOperations, onSkillOperationsChange, refreshSkillOperations, skillOperationsFor } from "./skill-operations.js";
+import { targetWindowId } from "./target-window.js";
 
 interface PromptSkill {
   id: string;
@@ -73,6 +79,11 @@ function sanitize(raw: StoredItem[]): PromptSkill[] {
   });
 }
 
+/** 网站显示名：去掉协议和 www。 */
+function siteLabel(site: string): string {
+  try { return new URL(site).host.replace(/^www\./, ""); } catch { return site; }
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
 
@@ -88,6 +99,8 @@ interface SlashSkillsOptions {
   inputEl: HTMLTextAreaElement;
   /** 用正常发送路径发出这段文字（会附带当前页面上下文）。 */
   run: (text: string) => void;
+  /** 这条消息是不是最近一个核对做成的任务的请求：是的话「存成技能」可以存成直接运行。 */
+  verifiedRequest: (bubble: HTMLElement) => boolean;
 }
 
 interface SlashSkills {
@@ -99,8 +112,10 @@ interface SlashSkills {
   saveFromText: (text: string) => void;
 }
 
-export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOptions): SlashSkills {
+export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: SlashSkillsOptions): SlashSkills {
   let skills: PromptSkill[] = [];
+  /** 用户眼前网页的地址：只列这个网站上能直接运行的技能。 */
+  let pageUrl: string | null = null;
   let loaded = false;
   let active = 0;
   /** 用户按 Esc 关掉列表后，同一段输入不再自动弹出。 */
@@ -143,7 +158,21 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
 
   // ── 列表 ─────────────────────────────────────────────
 
-  type Row = { kind: "skill"; skill: PromptSkill } | { kind: "manage" };
+  type Row = { kind: "skill"; skill: PromptSkill } | { kind: "operation"; operation: SkillOperationSummary } | { kind: "manage" };
+
+  async function syncPage(): Promise<void> {
+    const windowId = await targetWindowId().catch(() => undefined);
+    const [tab] = await chrome.tabs.query({ active: true, windowId: windowId ?? chrome.windows.WINDOW_ID_CURRENT }).catch(() => []);
+    const next = tab?.url ?? null;
+
+    if (next !== pageUrl) { pageUrl = next; refresh(); }
+  }
+
+  onSkillOperationsChange(() => {
+    refresh();
+
+    if (!manage.hidden && !editing) renderManageList();
+  });
 
   let rows: Row[] = [];
 
@@ -172,21 +201,26 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
 
     if (dismissedFor !== null) dismissedFor = null;
     const matched = skills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.body.toLowerCase().includes(q));
-    rows = [...matched.map((skill): Row => ({ kind: "skill", skill })), { kind: "manage" }];
+    const operations = skillOperationsFor(pageUrl).filter((o) => !q || o.name.toLowerCase().includes(q) || o.purpose.toLowerCase().includes(q));
+    rows = [...operations.map((operation): Row => ({ kind: "operation", operation })), ...matched.map((skill): Row => ({ kind: "skill", skill })), { kind: "manage" }];
     active = Math.min(active, rows.length - 1);
 
-    if (matched.length && active === rows.length - 1) active = 0;
+    if (rows.length > 1 && active === rows.length - 1) active = 0;
     menu.replaceChildren();
 
-    if (!matched.length) menu.append(el("div", "pskill-empty", skills.length ? "没有匹配的技能" : "还没有技能"));
+    if (rows.length === 1) menu.append(el("div", "pskill-empty", skills.length ? "没有匹配的技能" : "还没有技能"));
 
     rows.forEach((row, i) => {
-      const item = el("div", row.kind === "manage" ? "pskill-item pskill-manage-entry" : "pskill-item");
+      const item = el("div", row.kind === "manage" ? "pskill-item pskill-manage-entry" : row.kind === "operation" ? "pskill-item pskill-op" : "pskill-item");
       item.id = `pskill-opt-${i}`;
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", String(i === active));
 
-      if (row.kind === "skill") {
+      if (row.kind === "operation") {
+        const glyph = el("span", "pskill-emoji");
+        glyph.append(icon(Zap));
+        item.append(glyph, el("span", "pskill-name", row.operation.name), el("span", "pskill-badge", "直接运行"), el("span", "pskill-hint", row.operation.purpose));
+      } else if (row.kind === "skill") {
         item.append(el("span", "pskill-emoji", row.skill.emoji ?? "⚡"), el("span", "pskill-name", row.skill.name));
         const hint = row.skill.body.replace(/\{\d\}/g, "…").replace(/\s+/g, " ");
         item.append(el("span", "pskill-hint", hint));
@@ -223,6 +257,14 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
     if (row.kind === "manage") { openManage();
 
  return; }
+
+    // 直接运行的技能要一组新参数：把名字放进输入框，用户接着写这次要查的内容。
+    if (row.kind === "operation") {
+      setInput(`用技能「${row.operation.name}」：`);
+      inputEl.focus({ preventScroll: true });
+
+      return;
+    }
 
     start(row.skill);
   }
@@ -327,6 +369,7 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
 
   function openManage(): void {
     setInput("");
+    refreshSkillOperations();
     manage.hidden = false;
     shade.hidden = false;
     renderManageList();
@@ -358,7 +401,30 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
       list.append(row);
     }
 
-    if (!skills.length) list.append(el("div", "pskill-empty", "还没有技能。也可以在发过的消息上点「存成技能」。"));
+    for (const operation of knownSkillOperations()) {
+      const row = el("div", "pskill-row");
+      const glyph = el("span", "pskill-emoji");
+      glyph.append(icon(Zap));
+      row.append(glyph, el("span", "pskill-name", operation.name), el("span", "pskill-badge", siteLabel(operation.site)));
+      const del = el("button", "pskill-btn danger", "删除");
+      del.type = "button";
+      del.addEventListener("click", () => {
+        if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "确认删除";
+
+ return; }
+
+        del.disabled = true;
+
+        if (!deleteSkillOperation(operation.id, ok => { if (!ok) { del.disabled = false; del.textContent = "没删成，再试"; } })) {
+          del.disabled = false;
+          del.textContent = "没连上，再试";
+        }
+      });
+      row.append(del);
+      list.append(row);
+    }
+
+    if (!skills.length && !knownSkillOperations().length) list.append(el("div", "pskill-empty", "还没有技能。也可以在发过的消息上点「存成技能」。"));
     manage.append(list);
     const add = el("button", "pskill-btn primary", "新建技能");
     add.type = "button";
@@ -367,7 +433,7 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
     (manage.querySelector<HTMLButtonElement>(".pskill-row .pskill-btn") ?? add).focus({ preventScroll: true });
   }
 
-  function renderEditor(skill: PromptSkill | null, prefill?: string): void {
+  function renderEditor(skill: PromptSkill | null, prefill?: string, runnable = false): void {
     editing = true;
     manage.replaceChildren(sheetHead(skill ? "编辑技能" : "新建技能"));
     const form = el("form", "pskill-form");
@@ -402,6 +468,16 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
     const q1 = field("运行前先问（可选）", text(skill?.questions?.[0] ?? "", "例如：预算多少？"));
     const q2 = field("再问一个（可选）", text(skill?.questions?.[1] ?? ""));
     form.append(el("p", "pskill-note", "提示词里写 {1}、{2} 会换成对应回答；没写就把回答附在末尾。"));
+    // 刚核对做成的网页任务：可以存成在这个网站上直接运行的技能。助手先用原来的和另一组内容各跑一次，都对才存。
+    const direct = el("input");
+    direct.type = "checkbox";
+    direct.checked = runnable;
+
+    if (runnable) {
+      const wrap = el("label", "pskill-check");
+      wrap.append(direct, el("span", undefined, "在这个网站上直接运行：助手先验证一次，以后换个词直接重新读页面"));
+      form.append(wrap);
+    }
     const error = el("p", "pskill-error");
     error.hidden = true;
     form.append(error);
@@ -425,6 +501,13 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
         return;
       }
 
+      if (runnable && direct.checked) {
+        closeManage();
+        run(`把刚才的做法存成技能，名字叫「${name.value.trim().slice(0, 40)}」`);
+
+        return;
+      }
+
       const questions = [q1.value.trim(), q2.value.trim()].filter(Boolean);
 
       const next: PromptSkill = {
@@ -443,16 +526,17 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
     name.focus({ preventScroll: true });
   }
 
-  function saveFromMessage(text: string): void {
+  function saveFromMessage(text: string, bubble?: HTMLElement): void {
     manage.hidden = false;
     shade.hidden = false;
-    renderEditor(null, text);
+    renderEditor(null, text, !!bubble && verifiedRequest(bubble));
   }
 
   // ── 与输入框对接 ─────────────────────────────────────
 
   inputEl.addEventListener("input", () => {
     if (!inputEl.value.startsWith("/")) { dismissedFor = null; active = 0; }
+    else if (inputEl.value === "/") { void syncPage(); refreshSkillOperations(); }
 
     refresh();
   });
@@ -494,7 +578,7 @@ export function mountSlashSkills({ composerEl, inputEl, run }: SlashSkillsOption
     const btn = el("button", "pskill-save", "存成技能");
     btn.type = "button";
     btn.title = "把这句话存成技能。以后在输入框输入 /，就能对当前页面再用一次";
-    btn.addEventListener("click", (e) => { e.stopPropagation(); saveFromMessage(text); });
+    btn.addEventListener("click", (e) => { e.stopPropagation(); saveFromMessage(text, bubble); });
     bubble.append(btn);
   }
 
