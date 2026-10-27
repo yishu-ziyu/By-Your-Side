@@ -290,6 +290,15 @@ function rowSource(tab: string | true | undefined, raws: string[]): RowSource | 
   return undefined;
 }
 
+function htmlCellText(source: string): string {
+  const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+  return source.replace(/<br\s*\/?\s*>/gi, " ").replace(/<[^>]*>/g, "").replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi, (raw, key: string) => {
+    if (!key.startsWith("#")) return entities[key.toLowerCase()] ?? raw;
+    const value = key[1]?.toLowerCase() === "x" ? parseInt(key.slice(2), 16) : parseInt(key.slice(1), 10);
+    return value > 0 && value <= 0x10ffff && !(value >= 0xd800 && value <= 0xdfff) ? String.fromCodePoint(value) : raw;
+  }).replace(/\s+/g, " ").trim();
+}
+
 function parseCard(source: string, closed: boolean): Card | undefined {
   const head = new RegExp(String.raw`^<card${ATTRS}\s*>`).exec(source);
 
@@ -339,6 +348,13 @@ function parseCard(source: string, closed: boolean): Card | undefined {
    * 图的原文里有 <br/>、-->，原文摘录里可能有网页上的任何字（包括像 <button> 的字），都不走下面的组件正则。
    */
   let body = source.slice(head[0].length);
+  const htmlRows: string[][] = [];
+  body = body.replace(/<tr\s*>([\s\S]*?)<\/tr\s*>/gi, (raw, inner: string) => {
+    const cells = [...inner.matchAll(/<td(?:\s[^>]*)?>([\s\S]*?)<\/td\s*>/gi)].map(m => htmlCellText(m[1] ?? ""));
+    if (cells.length < 2) return raw;
+    const index = htmlRows.push(cells) - 1;
+    return `<tr html-row="${index}" />`;
+  });
   const diagramAt = body.indexOf("<diagram>");
   let diagram: Extract<Block, { kind: "diagram" }> | undefined;
   const cites: Array<{ node: string; text: string; from?: string }> = [];
@@ -426,7 +442,8 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       if (cols.length > 1) card.blocks.push({ kind: "table", cols, rows: [] });
     } else if (tag === "tr") {
       const table = last();
-      const cells = (str(a.cells) ?? "").split("|").map((c) => c.trim());
+      const rowIndex = str(a["html-row"]);
+      const cells = rowIndex !== undefined && /^\d+$/.test(rowIndex) ? htmlRows[Number(rowIndex)] ?? [] : (str(a.cells) ?? "").split("|").map((c) => c.trim());
 
       if (table?.kind !== "table" || cells.length < 2) continue;
       const rowTag = str(a.tag) && !table.rows.some((r) => r.tag) ? str(a.tag) : undefined;
