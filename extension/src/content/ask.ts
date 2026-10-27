@@ -18,6 +18,7 @@ import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } fr
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
+import { selectionSurrounding } from './selection-context.js';
 import { createReadAloud } from './read-aloud.js';
 import { syncColorTone } from '../shared/color-tone.js';
 
@@ -56,13 +57,7 @@ export function selectionSnapshot(): SelectionSnapshot | null {
     return null;
   }
 
-  const node = range.commonAncestorContainer;
-  const parent = node instanceof Element ? node : node.parentElement;
-  const paragraph = parent?.closest('p,li,pre,blockquote,h1,h2,h3,td');
-
-  const surrounding = paragraph ? [paragraph.previousElementSibling, paragraph, paragraph.nextElementSibling]
-    .flatMap((e): string[] => e instanceof HTMLElement && !isEditableTarget(e) && !e.querySelector('input,textarea,[contenteditable]') && e.checkVisibility() ? [e.innerText] : [])
-    .join('\n').slice(0, READING_CONTEXT_LIMIT) : '';
+  const surrounding = selectionSurrounding(range, raw, READING_CONTEXT_LIMIT);
 
   return { source: { text, surrounding, truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
 }
