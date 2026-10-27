@@ -28,7 +28,7 @@ export const BACKUP_STORAGE_KEYS = [BROWSE_ON_KEY] as const;
  * 只备份用户已经确认或做成的内容。pending-memory 存着还没判完的原话，habits 存着从浏览里数出来的计数，都不出这个扩展。
  * 恢复时也只认这几份，别的键一律拒绝。
  */
-const BACKUP_DOCUMENTS = ["memories", "tasks", "site-notes"] as const;
+const BACKUP_DOCUMENTS = ["memories", "tasks", "site-notes", "learned-operations"] as const;
 
 const FORMAT = "by-your-side-memory-backup";
 const VERSION = 1;
@@ -42,7 +42,7 @@ export interface MemoryBackup {
   version: typeof VERSION;
   savedAt: number;
   extensionVersion: string;
-  /** IndexedDB 里每一份文档的原文（记忆、过往任务、站点笔记、习惯计数等）。 */
+  /** IndexedDB 里每一份文档的原文（记忆、过往任务、站点笔记、已保存做法等）。 */
   documents: Record<string, string>;
   storage: Partial<Record<(typeof BACKUP_STORAGE_KEYS)[number], unknown>>;
 }

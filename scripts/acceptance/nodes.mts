@@ -70,8 +70,8 @@ export const NODES: Node[] = BASE_NODES.map((node) => ({
 export const SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ConnectionAttempts=3",
   "-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/bys-ssh-%C", "-o", "ControlPersist=120"];
 
-// background-tab-input 和 attention-cues 要有窗口的 Chrome（会开窗口），不进无头整轮。
-export const SKIP_FILES = new Set(["harness.mts", "run-all.mts", "shard-run.mts", "background-tab-input.mts", "attention-cues.mts"]);
+// background-tab-input 和 attention-cues 要有窗口的 Chrome（会开窗口）；learned-operations-live 需要真实模型凭据，都不进默认整轮。
+export const SKIP_FILES = new Set(["harness.mts", "run-all.mts", "shard-run.mts", "background-tab-input.mts", "attention-cues.mts", "learned-operations-live.mts"]);
 
 // 核心用户路径（npm test / accept:shard --core 共用唯一清单）：只装扩展、脚本模型、无需凭据。
 export const CORE_CASES = [

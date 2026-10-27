@@ -45,7 +45,7 @@ const textOf = (content: ChatMessage["content"]): string => Array.isArray(conten
  * 产品插进对话的数据段，开头自己写明「不是用户消息」。本次运行的上下文里有往期任务和对话的原话：
  * 它和用户这一轮的话都匹配时，用户的话优先；只有用户的话一条都不匹配，才看数据段。
  */
-const PRODUCT_DATA = ["本次运行的上下文，不是用户消息", "应用状态快照，不是新用户消息"];
+export const PRODUCT_DATA = ["本次运行的上下文，不是用户消息", "应用状态快照，不是新用户消息"];
 
 function pick(rules: Rule[], messages: ChatMessage[]): { rule: Rule; step: number } | null {
   return pickFrom(rules, messages, (text) => !PRODUCT_DATA.some((head) => text.startsWith(head))) ?? pickFrom(rules, messages, () => true);

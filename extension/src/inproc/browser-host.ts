@@ -1,5 +1,5 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
-import { createConversationRuntime, GptLiveSession, MemoryStore, RealtimeVoiceSession, SiteNotesStore, TaskHistoryStore, startHostCore, useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useStyleSignals, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
+import { createConversationRuntime, GptLiveSession, LearnedOperationStore, MemoryStore, RealtimeVoiceSession, SiteNotesStore, TaskHistoryStore, startHostCore, useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useStyleSignals, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
 import type { SessionLogPort } from "@sideagent/agent/browser-core";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import { describeModelError } from "../../../shared/user-facing.js";
@@ -27,7 +27,7 @@ interface InprocHostDeps {
   /** Tests explicitly inject a session backend; production always uses IndexedDB. */
   sessionData?: (id: string) => Promise<{ session: SessionLogPort; files?: ArtifactPersistence }>;
   /** Node entry-contract tests inject durable documents; production uses IndexedDB. */
-  document?: (name: "memories" | "pending-memory" | "tasks" | "habits" | "site-notes" | "style-signals") => DocumentPersistence;
+  document?: (name: "memories" | "pending-memory" | "tasks" | "habits" | "site-notes" | "style-signals" | "learned-operations") => DocumentPersistence;
   onConnect: (listener: (port: chrome.runtime.Port) => void) => void;
 }
 
@@ -96,6 +96,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const taskHistory = new TaskHistoryStore(personal("tasks"));
     // 站点笔记：关于网站的做法，不是关于用户的记忆，单独一份。
     const siteNotes = new SiteNotesStore(document("site-notes"));
+    const learnedOperations = new LearnedOperationStore(document("learned-operations"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
       store,
       memoryStore,
@@ -113,6 +114,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         memoryStore,
         taskHistory,
         siteNotes,
+        learnedOperations,
         miniApps: async () => pushedMiniApps(),
         translationStyle: () => pushedTranslationStyle(),
         });
