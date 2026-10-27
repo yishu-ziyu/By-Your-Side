@@ -101,6 +101,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
       store,
       memoryStore,
       taskHistory,
+      learnedOperations,
       createRuntime: async (id, emit, summary) => {
         const data = deps.sessionData ? await deps.sessionData(id) : {
           session: await openPiSession(id),
