@@ -73,8 +73,16 @@ export function conversationBackgroundLabel(c: Pick<ConversationSummary, 'state'
     return '现在归你';
   }
 
-  // 顶部条挂在当前对话上方，要说清这是另一个对话。
   return '另一个会话的任务结束了';
+}
+
+/** 会话切换器里：说清这是别的任务，不要写成当前对话断了。 */
+export function otherTaskCopy(count: number, title: string): { line: string; action: string } {
+  const name = title.trim() || "未命名任务";
+  return {
+    line: count > 1 ? `另有 ${count} 个任务还没做完，最近一件：「${name}」` : `另有 1 个任务还没做完：「${name}」`,
+    action: "继续",
+  };
 }
 
 /** 结果卡：摘要是主信息，剩余项和声音失败弱化。没有摘要时整张卡不出现。 */

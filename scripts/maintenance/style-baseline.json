@@ -12,9 +12,9 @@
     "emoji": 0
   },
   "extension/src/sidepanel/styles.css": {
-    "fontSize": 39,
-    "radius": 93,
-    "color": 55,
+    "fontSize": 0,
+    "radius": 12,
+    "color": 54,
     "emoji": 0
   },
   "extension/src/settings/settings.css": {
@@ -33,7 +33,7 @@
     "fontSize": 0,
     "radius": 0,
     "color": 0,
-    "emoji": 2
+    "emoji": 1
   },
   "extension/src/sidepanel/slash-skills.ts": {
     "fontSize": 0,

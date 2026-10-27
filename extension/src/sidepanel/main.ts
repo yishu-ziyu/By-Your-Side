@@ -8,7 +8,7 @@ import { answerSkeleton } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { observeForCue } from "./cue.js";
-import { sendConfirmCard } from "./send-confirm-card.js";
+import { resetSendConfirmCards, sendConfirmCard } from "./send-confirm-card.js";
 import { mountDictation } from "./dictation.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 /**
@@ -79,7 +79,9 @@ import { normalizeMemoryHostname,} from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { isWriteTool } from "../../../shared/effect-policy.js";
-import { conversationBackgroundLabel, conversationDayGroup, conversationOutcome, conversationRelativeTime, resultCardCopy } from "./selectors.js";
+import { conversationDayGroup, conversationOutcome, conversationRelativeTime, otherTaskCopy, resultCardCopy } from "./selectors.js";
+import { liveStatus, runMetaLine, STEER_OTHER_WAY, STEER_SKIP } from "../../../shared/run-status.js";
+import { describeTimeout } from "../../../shared/timeouts.js";
 import { TaskBar, stateHeadline } from "./task-bar.js";
 import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
@@ -372,6 +374,7 @@ app.innerHTML = `
     </div>
     <input type="file" id="file-input" multiple hidden />
     <select id="marginalia-mode" aria-label="段落提示模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">解释段落 · 会发给模型</option></select>
+    <div id="confirm-dock" hidden></div>
     <div id="task-bar-root"></div>
     <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
       <span id="tab-icon-sq" class="tab-icon-sq"></span>
@@ -1065,16 +1068,46 @@ function renderConversations(): void {
     ?? list.find((c) => elsewhere(c) && c.checkpoint === "interrupted")
     ?? list.find((c) => elsewhere(c) && completedConversations.has(c.id));
 
-  conversationBackground.hidden = !other;
+  conversationBackground.hidden = true;
+  conversationBackground.replaceChildren();
+  conversationSwitcher.dataset.other = "";
+  conversationSwitcher.removeAttribute("data-other");
 
-  if (other) {
-    conversationBackground.textContent = `${conversationBackgroundLabel(other)}：${other.title} ↗`;
-    conversationBackground.onclick = () => selectConversation(other.id);
+  const waiting = list.filter((c) => elsewhere(c) && (c.state === "running" || c.state === "user" || c.checkpoint === "interrupted"));
+  const cue = waiting[0] ?? other;
+  const otherKey = cue && waiting.length ? `${waiting.length}:${cue.id}:${cue.title}` : "";
+  const existingOther = document.getElementById("conversation-other");
+
+  if (cue && waiting.length) {
+    conversationSwitcher.dataset.other = String(waiting.length);
+    conversationSwitcher.title = otherTaskCopy(waiting.length, cue.title).line;
+  }
+
+  // 菜单开着时不能反复移动这一行，否则下面正在按下的会话会错位。
+  if ((existingOther?.dataset.other ?? "") !== otherKey) {
+    existingOther?.remove();
+
+    if (cue && waiting.length) {
+      const row = document.createElement("div");
+      row.id = "conversation-other";
+      row.dataset.other = otherKey;
+      row.className = "conversation-other";
+      const copy = otherTaskCopy(waiting.length, cue.title);
+      const line = document.createElement("p");
+      line.textContent = copy.line;
+      const go = document.createElement("button");
+      go.type = "button";
+      go.textContent = copy.action;
+      go.onclick = (event) => { event.stopPropagation(); selectConversation(cue.id); };
+      row.append(line, go);
+      conversationMenu.prepend(row);
+    }
   }
 }
 
 function resetConversationRender(): void {
   resetFillUndo();
+  resetSendConfirmCards();
   planCardRun = null;
   planUndo = null;
   if (currentRun) { clearInterval(currentRun.timer); currentRun.orb.dispose(); }
@@ -2277,12 +2310,13 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
 
   const pageTitle = [context.title, context.url].filter(Boolean).join("\n");
 
-  // 和上一句是同一页时不再带页面卡：只在换了页面时说一次。
-  if ((context.title || host) && previousPageChipTitle(bubble) !== pageTitle) {
+  // 和上一句是同一页时不再带页面卡：只在换了页面时说一次。标题太长又和问句对不上就不写，免得看成任务分类。
+  const pageName = context.title || host;
+  if (pageName && previousPageChipTitle(bubble) !== pageTitle && pageSourceVisible(pageName, bubble)) {
     const glyph = siteGlyph(context.url, host);
     glyph.className = "cg";
-    const chip = ctxChip(glyph, context.title || host, pageTitle);
-    chip.classList.add("page");
+    const chip = ctxChip(glyph, `来自页面：${clipTitle(pageName, 22)}`, pageTitle);
+    chip.classList.add("page", "page-from");
     chips.push(chip);
   }
 
@@ -2311,6 +2345,16 @@ function renderTurnContext(bubble: HTMLElement, context: UserTurnContext): void 
   row.replaceChildren(...chips);
 
   if (chips.length && row !== next) bubble.after(row);
+}
+
+/** 标题短就写；太长时只在和问句有几个相同的字时写，避免像任务分类。 */
+function pageSourceVisible(title: string, bubble: HTMLElement): boolean {
+  const name = title.trim();
+  if (!name) return false;
+  if ([...name].length <= 24) return true;
+  const ask = bubble.querySelector(".user-msg-text")?.textContent ?? bubble.textContent ?? "";
+  const askChars = new Set([...ask].filter((ch) => /[\u4e00-\u9fffA-Za-z0-9]/.test(ch)));
+  return [...name].filter((ch) => askChars.has(ch)).length >= 4;
 }
 
 /** 前面最近一张页面卡的 title（「标题\n网址」）；中间几句没带卡说明还是同一页，接着往前找。 */
@@ -2568,7 +2612,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   beat.append(orb.el);
   const title = document.createElement("span");
   title.className = "run-title";
-  paintAction(title, `正在${loaderSubtitle(null)}`);
+  paintAction(title, `正在：${loaderSubtitle(null)}`);
   const chainEl = document.createElement("span");
   chainEl.className = "run-chain";
   const timeEl = document.createElement("span");
@@ -2694,7 +2738,7 @@ function stopLiveSeconds(run: RunHost): void {
 /** 首字前挂这么久还没回音，只换标题，不改秒数和墨点。 */
 const WAIT_STALE_MS = 15_000;
 const WAIT_STALE_TITLE = "还没有回音";
-const THINKING_TITLE = "正在思考";
+const THINKING_TITLE = "正在：思考";
 
 /** 每秒刷新一次秒数，刷新时刻对齐 from 之后的整秒（多留一点余量，免得早到几毫秒少数一秒）：显示的秒数最多比真实慢 1 秒。 */
 function startLiveSeconds(run: RunHost, from = Date.now()): void {
@@ -2713,25 +2757,59 @@ function startLiveSeconds(run: RunHost, from = Date.now()): void {
   run.timer = align;
 }
 
-/** 第一行的秒数：贴在动词后面。在想就数这段（≥1 秒才写），在跑一步就数这一步（≥3 秒才写）。历史回放没有时钟时不写。 */
+/** 第一行的秒数：贴在动词后面。有动作就从 1 秒写；超过 10 秒改成「仍在处理」。 */
 function liveSeconds(run: RunHost): string {
-  const now = Date.now();
-
-  if (Number.isFinite(run.thinkFrom)) {
-    if (now - run.thinkFrom < 1_000) return "";
-    return spokenDuration(run.thinkFrom, now) ?? "";
-  }
-  const running = [...toolChips.values()].find(entry => entry.chip.isConnected && run.body.contains(entry.chip));
-
-  return running && Number.isFinite(running.start) && now - running.start >= SHOW_SECS_MS ? spokenDuration(running.start, now) ?? "" : "";
+  return refreshLiveStatus(run);
 }
 
-/** 「还没有回音」只顶替「正在思考」：重试、压缩、接着做这些标题说的是更具体的事，不能盖掉。思考摘要也算回音。 */
+function runningTool(run: RunHost) {
+  return [...toolChips.values()].find(entry => entry.chip.isConnected && run.body.contains(entry.chip));
+}
+
+function refreshLiveStatus(run: RunHost): string {
+  if (run.root.hasAttribute("data-wait-user") || applyingHistory) {
+    paintEscalate(run, false);
+    return "";
+  }
+  const tool = runningTool(run);
+  const from = Number.isFinite(run.thinkFrom) ? run.thinkFrom : tool && Number.isFinite(tool.start) ? tool.start : Number.NaN;
+  const step = Number.isFinite(run.thinkFrom) ? "思考" : (tool?.chip.dataset.past || run.lastToolShort || "这一步");
+  const status = liveStatus({ step: plainStep(step), from, now: Date.now() });
+  if (!status) {
+    paintEscalate(run, false);
+    return "";
+  }
+  // 只换通用的那句：续做、核对、重试这类更具体的状态留着，下一个动作开始时自然换掉。
+  const shown = run.titleEl.textContent ?? "";
+  if (shown !== status.title && (shown === "" || shown.startsWith("正在：") || shown === "仍在处理")) setRunTitle(run, status.title, true, Number.isFinite(run.thinkFrom) ? "think" : undefined);
+  paintEscalate(run, status.escalated);
+  return status.time;
+}
+
+function paintEscalate(run: RunHost, on: boolean): void {
+  const existing = run.root.querySelector<HTMLElement>(":scope > summary .run-escalate");
+  if (!on) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
+  const acts = document.createElement("span");
+  acts.className = "run-escalate";
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.textContent = "跳过";
+  skip.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_SKIP); };
+  const other = document.createElement("button");
+  other.type = "button";
+  other.textContent = "换个方法";
+  other.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_OTHER_WAY); };
+  acts.append(skip, other);
+  run.metaEl.after(acts);
+}
+
+/** 超过 10 秒由 refreshLiveStatus 升级成「仍在处理」；这里不再单独换标题。 */
 function maybeStaleWait(run: RunHost): void {
-  if (!Number.isFinite(run.thinkFrom) || run.body.querySelector(".chip, details.thinking")) return;
-  if (Date.now() - run.thinkFrom < WAIT_STALE_MS) return;
-  if (run.titleTimer || run.titleEl.textContent !== THINKING_TITLE) return;
-  setRunTitle(run, WAIT_STALE_TITLE, true, "think");
+  refreshLiveStatus(run);
 }
 
 /** 结束正在算的这段思考：≥3 秒的在记录里单列一行「想了 N 秒」。 */
@@ -2777,11 +2855,11 @@ function doneSteps(run: RunHost): HTMLElement[] {
   return Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep):not(.note):not(.running)"));
 }
 
-/** 第二行小字：「已做 N 步 ›」，有换了做法的步骤时跟一句。一步还没做完时不显示。 */
+/** 第二行小字：默认识「试了几步、几次没做成」；步数少或没有失败时不占地方。 */
 function renderRunMeta(run: RunHost): void {
   const done = doneSteps(run);
   const failed = done.filter(chip => chip.classList.contains("error")).length;
-  const steps = done.length ? `已做 ${done.length - failed} 步${failed ? ` · ${failed} 步换了做法` : ""}` : "";
+  const steps = runMetaLine(done.length, failed) ?? "";
   const text = [run.checkNote, steps].filter(Boolean).join(" · ");
 
   if (run.metaEl.textContent !== text) run.metaEl.textContent = text;
@@ -3057,6 +3135,8 @@ function finishRun(): void {
   runStartAt = 0;
 
   if (!run) return;
+  // 跳过、换个方法、中止都只对还在跑的这一轮有意义，收尾就收掉。
+  for (const acts of run.root.querySelectorAll(".run-escalate")) acts.remove();
   // 计划那一行只陪这一轮任务；做完、停下、出错都收掉，不挂到下一件事上。
   taskPlan.endRun();
   lastRun = run;
@@ -3128,7 +3208,7 @@ function finishRun(): void {
     else {
       // 回执：「做了 6 步：打开词条 → … → 圈出 11 部 · 1 步换了做法」。出错结束只写步数和「有 1 步没做成」。
       const names = ended === "failed" ? [] : done.filter(chip => !chip.classList.contains("error")).map(chip => chip.dataset.short ?? "").filter(Boolean);
-      paintReceipt(title, head, names, ended === "completed" && failed ? ` · ${failed} 步换了做法` : "");
+      paintReceipt(title, head, names, ended === "completed" && failed ? ` · ${failed} 次没做成` : "");
     }
   }
 
@@ -3945,7 +4025,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   run.lastToolName = ev.name;
 
   if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
-    setRunTitle(run, `正在${actionCardLabel(ev.name, ev.params)}`, false, kind);
+    setRunTitle(run, `正在：${actionCardLabel(ev.name, ev.params)}`, false, kind);
   }
 
   const chip = document.createElement("button");
@@ -4029,7 +4109,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   // 这一步做完、下一步还没开始：模型在想下一步。第一行只写「正在思考」并从这里开始数秒，做了几步在第二行。
   if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
     run.lastToolName = null;
-    setRunTitle(run, "正在思考", false, "think");
+    setRunTitle(run, THINKING_TITLE, false, "think");
     openThink(run, eventTime());
   }
 
@@ -4106,10 +4186,31 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   }
 
   if (failed && label) {
+    const timeout = describeTimeout(ev.resultText ?? ev.reason ?? "");
     const note = document.createElement("span");
     note.className = "act-failed";
-    note.textContent = ` · ${ev.reason ?? "没做成"}`;
+    note.textContent = ` · ${timeout?.copy ?? ev.reason ?? "没做成"}`;
     label.append(note);
+    if (timeout) {
+      const acts = document.createElement("span");
+      acts.className = "run-escalate";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "重试";
+      retry.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput("重试刚才没做成的那一步。"); };
+      const other = document.createElement("button");
+      other.type = "button";
+      other.textContent = "换个方法";
+      other.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_OTHER_WAY); };
+      const halt = document.createElement("button");
+      halt.type = "button";
+      halt.textContent = "中止";
+      // 只停产生这次超时的那一轮：回合结束后发送键变回「发送」，不能借它发出草稿或停掉后来的任务。
+      halt.onclick = (event) => { event.preventDefault(); event.stopPropagation(); if (run && currentRun === run && sendBtn.classList.contains("stopping")) stopCurrentTask(); };
+      if (timeout.retry) acts.append(retry);
+      acts.append(other, halt);
+      label.after(acts);
+    }
   }
 
   run?.graph.end(ev.toolCallId, {
@@ -4255,7 +4356,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if (resultRun?.answer && resultRun.receipt && resultRun.root.classList.contains("done") && ev.confirm?.clicked) paintAnsweredTitle(resultRun);
       const card = sendConfirmCard(ev.confirm);
 
-      if (card) {
+      if (card && !document.getElementById("confirm-dock")?.contains(card)) {
         appendToMessages(card);
         scrollToEnd();
       }
@@ -4263,15 +4364,15 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // 确认之后点没点下去的补报：等待早就结束了，只更新卡。
       if (ev.confirm?.clicked) break;
 
-      // 新会话第一轮经补放历史到达（applyingHistory 为真），所以补放时也照样换标题。
-      // 等你确认的时间不算「想了」。
+      // 等确认时状态就是输入框上方那张卡，过程行不再另写「等你确认发送」。
       if (run) {
-        setRunTitle(run, ev.waiting ? "等你确认发送" : "正在思考", true, ev.waiting ? undefined : "think");
-        // 等你的时候过程行不扫光、回答位置不放骨架；这一步的工具还在途，所以 data-phase 仍是 executing。
         run.root.toggleAttribute("data-wait-user", ev.waiting);
 
         if (ev.waiting) closeThink(run, eventTime());
-        else openThink(run, eventTime());
+        else {
+          setRunTitle(run, "正在：思考", true, "think");
+          openThink(run, eventTime());
+        }
       }
 
       // 「不等了」不一定带 guide，到这里的也可能是教学一步结束：橙字一起清掉。
@@ -4288,7 +4389,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
       if (!run) break;
       const waiting = ev.waiting && ev.guide;
-      setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : "正在思考", true, waiting ? undefined : "think");
+      setRunTitle(run, waiting ? `第 ${waiting.step} 步 · 等你操作` : THINKING_TITLE, true, waiting ? undefined : "think");
       run.root.toggleAttribute("data-wait-user", !!waiting);
 
       // 等你自己点的时间不算「想了」。

@@ -3,10 +3,11 @@
  * 浏览器 Agent 带着登录态取接口，最怕模型被页面内容骗去读本地服务或改数据：
  * 这里不做"问模型"，直接在扩展侧拒绝。
  */
+import { FETCH_READ_MS } from "./timeouts.js";
 
 export const FETCH_MAX_BYTES = 512 * 1024;
 
-export const FETCH_READ_DEADLINE_MS = 30_000;
+export const FETCH_READ_DEADLINE_MS = FETCH_READ_MS;
 
 export const FETCH_MAX_REDIRECTS = 3;
 

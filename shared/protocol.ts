@@ -382,7 +382,28 @@ export type SendConfirmOutcome = "send" | "decline" | "stopped" | "left" | "time
  * 侧栏确认卡要显示的内容：网站、按钮名、按钮附近的草稿，都由扩展从网页读出。
  * id 是后台这次等待的身份，侧栏回答时带回；outcome 只在不等了时有，clicked 只在确认后点完时有。草稿只在开始等的那条里带。
  */
-export interface SendConfirmView { id: string; host: string; label: string; content?: string; /** 发给谁：从网页读（收件人栏、聊天标题），读不到不写。 */ recipient?: string; /** 怎么发出去的：脚本、回车、网络请求都走同一个确认。 */ route?: "click" | "script" | "enter" | "request"; outcome?: SendConfirmOutcome; /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */ clicked?: "yes" | "no" | "unknown" | "changed" | "unverified" }
+export interface SendConfirmView {
+  id: string;
+  host: string;
+  label: string;
+  content?: string;
+  /** 发给谁：从网页读（收件人栏、聊天标题），读不到不写。 */
+  recipient?: string;
+  /** 怎么发出去的：脚本、回车、网络请求都走同一个确认。 */
+  route?: "click" | "script" | "enter" | "request";
+  outcome?: SendConfirmOutcome;
+  /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */
+  clicked?: "yes" | "no" | "unknown" | "changed" | "unverified";
+  /** 请求类确认的人话分类：搜索放行或写进标题；缺省按 route 猜。 */
+  kind?: "search" | "send" | "request";
+  /** 从请求体读出的搜索词或正文；读不到不写。 */
+  query?: string;
+  path?: string;
+  method?: string;
+  body?: string;
+  startedAt?: number;
+  expiresAt?: number;
+}
 
 export interface ConversationEnvelope { conversationId?: string }
 

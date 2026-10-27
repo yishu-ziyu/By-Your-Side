@@ -9,6 +9,7 @@ import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding
 import type { ModelPort, ModelQueueOptions } from "./agent-loop.js";
 import type { ModelRequestObservation } from "./model-request-trace.js";
 import type { PiSessionPersistence } from "./pi-session-persistence.js";
+import { MODEL_FIRST_EVENT_MS, MODEL_HEDGE_MS, MODEL_STALL_AFTER_START_MS, MODEL_STALL_MID_STREAM_MS } from "../../shared/timeouts.js";
 
 export interface PiAgentLoopOptions {
   models: ModelPort;
@@ -43,16 +44,7 @@ export const ELIDE_MIN_CHARS = 1000;
 export const PAGE_OBSERVATION_MARK = "[FRESH PAGE OBSERVATION";
 
 /** 模型调用发出后多久还没有第一个事件（文字、思考、工具调用或结束）就算挂起。 */
-const MODEL_FIRST_EVENT_TIMEOUT_MS = 15_000;
-
-/** 服务端已发出原始事件（如 response.created）后，等第一个内容事件的上限。排队发生在这之前，不受这条限制。 */
-const MODEL_STALL_AFTER_START_MS = 10_000;
-
-/** 流已开始出内容后，这么久没有内容进展就算断流：取消，按可重试错误重来。 */
-const MODEL_STALL_MID_STREAM_MS = 30_000;
-
-/** 能力表没有登记 hedgeMs 的模型：发出后这么久还没有第一个事件（且未受理），就再发一份相同的请求。 */
-const MODEL_HEDGE_MS = 8_000;
+const MODEL_FIRST_EVENT_TIMEOUT_MS = MODEL_FIRST_EVENT_MS;
 
 /** 工具调用参数里连续这么多空白，就算模型写跑了：取消这次请求，按可重试错误重来。 */
 const RUNAWAY_TOOL_ARGS_BLANKS = 512;

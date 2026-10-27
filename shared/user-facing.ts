@@ -5,6 +5,7 @@
  * 规则只有两条：用户面前永远不出现内部名字；翻不出来时说一句笼统但真实的话，不回退到原文。
  * 原文仍进诊断记录（run trace、agent.log），排查不受影响。
  */
+import { describeTimeout } from "./timeouts.js";
 
 /** 工具名 → 用户看得懂的动作（动宾短语，可直接接在「正在」后面）。 */
 const TOOL_ACTIONS = new Map<string, string>(Object.entries({
@@ -16,7 +17,7 @@ const TOOL_ACTIONS = new Map<string, string>(Object.entries({
   scroll: "滚动页面", select_option: "选择选项", upload_file: "上传文件", read_attachment: "读附件", page_operation: "填写并核对", page_translation: "翻译网页",
   browser_run: "连续操作网页", wait_for: "等待页面", check: "核对页面", assert: "核对条件", sleep: "等待", arm_event: "等待页面事件", wait_event: "等待页面事件", disarm_event: "停止等待",
   accept_dialog: "确认弹窗", dismiss_dialog: "关闭弹窗", download_url: "下载文件",
-  js: "检查页面", cdp: "调用浏览器", mark: "标注页面", clear_marks: "清除标注", guide_step: "在网页上教你", ask_user_to_point: "等你在页面上点选", fetch: "发送网络请求",
+  js: "检查页面", cdp: "调用浏览器", mark: "标注页面", clear_marks: "清除标注", guide_step: "在网页上教你", ask_user_to_point: "等你在页面上点选", fetch: "读取网页数据",
   browser_request: "发送网络请求", artifacts: "生成文件", saveFile: "保存文件", remember_user_preference: "记住偏好", user_memory: "查看记忆",
   spawn_worker: "安排助手", list_workers: "查看助手", stop_worker: "让助手停下", post: "发送消息", await_message: "等待助手结果", share_tab: "安排同页协作",
   take_tab: "接手页面", worker_tabs: "调整页面归属", task_goals: "核对目标", task_status: "核对进度", record_task_results: "整理剩余步骤",
@@ -119,7 +120,10 @@ function classifyModelError(text: string, model: string | undefined): Pick<Model
 
   if (/\b5\d\d\b|overload|unavailable|bad gateway|internal server error/i.test(text)) return { kind: "busy", title: "模型服务暂时出错", copy: "对方繁忙或故障，已自动重试几次。可以稍后再试，或换个模型立刻继续。" };
 
-  if (/timeout|timed out|超时/i.test(text)) return { kind: "busy", title: "模型服务太久没有回应", copy: "这次没有拿到回答。可以稍后再试，或换个模型立刻继续。" };
+  if (/timeout|timed out|超时/i.test(text)) {
+    const timeout = describeTimeout(text);
+    return { kind: "busy", title: timeout?.title ?? "模型没有回应", copy: timeout?.copy ?? "这次没有拿到回答。可以重试，或换个模型立刻继续。" };
+  }
 
   if (/connection|network|fetch failed|failed to fetch|ECONN|ENOTFOUND|socket/i.test(text)) return { kind: "network", title: "连不上模型服务", copy: "网络断了，或服务商没有响应。进度没有丢。" };
 
@@ -151,7 +155,7 @@ export function plainDownloadError(code: string | null | undefined): string {
 // 按顺序认第一条：fetch 抛错时外面还包着一层「fetch 请求已发出，结果未知：…」，里面的具体原因（连不上、超时）要先认。
 const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [
   [/fetch 请求失败|Failed to fetch|ERR_(NAME_NOT_RESOLVED|CONNECTION_REFUSED|CONNECTION_TIMED_OUT|CONNECTION_RESET|ADDRESS_UNREACHABLE|INTERNET_DISCONNECTED|NETWORK_FAILED)/, "连不上这个地址"],
-  [/timed out|超时/i, "这一步超时了"],
+  [/timed out|超时/i, "这一步超时了"], // 具体耗时由 describeTimeout 补在错误卡上
   [/已取消/, "已取消"],
   [/not connected|disconnected/i, "连接断开了"],
   [/ERR_(CERT|SSL)/, "页面证书有问题"],
@@ -169,6 +173,8 @@ export function plainToolError(errorText: string): string {
   const text = errorText.trim();
 
   if (!text) return "没做成";
+  const timeout = describeTimeout(text);
+  if (timeout) return timeout.copy;
 
   // 挡住它的元素名字是网页原文（不可信）：只取 ≤11 字显示，标签只作文字（input.ts 的「被挡住」回执）。
   const blockedBy = /元素名字：<page-content[^>]*>\s*([^<]{1,40}?)\s*<\//.exec(text)?.[1]?.trim();

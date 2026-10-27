@@ -9,10 +9,9 @@ import { readCurrentDocument } from "./exec/page-readiness.js";
 import { bringForwardForUser } from "./foreground.js";
 import { SEND_ARM_MS, SEND_CONFIRM_PANEL_PORT } from "../relay.js";
 import type { GuideWait, HeldReason, SendConfirmView } from "../../../shared/protocol.js";
+import { classifyRequest } from "../../../shared/request-confirm.js";
+import { SEND_CONFIRM_MS } from "../../../shared/timeouts.js";
 import { isPanelUrl } from "./target-window.js";
-
-/** 用户多久没理就按「不发」处理。宿主那边放宽的期限比这个长，所以总是这里先给出「没点」的结果。 */
-const SEND_CONFIRM_MS = 120_000;
 
 const PORT_PREFIX = "send-confirm:";
 
@@ -55,7 +54,20 @@ export function readRecipientInPage(x: number | null, y: number | null, maxLengt
   return where && where !== name && !where.includes(name) ? `${name}（${where}）` : name;
 }
 
-export interface SendDetails { content?: string; recipient?: string; binding?: string; rect?: { left: number; top: number; width: number; height: number }; route?: SendConfirmView["route"]; /** 请求发往的网站：和所在网页不是同一个时，卡上写请求真正去的地方。 */ host?: string }
+export interface SendDetails {
+  content?: string;
+  recipient?: string;
+  binding?: string;
+  rect?: { left: number; top: number; width: number; height: number };
+  route?: SendConfirmView["route"];
+  /** 请求发往的网站：和所在网页不是同一个时，卡上写请求真正去的地方。 */
+  host?: string;
+  kind?: SendConfirmView["kind"];
+  query?: string;
+  path?: string;
+  method?: string;
+  body?: string;
+}
 
 type Outcome = NonNullable<SendConfirmView["outcome"]>;
 
@@ -246,17 +258,21 @@ export async function confirmSend(tabId: number, label: string, guard: SendGuard
 function secretField(name: string): boolean {
   const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 
-  return words.some((word, i) => /^(?:pass|passwd|password|passcode|pwd|token|secret|otp|cvv|cvc|cvn|pin|auth|authorization|session|sessionid|cookie|credentials?|signature|apikey|accesskey|privatekey|secretkey|cardnumber|cardno)$/.test(word)
+  return words.some((word, i) => /^(?:pass|passwd|password|passcode|pwd|token|secret|otp|cvv|cvc|cvn|pin|auth|authorization|session|sessionid|cookie|credentials?|signature|apikey|accesskey|privatekey|secretkey|cardnumber|cardno|jwt|bearer|csrf|xsrf|nonce)\d*$/.test(word)
     || (word === "key" && /^(?:api|access|private|secret|client|app|signing)$/.test(words[i - 1] ?? ""))
     || (word === "card" && /^(?:number|no|num|nr)$/.test(words[i + 1] ?? "")));
 }
 
+/** 写在字符串里的凭据（GraphQL 参数、拼好的查询串）：整段遮住。 */
+const INLINE_SECRET = /(pass(?:word|wd|code)?|pwd|token|secret|authorization|api[_-]?key)\d*["']?\s*[:=]/i;
+
 /** 确认卡上的内容随侧栏记录存进本机：JSON 和表单按字段遮住凭据；认不出格式就不写内容，只写去哪。 */
-function requestSummary(body: string | undefined): string | undefined {
+export function requestSummary(body: string | undefined): string | undefined {
   if (!body?.trim()) return undefined;
   const scrub = (value: unknown, hidden: boolean): unknown => hidden ? "••••"
     : Array.isArray(value) ? value.map(item => scrub(item, false))
-      : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrub(item, secretField(key))])) : value;
+      : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrub(item, secretField(key))]))
+        : typeof value === "string" && INLINE_SECRET.test(value) ? "••••" : value;
   let text: string | undefined;
 
   try { text = JSON.stringify(scrub(JSON.parse(body), false)); } catch {
@@ -266,12 +282,22 @@ function requestSummary(body: string | undefined): string | undefined {
   return text?.replace(/\s+/g, " ").trim().slice(0, 120) || undefined;
 }
 
-/** 请求工具带着登录态发 POST：服务器那边可能就是发出、下单或付款，和点「发送」走同一张确认卡，卡上写请求去哪个网站、哪个路径和内容开头。 */
+/** 请求工具带着登录态发 POST：写入、发信、付款和点「发送」走同一张确认卡；搜索、查询按同一份判定放行。 */
 export async function confirmRequest(tabId: number, request: { url: string; body?: string }, guard: SendGuard): Promise<void> {
-  let host = "", path = request.url;
+  const classified = classifyRequest({ method: "POST", url: request.url, body: request.body });
+  if (!classified.confirm) return;
+  let host = classified.host, path = classified.path || request.url;
   try { const url = new URL(request.url); host = url.host; path = url.pathname; } catch { /* 原样显示 */ }
   const content = requestSummary(request.body);
-  await confirmSend(tabId, `POST ${path}`.slice(0, 60), guard, async () => ({ ...(content ? { content } : {}), ...(host ? { host } : {}), route: "request" }));
+  await confirmSend(tabId, `${classified.method} ${path}`.slice(0, 60), guard, async () => ({
+    ...(content ? { content } : {}),
+    ...(host ? { host } : {}),
+    route: "request",
+    kind: classified.intent === "search" ? "search" : "request",
+    path,
+    method: classified.method,
+    ...(content ? { body: content } : {}),
+  }));
 }
 
 async function askUser(tabId: number, guard: SendGuard, key: string | null, label: string, details: SendDetails): Promise<boolean> {
@@ -289,9 +315,24 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
 
   waitingPorts.delete(portName);
 
-  if (!port) throw notSent("确认框没能显示在网页上，所以没有点「发送」。");
+  if (!port) throw notSent("确认框没能显示在网页上，所以没有点「发送」。先看一眼侧栏，或再打开这个网页后重试。");
   const shown = port;
-  const view: SendConfirmView = { id: crypto.randomUUID(), host: details.host ?? hostOf(shown.sender?.url), label: label.trim(), ...(content ? { content } : {}), ...(recipient ? { recipient } : {}), ...(route ? { route } : {}) };
+  const now = Date.now();
+  const view: SendConfirmView = {
+    id: crypto.randomUUID(),
+    host: details.host ?? hostOf(shown.sender?.url),
+    label: label.trim(),
+    ...(content ? { content } : {}),
+    ...(recipient ? { recipient } : {}),
+    ...(route ? { route } : {}),
+    ...(details.kind ? { kind: details.kind } : {}),
+    ...(details.query ? { query: details.query } : {}),
+    ...(details.path ? { path: details.path } : {}),
+    ...(details.method ? { method: details.method } : {}),
+    ...(details.body ? { body: details.body } : {}),
+    startedAt: now,
+    expiresAt: now + SEND_CONFIRM_MS,
+  };
   const cleanups: Array<() => void> = [];
 
   const outcome = await new Promise<Outcome>(done => {
