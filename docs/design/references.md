@@ -10,6 +10,7 @@
 |---|---|---|---|
 | 对话流、输入框、空会话 | [assistant-ui](https://www.assistant-ui.com/) | 一句问候加居中输入框，消息、工具调用、附件的层次 | MIT，可以 |
 | 会话菜单、回答动作、@ 标签页、/ 技能 | [cmdk](https://github.com/dip/cmdk) | 一个输入框筛选所有动作，键盘上下选，分组标题 | MIT，可以 |
+| 网页划词工具条、划词回答窗 | [Sider 智能菜单](https://sider.ai/) | 图标工具条可钉常用动作；回答窗顶上是动作名，底栏复制、朗读、继续聊天；模型芯片 | 闭源，只看做法 |
 | 回答卡片、表单卡、确认卡 | [shadcn/ui Card](https://ui.shadcn.com/docs/components/card) | 标题、说明、内容、底部动作四层，按钮一个实心一个描边 | MIT，可以 |
 | 字号、颜色、间距的整套档位 | [Vercel Geist](https://vercel.com/geist/introduction) | 少量字号档位、高对比灰阶、每种颜色有固定用途 | 看做法，不搬代码 |
 | 执行反馈、完成提示、页角胶囊 | [Sonner](https://sonner.emilkowal.ski/) | 进出方向一致、叠放、悬停展开，默认值就好看 | MIT，可以 |
