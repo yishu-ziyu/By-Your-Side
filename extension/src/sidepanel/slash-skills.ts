@@ -536,12 +536,20 @@ export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: 
 
   inputEl.addEventListener("input", () => {
     if (!inputEl.value.startsWith("/")) { dismissedFor = null; active = 0; }
-    else if (inputEl.value === "/") { void syncPage(); refreshSkillOperations(); }
+    else {
+      // 用户可能刚切了标签页或网页跳转了：每次输入都按眼前的网站重新筛。
+      void syncPage();
+
+      if (inputEl.value === "/") refreshSkillOperations();
+    }
 
     refresh();
   });
   inputEl.addEventListener("blur", () => close());
-  inputEl.addEventListener("focus", () => refresh());
+  inputEl.addEventListener("focus", () => {
+    if (inputEl.value.startsWith("/")) { void syncPage(); refreshSkillOperations(); }
+    refresh();
+  });
 
   function handleKeydown(e: KeyboardEvent): boolean {
     if (!isOpen() || e.isComposing) return false;

@@ -8,6 +8,7 @@ type Settle = (operations: SkillOperationSummary[] | null) => void;
 
 let send: ((msg: ClientMessage) => boolean) | null = null;
 let known: SkillOperationSummary[] = [];
+let loaded = false;
 const pending = new Map<string, Settle>();
 const listeners = new Set<() => void>();
 
@@ -18,6 +19,11 @@ export function connectSkillOperations(sendMessage: (msg: ClientMessage) => bool
 /** 最近一次拿到的列表；还没拿到时是空的。 */
 export function knownSkillOperations(): readonly SkillOperationSummary[] {
   return known;
+}
+
+/** 拿到过一次列表：之后才能据此说某条技能已经不在了。 */
+export function skillOperationsLoaded(): boolean {
+  return loaded;
 }
 
 export function onSkillOperationsChange(listener: () => void): () => void {
@@ -45,21 +51,18 @@ export function deleteSkillOperation(id: string, done: (ok: boolean) => void): b
   return request({ type: "skill_operation_delete", requestId: crypto.randomUUID(), id }, operations => done(!!operations && !operations.some(item => item.id === id)));
 }
 
-/** 后台回的列表；不是这里发出的请求返回 false。 */
-export function receiveSkillOperations(msg: Extract<ServerMessage, { type: "skill_operations_result" }>): boolean {
+/** 后台回的列表。另一个窗口删改后发出的结果也收：列表只有后台那一份，哪个窗口看到的都该一样。 */
+export function receiveSkillOperations(msg: Extract<ServerMessage, { type: "skill_operations_result" }>): void {
   const settle = pending.get(msg.requestId);
-
-  if (!settle) return false;
   pending.delete(msg.requestId);
 
   if (msg.ok && msg.operations) {
     known = msg.operations;
+    loaded = true;
     for (const listener of listeners) listener();
   }
 
-  settle(msg.ok ? msg.operations ?? [] : null);
-
-  return true;
+  settle?.(msg.ok ? msg.operations ?? [] : null);
 }
 
 /** 当前网页所在网站（完整来源）的技能：技能只在存下它的那个网站上能直接运行。 */

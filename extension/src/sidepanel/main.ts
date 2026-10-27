@@ -101,7 +101,7 @@ import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
-import { connectSkillOperations, deleteSkillOperation, receiveSkillOperations } from "./skill-operations.js";
+import { connectSkillOperations, deleteSkillOperation, knownSkillOperations, onSkillOperationsChange, receiveSkillOperations, refreshSkillOperations, skillOperationsLoaded } from "./skill-operations.js";
 import { mountChapters } from "./chapters.js";
 import { activeTargetTab, isFloat, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
 import { FLOAT_CARD_DEFAULT_RECT, FLOAT_CARD_KEY, readFloatCard } from "../shared/float-card.js";
@@ -475,6 +475,16 @@ const slashSkills = mountSlashSkills({
   verifiedRequest: isLatestVerifiedRequest,
 });
 connectSkillOperations(msg => send(msg));
+// 「撤销」跟着后台那一份列表走：撤销过、在别的窗口删掉、重开侧栏重放记录时，都按技能还在不在来显示。
+onSkillOperationsChange(() => {
+  for (const button of messagesEl.querySelectorAll<HTMLButtonElement>(".skill-undo[data-skill-id]")) paintSkillUndo(button);
+});
+
+function paintSkillUndo(button: HTMLButtonElement): void {
+  if (!skillOperationsLoaded() || knownSkillOperations().some(item => item.id === button.dataset.skillId)) return;
+  button.textContent = "已撤销";
+  button.disabled = true;
+}
 
 /**
  * 这条用户消息是不是最近一个核对做成的任务的请求。宿主只拿最近一个核对做成的任务存成直接运行的技能，
@@ -3088,7 +3098,7 @@ function finishRun(): void {
     const failed = done.filter(chip => chip.classList.contains("error")).length;
     // 换了做法的那步不算进「做了几步」，单独写在末尾。
     // 存成或用上技能的一轮：过程行先说技能，步数收在展开的过程里。
-    const skillChip = ended === "completed" ? done.find(chip => chip.dataset.skill === "saved" || chip.dataset.skill === "used") : undefined;
+    const skillChip = ended === "completed" ? done.find(chip => chip.dataset.skill === "saved" || chip.dataset.skill === "used") ?? done.find(chip => chip.dataset.skill === "unused") : undefined;
     const head = hasResumeReceipt && done.length === 0 && ended === "completed" ? "恢复记录"
       : skillChip?.dataset.past ? skillChip.dataset.past
       : only?.dataset.past ? only.dataset.past
@@ -3336,17 +3346,21 @@ function attachSkillUndo(run: RunHost, answer = run.answer?.el): void {
   const undo = document.createElement("button");
   undo.type = "button";
   undo.className = "skill-undo";
+  undo.dataset.skillId = id;
   undo.textContent = "撤销";
   undo.title = "删掉刚存的这条技能";
   undo.addEventListener("click", () => {
     undo.disabled = true;
 
-    if (!deleteSkillOperation(id, ok => { undo.textContent = ok ? "已撤销" : "没撤销成，再试一次"; undo.disabled = ok; })) {
+    if (!deleteSkillOperation(id, ok => { if (!ok) { undo.textContent = "没撤销成，再试一次"; undo.disabled = false; } })) {
       undo.disabled = false;
       undo.textContent = "没连上，再试一次";
     }
   });
   actions.prepend(undo);
+  paintSkillUndo(undo);
+
+  if (!skillOperationsLoaded()) refreshSkillOperations();
 }
 
 /** 「继续原任务」卡这时在对话里显示着。 */
