@@ -348,13 +348,6 @@ function parseCard(source: string, closed: boolean): Card | undefined {
    * 图的原文里有 <br/>、-->，原文摘录里可能有网页上的任何字（包括像 <button> 的字），都不走下面的组件正则。
    */
   let body = source.slice(head[0].length);
-  const htmlRows: string[][] = [];
-  body = body.replace(/<tr\s*>([\s\S]*?)<\/tr\s*>/gi, (raw, inner: string) => {
-    const cells = [...inner.matchAll(/<td(?:\s[^>]*)?>([\s\S]*?)<\/td\s*>/gi)].map(m => htmlCellText(m[1] ?? ""));
-    if (cells.length < 2) return raw;
-    const index = htmlRows.push(cells) - 1;
-    return `<tr html-row="${index}" />`;
-  });
   const diagramAt = body.indexOf("<diagram>");
   let diagram: Extract<Block, { kind: "diagram" }> | undefined;
   const cites: Array<{ node: string; text: string; from?: string }> = [];
@@ -377,6 +370,13 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       return "";
     });
   }
+  const htmlRows: string[][] = [];
+  body = body.replace(/<tr\s*>([\s\S]*?)<\/tr\s*>/gi, (raw, inner: string) => {
+    const cells = [...inner.matchAll(/<td(?:\s[^>]*)?>([\s\S]*?)<\/td\s*>/gi)].map(m => htmlCellText(m[1] ?? ""));
+    if (cells.length < 2) return raw;
+    const index = htmlRows.push(cells) - 1;
+    return `<tr html-row="${index}" />`;
+  });
   const component = new RegExp(String.raw`<(input|field|stat|step|option|table|tr|check|callout|button|source|diagram-at)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
   // 可调的数先全部认出来：算式可能写在它前面。
   const inputs = new Map<string, CardInput>();
