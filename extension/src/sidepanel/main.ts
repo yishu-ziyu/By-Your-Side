@@ -2420,14 +2420,22 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
   // 收到提示紧跟在气泡（或它的页面标签）后面。
   let note = lastUserBubbleFor(receipt.text)?.nextElementSibling;
   if (note?.matches(".ctx-chips")) note = note.nextElementSibling;
-  if (note instanceof HTMLElement && note.matches(".steer-received")) note.textContent = receipt.status === "applied" ? "已收到 · 并回上一件处理" : "另开一件 · 不打断当前任务";
+  if (note instanceof HTMLElement && note.matches(".steer-received")) {
+    const label = note.querySelector(".steer-received-label");
+    if (label) label.textContent = receipt.status === "applied" ? "已收到 · 并回上一件处理" : "另开一件 · 不打断当前任务";
+  }
 }
 
 /** 任务进行中发出的话会交给正在做的这一轮：在气泡下说一声收到了，免得看不出它是在排队还是被忽略了。 */
 function markSteerReceived(bubble: HTMLElement): void {
   const note = document.createElement("div");
   note.className = "steer-received";
-  note.textContent = "已收到 · 接在当前任务里处理";
+  const label = document.createElement("span");
+  label.className = "steer-received-label";
+  label.textContent = "已收到 · 接在当前任务里处理";
+  note.append(label);
+  const saveButton = bubble.querySelector<HTMLButtonElement>(".pskill-save");
+  if (saveButton) note.append(saveButton);
   const chips = bubble.nextElementSibling;
   (chips instanceof HTMLElement && chips.matches(".ctx-chips") ? chips : bubble).after(note);
 }

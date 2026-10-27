@@ -3370,6 +3370,11 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .msg.user.held-pending { padding: 4px 10px; line-height: 1.4; }
 .msg.user.held-pending .pskill-save { display: none; }
 .msg.user .pskill-save { position: absolute; right: 4px; top: 100%; margin: 3px 0 0; }
+.steer-received { display: flex; flex-direction: column; align-items: flex-end; margin-top: -8px; }
+.steer-received .pskill-save { border: 0; background: transparent; padding: 0; margin: 3px 0 0; font: inherit; color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity var(--m-quick) var(--e-glide); }
+.msg.user:hover + .steer-received .pskill-save, .msg.user:hover + .ctx-chips + .steer-received .pskill-save, .ctx-chips:hover + .steer-received .pskill-save, .steer-received:hover .pskill-save, .steer-received .pskill-save:focus-visible { opacity: 1; }
+.steer-received .pskill-save:hover { color: var(--text-primary); }
+@media (prefers-reduced-motion: reduce) { .steer-received .pskill-save { transition: none; } }
 
 /* 思考摘要、旁白里的小标题（模型写的 **粗体**）：比正文深一档，不放大。 */
 details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
