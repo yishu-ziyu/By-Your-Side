@@ -9,7 +9,7 @@
  * --label 把报告写成 <日期>-<名字>，改前改后对照时不覆盖当晚的报告；对照的那份构建用 SIDEAGENT_ACCEPTANCE_DIST 指定。
  * 任务池是用户的原话，只放在本机 out/ 下，不进仓库。格式：[{ "n": 1, "url": "https://…", "say": ["第一句", "接着说的第二句"], "onPage": [2], "expect": { "1": { "answer": ["57\\.1%"] } } }]
  * onPage 标出哪几句（从 1 数）指的是当时页面上的东西：这几句的动作落在别的页、或用了用户原话里没有的搜索词，记「换了目标」，不算完成。
- * expect 是每句的结果断言（见 replay-row.mts）：流程跑完、有回答不等于答对，登记了断言的句子要断言也过才算做成。
+ * expect 是每句的结果断言（见 replay-row.mts），每句必填：流程跑完、有回答不等于答对，断言过了才算做成。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -146,16 +146,16 @@ try {
       await writeFile(join(shots, `${task.n}-${k}.trace.jsonl`), lines.map(line => `${line.trimEnd()}\n`).join("")).catch(() => {});
       await savePrompts(panel);
       rowRuns.push(new Set(lines.flatMap(line => { try { const r = JSON.parse(line) as { type?: unknown; runId?: unknown }; return r.type === "run_start" ? [r.runId] : []; } catch { return []; } })));
-      const rule = task.expect?.[String(k)];
-      const missed = rule ? missedOf(rule, {
+      const rule = task.expect[String(k)]!;
+      const missed = missedOf(rule, {
         answer: seen.answer,
         page: String(await rp.evaluate(workSession, "document.body?.innerText ?? ''").catch(() => "")),
         tabs: (await rp.targets()).filter(t => t.type === "page").map(t => t.url),
         replyHas: rule.replyHas?.length ? await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); return ${JSON.stringify(rule.replyHas)}.filter(s => !!a?.querySelector(s)); })()`).catch(() => []) as string[] : [],
-      }) : [];
+      });
       const secs = Math.round((answered - start) / 1000);
       const checkSecs = Math.round((Date.now() - answered) / 1000);
-      rows.push({ n: task.n, k, say, secs, checkSecs, totalSecs: secs + checkSecs, calls: 0, load: [loadStart, load()], finished, error: error ?? unsettled ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal: false, verdict: null, expect: rule ? (missed.length ? "fail" : "pass") : null, missed, answer: seen.answer });
+      rows.push({ n: task.n, k, say, secs, checkSecs, totalSecs: secs + checkSecs, calls: 0, load: [loadStart, load()], finished, error: error ?? unsettled ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal: false, verdict: null, expect: missed.length ? "fail" : "pass", missed, answer: seen.answer });
       await rp.screenshot(panel, join(shots, `${task.n}-${k}.png`)).catch(() => {});
       // 原话只进本机报告，不打到终端：climb 会转发这里的输出。
       console.log(`${task.n}-${k} ${finished ? "完成" : "没完成"} ${rows.at(-1)!.totalSecs}s`);
