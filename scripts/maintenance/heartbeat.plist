@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 装法：cp 到 ~/Library/LaunchAgents/com.byyourside.heartbeat.plist，再 launchctl bootstrap gui/$(id -u) 该文件。只读工作树和 PR，不改任何东西。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.byyourside.heartbeat</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string><string>-lc</string>
+    <string>cd ~/Desktop/AI-products/By-Your-Side &amp;&amp; node scripts/maintenance/lines.mjs --stuck</string>
+  </array>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>/tmp/byyourside-heartbeat.log</string>
+  <key>StandardErrorPath</key><string>/tmp/byyourside-heartbeat.log</string>
+</dict>
+</plist>
