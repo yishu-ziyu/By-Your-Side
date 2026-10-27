@@ -251,7 +251,8 @@ function wrapLabels(source: string): string {
 
 /** 上下排和左右排各排一次，取窄的那个：分支多的图左右排常常窄一半。 */
 function narrower(source: string, render: Engine["render"]): string {
-  const flipped = source.replace(/^(\s*(?:flowchart|graph)\s+)(TB|TD|LR)\b/, (_all, head: string, dir: string) => head + (dir === "LR" ? "TB" : "LR"));
+  const at = diagramStart(source);
+  const flipped = source.slice(0, at) + source.slice(at).replace(/^((?:flowchart|graph)\s+)(TB|TD|LR)\b/, (_all, head: string, dir: string) => head + (dir === "LR" ? "TB" : "LR"));
 
   try {
     return flipped !== source && render(flipped, { fontSize: 13 }).width < render(source, { fontSize: 13 }).width ? flipped : source;
@@ -308,8 +309,7 @@ async function drawDiagram(figure: HTMLElement): Promise<void> {
 
   try {
     // 断行和换横竖排都按流程图的语法改写，别的图种原样画。
-    // 图种看第一行关键字；开头的 --- 配置头、%% 注释和 %%{init}%% 指令、空行都不算。
-    const kind = /^(?:\s*---\r?\n[\s\S]*?\r?\n\s*---[^\S\n]*\r?\n)?(?:\s*%%[^\n]*\n)*\s*([A-Za-z-]+)/.exec(source)?.[1] ?? "";
+    const kind = diagramKind(source);
     const flow = kind === "flowchart" || kind === "graph";
     figure.dataset.kind = kind;
     const { mount, render } = await loadEngine(flow ? "flow" : "more");
@@ -374,8 +374,27 @@ export function renderAnswerHtml(text: string, renderProse: (markdown: string) =
   return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "") : p.card ? cardHtml(p.card, sources) : "")).join("");
 }
 
-/** 写完的 ```mermaid 代码块：只有侧栏画得出的图种才换（和 diagram-engine.ts、diagram-engine-more.ts 注册的一一对应）。 */
-const MERMAID_FENCE = /^```mermaid[ \t]*\n((?:---\n[\s\S]*?\n---[ \t]*\n)?(?:%%[^\n]*\n)*(?:flowchart|graph|timeline|sequenceDiagram|mindmap|pie|gantt|stateDiagram(?:-v2)?|classDiagram|erDiagram|journey|quadrantChart|xychart(?:-beta)?)\b[\s\S]*?)\n```[ \t]*$/gm;
+/** 写完的 ```mermaid 代码块。 */
+const MERMAID_FENCE = /^```mermaid[ \t]*\n([\s\S]*?)\n```[ \t]*$/gm;
+/** 侧栏画得出的图种：和 diagram-engine.ts、diagram-engine-more.ts 注册的一一对应。 */
+const DRAWABLE = new Set(["flowchart", "graph", "timeline", "sequenceDiagram", "mindmap", "pie", "gantt", "stateDiagram", "stateDiagram-v2", "classDiagram", "erDiagram", "journey", "quadrantChart", "xychart", "xychart-beta"]);
+
+/** 图的第一个关键字从哪开始：开头的 --- 配置头、%% 注释、%%{…}%% 指令（可以跨行）和空行都不算图。 */
+function diagramStart(source: string): number {
+  let at = 0;
+  const skip = (pattern: RegExp) => {
+    const match = pattern.exec(source.slice(at));
+    if (match) at += match[0].length;
+    return !!match;
+  };
+
+  skip(/^\s*---[^\S\n]*\r?\n[\s\S]*?\r?\n[^\S\n]*---[^\S\n]*(?=\r?\n|$)/);
+  while (skip(/^\s+/) || skip(/^%%\{[\s\S]*?\}%%/) || skip(/^%%[^\n]*/));
+
+  return at;
+}
+
+const diagramKind = (source: string) => /^[A-Za-z-]+/.exec(source.slice(diagramStart(source)))?.[0] ?? "";
 
 /**
  * 模型把结构图写成 ```mermaid 代码块时，用户看到的是一段代码，不是图：照卡片里的结构图画出来，代码收在下面，要复制还在。
@@ -384,6 +403,7 @@ const MERMAID_FENCE = /^```mermaid[ \t]*\n((?:---\n[\s\S]*?\n---[ \t]*\n)?(?:%%[
 function withMermaidDiagrams(prose: string, renderProse: (markdown: string) => string, sources?: AnswerSourceMap): string {
   const blocks: string[] = [];
   const marked = prose.replace(MERMAID_FENCE, (fence: string, source: string) => {
+    if (!DRAWABLE.has(diagramKind(source))) return fence;
     blocks.push(`<div class="gc-diagram" data-diagram="${encodeURIComponent(source)}"><div class="gc-diagram-canvas"></div></div><details class="gc-diagram-code"><summary>Mermaid 代码</summary>${renderProse(fence)}</details>`);
 
     return `\n\n\uE010${blocks.length - 1}\uE011\n\n`;

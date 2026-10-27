@@ -32,7 +32,6 @@ class ArchivedSources extends Map<string, AnswerSource> {
   archive?: (id: string) => AnswerSource | undefined;
   override get(id: string): AnswerSource | undefined { return super.get(id) ?? this.archive?.(id); }
   override has(id: string): boolean { return this.get(id) !== undefined; }
-  cached(id: string): AnswerSource | undefined { return super.get(id); }
 }
 
 /** Source ids belong to captured text, never a live DOM ref or a model-supplied quote. */
@@ -56,7 +55,7 @@ export class AnswerSources {
     if (safe.length < 12 || safe.length > ANSWER_SOURCE_MAX_CHARS) return;
     const digest = createHash('sha256').update(`${origin}\0${safe}`).digest('hex');
     let id = `s${digest.slice(0,8)}`;
-    const existing = this.candidates.get(id) ?? this.records.cached(id);
+    const existing = this.candidates.get(id) ?? this.records.get(id);
     if (existing && (existing.text !== safe || existing.from !== origin)) id = `s${digest.slice(0,16)}`;
     if (!this.candidates.has(id)) this.candidates.set(id,{id,text:safe,from:origin});
     this.trim();

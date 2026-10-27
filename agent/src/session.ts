@@ -1631,8 +1631,8 @@ return;}
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
       const preview = pageReading(main);
       let wholeRead = false;
-      // about:blank、新标签页这类没有网页正文可读，问题本就不针对它；只有 http(s) 网页才要求先读全。
-      const readablePage = /^https?:/i.test(preview?.url ?? context.url ?? '');
+      // about:blank、新标签页这类没有正文可读，问题本就不针对它；网页和本地文件才要求先读全。
+      const readablePage = /^(?:https?|file):/i.test(preview?.url ?? context.url ?? '');
       if (readablePage && (!preview?.text.trim() || preview.totalChars > preview.text.length)) {
         const requests = this.copyRequirements();
         const key = JSON.stringify([run, requests]);
