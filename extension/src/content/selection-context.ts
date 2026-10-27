@@ -2,16 +2,16 @@
  * 划词时交给阅读卡的上下文：所在小节标题，加选区前后看得见的正文。
  * 很多网站的正文不放在 p/li 里（div、span 排版，或跨段选中），只认段落标签会拿到空上下文，回答就只能看着选中的几个字猜。
  * 从选区两端沿文档顺序往外取文字节点，取够就停：不读整页，也不靠搜索文字定位（重复的句子会定位错）。
- * 只取文章范围内（article/main）看得见的字：草稿、隐藏内容、导航、侧栏里的账户信息都不是页面在讲的东西。
+ * 只取文章范围内（article/main）看得见的字：草稿、隐藏内容、导航、侧栏（aside）里的账户信息都不是页面在讲的东西。
  * 这段也会按源码注入验收探针，必须自包含，不能引用模块作用域。
  */
 export function selectionSurrounding(range: Range, text: string, limit: number): string {
   const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
   const visible = (el: Element): boolean => el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
     // display:contents 自己没有盒子，checkVisibility 说看不见，里面的字其实看得见。
-    || (getComputedStyle(el).display === 'contents' && !!el.parentElement && visible(el.parentElement));
+    || ((style => style.display === 'contents' && style.visibility !== 'hidden' && style.opacity !== '0')(getComputedStyle(el)) && !!el.parentElement && visible(el.parentElement));
   const skip = (el: Element | null): boolean => !el
-    || !!el.closest('input,textarea,select,script,style,noscript,template,nav,[role="navigation"],[contenteditable]:not([contenteditable="false"]),[aria-hidden="true"]')
+    || !!el.closest('input,textarea,select,script,style,noscript,template,nav,[role="navigation"],aside,[role="complementary"],[contenteditable]:not([contenteditable="false"]),[aria-hidden="true"]')
     || !visible(el);
   const start = range.startContainer, end = range.endContainer;
   const startEl = start instanceof Element ? start : start.parentElement;
@@ -75,7 +75,8 @@ export function selectionSurrounding(range: Range, text: string, limit: number):
 
   // 所在小节：往回找最近的标题，只念它看得见的字。
   let heading = '';
-  const back = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT);
+  // 只在正文范围里找：侧栏、页头里的标题不是这段所在的小节。
+  const back = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
   back.currentNode = startEl!;
   for (let n = 0, node: Node | null = startEl; node && n < MAX_STEPS; n++, node = back.previousNode()) {
     const h = node instanceof Element ? node.closest('h1,h2,h3,h4') : null;

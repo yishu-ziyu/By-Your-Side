@@ -36,7 +36,7 @@ const FILLER = "<div>学徒们每天清晨先擦版，再调墨，最后才开�
 // 像很多资讯站和单页应用：正文全是 div，没有 p。
 const DIVS = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>印刷工坊</title>
 <style>body{margin:0}.post{max-width:36rem;margin:56px 72px;font:17px/1.75 serif}.post>div{margin:0 0 14px}</style></head><body>
-<div class="post"><h2>${HEADING}</h2>${FILLER}<div>${CLUE}，账本上的开销因此少了三成。</div>
+<aside><h3>${ACCOUNT}</h3><div>${ACCOUNT}</div></aside><div class="post"><h2>${HEADING}</h2>${FILLER}<div>${CLUE}，账本上的开销因此少了三成。</div>
 <h3 style="display:none">${HIDDEN}</h3>
 <div id="pick"><span id="pick-text">这个决定让老师傅们很不满意</span>，他们说新版印出的线条发虚。</div>
 <div contenteditable="plaintext-only">${DRAFT}</div>${FILLER}</div></body></html>`;
@@ -139,7 +139,7 @@ try {
     throw new Error("live-done");
   }
   check("div 排版：请求里有前一段的线索和小节标题", divs.sent.includes(CLUE) && divs.sent.includes(HEADING), { selected: divs.selected, clue: divs.sent.includes(CLUE), heading: divs.sent.includes(HEADING) });
-  check("旁边的可编辑草稿和隐藏标题不进请求", !divs.sent.includes(DRAFT) && !divs.sent.includes(HIDDEN), { draft: divs.sent.includes(DRAFT), hidden: divs.sent.includes(HIDDEN) });
+  check("旁边的可编辑草稿、隐藏标题、没有 article 的页面上的侧栏都不进请求", !divs.sent.includes(DRAFT) && !divs.sent.includes(HIDDEN) && !divs.sent.includes(ACCOUNT), { draft: divs.sent.includes(DRAFT), hidden: divs.sent.includes(HIDDEN), account: divs.sent.includes(ACCOUNT) });
 
   const cross = await explain("/cross", "#a-text", "#b-text");
   check("跨段选中：请求里有选区之外的前文线索", cross.selected.includes("老师傅") && cross.selected.includes("贵重订单") && cross.sent.includes(CLUE), { selected: cross.selected.slice(0, 80), clue: cross.sent.includes(CLUE) });
