@@ -308,8 +308,8 @@ async function drawDiagram(figure: HTMLElement): Promise<void> {
 
   try {
     // 断行和换横竖排都按流程图的语法改写，别的图种原样画。
-    // 图种看第一行关键字；开头的 %% 注释行和空行不算。
-    const kind = /^(?:\s*%%[^\n]*\n)*\s*([A-Za-z-]+)/.exec(source)?.[1] ?? "";
+    // 图种看第一行关键字；开头的 --- 配置头、%% 注释和 %%{init}%% 指令、空行都不算。
+    const kind = /^(?:\s*---\r?\n[\s\S]*?\r?\n\s*---[^\S\n]*\r?\n)?(?:\s*%%[^\n]*\n)*\s*([A-Za-z-]+)/.exec(source)?.[1] ?? "";
     const flow = kind === "flowchart" || kind === "graph";
     figure.dataset.kind = kind;
     const { mount, render } = await loadEngine(flow ? "flow" : "more");
@@ -375,7 +375,7 @@ export function renderAnswerHtml(text: string, renderProse: (markdown: string) =
 }
 
 /** 写完的 ```mermaid 代码块：只有侧栏画得出的图种才换（和 diagram-engine.ts、diagram-engine-more.ts 注册的一一对应）。 */
-const MERMAID_FENCE = /^```mermaid[ \t]*\n((?:flowchart|graph|timeline|sequenceDiagram|mindmap|pie|gantt|stateDiagram(?:-v2)?|classDiagram|erDiagram|journey|quadrantChart|xychart(?:-beta)?)\b[\s\S]*?)\n```[ \t]*$/gm;
+const MERMAID_FENCE = /^```mermaid[ \t]*\n((?:---\n[\s\S]*?\n---[ \t]*\n)?(?:%%[^\n]*\n)*(?:flowchart|graph|timeline|sequenceDiagram|mindmap|pie|gantt|stateDiagram(?:-v2)?|classDiagram|erDiagram|journey|quadrantChart|xychart(?:-beta)?)\b[\s\S]*?)\n```[ \t]*$/gm;
 
 /**
  * 模型把结构图写成 ```mermaid 代码块时，用户看到的是一段代码，不是图：照卡片里的结构图画出来，代码收在下面，要复制还在。
