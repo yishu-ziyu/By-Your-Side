@@ -56,8 +56,8 @@
   /* 文字色彩层级（50%–90% 蓝调色阶） */
   --text-primary: #111827;
   --text-secondary: #3d4a5c;
-  --text-tertiary: #3d4a5c;
-  --text-quaternary: #3d4a5c;
+  --text-tertiary: #5a6778;
+  --text-quaternary: #5c6b7c;
   /* 光球专用墨色：比 text-secondary 深一档。球是细线，用次要色会被 alpha 稀释到看不清。 */
   --orb-ink: #334155;
 
@@ -122,8 +122,8 @@
   --well-outline: rgb(0 0 0 / 0.05);
   --text-primary: #141413;
   --text-secondary: #4a4944;
-  --text-tertiary: #4a4944;
-  --text-quaternary: #4a4944;
+  --text-tertiary: #5c5a52;
+  --text-quaternary: #6a675e;
   --orb-ink: #454139;
   --popover-shadow: 0 10px 28px rgba(20, 20, 19, .1);
   --sh-1: 0 2px 8px rgba(20, 20, 19, .03);
