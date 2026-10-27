@@ -26,15 +26,20 @@ interface FetchResult {
   truncated: boolean;
   stoppedReason: "complete" | "limit" | "deadline" | "abort";
   text: string;
+  timingsMs: { confirmation: number; dispatch: number; response: number; body: number };
 }
 
 export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?: AbortSignal; beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}; confirmPost?: (request: { url: string; body?: string }) => Promise<void> }): Promise<FetchResult & { sendConfirmed?: true }> {
   const request = normalizeFetchRequest(params);
+  const started = performance.now();
   // 读取时限要从用户点「发送」之后算：等确认最长 2 分钟，先起计时会让确认过的请求直接超时。
   const confirmed = request.method === "POST" && opts?.confirmPost ? await opts.confirmPost({ url: request.url, body: request.body }).then(() => true, (error: unknown) => {
     // 还没发出：确认这一步出什么错都是没执行，不能让宿主当成结果未知去重读。
     throw error && typeof error === "object" && "executionFact" in error ? error : Object.assign(new Error(`POST 请求没能先问用户，没有发出：${oneLine(error)}`), { executionFact: "not_executed" as const });
   }) : false;
+  const confirmation = Math.round(performance.now() - started);
+  let dispatch = 0;
+  let responseTime = 0;
   let dispatched = false;
   const controller = new AbortController();
   const onAbort = (): void => controller.abort();
@@ -48,11 +53,14 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
     for (;;) {
       let response: Response;
 
+      const dispatchStart = performance.now();
       await opts?.beforeDispatch?.();
       opts?.beforeDispatch?.checkNow?.();
+      dispatch += performance.now() - dispatchStart;
       if (controller.signal.aborted) throw Object.assign(new Error("fetch 已取消，操作未执行。"), {executionFact: "not_executed"});
       try {
         dispatched = true;
+        const responseStart = performance.now();
         response = await fetch(request.url, {
           method: request.method,
           headers: request.headers,
@@ -61,6 +69,7 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
           redirect: "manual",
           signal: controller.signal,
         });
+        responseTime += performance.now() - responseStart;
       } catch (error) {
         // 用户取消和我们自己的时限分开说：侧栏据此写「已取消」或「超时」。
         if (controller.signal.aborted) throw new Error(opts?.signal?.aborted ? "fetch 已取消，请求结果未知。" : `fetch 超时（${FETCH_READ_DEADLINE_MS / 1000} 秒没有回应），请求结果未知。`);
@@ -81,6 +90,7 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
         continue;
       }
 
+      const bodyStart = performance.now();
       const capped = await readCappedText(response, FETCH_MAX_BYTES, {
         signal: controller.signal,
         deadlineMs: FETCH_READ_DEADLINE_MS,
@@ -98,6 +108,7 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
         truncated: capped.truncated,
         stoppedReason: capped.stoppedReason,
         text: capped.text,
+        timingsMs: { confirmation, dispatch: Math.round(dispatch), response: Math.round(responseTime), body: Math.round(performance.now() - bodyStart) },
       };
     }
   } catch (error) {
