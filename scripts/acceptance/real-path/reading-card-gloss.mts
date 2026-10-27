@@ -1,16 +1,19 @@
 /**
- * 划词阅读卡：正文右侧是空白时贴在旁边并连线；右侧有侧栏或窗口变窄时退回浮卡；
- * 默认短摘要，可展开完整段落；提问框默认「快速」，切到「深度」后请求带深度标记并用主模型。
+ * 划词阅读卡：和侧栏同一套纸色；右边是空白时放在正文旁，有侧栏或窗口窄时浮在选区旁。
+ * 回答窗顶上是动作名（解释、翻译…），底栏有复制、朗读、在侧栏继续；输入框左边的芯片切快速/深度。
+ * 工具条有复制和关闭，「更多」里的常用提问可以钉到工具条上。
  *
- * 真扩展、隔离无头 Chrome、本机练习页、本机脚本模型。脚本模型只证明卡片位置、样式和请求去向，不证明真实回答写得好不好。
+ * 真扩展、隔离无头 Chrome、本机练习页、本机脚本模型。脚本模型只证明卡片位置、样子和请求去向，不证明真实回答写得好不好。
  *   npx tsx scripts/acceptance/real-path/reading-card-gloss.mts --headless
  *
  * 判据：
- *   右侧空白  卡片在正文右侧，不和选区所在段落重叠，有连线；滚动后仍贴着这段。
- *   有侧栏    卡片是浮卡，不盖住侧栏。
- *   窄窗口    退回浮卡，没有连线。
- *   摘要      标题与分隔线不代替正文；长段落可展开完整内容，按钮保留焦点。
- *   快速/深度  默认请求是快速模型并带 fast；切到深度后的请求是主模型并带 deep。
+ *   右侧空白  卡片在正文右侧，不和选区所在段落重叠；滚动后仍贴着这段。
+ *   回答窗    标题是「解释」，不再重复「解释这段文字」；底栏三个按钮可见；点复制后图标变成对勾。
+ *   纸色      卡片底色是浅色，和侧栏同一套色阶。
+ *   快速/深度  默认请求是快速模型并带 fast；点芯片换成深度后，打字追问打到主模型并带 deep。
+ *   钉到工具条 在「更多」里钉上「翻译」，再选中文字时工具条上有「翻译」，点它发出翻译提问、标题是「翻译」。
+ *   关闭      工具条上的 × 收起工具条。
+ *   有侧栏    卡片是浮卡，不盖住侧栏。窄窗口退回浮卡。
  */
 import { createServer } from "node:http";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
@@ -73,13 +76,14 @@ const seen: Seen[] = [];
 const model = await startScriptedModel([
   { match: FOLLOW_UP, steps: [{ text: FOLLOW_ANSWER }] },
   { match: "解释这段选中的文字", steps: [{ text: EXPLAIN_ANSWER }] },
+  { match: "翻译成中文", steps: [{ text: "灯塔看守人用紫色墨水记下每一场风暴。" }] },
 ], undefined, (payload) => {
   const body = payload as { model?: string; reasoning_effort?: unknown; messages?: Array<{ role?: string; content?: unknown }> };
   const user = (body.messages ?? []).filter((message) => message.role === "user").map((message) => typeof message.content === "string" ? message.content : "").join("\n");
 
   if (!user.includes(MARKER) && !user.includes("解释这段选中的文字")) return;
   const depth = user.match(/"depth":"(fast|deep)"/)?.[1] ?? null;
-  seen.push({ model: body.model ?? "", depth, user: user.slice(0, 240), reasoning: body.reasoning_effort ?? null });
+  seen.push({ model: body.model ?? "", depth, user, reasoning: body.reasoning_effort ?? null });
 });
 
 const rp = await launchRealPath();
@@ -99,10 +103,8 @@ type Scene = {
   block: Box;
   rail: Box | null;
   card: Box;
-  line: Box | null;
   place: string;
   innerWidth: number;
-  depths: Array<{ depth: string; checked: string }>;
 };
 
 type DomNode = { backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
@@ -126,6 +128,8 @@ try {
   await rp.cdp.send("Target.activateTarget", { targetId: workTargetId }).catch(() => {});
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, work);
+  // 无头 Chrome 默认不给网页写剪贴板；日常 Chrome 里点击本身就够。
+  await rp.cdp.send("Browser.grantPermissions", { origin: `http://127.0.0.1:${port}`, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] }).catch(() => {});
 
   const findShadow = (node: DomNode): DomNode | null => {
     if ((node.attributes ?? []).includes("data-sideagent-ask") && node.shadowRoots?.length) return node.shadowRoots[0]!;
@@ -165,12 +169,9 @@ try {
   const SCENE = `function(){
     const box = (r) => r && r.width ? {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height} : null;
     const surface = this.querySelector(".surface");
-    const line = this.querySelector(".link:not([hidden])");
     return {
       card: box(surface?.getBoundingClientRect()),
-      line: box(line?.getBoundingClientRect()),
       place: surface?.dataset.place ?? "",
-      depths: [...this.querySelectorAll("[data-depth]")].map((b) => ({ depth: b.getAttribute("data-depth"), checked: b.getAttribute("aria-checked") })),
     };
   }`;
 
@@ -186,7 +187,8 @@ try {
     await copyFile(join(out, `${name}.png`), join(shots, `${name}.png`));
   };
 
-  const openReading = async (path: string, width: number) => {
+  /** 像用户一样拖选标记句，等工具条出来。 */
+  const selectMarker = async (path: string, width: number) => {
     await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false }, work);
     await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${port}${path}` }, work);
     await until(async () => (await rp.evaluate(work, `location.pathname === ${JSON.stringify(path)} && document.readyState === "complete" && !!document.querySelector("[data-sideagent-ask]")`)) || undefined, 15_000, path);
@@ -199,7 +201,12 @@ try {
     const selected = String(await rp.evaluate(work, "getSelection().toString()"));
 
     if (!selected.includes("violet ink")) throw new Error(`划选没有覆盖标记句：${selected.slice(0, 80)}`);
-    const explain = await until(() => pointOf('[data-act="explain"]'), 10_000, "解释");
+    await until(() => pointOf('[data-act="explain"]'), 10_000, "工具条");
+  };
+
+  const openReading = async (path: string, width: number) => {
+    await selectMarker(path, width);
+    const explain = (await pointOf('[data-act="explain"]'))!;
     await sleep(200);
     await click(explain);
     await until(async () => (await inCard<string>(`function(){return [...this.querySelectorAll(".answer")].map(a=>a.textContent??"").join("\\n")}`)).includes("几十年") ? true : undefined, 30_000, "解释写完");
@@ -209,45 +216,34 @@ try {
   await openReading("/blank", 1280);
   const wide = await scene();
   await shot("1-wide");
-  const wideBeside = wide.card.left >= wide.block.right - 1 && !overlaps(wide.card, wide.block);
-  const wideLine = !!wide.line && wide.line.width >= 8 && wide.line.left >= wide.block.right - 4 && wide.line.right <= wide.card.left + 4 && wide.line.top >= wide.block.top - 8 && wide.line.top <= wide.block.bottom + 8;
-  check("宽屏空白：卡片在正文右侧，不和这段重叠，有连线", wideBeside && wideLine, { card: wide.card, block: wide.block, line: wide.line, place: wide.place });
-  const compact = await inCard<{width:number; summary:string; hidden:boolean; composer:boolean}>(`function(){return {width:this.querySelector('.surface').getBoundingClientRect().width,summary:this.querySelector('.answer-summary')?.textContent??'',hidden:!!this.querySelector('.answer')?.hidden,composer:!!this.querySelector('.composer')?.hidden}}`);
-  check("默认窄卡只显示摘要，完整回答可展开", compact.width <= 320 && compact.summary.includes("几十年") && compact.hidden && compact.composer, compact);
-  const details = await pointOf('[data-act="details"]');
-  if (details) {
-    await click(details);
-    const full = await inCard<boolean>(`function(){const a=this.querySelector('.answer');return !!a&&!a.hidden&&a.innerText.includes('盐雾')}`);
-    check("展开后能看到完整第二段", full, full);
-    await shot("1-expanded");
-    await click((await pointOf('[data-act="details"]'))!);
-  } else check("展开按钮可见", false, "没有展开按钮");
-  const followup = await pointOf('[data-act="followup"]');
-  if (followup) await click(followup);
-  const fastChecked = wide.depths.find((item) => item.depth === "fast")?.checked === "true" && wide.depths.find((item) => item.depth === "deep")?.checked === "false";
-  const beforeDeep = seen.length;
+  check("宽屏空白：卡片在正文右侧，不和这段重叠", wide.card.left >= wide.block.right - 1 && !overlaps(wide.card, wide.block) && wide.place === "beside", { card: wide.card, block: wide.block, place: wide.place });
+  const look = await inCard<{ title: string; asked: boolean; foot: string[]; bg: string }>(`function(){const q=this.querySelector('.turn .question');return {title:this.querySelector('.head .title')?.textContent??'',asked:!!q&&!q.hidden,foot:[...this.querySelectorAll('.foot:not([hidden]) button')].map(b=>b.textContent.trim()),bg:getComputedStyle(this.querySelector('.surface')).backgroundColor}}`);
+  const light = (look.bg.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number).every((v) => v > 230);
+  check("回答窗：标题是「解释」，不重复问题行，底栏有复制、朗读、在侧栏继续", look.title === "解释" && !look.asked && ["复制", "朗读", "在侧栏继续"].every((label) => look.foot.includes(label)), look);
+  check("纸色：卡片是浅色底", light, look.bg);
+  await click((await pointOf('.foot [data-act="copy"]'))!);
+  await sleep(200);
+  const copied = await inCard<{ check: boolean; error: string }>(`function(){return {check:this.querySelector('.foot [data-act="copy"]')?.getAttribute('aria-label')==='已复制',error:this.querySelector('.error:not([hidden])')?.textContent??''}}`);
+  const pasted = String(await rp.evaluate(work, "navigator.clipboard.readText().catch((e) => 'ERR ' + e.message)"));
+  check("点复制：剪贴板里是回答，图标变成对勾", copied.check && pasted.includes("几十年"), { ...copied, pasted: pasted.slice(0, 80) });
   const fastRequest = seen.find((item) => item.depth === "fast");
-  const fastSeen = seen.slice(0, beforeDeep).map(({ model: id, depth }) => ({ model: id, depth }));
-  check("默认是快速：请求带 fast，打到快速模型", fastChecked && !!fastRequest && fastRequest.model === "fast-reader" && !fastSeen.some((item) => item.model === "main-reader"), { depths: wide.depths, requests: fastSeen });
+  check("默认是快速：请求带 fast，打到快速模型", !!fastRequest && fastRequest.model === "fast-reader" && !seen.some((item) => item.model === "main-reader"), { requests: seen.map(({ model: id, depth }) => ({ model: id, depth })) });
 
-  await click(await until(() => pointOf('[data-depth="deep"]'), 5_000, "深度"));
+  await click(await until(() => pointOf(".depth"), 5_000, "模型芯片"));
   await sleep(150);
-  const deepOn = await scene();
+  const chip = await inCard<{ text: string; pressed: string | null }>(`function(){const b=this.querySelector('.depth');return {text:b.textContent,pressed:b.getAttribute('aria-pressed')}}`);
   await shot("2-depth");
-  check("切到深度后，深度为选中", deepOn.depths.find((item) => item.depth === "deep")?.checked === "true" && deepOn.depths.find((item) => item.depth === "fast")?.checked === "false", deepOn.depths);
+  check("点芯片换成深度", chip.text === "深度" && chip.pressed === "true", chip);
   await click(await until(() => pointOf("textarea"), 5_000, "输入框"));
   await rp.typeText(work, FOLLOW_UP);
-  await until(async () => (await inCard<string>(`function(){return this.querySelector("textarea")?.value??""}`)).includes(FOLLOW_UP) || undefined, 3_000, "追问已输入").catch(() => undefined);
   await rp.pressEnter(work);
-  await until(async () => (await inCard<string>(`function(){return [...this.querySelectorAll(".answer")].map(a=>a.textContent??"").join("\\n")}`)).includes("清楚可读") ? true : undefined, 20_000, "深度回答");
-  await until(async () => (await inCard<string>(`function(){return this.querySelectorAll('.answer')[1]?.textContent??''}`)).includes('完整结尾') || undefined, 20_000, "长段落写完");
-  const longSummary = await inCard<{summary:string;hidden:boolean}>(`function(){const t=this.querySelectorAll('.turn')[1];return {summary:t.querySelector('.answer-summary')?.textContent??'',hidden:!!t.querySelector('.answer')?.hidden}}`);
-  check("单个长段落也收起，默认只露出第一句", longSummary.hidden && longSummary.summary === "几十年后仍清楚可读。", longSummary);
-  await click((await pointOf('[data-act="details"][data-turn="1"]'))!);
-  const longFull = await inCard<boolean>(`function(){const t=this.querySelectorAll('.turn')[1];return !t.querySelector('.answer').hidden&&t.querySelector('.answer').innerText.includes('完整结尾')&&this.activeElement===t.querySelector('.details')}`);
-  check("长段落完整展开，焦点留在展开键", longFull, longFull);
+  await until(async () => (await inCard<string>(`function(){return this.querySelectorAll('.answer')[1]?.textContent??''}`)).includes("完整结尾") || undefined, 20_000, "深度回答写完");
   const deepRequest = seen.find((item) => item.depth === "deep");
-  check("深度请求带 deep，后端用主模型", !!deepRequest && deepRequest.model === "main-reader", { requests: seen.map(({ model: id, depth }) => ({ model: id, depth })) });
+  check("深度追问带 deep，打到主模型", !!deepRequest && deepRequest.model === "main-reader", { requests: seen.map(({ model: id, depth }) => ({ model: id, depth })) });
+  await click((await pointOf('[data-act="details"][data-turn="1"]'))!);
+  const folded = await inCard<{ summary: string; hidden: boolean }>(`function(){const t=this.querySelectorAll('.turn')[1];return {summary:t.querySelector('.answer-summary')?.textContent??'',hidden:!!t.querySelector('.answer')?.hidden}}`);
+  check("长回答可收起成第一句", folded.hidden && folded.summary === "几十年后仍清楚可读。", folded);
+  await click((await pointOf('[data-act="details"][data-turn="1"]'))!);
 
   const beforeScroll = await scene();
   await rp.evaluate(work, "window.scrollBy(0, 140)");
@@ -255,19 +251,42 @@ try {
   const afterScroll = await scene();
   const moved = beforeScroll.block.top - afterScroll.block.top;
   const cardMoved = beforeScroll.card.top - afterScroll.card.top;
-  check("滚动时卡片跟着这段走", moved > 80 && Math.abs(cardMoved - moved) < 16 && afterScroll.card.left >= afterScroll.block.right - 1, { moved, cardMoved, before: beforeScroll.card.top, after: afterScroll.card.top });
+  check("滚动时卡片跟着这段走", moved > 80 && Math.abs(cardMoved - moved) < 16 && afterScroll.card.left >= afterScroll.block.right - 1, { moved, cardMoved });
+
+  // 钉「翻译」：工具条状态下打开「更多」，点「翻译」那行的图钉。
+  await selectMarker("/blank", 1280);
+  await click(await until(() => pointOf('[data-act="more"]'), 5_000, "更多"));
+  await click(await until(() => pointOf('[data-pin="translate"]'), 5_000, "图钉"));
+  await sleep(300);
+  await shot("3-menu");
+  await rp.evaluate(work, "getSelection().removeAllRanges()");
+  await selectMarker("/blank", 1280);
+  const bar = await inCard<string[]>(`function(){return [...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]')).map(b=>b.textContent.trim()||b.getAttribute('aria-label'))}`);
+  await shot("4-pinned-bar");
+  check("工具条有复制、关闭，钉上的「翻译」出现在工具条上", ["复制", "关闭", "翻译"].every((label) => bar.includes(label)), bar);
+  const asked = seen.length;
+  await click(await until(() => pointOf('.bar [data-prompt="translate"]'), 5_000, "工具条上的翻译"));
+  await until(() => seen.length > asked || undefined, 20_000, "翻译请求");
+  await sleep(300);
+  const translated = await inCard<string>(`function(){return this.querySelector('.head .title')?.textContent??''}`);
+  check("点工具条上的翻译：发出翻译提问，标题是「翻译」", translated === "翻译" && seen.at(-1)!.user.includes("翻译"), { title: translated, user: seen.at(-1)!.user.slice(0, 120) });
+
+  await selectMarker("/blank", 1280);
+  await click(await until(() => pointOf('.bar [data-act="dismiss"]'), 5_000, "关闭"));
+  await sleep(300);
+  check("工具条上的 × 收起工具条", await inCard<boolean>(`function(){return this.querySelector('.surface').hidden}`), null);
 
   await openReading("/side", 1280);
   const side = await scene();
   await shot("3-sidebar");
-  const sideFloat = side.card.left < side.block.right - 8 && !side.line;
+  const sideFloat = side.card.left < side.block.right - 8 && side.place !== "beside";
   const sideClear = !!side.rail && !overlaps(side.card, side.rail);
-  check("右侧有侧栏：保持浮卡，不盖住侧栏", sideFloat && sideClear, { card: side.card, block: side.block, rail: side.rail, line: side.line, place: side.place });
+  check("右侧有侧栏：保持浮卡，不盖住侧栏", sideFloat && sideClear, { card: side.card, block: side.block, rail: side.rail, place: side.place });
 
   await openReading("/blank", 480);
   const narrow = await scene();
   await shot("4-narrow");
-  check("窄窗口：退回浮卡", narrow.innerWidth <= 520 && narrow.card.left < narrow.block.right - 8 && !narrow.line, { innerWidth: narrow.innerWidth, card: narrow.card, block: narrow.block, line: narrow.line, place: narrow.place });
+  check("窄窗口：退回浮卡", narrow.innerWidth <= 520 && narrow.card.left < narrow.block.right - 8 && narrow.place !== "beside", { innerWidth: narrow.innerWidth, card: narrow.card, block: narrow.block, place: narrow.place });
 } catch (error) {
   check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
 } finally {

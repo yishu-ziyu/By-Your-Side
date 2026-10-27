@@ -11,7 +11,7 @@ import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
@@ -73,7 +73,19 @@ const BESIDE_GAP = 40;
 /** 工具条和选区之间的距离，小三角画在这段距离里。 */
 const LENS_GAP = 10;
 
-const QUICK_QUESTIONS = [['举个例子', '举个例子'], ['为什么重要？', '这段话为什么重要？'], ['证据是什么？', '作者的证据是什么？']] as const;
+/** 「更多」里的常用提问；钉上的出现在工具条上。存的是 id，改文案不丢已钉的。 */
+const PROMPTS = [
+  { id: 'translate', label: '翻译', question: '把这段翻译成中文；本来就是中文就翻成英文。' },
+  { id: 'define', label: '定义', question: '这段里的关键词是什么意思？' },
+  { id: 'example', label: '举个例子', question: '举个例子' },
+  { id: 'why', label: '为什么重要', question: '这段话为什么重要？' },
+  { id: 'evidence', label: '证据是什么', question: '作者的证据是什么？' },
+] as const;
+
+/** 输入框下的快捷问题：从常用提问里取跟着读下去最常问的三个。 */
+const QUICK_QUESTIONS = PROMPTS.filter(prompt => ['example', 'why', 'evidence'].includes(prompt.id));
+
+const PINS_KEY = 'reading_bar_pins';
 
 /** 卡片顶上引用原文的长度：认得出是哪一段就够。 */
 const QUOTE_CHARS = 36;
@@ -183,15 +195,17 @@ function boot(): void {
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
-      <div class="bar" role="toolbar" aria-label="划词"><button class="ask" data-act="ask" title="选中后直接打字也能问">问<span class="caret" aria-hidden="true"></span></button><span class="sep" aria-hidden="true"></span><button data-act="explain">解释</button><button data-act="read">朗读</button><button class="icon more" data-act="more" aria-label="更多" title="更多" aria-haspopup="menu" aria-expanded="false"></button></div>
-      <div class="head" hidden><span class="q quote"></span><button class="icon small" data-act="handoff" aria-label="在侧栏继续" title="在侧栏继续"></button><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
+      <div class="bar" role="toolbar" aria-label="划词"><button class="ask" data-act="ask" title="选中后直接打字也能问">问<span class="caret" aria-hidden="true"></span></button><span class="sep" aria-hidden="true"></span><button data-act="explain">解释</button><button data-act="read">朗读</button><span class="pins"></span><button class="icon" data-act="copy-selection" aria-label="复制" title="复制"></button><button class="icon more" data-act="more" aria-label="更多" title="更多" aria-haspopup="menu" aria-expanded="false"></button><button class="icon" data-act="dismiss" aria-label="关闭" title="关闭"></button></div>
+      <div class="head" hidden><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
+      <div class="q quote" hidden></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
+      <div class="foot" hidden><button type="button" data-act="copy">复制</button><button type="button" data-act="speak">朗读</button><span class="grow"></span><button type="button" data-act="handoff">在侧栏继续</button></div>
       <div class="error" role="status" hidden></div>
-      <form class="composer" hidden><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问这段话…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
-      <div class="chips" role="group" aria-label="常用问题" hidden>${QUICK_QUESTIONS.map(([label, question]) => `<button type="button" data-ask="${question}">${label}</button>`).join('')}</div>
+      <form class="composer" hidden><button type="button" class="depth" data-act="depth" aria-pressed="false" title="换成深度模型">快速</button><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问这段话…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
+      <div class="chips" role="group" aria-label="常用问题" hidden>${QUICK_QUESTIONS.map(prompt => `<button type="button" data-ask="${prompt.question}">${prompt.label}</button>`).join('')}</div>
       <span class="tail" aria-hidden="true"></span>
     </section>
-    <div class="menu" role="menu" aria-label="更多" hidden><button role="menuitem" data-act="transfer">在侧栏继续</button><div class="rule" role="separator"></div><button role="menuitem" class="dim" data-act="mute-page">这一页不再弹出</button><button role="menuitem" class="dim" data-act="mute-all">关闭划词工具条</button></div>
+    <div class="menu" role="menu" aria-label="更多" hidden><div class="menu-label">常用</div>${PROMPTS.map(prompt => `<div class="menu-row"><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button><button class="icon small pin" data-pin="${prompt.id}" aria-pressed="false" aria-label="钉到工具条" title="钉到工具条"></button></div>`).join('')}<div class="rule" role="separator"></div><button role="menuitem" data-act="transfer">在侧栏继续</button><div class="rule" role="separator"></div><button role="menuitem" class="dim" data-act="mute-page">这一页不再弹出</button><button role="menuitem" class="dim" data-act="mute-all">关闭划词工具条</button></div>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
   document.documentElement.append(host);
   const el = <T extends Element = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
@@ -199,8 +213,12 @@ function boot(): void {
   el('[data-act="explain"]').prepend(icon(Lightbulb));
   el('[data-act="read"]').prepend(icon(Volume2));
   el('[data-act="more"]').append(icon(Ellipsis));
-  el('[data-act="handoff"]').append(icon(PanelRight));
   el('[data-act="close"]').append(icon(X));
+  el('[data-act="dismiss"]').append(icon(X));
+  el('[data-act="copy-selection"]').append(icon(Copy));
+  el('[data-act="copy"]').prepend(icon(Copy));
+  el('[data-act="speak"]').prepend(icon(Volume2));
+  for (const pin of root.querySelectorAll('[data-pin]')) pin.append(icon(Pin));
 
   const surface = el('.surface');
   const menu = el('.menu');
@@ -239,6 +257,10 @@ function boot(): void {
   const deepTurns = new Set<number>();
 
   const drafts = new Map<string, string>();
+  /** 输入框左边的模型芯片：打字问时用快速还是深度。整页沿用，不随换段重置。 */
+  let typedDepth: 'fast' | 'deep' = 'fast';
+  /** 钉到工具条上的常用提问。 */
+  let pins: string[] = [];
   let pinned = false;
 
   /**
@@ -449,7 +471,10 @@ function boot(): void {
     }
   }
 
-  const questionLabel = (question: string) => question === EXPLAIN_PROMPT ? '解释这段文字' : question;
+  const questionLabel = (question: string) => question === EXPLAIN_PROMPT ? '解释这段文字' : PROMPTS.find(prompt => prompt.question === question)?.label ?? question;
+  const preset = (question: string) => question === EXPLAIN_PROMPT || PROMPTS.some(prompt => prompt.question === question);
+  /** 卡片标题用这一问的动作名（解释、翻译…），自己打的问题统一叫「提问」。 */
+  const actionName = (question: string) => question === EXPLAIN_PROMPT ? '解释' : PROMPTS.find(prompt => prompt.question === question)?.label ?? '提问';
 
   function metaButton(label: string, act: string, turn: number): HTMLButtonElement {
     const button = document.createElement('button');
@@ -470,6 +495,8 @@ function boot(): void {
     surface.classList.toggle('composing', composing);
     el('.bar').hidden = expanded;
     el('.head').hidden = !answering;
+    el('.q').hidden = !answering;
+    el('.foot').hidden = !answering || !turns.some(turn => turn.answer.trim());
     messages.hidden = !answering;
     el('.composer').hidden = !expanded;
     el('.chips').hidden = !composing;
@@ -520,6 +547,8 @@ function boot(): void {
       setSourceQuote(item.turn, several && (index === 0 || sources[index] !== sources[index - 1]) ? sources[index]! : '');
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
+      // 第一问是解释、翻译这类动作时，标题已经说了，不再重复一行。
+      item.question.hidden = index === 0 && preset(turn.question) && !corrected.includes(index);
 
       if (fixed) {
         const tag = document.createElement('span');
@@ -586,7 +615,9 @@ function boot(): void {
             const dot = document.createElement('span');
             dot.className = 'dot';
             dot.textContent = '·';
-            parts.push(dot, metaButton('用深度模型重答', 'deep', index));
+            const deepButton = metaButton('用深度模型重答', 'deep', index);
+            deepButton.prepend(icon(Sparkles));
+            parts.push(dot, deepButton);
           }
         }
 
@@ -603,7 +634,8 @@ function boot(): void {
 
     // 顶上引用的是这张卡现在理解的那段原文：等回答时是刚按住时选的那段，换了选段就跟着换。
     const quoted = (waitingSource ?? sources.at(-1) ?? snapshot?.source.text ?? '').replace(/\s+/g, ' ').trim();
-    const quote = el('.head .q');
+    el('.title').textContent = waiting ? '提问' : actionName(turns.at(-1)?.question ?? '');
+    const quote = el('.q');
     quote.textContent = quoteOf(quoted);
     quote.title = quoted.slice(0, 400);
     const busy = readingBusy(record);
@@ -618,10 +650,42 @@ function boot(): void {
     const handoff = el<HTMLButtonElement>('[data-act="handoff"]');
     handoff.disabled = busy || sending;
     const handoffLabel = record?.transferredConversationId ? '回到侧栏' : '在侧栏继续';
-    handoff.setAttribute('aria-label', handoffLabel);
-    handoff.title = handoffLabel;
+    handoff.replaceChildren(icon(PanelRight), handoffLabel);
+    const depth = el<HTMLButtonElement>('.depth');
+    depth.textContent = typedDepth === 'deep' ? '深度' : '快速';
+    depth.setAttribute('aria-pressed', String(typedDepth === 'deep'));
+    depth.title = typedDepth === 'deep' ? '打字问时用深度模型，点一下换回快速' : '打字问时用快速模型，点一下换成深度';
     position();
     pushPointer();
+  }
+
+  /** 复制成功：图标换成对勾一会儿，不另弹提示。 */
+  function flash(button: HTMLElement): void {
+    const glyph = button.querySelector('svg');
+
+    if (!glyph) return;
+    glyph.replaceWith(icon(Check));
+    button.dataset.copied = '1';
+    button.setAttribute('aria-label', '已复制');
+    setTimeout(() => {
+      button.querySelector('svg')?.replaceWith(icon(Copy));
+      delete button.dataset.copied;
+      button.setAttribute('aria-label', '复制');
+    }, 1200);
+  }
+
+  /** 工具条上「解释」「朗读」后面跟着用户钉上的常用提问，菜单里的图钉同步亮。 */
+  function renderPins(): void {
+    el('.pins').replaceChildren(...PROMPTS.filter(prompt => pins.includes(prompt.id)).map(prompt => {
+      const button = document.createElement('button');
+      button.dataset.prompt = prompt.id;
+      button.textContent = prompt.label;
+
+      return button;
+    }));
+
+    for (const pin of root.querySelectorAll<HTMLElement>('[data-pin]')) pin.setAttribute('aria-pressed', String(pins.includes(pin.dataset.pin!)));
+    if (visible && !expanded) position();
   }
 
   const quoteOf = (text: string) => {
@@ -1023,30 +1087,38 @@ function boot(): void {
   function typed(question: string): Promise<void> {
     const next = candidate;
 
-    if (!next || !question.trim()) return send(question, false, readingBusy(record));
+    if (!next || !question.trim()) return send(question, false, readingBusy(record), typedDepth);
     candidate = null;
     snapshot = next;
     side = null;
     glide();
     highlight();
 
-    return send(question, false, readingBusy(record), 'fast', false, next.source);
+    return send(question, false, readingBusy(record), typedDepth, false, next.source);
   }
 
   root.addEventListener('click', event => {
-    const target = (event.target as Element).closest<HTMLElement>('[data-act],[data-ask]');
+    const target = (event.target as Element).closest<HTMLElement>('[data-act],[data-ask],[data-prompt],[data-pin]');
 
     if (!target) {
       return;
     }
 
     const action = target.dataset.act;
-    const quick = target.dataset.ask;
+    const quick = target.dataset.ask ?? PROMPTS.find(prompt => prompt.id === target.dataset.prompt)?.question;
+    const pin = target.dataset.pin;
 
     void (async () => {
       report();
 
-      if (quick) {
+      if (pin) {
+        await chrome.storage.local.set({ [PINS_KEY]: pins.includes(pin) ? pins.filter(id => id !== pin) : [...pins, pin] });
+      }
+      else if (quick) {
+        closeMenu();
+
+        // 从工具条或菜单点的：卡还没展开就先在原地展开，和「解释」一样。
+        if (!expanded) await openReading();
         await send(quick);
       }
       else if (action === 'ask') {
@@ -1070,8 +1142,25 @@ function boot(): void {
           await reader.start(current.source.text, current.range);
         }
       }
-      else if (action === 'close') {
+      else if (action === 'close' || action === 'dismiss') {
         hide();
+      }
+      else if (action === 'copy-selection' || action === 'copy') {
+        const text = action === 'copy' ? answers.at(-1)?.node.innerText ?? '' : snapshot?.source.text ?? '';
+
+        await navigator.clipboard.writeText(text);
+        flash(target);
+
+        if (action === 'copy-selection') setTimeout(hide, 500);
+      }
+      else if (action === 'speak') {
+        const text = answers.at(-1)?.node.innerText ?? '';
+
+        if (text) await reader.start(text, null);
+      }
+      else if (action === 'depth') {
+        typedDepth = typedDepth === 'fast' ? 'deep' : 'fast';
+        render();
       }
       else if (action === 'mute-page') {
         pageMuted = true;
@@ -1140,7 +1229,7 @@ function boot(): void {
     });
   });
   // 点工具条和菜单不能清掉网页上的选区；输入框照常拿焦点。
-  for (const part of [el('.bar'), menu, el('.chips')]) part.addEventListener('pointerdown', event => event.preventDefault());
+  for (const part of [el('.bar'), menu, el('.chips'), el('.depth')]) part.addEventListener('pointerdown', event => event.preventDefault());
   el<HTMLFormElement>('.composer').addEventListener('submit', event => {
     event.preventDefault();
 
@@ -1176,7 +1265,15 @@ function boot(): void {
     }
   };
 
-  void chrome.storage.local.get(SELECTION_BAR_KEY).then(stored => applyBarSetting(isSelectionBarOff(stored[SELECTION_BAR_KEY]))).catch(() => {
+  const applyPins = (value: unknown) => {
+    pins = Array.isArray(value) ? value.filter((id): id is string => PROMPTS.some(prompt => prompt.id === id)) : [];
+    renderPins();
+  };
+
+  void chrome.storage.local.get([SELECTION_BAR_KEY, PINS_KEY]).then(stored => {
+    applyBarSetting(isSelectionBarOff(stored[SELECTION_BAR_KEY]));
+    applyPins(stored[PINS_KEY]);
+  }).catch(() => {
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (retired()) {
@@ -1186,6 +1283,8 @@ function boot(): void {
     if (area === 'local' && SELECTION_BAR_KEY in changes) {
       applyBarSetting(isSelectionBarOff(changes[SELECTION_BAR_KEY]!.newValue));
     }
+
+    if (area === 'local' && PINS_KEY in changes) applyPins(changes[PINS_KEY]!.newValue);
   });
 
   function changedSelection(keyboard = false): void {
