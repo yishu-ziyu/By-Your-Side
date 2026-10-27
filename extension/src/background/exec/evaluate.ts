@@ -2,12 +2,13 @@ import { sendCommand } from "../debugger.js";
 import { LEAD_SESSION_ID, type HeldReason } from "../../../../shared/protocol.js";
 import { resolveWorkingTab } from "../state.js";
 import { oneLine } from "../util.js";
-import { confirmSend, readRecipientInPage, type SendGuard } from "../send-confirm.js";
+import { confirmSend, readRecipientInPage, requestSummary, type SendGuard } from "../send-confirm.js";
 import { payStopText, showPayStopOnPage } from "../pay-stop.js";
 import { isPayLabel } from "../../shared/mark-actions.js";
 import { SENSITIVE_FIELD_NAME } from "../../../../shared/trace-sanitize.js";
 import { readFieldInPage } from "./field-read-in-page.js";
 import { snapshotSendScopeInPage } from "./send-context.js";
+import { requestShape } from "../../../../shared/request-confirm.js";
 
 interface CdpEvalResult {
   result?: { type?: string; value?: unknown; description?: string };
@@ -56,13 +57,13 @@ async function invokeBareFunction(tabId: number, code: string): Promise<string> 
 /**
  * 脚本运行期间先留住发送动作，结束后走和点击「发送」同一个确认。
  * 点名字以「发送 / Send」开头的按钮（element.click、dispatchEvent）、提交带这种按钮的表单（requestSubmit、form.submit）、
- * 合成的回车（输入框里有字，或表单里有发送按钮）、脚本发起的、路径像发送接口的非 GET 网络请求（fetch、XHR、sendBeacon）。
+ * 合成的回车（输入框里有字，或表单里有发送按钮）、脚本发起的写入或无法确认只读的非 GET 网络请求（fetch、XHR、sendBeacon）。
  * 拦下的动作先不做；用户点「发送」后原样重做第一个，其余丢弃。序列化进页面，必须自包含。
  * 付款按钮另算：脚本点它、提交带它的表单、在这种表单里合成回车，一律拦下且永不重做，付款留给用户自己点。isPay 是 isPayLabel 本身，按源码传进来。
  */
-function armSendBlock(marker: string, isPay: (text: string) => boolean, sensitiveName: string, recipient: typeof readRecipientInPage, readField: typeof readFieldInPage, snapshotScope: typeof snapshotSendScopeInPage): void {
+function armSendBlock(marker: string, isPay: (text: string) => boolean, sensitiveName: string, recipient: typeof readRecipientInPage, readField: typeof readFieldInPage, snapshotScope: typeof snapshotSendScopeInPage, request: typeof requestShape): void {
   type Rect = { left: number; top: number; width: number; height: number };
-  type Blocked = { route: "script" | "enter" | "request" | "pay"; label: string; content: string; rect: Rect | null };
+  type Blocked = { route: "script" | "enter" | "request" | "pay"; label: string; content: string; body?: string; host?: string; rect: Rect | null };
   const w = window as unknown as Record<string, any>;
   if (w.__sideagentSendBlock) w.__sideagentSendBlock.disarm();
   const isSend = (t: string) => { const s = (t ?? "").trim().replace(/\s+/g, " "); return s.startsWith("发送") || /^send(\s|$)/i.test(s); };
@@ -222,14 +223,16 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean, sensitiv
       return origDispatch.call(this, ev);
     };
     const meta = new WeakMap<XMLHttpRequest, { method: string; url: string }>();
-    // 只拦像发送接口的请求（路径里有 send、message、comment、reply、post 等词）：保存、搜索、读数据的请求照常发。这是按名字猜，名字不像的发送接口拦不到。
-    const sendy = (url: string) => { try { return /(send|message|msg|chat|comment|reply|post|tweet|mail|publish|share|submit|发送)/i.test(new URL(url, location.href).pathname); } catch { return false; } };
+    // 与请求工具运行同一份判定：搜索、查询、保存放行，写入和拿不准的都问。
+    const needsConfirm = (method: string, url: string, body?: string) => (i => i === "write" || i === "unknown")(request(method, url, body, location.href).intent);
+    const hostOf = (url: string) => { try { return new URL(url, location.href).host; } catch { return undefined; } };
+    const text = (body: unknown) => typeof body === "string" ? body : body instanceof URLSearchParams ? body.toString() : undefined;
     const where = (url: string) => { try { const u = new URL(url, location.href); return u.host === location.host ? u.pathname : u.host + u.pathname; } catch { return String(url).slice(0, 60); } };
     HTMLFormElement.prototype.submit = function (this: HTMLFormElement) { const pay = fromScript() ? payIn(this) : null; if (pay) { holdPay(null, pay); return; } const sb = sendIn(this); if (sb && fromScript()) { record({ route: "script", label: btnName(sb).trim().slice(0, 40), content: draftNear(sb), rect: rectOf(sb) }, () => origSubmit.call(this), sb); return; } return origSubmit.call(this); };
     window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
       const method = String(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
       const url = input instanceof Request ? input.url : String(input);
-      if (method !== "GET" && method !== "HEAD" && sendy(url) && fromScript()) {
+      if (method !== "GET" && method !== "HEAD" && needsConfirm(method, url, text(init?.body)) && fromScript()) {
         const headers = () => [...new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).entries()].sort(([a], [b]) => a.localeCompare(b));
         const beforeHeaders = JSON.stringify(headers());
         const requestBody = input instanceof Request && init?.body === undefined && input.body !== null ? input : null;
@@ -250,7 +253,7 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean, sensitiv
           }
           return bodySame?.() ?? "unverified";
         };
-        record({ route: "request", label: `${method} ${where(url)}`.slice(0, 60), content: typeof init?.body === "string" ? init.body.replace(/\s+/g, " ").slice(0, 120) : draftNear(document.activeElement), rect: null }, async () => {
+        record({ route: "request", label: `${method} ${where(url)}`.slice(0, 60), content: "", body: text(init?.body)?.slice(0, 4000), host: hostOf(url), rect: null }, async () => {
           const response = await origFetch.call(window, input, init);
           if (!response.ok) throw new Error(`发送请求返回 HTTP ${response.status}，请核对网页上的结果，不要重复发送。`);
         }, null, same);
@@ -261,7 +264,7 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean, sensitiv
     XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) { meta.set(this, { method: String(method).toUpperCase(), url: String(url) }); return (origOpen as any).call(this, method, url, ...rest); } as typeof origOpen;
     XMLHttpRequest.prototype.send = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
       const m = meta.get(this);
-      if (m && m.method !== "GET" && m.method !== "HEAD" && sendy(m.url) && fromScript()) {
+      if (m && m.method !== "GET" && m.method !== "HEAD" && needsConfirm(m.method, m.url, text(body)) && fromScript()) {
         const xhr = this; const sameBody = bodyUnchanged(() => body);
         const beforeOpen = Object.getOwnPropertyDescriptor(xhr, "open");
         const beforeHeader = Object.getOwnPropertyDescriptor(xhr, "setRequestHeader");
@@ -280,12 +283,12 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean, sensitiv
           installed = xhr.open === trackedOpen && xhr.setRequestHeader === trackedHeader;
         } catch { cleanup(); }
         const same = () => !installed ? "unverified" as const : !changed && xhr.open === trackedOpen && xhr.setRequestHeader === trackedHeader && xhr.readyState === 1 && xhr.timeout === config[0] && xhr.withCredentials === config[1] && xhr.responseType === config[2] && meta.get(xhr) === m && sameBody();
-        record({ route: "request", label: `${m.method} ${where(m.url)}`.slice(0, 60), content: typeof body === "string" ? body.replace(/\s+/g, " ").slice(0, 120) : draftNear(document.activeElement), rect: null }, () => origSend.call(xhr, body), null, same, cleanup);
+        record({ route: "request", label: `${m.method} ${where(m.url)}`.slice(0, 60), content: "", body: text(body)?.slice(0, 4000), host: hostOf(m.url), rect: null }, () => origSend.call(xhr, body), null, same, cleanup);
         return;
       }
       return origSend.call(this, body);
     };
-    navigator.sendBeacon = function (url: string | URL, data?: BodyInit | null) { if (sendy(String(url)) && fromScript()) { const address = String(url); const sameBody = bodyUnchanged(() => data); record({ route: "request", label: `POST ${where(address)}`.slice(0, 60), content: typeof data === "string" ? data.slice(0, 120) : "", rect: null }, () => origBeacon.call(navigator, url, data), null, () => String(url) === address && sameBody()); return false; } return origBeacon.call(navigator, url, data); };
+    navigator.sendBeacon = function (url: string | URL, data?: BodyInit | null) { if (needsConfirm("POST", String(url), text(data)) && fromScript()) { const address = String(url); const sameBody = bodyUnchanged(() => data); record({ route: "request", label: `POST ${where(address)}`.slice(0, 60), content: "", body: text(data)?.slice(0, 4000), host: hostOf(String(url)), rect: null }, () => origBeacon.call(navigator, url, data), null, () => String(url) === address && sameBody()); return false; } return origBeacon.call(navigator, url, data); };
     for (const t of PRESS) window.addEventListener(t, onPress, true);
     window.addEventListener("click", onClick, true);
     window.addEventListener("submit", onSubmit, true);
@@ -303,7 +306,7 @@ function armSendBlock(marker: string, isPay: (text: string) => boolean, sensitiv
   Object.defineProperty(w, "__sideagentSendBlock", { value: { disarm }, configurable: true, enumerable: false });
 }
 
-type BlockedSend = { route: "script" | "enter" | "request"; label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null };
+type BlockedSend = { route: "script" | "enter" | "request"; label: string; content: string; body?: string; host?: string; rect: { left: number; top: number; width: number; height: number } | null };
 type BlockedPay = Omit<BlockedSend, "route"> & { route: "pay" };
 
 const DISARM = `(() => window.__sideagentSendBlock ? window.__sideagentSendBlock.disarm() : [])()`;
@@ -327,7 +330,7 @@ export async function evaluateJs(
 
   const tabId = tab.id;
   const marker = `sideagent-script-${crypto.randomUUID()}`;
-  const armed = await sendCommand<CdpEvalResult>(tabId, "Runtime.evaluate", { expression: `(${armSendBlock.toString()})(${JSON.stringify(marker)}, ${isPayLabel.toString()}, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}, ${readRecipientInPage.toString()}, ${readFieldInPage.toString()}, ${snapshotSendScopeInPage.toString()})`, returnByValue: true });
+  const armed = await sendCommand<CdpEvalResult>(tabId, "Runtime.evaluate", { expression: `(${armSendBlock.toString()})(${JSON.stringify(marker)}, ${isPayLabel.toString()}, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}, ${readRecipientInPage.toString()}, ${readFieldInPage.toString()}, ${snapshotSendScopeInPage.toString()}, ${requestShape.toString()})`, returnByValue: true });
 
   // 拦截没装上就不跑：否则脚本里的付款、发送动作会直接落到网页上。
   if (armed.exceptionDetails) throw Object.assign(new Error(`没能在这个网页上装好付款和发送拦截，脚本没有运行：${oneLine(armed.exceptionDetails.exception?.description ?? armed.exceptionDetails.text ?? "未知原因")}`), { executionFact: "not_executed" as const });
@@ -379,7 +382,9 @@ export async function evaluateJs(
       await confirmSend(tabId, first.label, sendGuard, async () => {
         const r = await sendCommand<{ result?: { value?: string | null } }>(tabId, "Runtime.evaluate", { expression: `(${readRecipientInPage.toString()})(${cx}, ${cy})`, returnByValue: true }).catch(() => undefined);
         const recipient = r?.result?.value ?? undefined;
-        return { ...(first.content ? { content: first.content } : {}), ...(recipient ? { recipient } : {}), ...(first.rect ? { rect: first.rect } : {}), route: first.route };
+        // 请求正文会随侧栏记录存进本机：和请求工具一样先遮凭据，认不出格式就不写。
+        const content = first.body !== undefined ? requestSummary(first.body) : first.content;
+        return { ...(content ? { content } : {}), ...(first.host ? { host: first.host } : {}), ...(recipient ? { recipient } : {}), ...(first.rect ? { rect: first.rect } : {}), route: first.route };
       });
     } catch (error) {
       await sendCommand(tabId, "Runtime.evaluate", { expression: DROP }).catch(() => {});

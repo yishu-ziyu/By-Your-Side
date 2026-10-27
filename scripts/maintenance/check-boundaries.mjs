@@ -68,7 +68,7 @@ async function filesUnder(directory) {
     const name = path.join(directory, entry.name);
 
     if (entry.isDirectory()) files.push(...await filesUnder(name));
-    else if (/\.[cm]?[jt]sx?$/.test(entry.name) && !/\.d\.[cm]?ts$/.test(entry.name)) files.push(name);
+    else if (/\.[cm]?[jt]sx?$/.test(entry.name) && !/\.d\.[cm]?ts$/.test(entry.name) && !entry.name.endsWith('.sim.ts')) files.push(name);
   }
 
   return files;

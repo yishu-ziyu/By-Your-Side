@@ -14,6 +14,7 @@ import {
   redirectUrl,
 } from "../../../../shared/fetch.js";
 import { oneLine } from "../util.js";
+import { needsRequestConfirm } from "../../../../shared/request-confirm.js";
 
 interface FetchResult {
   url: string;
@@ -33,7 +34,8 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
   const request = normalizeFetchRequest(params);
   const started = performance.now();
   // 读取时限要从用户点「发送」之后算：等确认最长 2 分钟，先起计时会让确认过的请求直接超时。
-  const confirmed = request.method === "POST" && opts?.confirmPost ? await opts.confirmPost({ url: request.url, body: request.body }).then(() => true, (error: unknown) => {
+  // 搜索、查询类 POST 不拦；写入和拿不准的才问（判定见 shared/request-confirm.ts）。
+  const confirmed = request.method !== "GET" && opts?.confirmPost && needsRequestConfirm(request) ? await opts.confirmPost({ url: request.url, body: request.body }).then(() => true, (error: unknown) => {
     // 还没发出：确认这一步出什么错都是没执行，不能让宿主当成结果未知去重读。
     throw error && typeof error === "object" && "executionFact" in error ? error : Object.assign(new Error(`POST 请求没能先问用户，没有发出：${oneLine(error)}`), { executionFact: "not_executed" as const });
   }) : false;
@@ -83,6 +85,8 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
 
         if (hops > FETCH_MAX_REDIRECTS) throw new FetchRefused("fetch 重定向次数过多，后续请求未执行。");
         assertRedirectAllowed(request.url, next);
+        // 307/308 原样带着方法和正文再发一次：放行的搜索请求不能借重定向落到没问过的写入地址。
+        if (request.method !== "GET" && !confirmed && opts?.confirmPost && needsRequestConfirm({ ...request, url: next })) throw new FetchRefused("POST 请求被重定向到需要用户确认的地址，后续请求未执行。");
         // 重定向累计在同一份 request 上原地改，避免每跳都复制一份对象。
         request.url = next;
 
