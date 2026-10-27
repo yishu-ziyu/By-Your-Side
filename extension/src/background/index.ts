@@ -1619,7 +1619,7 @@ const TABLESS_TOOLS: ReadonlySet<string> = new Set(["open_tab", "list_tabs", "ge
 async function requestConfirmTab(key: string): Promise<number> {
   const tab = await resolveReadableTab(undefined, key).catch(() => null);
 
-  if (tab?.id == null) throw Object.assign(new Error("没有能显示确认的网页，这个 POST 请求没有发出。先打开要提交的网站再试。"), { executionFact: "not_executed" as const });
+  if (tab?.id == null) throw Object.assign(new Error("没有能显示确认的网页，这个请求没有发出。先打开要操作的网页，再让我发；也可以改用页面上的按钮。"), { executionFact: "not_executed" as const });
 
   return tab.id;
 }

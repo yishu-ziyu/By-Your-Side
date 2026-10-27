@@ -129,6 +129,8 @@ try {
     const dlg = typeof seen === "object" ? seen : null;
     const postsBeforeDecision = sendPosts() - before;
     const card = dlg ? await panelCard() : "";
+    // 折叠的「技术细节」不在 innerText 里，查路径和遮挡要连它一起读。
+    const cardAll = dlg ? String(await rp.evaluate(panel, `[...document.querySelectorAll(".send-confirm")].at(-1)?.textContent ?? ""`)) : "";
     if (dlg) { await rp.screenshot(work, join(out, `${c.id}-page.png`)); await rp.screenshot(panel, join(out, `${c.id}-panel.png`)); }
     if (dlg && c.answer === "decline" && dlg.no) await mouse(dlg.no);
     if (dlg && c.answer === "send" && dlg.yes) await mouse(dlg.yes);
@@ -138,7 +140,7 @@ try {
     const cardAfter = await panelCard();
     await rp.screenshot(panel, join(out, `${c.id}-after.png`));
     const retryButtons = await rp.evaluate(panel, `[...document.querySelectorAll('.msg.assistant')].filter(m => m.textContent.includes(${JSON.stringify(answer(c.id))})).at(-1)?.querySelectorAll('.send-declined-card button').length ?? 0`);
-    const row = { chips: chips as Json, answerShown, expectedError: !!c.error, expectedConfirmed: c.confirmed ?? (c.answer === "send" && !c.error), retryButtons: retryButtons as Json, cardAfter, id: c.id, answer: c.answer, confirmShown: !!dlg, postsBeforeDecision, postsAfter: sendPosts() - before, dialogText: dlg?.text ?? null, buttons: dlg?.buttons ?? null, ring: dlg?.ring ?? null, pageButtons: dlg?.pageButtons ?? null, pageNotice: dlg?.pageNotice ?? null, panelCard: card, reads: orderReads - readsBefore, tool: toolTexts.slice(tFrom), secs: (Date.now() - t0) / 1000 };
+    const row = { chips: chips as Json, answerShown, expectedError: !!c.error, expectedConfirmed: c.confirmed ?? (c.answer === "send" && !c.error), retryButtons: retryButtons as Json, cardAfter, id: c.id, answer: c.answer, confirmShown: !!dlg, postsBeforeDecision, postsAfter: sendPosts() - before, dialogText: dlg?.text ?? null, buttons: dlg?.buttons ?? null, ring: dlg?.ring ?? null, pageButtons: dlg?.pageButtons ?? null, pageNotice: dlg?.pageNotice ?? null, panelCard: card, panelCardAll: cardAll, reads: orderReads - readsBefore, tool: toolTexts.slice(tFrom), secs: (Date.now() - t0) / 1000 };
     rows.push(row as never); console.log("ROW", JSON.stringify(row));
   }
 } finally {
@@ -156,9 +158,8 @@ const pass = rows.length === CASES.length && rows.every(r => {
   if (r.id === "script-error-send" && (!tool.includes("page-computation-failed") || !tool.includes("不要重复发送"))) return false;
   if (r.id === "save") return !r.confirmShown && saved() === 1;
   if (r.id === "tool-fetch-get") return !r.confirmShown && r.postsAfter === 0 && r.reads === 1 && tool.includes("季度报表打印");
-  // 卡上要写请求真正去的地方，不只写所在网页。
-  // 卡上要写请求真正去的地方，不只写所在网页；令牌这类字段只写占位，因为卡的内容会存进侧栏记录。
-  if (r.id.startsWith("tool-fetch") && !(String(r.panelCard).includes("/api/orders") && String(r.panelCard).includes("网页请求") && !String(r.panelCard).includes("tok-SECRET-42") && String(r.panelCard).includes('"passengers":2'))) return false;
+  // 卡的标题写请求真正去的网站，路径和正文收在「技术细节」里；令牌这类字段只写占位，因为卡的内容会存进侧栏记录。
+  if (r.id.startsWith("tool-fetch") && !(String(r.panelCard).includes(ORDERS_HOST) && String(r.panelCardAll).includes("/api/orders") && !String(r.panelCardAll).includes("tok-SECRET-42") && String(r.panelCardAll).includes('"passengers":2'))) return false;
   return r.confirmShown && r.pageButtons === 0 && String(r.pageNotice).includes("等你在侧栏确认") && r.postsBeforeDecision === 0 && r.postsAfter === (r.answer === "send" ? 1 : 0) && (r.answer === "send" ? String(r.cardAfter).includes("已发送") === r.expectedConfirmed : true);
 });
 for (const r of rows) console.log(r.id, r.confirmShown ? "确认框" : "无确认框", "决定前", r.postsBeforeDecision, "最终", r.postsAfter);
