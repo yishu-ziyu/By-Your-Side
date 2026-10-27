@@ -669,7 +669,7 @@ export interface ToolContract {
   /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回 agent，不回侧栏。 */
   fetch: {
     params: { url: string; method?: "GET" | "POST"; headers?: Record<string, string>; body?: string; savePath?: string; pages?: { from: number; to: number; step?: number } };
-    data: { url: string; status: number; ok: boolean; contentType: string; bytes: number; truncated: boolean; text: string; readBytes?: number; totalBytes?: number | null; stoppedReason?: "complete" | "limit" | "deadline" | "abort" };
+    data: { url: string; status: number; ok: boolean; contentType: string; bytes: number; truncated: boolean; text: string; readBytes?: number; totalBytes?: number | null; stoppedReason?: "complete" | "limit" | "deadline" | "abort"; timingsMs?: { confirmation: number; dispatch: number; response: number; body: number } };
   };
   /** 被动看当前工作页真实发出过哪些请求（CDP Network 域环形缓冲）；只读，不改页面。 */
   network: {
