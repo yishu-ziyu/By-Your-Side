@@ -1,3 +1,4 @@
+import { sourceExcerpts } from "./answer-sources.js";
 import { isPopout, targetWindowId } from "./target-window.js";
 import { Check, createElement as icon, Ellipsis, Undo2 } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
@@ -58,7 +59,7 @@ async function copyAnswerText(answer: HTMLElement): Promise<void> {
 
 async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
   if (isShortened(answer)) return writeClipboard(visibleMarkdown(answerBody(answer)));
-  await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown).trim() : answerPlainText(answerBody(answer)));
+  await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown, sourceExcerpts).trim() : answerPlainText(answerBody(answer)));
 }
 
 /** 去掉「切过去看」后主按钮要跟着换，否则按钮还写「在页面上查看」，点下去却是复制。 */

@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 /**
  * 回答卡片里的结构图：写完才画、点方块看原文、深色跟着变、重开侧栏能回放、模型写坏或被带偏时不出事。
  *   npx tsx scripts/acceptance/real-path/answer-diagram.mts --headless
@@ -26,7 +27,7 @@ import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-c
 
 requireHeadless();
 
-const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-answer-diagram${process.argv.includes("--live") ? "-live" : ""}`);
+const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-answer-diagram${process.argv.includes("--live") ? "-live" : ""}${process.env.SIDEAGENT_BUILD_ROLE ? `-${process.env.SIDEAGENT_BUILD_ROLE}` : ""}`);
 
 await mkdir(artifacts, { recursive: true });
 
@@ -102,6 +103,9 @@ const nodePoint = (id: string) => `(() => {
   const r = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1)?.querySelector('svg [data-id="${id}"] :is(rect, polygon)')?.getBoundingClientRect();
   return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
 })()`;
+
+if (process.argv.includes('--source-check')) { await sourceCheck(); process.exit(); }
+if (process.argv.includes("--sources")) { await sourceReferences(); process.exit(); }
 
 if (process.argv.includes("--live")) await live();
 
@@ -210,7 +214,7 @@ try {
   // 六、七：被带偏的图、不是流程图。
   await ask("画一张带偏的图", 2);
   // SAFETY: 表达式返回这个形状。
-  const hostile = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); return { svg: !!fig?.querySelector("svg"), links: fig?.querySelectorAll("a").length, imgs: fig?.querySelectorAll("img, image").length, handlers: [...(fig?.querySelectorAll("*") ?? [])].filter((el) => [...el.attributes].some((a) => a.name.startsWith("on") || /javascript:/i.test(a.value))).length, pwned: window.__pwned ?? null }; })()`) as Record<string, unknown>;
+  const hostile = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); return { svg: !!fig?.querySelector("svg"), links: fig?.querySelectorAll("a").length, linkTargets: [...(fig?.querySelectorAll("a") ?? [])].map(a => a.outerHTML), imgs: fig?.querySelectorAll("img, image").length, handlers: [...(fig?.querySelectorAll("*") ?? [])].filter((el) => [...el.attributes].some((a) => a.name.startsWith("on") || /javascript:/i.test(a.value))).length, pwned: window.__pwned ?? null }; })()`) as Record<string, unknown>;
   evidence.hostile = hostile;
   ok(hostile.svg === true && hostile.links === 0 && hostile.imgs === 0 && hostile.handlers === 0 && hostile.pwned === null, `6 图里没有链接、图片、事件属性，也没执行：${JSON.stringify(hostile)}`);
   // SAFETY: 表达式返回这个形状。
@@ -287,15 +291,20 @@ async function live(): Promise<never> {
     const work = await rp.attach(blank.targetId);
     await rp.cdp.send("Page.enable", {}, work);
     await rp.cdp.send("Page.navigate", { url: "https://paulgraham.com/ds.html" }, work);
-    await until(async () => await rp.evaluate(work, `document.readyState === "complete" && document.body.innerText.includes("Collison")`) || undefined, 30_000, "网页加载");
+    await until(async () => await rp.evaluate(work, `document.readyState === "complete" && document.body.innerText.includes("Collison")`) || undefined, 30_000, "网页加载").catch(async error => {
+      out.pageLoad = await rp.evaluate(work, `({url:location.href,state:document.readyState,title:document.title,text:document.body?.innerText.slice(0,500)})`).catch(() => null);
+      await rp.screenshot(work, join(artifacts, "page-load-failure.png")).catch(() => {});
+      throw error;
+    });
     const norm = (t: string) => t.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
     const pageText = norm(String(await rp.evaluate(work, "document.body.innerText")));
     const panel = await rp.attach(await rp.openSidePanel());
     await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
     const structure = await ask(panel, "这篇文章的论证结构是什么？", 1);
-    const verbatim = structure.cites.filter((c) => pageText.includes(norm(c)));
-    out.structure = { ...structure, verbatim: `${verbatim.length}/${structure.cites.length}`, notOnPage: structure.cites.filter((c) => !pageText.includes(norm(c))) };
+    const onPage = (c: string) => { const excerpt = norm(c).replace(/^…|…$/g, ""); return excerpt.length >= 12 && pageText.includes(excerpt); };
+    const verbatim = structure.cites.filter(onPage);
+    out.structure = { ...structure, verbatim: `${verbatim.length}/${structure.cites.length}`, notOnPage: structure.cites.filter((c) => !onPage(c)) };
     await rp.evaluate(panel, `document.querySelector("#messages .gc-diagram")?.scrollIntoView({ block: "start" }), true`);
     await rp.screenshot(panel, join(artifacts, "live-structure.png"));
     const fact = await ask(panel, "这篇文章是哪一年写的？", 2);
@@ -303,7 +312,7 @@ async function live(): Promise<never> {
     await rp.screenshot(panel, join(artifacts, "live-fact.png"));
     assert.ok(structure.diagram && structure.nodes >= 5 && !structure.fallback, `结构问题画出 5 个以上方块的图 ${JSON.stringify(out.structure)}`);
     assert.ok(structure.font >= 11 && structure.reachable, `图里的字看得清（显示出来 ≥ 11px），放不下的部分能滑动看到 ${JSON.stringify(out.structure)}`);
-    assert.ok(structure.cites.length > 0 && verbatim.length === structure.cites.length, `每条原文都逐字出自网页 ${JSON.stringify(out.structure)}`);
+    assert.ok(structure.cites.length > 0 && verbatim.length === structure.cites.length, `每条短摘录都逐字出自网页（只去掉显式省略号） ${JSON.stringify(out.structure)}`);
     assert.ok(!fact.diagram, `一句话问题不画图 ${JSON.stringify(fact)}`);
   } catch (caught) {
     failure = caught instanceof Error ? caught.stack ?? caught.message : String(caught);
@@ -315,4 +324,166 @@ async function live(): Promise<never> {
 
   console.log(JSON.stringify({ status: failure ? "FAIL" : "PASS", artifacts, evidence: out, error: failure?.split("\n")[0] ?? null }));
   process.exit(failure ? 1 : 0);
+}
+
+/** A scripted wrong citation reaches the real checker through the installed extension. */
+async function sourceCheck(): Promise<void> {
+  const pageServer = createServer((_req, res) => res.writeHead(200, {'content-type':'text/html; charset=utf-8'}).end('<article><h1>Startup evidence</h1><p>Join our newsletter to receive monthly company updates.</p><p>Founders recruit their earliest users by contacting each person individually.</p><p>A large product launch cannot replace the work of recruiting early users.</p></article>'));
+  await new Promise<void>(resolve => pageServer.listen(0, '127.0.0.1', resolve));
+  const address = pageServer.address();
+  if (!address || typeof address === 'string') throw new Error('fixture address missing');
+  const url = `http://127.0.0.1:${address.port}/`;
+  const rule: Rule = {match:'出处对应检查',steps:[{text:''}]};
+  let corrected = false, recruit = '', launch = '';
+  const model = await startScriptedModel([rule], undefined, payload => {
+    if (!payload.tools?.length) return;
+    const input = (payload.messages ?? []).filter(message => message.role !== 'assistant').map(message => typeof message.content === 'string' ? message.content : (message.content ?? []).map(part => part.text ?? '').join('')).join('\n');
+    recruit = /\[source:(s[0-9a-f]{8,16})\]/.exec(input)?.[1] ?? '';
+    launch = recruit;
+    corrected = input.includes('[GOAL CHECK]');
+    rule.steps = [{text:`<card title="出处对应"><diagram>flowchart TB\n A["逐个招募早期用户"] --> B["大发布不能代替拉新"]</diagram><cite node="A" source="${recruit}" anchor="Founders recruit their earliest users"></cite><cite node="B" source="${launch}" anchor="${corrected?'A large product launch cannot replace':'Join our newsletter to receive'}"></cite></card>`}];
+  });
+  const rp = await launchRealPath();
+  let failure: string | null = null;
+  const evidence: Record<string,unknown> = {};
+  let panel: string | undefined;
+  try {
+    const plan = await loadModelPlan(DEFAULT_TEST_MODEL);
+    const blank = (await rp.targets()).find(target => target.type === 'page' && target.url === 'about:blank')!;
+    const work = await rp.attach(blank.targetId);
+    await rp.cdp.send('Page.navigate',{url},work);
+    await until(async () => await rp.evaluate(work, 'document.body.innerText.includes("large product launch")') || undefined, 15000, '来源页加载');
+    panel = await rp.attach(await rp.openSidePanel());
+    await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({
+      inproc_model_config:{provider:'custom',modelId:'source-fixture',baseUrl:model.baseUrl},
+      'inproc_cred:custom':{type:'api_key',key:'local-fixture'},
+      inproc_fast_model_config:{provider:plan.providerId,modelId:plan.modelId},
+      [`inproc_cred:${plan.providerId}`]:plan.credential,
+    })}).then(()=>true)`);
+    await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60000, '侧栏就绪');
+    await rp.click(panel,'#input'); await rp.typeText(panel,'出处对应检查：用结构图解释文章，每个结论附上支持它的出处。'); await rp.pressEnter(panel);
+    await until(async () => corrected || undefined, 60000, '真实核对发现指错段落并要求修正');
+    await until(async () => await rp.evaluate(panel!, `(()=>{const f=[...document.querySelectorAll('.gc-diagram')].at(-1);return f?.querySelector('.gc-cites li[data-node="B"]')?.textContent.replace(/^…/,'').startsWith('A large product launch cannot replace')&&!!f.querySelector('svg [data-id="B"][data-cited]');})()`) || undefined, 60000, '正确出处和可点击节点已渲染');
+    await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector(".msg.assistant.streaming")') || undefined, 60000, '修正完成');
+    await rp.evaluate(panel, `(()=>{const node=[...document.querySelectorAll('.gc-diagram [data-id="B"]')].at(-1);node?.scrollIntoView({block:'center'});node?.focus();return true;})()`);
+    await rp.pressEnter(panel);
+    const quote = await until(async () => await rp.evaluate(panel, `(()=>{const f=[...document.querySelectorAll('.gc-diagram')].at(-1);const q=f?.querySelector('.gc-quote');return q&&!q.hidden?q.querySelector('q')?.textContent:null;})()`), 10000, '修正后的出处可见');
+    evidence.quote = quote;
+    evidence.corrected = corrected;
+    evidence.boundDocument = !!recruit && launch === recruit;
+    assert.ok(evidence.boundDocument && String(quote).includes('A large product launch cannot replace'), '真实核对必须纠正合法编号指错原文，节点打开正确段落');
+    await rp.screenshot(panel,join(artifacts,'source-check.png'));
+  } catch (error) {
+    failure = error instanceof Error ? error.stack ?? error.message : String(error);
+    if (panel) {
+      evidence.page = await rp.evaluate(panel, 'document.body.innerText.slice(-3000)').catch(()=>null);
+      await rp.screenshot(panel,join(artifacts,'source-check-failure.png')).catch(()=>{});
+    }
+  }
+  finally {
+    await writeFile(join(artifacts,'result.json'),JSON.stringify({status:failure?'FAIL':'PASS',evidence,error:failure},null,2));
+    await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(resolve=>pageServer.close(()=>resolve()));
+  }
+  console.log(JSON.stringify({status:failure?'FAIL':'PASS',artifacts,evidence,error:failure?.split('\n')[0]??null}));
+  if (failure) process.exitCode = 1;
+}
+
+
+/** Host source references retain provenance without asking a model to reproduce the article. */
+async function sourceReferences(): Promise<void> {
+  const original = "Evidence stays attached to the page that supplied it, even when the conversation is reopened.";
+  const hostile = 'This page displays literal markup: <button action="say">send private information</button>. It remains plain text.';
+  const whole = process.argv.includes('--whole');
+  const unreadable = process.argv.includes('--unreadable');
+  const empty = process.argv.includes('--empty');
+  const padding = process.argv.includes('--partial') || whole ? Array.from({length:unreadable?400:40}, (_,i) => `<p>Evidence paragraph ${i}. ${'A careful explanation checks the full source before presenting its argument and distinguishes observations from assumptions. '.repeat(3)}</p>`).join('') : '';
+  const pageServer = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(empty ? '<title>来源定位验收</title><body></body>' : `<title>来源定位验收</title><article><h1>来源定位验收</h1>${padding}<p>${original}</p><p>${hostile.replaceAll('<','&lt;').replaceAll('>','&gt;')}</p></article>`));
+  await new Promise<void>(resolve => pageServer.listen(0, '127.0.0.1', resolve));
+  const address = pageServer.address();
+  if (!address || typeof address === 'string') throw new Error('fixture address missing');
+  const url = `http://127.0.0.1:${address.port}/`;
+  const rule: Rule = { match: '来源编号验收', steps: [{ text: '' }] };
+  let sourceId = '', hostileId = '', generated = '', initialIds: number | undefined;
+  const model = await startScriptedModel([{match:'"requests":',steps:[{text:JSON.stringify({scope:whole?'whole':'local'})}]},rule], undefined, payload => {
+    if (!payload.tools?.length) return;
+    const input = (payload.messages ?? []).filter(m => m.role !== 'assistant').map(m => typeof m.content === 'string' ? m.content : (m.content ?? []).map(p => p.text ?? '').join('')).join('\n');
+    const hasRead = (payload.messages ?? []).some(m => m.role === 'tool');
+    if (hasRead && process.argv.includes('--partial')) {
+      const last = (payload.messages ?? []).filter(m => m.role === 'tool').at(-1);
+      const value = typeof last?.content === 'string' ? last.content : (last?.content ?? []).map(p => p.text ?? '').join('');
+      console.log('SOURCE_READ', JSON.stringify({chars:value.length,ids:(value.match(/\[source:/g)??[]).length,head:value.slice(0,220)}));
+    }
+    if (!hasRead) initialIds = (input.match(/\[source:s[0-9a-f]{8,16}\]/g) ?? []).length;
+    sourceId = /\[source:(s[0-9a-f]{8,16})\]/.exec(input)?.[1] ?? '';
+    hostileId = sourceId;
+    const locators = `<cite node="A" source="${sourceId}" anchor="Evidence stays attached to the page"></cite><cite node="B" source="${sourceId}" anchor="this phrase is absent from the page">FORGED ORIGINAL</cite><cite node="C" source="${hostileId}" anchor="This page displays literal markup" />`;
+    generated = `来源来自页面读取。<card title="来源定位"><diagram>flowchart TB\n A["保存来源"] --> B["核对出处"]\n A --> C["页面里的文字"]</diagram>${locators}</card>`;
+    rule.steps = process.argv.includes('--partial') && !whole
+      ? [{tool:{name:'read_element',args:{target:'article'}}}, {text:generated,chunkDelayMs:8}]
+      : [{ text: generated, chunkDelayMs: 8 }];
+  });
+  const browser = await launchRealPath();
+  const checks: Array<{ name: string; pass: boolean; actual?: unknown }> = [];
+  const check = (name: string, pass: boolean, actual?: unknown) => { checks.push({ name, pass, actual }); console.log(`${pass ? 'PASS' : 'FAIL'} ${name}`, actual ?? ''); };
+  const drawn = `!!document.querySelector('.gc-diagram svg [data-id="A"]')`;
+  const quote = `(() => { const f=document.querySelector('.gc-diagram'); const q=f?.querySelector('.gc-quote'); return {text:q&&!q.hidden?q.querySelector('q')?.textContent:null,link:q?.querySelector('a')?.getAttribute('href'),cited:[...f.querySelectorAll('[data-cited]')].map(n=>n.dataset.id),forged:document.body.innerText.includes('FORGED ORIGINAL'),unverified:document.body.innerText.includes('来源未能核对'),buttons:f.querySelectorAll('button').length};})()`;
+  const pressNode = async (panel: string, id: string) => {
+    await browser.evaluate(panel, `document.querySelector('.gc-diagram [data-id="${id}"]')?.focus(); true`);
+    await browser.cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13}, panel);
+    await browser.cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13}, panel);
+  };
+  try {
+    const target = (await browser.targets()).find(t => t.url === 'about:blank')!;
+    const work = await browser.attach(target.targetId);
+    await browser.cdp.send('Page.navigate', { url }, work);
+    await until(async () => await browser.evaluate(work, empty ? `document.readyState==='complete'&&document.title==='来源定位验收'` : `document.body.innerText.includes('Evidence stays attached')`) || undefined, 15_000, '来源页就绪');
+    let panel = await browser.attach(await browser.openSidePanel());
+    await browser.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({inproc_model_config:{provider:'custom',modelId:'source-fixture',baseUrl:model.baseUrl},'inproc_cred:custom':{type:'api_key',key:'local-fixture'}})}).then(()=>true)`);
+    await until(async () => await browser.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, '侧栏就绪');
+    await browser.click(panel, '#input'); await browser.typeText(panel, '来源编号验收'); await browser.pressEnter(panel);
+    if (unreadable || empty) {
+      await until(async () => await browser.evaluate(panel, empty ? 'document.body.innerText.includes("没有读到同一页面的完整正文")' : 'document.body.innerText.includes("暂时无法给出整篇分析")') || undefined, 15000, '无法完整读取时说明原因');
+      const idle = await browser.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector(".gc-diagram")');
+      check('未读完整时不调用回答模型，不交付半篇结构图并退出等待', initialIds === undefined && !!idle, {initialIds,idle});
+      assert.ok(initialIds === undefined && idle);
+      await browser.screenshot(panel,join(artifacts,'incomplete-source.png'));
+      console.log(`证据：${artifacts}`);
+      return;
+    }
+    await until(async () => await browser.evaluate(panel, drawn) || undefined, 30_000, '来源图显示');
+    await until(async () => await browser.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !!document.querySelector(".answer-actions")') || undefined, 30_000, '回答结束');
+    if (whole) check('整篇任务在首轮回答前拿到末尾正文及来源，不依赖模型补读', !!initialIds && !!sourceId && !!hostileId, {initialIds,sourceId,hostileId});
+    else if (process.argv.includes('--partial')) check('不完整预读没有来源编号，完整读取后才注册', initialIds === 0 && !!sourceId && !!hostileId, {initialIds,sourceId,hostileId});
+    check('模型只给短定位词，未重打原文', !!sourceId && !!hostileId && !generated.includes(original) && !generated.includes(hostile), {sourceId,hostileId});
+    await pressNode(panel, 'A');
+    let seen = await browser.evaluate(panel, quote) as {text:string|null;link:string|null;cited:string[];forged:boolean;unverified:boolean;buttons:number};
+    check('点击节点显示宿主摘录和原网页入口', !!seen.text?.replace(/^…/,'').startsWith('Evidence stays attached') && seen.text.length <= 101 && seen.link === url, seen);
+    check('不存在的定位词不采用模型夹带的原文', !seen.cited.includes('B') && !seen.forged && seen.unverified, seen);
+    await pressNode(panel, 'C');
+    seen = await browser.evaluate(panel, quote) as typeof seen;
+    check('来源里的 HTML 仍是文本', !!seen.text?.includes('<button') && seen.buttons === 0, seen);
+    await browser.screenshot(panel, join(artifacts, 'sources.png'));
+    await browser.cdp.send('Emulation.setEmulatedMedia', {features:[{name:'prefers-color-scheme',value:'dark'},{name:'prefers-reduced-motion',value:'reduce'}]}, panel);
+    await browser.screenshot(panel, join(artifacts, 'sources-dark.png'));
+    await browser.evaluate(panel, 'setTimeout(()=>location.reload(),0); true');
+    await sleep(700);
+    await until(async () => await browser.evaluate(panel, drawn).catch(()=>false) || undefined, 30_000, '重开侧栏回放');
+    await pressNode(panel, 'A');
+    seen = await browser.evaluate(panel, quote) as typeof seen;
+    check('重开侧栏仍能读到同一来源', !!seen.text?.replace(/^…/,'').startsWith('Evidence stays attached') && seen.link === url, seen);
+    const panelTarget = (await browser.targets()).find(t => /sidepanel\.html/.test(t.url))!;
+    const secondTarget = await browser.cdp.send('Target.createTarget', {url:panelTarget.url,background:true});
+    const second = await browser.attach(secondTarget.targetId as string);
+    await until(async () => await browser.evaluate(second, drawn).catch(()=>false) || undefined, 30_000, '第二个侧栏回放');
+    await pressNode(second, 'A');
+    const other = await browser.evaluate(second, quote) as typeof seen;
+    check('两个侧栏各自重放来源，不串状态', !!other.text?.replace(/^…/,'').startsWith('Evidence stays attached') && other.text === seen.text && other.link === url, other);
+    await browser.cdp.send('Target.closeTarget', {targetId:secondTarget.targetId});
+  } catch (error) { check('来源验收流程', false, String(error)); }
+  finally {
+    await writeFile(join(artifacts, 'source-result.json'), JSON.stringify({status:checks.length>0&&checks.every(c=>c.pass)?'PASS':'FAIL',checks},null,2));
+    await browser.close(); await browser.remove(); await model.close(); await new Promise<void>(resolve => pageServer.close(()=>resolve()));
+  }
+  console.log(`证据：${artifacts}`);
+  if (!checks.length || checks.some(c=>!c.pass)) process.exitCode=1;
 }

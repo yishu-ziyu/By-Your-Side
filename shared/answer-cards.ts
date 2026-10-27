@@ -1,3 +1,4 @@
+import { resolveDiagramCite, type AnswerSourceMap, type DiagramCite } from "./answer-source.js";
 /**
  * 回答里的卡片：解析与取数，侧栏、语音、复制共用。
  * 侧栏怎么画在 extension/src/sidepanel/answer-cards.ts；模型怎么写在 agent/src/prompt.ts 的「Answer cards」一节。
@@ -33,7 +34,7 @@ export type Block =
   | { kind: "table"; cols: string[]; rows: Array<{ cells: Cell[]; tag?: string; from?: RowSource }> }
   | { kind: "checks"; items: Array<{ text: string; note?: string }> }
   | { kind: "callout"; tone: "info" | "warn"; text: string }
-  | { kind: "diagram"; source: string; cites: Record<string, { text: string; from?: string }> };
+  | { kind: "diagram"; source: string; cites: Record<string, DiagramCite> };
 
 /** submit：把卡片里各栏的名字和值合成一句用户的话发出。 */
 export type CardButton = { label: string; tab?: string; submit?: boolean; primary: boolean };
@@ -350,7 +351,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   let body = source.slice(head[0].length);
   const diagramAt = body.indexOf("<diagram>");
   let diagram: Extract<Block, { kind: "diagram" }> | undefined;
-  const cites: Array<{ node: string; text: string; from?: string }> = [];
+  const cites: Array<{ node: string; cite: DiagramCite }> = [];
 
   if (diagramAt >= 0 && !closed) {
     body = body.slice(0, diagramAt);
@@ -361,11 +362,12 @@ function parseCard(source: string, closed: boolean): Card | undefined {
     body = `${body.slice(0, diagramAt)}<diagram-at />${end < 0 ? "" : body.slice(end + "</diagram>".length)}`;
 
     if (text) diagram = { kind: "diagram", source: text, cites: {} };
-    body = body.replace(new RegExp(String.raw`<cite\b${ATTRS}\s*>([\s\S]*?)<\/cite>`, "g"), (_all, rawAttrs: string, inner: string) => {
+    body = body.replace(new RegExp(String.raw`<cite\b${ATTRS}\s*(?:/>|>([\s\S]*?)<\/cite>)`, "g"), (_all, rawAttrs: string, inner: string) => {
       const a = attrsOf(rawAttrs);
       const node = str(a.node);
 
-      if (node && inner.trim()) cites.push({ node, text: inner.trim(), from: str(a.from) });
+      if (node && str(a.anchor)) cites.push({ node, cite: { source: str(a.source) ?? '', anchor: str(a.anchor)! } });
+      else if (node && inner?.trim()) cites.push({ node, cite: { text: inner.trim(), from: str(a.from) } });
 
       return "";
     });
@@ -465,7 +467,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
     } else if (tag === "source") {
       if (text) card.source = text;
     } else if (tag === "diagram-at" && diagram) {
-      for (const c of cites) diagram.cites[c.node] = { text: c.text, from: c.from };
+      for (const c of cites) diagram.cites[c.node] = c.cite;
       card.blocks.push(diagram);
     }
   }
@@ -579,7 +581,7 @@ function bareDiagram(text: string, start: number): Omit<CardSpan, "tag"> {
   let end = close + "</diagram>".length;
 
   for (;;) {
-    const cite = /^\s*<cite\b[\s\S]*?<\/cite>/.exec(text.slice(end));
+    const cite = /^\s*<cite\b[^>]*?(?:\/>|>[\s\S]*?<\/cite>)/.exec(text.slice(end));
 
     if (cite) { end += cite[0].length; continue; }
     const rest = text.slice(end);
@@ -673,14 +675,14 @@ export function answerSpeech(text: string): string {
 }
 
 /** 图里某个方块上写的字（复制时给原文配上方块名）；找不到就用方块的 id。 */
-function diagramLabel(source: string, node: string): string {
+export function diagramLabel(source: string, node: string): string {
   const label = new RegExp(String.raw`(?:^|[\s&;>])${node.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\s*[[({>]+\s*"([^"]*)"`, "m").exec(source)?.[1];
 
   return label ? label.replace(/<br\s*\/?>/gi, " ").trim() : node;
 }
 
 /** 复制为 Markdown：卡片换成等价的 Markdown（数字格、步骤、选项、表格、清单），按钮不复制。 */
-export function answerMarkdown(text: string): string {
+export function answerMarkdown(text: string, sources?: AnswerSourceMap): string {
   if (!MAY_HAVE_CARD.test(text) && !text.includes("{=")) return text;
   const parts = splitAnswer(text);
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
@@ -697,7 +699,7 @@ export function answerMarkdown(text: string): string {
       case "inputs": return b.items.map((v) => `- ${v.label}：${showValue(v.value, v.unit)}`).join("\n");
       case "app": return `（小程序：${b.title}）`;
       case "fields": return b.items.map((f) => `- ${f.label}：${f.value || "（待填）"}${f.options ? `（可选：${f.options.join(" / ")}）` : ""}`).join("\n");
-      case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, c]) => `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`)].join("\n");
+      case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, cite]) => { const c = resolveDiagramCite(cite, sources); return c ? (!("text" in cite) ? `- ${diagramLabel(b.source, node)}：${c.url ? `[查看原文](${c.url})` : c.from ?? "已读取的页面"}` : `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`) : `- ${diagramLabel(b.source, node)}：来源未能核对`; })].join("\n");
     }
   }), c.source ? `来源：${c.source}` : ""].filter(Boolean).join("\n\n");
 
