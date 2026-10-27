@@ -10,6 +10,8 @@ import { FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback, type FillSourc
 import { textSha256 } from "../../../../shared/copied-field.js";
 import { copyUnitCount, parseCopyTextRange, selectCopyText, type CopyTextRange } from "../../../../shared/copy-range.js";
 import { copyTargetIdentity, readFillSource } from "./read-element.js";
+import { readFieldInPage, type PageField } from "./field-read-in-page.js";
+import { snapshotSendScopeInPage } from "./send-context.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
 import { sendCommand } from "../debugger.js";
@@ -24,7 +26,7 @@ import { refindDetachedRef } from "../ref-refind.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
 import { isPayLabel, isSendLabel, resolveImplicitMarkActions } from "../../shared/mark-actions.js";
-import { confirmSend, confirmSendIfNeeded, readRecipientInPage, type SendDetails, type SendGuard } from "../send-confirm.js";
+import { confirmSend, confirmSendIfNeeded, readRecipientInPage, recheckConfirmedSend, type SendDetails, type SendGuard } from "../send-confirm.js";
 import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
@@ -173,62 +175,6 @@ function filledResult(range: InputRangeReadout | null | undefined, readback?: Fi
   return { filled: true, ...(rangeIssue ? { rangeIssue } : {}), ...(readback ? { readback } : {}) };
 }
 
-/** 页面里读到的一栏：敏感栏不带 value；select 表示读的是选中项的文字。 */
-type PageField = { name: string; value?: string; sensitive?: true; truncated?: true; select?: true; /** 下拉框选中项的 value（与可见文字不同时，要写的内容可能是它）。 */ optionValue?: string };
-
-/**
- * 写入之后从网页读回这一栏（页面在 input 事件里改了值，读到的是改过的）。在页面里执行，保持自包含。
- * this 是元素（CDP 按节点调用）；否则按 target 解析，target 为 null 时取当前焦点（type_text）。
- * 密码、验证码、卡号这类栏不读值：type、autocomplete 同 read-element.ts 的 secretField，再加字段名（sensitiveName 是 SENSITIVE_FIELD_NAME 的正则源码）
- * 和「这个页面里曾经是 password」的标记（data-bys-was-password，显示密码后 type 变成 text）。
- */
-function readFieldInPage(this: unknown, target: string | null, max: number, sensitiveName: string): PageField | null {
-  let el: Element | null | undefined = this instanceof Element ? this : null;
-
-  if (!el && target) el = window.__sideagent?.dom?.resolve(target);
-
-  if (!el && !target) {
-    el = document.activeElement;
-
-    while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
-  }
-
-  if (!el) return null;
-  const host = (el.getRootNode?.() as ShadowRoot | undefined)?.host;
-
-  if (host?.tagName === "INPUT" && (host as HTMLInputElement).type === "time") el = host;
-  // SAFETY: 下面按 tagName / isContentEditable 分支收窄后才读 value 或 innerText。
-  const field = el as HTMLElement & HTMLInputElement & { selectedOptions: HTMLCollectionOf<HTMLOptionElement> };
-  const tag = field.tagName.toLowerCase();
-  const by = field.getAttribute("aria-labelledby");
-  const name = (field.getAttribute("aria-label")
-    || (by ? by.split(/\s+/).map((id) => field.ownerDocument.getElementById(id)?.textContent ?? "").join(" ") : "")
-    || ("labels" in field && field.labels?.[0]?.textContent) || field.getAttribute("placeholder") || field.getAttribute("title") || "")
-    .replace(/\s+/g, " ").trim().slice(0, 40);
-  const editable = tag === "input" || tag === "textarea" || field.isContentEditable;
-  // 页面函数不能引用外部模块，所以拆驼峰、换分隔符、转小写在这里内联；SENSITIVE_FIELD_NAME 按这种规整后的文字写。
-  const normalize = (text: string) => text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-.]+/g, " ").toLowerCase();
-  const sensitive = editable && ((tag === "input" && (field.type === "password" || field.hasAttribute("data-bys-was-password")))
-    || /one-time-code|cc-(number|csc|exp)/i.test(String(field.getAttribute("autocomplete") ?? ""))
-    || new RegExp(sensitiveName, "i").test([field.getAttribute("name"), field.id, name, field.getAttribute("placeholder"), field.getAttribute("aria-label"), field.getAttribute("title")].map((part) => normalize(String(part ?? ""))).join(" ")));
-
-  if (tag === "input" && field.type === "password") field.setAttribute("data-bys-was-password", "");
-
-  if (sensitive) return { name, sensitive: true };
-  let value: string;
-  let optionValue: string | undefined;
-
-  if (tag === "select") {
-    value = [...field.selectedOptions].map((option) => option.text.trim()).join(", ");
-    optionValue = [...field.selectedOptions].map((option) => option.value).join(", ");
-  }
-  else if (tag === "input" || tag === "textarea") value = String(field.value ?? "");
-  else if (field.isContentEditable) value = field.innerText;
-  else return null;
-
-  return { name, value: value.length > max ? value.slice(0, max) : value, ...(value.length > max ? { truncated: true as const } : {}), ...(tag === "select" ? { select: true as const, optionValue } : {}) };
-}
-
 /**
  * 落点上的「发送」按钮属于哪一栏（R2 确认框上的内容）。在页面里执行，保持自包含。
  * 有表单只在表单里找；没有表单从按钮往上找，第一个有输入栏的容器为准，到 body 就停。
@@ -280,28 +226,58 @@ const SEND_CONTENT_MAX = 120;
 
 /** 确认框要写的：内容、发给谁、按钮在网页上的位置（同时圈出来）。 */
 async function readSendDetails(tabId: number, x: number, y: number): Promise<SendDetails> {
-  const content = await readSendContent(tabId, x, y);
+  const [draft, target] = await Promise.all([readSendContent(tabId, x, y), sendTargetIdentity(tabId, x, y)]);
   try {
-    const expression = `(() => { const el = document.elementFromPoint(${x}, ${y}); const b = el?.closest("button,[role=button],input,a") ?? el; let r = b?.getBoundingClientRect(); if (b && r && (r.bottom < 0 || r.top > innerHeight)) { b.scrollIntoView({ block: "center" }); r = b.getBoundingClientRect(); } return { recipient: (${readRecipientInPage.toString()})(${x}, ${y}), rect: r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null }; })()`;
+    const expression = `(() => { const el = document.elementFromPoint(${x}, ${y}); const b = el?.closest("button,[role=button],input,a") ?? el; let r = b?.getBoundingClientRect(); if (b && r && (r.bottom < 0 || r.top > innerHeight)) { b.scrollIntoView({ block: "center" }); r = b.getBoundingClientRect(); } return { recipient: (${readRecipientInPage.toString()})(${x}, ${y}, 65536), rect: r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null }; })()`;
     const v = (await sendCommand<{ result?: { value?: { recipient: string | null; rect: SendDetails["rect"] | null } } }>(tabId, "Runtime.evaluate", { expression, returnByValue: true })).result?.value;
-    return { content, ...(v?.recipient ? { recipient: v.recipient } : {}), ...(v?.rect ? { rect: v.rect } : {}), route: "click" };
-  } catch { return { content, route: "click" }; }
+    if (!v || target === null || (v.recipient?.length ?? 0) > 65536) return { ...draft, binding: "unavailable", route: "click" };
+    const binding = draft.binding === "unavailable" ? "unavailable" : await sendFingerprint(`${target}\0${draft.binding}\0${v.recipient ?? ""}`);
+    return { ...draft, binding, ...(v.recipient ? { recipient: v.recipient.length > 40 ? `${v.recipient.slice(0, 40)}…` : v.recipient } : {}), ...(v.rect ? { rect: v.rect } : {}), route: "click" };
+  } catch { return { ...draft, binding: "unavailable", route: "click" }; }
 }
 
-/** 确认框上要发出去的内容：从网页读，敏感栏（readFieldInPage 判定）、空栏、认不准的都不给。读不到不影响确认。 */
-async function readSendContent(tabId: number, x: number, y: number): Promise<string | undefined> {
+async function sendTargetIdentity(tabId: number, x: number, y: number): Promise<number | null> {
+  let objectId: string | undefined;
   try {
-    const expression = `(() => { const field = (${findSendFieldInPage.toString()})(${x}, ${y}); return field ? (${readFieldInPage.toString()}).call(field, null, ${SEND_CONTENT_MAX * 2}, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}) : null; })()`;
-    const result = await sendCommand<{ result?: { value?: PageField | null } }>(tabId, "Runtime.evaluate", { expression, returnByValue: true });
-    const field = result.result?.value;
+    const expression = `(() => { let el = document.elementFromPoint(${x}, ${y}); while (el?.shadowRoot) { const inner = el.shadowRoot.elementFromPoint(${x}, ${y}); if (!inner || inner === el) break; el = inner; } return el?.closest('button,[role="button"],input[type="submit"],input[type="button"],a') ?? el; })()`;
+    const result = await sendCommand<{ result?: { objectId?: string } }>(tabId, "Runtime.evaluate", { expression });
+    objectId = result.result?.objectId;
+    if (!objectId) return null;
+    const node = await sendCommand<{ node?: { backendNodeId?: number } }>(tabId, "DOM.describeNode", { objectId });
+    return node.node?.backendNodeId ?? null;
+  } catch { return null; }
+  finally { if (objectId) await sendCommand(tabId, "Runtime.releaseObject", { objectId }).catch(() => {}); }
+}
 
-    if (!field || field.sensitive || field.value === undefined) return undefined;
+async function sendFingerprint(value: string): Promise<string> {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** 确认框上的摘要和用于确认后核对的发送区域快照。 */
+async function readSendContent(tabId: number, x: number, y: number): Promise<Pick<SendDetails, "content" | "binding">> {
+  try {
+    const expression = `(() => {
+      const primary = (${findSendFieldInPage.toString()})(${x}, ${y});
+      const read = ${readFieldInPage.toString()};
+      let target = document.elementFromPoint(${x}, ${y});
+      while (target?.shadowRoot) { const inner = target.shadowRoot.elementFromPoint(${x}, ${y}); if (!inner || inner === target) break; target = inner; }
+      return { primary: primary ? read.call(primary, null, 1000000, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}) : null, scope: (${snapshotSendScopeInPage.toString()})(target, read, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}) };
+    })()`;
+    const result = await sendCommand<{ result?: { value?: { primary?: PageField | null; scope?: string | null } | null } }>(tabId, "Runtime.evaluate", { expression, returnByValue: true });
+    if (!result.result || !("value" in result.result)) return { binding: "unavailable" };
+    const snapshot = result.result.value;
+    if (!snapshot || typeof snapshot.scope !== "string") return { binding: "unavailable" };
+    const binding = await sendFingerprint(snapshot.scope);
+    const field = snapshot.primary;
+    if (!field) return { binding };
+    if (field.sensitive || field.value === undefined || field.truncated) return { binding: "unavailable" };
     const text = field.value.replace(/\s+/g, " ").trim();
 
-    if (!text) return undefined;
+    if (!text) return { binding };
 
-    return text.length > SEND_CONTENT_MAX || field.truncated ? `${text.slice(0, SEND_CONTENT_MAX)}…` : text;
-  } catch { return undefined; }
+    return { binding, content: text.length > SEND_CONTENT_MAX ? `${text.slice(0, SEND_CONTENT_MAX)}…` : text };
+  } catch { return { binding: "unavailable" }; }
 }
 
 /**
@@ -1664,9 +1640,8 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
 
   await beforeDispatch?.();
   // 「发送」按钮：先在网页上等用户确认（页面先切到前台，用户才看得见）。用户点「发送」后，下面照常重新定位、核对命中再点。
-  let sendConfirmed = await confirmSendIfNeeded(tabId, sendName, sendGuard, () => readSendDetails(tabId, point[0], point[1]));
-
   let [x, y] = point!;
+  let sendConfirmed = await confirmSendIfNeeded(tabId, sendName, sendGuard, () => readSendDetails(tabId, x, y));
 
   if (!target) {
     await callPointGuard(tabId, x, y, "remember");
@@ -1739,6 +1714,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
 
       const [effectToken, undoMark] = await Promise.all([effectPending, undoPending]);
       undo = undoMark;
+      if (sendConfirmed && sendGuard) await recheckConfirmedSend(sendGuard);
       // 点击弹出原生 alert/confirm/prompt 时页面被对话框挡住，松开鼠标与效果采样要等对话框关掉才返回（等满 30 秒）。
       // 一弹出就按「已点击，页面弹出对话框」返回；还没返回的命令留在后台，对话框关掉后自然结束。
       const dialogWatch = watchDialog(tabId);
@@ -2772,6 +2748,18 @@ function enterWouldSendInPage(): { label: string; content: string; rect: { left:
   return { label: sendBtn ? (sendBtn.getAttribute("aria-label") || sendBtn.innerText || (sendBtn as HTMLInputElement).value || "发送").trim() : "回车发送", content: content.length > 120 ? content.slice(0, 120) + "…" : content, rect: { left: r.left, top: r.top, width: r.width, height: r.height }, send };
 }
 
+async function readEnterSendDetails(tabId: number, rect: SendDetails["rect"] | null): Promise<SendDetails> {
+  try {
+    const expression = `(() => { const el = window.__sideagentEnterTarget; if (!el?.isConnected) return null; const read = ${readFieldInPage.toString()}; return { field: read.call(el, null, 1000000, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}), scope: (${snapshotSendScopeInPage.toString()})(el, read, ${JSON.stringify(SENSITIVE_FIELD_NAME.source)}), recipient: (${readRecipientInPage.toString()})(null, null, 65536, el) }; })()`;
+    const v = (await sendCommand<{ result?: { value?: { field: PageField | null; scope: string | null; recipient: string | null } | null } }>(tabId, "Runtime.evaluate", { expression, returnByValue: true })).result?.value;
+    if (!v || typeof v.scope !== "string" || v.field?.sensitive || v.field?.truncated || (v.field && v.field.value === undefined) || (v.recipient?.length ?? 0) > 65536) return { binding: "unavailable", route: "enter" };
+    const raw = v.field?.value ?? "";
+    const text = raw.replace(/\s+/g, " ").trim();
+    const binding = await sendFingerprint(`${v.field ? "field" : "none"}\0${raw}\0${v.scope}\0${v.recipient ?? ""}`);
+    return { binding, ...(text ? { content: text.length > SEND_CONTENT_MAX ? `${text.slice(0, SEND_CONTENT_MAX)}…` : text } : {}), ...(v.recipient ? { recipient: v.recipient.length > 40 ? `${v.recipient.slice(0, 40)}…` : v.recipient } : {}), ...(rect ? { rect } : {}), route: "enter" };
+  } catch { return { binding: "unavailable", route: "enter" }; }
+}
+
 /** 任务里的 press_key：回车（含 Ctrl/Cmd+回车，不含 Shift+回车换行）可能把消息发出去，先走和点「发送」同一个确认。 */
 export async function pressKeyGuarded(params: { key: string; tabId?: number }, sessionId: string, sendGuard: SendGuard) {
   const info = resolveKey(params.key);
@@ -2793,12 +2781,13 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
     const hit = read?.result?.value;
 
     if (hit?.send) {
-      confirmed = await confirmSend(tabId, hit.label, sendGuard, async () => {
-        const v = await sendCommand<{ result?: { value?: string | null } }>(tabId, "Runtime.evaluate", { expression: `(${readRecipientInPage.toString()})(null, null)`, returnByValue: true }).catch(() => undefined);
-        const recipient = v?.result?.value ?? undefined;
-        return { ...(hit.content ? { content: hit.content } : {}), ...(recipient ? { recipient } : {}), ...(hit.rect ? { rect: hit.rect } : {}), route: "enter" as const };
-      });
-      await sendCommand(tabId, "Runtime.evaluate", { expression: `(() => { const el = window.__sideagentEnterTarget; delete window.__sideagentEnterTarget; el?.focus(); return true; })()` }).catch(() => undefined);
+      try {
+        confirmed = await confirmSend(tabId, hit.label, sendGuard, () => readEnterSendDetails(tabId, hit.rect));
+        await sendCommand(tabId, "Runtime.evaluate", { expression: `(() => { window.__sideagentEnterTarget?.focus(); return true; })()` }).catch(() => undefined);
+        if (confirmed) await recheckConfirmedSend(sendGuard);
+      } finally {
+        await sendCommand(tabId, "Runtime.evaluate", { expression: `(() => { delete window.__sideagentEnterTarget; return true; })()` }).catch(() => undefined);
+      }
     }
   }
   const result = await pressKey(params, sessionId);

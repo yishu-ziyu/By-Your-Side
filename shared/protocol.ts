@@ -296,7 +296,7 @@ export type ToolExecutionFact = "not_executed" | "unknown" | "executed";
  * guide_*：教学一步没完成（用户停下、离开、点了两次页面都没变化、2 分钟没点），也不是助手出错。
  * 由做出这个决定的地方给出，侧栏按它选给用户看的那句话，不读给助手的文字。
  */
-const HELD_REASONS = ["pay", "declined", "repeat", "busy", "stopped", "left", "timeout", "guide_stopped", "guide_left", "guide_no_change", "guide_timeout"] as const;
+const HELD_REASONS = ["pay", "declined", "repeat", "busy", "stopped", "left", "timeout", "send_changed", "send_unverified", "guide_stopped", "guide_left", "guide_no_change", "guide_timeout"] as const;
 export type HeldReason = typeof HELD_REASONS[number];
 
 export function isHeldReason(v: unknown): v is HeldReason {
@@ -382,7 +382,7 @@ export type SendConfirmOutcome = "send" | "decline" | "stopped" | "left" | "time
  * 侧栏确认卡要显示的内容：网站、按钮名、按钮附近的草稿，都由扩展从网页读出。
  * id 是后台这次等待的身份，侧栏回答时带回；outcome 只在不等了时有，clicked 只在确认后点完时有。草稿只在开始等的那条里带。
  */
-export interface SendConfirmView { id: string; host: string; label: string; content?: string; /** 发给谁：从网页读（收件人栏、聊天标题），读不到不写。 */ recipient?: string; /** 怎么发出去的：脚本、回车、网络请求都走同一个确认。 */ route?: "click" | "script" | "enter" | "request"; outcome?: SendConfirmOutcome; /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */ clicked?: "yes" | "no" | "unknown" }
+export interface SendConfirmView { id: string; host: string; label: string; content?: string; /** 发给谁：从网页读（收件人栏、聊天标题），读不到不写。 */ recipient?: string; /** 怎么发出去的：脚本、回车、网络请求都走同一个确认。 */ route?: "click" | "script" | "enter" | "request"; outcome?: SendConfirmOutcome; /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */ clicked?: "yes" | "no" | "unknown" | "changed" | "unverified" }
 
 export interface ConversationEnvelope { conversationId?: string }
 
