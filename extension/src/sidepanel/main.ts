@@ -4344,6 +4344,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
         if (checked.answer && checked !== currentRun && checked.root.classList.contains("done")) paintAnsweredTitle(checked);
       }
+      if (ev.status === "open" && ev.finding && !resumeCardShown()) addMsg("msg notice", checkNoteForUser(ev.finding, ev.remaining));
 
       // 核对判继续：这份回答不算数了，收进它那一轮的过程（只读的一轮不留过程，直接拿掉）；核对发现写在续做那一轮的过程行上。
       // 续做的过程排在这一刻的对话末尾之后：留一个看不见的定位点，代替原来那行「核对发现」。

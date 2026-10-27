@@ -3565,6 +3565,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const settled: Extract<AgentUiEvent, { kind: "goal_check" }> = { kind: "goal_check", status: continuation && "settle" in continuation ? continuation.settle : "open" };
 
       if (verdict.remaining) settled.remaining = verdict.remaining;
+      if (settled.status === "open" && verdict.verificationSubject === "answer" && verdict.finding) settled.finding = verdict.finding;
 
       if (this.answerHold === hold && !hold.settled) this.runTrace.record("goal_gate", { released: "verdict" });
       letGo();
