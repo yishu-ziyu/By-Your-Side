@@ -24,7 +24,9 @@
 
 10-27 16:17：只读任务做成后可存成「直接运行」的技能（/ 菜单，仅原网站），换词复用重读当前页；真模型维基百科通过，提速未测（[验收](evals/20261027-learned-operations.md)）。备份 `dist-20261027-1617-before-skills-run-directly`。
 
-10-27：OpenAI Codex 模型列表自动更新；新版本目录里的模型需先试连，失败保留当前账号上次结果。日常 Chrome 已看到 `gpt-6.1-terra`；隔离扩展真模型读网页通过，账号切换和断网通过。备份 `out/model-catalog-refresh-backup/previous-dist`。
+10-27：Codex 模型列表更新，试连失败保留上次结果。日常 Chrome 已看到 `gpt-6.1-terra`；隔离扩展真模型读页、账号切换、断网通过。备份 `out/model-catalog-refresh-backup/previous-dist`。
+
+10-27：表格补行、缺项提示、请求计时已装日常扩展。
 
 ## 现在能用什么、还差什么
 
