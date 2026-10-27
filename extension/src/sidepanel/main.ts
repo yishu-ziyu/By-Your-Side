@@ -492,8 +492,12 @@ function paintSkillUndo(button: HTMLButtonElement): void {
  * 侧栏按同一条规则决定「存成技能」里给不给这个选项。
  */
 function isLatestVerifiedRequest(bubble: HTMLElement): boolean {
+  // 宿主只认半小时内做成的任务（session.ts LEARNED_SOURCE_TTL_MS）。
   const runs = [...messagesEl.querySelectorAll<HTMLElement>("details.run-steps")]
     .filter(item => item.querySelector('.run-check[data-tone="ok"]') && !item.querySelector(".chip[data-skill-write]"));
+  const endedAt = Number(runs.at(-1)?.dataset.endedAt);
+
+  if (!Number.isFinite(endedAt) || Date.now() - endedAt > 30 * 60_000) return false;
   const run = runs.at(-1);
 
   for (let node = run?.previousElementSibling; node; node = node.previousElementSibling) {
@@ -3107,6 +3111,8 @@ function finishRun(): void {
       : finishedRunTitle(ended === "completed" ? done.length - failed : done.length, ended, failed);
     run.receipt = { head, total: spokenDuration(run.start, endedAt), steps: done.length, failed, ended };
 
+    if (Number.isFinite(endedAt)) run.root.dataset.endedAt = String(endedAt);
+
     if (hasResumeReceipt && done.length === 0 && ended === "completed") setRunTitle(run, head, true);
     else if (skillChip || only?.dataset.past) setRunTitle(run, head, true);
     else {
@@ -4061,6 +4067,9 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     entry.chip.dataset.short = shortAction("navigate", {}, pageTitle);
     paintAction(label, `打开页面 ${pageTitle}`);
   }
+
+  // 存、删、用技能都会改后台那份列表（用过的统计、助手按用户的话删掉的）：跟着刷新，撤销和菜单才不过期。
+  if (entry.name === "learned_operation") refreshSkillOperations();
 
   if (ev.skill && label) {
     const text = skillStepText(ev.skill);
