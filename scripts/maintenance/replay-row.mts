@@ -10,7 +10,7 @@ import type { GoalFacts } from "../../agent/src/goal-facts.ts";
  * replyHas 是 CSS 选择器，回答里必须有这样的元素（例如画出来的图 .gc-diagram svg）：画没画出来看文字判不准。
  */
 export type Expect = { answer?: string[]; answerNot?: string[]; page?: string[]; tab?: string[]; replyHas?: string[] };
-export type PoolTask = { n: number; url: string; say: string[]; onPage?: number[]; expect?: Record<string, Expect> };
+export type PoolTask = { n: number; url: string; say: string[]; onPage?: number[]; expect: Record<string, Expect> };
 
 export type Row = {
   n: number;
@@ -31,8 +31,7 @@ export type Row = {
   cardSaysFailed: boolean;
   changedGoal: boolean;
   verdict: string | null;
-  /** 结果断言：没登记是 null。 */
-  expect: "pass" | "fail" | null;
+  expect: "pass" | "fail";
   missed: string[];
   answer: string;
 };
@@ -40,8 +39,8 @@ export type Row = {
 // 宿主补的那句「没给出最后的回答就停了」不是回答。
 export const noAnswer = (row: Pick<Row, "answer">) => /没给出最后的回答/.test(row.answer);
 
-/** 做成：做完、没报错、卡片没写没做成、没换目标、有回答，而且登记了的结果断言没落空。 */
-export const ok = (row: Row) => row.finished && !row.error && !row.cardSaysFailed && !row.changedGoal && !!row.answer.trim() && !noAnswer(row) && row.expect !== "fail";
+/** 做成：做完、没报错、卡片没写没做成、没换目标、有回答，而且结果断言过了。 */
+export const ok = (row: Row) => row.finished && !row.error && !row.cardSaysFailed && !row.changedGoal && !!row.answer.trim() && !noAnswer(row) && row.expect === "pass";
 
 export const outcome = (row: Row) => !row.finished ? "没完成" : row.error ? `报错：${row.error.slice(0, 40)}` : row.cardSaysFailed ? "卡片写没做成" : row.changedGoal ? "换了目标" : noAnswer(row) ? "没给回答就停了" : row.expect === "fail" ? `结果不对：${row.missed.join("；").slice(0, 40)}` : "完成";
 
@@ -57,7 +56,7 @@ export function poolOf(value: unknown): PoolTask[] {
     const { n, url, say, onPage, expect } = task as Record<string, unknown>;
     if (typeof n !== "number" || typeof url !== "string" || !strings(say)) throw new Error(`${where}缺 n、url 或 say`);
     if (onPage !== undefined && !(Array.isArray(onPage) && onPage.every(i => typeof i === "number"))) throw new Error(`${where} onPage 应当是数字数组`);
-    if (expect !== undefined && (!expect || typeof expect !== "object")) throw new Error(`${where} expect 应当是对象`);
+    if (!expect || typeof expect !== "object") throw new Error(`${where}缺 expect：每句都要有结果断言`);
 
     for (const [key, rule] of Object.entries(expect ?? {})) {
       if (!/^\d+$/.test(key) || Number(key) < 1 || Number(key) > (say as string[]).length) throw new Error(`${where} expect 的键 ${key} 不是句号`);
@@ -67,6 +66,10 @@ export function poolOf(value: unknown): PoolTask[] {
         if (field !== "replyHas") for (const pattern of patterns as string[]) new RegExp(pattern, "i");
       }
     }
+
+    // 没有断言的句子跑完也判不出对错，只会被算成做成。
+    const bare = (say as string[]).map((_, i) => i + 1).filter(k => !Object.values((expect as Record<string, Record<string, string[]>>)[k] ?? {}).some(patterns => patterns.length));
+    if (bare.length) throw new Error(`${where}第 ${bare.join("、")} 句没有结果断言`);
 
     // SAFETY: 上面逐项核过形状。
     return task as PoolTask;
