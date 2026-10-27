@@ -80,6 +80,7 @@ export function measuredModelIds(provider: string): string[] {
 
 /** 把实测登记覆盖到模型对象上；没有登记的原样返回。可重复调用。 */
 export function withMeasuredCapability<TApi extends Api>(model: Model<TApi>): Model<TApi> {
+  if ("codexCatalogCapability" in model && model.codexCatalogCapability === true) return model;
   const measured = MEASURED.get(key(model));
 
   if (measured?.reasoning === undefined || !measured.input) return model;
@@ -144,8 +145,8 @@ export function thinkingProfile(model: Model<Api>): ThinkingProfile {
     return !(typeof mapped === 'string' && mapped !== level && supported.some(other => other === mapped));
   });
   const levels = distinct.length ? distinct : ["off" as const];
-
-  return { levels, canDisable: levels.includes("off"), image: (resolved.input ?? []).includes("image"), start: MEASURED.get(key(model))?.start };
+  const start = MEASURED.get(key(model))?.start;
+  return { levels, canDisable: levels.includes("off"), image: (resolved.input ?? []).includes("image"), start: start && levels.includes(start) ? start : undefined };
 }
 
 /** 同一账号同时在途请求的上限，按服务商（不按模型）登记；没登记的不限。扩展内所有模型请求按它排队。 */

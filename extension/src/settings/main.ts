@@ -9,8 +9,9 @@ import { mountDictationSettings } from "./dictation.js";
 import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earendil-works/pi-ai";
 import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, KeyRound, Link, Play, Search, X } from "lucide";
 import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
+import { CODEX_CATALOG_TTL_MS, codexIdentity, fetchCodexCatalog, readCodexCatalog } from "../inproc/codex-catalog.js";
 import {
-  CUSTOM_PROVIDER_ID, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, modelCredential, resolveVoiceKey, resolveVoiceModel,
+  CODEX_CATALOG_KEY, CUSTOM_PROVIDER_ID, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, modelCredential, resolveVoiceKey, resolveVoiceModel,
   STEPFUN_PROVIDER_ID,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
@@ -106,6 +107,12 @@ const saveButton = $<HTMLButtonElement>("model-save");
 const keyTail = $("key-tail");
 
 const modelMeta = $("model-meta");
+const codexRefreshButton = $<HTMLButtonElement>("codex-refresh");
+let codexCatalog: unknown;
+let codexRefreshMessage = "";
+let codexRefreshPending: Promise<void> | undefined;
+let codexShownIdentity: string | undefined;
+let codexDiscoveryModels: string[] = [];
 
 const modelInput = $<HTMLInputElement>("model-id");
 
@@ -419,6 +426,8 @@ function select(choice: ProviderChoice): void {
   modelInput.value = defaultModel(choice);
   $("model-toggle").hidden = connectionModels().length === 0;
   modelMeta.textContent = modelCount(choice);
+  codexRefreshButton.hidden = choice.id !== "openai-codex" || credentials[choice.id]?.type !== "oauth";
+  if (choice.id === "openai-codex" && codexRefreshMessage) modelMeta.textContent += ` · ${codexRefreshMessage}`;
   closeModelList();
   oauthFlow.hidden = true;
   oauthFlow.replaceChildren();
@@ -430,23 +439,66 @@ function select(choice: ProviderChoice): void {
   renderProviders();
 }
 
-const modelCount = (choice: ProviderChoice) => choice.models.length ? `列表里有 ${choice.models.length} 个模型，也可以直接填模型名` : "填模型名";
+const modelCount = (choice: ProviderChoice) => {
+  const count = choice.models.length + (choice.id === "openai-codex" ? codexDiscoveryModels.length : 0);
+  return count ? `列表里有 ${count} 个模型，也可以直接填模型名` : "填模型名";
+};
+
+function syncModelChoices(): void {
+  for (const fresh of runtime.providerChoices()) {
+    const choice = choiceOf(fresh.id);
+    if (choice) choice.models = fresh.models;
+  }
+  if (selected) {
+    $("model-toggle").hidden = connectionModels().length === 0;
+    modelMeta.textContent = modelCount(selected) + (selected.id === "openai-codex" && codexRefreshMessage ? ` · ${codexRefreshMessage}` : "");
+    codexRefreshButton.hidden = selected.id !== "openai-codex" || credentials[selected.id]?.type !== "oauth";
+    if (modelOptions.matches(":popover-open")) renderModelList();
+  }
+  renderProviders();
+}
+
+async function refreshCodexCatalog(force = false): Promise<void> {
+  if (codexRefreshPending) return force ? codexRefreshPending.then(() => refreshCodexCatalog(true)) : codexRefreshPending;
+  codexRefreshPending = (async () => {
+    const key = `${INPROC_CREDENTIAL_PREFIX}openai-codex`;
+    const initial = await chrome.storage.local.get([key, CODEX_CATALOG_KEY]);
+    const credential = pickCredentials(Object.entries(initial))["openai-codex"];
+    const identity = await codexIdentity(credential);
+    if (!credential || !identity) return;
+    const cached = readCodexCatalog(initial[CODEX_CATALOG_KEY], identity);
+    if (!force && cached && Date.now() - cached.checkedAt < CODEX_CATALOG_TTL_MS) return;
+    codexRefreshMessage = "正在更新";
+    codexRefreshButton.disabled = true;
+    syncModelChoices();
+    try {
+      const result = await fetchCodexCatalog(credential, AbortSignal.timeout(15_000));
+      const saved = await navigator.locks.request("codex-model-catalog", async () => {
+        const current = pickCredentials(Object.entries(await chrome.storage.local.get(key)))["openai-codex"];
+        if (await codexIdentity(current) !== identity || current?.type !== "oauth" || credential.type !== "oauth" || current.access !== credential.access) return false;
+        await chrome.storage.local.set({ [CODEX_CATALOG_KEY]: result });
+        return true;
+      });
+      if (!saved) return;
+      codexRefreshMessage = result.discoveryComplete ? "已更新" : "已更新，未能检查全部新模型";
+    } catch (error) {
+      const current = pickCredentials(Object.entries(await chrome.storage.local.get(key)))["openai-codex"];
+      if (await codexIdentity(current) !== identity) return;
+      codexRefreshMessage = cached ? "更新失败，显示上次结果" : "更新失败，显示内置列表";
+      console.debug("[sideagent]", "Codex model list unavailable", error instanceof Error ? error.message : String(error));
+    } finally {
+      codexRefreshButton.disabled = false;
+      syncModelChoices();
+    }
+  })().finally(() => { codexRefreshPending = undefined; });
+  return codexRefreshPending;
+}
+
+codexRefreshButton.addEventListener("click", () => void refreshCodexCatalog(true));
 
 /** 服务商公开清单到了就换上全量模型；拉不到时保留内置的几个，用户仍可直接填模型名。 */
 void runtime.loadProviderModels().then(() => {
-  for (const fresh of runtime.providerChoices()) {
-    const choice = choiceOf(fresh.id);
-
-    if (choice) choice.models = fresh.models;
-  }
-
-  if (selected) {
-    $("model-toggle").hidden = connectionModels().length === 0;
-    modelMeta.textContent = modelCount(selected);
-    if (modelOptions.matches(":popover-open")) renderModelList();
-  }
-
-  renderProviders();
+  syncModelChoices();
 }, (error: unknown) => console.debug("[sideagent]", "provider model list unavailable", error));
 
 /* 模型下拉：可搜索的列表，也能直接填目录外的名字（自定义地址必须能填）。 */
@@ -458,7 +510,7 @@ let modelFilter = "";
 
 function connectionModels(): string[] {
   const saved = selected && savedConnections.get(selected.id);
-  return [...new Set([...(selected?.models ?? []), ...(saved ? [saved.modelId] : [])])];
+  return [...new Set([...(selected?.models ?? []), ...(selected?.id === "openai-codex" ? codexDiscoveryModels : []), ...(saved ? [saved.modelId] : [])])];
 }
 
 function renderModelList(): void {
@@ -474,6 +526,11 @@ function renderModelList(): void {
     option.setAttribute("aria-selected", String(m === modelInput.value));
     option.dataset.id = m;
     option.append(Object.assign(document.createElement("span"), { textContent: m }));
+    if (selected?.id === "openai-codex" && codexDiscoveryModels.includes(m)) {
+      option.append(Object.assign(document.createElement("span"), { className: "d-label-meta", textContent: " · 新模型，先验证连接" }));
+    } else if (selected?.id === "openai-codex" && !selected.models.includes(m)) {
+      option.append(Object.assign(document.createElement("span"), { className: "d-label-meta", textContent: " · 已保存，未确认当前账号可用" }));
+    }
 
     if (m === modelInput.value) option.append(svg(Check, 13));
     option.addEventListener("mousedown", (event) => { event.preventDefault(); pickModel(m); });
@@ -663,6 +720,7 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
       ? { ...credentials, [value.config.provider]: modelCredential(value.config, value.key || (savedKey?.type === "api_key" ? savedKey.key ?? "" : "")) }
       : credentials;
     await probe.credentials.load(probeCredentials);
+    await probe.applyCodexCatalog(codexCatalog);
     await probeModel(probe, value.config, AbortSignal.any([timeout, cancel.signal]));
 
     return { ok: true, config: value.config, key: value.key, elapsed: performance.now() - started };
@@ -705,6 +763,9 @@ async function save(): Promise<void> {
   const result = await runProbe();
 
   if (!result.ok && result.cancelled) return;
+  if (!result.ok && result.config?.provider === "openai-codex" && codexDiscoveryModels.includes(result.config.modelId)) {
+    return setStatus(modelStatus, `新模型需要先通过连接测试：${result.reason ?? "服务商没有返回结果"}`, "err");
+  }
 
   // 先试连再保存：服务商明确不接受（密钥被拒、模型不存在）不保存；新填的密钥超时也不保存（见下）；限流、网络问题、没换密钥时的超时照样保存，并说刚才没连上。
   if (!result.ok && (result.local || result.definite)) {
@@ -871,6 +932,7 @@ async function startLogin(): Promise<void> {
     oauthFlow.hidden = true;
     login = null;
     await reload();
+    if (providerId === "openai-codex") void refreshCodexCatalog(true);
     oauthState.textContent = "登录成功。";
   } catch (error) {
     if (login !== attempt) return;
@@ -1095,6 +1157,7 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
   // 用的是已保存的订阅令牌：测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
   await probe.credentials.load(credentials);
+  await probe.applyCodexCatalog(codexCatalog);
   const started = performance.now();
   const rows = list.map(({ config: c, role }) => {
     const row = document.createElement("div");
@@ -1175,7 +1238,14 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
 
 $("speed-test").addEventListener("click", () => void runSpeedTest());
 
-async function reload(): Promise<void> {
+let reloadQueue = Promise.resolve();
+
+function reload(): Promise<void> {
+  reloadQueue = reloadQueue.then(reloadSettings, reloadSettings);
+  return reloadQueue;
+}
+
+async function reloadSettings(): Promise<void> {
   const stored = await chrome.storage.local.get(null);
   config = modelConfig(stored[INPROC_CONFIG_KEY]);
   fastConfig = modelConfig(stored[INPROC_FAST_CONFIG_KEY]);
@@ -1185,6 +1255,22 @@ async function reload(): Promise<void> {
   for (const current of [config, fastConfig, backupConfig]) if (current && !savedConnections.has(current.provider)) savedConnections.set(current.provider, current);
   credentials = pickCredentials(Object.entries(stored));
   await runtime.credentials.load(credentials);
+  const identity = await codexIdentity(credentials["openai-codex"]);
+  if (identity !== codexShownIdentity) {
+    codexShownIdentity = identity;
+    codexRefreshMessage = "";
+    await navigator.locks.request("codex-model-catalog", async () => {
+      const key = `${INPROC_CREDENTIAL_PREFIX}openai-codex`;
+      const current = await chrome.storage.local.get([key, CODEX_CATALOG_KEY]);
+      if (await codexIdentity(pickCredentials(Object.entries(current))["openai-codex"]) !== identity) return;
+      if (current[CODEX_CATALOG_KEY] && !readCodexCatalog(current[CODEX_CATALOG_KEY], identity)) await chrome.storage.local.remove(CODEX_CATALOG_KEY);
+    });
+    if (identity) void refreshCodexCatalog(true);
+  }
+  codexCatalog = stored[CODEX_CATALOG_KEY];
+  await runtime.applyCodexCatalog(codexCatalog);
+  codexDiscoveryModels = readCodexCatalog(codexCatalog, identity)?.models.filter(m => m.discoveryOnly).map(m => m.id) ?? [];
+  syncModelChoices();
   const storedVoiceKey = stored[INPROC_VOICE_KEY];
   const ownVoiceKey = isText(storedVoiceKey) ? storedVoiceKey : "";
   const voiceKey = resolveVoiceKey(Object.entries(stored));
@@ -1576,7 +1662,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => (on ? "做完会
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));
@@ -1595,6 +1681,7 @@ for (const select of [mainSelect, fastSelect, backupSelect]) mountModelPicker(se
 });
 form.remove();
 await reload();
+void refreshCodexCatalog();
 
 const traceStatus = document.getElementById("trace-status")!;
 

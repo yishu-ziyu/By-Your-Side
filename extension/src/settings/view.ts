@@ -282,6 +282,7 @@ export function renderSettings(): void {
       </div>
       <div class="d-actions">
         <button id="model-test" type="button" class="btn btn-quiet">测试连接</button>
+        <button id="codex-refresh" type="button" class="btn btn-quiet" hidden>刷新模型列表</button>
         <button id="connection-remove" type="button" class="btn btn-quiet" hidden>移除连接</button>
         <button id="model-fast" type="button" class="btn btn-quiet">选择模型</button>
         <span class="grow"></span>

@@ -18,7 +18,8 @@ import { IdbDocument } from "./document-idb.js";
 import { pushedMiniApps, pushedSelfUse, pushedTranslationStyle, receiveCoreSettings } from "../shared/core-settings.js";
 
 type Inbound = ClientMessage
-  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials }
+  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials; codexCatalog?: unknown }
+  | { type: "inproc_catalog"; codexCatalog?: unknown }
   | { type: "inproc_settings"; values: unknown }
   | { type: "inproc_voice"; configured: boolean; model?: unknown };
 
@@ -243,6 +244,11 @@ export function startInprocHost(deps: InprocHostDeps): void {
   }
 
   async function handle(message: Inbound): Promise<void> {
+    if (message.type === "inproc_catalog") {
+      await models.applyCodexCatalog(message.codexCatalog);
+      if (core && connection) connection.send({ type: "model_info", models: await core.session.availableModels() });
+      return;
+    }
     if (message.type === "inproc_voice") {
       voiceConfigured = message.configured;
       voiceModel = message.model;
@@ -262,6 +268,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
       backupSelected = message.backup ?? null;
       storedCredentials = message.credentials ?? {};
       await models.credentials.load(storedCredentials);
+      await models.applyCodexCatalog(message.codexCatalog);
 
       if (!selected) return;
       const model = models.resolveModel(selected);
