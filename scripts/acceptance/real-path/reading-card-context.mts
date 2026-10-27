@@ -27,13 +27,18 @@ await mkdir(out, { recursive: true });
 
 const HEADING = "第三节：铜版的退场";
 const CLUE = "工坊在一八九零年把铜版换成了更便宜的锌版";
+// 选区旁边用户还没发出的草稿、页面藏起来的标题：都不该进模型请求。
+const DRAFT = "草稿：下周三请假一天";
+const HIDDEN = "内部备注不要公开";
 const FILLER = "<div>学徒们每天清晨先擦版，再调墨，最后才开始印刷当天的订单。</div>".repeat(6);
 
 // 像很多资讯站和单页应用：正文全是 div，没有 p。
 const DIVS = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>印刷工坊</title>
 <style>body{margin:0}.post{max-width:36rem;margin:56px 72px;font:17px/1.75 serif}.post>div{margin:0 0 14px}</style></head><body>
 <div class="post"><h2>${HEADING}</h2>${FILLER}<div>${CLUE}，账本上的开销因此少了三成。</div>
-<div id="pick"><span id="pick-text">这个决定让老师傅们很不满意</span>，他们说新版印出的线条发虚。</div>${FILLER}</div></body></html>`;
+<h3 style="display:none">${HIDDEN}</h3>
+<div id="pick"><span id="pick-text">这个决定让老师傅们很不满意</span>，他们说新版印出的线条发虚。</div>
+<div contenteditable="plaintext-only">${DRAFT}</div>${FILLER}</div></body></html>`;
 
 // 段落标签齐全，但选区跨了两段：共同祖先是 article，不是某一段。
 const CROSS = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>印刷工坊</title>
@@ -123,14 +128,17 @@ try {
     return { selected, sent: asked[asked.length - 1] ?? "", answer: LIVE ? await answerText() : "" };
   };
 
+  // 要说清是改用锌版，不能是「没说明」「无法确定」或说反了方向。
+  const understood = (a: string) => /(改用|换成|换用|换为|改为|使用)[^。]{0,6}锌版|锌版[^。]{0,8}(取代|代替|替代)/.test(a) && !/没有说明|未说明|无法确定|不清楚|没有交代/.test(a) && !/锌版换成铜版|改用铜版/.test(a);
   const divs = await explain("/divs", "#pick-text", "#pick-text");
   if (LIVE) {
-    check("真模型 div 排版：回答说出「这个决定」是换锌版", /锌/.test(divs.answer), { answer: divs.answer.slice(0, 300) });
+    check("真模型 div 排版：回答说出「这个决定」是换锌版", understood(divs.answer), { answer: divs.answer.slice(0, 300) });
     const cross = await explain("/cross", "#a-text", "#b-text");
-    check("真模型 跨段选中：回答说出「这个决定」是换锌版", /锌/.test(cross.answer), { answer: cross.answer.slice(0, 300) });
+    check("真模型 跨段选中：回答说出「这个决定」是换锌版", understood(cross.answer), { answer: cross.answer.slice(0, 300) });
     throw new Error("live-done");
   }
   check("div 排版：请求里有前一段的线索和小节标题", divs.sent.includes(CLUE) && divs.sent.includes(HEADING), { selected: divs.selected, clue: divs.sent.includes(CLUE), heading: divs.sent.includes(HEADING) });
+  check("旁边的可编辑草稿和隐藏标题不进请求", !divs.sent.includes(DRAFT) && !divs.sent.includes(HIDDEN), { draft: divs.sent.includes(DRAFT), hidden: divs.sent.includes(HIDDEN) });
 
   const cross = await explain("/cross", "#a-text", "#b-text");
   check("跨段选中：请求里有选区之外的前文线索", cross.selected.includes("老师傅") && cross.selected.includes("贵重订单") && cross.sent.includes(CLUE), { selected: cross.selected.slice(0, 80), clue: cross.sent.includes(CLUE) });

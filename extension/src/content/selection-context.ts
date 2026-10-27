@@ -1,45 +1,75 @@
 /**
- * 划词时交给阅读卡的上下文：选中处前后的正文，加上它所在小节的标题。
+ * 划词时交给阅读卡的上下文：所在小节标题，加选区前后看得见的正文。
  * 很多网站的正文不放在 p/li 里（div、span 排版，或跨段选中），只认段落标签会拿到空上下文，回答就只能看着选中的几个字猜。
+ * 从选区两端沿文档顺序往外取文字节点，取够就停：不读整页，也不靠搜索文字定位（重复的句子会定位错）。
  * 这段也会按源码注入验收探针，必须自包含，不能引用模块作用域。
  */
 export function selectionSurrounding(range: Range, text: string, limit: number): string {
   const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
-  const editable = (el: Element) => !!el.closest('input,textarea,select,[contenteditable="true"],[contenteditable=""]');
-  const want = squash(text);
-  const node = range.commonAncestorContainer;
-  let el: Element | null = node instanceof Element ? node : node.parentElement;
+  // 草稿、输入框、隐藏内容都不是页面在讲的东西：可编辑区里是用户还没发出的字。
+  const skip = (el: Element | null): boolean => !el
+    || !!el.closest('input,textarea,select,script,style,noscript,template,nav,[role="navigation"],[contenteditable]:not([contenteditable="false"]),[aria-hidden="true"]')
+    || !el.checkVisibility();
+  const start = range.startContainer, end = range.endContainer;
+  const startEl = start instanceof Element ? start : start.parentElement;
 
-  if (!el || editable(el)) return '';
+  if (skip(startEl)) return '';
 
-  // 往上找到正文够多的那一层；到 body 就停在它下面一层，免得每次划词都把整页文字读一遍。
-  for (let level = 0; level < 12; level++) {
-    const parent: Element | null = el.parentElement;
-    if (!parent || parent === document.body || parent === document.documentElement) break;
-    // 量长度用 textContent：不触发排版，松开鼠标就会调用这里。
-    if ((el.textContent ?? '').length >= want.length + limit) break;
-    el = parent;
-  }
+  const rootNode = range.commonAncestorContainer.getRootNode();
+  const root = rootNode instanceof Document ? rootNode.body : rootNode;
 
-  // 输入框的值本来不在 innerText 里；可编辑区（草稿、评论框）在，要去掉：那是用户还没发出的字，不是页面内容。
-  let full = squash((el as HTMLElement).innerText ?? el.textContent ?? '');
-  for (const draft of el.querySelectorAll('[contenteditable="true"],[contenteditable=""]')) {
-    const typed = squash((draft as HTMLElement).innerText ?? '');
-    if (typed) full = full.split(typed).join(' ');
-  }
-  const at = full.indexOf(want.slice(0, 60));
-  const side = Math.max(0, Math.floor((limit - Math.min(want.length, limit / 3)) / 2));
-  const start = at < 0 ? 0 : Math.max(0, at - side);
-  const end = at < 0 ? limit : Math.min(full.length, at + want.length + side);
-  const body = full.slice(start, end);
+  if (!root) return '';
 
-  // 所在小节：文档顺序上在选区之前的最后一个标题。
+  const picked = squash(text);
+  const quote = picked.length > limit / 3 ? `${picked.slice(0, Math.floor(limit / 3))}…` : picked;
+  const side = Math.floor((limit - quote.length) / 2);
+  // 隐藏节点多的页面也不能一直走下去。
+  const MAX_NODES = 3000;
+
+  const collect = (forward: boolean): string => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const edge = forward ? end : start;
+    const parts: string[] = [];
+    let size = 0;
+
+    if (edge.nodeType === Node.TEXT_NODE) {
+      walker.currentNode = edge;
+      const own = edge.nodeValue ?? '';
+      const piece = forward ? own.slice(range.endOffset) : own.slice(0, range.startOffset);
+      if (piece.trim()) { parts.push(piece); size += piece.length; }
+    } else {
+      // 选区端点落在元素上：从那个位置旁边的子节点开始走。
+      walker.currentNode = edge.childNodes[forward ? range.endOffset : range.startOffset - 1] ?? edge;
+    }
+
+    let lastParent: Element | null = null;
+    for (let n = 0; size < side && n < MAX_NODES; n++) {
+      const node = forward ? walker.nextNode() : walker.previousNode();
+      if (!node) break;
+      const parent = node.parentElement;
+      const value = node.nodeValue ?? '';
+      if (!value.trim() || skip(parent)) continue;
+      // 换了元素就隔一个空格，免得两段字粘在一起。
+      parts.push(parent !== lastParent ? ` ${value} ` : value);
+      lastParent = parent;
+      size += value.length + 2;
+    }
+
+    const joined = squash((forward ? parts : parts.reverse()).join(''));
+
+    return forward ? joined.slice(0, side) : joined.slice(Math.max(0, joined.length - side));
+  };
+
+  const before = collect(false);
+  const after = collect(true);
+
+  // 所在小节：文档顺序上在选区之前、看得见的最后一个标题。
   let heading = '';
-  for (const h of document.querySelectorAll('h1,h2,h3,h4')) {
-    if (h.compareDocumentPosition(range.startContainer) & Node.DOCUMENT_POSITION_FOLLOWING || h.contains(range.startContainer)) heading = squash((h as HTMLElement).innerText ?? h.textContent ?? '');
-    else break;
+  for (const h of (root as ParentNode).querySelectorAll('h1,h2,h3,h4')) {
+    if (!(h.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING) && !h.contains(start)) break;
+    if (!skip(h)) heading = squash(h.textContent ?? '');
   }
-  const head = heading && !body.includes(heading) ? `小节：${heading.slice(0, 120)}\n` : '';
+  const head = heading && !before.includes(heading) ? `小节：${heading.slice(0, 120)}\n` : '';
 
-  return (head + body).slice(0, limit);
+  return (head + squash(`${before} ${quote} ${after}`)).slice(0, limit);
 }
