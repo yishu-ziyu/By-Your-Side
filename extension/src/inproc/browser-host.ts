@@ -103,10 +103,11 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const personal = (name: Parameters<typeof document>[0]) => readOnlyWhileSelfUse(document(name));
     const memoryStore = usePausedMemory(useStyleSignals(useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(personal("memories")), personal("pending-memory")), personal("habits")), personal("style-signals")), pushedSelfUse);
     const taskHistory = new TaskHistoryStore(personal("tasks"));
-    // 站点笔记：关于网站的做法，不是关于用户的记忆，单独一份。
+    // 旧站点笔记只供用户查看和删除，不交给会话。
     const siteNotes = new SiteNotesStore(document("site-notes"));
     const learnedOperations = new LearnedOperationStore(document("learned-operations"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
+      siteNotes,
       store,
       memoryStore,
       taskHistory,
@@ -123,7 +124,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
         artifactPersistence: data.files,
         memoryStore,
         taskHistory,
-        siteNotes,
         learnedOperations,
         miniApps: async () => pushedMiniApps(),
         translationStyle: () => pushedTranslationStyle(),
