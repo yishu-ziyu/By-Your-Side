@@ -1,7 +1,7 @@
 import { BROWSE_DAY_LIMIT, BROWSE_LINE_LIMIT, type BrowseDay, type BrowseHabitResult } from '../../../shared/browse-habits.js';
 import type { ClientMessage } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
-import { BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_EVENT, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, isBrowseStep, localDay, readBrowseEvents, readBrowseFound, readDismissed, type BrowseEvent, type BrowseStep } from '../shared/browse-habits.js';
+import { BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_EVENT, BROWSE_FOUND_KEY, BROWSE_INDUCE_AFTER_STEPS, BROWSE_INDUCE_EVERY_MS, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, isBrowseStep, localDay, readBrowseEvents, readBrowseFound, readDismissed, type BrowseEvent, type BrowseStep } from '../shared/browse-habits.js';
 import { watchSelfUse } from '../shared/self-use.js';
 import { debuggerAttached } from './debugger.js';
 import { isPanelUrl } from './target-window.js';
@@ -10,11 +10,6 @@ import { nudgeableUrl } from '../shared/nudge.js';
 type Deps = { send: (message: ClientMessage) => boolean; selected: () => string };
 
 const MAX_EVENTS = 4000;
-
-/** 攒够这么多新步骤、且离上次归纳够久，才再交给模型：归纳一次要读整整两周的记录。 */
-const INDUCE_AFTER_STEPS = 5;
-
-const INDUCE_EVERY_MS = 30 * 60_000;
 
 const KEEP_MS = BROWSE_DAY_LIMIT * 24 * 60 * 60_000;
 
@@ -90,7 +85,7 @@ export function installBrowseHabits(deps: Deps) {
       log.events = [...log.events.filter(e => at - e.at < KEEP_MS), { at, day: localDay(at), host: url.hostname, line: line(step, url, at) }].slice(-MAX_EVENTS);
       log.since += 1;
 
-      if (log.since >= INDUCE_AFTER_STEPS && at - log.lastAt >= INDUCE_EVERY_MS) await induce(log);
+      if (log.since >= BROWSE_INDUCE_AFTER_STEPS && at - log.lastAt >= BROWSE_INDUCE_EVERY_MS) await induce(log);
     });
   };
 
