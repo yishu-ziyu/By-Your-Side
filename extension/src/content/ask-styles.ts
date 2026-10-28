@@ -87,7 +87,7 @@ export const ASK_STYLES = `
 .surface, .menu, .restore, .reader { font: var(--t-ui)/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; color: var(--ink-fg); -webkit-font-smoothing: antialiased; }
 .surface { position: fixed; pointer-events: auto; padding: 0; background: var(--ink); border-radius: var(--r-outer); box-shadow: var(--shadow); max-width: calc(100vw - 24px); }
 .surface:not(.expanded) { padding: 2px; border-radius: 8px; box-shadow: var(--shadow-bar); }
-.surface.expanded { width: 380px; display: flex; flex-direction: column; max-height: calc(100vh - 24px); overflow: hidden; border: 1px solid var(--ink-rule); }
+.surface.expanded { display: flex; flex-direction: column; max-height: calc(100vh - 24px); overflow: hidden; border: 1px solid var(--ink-rule); }
 .surface.composing { width: 420px; }
 button, textarea { font: inherit; color: inherit; }
 button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-shrink: 0; height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-inner); background: transparent; cursor: pointer; white-space: nowrap; transition: background-color .15s, color .15s, transform .15s var(--ease-out); }
@@ -126,11 +126,6 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 
 .head { display: flex; align-items: center; gap: 7px; height: 42px; padding: 0 8px 0 9px; border-bottom: 1px solid var(--ink-rule); font-size: var(--t-meta); color: var(--ink-mute); cursor: grab; user-select: none; touch-action: none; }
 .surface.dragging .head { cursor: grabbing; }
-.head .grip { width: 13px; height: 24px; display: flex; align-items: center; justify-content: center; flex: none; color: var(--ink-mute); opacity: .34; transition: opacity .15s; }
-.head .grip svg { width: 13px; height: 13px; stroke-width: 1.7; }
-.head:hover .grip { opacity: .7; }
-.head-icon { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 6px; background: var(--ink-raised); color: var(--pen); }
-.head-icon svg { stroke-width: 1.9; }
 .head .title { flex: 1; min-width: 0; font-size: var(--t-ui); font-weight: 600; color: var(--ink-fg); }
 .turn > .source { margin-bottom: 6px; padding-left: 8px; box-shadow: inset 2px 0 0 var(--mark); font-size: var(--t-meta); line-height: 1.5; color: var(--ink-fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-pending .question { color: var(--ink-fg-2); }
@@ -165,8 +160,6 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .status.err { color: var(--warn); }
 .tag { color: var(--ink-fg-2); }
 
-.foot .current-source { flex: 0 1 auto; min-width: 0; max-width: 46%; justify-content: flex-start; color: var(--ink-mute); font-size: var(--t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.current-source svg { flex:none; }
 .composer { display: flex; align-items: flex-end; gap: 3px; margin: 0 10px 10px; padding: 4px; border: 1px solid var(--ink-rule); border-radius: var(--r-inner); background: var(--ink-raised); }
 button.depth { height: 28px; margin-bottom: 2px; padding: 0 7px; border: 1px solid var(--ink-rule); border-radius: 7px; background: var(--ink); font-size: var(--t-tiny); color: var(--ink-mute); }
 button.depth[aria-pressed="true"] { color: var(--pen); background: var(--ink-hover); }
@@ -213,10 +206,6 @@ button.send svg { color: var(--on-pen); width: 15px; height: 15px; stroke-width:
 /* 读者在滚正文：浮在正文上的卡片淡下去让开，停下就回来，不收起、不改内容。 */
 .surface.receding { opacity: .28; transition-duration: .12s; }
 .surface.glide { transition: left .28s var(--ease-out), top .28s var(--ease-out), opacity .2s var(--ease-out); }
-.surface.enter { animation: lens-in .24s var(--ease-spring); transform-origin: var(--origin, bottom center); }
-.surface.morph { animation: lens-morph .24s var(--ease-out); transform-origin: var(--origin, bottom center); }
-@keyframes lens-in { from { opacity: 0; transform: translateY(4px) scale(.96); } to { opacity: 1; transform: none; } }
-@keyframes lens-morph { from { opacity: .6; transform: scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
 .reader { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 4px; max-width: calc(100vw - 24px); background: var(--ink); border-radius: 999px; box-shadow: var(--shadow); pointer-events: auto; animation: reader-enter .16s var(--ease-out); }
@@ -224,37 +213,33 @@ button.send svg { color: var(--on-pen); width: 15px; height: 15px; stroke-width:
 .reader-label { padding: 0 8px; color: var(--ink-fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reader-rate { min-width: 46px; font-variant-numeric: tabular-nums; color: var(--ink-fg-2); }
 @keyframes reader-enter { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%); } }
-/* 试验皮肤：按 Sider 5.35.3 划词结果窗的打包样式复刻（宽 450、圆角 16、标题 18 粗、正文 14/1.65、底栏 20 内边距）。 */
-.surface.sider.expanded { width: 450px; min-height: 0; border: 0; border-radius: 16px; background: var(--sider-layer); box-shadow: var(--shadow-bar); }
-.surface.sider.enter, .surface.sider.morph { animation: sider-in .3s ease-in-out; }
-@keyframes sider-in { from { opacity: 0; } }
-.surface.sider .head { height: auto; padding: 16px 16px 16px 20px; border-bottom: 0; gap: 12px; }
-.surface.sider .head .grip, .surface.sider .head-icon { display: none; }
-.surface.sider .head .title { font-size: 18px; font-weight: 700; line-height: 1.4; }
-.surface.sider .head button.icon.small { width: 26px; height: 26px; border-radius: 8px; }
-.surface.sider .messages { padding: 0 16px 0 20px; max-height: 250px; }
-.surface.sider .turn > .source { display: block; width: 100%; height: auto; margin: 0 0 12px; padding: 6px; border-radius: 8px; box-shadow: none; background: var(--sider-fill); font-size: 14px; line-height: 1.65; color: var(--ink-fg-2); white-space: normal; text-align: left; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
-.surface.sider .answer, .surface.sider .answer-summary { font-size: 14px; line-height: 1.65; letter-spacing: 0; }
-.surface.sider .answer.thinking::before { background: var(--ink-fg); }
-.surface.sider .meta .status { display: none; }
-.surface.sider .foot { min-height: 0; padding: 20px; gap: 6px; }
-.surface.sider .foot .handoff { order: -1; height: 32px; padding: 0 12px; gap: 8px; border: 0; border-radius: 8px; background: var(--sider-fill); color: var(--pen); font-size: 14px; font-weight: 400; }
-.surface.sider .foot .handoff:hover { background: var(--sider-fill-hover); }
-.surface.sider .foot .current-source { display: none; }
-.surface.sider .foot button.icon { width: 32px; height: 32px; border-radius: 8px; }
-.surface.sider .foot button.icon[data-act="copy"] { order: 2; width: auto; height: 32px; padding: 0 12px; gap: 6px; border-radius: 6px; background: var(--sider-fill); color: var(--ink-fg); font-size: 14px; }
-.surface.sider .foot [data-act="copy"] svg { display: none; }
-.surface.sider .foot [data-act="copy"]::after { content: "↵"; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: var(--sider-line); color: var(--ink-mute); font-size: 11px; }
-.surface.sider .foot [data-act="copy"][data-copied] .copy-label { font-size: 0; }
-.surface.sider .foot [data-act="copy"][data-copied] .copy-label::before { content: "已复制"; font-size: 14px; }
-.surface.sider.live .foot { display: none; }
-.surface.sider.live .composer { justify-content: center; margin: 0; padding: 20px; border: 0; background: transparent; }
-.surface.sider.live .composer textarea, .surface.sider.live .composer .depth { display: none; }
-.surface.sider.live .composer .send { width: auto; height: 32px; padding: 0 14px; gap: 6px; border-radius: 8px; background: var(--sider-fill); color: var(--ink-fg); font-size: 14px; }
-.surface.sider.live .composer .send::after { content: "停止"; }
-.surface.sider.live .composer .send svg { color: var(--ink-fg); }
-.surface.sider .resize { display: block; }
-.copy-label { display: none; }
-.surface.sider .copy-label { display: inline; }
-@media (prefers-reduced-motion: reduce) { .surface.sider.enter, .surface.sider.morph, .surface.enter, .surface.morph, .menu, .reader, .bar-tip, .answer .fresh, .answer.thinking::before { animation: none; } button, .surface, .surface.glide { transition: none; } }
+/* 回答卡按 Sider 5.35.3 划词结果窗的打包样式对齐（宽 450、圆角 16、标题 18 粗、正文 14/1.65、底栏 20 内边距）；多保留了追问输入框。 */
+.surface.expanded { width: 450px; border: 0; border-radius: 16px; background: var(--sider-layer); box-shadow: var(--shadow-bar); }
+.surface.enter { animation: card-in .3s ease-in-out; }
+.surface.morph { animation: card-morph .3s ease-in-out; }
+@keyframes card-in { from { opacity: 0; } }
+@keyframes card-morph { from { opacity: .85; } }
+.surface .head { height: auto; padding: 16px 16px 16px 20px; border-bottom: 0; gap: 12px; }
+.surface .head .title { font-size: 18px; font-weight: 700; line-height: 1.4; }
+.surface .head button.icon.small { width: 26px; height: 26px; border-radius: 8px; }
+.surface .messages { padding: 0 16px 0 20px; }
+.surface:not(.resized) .messages { max-height: 250px; }
+.surface .turn > .source { display: -webkit-box; width: 100%; height: auto; margin: 0 0 12px; padding: 6px; border-radius: 8px; box-shadow: none; background: var(--sider-fill); font-size: 14px; line-height: 1.65; color: var(--ink-fg-2); white-space: normal; text-align: left; -webkit-line-clamp: 3; -webkit-box-orient: vertical; max-height: calc(1.65em * 3 + 12px); overflow: hidden; }
+.surface .answer, .surface .answer-summary { font-size: 14px; line-height: 1.65; letter-spacing: 0; }
+.surface .answer.thinking::before { background: var(--ink-fg); }
+.surface .meta .status:not(.err) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* 卡片比内容高时（用户拉大过），空白留在回答和底栏之间，底栏始终贴底。 */
+.surface .foot { margin-top: auto; min-height: 0; padding: 14px 20px 10px; gap: 6px; }
+.surface .foot .handoff { order: -1; height: 32px; padding: 0 12px; gap: 8px; border: 0; border-radius: 8px; background: var(--sider-fill); color: var(--pen); font-size: 14px; font-weight: 400; }
+.surface .foot .handoff:hover { background: var(--sider-fill-hover); }
+.surface .foot button.icon { width: 32px; height: 32px; border-radius: 8px; }
+.surface .foot button.icon[data-act="copy"] { order: 2; width: auto; height: 32px; padding: 0 12px; gap: 6px; border-radius: 6px; background: var(--sider-fill); color: var(--ink-fg); font-size: 14px; }
+.surface .foot [data-act="copy"] svg { display: none; }
+.surface .foot [data-act="copy"]::after { content: "↵"; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: var(--sider-line); color: var(--ink-mute); font-size: 11px; }
+.surface .foot [data-act="copy"][data-copied] .copy-label { font-size: 0; }
+.surface .foot [data-act="copy"][data-copied] .copy-label::before { content: "已复制"; font-size: 14px; }
+.surface.live .foot { display: none; }
+.surface.live .composer { margin-top: auto; }
+.surface .composer { margin: 0 20px 16px; border: 0; border-radius: 8px; background: var(--sider-fill); }
+@media (prefers-reduced-motion: reduce) { .surface.enter, .surface.morph, .menu, .reader, .bar-tip, .answer .fresh, .answer.thinking::before { animation: none; } button, .surface, .surface.glide { transition: none; } }
 `;

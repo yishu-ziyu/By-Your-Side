@@ -147,17 +147,17 @@ type CardState = { visible: boolean; quote: string; turns: Turn[]; pending: stri
 const CARD_STATE = `function(){
   const s=this.querySelector('.surface');
   const r=s&&!s.hidden?s.getBoundingClientRect():null;
-  const source=this.querySelector('.current-source');
+  const source=[...this.querySelectorAll('article.turn:not(.voice-pending) > .source')].pop();
   const turns=[...this.querySelectorAll('article.turn:not(.voice-pending)')].map(t=>{const a=t.querySelector('.answer');const q=t.querySelector('.question');return {question:q?.textContent??'',spoken:!!q?.querySelector('svg'),tag:q?.querySelector('.tag')?.textContent??'',answer:a?.innerText??'',status:t.querySelector('.status')?.textContent??'',hidden:!a||a.hidden,clipped:!!a&&a.scrollHeight>a.clientHeight+4,source:t.querySelector('.source')?.textContent??''};});
   const p=this.querySelector('article.turn.voice-pending');
-  return {visible:!!r,quote:source?.getClientRects().length?source.getAttribute('title')?.replace(/^回到选中的原文：/,'')??'':'',turns,pending:p?(p.querySelector('.question')?.textContent??''):null,rect:r&&{left:r.left,top:r.top,right:r.right,bottom:r.bottom}};
+  return {visible:!!r,quote:source?.textContent??'',turns,pending:p?(p.querySelector('.question')?.textContent??''):null,rect:r&&{left:r.left,top:r.top,right:r.right,bottom:r.bottom}};
 }`;
 /** 采样用的轻量读数：不取回答全文，只取字数。 */
 const CARD_SAMPLE = `function(){
   const s=this.querySelector('.surface');
   const turns=[...this.querySelectorAll('article.turn:not(.voice-pending)')];
   const p=this.querySelector('article.turn.voice-pending');
-  return {visible:!!s&&!s.hidden,quote:this.querySelector('.current-source')?.getAttribute('title')?.replace(/^回到选中的原文：/,'')??'',marked:[...(CSS.highlights?.get(${JSON.stringify(HIGHLIGHT)})??[])].map(r=>r.toString()).join(''),pending:p?(p.querySelector('.question')?.textContent??''):null,
+  return {visible:!!s&&!s.hidden,quote:[...this.querySelectorAll('article.turn:not(.voice-pending) > .source')].pop()?.textContent??'',marked:[...(CSS.highlights?.get(${JSON.stringify(HIGHLIGHT)})??[])].map(r=>r.toString()).join(''),pending:p?(p.querySelector('.question')?.textContent??''):null,
     lens:turns.map(t=>(t.querySelector('.answer')?.textContent??'').length),
     writing:turns.filter(t=>/正在回答/.test(t.querySelector('.status')?.textContent??'')).length};
 }`;
