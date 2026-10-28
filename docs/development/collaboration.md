@@ -53,8 +53,8 @@
 - 「Codex 可领」：只给规格清楚、写明文件范围与检查命令的实现任务。
 - 「要你来」：需要用户亲手试、拍板或授权的事。
 
-Codex 用本机 CLI（已接 Linear），在单独的 git worktree 和分支里完成。交回后由 Claude 验收，再合入 main。
-Codex 不与 Claude 同时改同一文件。浏览器验收由 Claude 统一排队。
+Codex 用本机 CLI（已接 Linear），在单独的 git worktree 和分支里完成，由实现者完成验收后合入 main。额外审查按全局工作约定，只在用户明确要求时安排。
+Codex 不与 Claude 同时改同一文件。浏览器验收由当前主会话统一排队。
 
 只存图的远端分支：`design-refs`（#53 引用）、`ux-walkthrough-1007`（#102–#106 引用）。
 
