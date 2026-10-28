@@ -2,7 +2,6 @@ import { installQuietTabs } from "./quiet-tabs.js";
 import { activeTargetTabs, isPanelUrl, popoutSource } from "./target-window.js";
 import { installEdgePill } from "./edge-pill.js";
 import { installFloatCard } from "./float-card.js";
-import { installLinkPreview } from "./link-preview.js";
 import { installMarginalia } from "./marginalia.js";
 import { installNudge } from "./nudge.js";
 import { installBrowseHabits } from "./browse-habits.js";
@@ -213,7 +212,6 @@ async function selectForTab(id: string, tabId: number): Promise<void> {
 
 installPageInteractions();
 
-installLinkPreview();
 
 installReinject();
 
@@ -441,6 +439,14 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  const tab = sender.tab;
  const tabId = tab.id!;
  void (async () => {
+  console.debug("[ptt] background_received", raw.phase, tabId);
+  if (raw.phase === "start" && !(await readVoiceDictationKey()).key) {
+   console.debug("[ptt] setup_required", tabId);
+   await chrome.tabs.create({ url: chrome.runtime.getURL(`settings.html?readingTab=${tabId}#voice`) });
+   console.debug("[ptt] setup_opened", tabId);
+   sendResponse({ ok: false, reason: "failed", message: "请先配置网页语音。" });
+   return;
+  }
   const command: PttCommand = { target: PTT_TARGET, phase: raw.phase };
   const releasedAt = Date.now();
   if (raw.phase === "start") { pttTurn++; reading.interrupt(tabId); pttCapsule.recording(tabId); }
@@ -479,7 +485,11 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
   }
 
   sendResponse(reply ?? { ok: false, reason: "failed" });
- })();
+ })().catch(error => {
+  console.error("[ptt] background_failed", raw.phase, tabId, error instanceof Error ? error.message : String(error));
+  pttCapsule.failed(tabId, "语音没有接上，请重新按住说话。");
+  sendResponse({ ok: false, reason: "failed", message: "语音没有接上" });
+ });
 
  return true;
 });

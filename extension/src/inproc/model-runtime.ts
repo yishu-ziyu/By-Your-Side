@@ -48,7 +48,7 @@ const NEEDS_EXTRA_CONFIG = new Set(["amazon-bedrock", "google-vertex", "azure-op
 const RETIRED_JEV_PROVIDER = "typesafe";
 
 /** 设置页置顶的套餐，按用户实际在用的排序；默认模型是已在扩展内跑通「圈出保存按钮」的那个。 */
-const omitCookies: typeof fetch = (input, init) => fetch(input, { ...init, credentials: "omit" });
+export const omitCookies: typeof fetch = (input, init) => fetch(input, { ...init, credentials: "omit" });
 
 export const FEATURED_PROVIDERS: ReadonlyArray<{ id: string; label: string; defaultModel: string }> = [
   { id: COMMANDCODE_PROVIDER_ID, label: "Command Code", defaultModel: "xiaomi/mimo-v2.6-flash" },
@@ -404,7 +404,7 @@ export async function probeModel(probe: ModelRuntime, config: InprocModelConfig,
 
   const reply = await probe.models.completeSimple(model, {
     messages: [{ role: "user", content: "Reply with the single word OK.", timestamp: Date.now() }],
-  }, { maxTokens: 256, signal, headers: probe.headersFor(model), sessionId: probe.sessionId, reasoning: lowest === "off" ? undefined : lowest });
+  }, { maxTokens: 256, signal, fetch: omitCookies, headers: probe.headersFor(model), sessionId: probe.sessionId, reasoning: lowest === "off" ? undefined : lowest });
 
   if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error(reply.errorMessage ?? "服务商返回错误");
 }

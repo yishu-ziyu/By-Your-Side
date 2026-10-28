@@ -9,7 +9,7 @@
  * 行留在出错的位置，续写的答案跟在它下面。再出错不换新卡：同一张卡原地换内容、淡一下，不抖也不重新进场。
  */
 import { createElement as icon, Check } from "lucide";
-import type { ModelOption } from "../../../shared/protocol.js";
+import type { ModelConnectionIdentity, ModelConnectionTarget, ModelOption } from "../../../shared/protocol.js";
 import type { ModelErrorCopy } from "../../../shared/user-facing.js";
 import { displayName } from "./models.js";
 
@@ -25,6 +25,7 @@ const AUTO_WAITS = [8, 16, 32];
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
 export interface KeyTestResult { ok: boolean; ms?: number; reason?: string; detail?: string }
+export interface KeyTarget { saveRequestId?: string; config: ModelConnectionTarget; credential: unknown; conversationId: string | null; runId: string; roles: string; connection: string }
 
 interface ErrorCardHost {
   /** 把卡插进消息流的当前位置（接续锚点之前），让之后到达的答案自然跟在它下面。 */
@@ -36,11 +37,12 @@ interface ErrorCardHost {
   /** 发 set_model；返回的 Promise 在宿主确认换好（model_info）后完成。 */
   switchModel(id: string): Promise<void>;
   /** 发 retry_after_error；key 是刚换的 key，auto 表示倒计时到点自己发的。 */
-  retry(key?: string, auto?: boolean): void;
+  retry(key?: string, auto?: boolean, target?: KeyTarget): void;
   /** 几个窗口的侧栏同时收到同一次出错时，只有返回 true 的那一个倒计时并替用户重试。 */
   ownsAutoRetry(): Promise<boolean>;
-  testKey(key: string): Promise<KeyTestResult>;
-  saveKey(provider: string, key: string): Promise<void>;
+  resolveKeyTarget(identity: ModelConnectionIdentity): Promise<KeyTarget | null>;
+  testKey(key: string, target: KeyTarget): Promise<KeyTestResult>;
+  saveKey(target: KeyTarget, key: string, stillCurrent: () => boolean): Promise<boolean>;
   scrollToEnd(): void;
 }
 
@@ -72,7 +74,7 @@ export function mountErrorCards(host: ErrorCardHost) {
   /** 卡之后已经有用户的新消息：它不再是最新一轮，不能替用户重试。 */
   const superseded = (el: HTMLElement) => [...document.querySelectorAll(".msg.user")].some(u => (el.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
 
-  function recover(source: string, key?: string, autoSent = false): void {
+  function recover(source: string, key?: string, autoSent = false, target?: KeyTarget): void {
     if (!card) return;
     clearTimers();
     recovering = source;
@@ -81,7 +83,7 @@ export function mountErrorCards(host: ErrorCardHost) {
     line.textContent = `${source}，正在从出错处继续…`;
     card.classList.add("is-recovering");
     card.replaceChildren(line);
-    host.retry(key, autoSent);
+    host.retry(key, autoSent, target);
   }
 
   function modelMenu(row: HTMLElement, trigger: HTMLButtonElement): HTMLElement {
@@ -213,8 +215,8 @@ export function mountErrorCards(host: ErrorCardHost) {
     root.append(head, text, row);
 
     if (copy.kind === "auth") {
-      const fix = button("换密钥", "fix-key", true);
-      fix.addEventListener("click", () => openKeySheet(copy));
+      const fix = button(copy.modelConnection ? "换密钥" : "去设置", "fix-key", true);
+      fix.addEventListener("click", () => { if (copy.modelConnection) openKeySheet(copy); else void chrome.runtime.openOptionsPage(); });
       const again = button("仍然重试", "retry-anyway");
       again.addEventListener("click", () => recover("已重试"));
       row.append(fix, again);
@@ -271,7 +273,10 @@ export function mountErrorCards(host: ErrorCardHost) {
 
   function openKeySheet(copy: ModelErrorCopy): void {
     if (host.app.querySelector("#key-sheet")) return;
-    const [provider = "", ...rest] = (copy.model ?? host.currentModel() ?? "").split("/");
+    const model = copy.model ?? "";
+    const [provider = "", ...rest] = model.split("/");
+    const owner = card;
+    const targetPromise = copy.modelConnection && copy.model === `${copy.modelConnection.provider}/${copy.modelConnection.modelId}` ? host.resolveKeyTarget(copy.modelConnection).catch(() => null) : Promise.resolve(null);
     const sheet = document.createElement("section");
     sheet.id = "key-sheet";
     sheet.setAttribute("role", "dialog");
@@ -311,10 +316,11 @@ export function mountErrorCards(host: ErrorCardHost) {
       save.disabled = true;
       status.dataset.tone = "";
       status.textContent = "正在测试…";
-      const result = await host.testKey(key).catch((): KeyTestResult => ({ ok: false, reason: "测试没有完成，再试一次。" }));
+      const target = await targetPromise.catch(() => null);
+      const result = target && owner === card && shown === copy ? await host.testKey(key, target).catch((): KeyTestResult => ({ ok: false, reason: "测试没有完成，再试一次。" })) : { ok: false, reason: "无法核对原连接，请到设置里检查。" };
       test.disabled = false;
 
-      if (result.ok && input.value.trim() === key) {
+      if (result.ok && input.value.trim() === key && owner === card && shown === copy) {
         tested = key;
         save.disabled = false;
         status.dataset.tone = "ok";
@@ -340,15 +346,29 @@ export function mountErrorCards(host: ErrorCardHost) {
 
       if (!key) return;
       save.disabled = true;
-      await host.saveKey(provider, key);
+      const target = await targetPromise.catch(() => null);
+      const saved = target && owner === card && shown === copy && await host.saveKey(target, key, () => owner === card && shown === copy).catch(() => false);
+      if (!saved || !target) { tested = ""; status.dataset.tone = "err"; status.textContent = "无法确认密钥是否保存，请到设置核对后再继续。"; return; }
       close();
-      recover("已换密钥", key);
+      if (owner !== card || shown !== copy) return;
+      recover("已换密钥", key, false, target);
     });
     host.app.append(sheet);
     requestAnimationFrame(() => { sheet.classList.add("is-open"); input.focus(); });
   }
 
   const api = {
+    recoveryFailed(reason: string): boolean {
+      if (!card || recovering === null || !shown) return false;
+      recovering = null;
+      card.classList.remove("is-recovering");
+      card.replaceChildren(...render(shown).childNodes);
+      const note = document.createElement("p");
+      note.className = "error-card-note";
+      note.textContent = reason;
+      card.append(note);
+      return true;
+    },
     /** 模型出错：没有卡就在消息流末尾出一张（rise 进场）。上一张还在就原地换内容、淡一下：位置不动，不抖也不重新进场。 */
     /** live：刚发生的出错；重开侧栏、切回会话时回放出来的是旧出错，只给手动按钮，不替用户重试。 */
     show(copy: ModelErrorCopy, live: boolean): void {

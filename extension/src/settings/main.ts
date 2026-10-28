@@ -1,3 +1,4 @@
+import { mountReadingVoice } from './reading-voice.js';
 import { mountDictationSettings } from "./dictation.js";
 /**
  * 模型与语音设置页：扩展的独立页面，侧栏「更多 → 模型与语音」打开。
@@ -8,7 +9,7 @@ import { mountDictationSettings } from "./dictation.js";
  */
 import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earendil-works/pi-ai";
 import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, KeyRound, Link, Play, Search, X } from "lucide";
-import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
+import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, omitCookies, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
 import { CODEX_CATALOG_TTL_MS, codexIdentity, fetchCodexCatalog, readCodexCatalog } from "../inproc/codex-catalog.js";
 import {
   CODEX_CATALOG_KEY, CUSTOM_PROVIDER_ID, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, modelCredential, resolveVoiceKey, resolveVoiceModel,
@@ -19,7 +20,6 @@ import { thinkingProfile } from "../../../shared/model-capabilities.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
 import { BACKUP_ERROR_KEY, BACKUP_FOLDER, BACKUP_LAST_KEY, BACKUP_STORAGE_KEYS, MAX_BACKUP_BYTES, MEMORY_CHANGED, MEMORY_RESTORED, countBackup, parseBackup, readMemoryDocuments, restoreBackup, writeBrowseSetting, type MemoryBackup } from "../shared/memory-backup.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
-import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
@@ -58,6 +58,7 @@ const svg = (node: Parameters<typeof icon>[0], size = 14) => icon(node, { width:
 
 renderSettings();
 void mountDictationSettings();
+void mountReadingVoice();
 
 const isText = (value: unknown): value is string => typeof value === "string";
 
@@ -1304,7 +1305,7 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
       const model = probe.resolveModel(r.c);
       const [lowest] = thinkingProfile(model).levels;
       const stream = probe.models.streamSimple(model, { messages: [{ role: "user", content: SPEED_QUESTION, timestamp: Date.now() }] }, {
-        maxTokens: 2048, signal, headers: probe.headersFor(model), sessionId: probe.sessionId,
+        maxTokens: 2048, signal, fetch: omitCookies, headers: probe.headersFor(model), sessionId: probe.sessionId,
         reasoning: lowest === "off" ? undefined : lowest,
         // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型直接用 SSE，和任务里一样。
         ...(model.api === "openai-codex-responses" ? { transport: "sse" as const } : {}),
@@ -1409,7 +1410,6 @@ async function reloadSettings(): Promise<void> {
   renderTranslationStyles(parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]));
   $<HTMLInputElement>("edge-entry").checked = !isEdgeEntryOff(stored[EDGE_ENTRY_KEY]);
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
-  linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
   $<HTMLInputElement>("browse-habits").checked = isBrowseOn(stored[BROWSE_ON_KEY]);
   renderBrowseState(isBrowseOn(stored[BROWSE_ON_KEY]));
@@ -1718,7 +1718,6 @@ const selectionBar = $<HTMLInputElement>("selection-bar");
 
 const selectionStatus = $("selection-status");
 
-const linkPreview = $<HTMLInputElement>("link-preview");
 
 const nudgeToggle = $<HTMLInputElement>("nudge");
 
@@ -1735,7 +1734,6 @@ void chrome.commands.getAll().then((commands) => {
     : "关掉后右键「问 By Your Side」仍然可用。快捷键还没有设置，可以在 chrome://extensions/shortcuts 里给「问选中的文字」设一个。";
 });
 
-bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接预览已开启。" : "链接预览已关闭。"));
 
 bindToggle(nudgeToggle, NUDGE_KEY, selectionStatus, (on) => (on ? "主动建议已开启。" : "主动建议已关闭。"));
 
@@ -1793,7 +1791,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => {
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));

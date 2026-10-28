@@ -187,7 +187,13 @@ try {
   await rp.screenshot(panel, join(out, "a-panel-waiting.png"));
   const dockA = await rp.evaluate(panel, `(() => { const dock = document.querySelector("#confirm-dock"); const card = dock?.querySelector(".send-confirm"); return { inDock: !!card && !dock.hidden, wait: card?.querySelector(".send-confirm-wait")?.textContent ?? "", title: card?.querySelector(".send-confirm-title")?.textContent ?? "" }; })()`) as { inDock: boolean; wait: string; title: string };
   check("a 等确认时：卡钉在输入框上方，并显示倒计时", dockA.inDock && dockA.title.includes(DOCKED) && /已等/.test(dockA.wait) && !waitingA?.title.includes(WAITING), { run: waitingA, dock: dockA });
-  await clickYes(boxA.id);
+  await rp.evaluate(panel, `document.querySelector('.send-confirm-yes').click()`);
+  await sleep(200);
+  check("合成点击不批准发送", sent() === 0, { sent: sent() });
+  const tabIndex = await rp.evaluate(panel, `document.querySelector('.send-confirm-yes').tabIndex`);
+  check("发送按钮在键盘顺序里", tabIndex === 0, { tabIndex });
+  await rp.evaluate(panel, `document.querySelector('.send-confirm-yes').focus()`);
+  await rp.pressEnter(panel);
   const goneA = await until(async () => { const run = await lastRun(); return run && !run.title.includes(WAITING) ? run : null; }, 5_000, "用户决定后等确认的标题消失", 100).catch(() => null);
   check("a 用户决定后：等确认的标题 5 秒内消失", !!goneA, { run: goneA });
   await until(async () => sent() >= 1, 10_000, "确认后服务器收到发送");
@@ -375,7 +381,7 @@ try {
 
   // ── o：没有表单、附近没有输入栏的「发送」：确认卡写网站和按钮名，不写内容 ──
   const o = await confirmThenDecline("o", "O 完成。");
-  check("o 按钮没有对应的输入栏：确认卡有网站和按钮名，没有内容行", !!o.pageText?.includes("等你在侧栏确认") && !!o.box?.includes(`127.0.0.1:${siteAddress(site).port}`) && !!o.box?.includes("「发送」") && !o.box.includes("「周五") && !o.box.includes("备忘"), o);
+  check("o 按钮没有对应的输入栏：确认卡有网站和按钮名，没有内容行", !!o.pageText?.includes("等你在侧栏确认") && !!o.box?.includes(`127.0.0.1:${siteAddress(site).port}`) && !!o.box?.includes("发送") && !o.box.includes("「周五") && !o.box.includes("备忘"), o);
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, measured, posts, toolTexts, notCovered: ["2 分钟没理自动不发（产品没有缩短等待的开关）", "真实网站"], modelRequests: model.requests }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));

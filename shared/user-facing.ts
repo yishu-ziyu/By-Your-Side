@@ -6,6 +6,7 @@
  * 原文仍进诊断记录（run trace、agent.log），排查不受影响。
  */
 import { describeTimeout } from "./timeouts.js";
+import type { ModelConnectionIdentity } from "./protocol.js";
 
 /** 工具名 → 用户看得懂的动作（动宾短语，可直接接在「正在」后面）。 */
 const TOOL_ACTIONS = new Map<string, string>(Object.entries({
@@ -66,7 +67,7 @@ export function isQuotaError(message: string | undefined): boolean {
 /** 错误卡按种类给按钮：auth 换 key，busy 倒计时自动重试或换模型，quota 稍后重试或换模型，missing 换模型，network 重试。 */
 export type ModelErrorKind = "auth" | "busy" | "quota" | "missing" | "network" | "other";
 
-export interface ModelErrorCopy { kind: ModelErrorKind; title: string; copy: string; model?: string; detail: string }
+export interface ModelErrorCopy { kind: ModelErrorKind; title: string; copy: string; model?: string; modelConnection?: ModelConnectionIdentity; detail: string }
 
 /**
  * 模型服务的错误 → 错误卡的标题和说明。宿主写成「模型请求最终失败（provider/id）：原文」，原文形如

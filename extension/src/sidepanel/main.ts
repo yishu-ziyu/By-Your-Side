@@ -61,9 +61,10 @@ import {
 } from "./steps.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
-import { mountErrorCards, type KeyTestResult } from "./error-card.js";
+import { mountErrorCards, type KeyTarget, type KeyTestResult } from "./error-card.js";
 import { describeModelError, plainToolError } from "../../../shared/user-facing.js";
-import { INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
+import { INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
+import { CONNECTION_PREFIX, credentialFingerprint, modelConfig, withModelSettings } from "../settings/connections.js";
 import { mountModelMenu } from "./model-menu.js";
 import { chipLabel } from "./models.js";
 import { mountReadingSettings } from "./reading-settings.js";
@@ -74,7 +75,7 @@ import { fileChip, fileMeta } from "./file-chip.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
 import { LEAD_SESSION_ID, isLeadSession, parseServerMessage } from "../../../shared/protocol.js";
 import { checkNoteForUser, evidenceLine, mergeEvidence, nextWorkingTab, readbackKey } from "./claim-hold.js";
-import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, HeldReason, ModelOption, PageContext, ServerMessage, TeamView } from "../../../shared/protocol.js";
+import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMessage, ConversationSummary, HeldReason, ModelConnectionIdentity, ModelOption, PageContext, ServerMessage, TeamView } from "../../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { normalizeMemoryHostname,} from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
@@ -571,6 +572,7 @@ const askCiteClose = document.getElementById("ask-cite-close") as HTMLButtonElem
 let pendingAsk: PendingAsk | null = null;
 
 let selectedConversationId = "default";
+let cancelPendingKeySaves = (): void => {};
 let dictationUI: ReturnType<typeof mountDictation> | undefined;
 
 /** 这个侧栏页面自己看着的会话：刷新后回到它，不跟别的侧栏页面走。关掉侧栏再开是新页面，跟最近操作的那个侧栏。 */
@@ -1162,7 +1164,7 @@ function resetConversationRender(): void {
 function selectConversation(id: string, notify = true): void {
   const preserveInitialDraft = !conversationReady && (inputEl.value.length > 0 || attachments.getAttachments().length > 0 || pendingAsk !== null);
 
-  if (id !== selectedConversationId) { voiceUI.stop(); dictationUI?.cancel(); memoryInline.asksUnanswered("switched_conversation"); }
+  if (id !== selectedConversationId) { cancelPendingKeySaves(); voiceUI.stop(); dictationUI?.cancel(); memoryInline.asksUnanswered("switched_conversation"); }
   completedConversations.delete(id);
   conversationMenu.hidden = true;
   conversationSwitcher.setAttribute("aria-expanded", "false");
@@ -1641,6 +1643,10 @@ let currentModelId: string | undefined;
 let pendingModelSwitch: { id: string; done: () => void; timer: ReturnType<typeof setTimeout> } | null = null;
 
 const keyTests = new Map<string, (result: KeyTestResult) => void>();
+const keySaves = new Map<string, (ok: boolean) => void>();
+const keySaveCancels = new Map<string, () => void>();
+cancelPendingKeySaves = () => { for (const cancel of keySaveCancels.values()) cancel(); };
+addEventListener("pagehide", cancelPendingKeySaves);
 
 function noteModelInfo(model: string | undefined, models: ModelOption[] | undefined): void {
   if (models?.length) knownModels = models;
@@ -1682,6 +1688,33 @@ async function ownsAutoRetry(): Promise<boolean> {
   return !held.some(lock => lock.name === `${AUTO_RETRY_LOCK}:${selectedConversationId}`);
 }
 
+const keyRoleKeys = [INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY];
+
+async function resolveKeyTarget(identity: ModelConnectionIdentity): Promise<KeyTarget | null> {
+  const conversationId = selectedConversationId;
+  return withModelSettings(async () => {
+    const stored = await chrome.storage.local.get(null);
+    const connection = modelConfig(stored[CONNECTION_PREFIX + identity.provider]);
+    const candidates = keyRoleKeys.map(role => modelConfig(stored[role])).filter(config => config && config.provider === identity.provider && config.modelId === identity.modelId);
+    if (connection && connection.provider === identity.provider) candidates.push({ ...connection, modelId: identity.modelId });
+    else if (identity.provider !== "custom" && stored[INPROC_CREDENTIAL_PREFIX + identity.provider]) candidates.push({ provider: identity.provider, modelId: identity.modelId });
+    const bound = await Promise.all(candidates.map(async config => {
+      if (!config || config.provider !== "custom") return config;
+      if (!config.baseUrl || !identity.endpointHash) return null;
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(config.baseUrl));
+      const hash = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+      return hash === identity.endpointHash ? config : null;
+    }));
+    const unique = [...new Map(bound.filter(config => config !== null).map(config => [JSON.stringify(config), config])).values()];
+    const config = unique[0];
+    if (unique.length !== 1 || !config || selectedConversationId !== conversationId) return null;
+    if (config.provider === "custom" && keyRoleKeys.some(role => { const current = modelConfig(stored[role]); return current?.provider === "custom" && current.baseUrl !== config.baseUrl; })) return null;
+    const credential: unknown = stored[INPROC_CREDENTIAL_PREFIX + config.provider];
+    if (credential && typeof credential === "object" && "type" in credential && credential.type === "oauth") return null;
+    return { config, credential: stored[INPROC_CREDENTIAL_PREFIX + config.provider], conversationId, runId: identity.runId, roles: JSON.stringify(keyRoleKeys.map(role => modelConfig(stored[role]))), connection: JSON.stringify(connection) };
+  });
+}
+
 const errorCards = mountErrorCards({
   mount: (el) => appendToMessages(el),
   app,
@@ -1692,15 +1725,42 @@ const errorCards = mountErrorCards({
     pendingModelSwitch = { id, done: resolve, timer: setTimeout(() => { pendingModelSwitch = null; reject(new Error("切换超时")); }, 10_000) };
     send({ type: "set_model", model: id });
   }),
-  retry: (key, auto) => { send({ type: "retry_after_error", ...(key ? { key } : {}), ...(auto ? { auto: true as const } : {}) }); },
+  retry: (_key, auto, target) => { send({ type: "retry_after_error", ...(target ? { target: target.config, expectedRunId: target.runId, keySaveRequestId: target.saveRequestId, conversationId: target.conversationId ?? undefined } : {}), ...(auto ? { auto: true as const } : {}) }); },
   ownsAutoRetry,
-  testKey: (key) => new Promise((resolve) => {
+  resolveKeyTarget,
+  testKey: (key, target) => new Promise((resolve) => {
+    if (selectedConversationId !== target.conversationId) { resolve({ ok: false, reason: "原任务已变化，请重新打开。" }); return; }
     const requestId = crypto.randomUUID();
     keyTests.set(requestId, resolve);
     setTimeout(() => { if (keyTests.delete(requestId)) resolve({ ok: false, reason: "测试没有回音，再试一次。" }); }, 70_000);
-    send({ type: "model_key_test", requestId, key });
+    send({ type: "model_key_test", requestId, key, target: target.config, expectedRunId: target.runId });
   }),
-  saveKey: (provider, key) => chrome.storage.local.set({ [`${INPROC_CREDENTIAL_PREFIX}${provider}`]: { type: "api_key", key } }),
+  saveKey: async (target, key, stillCurrent) => {
+    if (selectedConversationId !== target.conversationId || !stillCurrent()) return false;
+    const credentialHash = await credentialFingerprint(target.credential);
+    if (selectedConversationId !== target.conversationId || !stillCurrent()) return false;
+    return new Promise<boolean>(resolve => {
+      const requestId = crypto.randomUUID();
+      const cancel = () => {
+        for (let i = queuedSends.length - 1; i >= 0; i -= 1) {
+          const envelope = queuedSends[i];
+          if (envelope?.kind === "client" && envelope.msg.type === "model_key_save" && envelope.msg.requestId === requestId) queuedSends.splice(i, 1);
+        }
+        const msg: ClientMessage = { type: "model_key_cancel", requestId, conversationId: target.conversationId ?? undefined };
+        try { if (port) port.postMessage({ kind: "client", msg }); else send(msg); } catch { /* 断开时宿主按未确认处理。 */ }
+      };
+      keySaveCancels.set(requestId, cancel);
+      const watch = setInterval(() => { if (selectedConversationId !== target.conversationId || !stillCurrent()) { cancel(); clearInterval(watch); } }, 100);
+      keySaves.set(requestId, ok => { clearInterval(watch); keySaveCancels.delete(requestId); if (ok) target.saveRequestId = requestId; resolve(ok); });
+      setTimeout(() => { if (keySaves.delete(requestId)) { clearInterval(watch); keySaveCancels.delete(requestId); cancel(); resolve(false); } }, 10_000);
+      if (!send({ type: "model_key_save", requestId, key, target: target.config, expectedRunId: target.runId, roles: target.roles, connection: target.connection, credentialHash, conversationId: target.conversationId ?? undefined })) {
+        keySaves.delete(requestId);
+        keySaveCancels.delete(requestId);
+        clearInterval(watch);
+        resolve(false);
+      }
+    });
+  },
   scrollToEnd: () => scrollToEnd(true),
 });
 
@@ -4597,8 +4657,8 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
     case "error": {
       const copy = describeModelError(ev.message);
 
-      if (copy) errorCards.show(copy, !replayingHistory);
-      else addMsg("msg error", ev.message);
+      if (copy) errorCards.show({ ...copy, ...(ev.modelConnection ? { modelConnection: ev.modelConnection } : {}) }, !replayingHistory);
+      else if (!errorCards.recoveryFailed(ev.message)) addMsg("msg error", ev.message);
       break;
     }
   }
@@ -5111,6 +5171,10 @@ function handleServerMessage(raw: string): void {
       noteModelInfo(msg.model, msg.models);
 
       if (msg.model || msg.models?.length) noteModelPresence(msg.model, msg.models);
+      break;
+    case "model_key_save_result":
+      keySaves.get(msg.requestId)?.(msg.ok);
+      keySaves.delete(msg.requestId);
       break;
     case "model_key_test_result":
       keyTests.get(msg.requestId)?.(msg);
