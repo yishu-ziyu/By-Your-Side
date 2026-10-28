@@ -17,7 +17,15 @@ export interface PttCompanion { start: () => boolean; stop: () => boolean; cance
 export function installPushToTalkKeys(companion?: PttCompanion): void {
   const report = (phase: PttPageMessage["phase"]) => {
     const message: PttPageMessage = { type: "ptt", phase };
-    void chrome.runtime.sendMessage(message).catch(() => {});
+    console.debug('[ptt] page_send', phase);
+    void chrome.runtime.sendMessage(message).then(reply => {
+      if (!reply || typeof reply !== 'object' || typeof reply.ok !== 'boolean') throw new Error('后台没有返回语音状态');
+      console.debug('[ptt] page_reply', phase, reply.ok, reply.reason);
+    }).catch(error => {
+      console.error('[ptt] page_send_failed', phase, error instanceof Error ? error.message : String(error));
+      companion?.cancel();
+      capsule.show({ phase: 'failed', reason: '语音没有接上，请重新按住说话。' });
+    });
   };
 
   const capsule = createPttCapsule();

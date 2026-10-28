@@ -441,8 +441,11 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  const tab = sender.tab;
  const tabId = tab.id!;
  void (async () => {
+  console.debug("[ptt] background_received", raw.phase, tabId);
   if (raw.phase === "start" && !(await readVoiceDictationKey()).key) {
+   console.debug("[ptt] setup_required", tabId);
    await chrome.tabs.create({ url: chrome.runtime.getURL(`settings.html?readingTab=${tabId}#voice`) });
+   console.debug("[ptt] setup_opened", tabId);
    sendResponse({ ok: false, reason: "failed", message: "请先配置网页语音。" });
    return;
   }
@@ -484,7 +487,11 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
   }
 
   sendResponse(reply ?? { ok: false, reason: "failed" });
- })();
+ })().catch(error => {
+  console.error("[ptt] background_failed", raw.phase, tabId, error instanceof Error ? error.message : String(error));
+  pttCapsule.failed(tabId, "语音没有接上，请重新按住说话。");
+  sendResponse({ ok: false, reason: "failed", message: "语音没有接上" });
+ });
 
  return true;
 });
