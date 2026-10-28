@@ -2255,11 +2255,16 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-drawer-head h2, .memory-drawer-head p { margin:0; }
 .memory-drawer-head h2 { font-size: var(--fs-read); line-height:1.35; font-weight:600; letter-spacing:-.015em; }
 .memory-drawer-head p { margin-top:2px; color:var(--text-tertiary); font-size:var(--fs-micro); }
-#memory-close, #memory-body button { border:0; border-radius: var(--r-sm); background:transparent; color:var(--accent); font:inherit; font-size:var(--fs-micro); cursor:pointer; }
+#memory-close, #memory-body button, #site-note-management button { border:0; border-radius: var(--r-sm); background:transparent; color:var(--accent); font:inherit; font-size:var(--fs-micro); cursor:pointer; }
 #memory-close { padding:4px 6px; color:var(--text-secondary); }
-#memory-close:hover, #memory-body button:hover:not(:disabled) { background:var(--content-subtle-hover); }
+#memory-close:hover, #memory-body button:hover:not(:disabled), #site-note-management button:hover:not(:disabled) { background:var(--content-subtle-hover); }
 #memory-close:focus-visible, #memory-body button:focus-visible, #memory-body textarea:focus-visible, #memory-body select:focus-visible, #memory-body input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 #memory-body { flex:1; min-height:0; overflow:auto; padding:0 18px 24px; background:var(--content-bg); }
+#site-note-management { padding:0 18px; color:var(--text-primary); font-size:var(--fs-micro); }
+#site-note-management summary { cursor:pointer; }
+#site-note-management button { padding:4px 6px; }
+#site-note-management button:disabled { opacity:.5; cursor:default; }
+#site-note-management button:focus-visible, #site-note-management summary:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 .memory-quiet { color:var(--text-tertiary); font-size:var(--fs-micro); line-height:1.65; }
 .memory-intro { margin:12px 0 3px; }
 .memory-list { display:grid; }
