@@ -26,6 +26,10 @@ export interface ReadingTurn {
   spoken?: boolean;
   /** 这一问换了一段原文：这一问和之后的问题针对它，前面的回答仍属于各自的原文。 */
   source?: ReadingTurnSource;
+  /** 这一问要动手（搜索、开网页、读全文、记录），交给了侧栏同一个助手去做，回答是助手的交付。 */
+  agent?: true;
+  /** 助手正在做的那一步，只在做的过程中有。 */
+  step?: string;
 }
 
 export interface ReadingTurnSource {
@@ -42,7 +46,12 @@ export interface ReadingTranscript {
   source: ReadingSource;
   turns: ReadingTurn[];
   depth?: ReadingDepth;
+  /** 提问的一方能把要动手的问题交给助手（阅读卡）；没有时回答模型只答文字。 */
+  canAct?: true;
 }
+
+/** 回答模型判断最后一问要动手时只回这一串，阅读卡据此把这一问交给助手。 */
+export const READING_ACT_MARKER = '[[agent]]';
 
 /** 页面上选着文字或开着阅读卡时说的一句话：交给阅读卡回答（reading），还是当成任务交给助手（task）。 */
 export type ReadingRoute = 'reading' | 'task';
@@ -52,6 +61,8 @@ export const READING_ROUTE_SELECTION_LIMIT = 600;
 export type ReadingClientMessage =
   | { type: 'reading_request'; requestId: string; transcript: ReadingTranscript }
   | { type: 'reading_cancel'; requestId: string; threadId: string }
+  /** 阅读卡交给助手的会话还没看过的问答：只进助手的上下文，不开始任务。 */
+  | { type: 'reading_import'; requestId: string; transcript: ReadingTranscript }
   /** asked：阅读卡上最近一问；卡没开时不带。 */
   | { type: 'reading_route'; requestId: string; utterance: string; selection: string; asked?: string };
 
@@ -60,6 +71,8 @@ export interface ReadingRouteResult { type: 'reading_route_result'; requestId: s
 export interface ReadingEvent {
   type: 'reading_event'; requestId: string; threadId: string;
   state: ReadingTurn['state']; text: string; error?: string;
+  /** 回答模型判断这一问要动手：state 为 done、text 为空，由阅读卡交给助手。 */
+  act?: true;
 }
 
 const id = (v: unknown): v is string => typeof v === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(v);
@@ -82,12 +95,13 @@ export function isReadingTranscript(v: unknown): v is ReadingTranscript {
     && string(s.text, READING_SELECTION_LIMIT) && !!s.text.trim()
     && string(s.surrounding, READING_CONTEXT_LIMIT) && (s.location === undefined || string(s.location, 2000)) && typeof s.truncated === 'boolean'
     && Number.isSafeInteger(s.tabId) && s.tabId >= 0 && string(s.title, 500) && string(s.url, 4000)
-    && (t.depth === undefined || t.depth === 'fast' || t.depth === 'deep')
+    && (t.depth === undefined || t.depth === 'fast' || t.depth === 'deep') && (t.canAct === undefined || t.canAct === true)
     && Array.isArray(t.turns) && t.turns.length <= READING_TURN_LIMIT
     && t.turns.every(turn => turn && string(turn.question, 2000) && !!turn.question.trim()
       && string(turn.answer, READING_ANSWER_LIMIT) && states.includes(turn.state)
       && (turn.error === undefined || string(turn.error, 500)) && (turn.spoken === undefined || typeof turn.spoken === 'boolean')
-      && (turn.source === undefined || isReadingTurnSource(turn.source)))
+      && (turn.source === undefined || isReadingTurnSource(turn.source))
+      && (turn.agent === undefined || turn.agent === true) && (turn.step === undefined || string(turn.step, 200)))
     && JSON.stringify(t).length <= 64000;
 }
 
@@ -95,6 +109,8 @@ export function isReadingClientMessage(v: ReadingClientMessage): boolean {
   if (!id(v.requestId)) return false;
 
   if (v.type === 'reading_cancel') return id(v.threadId);
+
+  if (v.type === 'reading_import') return isReadingTranscript(v.transcript);
 
   if (v.type === 'reading_route') return string(v.utterance, 2000) && !!v.utterance.trim() && string(v.selection, READING_ROUTE_SELECTION_LIMIT) && (v.asked === undefined || string(v.asked, 2000));
 
@@ -108,13 +124,13 @@ export function isReadingRouteResult(v: ReadingRouteResult): boolean {
 
 export function isReadingEvent(v: ReadingEvent): boolean {
   return id(v.requestId) && id(v.threadId) && states.includes(v.state)
-    && string(v.text, READING_ANSWER_LIMIT) && (v.error === undefined || string(v.error, 500));
+    && string(v.text, READING_ANSWER_LIMIT) && (v.error === undefined || string(v.error, 500)) && (v.act === undefined || v.act === true);
 }
 
 export function readingContext(transcript: ReadingTranscript): string {
   const depth = transcript.depth === 'deep' ? 'deep' : transcript.depth === 'fast' ? 'fast' : undefined;
 
-  return JSON.stringify({ ...(depth ? { depth } : {}), source: transcript.source, conversation: transcript.turns.map(({question, answer, state, spoken, source}) => ({...(source ? {source: source.text, surrounding: source.surrounding} : {}), question, answer, state, ...(spoken ? {spoken} : {})})) });
+  return JSON.stringify({ ...(depth ? { depth } : {}), source: transcript.source, conversation: transcript.turns.map(({question, answer, state, spoken, source, agent}) => ({...(source ? {source: source.text, surrounding: source.surrounding} : {}), question, answer, state, ...(spoken ? {spoken} : {}), ...(agent ? {agent} : {})})) });
 }
 
 export function readingHandoffContext(transcript: ReadingTranscript): string {

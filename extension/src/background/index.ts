@@ -290,6 +290,7 @@ const transport = new Uplink({
    if (msg.type === "memory_result" && msg.ok && msg.action !== "list") void nudge.memoryChanged().catch(() => {});
 
    pttCapsule.server(msg);
+   reading.server(msg);
 
    // 新会话只切发起的那个侧栏；阅读转来的，由阅读选给动手的那个窗口。随后的会话清单得带上新的选择，否则发起的侧栏会被切回旧会话。
    if (msg.type === "conversation_created") {
@@ -340,6 +341,8 @@ const reading = installReading({
   import: async (id, record) => { const c = controller(id); await c.ready; await c.importReading(record); },
   select: (id, tabId) => void selectForTab(id, tabId),
   voice: pttVoice,
+  act: (id, text, context) => controller(id).spoken(text, context, undefined, true),
+  stopTask: id => controller(id).stop(),
 });
 
 const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), panelConversation,async(id,input)=>{
@@ -2704,11 +2707,11 @@ async function importReading(record: ReadingRecord): Promise<void> {
 
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
 /**
- * 按住说话听写出的一句、按了主动卡的动词：和侧栏打字发送一样记进对话；任务在跑就作为补充交给它，空闲就开新任务。返回是否送出。
+ * 按住说话听写出的一句、按了主动卡的动词、阅读卡交给助手的一问（typed）：和侧栏打字发送一样记进对话；任务在跑就作为补充交给它，空闲就开新任务。返回是否送出。
  * card 只进侧栏历史，让这一轮画成那张卡。
  */
-spoken: async (text: string, context?: PageContext, card?: NudgeCard) => {
-  const sent = uplink.sendClientMessage(await attachPageContext({ type: lastStatus === "idle" ? "user_message" : "steer", text, context, ...(card ? {} : { spoken: true as const }) }));
+spoken: async (text: string, context?: PageContext, card?: NudgeCard, typed = false) => {
+  const sent = uplink.sendClientMessage(await attachPageContext({ type: lastStatus === "idle" ? "user_message" : "steer", text, context, ...(card || typed ? {} : { spoken: true as const }) }));
 
   // 没送出去就不记：胶囊上留着这句话可以重发，重发成功才进对话。
   if (sent) recordAndBroadcastHistory(card ? { kind: "user", text, card } : { kind: "user", text, ...(context?.selection ? { context: { title: context.title, url: context.url, selection: context.selection.text } } : {}) });
