@@ -193,6 +193,8 @@ function boot(): void {
   host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483645';
   syncColorTone(host);
   const root = host.attachShadow({ mode: 'closed' });
+  // 封闭的影子根让网页看到的焦点是一个普通 div：Claude 网页版这类「随处打字就聚焦自己输入框」的网站会把卡片里的按键抢走，所以按键不再冒泡出卡片。
+  for (const type of ['keydown', 'keypress', 'keyup'] as const) host.addEventListener(type, event => event.stopPropagation());
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
       <div class="bar" role="toolbar" aria-label="划词"><button class="ask" data-act="ask" title="选中后直接打字也能问">问<span class="caret" aria-hidden="true"></span></button><span class="sep" aria-hidden="true"></span><button data-act="explain">解释</button><button data-act="read">朗读</button><span class="pins"></span><button class="icon" data-act="copy-selection" aria-label="复制" title="复制"></button><button class="icon more" data-act="more" aria-label="更多" title="更多" aria-haspopup="menu" aria-expanded="false"></button><button class="icon" data-act="dismiss" aria-label="关闭" title="关闭"></button></div>

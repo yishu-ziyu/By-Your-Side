@@ -13,6 +13,7 @@
  *   快速/深度  默认请求是快速模型并带 fast；点芯片换成深度后，打字追问打到主模型并带 deep。
  *   钉到工具条 在「更多」里钉上「翻译」，再选中文字时工具条上有「翻译」，点它发出翻译提问、标题是「翻译」。
  *   关闭      工具条上的 × 收起工具条。
+ *   网页抢键  网页在 document 上监听按键、发现焦点不在输入框就聚焦自己的输入框（Claude 网页版就这样）：在卡片输入框里逐键打字，字仍落在卡片里，网页输入框是空的。
  *   有侧栏    卡片是浮卡，不盖住侧栏。窄窗口退回浮卡。
  */
 import { createServer } from "node:http";
@@ -61,9 +62,12 @@ const SIDE = article(`
   article{margin-right:340px;margin-left:48px}
 `);
 
+const STEAL = BLANK.replace("</body>", `<textarea id="site-box" style="position:fixed;left:16px;right:16px;bottom:16px;height:40px"></textarea>
+<script>document.addEventListener("keydown", (e) => { const a = document.activeElement; if (a && (a.matches("input,textarea") || a.isContentEditable)) return; document.querySelector("#site-box").focus(); });</script></body>`);
+
 const site = createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(path === "/side" ? SIDE : BLANK);
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(path === "/side" ? SIDE : path === "/steal" ? STEAL : BLANK);
 });
 
 await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
@@ -275,6 +279,19 @@ try {
   await click(await until(() => pointOf('.bar [data-act="dismiss"]'), 5_000, "关闭"));
   await sleep(300);
   check("工具条上的 × 收起工具条", await inCard<boolean>(`function(){return this.querySelector('.surface').hidden}`), null);
+
+  await openReading("/steal", 1280);
+  await click(await until(() => pointOf("textarea"), 5_000, "输入框"));
+  for (const ch of "abc") {
+    const key = { key: ch, code: `Key${ch.toUpperCase()}`, windowsVirtualKeyCode: ch.toUpperCase().charCodeAt(0) };
+    await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", text: ch, ...key }, work);
+    await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key }, work);
+  }
+  await sleep(200);
+  const typedIn = await inCard<string>(`function(){return this.querySelector('textarea').value}`);
+  const siteBox = String(await rp.evaluate(work, `document.querySelector("#site-box").value`));
+  await shot("5-steal");
+  check("网页抢键：逐键打的字落在卡片输入框，不落进网页输入框", typedIn === "abc" && siteBox === "", { card: typedIn, site: siteBox });
 
   await openReading("/side", 1280);
   const side = await scene();
