@@ -247,7 +247,7 @@ body {
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
-/* 组件内的 hidden 一律生效：状态行/材料区都自带 display，不能靠默认规则。 */
+/* 组件内的状态行自带 display，hidden 必须显式生效。 */
 .task-bar [hidden] { display: none; }
 .tb-summary { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 22px; }
 .tb-summary .tb-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -267,12 +267,9 @@ body {
 .task-bar[data-expanded] .tb-expand::before { transform: translateY(2px) rotate(180deg); }
 .tb-expand:hover { background: var(--content-subtle); color: var(--text-primary); }
 .tb-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* 收起时：目标在对话里已有，作用页全名、已送入的材料都收进详情；待处理的材料照常显示。 */
+/* 目标在对话里已有，任务条默认只显示状态。 */
 .task-bar:not([data-expanded]) .tb-head,
-.task-bar:not([data-expanded]) .tb-page,
-.task-bar:not([data-expanded]) .tb-materials[data-settled] { display: none; }
-.task-bar[data-head-in-summary] .tb-mat-head { display: none; }
-.task-bar[data-page-in-materials] .tb-page { display: none; }
+.task-bar:not([data-expanded]) .tb-page { display: none; }
 .tb-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .tb-dot {
   flex: none;
@@ -303,20 +300,6 @@ body {
 .task-bar[data-state="error"] .tb-waiting,
 .task-bar[data-state="aborted"] .tb-waiting { color: var(--err); }
 .tb-page { margin: 0; color: var(--text-tertiary); font-size: var(--fs-micro); }
-.tb-materials { display: grid; gap: 3px; margin-top: 2px; }
-.tb-mat-head { color: var(--text-tertiary); font-size: var(--fs-micro); }
-.tb-mat-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.tb-mat { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.tb-mat-kind {
-  flex: none;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--content-subtle);
-  color: var(--text-tertiary);
-  font-size: var(--fs-micro);
-  line-height: 16px;
-}
-.tb-mat-label { min-width: 0; color: var(--text-secondary); }
 .tb-control-retry {
   flex: none;
   padding: 0 8px;
@@ -330,7 +313,6 @@ body {
 }
 .tb-control-retry:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
 .tb-control-retry:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
-.tb-mat-status { color: var(--apple-orange); font-size: var(--fs-micro); }
 .tb-control {
   display: flex;
   flex-wrap: wrap;
@@ -4515,3 +4497,18 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
   text-align: center;
 }
 #self-use-banner[hidden] { display: none; }
+
+.mt-toggle { display: flex; align-items: center; gap: var(--s-1); white-space: nowrap; cursor: pointer; }
+.mt-toggle[aria-expanded="true"] > svg { transform: rotate(180deg); }
+.mt-delivery {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: var(--s-1) var(--s-2);
+  color: var(--text-tertiary);
+  font-size: var(--fs-micro);
+}
+.mt-delivery[data-state="unknown"],
+.mt-delivery[data-state="failed"],
+.mt-delivery[data-state="rejected"] { color: var(--warn); }
+.mt-delivery-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
