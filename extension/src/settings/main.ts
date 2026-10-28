@@ -33,7 +33,7 @@ import { COLOR_TONE_KEY, COLOR_TONES, parseColorTone, syncColorTone, writeCached
 import { renderSettings } from "./view.js";
 import { mountSettingsNavigation } from "./navigation.js";
 import { mountModelPicker } from "./model-picker.js";
-import { CONNECTION_PREFIX, modelConfig, optionConfig, readConnections, rememberConnections, saveConnection, saveModelRole, withModelSettings } from "./connections.js";
+import { CONNECTION_PREFIX, modelConfig, optionConfig, readConnectionChecks, readConnections, rememberConnections, saveConnection, saveModelRole, updateConnectionCheck, withModelSettings, type ConnectionCheck } from "./connections.js";
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
 
 syncColorTone();
@@ -66,8 +66,10 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 const form = $("provider-form");
 const connectionDialog = $<HTMLDialogElement>("connection-dialog");
+const connectionClose = $<HTMLButtonElement>("connection-close");
 const connectionHeading = $("connection-heading");
 let savedConnections = new Map<string, InprocModelConfig>();
+let connectionChecks = new Map<string, ConnectionCheck>();
 let addingConnection = false;
 
 const regionRow = $("region-row");
@@ -167,11 +169,41 @@ let openKey: string | null = null;
 let changingKey = false;
 /** 表单打开时自定义连接的地址；别的窗口之后改了地址，旧表单不能把新密钥带到旧地址。 */
 let openedBaseUrl = "";
+let openedConnection: InprocModelConfig | null = null;
+let openedCredential: StoredCredential | undefined;
+type ConnectionDraft = { baseUrl: string; key: string; modelId: string; changingKey: boolean; openedBaseUrl: string; openedConnection: InprocModelConfig | null; openedCredential: StoredCredential | undefined };
+const connectionDrafts = new Map<string, ConnectionDraft>();
+let formDirty = false;
+let formBusy = false;
+let savingConnection = false;
+
+function rememberConnectionDraft(): void {
+  if (!selected || !formDirty) return;
+  connectionDrafts.set(selected.id, { baseUrl: baseUrlInput.value, key: keyInput.value, modelId: modelInput.value, changingKey, openedBaseUrl, openedConnection, openedCredential });
+}
+
+function markConnectionDraft(): void {
+  formDirty = true;
+  rememberConnectionDraft();
+}
+
+function renderConnectionDraftNotice(): void {
+  $("connection-draft-note").hidden = connectionDrafts.size === 0;
+}
 
 let login: AbortController | null = null;
 
 /** 语音用的阶跃星辰 key 从哪来（resolveVoiceKey 的结果）：语音自己存的、借主模型的阶跃星辰 key、还没有。 */
 let voiceKeySource: "own" | "model" | "" = "";
+let speechKeyConfigured = false;
+
+function renderBrowseState(on: boolean): void {
+  $("browse-state").textContent = on ? "正在观察：本机记录操作，满足条件时交给模型归纳。" : "已暂停：不再新增记录，已有记录保留。";
+}
+
+function renderSpeechState(on: boolean): void {
+  $("ptt-speak-state").textContent = on ? speechKeyConfigured ? " 已开启，密钥已保存，尚未验证。" : " 已开启，但缺少订阅密钥。" : " 已关闭。";
+}
 
 $("connection-close").append(svg(X, 16));
 
@@ -224,19 +256,22 @@ function credentialNote(providerId: string): "已登录" | "已存密钥" | "" {
 const connected = (entry: Entry) => entry.members.some((m) => credentialNote(m.id) || m.id === CUSTOM_PROVIDER_ID && savedConnections.has(m.id) || m.id === config?.provider);
 
 /** 一行的状态：使用中 > 已登录 > 已存密钥。 */
-interface EntryStatus { kind: "use" | "oauth" | "key" | ""; text: string; region?: string }
+interface EntryStatus { kind: "use" | "oauth" | "key" | "saved" | ""; text: string; region?: string }
 
 function entryStatus(entry: Entry): EntryStatus {
+  const checked = (id: string) => connectionChecks.get(id)?.state === "passed" ? "上次测试通过" : connectionChecks.get(id)?.state === "failed" ? "上次连接失败" : "尚未验证";
   const use = entry.members.find((m) => m.id === config?.provider);
 
-  if (use) return { kind: "use", text: "使用中", region: use.region };
+  if (use) return { kind: "use", text: `主模型使用 · ${connectionChecks.get(use.id)?.modelId === config?.modelId ? checked(use.id) : "尚未验证"}`, region: use.region };
 
   for (const [kind, text] of [["oauth", "已登录"], ["key", "已存密钥"]] as const) {
     const member = entry.members.find((m) => credentialNote(m.id) === text);
 
-    if (member) return { kind, text, region: member.region };
+    if (member) return { kind, text: `${text} · ${checked(member.id)}`, region: member.region };
   }
 
+  const saved = entry.members.find((member) => savedConnections.has(member.id));
+  if (saved) return { kind: "saved", text: `已保存 · ${checked(saved.id)}`, region: saved.region };
   return { kind: "", text: "" };
 }
 
@@ -271,6 +306,7 @@ function providerRow(entry: Entry, hits: string[]): HTMLElement {
   if (entry.members.length > 1) name.append(Object.assign(document.createElement("span"), { className: "p-meta", textContent: entry.members.map((m) => m.region).join(" / ") }));
 
   if (hits.length) name.append(Object.assign(document.createElement("span"), { className: "p-meta p-hit", textContent: hits.length > 1 ? `${hits[0]} 等 ${hits.length} 个` : hits[0] }));
+  if (entry.members.some(member => connectionDrafts.has(member.id))) name.append(Object.assign(document.createElement("span"), { className: "p-meta", textContent: " · 有未保存的修改" }));
   const lead = entry.key === CUSTOM_PROVIDER_ID ? Object.assign(document.createElement("span"), { className: "pv pv-glyph" }) : providerIcon(id, entry.name);
 
   if (entry.key === CUSTOM_PROVIDER_ID) lead.append(svg(Link, 15));
@@ -327,6 +363,7 @@ function renderProviders(): void {
 
 function closeForm(restoreFocus = true): void {
   const returnTo = openKey;
+  rememberConnectionDraft();
   cancelProbe();
   login?.abort();
   login = null;
@@ -338,6 +375,7 @@ function closeForm(restoreFocus = true): void {
   closeModelList();
   form.remove();
   renderProviders();
+  renderConnectionDraftNotice();
   if (restoreFocus && returnTo && !document.querySelector<HTMLElement>('[data-settings-panel="connections"]')?.hidden) {
     [...document.querySelectorAll<HTMLButtonElement>('.provider-option')].find(button => button.dataset.entryKey === returnTo)?.focus();
   }
@@ -372,13 +410,14 @@ function renderRegions(): void {
   regionRow.replaceChildren(...entry.members.map((m) => {
     const button = document.createElement("button");
     button.type = "button";
+    button.disabled = formBusy;
     button.setAttribute("role", "radio");
     button.setAttribute("aria-checked", String(m.id === selected!.id));
     button.dataset.region = m.id;
     button.append(m.region ?? m.id);
 
     if (credentialNote(m.id)) button.append(Object.assign(document.createElement("i"), { className: "seg-dot", title: credentialNote(m.id) }));
-    button.addEventListener("click", () => { if (!login && m.id !== selected?.id) select(choiceOf(m.id)!); });
+    button.addEventListener("click", () => { if (!login && !formBusy && m.id !== selected?.id) select(choiceOf(m.id)!); });
 
     return button;
   }));
@@ -403,7 +442,7 @@ function renderCredentialState(): void {
 
   keySaved.hidden = !selected.apiKey || !saved || changingKey;
   keyTail.textContent = saved ? ` · 末四位 ${saved.slice(-4)}` : "";
-  keyRow.hidden = !selected.apiKey || loggedIn || !!saved && !changingKey;
+  keyRow.hidden = !selected.apiKey || loggedIn && !keyInput.value || !!saved && !changingKey;
   $("connection-remove").hidden = selected.id !== CUSTOM_PROVIDER_ID || !savedConnections.has(CUSTOM_PROVIDER_ID);
   keyLabel.textContent = selected.id === CUSTOM_PROVIDER_ID ? "密钥（本机服务可以不填）" : selected.oauthLabel ? "或者填密钥" : "密钥";
   keyInput.placeholder = saved ? "粘贴新密钥。留空就继续用旧的。" : "粘贴密钥";
@@ -411,19 +450,24 @@ function renderCredentialState(): void {
 
 function select(choice: ProviderChoice): void {
   if (login) return;
+  rememberConnectionDraft();
+  const pending = connectionDrafts.get(choice.id);
   selected = choice;
   openKey = entryOf(choice.id)?.key ?? null;
-  changingKey = false;
+  changingKey = pending?.changingKey ?? false;
+  formDirty = !!pending;
   form.hidden = false;
   saveButton.textContent = savedConnections.has(choice.id) ? "验证并更新" : "验证并保存";
   connectionHeading.textContent = labelOf(choice.id);
   connectionDialog.append(form);
   if (!connectionDialog.open) connectionDialog.showModal();
   baseUrlRow.hidden = choice.id !== CUSTOM_PROVIDER_ID;
-  baseUrlInput.value = choice.id === CUSTOM_PROVIDER_ID ? savedConnections.get(CUSTOM_PROVIDER_ID)?.baseUrl ?? (config?.provider === CUSTOM_PROVIDER_ID ? config.baseUrl : "") ?? "" : "";
-  openedBaseUrl = baseUrlInput.value;
-  keyInput.value = "";
-  modelInput.value = defaultModel(choice);
+  baseUrlInput.value = pending?.baseUrl ?? (choice.id === CUSTOM_PROVIDER_ID ? savedConnections.get(CUSTOM_PROVIDER_ID)?.baseUrl ?? (config?.provider === CUSTOM_PROVIDER_ID ? config.baseUrl : "") ?? "" : "");
+  openedBaseUrl = pending?.openedBaseUrl ?? baseUrlInput.value;
+  openedConnection = pending ? pending.openedConnection : savedConnections.get(choice.id) ?? null;
+  openedCredential = pending ? pending.openedCredential : credentials[choice.id] ? structuredClone(credentials[choice.id]) : undefined;
+  keyInput.value = pending?.key ?? "";
+  modelInput.value = pending?.modelId ?? defaultModel(choice);
   $("model-toggle").hidden = connectionModels().length === 0;
   modelMeta.textContent = modelCount(choice);
   codexRefreshButton.hidden = choice.id !== "openai-codex" || credentials[choice.id]?.type !== "oauth";
@@ -432,7 +476,10 @@ function select(choice: ProviderChoice): void {
   oauthFlow.hidden = true;
   oauthFlow.replaceChildren();
   cancelProbe();
-  setStatus(modelStatus, "");
+  const check = connectionChecks.get(choice.id);
+  const savedState = check?.modelId !== modelInput.value ? "尚未验证" : check.state === "passed" ? "上次测试通过" : "上次连接失败，请重试";
+  setStatus(modelStatus, pending ? "有未保存的修改，可以继续填写或验证。"
+    : savedConnections.has(choice.id) || credentialNote(choice.id) ? `已保存 · ${savedState}。` : "");
   hideKeyReason();
   renderRegions();
   renderCredentialState();
@@ -564,6 +611,7 @@ function closeModelList(): void {
 
 function pickModel(id: string): void {
   modelInput.value = id;
+  markConnectionDraft();
   closeModelList();
 }
 
@@ -572,6 +620,7 @@ modelInput.addEventListener("click", openModelList);
 modelInput.addEventListener("blur", closeModelList);
 
 modelInput.addEventListener("input", () => {
+  markConnectionDraft();
   openModelList();
   modelFilter = modelInput.value.trim();
   modelActive = -1;
@@ -648,11 +697,15 @@ function explainFailure(raw: string): string {
 /** 试连超时的说法：「测试连接」和保存前的试连共用同一个开头和同一个时长。 */
 const probeTimeoutLead = (): string => `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到服务商的回复`;
 const TEST_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}。服务商可能正忙。再试一次，或换一个模型。`;
-const SAVE_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}，密钥没有保存。可能是网络或服务繁忙，稍后重试。`;
+const SAVE_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}，密钥没有保存。原连接和输入都保留，可能是网络或服务繁忙，稍后重试。`;
 
-/** 试连时禁掉测试、快速模型、保存和重试按钮，免得再点出第二个并发的测试或保存。 */
+/** 测试的是表单快照；关闭详情可取消，测试期间不让修改这份快照。 */
 function setFormBusy(busy: boolean): void {
-  for (const button of [saveButton, fastButton, testButton, keyRetry]) button.disabled = busy;
+  formBusy = busy;
+  if (busy) closeModelList();
+  for (const input of [baseUrlInput, keyInput, modelInput]) input.disabled = busy;
+  for (const button of [saveButton, fastButton, testButton, keyRetry, $<HTMLButtonElement>("model-toggle"), $<HTMLButtonElement>("key-change"), $<HTMLButtonElement>("key-delete"), $<HTMLButtonElement>("connection-remove"), oauthLogin, oauthLogout]) button.disabled = busy;
+  for (const button of regionRow.querySelectorAll<HTMLButtonElement>("button")) button.disabled = busy;
 }
 
 let retryAction: (() => Promise<void>) | undefined;
@@ -679,9 +732,9 @@ function showKeyReason(reason: string, raw?: string, retry?: () => Promise<void>
   keyInput.focus();
 }
 
-type ProbeOk = { ok: true; config: InprocModelConfig; key: string; elapsed: number };
+type ProbeOk = { ok: true; config: InprocModelConfig; key: string; elapsed: number; credential?: StoredCredential };
 /** definite：服务商明确不接受这份配置（密钥被拒、模型不存在）。超时、限流、网络、服务商自己出错都不算。 */
-type ProbeFail = { ok: false; cancelled?: boolean; local?: string; reason?: string; raw?: string; definite?: boolean; timedOut?: boolean; config?: InprocModelConfig; key?: string };
+type ProbeFail = { ok: false; cancelled?: boolean; local?: string; reason?: string; raw?: string; definite?: boolean; timedOut?: boolean; config?: InprocModelConfig; key?: string; credential?: StoredCredential };
 
 function rejectsConfig(raw: string): boolean {
   if (/concurrent request limit|too many concurrent/i.test(raw)) return false;
@@ -693,6 +746,7 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
   const value = draft();
 
   if (!value.ok) return { ok: false, local: value.error };
+  const credential = credentials[value.config.provider] ? structuredClone(credentials[value.config.provider]) : undefined;
   if (value.config.provider === CUSTOM_PROVIDER_ID && !value.key && (savedConnections.get(CUSTOM_PROVIDER_ID)?.baseUrl ?? "") !== openedBaseUrl) {
     return { ok: false, local: "这条连接刚在别的窗口改过。关掉再打开，确认地址后再试。" };
   }
@@ -723,7 +777,7 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
     await probe.applyCodexCatalog(codexCatalog);
     await probeModel(probe, value.config, AbortSignal.any([timeout, cancel.signal]));
 
-    return { ok: true, config: value.config, key: value.key, elapsed: performance.now() - started };
+    return { ok: true, config: value.config, key: value.key, elapsed: performance.now() - started, credential };
   } catch (error) {
     if (cancel.signal.aborted) return { ok: false, cancelled: true };
     const raw = error instanceof Error ? error.message : String(error);
@@ -734,9 +788,9 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
       timedOut: timeout.aborted,
       raw: timeout.aborted ? undefined : raw,
       definite: !timeout.aborted && rejectsConfig(raw),
-      // 试的是哪份配置就存哪份：试连期间改了表单，不存没试过的值。
       config: value.config,
       key: value.key,
+      credential,
     };
   } finally {
     release();
@@ -747,30 +801,61 @@ async function testConnection(): Promise<void> {
   const result = await runProbe();
 
   if (!result.ok && result.cancelled) return;
+  savingConnection = true;
+  setFormBusy(true);
+  connectionClose.disabled = true;
+  try {
+    if (result.config && !result.key && result.credential) {
+      try { await updateConnectionCheck(result.config, result.ok ? "passed" : "failed", result.credential); }
+      catch { return setStatus(modelStatus, "测试结束，但状态没有保存。请重试。", "err"); }
+    }
 
-  if (!result.ok) {
-    if (result.local) return setStatus(modelStatus, result.local, "err");
-    // 只有服务商明确不接受时才挂在密钥框下；超时、限流、网络问题不是密钥的错。
-    if (result.definite) return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
-    return setStatus(modelStatus, `连接失败：${result.reason ?? "服务商返回了错误"}`, "err", result.raw);
+    if (!result.ok) {
+      if (result.local) return setStatus(modelStatus, result.local, "err");
+      // 只有服务商明确不接受时才挂在密钥框下；超时、限流、网络问题不是密钥的错。
+      if (result.definite) return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+      return setStatus(modelStatus, `连接失败：${result.reason ?? "服务商返回了错误"}`, "err", result.raw);
+    }
+
+    hideKeyReason();
+    setStatus(modelStatus, `本次连接测试通过（${(result.elapsed / 1000).toFixed(1)} 秒），不代表之后每次都可用。`, "ok");
+  } finally {
+    savingConnection = false;
+    connectionClose.disabled = false;
+    setFormBusy(false);
+    if (!keyReason.hidden) keyInput.focus();
   }
-
-  hideKeyReason();
-  setStatus(modelStatus, `连接正常（${(result.elapsed / 1000).toFixed(1)} 秒）。`, "ok");
 }
 
 async function save(): Promise<void> {
   const result = await runProbe();
 
   if (!result.ok && result.cancelled) return;
+  savingConnection = true;
+  setFormBusy(true);
+  connectionClose.disabled = true;
+  try { await finishSave(result); }
+  finally {
+    savingConnection = false;
+    connectionClose.disabled = false;
+    setFormBusy(false);
+    if (!keyReason.hidden) keyInput.focus();
+  }
+}
+
+async function finishSave(result: ProbeOk | ProbeFail): Promise<void> {
+  if (!result.ok && result.definite && result.config && !result.key && result.credential) {
+    try { await updateConnectionCheck(result.config, "failed", result.credential); }
+    catch { return setStatus(modelStatus, "没有保存，输入已保留。测试状态保存失败，请重试。", "err"); }
+  }
   if (!result.ok && result.config?.provider === "openai-codex" && codexDiscoveryModels.includes(result.config.modelId)) {
     return setStatus(modelStatus, `新模型需要先通过连接测试：${result.reason ?? "服务商没有返回结果"}`, "err");
   }
 
-  // 先试连再保存：服务商明确不接受（密钥被拒、模型不存在）不保存；新填的密钥超时也不保存（见下）；限流、网络问题、没换密钥时的超时照样保存，并说刚才没连上。
+  // 服务商明确拒绝时保留草稿；暂时失败只允许新连接保存为未验证。
   if (!result.ok && (result.local || result.definite)) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
-    return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
+    return showKeyReason(`没有保存。${result.reason ?? "服务商返回了错误"} 输入已保留，可检查后重试。`, result.raw);
   }
 
   // 新填的密钥试连超时：不保存，说清是超时，并给「重试」。
@@ -780,17 +865,36 @@ async function save(): Promise<void> {
 
   const value = result.ok ? result : { config: result.config!, key: result.key ?? "" };
 
-  await saveConnection(value.config, value.key);
+  if (!result.ok && (savedConnections.has(value.config.provider) || credentials[value.config.provider]
+    || [config, fastConfig, backupConfig].some(role => role?.provider === value.config.provider))) {
+    if (!value.key && result.credential) {
+      try { await updateConnectionCheck(value.config, "failed", result.credential); }
+      catch { return setStatus(modelStatus, "没有更新，原连接和输入都保留。测试状态保存失败，请重试。", "err"); }
+    }
+    return setStatus(modelStatus, `没有更新，原连接保留。${result.reason ?? "服务商暂时不可用"} 修改已保留，请稍后重试。`, "err", result.raw);
+  }
+  let saved = false;
+  try { saved = await saveConnection(value.config, value.key, result.ok ? "passed" : "failed", openedConnection, openedCredential); }
+  catch { return setStatus(modelStatus, "没有保存，输入已保留。请检查存储后重试。", "err"); }
+  if (!saved) {
+    return setStatus(modelStatus, "没有保存：连接可能已在别处变动。修改已保留，请重新打开并核对。", "err");
+  }
   savedConnections.set(value.config.provider, value.config);
+  connectionDrafts.delete(value.config.provider);
+  formDirty = false;
+  openedConnection = value.config;
   if (value.config.provider === CUSTOM_PROVIDER_ID) openedBaseUrl = value.config.baseUrl ?? "";
   await reload();
+  openedCredential = credentials[value.config.provider] ? structuredClone(credentials[value.config.provider]) : undefined;
   keyInput.value = "";
   changingKey = false;
+  renderCredentialState();
   hideKeyReason();
+  renderConnectionDraftNotice();
   setStatus(mainStatus, "");
 
-  if (result.ok) setStatus(modelStatus, `已保存连接。到模型页选择 ${value.config.modelId} 后使用。`, "ok");
-  else setStatus(modelStatus, `已保存，但刚才没连上：${result.reason ?? "服务商返回了错误"}`, "err", result.raw);
+  if (result.ok) setStatus(modelStatus, `已保存连接，本次测试通过。到模型页选择 ${value.config.modelId} 后使用。`, "ok");
+  else setStatus(modelStatus, `已保存，但尚未验证：${result.reason ?? "服务商暂时不可用"}。请稍后重新测试。`, "err", result.raw);
 }
 
 async function disconnectProvider(): Promise<boolean> {
@@ -932,6 +1036,7 @@ async function startLogin(): Promise<void> {
     oauthFlow.hidden = true;
     login = null;
     await reload();
+    if (selected?.id === providerId) openedCredential = credentials[providerId] ? structuredClone(credentials[providerId]) : undefined;
     if (providerId === "openai-codex") void refreshCodexCatalog(true);
     oauthState.textContent = "登录成功。";
   } catch (error) {
@@ -951,10 +1056,11 @@ async function saveVoiceKey(): Promise<void> {
   const key = voiceInput.value.trim();
 
   if (!key) return setStatus(voiceStatus, "填阶跃星辰密钥。", "err");
-  await chrome.storage.local.set({ [INPROC_VOICE_KEY]: key });
+  try { await chrome.storage.local.set({ [INPROC_VOICE_KEY]: key }); }
+  catch { return setStatus(voiceStatus, "没有保存，输入已保留。请重试。", "err"); }
   voiceInput.value = "";
   await reload();
-  setStatus(voiceStatus, "已保存。侧栏的语音按钮现在可以用了。", "ok");
+  setStatus(voiceStatus, "密钥已保存，尚未验证。下次开启语音对话时生效。", "ok");
 }
 
 async function clearVoiceKey(): Promise<void> {
@@ -995,10 +1101,11 @@ async function saveSpeechKey(): Promise<void> {
   if (!key) return setStatus(speechStatus, "填 MiniMax 订阅密钥。", "err");
 
   if (!isSubscriptionKey(key)) return setStatus(speechStatus, "只能用 Token Plan 订阅密钥（sk-cp- 开头）。按量计费的密钥不能用。", "err");
-  await chrome.storage.local.set({ [PTT_SPEECH_KEY]: key });
+  try { await chrome.storage.local.set({ [PTT_SPEECH_KEY]: key }); }
+  catch { return setStatus(speechStatus, "没有保存，输入已保留。请重试。", "err"); }
   speechInput.value = "";
   await reload();
-  setStatus(speechStatus, "已保存。按住说话的任务做完后，会念出结果。", "ok");
+  setStatus(speechStatus, speakToggle.checked ? "密钥已保存，尚未验证。" : "密钥已保存；朗读已关闭。", "ok");
 }
 
 async function clearSpeechKey(): Promise<void> {
@@ -1017,7 +1124,9 @@ function renderMainModel(): void {
   mainSelect.replaceChildren(...config ? [] : [new Option("还没有选择", "")], ...groups);
   mainSelect.value = config ? JSON.stringify(config) : "";
   $("main-icon").replaceChildren(...config ? [config.provider === CUSTOM_PROVIDER_ID ? svg(Link, 15) : providerIcon(config.provider, labelOf(config.provider))] : []);
-  $("main-desc").textContent = config ? "对话与网页操作" : none ? "还没有连接服务商。在服务商列表里选一家，登录或填好密钥后保存。" : "在服务商列表里选一家。登录或填好密钥后保存。";
+  const check = config && connectionChecks.get(config.provider);
+  $("main-desc").textContent = config ? `对话与网页操作 · ${check?.modelId !== config.modelId ? "尚未验证" : check.state === "passed" ? "上次测试通过" : "上次连接失败"}`
+    : none ? "还没有连接服务商。在服务商列表里选一家，登录或填好密钥后保存。" : "连接已添加，在这里选择主模型。";
 }
 
 async function saveSelection(save: () => Promise<void>, target: HTMLElement): Promise<void> {
@@ -1251,6 +1360,7 @@ async function reloadSettings(): Promise<void> {
   fastConfig = modelConfig(stored[INPROC_FAST_CONFIG_KEY]);
   backupConfig = modelConfig(stored[INPROC_BACKUP_CONFIG_KEY]);
   savedConnections = readConnections(stored);
+  connectionChecks = readConnectionChecks(stored);
   await rememberConnections([config, fastConfig, backupConfig], savedConnections);
   for (const current of [config, fastConfig, backupConfig]) if (current && !savedConnections.has(current.provider)) savedConnections.set(current.provider, current);
   credentials = pickCredentials(Object.entries(stored));
@@ -1277,17 +1387,19 @@ async function reloadSettings(): Promise<void> {
   voiceKeySource = ownVoiceKey ? "own" : voiceKey ? "model" : "";
   $("voice-key-note").textContent = voiceKeySource === "model" ? "正在用阶跃星辰模型的密钥，下面的密钥可以不填。"
     : voiceKeySource === "own" ? "" : "下面的密钥只给语音用。主模型的密钥在服务商列表里填。";
-  $("voice-state").textContent = ownVoiceKey ? `已保存 · 末四位 ${ownVoiceKey.slice(-4)}` : voiceKey ? "正在用阶跃星辰模型的密钥，可以不填。" : "还没有密钥。";
-  $("voice-state").dataset.tone = voiceKey ? "ok" : "";
+  $("voice-state").textContent = ownVoiceKey ? `已保存 · 末四位 ${ownVoiceKey.slice(-4)} · 尚未验证` : voiceKey ? "使用阶跃星辰模型的密钥，语音连接尚未验证。" : "还没有密钥。";
+  $("voice-state").dataset.tone = "";
   voiceInput.placeholder = ownVoiceKey ? "粘贴新密钥" : "粘贴密钥";
   voiceClear.hidden = !ownVoiceKey;
   const speechKey = stored[PTT_SPEECH_KEY];
   const ownSpeechKey = isText(speechKey) && isSubscriptionKey(speechKey) ? speechKey : "";
-  $("speech-state").textContent = ownSpeechKey ? `已保存 · 末四位 ${ownSpeechKey.slice(-4)}` : "还没有密钥，做完不念。";
-  $("speech-state").dataset.tone = ownSpeechKey ? "ok" : "";
+  $("speech-state").textContent = ownSpeechKey ? `已保存 · 末四位 ${ownSpeechKey.slice(-4)} · 尚未验证` : "还没有密钥，做完不念。";
+  $("speech-state").dataset.tone = "";
   speechInput.placeholder = ownSpeechKey ? "粘贴新密钥" : "粘贴 sk-cp- 开头的密钥";
   speechClear.hidden = !ownSpeechKey;
   speakToggle.checked = stored[PTT_SPEAK_RESULT] !== false;
+  speechKeyConfigured = !!ownSpeechKey;
+  renderSpeechState(speakToggle.checked);
   renderVoiceModels(stored[INPROC_VOICE_MODEL_KEY]);
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
@@ -1300,6 +1412,7 @@ async function reloadSettings(): Promise<void> {
   linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
   $<HTMLInputElement>("browse-habits").checked = isBrowseOn(stored[BROWSE_ON_KEY]);
+  renderBrowseState(isBrowseOn(stored[BROWSE_ON_KEY]));
   $<HTMLInputElement>("mini-apps").checked = isMiniAppsOn(stored[MINI_APPS_KEY]);
   openThreads.checked = stored[OPEN_THREADS_KEY] === true;
   attentionCues.checked = isCuesOn(stored[ATTENTION_CUES_KEY]);
@@ -1354,13 +1467,13 @@ function renderVoiceModels(raw: unknown): void {
   $("voice-key-row").hidden = current === GPT_LIVE_MODEL;
   $("voice-key-note").hidden = current === GPT_LIVE_MODEL;
   $("voice-model-state").textContent = !current ? "没有读到语音模型。重新选一个，再开启语音。"
-    : current === GPT_LIVE_MODEL ? "这个语音模型用 ChatGPT 账号，不用阶跃星辰密钥。先在服务商列表里用 ChatGPT 登录。下次开启语音时生效。"
-    : voiceKeySource === "model" ? "用阶跃星辰模型的密钥。下次开启语音时生效。"
-    : voiceKeySource === "own" ? "用语音那一行保存的阶跃星辰密钥。下次开启语音时生效。"
+    : current === GPT_LIVE_MODEL ? credentials["openai-codex"]?.type === "oauth" ? "已登录 ChatGPT，实时语音尚未验证。下次开启语音时生效。" : "缺少 ChatGPT 登录。先在服务商列表里登录，下次开启语音时生效。"
+    : voiceKeySource === "model" ? "用阶跃星辰模型的密钥，实时语音尚未验证。下次开启语音时生效。"
+    : voiceKeySource === "own" ? "用语音那一行保存的阶跃星辰密钥，实时语音尚未验证。下次开启语音时生效。"
     : "要先有阶跃星辰密钥。填在「阶跃星辰密钥（语音用）」，或在服务商列表里连接阶跃星辰。下次开启语音时生效。";
   $("voice-model-list").replaceChildren(...[
-    { model: "stepaudio-3-realtime-preview", label: "按量 Realtime 3", note: "当前默认" },
-    { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "闲聊由语音模型回答。页面操作交给助手。" },
+    { model: "stepaudio-3-realtime-preview", label: "按量 Realtime 3", note: "按量使用；闲聊由语音模型回答，页面操作交给助手。" },
+    { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "按套餐规则使用；闲聊由语音模型回答，页面操作交给助手。" },
     { model: GPT_LIVE_MODEL, label: "GPT-Live（ChatGPT 登录）", note: "闲聊由语音模型回答。页面操作交给助手。" },
   ].map(option => {
     const row = document.createElement("div");
@@ -1372,7 +1485,7 @@ function renderVoiceModels(raw: unknown): void {
       void chrome.storage.local.set({ [INPROC_VOICE_MODEL_KEY]: option.model }).then(() => {
         renderVoiceModels(option.model);
         setStatus(voiceStatus, "已保存，下次开启语音时生效。", "ok");
-      });
+      }, () => setStatus(voiceStatus, "没有保存，当前语音模型没有改变。请重试。", "err"));
     });
     row.append(pick);
 
@@ -1476,6 +1589,7 @@ const personaText = $<HTMLTextAreaElement>("persona-text");
 const personaStatus = $("persona-status");
 
 const personaCount = $("persona-count");
+let personaDirty = false;
 
 const PERSONA_OPTIONS = [...VOICE_PERSONAS.map(({ id, label, summary }) => ({ id, label, summary })), { id: "custom", label: "自定义", summary: "用你自己的描述" }] as const;
 
@@ -1502,17 +1616,18 @@ function renderPersonas(saved: VoicePersona, picked: VoicePersona["id"] = saved.
   }));
   personaCustom.hidden = picked !== "custom";
 
-  if (saved.id === "custom" && document.activeElement !== personaText) personaText.value = saved.text;
+  if (saved.id === "custom" && !personaDirty && document.activeElement !== personaText) personaText.value = saved.text;
   personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`;
 }
 
 async function savePersona(persona: VoicePersona): Promise<void> {
   await chrome.storage.local.set({ [VOICE_PERSONA_STORAGE_KEY]: persona });
+  if (persona.id === "custom") personaDirty = false;
   renderPersonas(persona);
   setStatus(personaStatus, "已保存，下次语音对话生效。", "ok");
 }
 
-personaText.addEventListener("input", () => { personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`; });
+personaText.addEventListener("input", () => { personaDirty = true; personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`; });
 
 $("persona-save").addEventListener("click", () => {
   const text = personaText.value.trim();
@@ -1530,6 +1645,7 @@ const translationStyleInput = $<HTMLTextAreaElement>("translation-style-text");
 const translationStatus = $("translation-status");
 
 const translationStyleCount = $("translation-style-count");
+let translationDirty = false;
 
 const TRANSLATION_STYLE_OPTIONS = [...TRANSLATION_STYLES.map(({ id, label, summary }) => ({ id, label, summary })), { id: "custom", label: "自定义", summary: "用你自己的话说想要的译文" }] as const;
 
@@ -1556,17 +1672,25 @@ function renderTranslationStyles(saved: TranslationStyle, picked: TranslationSty
   }));
   translationStyleCustom.hidden = picked !== "custom";
 
-  if (saved.id === "custom" && document.activeElement !== translationStyleInput) translationStyleInput.value = saved.text;
+  if (saved.id === "custom" && !translationDirty && document.activeElement !== translationStyleInput) translationStyleInput.value = saved.text;
   translationStyleCount.textContent = `${translationStyleInput.value.length}/${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}`;
 }
 
 async function saveTranslationStyle(style: TranslationStyle): Promise<void> {
   await chrome.storage.local.set({ [TRANSLATION_STYLE_KEY]: style });
+  if (style.id === "custom") translationDirty = false;
   renderTranslationStyles(style);
   setStatus(translationStatus, "已保存，下次翻译起生效。", "ok");
 }
 
-translationStyleInput.addEventListener("input", () => { translationStyleCount.textContent = `${translationStyleInput.value.length}/${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}`; });
+translationStyleInput.addEventListener("input", () => { translationDirty = true; translationStyleCount.textContent = `${translationStyleInput.value.length}/${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}`; });
+
+addEventListener("beforeunload", (event) => {
+  if (!connectionDrafts.size && !formDirty && !voiceInput.value && !speechInput.value && !personaDirty && !translationDirty
+    && $("dictation-status").dataset.unsaved !== "true") return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 $("translation-style-save").addEventListener("click", () => {
   const text = translationStyleInput.value.trim();
@@ -1615,7 +1739,10 @@ bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接
 
 bindToggle(nudgeToggle, NUDGE_KEY, selectionStatus, (on) => (on ? "主动建议已开启。" : "主动建议已关闭。"));
 
-bindToggle($<HTMLInputElement>("browse-habits"), BROWSE_ON_KEY, $("habits-status"), (on) => (on ? "已开启。" : "已暂停，已记的操作保留。"));
+bindToggle($<HTMLInputElement>("browse-habits"), BROWSE_ON_KEY, $("habits-status"), (on) => {
+  renderBrowseState(on);
+  return on ? "已开启。" : "已暂停，已记的操作保留。";
+});
 bindToggle($<HTMLInputElement>("edge-entry"), EDGE_ENTRY_KEY, $("translation-status"), (on) => (on ? "已打开，网页右边缘会停着翻译入口。" : "已关闭，⌥T 和侧栏按钮照常可用。"));
 bindToggle($<HTMLInputElement>("mini-apps"), MINI_APPS_KEY, $("labs-status"), (on) => (on ? "已打开，下一个问题起生效。" : "已关闭，已有的小程序不再显示。"));
 
@@ -1638,7 +1765,8 @@ $("key-change").addEventListener("click", () => {
 $("key-delete").addEventListener("click", () => void deleteKey());
 $("connection-remove").addEventListener("click", () => void deleteKey());
 
-keyInput.addEventListener("input", () => hideKeyReason());
+baseUrlInput.addEventListener("input", markConnectionDraft);
+keyInput.addEventListener("input", () => { markConnectionDraft(); hideKeyReason(); });
 
 testButton.addEventListener("click", () => void testConnection());
 
@@ -1658,7 +1786,10 @@ speechInput.addEventListener("keydown", (event) => { if (event.key === "Enter") 
 
 speechClear.addEventListener("click", () => void clearSpeechKey());
 
-bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => (on ? "做完会念出结果。" : "做完不再念。"));
+bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => {
+  renderSpeechState(on);
+  return on ? speechKeyConfigured ? "已开启，密钥尚未验证。" : "已开启，但缺少 MiniMax 订阅密钥。" : "朗读已关闭。";
+});
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -1666,8 +1797,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));
+$("connection-draft-return").addEventListener("click", () => {
+  const id = connectionDrafts.keys().next().value;
+  const choice = id && choiceOf(id);
+  if (!choice) return;
+  showPage("connections");
+  select(choice);
+});
 $("connection-close").addEventListener("click", () => closeForm());
-connectionDialog.addEventListener("cancel", () => closeForm());
+connectionDialog.addEventListener("cancel", (event) => {
+  if (savingConnection) { event.preventDefault(); return; }
+  closeForm();
+});
 connectionDialog.addEventListener("close", () => { if (selected && !connectionDialog.open) closeForm(); });
 $("connection-add").addEventListener("click", () => {
   addingConnection = !addingConnection;

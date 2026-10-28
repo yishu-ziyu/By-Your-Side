@@ -612,6 +612,10 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
       ? `已记下你自己做的 ${browseSeen.recent.length} 步。快速模型每半小时最多归纳一次，同一件事出现在 2 天里就问你要不要记住。`
       : `已暂停，暂停期间什么都不记。已记下的 ${browseSeen.recent.length} 步保留。`;
     group.append(heading, intro);
+    const feedback = document.createElement("p");
+    feedback.className = "memory-quiet";
+    feedback.setAttribute("role", "status");
+    const succeeded = (value: unknown): boolean => !!value && typeof value === "object" && "ok" in value && value.ok === true;
     const list = document.createElement("div");
     list.className = "memory-list";
 
@@ -637,7 +641,11 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "删除";
-      remove.onclick = () => void browseControl({ action: "dismiss", key: habit.key });
+      remove.onclick = async () => {
+        remove.disabled = true;
+        const result: unknown = await browseControl({ action: "dismiss", key: habit.key });
+        if (!succeeded(result)) { feedback.textContent = "没有删除这条记录，请重试。"; remove.disabled = false; }
+      };
       actions.append(remove);
       meta.append(facts, actions);
       row.append(text, meta);
@@ -668,7 +676,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
     pause.textContent = browseSeen.on ? "暂停观察" : "继续观察";
     pause.onclick = () => {
       uiEvent("ui_browse_toggle", { on: !browseSeen.on });
-      void chrome.storage.local.set({ [BROWSE_ON_KEY]: !browseSeen.on });
+      void chrome.storage.local.set({ [BROWSE_ON_KEY]: !browseSeen.on }).catch(() => { feedback.textContent = "没有保存观察状态，请重试。"; });
     };
     const clear = document.createElement("button");
     clear.type = "button";
@@ -681,10 +689,13 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
         return;
       }
       browseClearArmed = false;
-      await browseControl({ action: "clear" });
+      clear.disabled = true;
+      clear.textContent = "全部删除";
+      const result: unknown = await browseControl({ action: "clear" });
+      if (!succeeded(result)) { feedback.textContent = "没有清除记录，请重试。"; clear.disabled = false; }
     };
     actions.append(pause, clear);
-    group.append(actions);
+    group.append(actions, feedback);
 
     return group;
   }

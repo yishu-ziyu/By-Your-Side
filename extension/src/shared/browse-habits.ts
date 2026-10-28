@@ -4,6 +4,8 @@ import { isBrowseHabit, type BrowseHabit } from '../../../shared/browse-habits.j
 
 /** chrome.storage.local：开关。默认开，只有明确存了 false 才算关（关掉＝暂停，已记的保留）。 */
 export const BROWSE_ON_KEY = 'sideagent_browse_habits';
+export const BROWSE_INDUCE_AFTER_STEPS = 5;
+export const BROWSE_INDUCE_EVERY_MS = 30 * 60_000;
 
 /** chrome.storage.local：操作记录 { events: BrowseEvent[], since: number, lastAt: number }，只有后台写。 */
 export const BROWSE_LOG_KEY = 'sideagent_browse_log';
