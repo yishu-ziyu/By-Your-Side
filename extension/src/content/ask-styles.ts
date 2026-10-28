@@ -27,6 +27,10 @@ export const ASK_STYLES = `
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
   --ease-word: cubic-bezier(.37, .55, .86, .88);
+  --sider-layer: #fff;
+  --sider-fill: rgb(114 118 139 / .06);
+  --sider-fill-hover: rgb(114 118 139 / .12);
+  --sider-line: rgb(114 118 139 / .16);
   /* 和网页上那段字的黄色标记同一种黄：卡里的引用和页面上的标记一眼对得上。 */
   --mark: rgba(232, 180, 30, .9);
 }
@@ -59,6 +63,10 @@ export const ASK_STYLES = `
     --warn: #eb9284;
     --shadow: 0 0 0 1px var(--ring), 0 12px 32px -6px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .2);
     --shadow-bar: 0 0 0 1px var(--ring), 0 4px 16px rgb(0 0 0 / .48), 0 2px 8px -4px rgb(0 0 0 / .72), 0 8px 32px 8px rgb(0 0 0 / .24);
+    --sider-layer: #1e1f2b;
+    --sider-fill: rgb(114 118 139 / .12);
+    --sider-fill-hover: rgb(114 118 139 / .24);
+    --sider-line: rgb(114 118 139 / .32);
   }
   :host([data-tone="warm"]) {
     --ink: #2b2822;
@@ -216,5 +224,37 @@ button.send svg { color: var(--on-pen); width: 15px; height: 15px; stroke-width:
 .reader-label { padding: 0 8px; color: var(--ink-fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reader-rate { min-width: 46px; font-variant-numeric: tabular-nums; color: var(--ink-fg-2); }
 @keyframes reader-enter { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) { .surface.enter, .surface.morph, .menu, .reader, .bar-tip, .answer .fresh, .answer.thinking::before { animation: none; } button, .surface, .surface.glide { transition: none; } }
+/* 试验皮肤：按 Sider 5.35.3 划词结果窗的打包样式复刻（宽 450、圆角 16、标题 18 粗、正文 14/1.65、底栏 20 内边距）。 */
+.surface.sider.expanded { width: 450px; min-height: 0; border: 0; border-radius: 16px; background: var(--sider-layer); box-shadow: var(--shadow-bar); }
+.surface.sider.enter, .surface.sider.morph { animation: sider-in .3s ease-in-out; }
+@keyframes sider-in { from { opacity: 0; } }
+.surface.sider .head { height: auto; padding: 16px 16px 16px 20px; border-bottom: 0; gap: 12px; }
+.surface.sider .head .grip, .surface.sider .head-icon { display: none; }
+.surface.sider .head .title { font-size: 18px; font-weight: 700; line-height: 1.4; }
+.surface.sider .head button.icon.small { width: 26px; height: 26px; border-radius: 8px; }
+.surface.sider .messages { padding: 0 16px 0 20px; max-height: 250px; }
+.surface.sider .turn > .source { display: block; width: 100%; height: auto; margin: 0 0 12px; padding: 6px; border-radius: 8px; box-shadow: none; background: var(--sider-fill); font-size: 14px; line-height: 1.65; color: var(--ink-fg-2); white-space: normal; text-align: left; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.surface.sider .answer, .surface.sider .answer-summary { font-size: 14px; line-height: 1.65; letter-spacing: 0; }
+.surface.sider .answer.thinking::before { background: var(--ink-fg); }
+.surface.sider .meta .status { display: none; }
+.surface.sider .foot { min-height: 0; padding: 20px; gap: 6px; }
+.surface.sider .foot .handoff { order: -1; height: 32px; padding: 0 12px; gap: 8px; border: 0; border-radius: 8px; background: var(--sider-fill); color: var(--pen); font-size: 14px; font-weight: 400; }
+.surface.sider .foot .handoff:hover { background: var(--sider-fill-hover); }
+.surface.sider .foot .current-source { display: none; }
+.surface.sider .foot button.icon { width: 32px; height: 32px; border-radius: 8px; }
+.surface.sider .foot button.icon[data-act="copy"] { order: 2; width: auto; height: 32px; padding: 0 12px; gap: 6px; border-radius: 6px; background: var(--sider-fill); color: var(--ink-fg); font-size: 14px; }
+.surface.sider .foot [data-act="copy"] svg { display: none; }
+.surface.sider .foot [data-act="copy"]::after { content: "↵"; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: var(--sider-line); color: var(--ink-mute); font-size: 11px; }
+.surface.sider .foot [data-act="copy"][data-copied] .copy-label { font-size: 0; }
+.surface.sider .foot [data-act="copy"][data-copied] .copy-label::before { content: "已复制"; font-size: 14px; }
+.surface.sider.live .foot { display: none; }
+.surface.sider.live .composer { justify-content: center; margin: 0; padding: 20px; border: 0; background: transparent; }
+.surface.sider.live .composer textarea, .surface.sider.live .composer .depth { display: none; }
+.surface.sider.live .composer .send { width: auto; height: 32px; padding: 0 14px; gap: 6px; border-radius: 8px; background: var(--sider-fill); color: var(--ink-fg); font-size: 14px; }
+.surface.sider.live .composer .send::after { content: "停止"; }
+.surface.sider.live .composer .send svg { color: var(--ink-fg); }
+.surface.sider .resize { display: block; }
+.copy-label { display: none; }
+.surface.sider .copy-label { display: inline; }
+@media (prefers-reduced-motion: reduce) { .surface.sider.enter, .surface.sider.morph, .surface.enter, .surface.morph, .menu, .reader, .bar-tip, .answer .fresh, .answer.thinking::before { animation: none; } button, .surface, .surface.glide { transition: none; } }
 `;
