@@ -399,6 +399,7 @@ try {
     check("B 结束后：网页上没有圈、光标没有停住", (await markCount()) === 0 && !(await hold())?.guide, { marks: await markCount(), hold: await hold() });
     await idle();
 
+    if (!process.argv.includes("--visual")) {
     // ── Q：按下就切换、整块重画 ──
     await openPage("?rerender=1");
     from = toolTexts.length;
@@ -491,11 +492,14 @@ try {
     await guideShown(SAY[0]!);
     await userClick((await markCenter())!);
     await answered("R 完成。");
+    // 这轮复用了 R 的问题和答案，旧回答不能证明新的工具结果已经送到模型。
+    await idle();
     const stopped = toolTexts.find(t => t.includes("用户停下了任务或接管了页面"));
     check("S 模型收到的结果写明用户停下、工具没有替用户点", !!stopped?.includes("没有替用户点"), { tool: stopped ?? null });
+    }
   }
 } catch (error) { check("流程完成", false, String(error)); } finally {
-  await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.every(c => c.pass) ? "PASS" : "FAIL", model: modelArg ?? "scripted", checks, measured, toolTexts, notCovered: ["2 分钟没点（timeout）：产品没有缩短等待的开关，也不为测试加", "接管、关页、离开网页：与停下走同一条收场路径，这里只跑停下", "跨源 iframe 里的目标"], modelRequests: scripted?.requests ?? null }, null, 2));
+  await writeFile(join(out, "result.json"), JSON.stringify({ scope: process.argv.includes("--visual") ? "N/M/R/B only" : "all", status: checks.every(c => c.pass) ? "PASS" : "FAIL", model: modelArg ?? "scripted", checks, measured, toolTexts, notCovered: ["2 分钟没点（timeout）：产品没有缩短等待的开关，也不为测试加", "接管、关页、离开网页：与停下走同一条收场路径，这里只跑停下", "跨源 iframe 里的目标"], modelRequests: scripted?.requests ?? null }, null, 2));
   await rp.close(); await rp.remove(); await scripted?.close(); await new Promise<void>(done => site.close(() => done()));
 }
 

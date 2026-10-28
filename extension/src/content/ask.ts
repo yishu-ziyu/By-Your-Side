@@ -10,7 +10,7 @@ import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, GripVertical } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, GripVertical, ArrowUpRight } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
@@ -219,17 +219,17 @@ function boot(): void {
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
       <div class="bar" role="toolbar" aria-label="划词"><button class="ask" data-act="ask" title="选中后直接打字也能问">问<span class="caret" aria-hidden="true"></span></button><span class="sep" aria-hidden="true"></span><button data-act="explain">解释</button><button data-act="read">朗读</button><span class="pins"></span><button class="icon" data-act="copy-selection" aria-label="复制" title="复制"></button><button class="icon more" data-act="more" aria-label="更多" title="更多" aria-haspopup="menu" aria-expanded="false"></button><button class="icon" data-act="dismiss" aria-label="关闭" title="关闭"></button></div>
-      <div class="head" hidden><span class="grip" aria-hidden="true"></span><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
+      <div class="head" hidden><span class="grip" aria-hidden="true"></span><strong class="title"></strong><button class="icon small" data-act="answer-more" hidden aria-label="回答操作" title="回答操作" aria-haspopup="menu" aria-expanded="false"></button><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
-      <div class="foot" hidden><button type="button" data-act="copy">复制</button><button type="button" data-act="speak">朗读</button><span class="grow"></span><button type="button" data-act="handoff">在侧栏继续</button></div>
+      <div class="foot" hidden><button type="button" class="current-source" data-act="current-source" hidden></button><span class="grow"></span><button type="button" class="icon" data-act="copy" aria-label="复制" title="复制"></button><button type="button" class="icon" data-act="speak" aria-label="朗读" title="朗读"></button><button type="button" class="icon" data-act="handoff" aria-label="在侧栏继续" title="在侧栏继续"></button></div>
       <div class="error" role="status" hidden></div>
-      <button type="button" class="current-source" data-act="current-source" hidden></button>
       <form class="composer" hidden><button type="button" class="depth" data-act="depth" aria-pressed="false" title="换成深度模型">快速</button><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问这段话…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
       <div class="chips" role="group" aria-label="常用问题" hidden>${QUICK_QUESTIONS.map(prompt => `<button type="button" data-ask="${prompt.question}">${prompt.label}</button>`).join('')}</div>
       <div class="resize" title="拖动调整大小，双击恢复" aria-hidden="true"></div>
       <span class="tail" aria-hidden="true"></span>
     </section>
     <div class="menu" role="menu" aria-label="更多" hidden><div class="menu-label">常用</div>${PROMPTS.map(prompt => `<div class="menu-row"><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button><button class="icon small pin" data-pin="${prompt.id}" aria-pressed="false" aria-label="钉到工具条" title="钉到工具条"></button></div>`).join('')}<div class="rule" role="separator"></div><button role="menuitem" data-act="transfer">在侧栏继续</button><div class="rule" role="separator"></div><button role="menuitem" class="dim" data-act="mute-page">这一页不再弹出</button><button role="menuitem" class="dim" data-act="mute-all">关闭划词工具条</button></div>
+    <div class="menu answer-menu" role="menu" aria-label="回答操作" hidden><button role="menuitem" data-act="deep">用深度模型重答</button><button role="menuitem" data-act="details">收起回答</button></div>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
   document.documentElement.append(host);
   const el = <T extends Element = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
@@ -238,6 +238,8 @@ function boot(): void {
   el('[data-act="read"]').prepend(icon(Volume2));
   el('[data-act="more"]').append(icon(Ellipsis));
   el('[data-act="close"]').append(icon(X));
+  el('[data-act="answer-more"]').append(icon(Ellipsis));
+  el('.answer-menu [data-act="deep"]').prepend(icon(Sparkles));
   el('[data-act="dismiss"]').append(icon(X));
   el('[data-act="copy-selection"]').append(icon(Copy));
   el('[data-act="copy"]').prepend(icon(Copy));
@@ -261,6 +263,8 @@ function boot(): void {
   resizeHandle.addEventListener('dblclick', resetSize);
   const menu = el('.menu');
   const more = el('[data-act="more"]');
+  const answerMore = el('[data-act="answer-more"]');
+  const answerMenu = el('.answer-menu');
   const messages = el('.messages');
   const input = el<HTMLTextAreaElement>('textarea');
   const submit = el<HTMLButtonElement>('.send');
@@ -372,17 +376,20 @@ function boot(): void {
 
   function closeMenu(): void {
     menu.hidden = true;
+    answerMenu.hidden = true;
     more.setAttribute('aria-expanded', 'false');
+    answerMore.setAttribute('aria-expanded', 'false');
   }
 
-  function openMenu(): void {
-    const anchor = more.getBoundingClientRect();
-    menu.hidden = false;
-    const box = menu.getBoundingClientRect();
+  function openMenu(button = more, sheet = menu): void {
+    closeMenu();
+    const anchor = button.getBoundingClientRect();
+    sheet.hidden = false;
+    const box = sheet.getBoundingClientRect();
     const below = anchor.bottom + 8 + box.height <= innerHeight - PLACE_MARGIN;
-    menu.style.left = `${clamp(anchor.right - box.width, PLACE_MARGIN, innerWidth - box.width - PLACE_MARGIN)}px`;
-    menu.style.top = `${below ? anchor.bottom + 8 : Math.max(PLACE_MARGIN, anchor.top - 8 - box.height)}px`;
-    more.setAttribute('aria-expanded', 'true');
+    sheet.style.left = `${clamp(anchor.right - box.width, PLACE_MARGIN, innerWidth - box.width - PLACE_MARGIN)}px`;
+    sheet.style.top = `${below ? anchor.bottom + 8 : Math.max(PLACE_MARGIN, anchor.top - 8 - box.height)}px`;
+    button.setAttribute('aria-expanded', 'true');
   }
 
   function animate(name: 'enter' | 'morph'): void {
@@ -697,7 +704,10 @@ function boot(): void {
     el('.bar').hidden = expanded;
     // 打字用的输入卡也能拖：标题栏一直留着，标题写「提问」。
     el('.head').hidden = !expanded;
-    el('.foot').hidden = !answering || !turns.some(turn => turn.answer.trim());
+    el('.foot').hidden = !expanded;
+    const hasAnswer = turns.some(turn => turn.answer.trim());
+    for (const action of ['copy', 'speak', 'handoff']) el(`[data-act="${action}"]`).hidden = !hasAnswer;
+    answerMore.hidden = !hasAnswer;
     messages.hidden = !answering;
     el('.composer').hidden = !expanded;
     el('.chips').hidden = !composing;
@@ -808,26 +818,22 @@ function boot(): void {
         else if (interrupted) say('已停在这里，按新要求接着答');
         else if (turn.state === 'stopped') say('已中止，内容已保留');
 
-        if (hasDetails) parts.push(metaButton(item.detailed ? '收起' : '展开全文', 'details', index));
+        if (hasDetails && index !== lastIndex) parts.push(metaButton(item.detailed ? '收起' : '展开全文', 'details', index));
 
         if (index === lastIndex && (turn.state === 'error' || turn.state === 'stopped')) parts.push(metaButton('重试', 'retry', index));
 
-        if (index === lastIndex && done) {
-          const label = document.createElement('span');
-          label.textContent = deep ? '深度回答' : '快速回答';
-          parts.push(label);
-
-          if (!deep) {
-            const dot = document.createElement('span');
-            dot.className = 'dot';
-            dot.textContent = '·';
-            const deepButton = metaButton('用深度模型重答', 'deep', index);
-            deepButton.prepend(icon(Sparkles));
-            parts.push(dot, deepButton);
-          }
-        }
 
         item.meta.replaceChildren(...parts);
+      }
+      if (index === lastIndex) {
+        const detailButton = el<HTMLButtonElement>('.answer-menu [data-act="details"]');
+        detailButton.hidden = !hasDetails;
+        detailButton.textContent = item.detailed ? '收起回答' : '展开全文';
+        detailButton.dataset.turn = String(index);
+        const deepButton = el<HTMLButtonElement>('.answer-menu [data-act="deep"]');
+        deepButton.hidden = !done || deep;
+        deepButton.disabled = sending;
+        answerMore.hidden = !hasDetails && (!done || deep);
       }
     }
 
@@ -851,13 +857,16 @@ function boot(): void {
     const currentSource = candidate ?? snapshot;
     const sourceButton = el<HTMLButtonElement>('.current-source');
     sourceButton.hidden = !currentSource?.range?.startContainer.isConnected;
-    sourceButton.textContent = currentSource ? quoteOf(currentSource.source.text) : '';
-    sourceButton.title = '回到选中的原文';
+    sourceButton.replaceChildren(document.createTextNode(currentSource?.source.title || '原文'), icon(ArrowUpRight));
+    sourceButton.title = currentSource ? `回到选中的原文：${currentSource.source.text}` : '回到选中的原文';
+    sourceButton.setAttribute('aria-label', sourceButton.title);
     input.placeholder = candidate ? '问刚选中的这段…' : turns.length ? '接着问…' : '问这段话…';
     const handoff = el<HTMLButtonElement>('[data-act="handoff"]');
     handoff.disabled = busy || sending;
     const handoffLabel = record?.transferredConversationId ? '回到侧栏' : '在侧栏继续';
-    handoff.replaceChildren(icon(PanelRight), handoffLabel);
+    handoff.replaceChildren(icon(PanelRight));
+    handoff.setAttribute('aria-label', handoffLabel);
+    handoff.title = handoffLabel;
     const depth = el<HTMLButtonElement>('.depth');
     depth.textContent = typedDepth === 'deep' ? '深度' : '快速';
     depth.setAttribute('aria-pressed', String(typedDepth === 'deep'));
@@ -1349,6 +1358,10 @@ function boot(): void {
         if (menu.hidden) openMenu();
         else closeMenu();
       }
+      else if (action === 'answer-more') {
+        if (answerMenu.hidden) openMenu(answerMore, answerMenu);
+        else closeMenu();
+      }
       else if (action === 'read') {
         // 朗读只在本页用浏览器声音出声，不发起任何阅读或页面任务。
         const current = snapshot;
@@ -1403,6 +1416,7 @@ function boot(): void {
         highlight();
       }
       else if (action === 'details') {
+        closeMenu();
         const item = answers[Number(target.dataset.turn)];
 
         if (item) item.detailed = !item.detailed;
@@ -1413,6 +1427,7 @@ function boot(): void {
         await send(record!.turns.at(-1)!.question, true, false, deepTurns.has(index) ? 'deep' : 'fast');
       }
       else if (action === 'deep') {
+        closeMenu();
         await send(record!.turns.at(-1)!.question, false, false, 'deep');
       }
       else if (action === 'source-turn') {
@@ -1659,7 +1674,7 @@ function boot(): void {
     if (event.key === 'Escape') {
       if (swallowEscape) return;
 
-      if (!menu.hidden) closeMenu();
+      if (!menu.hidden || !answerMenu.hidden) closeMenu();
       else hide();
 
       return;
