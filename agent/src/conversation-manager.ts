@@ -35,6 +35,7 @@ import {VoiceIntentError} from './voice-errors.js';
 import {pageRecoveryKey} from './task-recovery.js';
 import {redactTaskSecrets, type TaskHistoryStore} from './task-history.js';
 import type { LearnedOperationStore } from './learned-operations.js';
+import type { SiteNotesStore } from './site-notes.js';
 import {memoryHostOfUrl} from '../../shared/memory.js';
 import type {BrowseHabit} from '../../shared/browse-habits.js';
 import {asksUser} from './goal-check.js';
@@ -109,12 +110,6 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
   private connected=true;
   reconnect(): void {
     this.connected = true;
-    for (const entry of this.entries.values()) {
-      const id = entry.summary.id;
-      // 存储里没做完的运行自己接着做。不登记的话，中断状态会把这一轮的正文丢掉。
-      if (this.progress.get(id)?.snapshot().state === "interrupted") this.checkpointResumes.add(id);
-      entry.runtime.session.continueStoredRun();
-    }
   }
   private pumpTasks(){if(!this.queueClosed&&this.connected)void this.taskQueue.pump().catch(()=>this.emit({type:'agent_event',conversationId:DEFAULT_CONVERSATION_ID,event:{kind:'error',message:'待办调度未能保存状态，请核对任务记录；不会自动重做。'}}));}
   private runningTasks(){return new Set([...this.pendingStarts,...[...this.entries.values()].flatMap(e => e.runtime.session.isStreaming()||this.getTaskProgress(e.summary.id)?.state==='running' ? [e.summary.id] : [])]).size;}
@@ -836,6 +831,7 @@ return { kind: "silent" };}
   taskHistory?: TaskHistoryStore;
   /** 可直接运行的技能（存下的只读程序）：侧栏「/ 技能」和「管理技能」列出、删除。 */
   learnedOperations?: LearnedOperationStore;
+  siteNotes?: SiteNotesStore;
   /** 各模型的手动起始档；自动升档只属于各自正在执行的会话。 */
   private readonly thinkingPreferences = new Map<string, import('../../shared/protocol.js').ThinkingLevel | null>();
 
@@ -947,12 +943,6 @@ return host?[host]:[];}))].slice(0,16);
 
     // 改过页面的任务计入习惯（打开页面也算，不跟着上面收紧）：同一件事在 3 个对话里做过，就问一次要不要记住。
     if(acted)void session?.noticeHabit?.(entry).catch(()=>{});
-
-    // 站点笔记：只从核对判做成的任务里学；没核对、没做成、用户停下的都不学，
-    // 这一轮的回答自己说只做成一部分或列了没做完的事，也不学。宿主账本补的 hostNote 不算：核对判做成就以核对为准。
-    const partialDelivery=delivery?.runId===snap.runId&&((delivery.facts?.outcome==='partial'&&!delivery.hostNote)||!!delivery.unfinished?.length);
-
-    if(snap.goalCheck?.status==='done'&&snap.state==='idle'&&snap.startedAt!==null&&hosts.length&&!partialDelivery)void session?.learnSiteNotes?.({runId:snap.runId,startedAt:snap.startedAt,hosts,request:[entry.goal,...entry.revisions]}).catch(()=>{});
 
     if(!committed&&(!snap.goalCheck||snap.goalCheck.status==='done'))return;
     const written=history.record(entry).catch(()=>{});
@@ -1934,6 +1924,24 @@ return;}
         this.emit({ type: "task_history_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
       }
 
+      return;
+    }
+
+    if (message.type === "site_note_delete" || message.type === "site_note_list") {
+      try {
+        if (!this.siteNotes) throw new Error("站点笔记不可用");
+        if (message.type === "site_note_list") {
+          const { notes } = await this.siteNotes.list();
+          this.emit({ type: "site_note_list_result", conversationId: id, requestId: message.requestId, ok: true, notes });
+        } else {
+          await this.siteNotes.remove(message.host, message.text, message.runId);
+          this.emit({ type: "site_note_delete_result", conversationId: id, requestId: message.requestId, ok: true });
+        }
+      } catch (error) {
+        const errorText = error instanceof Error ? error.message : String(error);
+        if (message.type === "site_note_list") this.emit({ type: "site_note_list_result", conversationId: id, requestId: message.requestId, ok: false, error: errorText });
+        else this.emit({ type: "site_note_delete_result", conversationId: id, requestId: message.requestId, ok: false, error: errorText });
+      }
       return;
     }
 

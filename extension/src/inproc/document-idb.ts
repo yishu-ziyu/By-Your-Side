@@ -3,7 +3,7 @@
  * 只在这台电脑的这个扩展里，不同步、不上传；卸载扩展即删除，所以每次写入后通知后台另存一份到下载文件夹（shared/memory-backup.ts）。
  */
 import { InProcessLock, type DocumentPersistence } from "@sideagent/agent/browser-core";
-import { MEMORY_CHANGED } from "../shared/memory-backup.js";
+import { MEMORY_BACKUP_DIRTY, MEMORY_CHANGED, MEMORY_RESTORE_JOURNAL, isBackupDocumentKey } from "../shared/memory-backup.js";
 
 const DB_NAME = "sideagent-memory";
 
@@ -49,11 +49,15 @@ export class IdbDocument implements DocumentPersistence {
 
   async read(): Promise<string | null> {
     const db = await this.database();
-    const req = db.transaction(STORE).objectStore(STORE).get(this.key);
+    const tx = db.transaction(STORE);
+    const store = tx.objectStore(STORE);
+    const req = store.get(this.key);
+    const journal = store.get(MEMORY_RESTORE_JOURNAL);
 
     return new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(isStoredText(req.result) ? req.result : null);
-      req.onerror = () => reject(req.error ?? new Error("记忆没能读出"));
+      tx.oncomplete = () => isBackupDocumentKey(this.key) && journal.result !== undefined ? reject(new Error("记忆恢复尚未完成，请稍后重试。")) : resolve(isStoredText(req.result) ? req.result : null);
+      tx.onerror = () => reject(tx.error ?? new Error("记忆没能读出"));
+      tx.onabort = () => reject(tx.error ?? new Error("记忆没能读出"));
     });
   }
 
@@ -69,9 +73,14 @@ export class IdbDocument implements DocumentPersistence {
 
     if (commitGuard && !commitGuard()) throw new Error("Memory save is no longer authorized");
     const tx = db.transaction(STORE, "readwrite", { durability: "strict" });
-    tx.objectStore(STORE).put(text, this.key);
+    const store = tx.objectStore(STORE);
+    const journal = store.get(MEMORY_RESTORE_JOURNAL);
+    journal.onsuccess = () => {
+      if (isBackupDocumentKey(this.key) && journal.result !== undefined || commitGuard && !commitGuard()) tx.abort();
+      else { store.put(text, this.key); if (isBackupDocumentKey(this.key)) store.put(crypto.randomUUID(), MEMORY_BACKUP_DIRTY); }
+    };
     await done(tx);
     // Node 测试里没有 chrome；后台没醒或没装备份时只是少备份一次，不影响这次写入。
-    void globalThis.chrome?.runtime?.sendMessage?.({ type: MEMORY_CHANGED })?.catch(() => {});
+    if (isBackupDocumentKey(this.key)) void globalThis.chrome?.runtime?.sendMessage?.({ type: MEMORY_CHANGED })?.catch(() => {});
   }
 }

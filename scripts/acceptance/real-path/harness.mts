@@ -452,7 +452,7 @@ export async function exportDiagnosticsViaSettings(
  * chromeArgs：额外的 Chrome 启动参数（如把语音服务地址映射到本机，模拟连不上）。
  * dist / SIDEAGENT_ACCEPTANCE_DIST：明确指定已准备的扩展包；复制到隔离目录，不重建或修改原包。同一进程里交错跑两版代码时用 dist。
  */
-export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false, dist, recordFps }: { microphoneWav?: string; chromeArgs?: string[]; headed?: boolean; dist?: string; recordFps?: number } = {}) {
+export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = false, dist, recordFps, unpackedViaCdp = false }: { microphoneWav?: string; chromeArgs?: string[]; headed?: boolean; dist?: string; recordFps?: number; unpackedViaCdp?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "sideagent-real-path-"));
   // Removed by remove(), or at process end if the case fails or is interrupted before that.
   const tempDir = trackTempDir(root);
@@ -502,7 +502,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     "--enable-unsafe-extension-debugging",
     `--user-data-dir=${dirs.profile}`,
     "--remote-debugging-port=0",
-    `--load-extension=${dirs.extension}`,
+    ...(unpackedViaCdp ? [] : [`--load-extension=${dirs.extension}`]),
     "--no-first-run",
     "--no-default-browser-check",
     "--window-size=1280,900",
