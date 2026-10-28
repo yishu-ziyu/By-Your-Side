@@ -110,12 +110,6 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
   private connected=true;
   reconnect(): void {
     this.connected = true;
-    for (const entry of this.entries.values()) {
-      const id = entry.summary.id;
-      // 存储里没做完的运行自己接着做。不登记的话，中断状态会把这一轮的正文丢掉。
-      if (this.progress.get(id)?.snapshot().state === "interrupted") this.checkpointResumes.add(id);
-      entry.runtime.session.continueStoredRun();
-    }
   }
   private pumpTasks(){if(!this.queueClosed&&this.connected)void this.taskQueue.pump().catch(()=>this.emit({type:'agent_event',conversationId:DEFAULT_CONVERSATION_ID,event:{kind:'error',message:'待办调度未能保存状态，请核对任务记录；不会自动重做。'}}));}
   private runningTasks(){return new Set([...this.pendingStarts,...[...this.entries.values()].flatMap(e => e.runtime.session.isStreaming()||this.getTaskProgress(e.summary.id)?.state==='running' ? [e.summary.id] : [])]).size;}

@@ -143,21 +143,6 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   return view;
 }
 
-/**
- * 后台（offscreen）重启后能否不等用户、自己接着做：被重启或断连打断、没有说不清是否已执行的步骤、
- * 可恢复、并且知道原页面。页面是否还开着由调用方核对；不满足就照旧等用户点「继续原任务」。
- */
-export function canAutoResume(view: TaskView): boolean {
-  return view.state === "interrupted"
-    && view.waiting?.reason === "restart_checkpoint"
-    && (view.waiting.detail === "host_restart" || view.waiting.detail === "connection_lost")
-    && view.resumable
-    && !view.unresolvedEffect
-    && !view.outstanding.some((item) => item.status === "unknown")
-    && !!view.runId
-    && view.page !== null;
-}
-
 function latestDeliveryRef(delivery: UserDelivery | null | undefined): TaskView["latestDelivery"] {
   if (!delivery) return null;
 
