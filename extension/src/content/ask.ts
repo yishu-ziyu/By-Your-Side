@@ -10,7 +10,7 @@ import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, GripVertical, ArrowUpLeft, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
@@ -81,7 +81,7 @@ export function selectionSnapshot(): SelectionSnapshot | null {
 }
 
 /** 与样式宽度一致，用于判断正文旁是否放得下回答。 */
-const CARD_WIDTH = 380;
+const CARD_WIDTH = 450;
 
 /** 右下角能拉到多小；再小回答就只剩一条缝。 */
 const CARD_MIN_WIDTH = 320;
@@ -116,11 +116,8 @@ const PROMPT_ICONS = {
 const QUICK_QUESTIONS = PROMPTS.filter(prompt => ['example', 'why', 'evidence'].includes(prompt.id));
 
 const PINS_KEY = 'reading_bar_pins';
-/** 试验：回答卡换成 Sider 划词结果窗的结构（原文引用常显、无追问输入、生成时只留停止）。 */
-const SKIN_KEY = 'reading_skin';
 
 /** 一轮里换过段时，那轮上面引用原文的长度：认得出是哪一段就够。 */
-const QUOTE_CHARS = 36;
 
 /** 系统默认的双击间隔约 500ms，网页里多数连击在 400ms 内。 */
 const MULTI_CLICK_MS = 420;
@@ -268,9 +265,9 @@ function boot(): void {
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
       <div class="bar" role="toolbar" aria-label="划词"><button class="icon ask" data-act="ask" data-tip="问这段" aria-label="问这段"></button><button class="icon" data-act="explain" data-tip="解释" aria-label="解释"></button><button class="icon" data-act="read" data-tip="朗读" aria-label="朗读" hidden></button><span class="pins"></span><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><span class="sep" aria-hidden="true"></span><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
       <div class="bar-tip" id="toolbar-tip" role="tooltip" hidden></div>
-      <div class="head" hidden><span class="grip" aria-hidden="true"></span><span class="head-icon" aria-hidden="true"></span><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
+      <div class="head" hidden><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
-      <div class="foot" hidden><button type="button" class="current-source" data-act="current-source" hidden></button><span class="grow"></span><button type="button" class="icon" data-act="copy" aria-label="复制" title="复制"></button><button type="button" class="icon" data-act="speak" aria-label="朗读" title="朗读" hidden></button><button type="button" class="icon" data-act="answer-more" hidden aria-label="更多回答操作" title="更多回答操作" aria-haspopup="menu" aria-expanded="false"></button><button type="button" class="handoff" data-act="handoff" aria-label="继续聊天" title="继续聊天"></button></div>
+      <div class="foot" hidden><span class="grow"></span><button type="button" class="icon" data-act="copy" aria-label="复制" title="复制"></button><button type="button" class="icon" data-act="speak" aria-label="朗读" title="朗读" hidden></button><button type="button" class="icon" data-act="answer-more" hidden aria-label="更多回答操作" title="更多回答操作" aria-haspopup="menu" aria-expanded="false"></button><button type="button" class="handoff" data-act="handoff" aria-label="继续聊天" title="继续聊天"></button></div>
       <div class="error" role="status" hidden></div>
       <form class="composer" hidden><textarea rows="1" maxlength="2000" aria-label="关于这段继续提问" placeholder="问这段…"></textarea><button type="button" class="depth" data-act="depth" aria-pressed="false" title="换成深度回答">快速回答</button><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
       <div class="chips" role="group" aria-label="常用问题" hidden>${QUICK_QUESTIONS.map(prompt => `<button type="button" data-ask="${prompt.question}">${prompt.label}</button>`).join('')}</div>
@@ -295,7 +292,6 @@ function boot(): void {
   el('[data-act="copy"]').prepend(icon(Copy));
   el('[data-act="copy"]').append(Object.assign(document.createElement('span'), { className: 'copy-label', textContent: '复制' }));
   el('[data-act="speak"]').prepend(icon(Volume2));
-  el('.grip').append(icon(GripVertical, { width: 14, height: 14 }));
   el('.menu-copy-icon').append(icon(Copy));
   el('.menu-transfer-icon').append(icon(PanelRight));
   for (const [index, glyph] of [...root.querySelectorAll('.menu-glyph')].entries()) glyph.append(icon(PROMPT_ICONS[PROMPTS[index]!.id]));
@@ -782,12 +778,6 @@ function boot(): void {
   const preset = (question: string) => question === EXPLAIN_PROMPT || PROMPTS.some(prompt => prompt.question === question);
   /** 卡片标题用这一问的动作名（解释、翻译…），自己打的问题统一叫「问这段」。 */
   const actionName = (question: string) => question === EXPLAIN_PROMPT ? '解释' : PROMPTS.find(prompt => prompt.question === question)?.label ?? '问这段';
-  const actionIcon = (question: string) => {
-    if (question === EXPLAIN_PROMPT) return Lightbulb;
-    const prompt = PROMPTS.find(item => item.question === question);
-
-    return prompt ? PROMPT_ICONS[prompt.id] : MessageCircleQuestion;
-  };
 
   function metaButton(label: string, act: string, turn: number): HTMLButtonElement {
     const button = document.createElement('button');
@@ -818,11 +808,9 @@ function boot(): void {
     el('[data-act="speak"]').hidden = !hasAnswer || !aloudEnabled;
     answerMore.hidden = !hasAnswer;
     messages.hidden = !answering;
-    const sider = surface.classList.contains('sider');
-    const live = turns.some(turn => turn.state === 'pending' || turn.state === 'streaming') || waiting;
-    surface.classList.toggle('live', live);
-    // Sider 的结果窗没有追问框：生成时只留停止，写完由「继续聊天」去侧栏接着问。
-    el('.composer').hidden = !expanded || (sider && answering && !live);
+    // 生成中不露回答操作：写完才出现，卡片不会边写边跳高。
+    surface.classList.toggle('live', turns.some(turn => turn.state === 'pending' || turn.state === 'streaming') || waiting);
+    el('.composer').hidden = !expanded;
     el('.chips').hidden = !composing;
 
     if (!expanded) {
@@ -847,8 +835,6 @@ function boot(): void {
     const waitingSource = waiting ? voice!.target.source.text : undefined;
     // 问过不止一段时，每段第一问上面引用它那段原文：旧回答留着自己的出处，新一轮引用新的一段。
     const several = turns.some(turn => !!turn.source) || new Set([...sources, ...(waitingSource ? [waitingSource] : [])]).size > 1;
-    // 选区在页面上高亮时卡里不重复；快捷键恢复时没有选区，第一问至少带上出处。
-    const sourceVisible = Boolean(snapshot?.range?.startContainer.isConnected);
 
     for (const [index, turn] of turns.entries()) {
       if (!answers[index]) {
@@ -870,9 +856,7 @@ function boot(): void {
       }
 
       const item = answers[index]!;
-      const showsSource = several
-        ? index === 0 || !!turn.source
-        : (!sourceVisible || surface.classList.contains('sider')) && index === 0;
+      const showsSource = index === 0 || (several && !!turn.source);
       setSourceQuote(item.turn, showsSource ? sources[index]! : '', index);
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
@@ -961,10 +945,8 @@ function boot(): void {
       messages.scrollTop = messages.scrollHeight;
     }
 
-    // 选区在页面上已经高亮，卡里不再重复一遍；一轮里换过段时，各轮自己带出处。
     const latestQuestion = turns.at(-1)?.question ?? '';
     el('.title').textContent = actionName(latestQuestion);
-    el('.head-icon').replaceChildren(icon(actionIcon(latestQuestion), { width: 13, height: 13 }));
     const busy = readingBusy(record);
     // 生成中输入框有字时，按钮是改口；空着时才是停止。
     const stops = busy && !input.value.trim();
@@ -973,7 +955,6 @@ function boot(): void {
     submit.setAttribute('aria-label', label);
     submit.title = label;
     submit.disabled = sending || (!busy && !input.value.trim());
-    syncSourceLink();
     input.placeholder = turns.length ? '继续提问…' : '输入问题…';
     const handoff = el<HTMLButtonElement>('[data-act="handoff"]');
     handoff.disabled = busy || sending;
@@ -1002,19 +983,6 @@ function boot(): void {
       delete button.dataset.copied;
       button.setAttribute('aria-label', '复制');
     }, 1200);
-  }
-
-  /** 原文还在眼前时不占底栏；滚出视口后才提供「回到原文」。 */
-  function syncSourceLink(): void {
-    const currentSource = candidate ?? snapshot;
-    const range = currentSource?.range;
-    const sourceButton = el<HTMLButtonElement>('.current-source');
-    const connected = Boolean(range?.startContainer.isConnected);
-    const visible = connected && [...range!.getClientRects()].some(rect => rect.bottom >= 0 && rect.top <= innerHeight);
-    sourceButton.hidden = !connected || visible;
-    sourceButton.replaceChildren(icon(ArrowUpLeft, { width: 13, height: 13 }), document.createTextNode('回到原文'));
-    sourceButton.title = currentSource ? `回到原文 · ${currentSource.source.title}` : '回到原文';
-    sourceButton.setAttribute('aria-label', currentSource ? `回到原文：${currentSource.source.text.slice(0, 80)}` : '回到原文');
   }
 
   /** 回原文：跨得远时直接到，别让平滑滚动拖几秒；只在附近才用动画。 */
@@ -1050,11 +1018,6 @@ function boot(): void {
     if (visible && !expanded) position();
   }
 
-  const quoteOf = (text: string) => {
-    const flat = text.replace(/\s+/g, ' ').trim();
-
-    return flat ? `「${flat.length > QUOTE_CHARS ? `${flat.slice(0, QUOTE_CHARS)}…` : flat}」` : '';
-  };
 
   /** 第 index 问针对哪段原文：往前最近一个换过段的轮次，没有就是卡片打开时那段。 */
   function sourceOf(index: number): string {
@@ -1086,7 +1049,7 @@ function boot(): void {
       turn.prepend(quote);
     }
 
-    quote.textContent = surface.classList.contains('sider') ? text : quoteOf(text);
+    quote.textContent = text;
     quote.title = text.slice(0, 400);
   }
 
@@ -1624,15 +1587,6 @@ function boot(): void {
         }
         if (!located) report('原文位置已变化，摘录仍保留。');
       }
-      else if (action === 'current-source') {
-        const range = (candidate ?? snapshot)?.range;
-        const node = range?.startContainer;
-        if (!node?.isConnected || !range || clipSelection(range.toString().trim()) !== (candidate ?? snapshot)?.source.text) {
-          report('原文位置已变化，摘录仍保留。');
-          return;
-        }
-        revealSource(node);
-      }
       else if (action === 'transfer' || action === 'handoff') {
         closeMenu();
 
@@ -1699,11 +1653,6 @@ function boot(): void {
     }
   };
 
-  const applySkin = (value: unknown) => {
-    surface.classList.toggle('sider', value === 'sider');
-    if (visible) render();
-  };
-
   const applyAloudSetting = (on: boolean) => {
     aloudEnabled = on;
     el('[data-act="read"]').hidden = !on;
@@ -1733,8 +1682,7 @@ function boot(): void {
     }
   };
 
-  void chrome.storage.local.get([SELECTION_BAR_KEY, READING_ALOUD_KEY, PINS_KEY, READING_CARD_SIZE_KEY, SKIN_KEY]).then(stored => {
-    applySkin(stored[SKIN_KEY]);
+  void chrome.storage.local.get([SELECTION_BAR_KEY, READING_ALOUD_KEY, PINS_KEY, READING_CARD_SIZE_KEY]).then(stored => {
     applyBarSetting(isSelectionBarOff(stored[SELECTION_BAR_KEY]));
     applyAloudSetting(isReadingAloudOn(stored[READING_ALOUD_KEY]));
     applyPins(stored[PINS_KEY]);
@@ -1752,7 +1700,6 @@ function boot(): void {
 
     if (area === 'local' && READING_ALOUD_KEY in changes) applyAloudSetting(isReadingAloudOn(changes[READING_ALOUD_KEY]!.newValue));
     if (area === 'local' && PINS_KEY in changes) applyPins(changes[PINS_KEY]!.newValue);
-    if (area === 'local' && SKIN_KEY in changes) applySkin(changes[SKIN_KEY]!.newValue);
     if (area === 'local' && READING_CARD_SIZE_KEY in changes) applyCardSize(changes[READING_CARD_SIZE_KEY]!.newValue);
   });
 
@@ -1889,7 +1836,6 @@ function boot(): void {
     if (expanded) {
       position();
       recede();
-      syncSourceLink();
     }
     else if (visible) {
       hide();
@@ -1904,7 +1850,6 @@ function boot(): void {
       applyManualSize();
       position();
       pushPointer();
-      if (expanded) syncSourceLink();
     }
   };
   window.addEventListener('resize', relayout, { signal });

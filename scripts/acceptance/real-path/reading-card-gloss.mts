@@ -8,7 +8,7 @@
  *
  * 判据：
  *   右侧空白  卡片在正文右侧，不和选区所在段落重叠；滚动后仍贴着这段。
- *   回答窗    标题是「解释」，不再重复「解释这段文字」，也不在卡里再引一遍选区；底栏三个按钮可见；点复制后图标变成对勾。
+ *   回答窗    标题是「解释」，不再重复「解释这段文字」；回答上方常显选中的原文，点它回到原文；生成中不露底栏，写完才出现继续聊天、复制；点复制后显示已复制。
  *   纸色      卡片底色是浅色，和侧栏同一套色阶。
  *   快速/深度  默认请求是快速模型并带 fast；点芯片换成深度后，打字追问打到主模型并带 deep。
  *   钉到工具条 在「更多」里钉上「翻译」，再选中文字时工具条上有「翻译」，点它发出翻译提问、标题是「翻译」。
@@ -282,8 +282,7 @@ try {
   else await until(async () => (await inCard<string>(`function(){return this.querySelector('.answer')?.textContent??''}`)).includes("几十年") || undefined, 20_000, "河岸回答");
   const beforeSameWord = seen.length;
   await selectBank("#finance-bank");
-  const currentQuote = await inCard<{text:string; hidden:boolean}>(`function(){const e=this.querySelector('.current-source');return {text:e?.getAttribute('aria-label')??'',hidden:!e||e.hidden}}`);
-  check("换段后原文仍在眼前时不占底栏，选字本身不生成", currentQuote.hidden && seen.length === beforeSameWord, currentQuote);
+  check("换段时选字本身不生成", seen.length === beforeSameWord, { asked: seen.length - beforeSameWord });
 
   await click(await until(() => pointOf("textarea"), 5_000, "同词追问"));
   await rp.typeText(work, "这里是什么意思");
@@ -309,12 +308,17 @@ try {
     const hit = await inCard<boolean>(`function(){const e=this.querySelector(${JSON.stringify(selector)});const hit=this.elementFromPoint(${point.x},${point.y});return !!e && (hit===e || e.contains(hit))}`);
     return hit ? point : undefined;
   };
+  // 回答区有限高：旧一轮的出处可能卷在上面，像用户一样先滚到它。
+  await inCard<boolean>(`function(){this.querySelector('.turn:first-child > .source')?.scrollIntoView({block:'nearest'});return true}`);
+  await sleep(200);
   await click(await until(() => clickable('.turn:first-child > .source'), 5_000, "旧出处可点击"));
   const riverInView = await until(async () => (await rp.evaluate(work, `(() => {const r=document.querySelector('#river-bank').getBoundingClientRect();return r.top >= 0 && r.bottom <= innerHeight})()`)) || undefined, 5_000, "回到河岸").catch(() => false);
   const riverScroll = await rp.evaluate(work, `scrollY`);
   await rp.evaluate(work, "window.scrollTo({top:0,behavior:'auto'})");
   await sleep(250);
-  await click(await until(() => clickable('.current-source'), 5_000, "当前引用可点击"));
+  await inCard<boolean>(`function(){this.querySelector('.turn:last-child > .source')?.scrollIntoView({block:'nearest'});return true}`);
+  await sleep(200);
+  await click(await until(() => clickable('.turn:last-child > .source'), 5_000, "当前引用可点击"));
   const financeInView = await until(async () => (await rp.evaluate(work, `(() => {const r=document.querySelector('#finance-bank').getBoundingClientRect();return r.top >= 0 && r.bottom <= innerHeight})()`)) || undefined, 5_000, "回到银行").catch(() => false);
   check("点击旧出处与当前引用，分别回到两处原文", !!riverInView && !!financeInView, {riverInView, financeInView, riverScroll});
   await rp.evaluate(work, `document.querySelector('#river-bank').textContent = '原文已更新'`);
@@ -337,15 +341,15 @@ try {
   check("宽屏空白：卡片在正文右侧，不和这段重叠", wide.card.left >= wide.block.right - 1 && !overlaps(wide.card, wide.block) && wide.place === "beside", { card: wide.card, block: wide.block, place: wide.place });
   const look = await inCard<{ title: string; asked: boolean; quote: boolean; source: boolean; foot: string[]; bg: string }>(`function(){const q=this.querySelector('.turn .question');return {title:this.querySelector('.head .title')?.textContent??'',asked:!!q&&!q.hidden,quote:!!this.querySelector('.q'),source:!!this.querySelector('.turn > .source'),foot:[...this.querySelectorAll('.foot:not([hidden]) button:not([hidden])')].map(b=>b.getAttribute('aria-label')||b.textContent.trim()),bg:getComputedStyle(this.querySelector('.surface')).backgroundColor}}`);
   const light = (look.bg.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number).every((v) => v > 230);
-  check("回答窗：标题是「解释」，不重复问题行和选区，默认底栏没有朗读", look.title === "解释" && !look.asked && !look.quote && !look.source && ["复制", "继续聊天"].every((label) => look.foot.includes(label)) && !look.foot.includes("朗读"), look);
+  check("回答窗：标题是「解释」，不重复问题行，原文常显，默认底栏没有朗读", look.title === "解释" && !look.asked && !look.quote && look.source && ["复制", "继续聊天"].every((label) => look.foot.includes(label)) && !look.foot.includes("朗读"), look);
   await rp.evaluate(panel, `chrome.storage.local.set({reading_aloud:true}).then(()=>true)`);
   const optInAloud = await until(() => inCard<{read:boolean;speak:boolean}>(`function(){return {read:!this.querySelector('[data-act="read"]')?.hidden,speak:!this.querySelector('[data-act="speak"]')?.hidden}}`).then((state) => state.read && state.speak ? state : undefined), 5_000, "设置开启后出现朗读");
   check("用户主动开启后，工具条和回答卡出现朗读", optInAloud.read && optInAloud.speak, optInAloud);
   await rp.evaluate(panel, `chrome.storage.local.set({reading_aloud:false}).then(()=>true)`);
   await until(async () => !(await inCard<boolean>(`function(){return !this.querySelector('[data-act="read"]')?.hidden}`)) || undefined, 5_000, "设置关闭后隐藏朗读");
   check("纸色：卡片是浅色底", light, look.bg);
-  const hierarchy = await inCard<{ repeated: boolean; sourceInFoot: boolean; iconsNamed: boolean }>(`function(){return {repeated:/快速回答|用深度模型重答/.test(this.querySelector('.meta')?.textContent??''),sourceInFoot:!!this.querySelector('.foot .current-source'),iconsNamed:[...this.querySelectorAll('.foot button.icon')].every(b=>!!b.title&&!!b.getAttribute('aria-label')&&!!b.querySelector('svg'))}}`);
-  check("阅读操作一行，图标保留名称，深度重答不挤在正文下", !hierarchy.repeated && hierarchy.sourceInFoot && hierarchy.iconsNamed, hierarchy);
+  const hierarchy = await inCard<{ repeated: boolean; iconsNamed: boolean }>(`function(){return {repeated:/快速回答|用深度模型重答/.test(this.querySelector('.meta')?.textContent??''),iconsNamed:[...this.querySelectorAll('.foot button.icon')].every(b=>!!b.title&&!!b.getAttribute('aria-label')&&!!b.querySelector('svg'))}}`);
+  check("阅读操作一行，图标保留名称，深度重答不挤在正文下", !hierarchy.repeated && hierarchy.iconsNamed, hierarchy);
   await click((await pointOf('[data-act="answer-more"]'))!);
   const answerMenu = await inCard<boolean>(`function(){return this.querySelector('.answer-menu')?.checkVisibility() && !this.querySelector('.answer-menu [data-act="deep"]').hidden}`);
   check("回答菜单可打开，深度重答仍可发现", answerMenu, { answerMenu });
@@ -354,7 +358,7 @@ try {
   await sleep(200);
   const copied = await inCard<{ check: boolean; error: string }>(`function(){return {check:this.querySelector('.foot [data-act="copy"]')?.getAttribute('aria-label')==='已复制',error:this.querySelector('.error:not([hidden])')?.textContent??''}}`);
   const pasted = String(await rp.evaluate(work, "navigator.clipboard.readText().catch((e) => 'ERR ' + e.message)"));
-  check("点复制：剪贴板里是回答，图标变成对勾", copied.check && pasted.includes("几十年"), { ...copied, pasted: pasted.slice(0, 80) });
+  check("点复制：剪贴板里是回答，按钮显示已复制", copied.check && pasted.includes("几十年"), { ...copied, pasted: pasted.slice(0, 80) });
   const fastRequest = seen.find((item) => item.depth === "fast");
   check("默认是快速：请求带 fast，打到快速模型", !!fastRequest && fastRequest.model === "fast-reader" && !seen.some((item) => item.model === "main-reader"), { requests: seen.map(({ model: id, depth }) => ({ model: id, depth })) });
 
@@ -437,9 +441,9 @@ try {
   await selectMarker("/blank", 1280);
   await click((await until(() => pointOf('[data-act="ask"]'), 5_000, "问"))!);
   await sleep(250);
-  const composing = await inCard<{ head: boolean; title: string; grip: boolean }>(`function(){return {head:!this.querySelector('.head').hidden,title:this.querySelector('.head .title')?.textContent??'',grip:!!this.querySelector('.grip svg')}}`);
+  const composing = await inCard<{ head: boolean; title: string; cursor: string }>(`function(){const h=this.querySelector('.head');return {head:!h.hidden,title:this.querySelector('.head .title')?.textContent??'',cursor:getComputedStyle(h).cursor}}`);
   await shot("5-composing");
-  check("输入卡也有标题栏和拖动把手", composing.head && composing.title === "问这段" && composing.grip, composing);
+  check("输入卡也有标题栏，整条标题栏可拖", composing.head && composing.title === "问这段" && composing.cursor === "grab", composing);
 
   await openReading("/blank", 1280);
   const beforeDrag = await scene();
@@ -472,7 +476,7 @@ try {
   await sleep(250);
   const reset = await scene();
   await shot("8-reset");
-  check("双击右下角：回到默认大小", Math.abs(reset.card.width - 380) < 2, { card: reset.card });
+  check("双击右下角：回到默认大小", Math.abs(reset.card.width - 450) < 2, { card: reset.card });
 
   await rp.evaluate(panel, `chrome.storage.local.set({reading_bar_pins:['translate','define','example','why','evidence']}).then(()=>true)`);
   await selectMarker("/blank", 360);
