@@ -1,4 +1,4 @@
-import { BACKUP_ERROR_KEY, BACKUP_INSTALL_KEY, BACKUP_LAST_KEY, MEMORY_CHANGED, backupDataUrl, backupFileName, clearMemoryBackupDirty, collectBackup, isOwnBackupDownload, markMemoryBackupDirty, memoryBackupDirty, recoverPendingMemoryRestore } from "../shared/memory-backup.js";
+import { BACKUP_ERROR_KEY, BACKUP_INSTALL_KEY, BACKUP_LAST_KEY, MEMORY_CHANGED, backupDataUrl, backupFileName, clearMemoryBackupDirty, collectBackup, isOwnBackupDownload, markMemoryBackupDirty, memoryBackupDirty, recoverPendingMemoryRestore, startBackupDownload } from "../shared/memory-backup.js";
 import { memoryBackupTiming } from "../../../shared/memory-backup-timing.js";
 
 import { BROWSE_ON_KEY } from "../shared/browse-habits.js";
@@ -58,7 +58,9 @@ async function restoreDownloadUi(): Promise<void> {
 }
 
 async function writeBackup(): Promise<void> {
-  const active = (await chrome.downloads.search({ state: "in_progress" })).filter(isOwnBackupDownload);
+  const items = await chrome.downloads.search({ state: "in_progress" });
+  const owned = await Promise.all(items.map(isOwnBackupDownload));
+  const active = items.filter((_, index) => owned[index]);
   for (const item of active) {
     await chrome.downloads.cancel(item.id).catch(() => {});
     await settled(item.id);
@@ -77,7 +79,7 @@ async function writeBackup(): Promise<void> {
   }
 
   try {
-    const id = await chrome.downloads.download({ url: backupDataUrl(JSON.stringify(backup)), filename, conflictAction: "overwrite", saveAs: false });
+    const id = await startBackupDownload({ url: backupDataUrl(JSON.stringify(backup)), filename, conflictAction: "overwrite", saveAs: false });
     await settled(id);
     let [item] = await chrome.downloads.search({ id }).catch(() => []);
     if (item?.state === "in_progress") {

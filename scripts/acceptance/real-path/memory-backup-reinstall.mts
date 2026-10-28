@@ -17,13 +17,15 @@ try {
   let target = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html#data` })).targetId as string;
   let settings = await rp.attach(target);
   await until(() => rp!.evaluate(settings, '!!document.querySelector("#memory-backup-status")').catch(() => false), 30_000, "设置就绪");
-  await rp.evaluate(settings, 'window.__backupOwners=[];chrome.downloads.onCreated.addListener(item=>window.__backupOwners.push({id:item.byExtensionId,url:item.url?.startsWith("data:application/x-by-your-side-memory-backup+json;base64,")}));true');
+  await rp.evaluate(settings, 'window.__backupOwners=[];chrome.downloads.onCreated.addListener(item=>window.__backupOwners.push({downloadId:item.id,id:item.byExtensionId,url:item.url?.startsWith("data:application/x-by-your-side-memory-backup+json;base64,")}));true');
   await rp.evaluate(settings, `new Promise((resolve,reject)=>{const q=indexedDB.open('sideagent-memory',1);q.onerror=()=>reject(q.error);q.onsuccess=()=>{const db=q.result,tx=db.transaction('kv','readwrite'),s=tx.objectStore('kv');for(const [k,v] of Object.entries(${JSON.stringify(docs)}))s.put(v,k);tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>reject(tx.error)}})`);
   await rp.evaluate(settings, 'chrome.runtime.sendMessage({type:"memory_backup_changed"}).then(()=>true)');
   const last = await until(async () => await rp!.evaluate(settings, 'chrome.storage.local.get("memory_backup_last").then(s=>s.memory_backup_last ?? null)') as { file?: string } | null, 30_000, "备份落盘");
   if (!last.file) throw new Error("备份没有文件名");
-  const ownership = await rp.evaluate(settings, 'window.__backupOwners') as Array<{id?:string;url:boolean}>;
-  if (!ownership.some(item => item.id === rp!.extensionId && item.url)) throw new Error("真实下载未带本扩展归属");
+  const ownership = await rp.evaluate(settings, 'window.__backupOwners') as Array<{downloadId:number;id?:string;url:boolean}>;
+  console.log("download ownership", JSON.stringify({expected:rp.extensionId,ownership}));
+  const registered = await rp.evaluate(settings, 'chrome.storage.local.get("memory_backup_download").then(s=>s.memory_backup_download)') as {id:number;urlHash:string};
+  if (!ownership.some(item => (item.id === rp!.extensionId || item.downloadId === registered?.id && /^[a-f0-9]{64}$/.test(registered.urlHash)) && item.url)) throw new Error("下载归属未与真实返回ID绑定");
   const path = join(rp.dirs.downloads, last.file);
   const saved = JSON.parse(await readFile(path, "utf8"));
   if (Object.entries(docs).some(([key, text]) => saved.documents[key] !== text)) throw new Error("备份文件内容不符");
