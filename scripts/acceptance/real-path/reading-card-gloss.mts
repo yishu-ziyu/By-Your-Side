@@ -1,7 +1,7 @@
 /**
  * 划词阅读卡：和侧栏同一套纸色；右边是空白时放在正文旁，有侧栏或窗口窄时浮在选区旁。
  * 回答窗顶上是动作名（解释、翻译…），底栏有复制、继续聊天；朗读默认不出现，用户主动开启后才出现。输入框里的芯片切快速/深度回答。
- * 工具条有复制和关闭，「更多」里的常用提问可以钉到工具条上。标题栏能拖动，右下角能缩放。
+ * 工具条常驻提问、解释、更多、关闭，复制收在「更多」里；「更多」里的常用提问可以钉到工具条上。标题栏能拖动，右下角能缩放。
  *
  * 真扩展、隔离无头 Chrome、本机练习页、本机脚本模型。脚本模型只证明卡片位置、样子和请求去向，不证明真实回答写得好不好。
  *   npx tsx scripts/acceptance/real-path/reading-card-gloss.mts --headless
@@ -252,12 +252,12 @@ try {
   await selectMarker("/blank", 1280);
   const defaultBar = await inCard<string[]>(`function(){return [...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]')).map(b=>b.textContent.trim()||b.getAttribute('aria-label'))}`);
   check("工具条默认显示「问这段」，不出现朗读", defaultBar.includes("问这段") && !defaultBar.includes("朗读"), defaultBar);
-  const iconBar = await inCard<{ text: string[]; named: boolean; sized: boolean; tipped: boolean }>(`function(){const bs=[...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]'));return {text:bs.map(b=>b.textContent.trim()).filter(Boolean),named:bs.every(b=>!!b.querySelector('svg')&&!!b.getAttribute('aria-label')),sized:bs.every(b=>b.offsetWidth===28&&b.offsetHeight===28),tipped:bs.every(b=>b.dataset.tip===b.getAttribute('aria-label'))}}`);
-  check("工具条动作统一为命名图标，没有残留文字", iconBar.text.length === 0 && iconBar.named && iconBar.sized && iconBar.tipped, iconBar);
+  const barLayout = await inCard<{ text: number; named: boolean; sized: boolean; tips: boolean }>(`function(){const bs=[...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]'));const tipButtons=bs.filter(b=>b.dataset.tip);return {text:bs.reduce((n,b)=>n+(b.textContent?.trim()?1:0),0),named:bs.every(b=>!!b.querySelector('svg')&&!!b.getAttribute('aria-label')),sized:bs.every(b=>b.offsetWidth===26&&b.offsetHeight===26),tips:tipButtons.every(b=>b.dataset.tip===b.getAttribute('aria-label'))}}`);
+  check("工具条保持纯图标，所有动作保留可访问名称", barLayout.text === 0 && barLayout.named && barLayout.sized && barLayout.tips, barLayout);
   await inCard<boolean>(`function(){this.querySelector('[data-act="explain"]').focus();return true}`);
   await sleep(180);
   const explainTip = await inCard<{ text: string; bg: string }>(`function(){const t=this.querySelector('.bar-tip');return {text:t.hidden?'':t.textContent??'',bg:getComputedStyle(t).backgroundColor}}`);
-  check("键盘聚焦出现黑底动作名", explainTip.text === "解释" && explainTip.bg === "rgb(21, 26, 32)", explainTip);
+  check("键盘聚焦图标动作时出现黑底动作名", explainTip.text === "解释" && explainTip.bg === "rgb(21, 26, 32)", explainTip);
   await shot("toolbar-tooltip");
   await inCard<boolean>(`function(){this.querySelector('[data-act="explain"]').blur();return true}`);
   const selectBank = async (id: string) => {
@@ -387,6 +387,8 @@ try {
   // 钉「翻译」：工具条状态下打开「更多」，点「翻译」那行的图钉。
   await selectMarker("/blank", 1280);
   await click(await until(() => pointOf('[data-act="more"]'), 5_000, "更多"));
+  const menuCopy = await inCard<string>(`function(){return this.querySelector('.menu [data-act="copy-selection"]')?.textContent?.trim()??''}`);
+  check("复制收进更多菜单", menuCopy === "复制所选文字", { menuCopy });
   await click(await until(() => pointOf('[data-pin="translate"]'), 5_000, "图钉"));
   await sleep(300);
   await shot("3-menu");
@@ -394,7 +396,7 @@ try {
   await selectMarker("/blank", 1280);
   const bar = await inCard<string[]>(`function(){return [...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]')).map(b=>b.textContent.trim()||b.getAttribute('aria-label'))}`);
   await shot("4-pinned-bar");
-  check("工具条有复制、关闭，钉上的「翻译」出现在工具条上", ["复制", "关闭", "翻译"].every((label) => bar.includes(label)), bar);
+  check("工具条保留更多、关闭，钉上的「翻译」出现在工具条上", ["更多问法", "关闭", "翻译"].every((label) => bar.includes(label)), bar);
   const asked = seen.length;
   await click(await until(() => pointOf('.bar [data-prompt="translate"]'), 5_000, "工具条上的翻译"));
   await until(() => seen.length > asked || undefined, 20_000, "翻译请求");

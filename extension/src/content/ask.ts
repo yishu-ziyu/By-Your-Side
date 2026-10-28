@@ -226,7 +226,7 @@ function boot(): void {
   for (const type of ['keydown', 'keypress', 'keyup'] as const) host.addEventListener(type, event => event.stopPropagation());
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
-      <div class="bar" role="toolbar" aria-label="划词"><button class="icon ask" data-act="ask" data-tip="问这段" aria-label="问这段"></button><span class="sep" aria-hidden="true"></span><button class="icon" data-act="explain" data-tip="解释" aria-label="解释"></button><button class="icon" data-act="read" data-tip="朗读" aria-label="朗读" hidden></button><span class="pins"></span><span class="sep" aria-hidden="true"></span><button class="icon" data-act="copy-selection" data-tip="复制" aria-label="复制"></button><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
+      <div class="bar" role="toolbar" aria-label="划词"><button class="icon ask" data-act="ask" data-tip="问这段" aria-label="问这段"></button><button class="icon" data-act="explain" data-tip="解释" aria-label="解释"></button><button class="icon" data-act="read" data-tip="朗读" aria-label="朗读" hidden></button><span class="pins"></span><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><span class="sep" aria-hidden="true"></span><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
       <div class="bar-tip" id="toolbar-tip" role="tooltip" hidden></div>
       <div class="head" hidden><span class="grip" aria-hidden="true"></span><span class="head-icon" aria-hidden="true"></span><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
@@ -237,7 +237,7 @@ function boot(): void {
       <div class="resize" title="拖动调整大小，双击恢复" aria-hidden="true"></div>
       <span class="tail" aria-hidden="true"></span>
     </section>
-    <div class="menu" role="menu" aria-label="更多问法" hidden><div class="menu-label">更多问法</div>${PROMPTS.map(prompt => `<div class="menu-row"><span class="menu-glyph" aria-hidden="true"></span><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button><button class="icon small pin" data-pin="${prompt.id}" aria-pressed="false" aria-label="固定到工具条" title="固定到工具条"></button></div>`).join('')}<div class="rule" role="separator"></div><button class="menu-action" role="menuitem" data-act="transfer"><span class="menu-action-icon" aria-hidden="true"></span>在侧栏打开</button><div class="rule" role="separator"></div><div class="menu-label">自动显示</div><button role="menuitem" class="dim" data-act="mute-page">此页不再自动显示</button><button role="menuitem" class="dim" data-act="mute-all">所有网页不再自动显示</button></div>
+    <div class="menu" role="menu" aria-label="更多问法" hidden><button class="menu-action" role="menuitem" data-act="copy-selection"><span class="menu-action-icon menu-copy-icon" aria-hidden="true"></span>复制所选文字</button><div class="rule" role="separator"></div><div class="menu-label">更多问法</div>${PROMPTS.map(prompt => `<div class="menu-row"><span class="menu-glyph" aria-hidden="true"></span><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button><button class="icon small pin" data-pin="${prompt.id}" aria-pressed="false" aria-label="固定到工具条" title="固定到工具条"></button></div>`).join('')}<div class="rule" role="separator"></div><button class="menu-action" role="menuitem" data-act="transfer"><span class="menu-action-icon menu-transfer-icon" aria-hidden="true"></span>在侧栏打开</button><div class="rule" role="separator"></div><div class="menu-label">自动显示</div><button role="menuitem" class="dim" data-act="mute-page">此页不再自动显示</button><button role="menuitem" class="dim" data-act="mute-all">所有网页不再自动显示</button></div>
     <div class="menu answer-menu" role="menu" aria-label="更多回答操作" hidden><button role="menuitem" data-act="deep">用深度回答重答</button><button role="menuitem" data-act="details">收起回答</button></div>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
   document.documentElement.append(host);
@@ -252,11 +252,11 @@ function boot(): void {
   el('[data-act="handoff"]').replaceChildren(icon(PanelRight), document.createTextNode('继续聊天'));
   el('.answer-menu [data-act="deep"]').prepend(icon(Sparkles));
   el('[data-act="dismiss"]').append(icon(X));
-  el('[data-act="copy-selection"]').append(icon(Copy));
   el('[data-act="copy"]').prepend(icon(Copy));
   el('[data-act="speak"]').prepend(icon(Volume2));
   el('.grip').append(icon(GripVertical, { width: 14, height: 14 }));
-  el('.menu-action-icon').append(icon(PanelRight));
+  el('.menu-copy-icon').append(icon(Copy));
+  el('.menu-transfer-icon').append(icon(PanelRight));
   for (const [index, glyph] of [...root.querySelectorAll('.menu-glyph')].entries()) glyph.append(icon(PROMPT_ICONS[PROMPTS[index]!.id]));
   for (const pin of root.querySelectorAll('[data-pin]')) pin.append(icon(Pin));
 

@@ -16,6 +16,7 @@ export const ASK_STYLES = `
   --on-pen: #fff;
   --warn: #b74536;
   --shadow: 0 0 0 1px var(--ring), 0 12px 32px -6px rgba(15, 23, 42, .12), 0 2px 6px rgba(15, 23, 42, .04);
+  --shadow-bar: 0 0 0 1px var(--ring), 0 4px 16px rgb(12 13 25 / .08), 0 2px 8px -4px rgb(12 13 25 / .12), 0 8px 32px 8px rgb(12 13 25 / .04);
   --r-outer: 14px;
   --r-inner: 9px;
   --r-small: 6px;
@@ -56,6 +57,7 @@ export const ASK_STYLES = `
     --on-pen: #0f1622;
     --warn: #eb9284;
     --shadow: 0 0 0 1px var(--ring), 0 12px 32px -6px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .2);
+    --shadow-bar: 0 0 0 1px var(--ring), 0 4px 16px rgb(0 0 0 / .48), 0 2px 8px -4px rgb(0 0 0 / .72), 0 8px 32px 8px rgb(0 0 0 / .24);
   }
   :host([data-tone="warm"]) {
     --ink: #2b2822;
@@ -75,7 +77,7 @@ export const ASK_STYLES = `
 [hidden] { display: none !important; }
 .surface, .menu, .restore, .reader { font: var(--t-ui)/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; color: var(--ink-fg); -webkit-font-smoothing: antialiased; }
 .surface { position: fixed; pointer-events: auto; padding: 0; background: var(--ink); border-radius: var(--r-outer); box-shadow: var(--shadow); max-width: calc(100vw - 24px); }
-.surface:not(.expanded) { padding: 2px; border-radius: 9px; box-shadow: 0 5px 18px -8px rgb(15 23 42 / .3), 0 1px 3px rgb(15 23 42 / .06); }
+.surface:not(.expanded) { padding: 2px; border-radius: 8px; box-shadow: var(--shadow-bar); }
 .surface.expanded { width: 380px; display: flex; flex-direction: column; max-height: calc(100vh - 24px); overflow: hidden; border: 1px solid var(--ink-rule); }
 .surface.composing { width: 420px; }
 button, textarea { font: inherit; color: inherit; }
@@ -91,13 +93,12 @@ button.icon { width: 32px; padding: 0; }
 button.icon.small { width: 24px; height: 24px; border-radius: var(--r-small); }
 button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 
-.bar { display: flex; align-items: center; gap: 1px; min-width: 0; }
-.bar button { width: 28px; height: 28px; padding: 0; border-radius: 7px; }
-.bar button svg { width: 14px; height: 14px; stroke-width: 1.8; }
-.bar .ask { background: var(--ink-hover); }
-.bar .ask svg { color: var(--pen); stroke-width: 1.9; }
-.bar .dismiss { margin-left: 2px; }
-.sep { width: 1px; height: 14px; margin: 0 3px; background: var(--ink-rule); flex: none; }
+.bar { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.bar button { width: 26px; height: 26px; padding: 0; border-radius: 8px; }
+.bar button svg { width: 16px; height: 16px; stroke-width: 1.75; color: var(--ink-fg); }
+.bar .ask svg { color: var(--pen); stroke-width: 2; }
+.bar .dismiss svg { color: var(--ink-mute); }
+.sep { width: 1px; height: 16px; margin: 0; background: var(--ink-rule); flex: none; }
 .bar .more[aria-expanded="true"] { background: var(--ink-hover); }
 .bar-tip { position: fixed; z-index: 2147483646; max-width: min(180px, calc(100vw - 16px)); padding: 5px 8px; border-radius: 7px; background: #151a20; color: #fff; box-shadow: 0 8px 22px rgb(10 14 18 / .24); font-size: 11px; font-weight: 500; line-height: 1.2; letter-spacing: .01em; white-space: nowrap; pointer-events: none; animation: tip-in .12s var(--ease-out); }
 .bar-tip:after { content: ""; position: absolute; left: var(--tip-x, 50%); width: 7px; height: 7px; background: #151a20; transform: translateX(-50%) rotate(45deg); }
