@@ -116,6 +116,8 @@ const PROMPT_ICONS = {
 const QUICK_QUESTIONS = PROMPTS.filter(prompt => ['example', 'why', 'evidence'].includes(prompt.id));
 
 const PINS_KEY = 'reading_bar_pins';
+/** 试验：回答卡换成 Sider 划词结果窗的结构（原文引用常显、无追问输入、生成时只留停止）。 */
+const SKIN_KEY = 'reading_skin';
 
 /** 一轮里换过段时，那轮上面引用原文的长度：认得出是哪一段就够。 */
 const QUOTE_CHARS = 36;
@@ -291,6 +293,7 @@ function boot(): void {
   el('.answer-menu [data-act="deep"]').prepend(icon(Sparkles));
   el('[data-act="dismiss"]').append(icon(X));
   el('[data-act="copy"]').prepend(icon(Copy));
+  el('[data-act="copy"]').append(Object.assign(document.createElement('span'), { className: 'copy-label', textContent: '复制' }));
   el('[data-act="speak"]').prepend(icon(Volume2));
   el('.grip').append(icon(GripVertical, { width: 14, height: 14 }));
   el('.menu-copy-icon').append(icon(Copy));
@@ -815,7 +818,11 @@ function boot(): void {
     el('[data-act="speak"]').hidden = !hasAnswer || !aloudEnabled;
     answerMore.hidden = !hasAnswer;
     messages.hidden = !answering;
-    el('.composer').hidden = !expanded;
+    const sider = surface.classList.contains('sider');
+    const live = turns.some(turn => turn.state === 'pending' || turn.state === 'streaming') || waiting;
+    surface.classList.toggle('live', live);
+    // Sider 的结果窗没有追问框：生成时只留停止，写完由「继续聊天」去侧栏接着问。
+    el('.composer').hidden = !expanded || (sider && answering && !live);
     el('.chips').hidden = !composing;
 
     if (!expanded) {
@@ -865,7 +872,7 @@ function boot(): void {
       const item = answers[index]!;
       const showsSource = several
         ? index === 0 || !!turn.source
-        : !sourceVisible && index === 0;
+        : (!sourceVisible || surface.classList.contains('sider')) && index === 0;
       setSourceQuote(item.turn, showsSource ? sources[index]! : '', index);
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
@@ -1079,7 +1086,7 @@ function boot(): void {
       turn.prepend(quote);
     }
 
-    quote.textContent = quoteOf(text);
+    quote.textContent = surface.classList.contains('sider') ? text : quoteOf(text);
     quote.title = text.slice(0, 400);
   }
 
@@ -1692,6 +1699,11 @@ function boot(): void {
     }
   };
 
+  const applySkin = (value: unknown) => {
+    surface.classList.toggle('sider', value === 'sider');
+    if (visible) render();
+  };
+
   const applyAloudSetting = (on: boolean) => {
     aloudEnabled = on;
     el('[data-act="read"]').hidden = !on;
@@ -1721,7 +1733,8 @@ function boot(): void {
     }
   };
 
-  void chrome.storage.local.get([SELECTION_BAR_KEY, READING_ALOUD_KEY, PINS_KEY, READING_CARD_SIZE_KEY]).then(stored => {
+  void chrome.storage.local.get([SELECTION_BAR_KEY, READING_ALOUD_KEY, PINS_KEY, READING_CARD_SIZE_KEY, SKIN_KEY]).then(stored => {
+    applySkin(stored[SKIN_KEY]);
     applyBarSetting(isSelectionBarOff(stored[SELECTION_BAR_KEY]));
     applyAloudSetting(isReadingAloudOn(stored[READING_ALOUD_KEY]));
     applyPins(stored[PINS_KEY]);
@@ -1739,6 +1752,7 @@ function boot(): void {
 
     if (area === 'local' && READING_ALOUD_KEY in changes) applyAloudSetting(isReadingAloudOn(changes[READING_ALOUD_KEY]!.newValue));
     if (area === 'local' && PINS_KEY in changes) applyPins(changes[PINS_KEY]!.newValue);
+    if (area === 'local' && SKIN_KEY in changes) applySkin(changes[SKIN_KEY]!.newValue);
     if (area === 'local' && READING_CARD_SIZE_KEY in changes) applyCardSize(changes[READING_CARD_SIZE_KEY]!.newValue);
   });
 
