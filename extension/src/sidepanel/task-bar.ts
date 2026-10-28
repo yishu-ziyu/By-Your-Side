@@ -1,18 +1,14 @@
 /**
- * 轻量任务条：不展开工具日志也能知道「目标是什么、正在做什么、用的是哪些材料、现在该谁行动」。
+ * 轻量任务条：不展开工具日志也能知道「目标是什么、正在做什么、现在该谁行动」。
  *
  * 事实来源与诚实边界：
  * - 状态/目标/作用页/等待原因全部消费只读的 task_view 投影，不另造状态机；
- * - 已接受材料由宿主 task_view 恢复；发送中与旧协议沿用实际发出的请求快照，作用页以 task_view.page 为准；
- * - 「发送中」不冒充「已接收」：只有 accepted 回执才把材料标为已随任务送入；
  * - 不显示百分比/剩余时间；接管与停止区分「请求中」与「已生效」，失败保留原状态可重试；
  * - 不新增任何动画：信息不依赖动效，prefers-reduced-motion 下完全等价。
  *
  * 纯逻辑（waitingCopy/buildTaskBarModel 等）与 DOM 装配同文件分层。
  */
 import type { TaskView } from "../../../shared/task-view.js";
-import type { TaskReceipt } from "../../../shared/task-actions.js";
-import type { Attachment, PageContext } from "../../../shared/protocol.js";
 import { displayNameFor } from "../../../shared/cast.js";
 import { formatDuration } from "./steps.js";
 
@@ -147,37 +143,6 @@ function controlCopy(control: ControlState, state: TaskView["state"] | null, now
   return null;
 }
 
-interface SentRequestMaterials {
-  requestId: string;
-  action: "start" | "steer";
-  status: "sending" | "accepted" | "rejected" | "failed" | "unknown";
-  /** 发出的时刻：回执通常不到一秒就回来，这段时间不亮「正在发送」，免得材料区闪一下就没。 */
-  sentAt: number;
-  runId: string | null;
-  page: PageContext | null;
-  selection: string | null;
-  attachments: Array<{ id: string; name: string }>;
-  note: string | null;
-}
-
-interface TaskMaterialItem {
-  key: string;
-  kind: "page" | "selection" | "attachment";
-  label: string;
-}
-
-interface TaskMaterialSet {
-  runId: string | null;
-  items: TaskMaterialItem[];
-}
-
-interface MaterialRow {
-  key: string;
-  kind: TaskMaterialItem["kind"];
-  kindLabel: string;
-  label: string;
-}
-
 interface TaskBarModel {
   visible: boolean;
   state: TaskView["state"] | "draft";
@@ -191,21 +156,11 @@ interface TaskBarModel {
   idleAge: string | null;
   waiting: { text: string; detail: string | null } | null;
   page: { label: string; host: string | null } | null;
-  materials: {
-    rows: MaterialRow[];
-    head: string;
-    /** 发送中/未接收等状态行，已随任务送入时为 null。 */
-    status: string | null;
-  } | null;
   control: ControlNote | null;
 }
 
 interface TaskBarInputs {
   view: TaskView | null;
-  /** 已发出但还没有 accepted/终态回执的请求（一般 0–1 条）。 */
-  sending: SentRequestMaterials[];
-  /** 当前 run 已确认送入的材料。 */
-  taskMaterials: TaskMaterialSet | null;
   control: ControlState;
   pageLabel: string | null;
   /** 任务页的主机名，摘要行只显示它；还没查到为 null。 */
@@ -214,49 +169,9 @@ interface TaskBarInputs {
   now: number;
 }
 
-const KIND_LABEL: Record<TaskMaterialItem["kind"], string> = { page: "页面", selection: "选区", attachment: "附件" };
-
-/** 已发出、还没确认接收的材料行（发送中/接收未知）。 */
-function sentRows(entry: SentRequestMaterials): MaterialRow[] {
-  const rows: MaterialRow[] = [];
-
-  if (entry.page) rows.push({ key: `sent:${entry.requestId}:page`, kind: "page", kindLabel: KIND_LABEL.page, label: pageLabelOf({ title: entry.page.title, url: entry.page.url }) });
-
-  if (entry.selection) rows.push({ key: `sent:${entry.requestId}:sel`, kind: "selection", kindLabel: KIND_LABEL.selection, label: `「${clip(entry.selection, 20)}」` });
-
-  for (const att of entry.attachments) rows.push({ key: `sent:${entry.requestId}:att:${att.id}`, kind: "attachment", kindLabel: KIND_LABEL.attachment, label: clip(att.name, 18) });
-
-  return rows;
-}
-
-function taskRows(set: TaskMaterialSet, resolvedPageLabel: string | null): MaterialRow[] {
-  const rows: MaterialRow[] = [];
-
-  for (const item of set.items) {
-    if (item.kind === "page") {
-      rows.push({ key: item.key, kind: "page", kindLabel: KIND_LABEL.page, label: item.key === 'task:page' ? resolvedPageLabel ?? item.label : item.label });
-    } else {
-      rows.push({ key: item.key, kind: item.kind, kindLabel: KIND_LABEL[item.kind], label: item.label });
-    }
-  }
-
-  if (!rows.some((r) => r.kind === "page") && resolvedPageLabel) {
-    rows.unshift({ key: "task:page", kind: "page", kindLabel: KIND_LABEL.page, label: resolvedPageLabel });
-  }
-
-  return rows;
-}
-
-/** 发出后这么久还没回执，才在材料区写「正在发送」。用户的话已经立刻出现在对话里，回执快的时候不需要第二处反馈。 */
-const SENDING_QUIET_MS = 800;
-
 /** 组装展示模型：纯函数，同一输入必得同一输出。 */
 function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
-  const { view, sending, taskMaterials, control, now } = input;
-  const newest = sending.at(-1);
-  // 刚发出的这一条还在安静期：连更早那条“没确认收到”也先不讲，免得先亮旧的那条、0.8 秒后又换成这一条。
-  const quiet = newest?.status === "sending" && now - newest.sentAt < SENDING_QUIET_MS;
-  const unresolved = quiet ? [] : sending.filter((s) => s.status === "unknown" || (s.status === "sending" && now - s.sentAt >= SENDING_QUIET_MS));
+  const { view, control, now } = input;
   const pageTabId = input.pageTabId ?? view?.page?.tabId ?? null;
 
   const page = pageTabId != null
@@ -270,27 +185,6 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   // 已结束(idle/aborted/error)的任务不在顶部留痕：结论在回答里，要用户处理的事由接续入口负责。
   const isOngoing = !!view && (view.state === "running" || view.state === "paused" || view.state === "interrupted");
 
-  // ── 材料区：已确认送入的任务材料 + 这一条还没确认接收的材料。还没发出的草稿由输入框里的文件卡和引用条讲，这里不重复 ──
-  let materials: TaskBarModel["materials"] = null;
-  const pendingEntry = unresolved.length ? unresolved[unresolved.length - 1]! : null;
-  const liveTaskMaterials = isOngoing ? taskMaterials : null;
-  const confirmedRows = liveTaskMaterials ? taskRows(liveTaskMaterials, view?.page ? page?.label ?? null : null) : [];
-  const pendingRows = pendingEntry ? sentRows(pendingEntry) : [];
-
-  if (liveTaskMaterials || pendingEntry || confirmedRows.length || pendingRows.length) {
-    const rows = [...confirmedRows, ...pendingRows];
-    // 普通发送的页面材料要等页面快照回来才认识；回执过了安静期还没到时，这段时间也必须先有「发送中」，
-    // 不能因为还没行就整块不显示（本地反馈不能靠异步查页面来决定有没有）。
-    const head = confirmedRows.length ? `已发给助手的材料 · ${confirmedRows.length} 项` : rows.length ? `要一起发送的材料 · ${rows.length} 项` : "正在发送";
-    materials = {
-      rows,
-      head: pendingRows.length && confirmedRows.length ? `${head}（另有 ${pendingRows.length} 项材料待确认）` : head,
-      status: pendingEntry ? (pendingEntry.status === "unknown" ? "助手还没确认收到这一条" : "正在发送，助手还没确认收到") : null,
-    };
-  }
-
-  // 没被接收的消息不在顶部另起一张卡：原因已经在消息流里（如「还没有配置模型」），卡上只会剩下空的目标和占位。
-
   // ── 任务不随一轮结束：没做完的任务留在输入框上方写「还差：…」，做完后让出输入区；
   // 纯聊天、读页问答（没列目标）结束后照旧不留痕。
   // 目标核对的结论优先：宿主判断「做完了 / 还差」，不靠模型自己列没列目标。
@@ -302,10 +196,10 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
 
   // ── 可见性：没有任何可说的事就整条隐藏 ──
   const hasViewStory = isOngoing || openTask;
-  const visible = !!materials || hasViewStory || !!controlNote;
+  const visible = hasViewStory || !!controlNote;
 
   if (!visible) {
-    return { visible: false, state: "draft", goal: null, goalTitle: null, headline: "", activity: null, idleAge: null, waiting: null, page: null, materials: null, control: null };
+    return { visible: false, state: "draft", goal: null, goalTitle: null, headline: "", activity: null, idleAge: null, waiting: null, page: null, control: null };
   }
 
   const goal = view?.goal ?? null;
@@ -350,7 +244,6 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     idleAge,
     waiting,
     page,
-    materials,
     control: controlNote,
   };
 }
@@ -371,31 +264,26 @@ interface TaskBarOptions {
 }
 
 /**
- * 任务条组件。main.ts 只调用 updateView/noteRequestSent/noteReceipt/noteControl*；
+ * 任务条组件。main.ts 只调用 updateView/noteControl*；
  * 渲染幂等：同一状态重复渲染不产生重复节点或重复控件。
  */
 export class TaskBar {
   private view: TaskView | null = null;
   private handoffShown = false;
-  private readonly sent = new Map<string, SentRequestMaterials>();
-  private taskMaterials: TaskMaterialSet | null = null;
   private control: ControlState = { takeover: { pending: false, since: null, failReason: null }, stop: { pending: false, since: null, accepted: false, failReason: null } };
   private readonly pageCache = new Map<number, { label: string | null; host: string | null; at: number }>();
   private model: TaskBarModel | null = null;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
-  /** 还在「不亮发送中」那段时间的请求：到点重画一次，回执还没来就亮出来。 */
-  private quietTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly el: HTMLElement;
   private readonly statusEl: HTMLElement;
   private readonly waitingEl: HTMLElement;
   private readonly pageEl: HTMLElement;
-  private readonly materialsEl: HTMLElement;
   private readonly controlEl: HTMLElement;
   private readonly goalEl: HTMLElement;
   private readonly headEl: HTMLElement;
   private readonly revisionsEl: HTMLElement;
   private readonly expandEl: HTMLButtonElement;
-  /** 目标、作用页全名与已送入材料默认收起，摘要行只留状态、耗时与网站名。 */
+  /** 目标与作用页全名默认收起，摘要行只留状态、耗时与网站名。 */
   private expanded = false;
   private readonly now: () => number;
   private readonly doc: Document;
@@ -436,11 +324,9 @@ export class TaskBar {
     this.waitingEl.className = "tb-waiting";
     this.pageEl = doc.createElement("p");
     this.pageEl.className = "tb-page";
-    this.materialsEl = doc.createElement("div");
-    this.materialsEl.className = "tb-materials";
     this.controlEl = doc.createElement("p");
     this.controlEl.className = "tb-control";
-    this.el.append(summary, this.headEl, this.waitingEl, this.pageEl, this.materialsEl, this.controlEl);
+    this.el.append(summary, this.headEl, this.waitingEl, this.pageEl, this.controlEl);
     this.el.addEventListener("click", (event) => this.onClick(event));
     opts.root.replaceChildren(this.el);
     this.render();
@@ -451,9 +337,6 @@ export class TaskBar {
 
     if (this.tickTimer !== null) clearInterval(this.tickTimer);
     this.tickTimer = null;
-
-    if (this.quietTimer !== null) clearTimeout(this.quietTimer);
-    this.quietTimer = null;
   }
 
   setHandoffShown(shown: boolean): void {
@@ -469,7 +352,6 @@ export class TaskBar {
     const current = this.opts.currentConversationId?.();
 
     if (current !== undefined && view.conversationId !== current) return;
-    const previous = this.view;
     this.view = view;
 
     // 控制请求的收束：状态权威变化后不再显示「请求中」
@@ -482,77 +364,14 @@ export class TaskBar {
       this.control.stop.failReason = null;
     }
 
-    // 换 run / 任务归零：旧 run 的材料不再展示
-    if (this.taskMaterials) {
-      const staleRun = this.taskMaterials.runId != null && view.runId != null && this.taskMaterials.runId !== view.runId;
-
-      if (view.state === "none" || staleRun) this.taskMaterials = null;
-    }
-
-    if (previous && previous.conversationId !== view.conversationId) this.taskMaterials = null;
-
-    if (view.materials !== undefined) {
-      this.taskMaterials = view.runId && view.state !== 'none'
-        ? { runId: view.runId, items: view.materials.map(item => ({ ...item })) }
-        : null;
-    }
-
     this.render();
   }
 
   /** 切会话 / 重置渲染：全部清空。 */
   reset(): void {
     this.view = null;
-    this.sent.clear();
-    this.taskMaterials = null;
     this.pageCache.clear();
     this.control = { takeover: { pending: false, since: null, failReason: null }, stop: { pending: false, since: null, accepted: false, failReason: null } };
-    this.render();
-  }
-
-  /** 发送成功后立刻调用：快照当时真正送出的材料（这是界面上材料的唯一来源之一）。 */
-  noteRequestSent(payload: {
-    requestId: string;
-    action: "start" | "steer";
-    context?: PageContext | null;
-    attachments?: Attachment[] | null;
-  }): void {
-    if (this.disposed) return;
-    this.sent.set(payload.requestId, {
-      requestId: payload.requestId,
-      action: payload.action,
-      status: "sending",
-      sentAt: this.now(),
-      runId: null,
-      page: payload.context ?? null,
-      selection: payload.context?.selection?.text ?? null,
-      attachments: (payload.attachments ?? []).map((a) => ({ id: a.id, name: a.name })),
-      note: null,
-    });
-    this.render();
-  }
-
-  /** 任务回执：accepted 才把材料升级为「已随任务送入」。 */
-  noteReceipt(receipt: TaskReceipt): void {
-    if (this.disposed) return;
-    const entry = this.sent.get(receipt.requestId);
-
-    if (!entry) return;
-
-    if (receipt.status === "accepted" || receipt.status === "applied") {
-      entry.status = "accepted";
-      entry.runId = receipt.runId;
-      this.absorbMaterials(entry);
-    } else if (receipt.status === "rejected" || receipt.status === "failed") {
-      entry.status = receipt.status;
-      entry.note = receipt.message;
-    } else if (receipt.status === "unknown") {
-      entry.status = "unknown";
-      entry.note = receipt.message;
-    } else {
-      return; // queued 等中间态不改口径
-    }
-
     this.render();
   }
 
@@ -587,16 +406,6 @@ export class TaskBar {
     this.render();
   }
 
-  /** 发送时页面材料要按真正上行的那一页补全（后台发送前会附当前页面上下文）。 */
-  noteRequestPage(requestId: string, page: { tabId: number; title?: string; url?: string }): void {
-    if (this.disposed) return;
-    const entry = this.sent.get(requestId);
-
-    if (!entry || entry.page) return;
-    entry.page = { tabId: page.tabId, title: page.title ?? "", url: page.url ?? "" };
-    this.render();
-  }
-
   /** 标签页切换/关闭后调用：重解析作用页身份。 */
   noteTabsChanged(): void {
     if (this.disposed) return;
@@ -608,44 +417,6 @@ export class TaskBar {
 
   getModel(): TaskBarModel | null {
     return this.model;
-  }
-
-  private absorbMaterials(entry: SentRequestMaterials): void {
-    // 新宿主的接受事实是唯一权威；晚到回执或旧请求缓存不得覆盖它。
-    if (this.view?.materials !== undefined) return;
-    const items: TaskMaterialItem[] = [];
-
-    if (entry.action === "start" || !this.taskMaterials) {
-      if (entry.page) items.push({ key: "task:page", kind: "page", label: pageLabelOf({ title: entry.page.title, url: entry.page.url }) });
-
-      if (entry.selection) items.push({ key: `task:sel:${clip(entry.selection, 24)}`, kind: "selection", label: `「${clip(entry.selection, 20)}」` });
-
-      for (const att of entry.attachments) items.push({ key: `task:att:${att.id}`, kind: "attachment", label: clip(att.name, 18) });
-      this.taskMaterials = { runId: entry.runId, items };
-
-      return;
-    }
-
-    // steer：并入当前 run 的材料（页面按最新，选区/附件去重追加）
-    const merged = [...this.taskMaterials.items];
-
-    if (entry.page) {
-      const index = merged.findIndex((i) => i.kind === "page");
-      const label = pageLabelOf({ title: entry.page!.title, url: entry.page!.url });
-
-      if (index >= 0) merged[index] = { key: "task:page", kind: "page", label };
-      else merged.unshift({ key: "task:page", kind: "page", label });
-    }
-
-    if (entry.selection && !merged.some((i) => i.kind === "selection" && i.label === `「${clip(entry.selection!, 20)}」`)) {
-      merged.push({ key: `task:sel:${clip(entry.selection, 24)}`, kind: "selection", label: `「${clip(entry.selection, 20)}」` });
-    }
-
-    for (const att of entry.attachments) {
-      if (!merged.some((i) => i.key === `task:att:${att.id}`)) merged.push({ key: `task:att:${att.id}`, kind: "attachment", label: clip(att.name, 18) });
-    }
-
-    this.taskMaterials = { runId: this.taskMaterials.runId ?? entry.runId, items: merged };
   }
 
   private onClick(event: Event): void {
@@ -695,12 +466,9 @@ export class TaskBar {
   private render(): void {
     if (this.disposed) return;
     const tabId = this.view?.page?.tabId ?? null;
-    this.scheduleQuietEnd();
 
     const model = buildTaskBarModel({
       view: this.view,
-      sending: [...this.sent.values()],
-      taskMaterials: this.taskMaterials,
       control: this.control,
       pageLabel: tabId != null ? this.pageCache.get(tabId)?.label ?? null : null,
       pageHost: tabId != null ? this.pageCache.get(tabId)?.host ?? null : null,
@@ -712,10 +480,9 @@ export class TaskBar {
     this.model = model;
 
     // 进行中、已结束由对话里那一行过程灰字讲；任务条只在有它独有的事时出现：
-    // 页面归你、停止/接管回执、还没送入的材料。任务页不是你在看的页时不提醒：过程行和回答已说明。
+    // 页面归你、停止/接管回执。任务页不是你在看的页时不提醒：过程行和回答已说明。
     // 页面归你时，输入框上方的「你在操作」已经说了；侧栏重开、没有那一行时，任务条照旧说。
-    const own = model.state === "paused" && !this.handoffShown || !!model.control
-      || !!model.materials?.status;
+    const own = model.state === "paused" && !this.handoffShown || !!model.control;
 
     this.el.hidden = !model.visible || !own;
 
@@ -733,8 +500,6 @@ export class TaskBar {
       this.pageEl.textContent = "";
       this.controlEl.hidden = true;
       this.controlEl.replaceChildren();
-      this.materialsEl.hidden = true;
-      this.materialsEl.replaceChildren();
       this.el.removeAttribute("data-state");
       this.stopTick();
 
@@ -745,29 +510,20 @@ export class TaskBar {
 
     if (model.outcome) this.el.setAttribute("data-outcome", model.outcome);
     else this.el.removeAttribute("data-outcome");
-    // 还没有任务（只是发送中）时没有目标可说，整行不显示，不放占位字。
+    // 没有目标时不放占位字。
     this.headEl.hidden = !model.goal && !this.view?.revisions.length;
     this.goalEl.textContent = model.goal ?? "";
     this.goalEl.title = model.goalTitle ?? model.goal ?? "";
     this.revisionsEl.textContent = this.view?.revisions.length ? `改过 ${this.view.revisions.length} 次` : "";
     this.revisionsEl.title = this.view?.revisions.length ? this.view.revisions.join("\n") : "";
     const statusBits = [model.headline, model.activity, model.idleAge].filter(Boolean);
-    // 还没有任务状态（发送中）时，摘要行说材料那一句，材料区不再重复这句标题。
-    const materialsHead = statusBits.length ? null : model.materials?.head ?? null;
-    this.statusEl.textContent = materialsHead ?? statusBits.join(" · ");
+    this.statusEl.textContent = statusBits.join(" · ");
     this.statusEl.hidden = !this.statusEl.textContent;
-    flag(this.el, "data-head-in-summary", materialsHead !== null);
     this.waitingEl.hidden = !model.waiting;
     this.waitingEl.textContent = model.waiting ? `等待：${model.waiting.text}${model.waiting.detail ? `（${model.waiting.detail}）` : ""}` : "";
     this.pageEl.hidden = !model.page;
     this.pageEl.textContent = model.page ? `页面：${model.page.label}` : "";
-    this.renderMaterials(model.materials);
-    // 只有已送入的材料才收进详情；发送中的材料要一直看得见。
-    const settledMaterials = !!model.materials && !model.materials.status;
-    flag(this.materialsEl, "data-settled", settledMaterials);
-    // 材料里已经列出这一页时，展开后不再另写一行「作用于」。
-    flag(this.el, "data-page-in-materials", !!model.materials?.rows.some((row) => row.kind === "page"));
-    const hasDetail = !this.headEl.hidden || !!model.page || (settledMaterials && !this.materialsEl.hidden);
+    const hasDetail = !this.headEl.hidden || !!model.page;
     this.expandEl.hidden = !hasDetail;
     flag(this.el, "data-expanded", this.expanded && hasDetail);
     this.expandEl.setAttribute("aria-expanded", String(this.expanded && hasDetail));
@@ -804,55 +560,6 @@ export class TaskBar {
     this.controlEl.hidden = false;
     this.controlEl.setAttribute("data-phase", control.phase);
     this.controlEl.setAttribute("data-tone", control.tone);
-  }
-
-  private renderMaterials(materials: TaskBarModel["materials"]): void {
-    if (!materials || (!materials.rows.length && !materials.status)) {
-      this.materialsEl.hidden = true;
-      this.materialsEl.replaceChildren();
-
-      return;
-    }
-
-    this.materialsEl.hidden = false;
-    const doc = this.doc;
-    const head = doc.createElement("div");
-    head.className = "tb-mat-head";
-    head.textContent = materials.head;
-    const list = doc.createElement("ul");
-    list.className = "tb-mat-list";
-
-    for (const row of materials.rows) {
-      const li = doc.createElement("li");
-      li.className = "tb-mat";
-      const kind = doc.createElement("span");
-      kind.className = "tb-mat-kind";
-      kind.textContent = row.kindLabel;
-      const label = doc.createElement("span");
-      label.className = "tb-mat-label";
-      label.textContent = row.label;
-      li.append(kind, label);
-
-      list.appendChild(li);
-    }
-
-    this.materialsEl.replaceChildren(head, list);
-
-    if (materials.status) {
-      const status = doc.createElement("div");
-      status.className = "tb-mat-status";
-      status.textContent = materials.status;
-      this.materialsEl.appendChild(status);
-    }
-  }
-
-  private scheduleQuietEnd(): void {
-    if (this.quietTimer !== null) clearTimeout(this.quietTimer);
-    this.quietTimer = null;
-    const now = this.now();
-    const waits = [...this.sent.values()].filter((s) => s.status === "sending" && now - s.sentAt < SENDING_QUIET_MS).map((s) => SENDING_QUIET_MS - (now - s.sentAt));
-
-    if (waits.length) this.quietTimer = setTimeout(() => { this.quietTimer = null; this.render(); }, Math.min(...waits) + 20);
   }
 
   private scheduleTick(): void {

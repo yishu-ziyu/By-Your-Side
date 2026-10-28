@@ -4673,8 +4673,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
 if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
       }else if (ev.receipt) {
-        // 任务条材料只认这张回执：accepted/applied 才把这次发出的材料升级为「已随任务送入」。
-        taskBar.noteReceipt(ev.receipt);
+        materialsTray?.noteReceipt(ev.receipt);
 
         // 插话没被采纳：下一段回答不是按它写的，不挂「已改方向」。
         if (ev.receipt.action === "steer" && (ev.receipt.status === "rejected" || ev.receipt.status === "failed")) steerRibbon.reset();
@@ -5869,6 +5868,21 @@ materialsTray = new MaterialsTray({
   root: document.getElementById("materials-tray-root")!,
   app,
   inputHasText: () => Boolean(inputEl.value.trim()),
+  conversationId: () => selectedConversationId,
+  onRetry: (original) => {
+    const request = { ...original, requestId: crypto.randomUUID() };
+
+    if (!send({ type: "task_action", request })) { noticeSendFailed(); return false; }
+    materialsTray?.noteRequestSent(request);
+    return true;
+  },
+  onReceiptDetails: (receipt) => {
+    const card = receiptMessages.get(`${receipt.conversationId}:${receipt.requestId}`);
+
+    if (card instanceof HTMLDetailsElement) card.open = true;
+    card?.scrollIntoView({ block: "nearest", behavior: "instant" });
+    card?.querySelector<HTMLElement>("summary,button")?.focus({ preventScroll: true });
+  },
   page: () => activeTabInfo ? { tabId: activeTabInfo.id, title: activeTabInfo.title, url: activeTabInfo.url } : null,
   selection: () => pendingAsk,
   mentions: () => tabMentions.items(),
@@ -5887,7 +5901,7 @@ materialsTray = new MaterialsTray({
 });
 materialsTray.sync();
 
-// ── 任务条：消费 task_view，材料事实来自实际发出的请求与回执 ──
+// ── 任务条：消费 task_view 与控制请求 ──
 function resolveTabPage(tabId: number): Promise<{ title?: string; url?: string } | null> {
   if (typeof chrome === "undefined" || !chrome.tabs?.get) return Promise.resolve(null);
 
@@ -6006,7 +6020,7 @@ function noticeSendFailed(): void {
  * background 没有记下它；换端口重新同步后历史里仍没有，就把正文、引用和附件放回输入框并提示没发出去。
  * 还排在面板队列里的消息会在新端口上补发，不算丢失。
  */
-let unconfirmedSend: { text: string; ask: PendingAsk | null; attachments: ReturnType<typeof attachments.getAttachments>; conversationId: string; postedOn: chrome.runtime.Port | "queued" } | null = null;
+let unconfirmedSend: { requestId: string; text: string; ask: PendingAsk | null; attachments: ReturnType<typeof attachments.getAttachments>; conversationId: string; postedOn: chrome.runtime.Port | "queued" } | null = null;
 
 function confirmSentText(text: string): void {
   if (unconfirmedSend && unconfirmedSend.text === text) unconfirmedSend = null;
@@ -6018,6 +6032,7 @@ function restoreLostSend(): void {
 
   if (!lost || lost.postedOn === "queued" || lost.postedOn === port || lost.conversationId !== selectedConversationId) return;
   unconfirmedSend = null;
+  materialsTray?.forgetRequest(lost.conversationId, lost.requestId);
   taskPlan.endRun();
 
   // 自动重发那次没送到：之后用户自己再发同一句，要画新气泡，不能接回上面的旧气泡。
@@ -6136,10 +6151,11 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
   if (!running && !held) { currentCitationSource = citationPage ? captureCitationContext(citationPage) : null; citationRequestPending = true; }
 
   const queued = queuedSends.some((e) => e.kind === "client" && e.msg.type === "task_action" && e.msg.request.requestId === request.requestId);
-  unconfirmedSend = { text, ask: quick ? null : pendingAsk, attachments: pendingAtts, conversationId: conversation, postedOn: queued ? "queued" : port ?? "queued" };
+  unconfirmedSend = { requestId: request.requestId, text, ask: quick ? null : pendingAsk, attachments: pendingAtts, conversationId: conversation, postedOn: queued ? "queued" : port ?? "queued" };
 
-  // 本地反馈：快照这次真正送出的材料；回执过了安静期（SENDING_QUIET_MS）还没 accepted，才显示「发送中」
-  taskBar.noteRequestSent({ requestId: request.requestId, action: request.action, context, attachments: clientAttachments });
+  materialsTray?.noteRequestSent({ ...request, context: context ?? (activeTabInfo ? {
+    tabId: activeTabInfo.id, title: activeTabInfo.title, url: activeTabInfo.url,
+  } : undefined) });
 
   // 没有选区引用时，后台会附当前页面上下文：把这一页也补进材料，界面与实际上行一致。
   // 同一页也记给这次请求：没连模型被退回时，连好后照这一页重发，而不是重发时开着的设置页。
@@ -6155,9 +6171,6 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
   })();
 
   lastSentPage = { requestId: request.requestId, page };
-
-  // 期间切了会话就不再补这条材料（任务条已重置）。
-  if (!context) void page.then((known) => { if (known && conversation === selectedConversationId) taskBar.noteRequestPage(request.requestId, known); });
 
   sendFailNotifiedFor = null;
   // 用户自己又发了话（连没连模型都算，同一句再发一次也算）：没连模型时记下的那句不再自动重发，它的卡改成「这句没有发出」。

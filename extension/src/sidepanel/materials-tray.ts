@@ -6,9 +6,10 @@
  * - @ 标签页、选区和附件仍走原来的 tabMentions / pendingAsk / AttachmentsManager；
  * - 批量移出只调用这些现有入口，撤销时恢复移出前的草稿快照。
  */
-import { createElement as icon, FileText, Globe2, Plus, TextQuote } from "lucide";
+import { createElement as icon, ChevronDown, FileText, Globe2, Plus, TextQuote } from "lucide";
 import type { PendingAsk } from "../shared/ask-selection.js";
 import type { AttachmentSnapshot } from "./attachments.js";
+import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
 import { siteGlyph } from "./answer-actions.js";
 import { hostOf, type MentionedTab } from "./tab-mentions.js";
 
@@ -43,6 +44,9 @@ interface MaterialsTrayOptions {
   root: HTMLElement;
   app: HTMLElement;
   inputHasText(): boolean;
+  conversationId(): string;
+  onRetry(request: TaskActionRequest): boolean;
+  onReceiptDetails(receipt: TaskReceipt): void;
   page(): TrayPage | null;
   selection(): PendingAsk | null;
   mentions(): MentionedTab[];
@@ -87,6 +91,8 @@ export class MaterialsTray {
   private materials: TrayMaterial[] = [];
   private lastSignature = "";
   private previousCount = -1;
+  private expanded = false;
+  private readonly deliveries = new Map<string, { request: TaskActionRequest; receipt: TaskReceipt | null }>();
   private undo: { label: string; restore: () => void; timer: ReturnType<typeof setTimeout> } | null = null;
 
   constructor(private readonly opts: MaterialsTrayOptions) {
@@ -113,8 +119,9 @@ export class MaterialsTray {
 
   sync(): void {
     this.materials = this.collect();
-    const show = this.opts.inputHasText() || this.materials.some((item) => item.removable);
-    this.app.classList.toggle("materials-tray-active", show);
+    const draft = this.opts.inputHasText() || this.materials.some((item) => item.removable);
+    const show = draft || !!this.delivery();
+    this.app.classList.toggle("materials-tray-active", draft);
     this.root.hidden = !show;
 
     for (const key of [...this.selected]) {
@@ -128,11 +135,35 @@ export class MaterialsTray {
       return;
     }
 
-    const signature = JSON.stringify({ materials: this.materials, selected: [...this.selected], undo: this.undo?.label ?? null });
+    const signature = JSON.stringify({ draft, expanded: this.expanded, delivery: this.delivery(), materials: this.materials, selected: [...this.selected], undo: this.undo?.label ?? null });
 
     if (signature === this.lastSignature) return;
     this.lastSignature = signature;
-    this.render();
+    this.render(draft);
+  }
+
+  noteRequestSent(request: TaskActionRequest): void {
+    this.deliveries.set(request.conversationId, { request, receipt: null });
+    this.sync();
+  }
+
+  noteReceipt(receipt: TaskReceipt): void {
+    const delivery = this.deliveries.get(receipt.conversationId);
+
+    if (!delivery || delivery.request.requestId !== receipt.requestId) return;
+    if (receipt.status === "accepted" || receipt.status === "applied") this.deliveries.delete(receipt.conversationId);
+    else delivery.receipt = receipt;
+    this.sync();
+  }
+
+  forgetRequest(conversationId: string, requestId: string): void {
+    if (this.deliveries.get(conversationId)?.request.requestId !== requestId) return;
+    this.deliveries.delete(conversationId);
+    this.sync();
+  }
+
+  private delivery() {
+    return this.deliveries.get(this.opts.conversationId());
   }
 
   private collect(): TrayMaterial[] {
@@ -201,7 +232,7 @@ export class MaterialsTray {
     return out;
   }
 
-  private render(): void {
+  private render(draft: boolean): void {
     const count = this.materials.length;
     const removables = this.materials.filter((item) => item.removable);
     const allSelected = removables.length > 0 && removables.every((item) => this.selected.has(item.key));
@@ -251,11 +282,21 @@ export class MaterialsTray {
     mention.title = "加入标签页";
     mention.setAttribute("aria-label", "加入标签页");
     mention.addEventListener("click", () => this.opts.onMention());
-    head.append(folder, title, countWrap, spacer, all, mention, add);
+    head.append(spacer, all, mention, add);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "mt-head-button mt-toggle";
+    toggle.setAttribute("aria-expanded", String(this.expanded));
+    toggle.setAttribute("aria-label", this.expanded ? "收起材料" : "展开材料");
+    toggle.append(folder, title, countWrap, icon(ChevronDown, { width: 14, height: 14, "aria-hidden": "true" }));
+    toggle.addEventListener("click", () => { this.expanded = !this.expanded; this.sync(); });
+    head.prepend(toggle);
+    all.hidden = !this.expanded || removables.length < 2;
 
     const list = document.createElement("div");
     list.className = "mt-list";
     list.setAttribute("role", "list");
+    list.hidden = !this.expanded;
 
     if (!count) {
       const empty = document.createElement("p");
@@ -270,7 +311,7 @@ export class MaterialsTray {
 
     shell.append(head, list);
 
-    if (this.selected.size) {
+    if (this.expanded && this.selected.size) {
       const actions = document.createElement("div");
       actions.className = "mt-actions";
       const copy = document.createElement("span");
@@ -310,7 +351,36 @@ export class MaterialsTray {
       shell.append(undo);
     }
 
-    this.root.replaceChildren(shell);
+    this.root.replaceChildren(...(draft ? [shell] : []));
+    const delivery = this.delivery();
+
+    if (delivery) {
+      const receipt = delivery.receipt;
+      const state = receipt?.status ?? "sending";
+      const line = document.createElement("div");
+      line.className = "mt-delivery";
+      line.dataset.state = state;
+      line.setAttribute("role", "status");
+      const copy = document.createElement("span");
+      copy.className = "mt-delivery-copy";
+      copy.textContent = !receipt || state === "queued" ? "正在发送…" : state === "unknown" ? "尚未确认收到这条消息" : `未送达：${receipt.message}`;
+      copy.title = copy.textContent;
+      line.append(copy);
+
+      if (receipt && (state === "failed" || state === "rejected" || state === "unknown")) {
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "mt-head-button";
+        const canRetry = state !== "unknown" && !receipt.needsModel && !receipt.newConversationRequest;
+        retry.textContent = canRetry ? "重试" : "查看详情";
+        retry.addEventListener("click", () => {
+          if (canRetry) this.opts.onRetry(delivery.request);
+          else this.opts.onReceiptDetails(receipt);
+        });
+        line.append(retry);
+      }
+      this.root.append(line);
+    }
   }
 
   private renderRow(item: TrayMaterial): HTMLElement {
