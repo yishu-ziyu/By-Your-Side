@@ -19,7 +19,7 @@ import {
 import { thinkingProfile } from "../../../shared/model-capabilities.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
 import { BACKUP_ERROR_KEY, BACKUP_FOLDER, BACKUP_LAST_KEY, BACKUP_STORAGE_KEYS, MAX_BACKUP_BYTES, MEMORY_CHANGED, MEMORY_RESTORED, countBackup, parseBackup, readMemoryDocuments, restoreBackup, writeBrowseSetting, type MemoryBackup } from "../shared/memory-backup.js";
-import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
+import { SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn } from "../shared/ask-selection.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
@@ -1410,6 +1410,7 @@ async function reloadSettings(): Promise<void> {
   renderTranslationStyles(parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]));
   $<HTMLInputElement>("edge-entry").checked = !isEdgeEntryOff(stored[EDGE_ENTRY_KEY]);
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
+  $<HTMLInputElement>("reading-aloud").checked = isReadingAloudOn(stored[READING_ALOUD_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
   $<HTMLInputElement>("browse-habits").checked = isBrowseOn(stored[BROWSE_ON_KEY]);
   renderBrowseState(isBrowseOn(stored[BROWSE_ON_KEY]));
@@ -1718,6 +1719,8 @@ const selectionBar = $<HTMLInputElement>("selection-bar");
 
 const selectionStatus = $("selection-status");
 
+const readingAloud = $<HTMLInputElement>("reading-aloud");
+
 
 const nudgeToggle = $<HTMLInputElement>("nudge");
 
@@ -1726,6 +1729,8 @@ const openThreads = $<HTMLInputElement>("open-threads");
 const attentionCues = $<HTMLInputElement>("attention-cues");
 
 bindToggle(selectionBar, SELECTION_BAR_KEY, selectionStatus, (on) => (on ? "已开启。" : "已关闭。"));
+
+bindToggle(readingAloud, READING_ALOUD_KEY, selectionStatus, (on) => (on ? "已开启，划词工具条和回答卡会显示朗读。" : "已关闭，划词工具条和回答卡不再显示朗读。"));
 
 // 划词快捷键按用户实际设的写（可在 chrome://extensions/shortcuts 改）；getAll 给的已是本系统的写法，如 Ctrl+J、⌘J。
 void chrome.commands.getAll().then((commands) => {
@@ -1791,7 +1796,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => {
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === READING_ALOUD_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));
