@@ -76,7 +76,7 @@ import { ContinuePolicy } from "./continue-policy.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
-import { filterSiteNotes, formatSiteNotes, operatedHosts, siteKey, siteNotesDigest, siteTitle, SITE_NOTES_PROMPT, typedValuesOf, type SiteNotesStore } from "./site-notes.js";
+import { siteKey } from "./site-notes.js";
 import { siteMethodHint, siteMethodsFor } from "../../shared/site-methods.js";
 import { Value } from "typebox/value";
 import { LearnedOperationStore, embedsValue, learnedOperationHint, runLearnedOperation, validateLearnedCandidate, type LearnedOperationRuntime } from "./learned-operations.js";
@@ -138,8 +138,6 @@ export interface SessionCreateOptions {
   memoryStore?: MemoryStore;
   /** 过往任务：开始时带上当前网站做过的事，并供 user_memory 查询。 */
   taskHistory?: TaskHistoryStore;
-  /** 站点笔记：只给主会话；做成的任务写，打开这个网站时带上。 */
-  siteNotes?: SiteNotesStore;
   /** 用户明确保存的只读可执行做法；工人会话没有。 */
   learnedOperations?: LearnedOperationStore;
   /** 用户打开了「回答里的小程序」实验功能：打开时每次运行的上下文附上小程序写法。 */
@@ -235,7 +233,7 @@ export class BrowserAgentSession {
   private displayAbort:AbortController|null=null;
   private authorizedDisplayCall:string|null=null;
   private displayWork:Promise<void>|null=null;
-  /** 新任务开工（读页、站点笔记、记忆）到模型开跑之间算在跑：这时的插话进 Pi 的插话队列，开跑时并进第一个请求。 */
+  /** 新任务开工（读页、网站做法、记忆）到模型开跑之间算在跑：这时的插话进 Pi 的插话队列，开跑时并进第一个请求。 */
   private starting:object|null=null;
   private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[];pages?:PageContext[]}>=[];
   private deliveryRunId: () => string | null = () => null;
@@ -402,15 +400,6 @@ export class BrowserAgentSession {
   observeProgramStep(step: ProgramStep): void {
     this.noProgressPolicy?.noteProgramStep(step);
     this.goalLedger.observeProgramStep(step);
-
-    // 程序里填的值也是这次任务的具体值：写站点笔记时据此过滤（R3）。
-    if (step.phase === 'start' && this.siteNotes) {
-      const values = typedValuesOf(step.name, step.params);
-      const runId = this.deliveryRunId();
-
-      if (values.length && this.programTyped.runId !== runId) this.programTyped = { runId, values: [] };
-      this.programTyped.values.push(...values);
-    }
 
     if (step.phase === 'start') this.callbacks.emit({kind:'tool_start',toolCallId:step.id,name:step.name,params:step.params});
     else {
@@ -989,11 +978,10 @@ if(required.includes(key))candidates.set(key,attachment);
       };
 
       if(productContext)productContext.onProjection=data=>wrapper.runTrace.record("harness_context",data);
-      wrapper.siteNotes = options?.memberId ? null : options?.siteNotes ?? null;
       wrapper.learnedOperations = options?.memberId ? null : options?.learnedOperations ?? null;
       wrapper.translationStyle = options?.translationStyle ?? null;
 
-      if (productContext && (wrapper.siteNotes || wrapper.learnedOperations)) productContext.siteNotes = url => wrapper.siteNotesFor(url, 1_000);
+      if (productContext && wrapper.learnedOperations) productContext.siteNotes = url => wrapper.siteNotesFor(url, 1_000);
 
       if (productContext && !options?.memberId && options?.miniApps) productContext.miniApps = options.miniApps;
       wrapper.bindDeliveryRun = (getRunId) => { runIdSlot.current = getRunId; wrapper.deliveryRunId = getRunId; };
@@ -1809,8 +1797,6 @@ return;}
     return this.memoryRuntime?.memoryForValue(value);
   }
 
-  /** 站点笔记的存放处；工人会话没有。 */
-  private siteNotes: SiteNotesStore | null = null;
   private learnedOperations: LearnedOperationStore | null = null;
   private learnedOperationsShown: { runId: string | null; ids: Set<string> } = { runId: null, ids: new Set() };
   private lastVerifiedOperationSource: { runId: string; goal: string[]; goalPage: GoalCheckInput["goalPage"]; endedOn: string; at: number } | null = null;
@@ -1824,35 +1810,18 @@ return;}
   private translationStyleText(): string {
     return this.translationStyle?.() ?? "";
   }
-  /** 这一轮已经带过笔记的网站：每个网站每轮只带一次。 */
-  private siteNotesShown: { runId: string | null; hosts: Set<string> } = { runId: null, hosts: new Set() };
   private siteMethodsShown: { runId: string | null; hosts: Set<string> } = { runId: null, hosts: new Set() };
-  /** 已经为它写过笔记的任务：同一任务结束时可能被记两次，只问一次模型。 */
-  private readonly siteNotesLearned = new Set<string>();
-  /** 这一轮 browser_run 里填过的值。 */
-  private programTyped: { runId: string | null; values: string[] } = { runId: null, values: [] };
-
-  /**
-   * 打开、跳转到这个网址，或任务开始时就在这个网址：这个网站有笔记、这一轮还没带过，就返回要附上的那一段。
-   * 写一条 site_notes{phase:"used"} 诊断。
-   */
+  /** 内置网站方法和用户保存的做法；不读取自动生成的旧站点笔记。 */
   async siteNotesFor(url: string | null, timeoutMs?: number): Promise<string | null> {
     if (!url) return null;
     const methodHint = siteMethodHint(url);
-    const empty = { host: "", notes: [] as string[] };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const notesRead = this.siteNotes?.notesFor(url).catch(() => empty) ?? Promise.resolve(empty);
     const operationsRead = this.learnedOperations?.operationsFor(url).catch(() => [] as LearnedOperation[]) ?? Promise.resolve([] as LearnedOperation[]);
-    const read = Promise.all([notesRead, operationsRead]);
-    // 限时读（任务开始时用）：超时就当没有笔记，也不记成「这一轮带过」，之后打开这个网站时还能带上。
-    const [stored, operations] = timeoutMs === undefined ? await read : await Promise.race([read, new Promise<[typeof empty, LearnedOperation[]]>(resolve => { timer = setTimeout(() => resolve([empty, []]), timeoutMs); })]).finally(() => clearTimeout(timer));
-    const { notes } = stored;
-    const host = stored.host || (methodHint || operations.length ? new URL(url).hostname : "");
-
-    if (!host || (!notes.length && !methodHint && !operations.length)) return null;
+    const operations = timeoutMs === undefined ? await operationsRead : await Promise.race([operationsRead, new Promise<LearnedOperation[]>(resolve => { timer = setTimeout(() => resolve([]), timeoutMs); })]).finally(() => clearTimeout(timer));
+    const host = methodHint || operations.length ? new URL(url).hostname : "";
+    if (!host) return null;
     const runId = this.deliveryRunId();
 
-    if (this.siteNotesShown.runId !== runId) this.siteNotesShown = { runId, hosts: new Set() };
     if (this.siteMethodsShown.runId !== runId) this.siteMethodsShown = { runId, hosts: new Set() };
     if (this.learnedOperationsShown.runId !== runId) this.learnedOperationsShown = { runId, ids: new Set() };
     const key = siteKey(host);
@@ -1867,12 +1836,6 @@ return;}
       for (const operation of freshOperations) this.learnedOperationsShown.ids.add(operation.id);
       this.runTrace.record("learned_operations", { phase: "offered", host, operations: freshOperations.map(operation => ({ id: operation.id, version: operation.format })) });
       parts.push(learnedOperationHint(freshOperations));
-    }
-    if (notes.length && !this.siteNotesShown.hosts.has(key)) {
-      this.siteNotesShown.hosts.add(key);
-      // 每条笔记一个内容指纹：之后才能按条算它被用了几次、用后任务成没成（诊断记录不留笔记原文）。
-      this.runTrace.record("site_notes", { phase: "used", host, count: notes.length, ids: notes.map(note => createHash("sha256").update(note).digest("hex").slice(0, 12)) });
-      parts.push(formatSiteNotes(host, notes));
     }
     return parts.length ? parts.join("\n\n") : null;
   }
@@ -1987,58 +1950,6 @@ return;}
     this.runTrace.record("learned_operations", { phase: "deleted", operationId: id, deleted });
 
     return { status: deleted ? "deleted" : "not_found", operationId: id, steps: 0 };
-  }
-
-  /**
-   * 任务判做成后：用快速模型从这一轮的操作记录里写出不超过 3 条这个网站的通用做法，过滤后存下。
-   * 只有两轮以内、没出错的任务没什么可学，不问；用户接管过的不学。只为这一轮动过手的网站写（开始时所在的页面没动过就不算）。
-   * 用户的原话不交给模型（只在本地用来过滤引号里的内容）。写一条 site_notes{phase:"learned"} 诊断。
-   */
-  async learnSiteNotes(task: { runId: string; startedAt: number; hosts: string[]; request: string[] }): Promise<void> {
-    const store = this.siteNotes, session = this.session, side = this.sideHost();
-
-    // 用户中途接管过的任务不学：那几步是用户做的（R4）。
-    if (!store || !session || !side || !task.hosts.length || this.siteNotesLearned.has(task.runId) || this.handbackRunId === task.runId) return;
-    this.siteNotesLearned.add(task.runId);
-    const model = this.modelRuntime?.fastModel?.() ?? session.model;
-
-    if (!model) return;
-    const messages = session.agent.state.messages.filter(message => "timestamp" in message && message.timestamp >= task.startedAt);
-    const digest = siteNotesDigest(messages, this.programTyped.runId === task.runId ? this.programTyped.values : []);
-
-    const hosts = operatedHosts(messages, this.activeGoalPage?.url ?? null);
-
-    if ((digest.rounds <= 2 && digest.errors === 0) || !hosts.length) { this.runTrace.record("site_notes", { phase: "skipped", why: hosts.length ? "short" : "no_host", rounds: digest.rounds }); return; }
-    const sessionId = `${session.sessionId}-site-notes`;
-
-    let reply: unknown;
-
-    try {
-      reply = await sideJudgment(side, model, {
-        purpose: "site_notes", systemPrompt: SITE_NOTES_PROMPT, maxTokens: 800, timeoutMs: 45_000, retry: "any",
-        content: JSON.stringify({ visitedHosts: hosts, rounds: digest.rounds, steps: digest.steps }),
-        sessionId, headers: opencodeSessionHeaders(model, sessionId), parse: text => parseJsonReply(text, isJsonObject),
-      });
-    } catch (error) {
-      this.runTrace.record("site_notes", { phase: "skipped", why: "side_call_failed" });
-      throw error;
-    }
-
-    const dropped: Array<{ tip: string; why: string }> = [];
-    let learned = 0;
-
-    for (const [host, notes] of filterSiteNotes(reply, { hosts, typed: digest.typed, request: task.request }, dropped)) {
-      const added = await store.add(host, notes, task.runId);
-
-      if (!added.length) continue;
-      this.runTrace.record("site_notes", { phase: "learned", host, count: added.length, notes: added });
-      learned += added.length;
-      const title = siteTitle(messages, host);
-      this.callbacks.emit({ kind: "site_notes", host, ...(title ? { title } : {}), notes: added });
-    }
-
-    // 被挡掉的笔记可能带着用户的值，诊断记录只写挡掉的原因，不写原文。
-    if (!learned) this.runTrace.record("site_notes", { phase: "skipped", why: dropped.length ? "filtered" : "model_empty", dropped: dropped.map(item => item.why) });
   }
 
   /** 决定点 A（任务结束）：过往任务的结果关联哪一天；见 MemoryRuntime.datePastTask。没有记忆运行时返回 null。 */
