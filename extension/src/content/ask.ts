@@ -1418,6 +1418,7 @@ function boot(): void {
         await send(record!.turns.at(-1)!.question, false, false, 'deep');
       }
       else if (action === 'source-turn') {
+        let located = false;
         const index = Number(target.dataset.turn);
         let source: Pick<ReadingSource, 'text' | 'surrounding' | 'location'> | undefined = record?.source;
         for (let i = 0; i <= index; i++) {
@@ -1435,14 +1436,20 @@ function boot(): void {
               range.setEnd(endNode, endOffset);
               if (clipSelection(range.toString().trim()) === source.text && selectionSurrounding(range, range.toString().trim(), READING_CONTEXT_LIMIT) === source.surrounding) {
                 (startNode instanceof Element ? startNode : startNode.parentElement)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                located = true;
               }
             }
-          } catch { /* 页面结构已变，旧位置无法恢复 */ }
+          } catch { /* 失效位置统一在引用旁提示。 */ }
         }
+        if (!located) report('原文位置已变化，摘录仍保留。');
       }
       else if (action === 'current-source') {
         const range = (candidate ?? snapshot)?.range;
         const node = range?.startContainer;
+        if (!node?.isConnected || !range || clipSelection(range.toString().trim()) !== (candidate ?? snapshot)?.source.text) {
+          report('原文位置已变化，摘录仍保留。');
+          return;
+        }
         (node instanceof Element ? node : node?.parentElement)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
       else if (action === 'transfer' || action === 'handoff') {
