@@ -82,11 +82,9 @@ export function confirmCopy(view: Pick<SendConfirmView, "host" | "label" | "cont
 export function confirmCountdown(now: number, startedAt: number | undefined, expiresAt: number | undefined): string {
   const start = startedAt ?? (expiresAt !== undefined ? expiresAt - SEND_CONFIRM_MS : now);
   const end = expiresAt ?? start + SEND_CONFIRM_MS;
-  const waited = Math.max(0, Math.round((now - start) / 1000));
-  const left = Math.max(0, Math.round((end - now) / 1000));
-  const leftMin = Math.max(1, Math.ceil(left / 60));
-
-  if (left >= 60) return `已等 ${waited} 秒 · ${leftMin} 分钟后自动取消`;
-  if (left > 0) return `已等 ${waited} 秒 · 还剩 ${left} 秒`;
-  return `已等 ${waited} 秒 · 已到时`;
+  const left = Math.max(0, Math.ceil((end - now) / 1000));
+  if (left === 0) return "已到期";
+  const minutes = String(Math.floor(left / 60)).padStart(2, "0");
+  const seconds = String(left % 60).padStart(2, "0");
+  return `${minutes}:${seconds} 后取消`;
 }

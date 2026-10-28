@@ -115,9 +115,12 @@ try {
   await rp.screenshot(panel, join(out, "p1-panel-waiting.png"));
   const c1 = await liveCard(panel);
   const c1b = await liveCard(panel2);
-  check("p1 两个侧栏都出卡，写网站、按钮、表单里的草稿，不写备忘", [c1, c1b].every(c => c.text.includes(host) && c.text.includes("「发送」") && c.text.includes(DRAFT) && !c.text.includes("备忘") && !/POST\s+\//.test(c.text)), { c1, c1b, host });
+  check("p1 两个侧栏都出卡，写网站、按钮、表单里的草稿，不写备忘", [c1, c1b].every(c => c.text.includes(host) && c.text.includes("留言练习页") && c.buttons.includes("发送") && c.text.includes(DRAFT) && !c.text.includes("备忘") && !/POST\s+\//.test(c.text)), { c1, c1b, host });
   const docked = await rp.evaluate(panel, `(() => { const dock = document.querySelector("#confirm-dock"); const card = dock?.querySelector(".send-confirm"); return { hidden: dock?.hidden ?? true, inDock: !!card, title: card?.querySelector(".send-confirm-title")?.textContent ?? "", wait: card?.querySelector(".send-confirm-wait")?.textContent ?? "" }; })()`) as { hidden: boolean; inDock: boolean; title: string; wait: string };
-  check("p1 待确认钉在输入框上方，并显示倒计时", docked.inDock && !docked.hidden && /要在/.test(docked.title) && /已等/.test(docked.wait), docked);
+  check("p1 待确认钉在输入框上方，并显示倒计时", docked.inDock && !docked.hidden && docked.title === "留言练习页" && /\d{2}:\d{2} 后取消/.test(docked.wait), docked);
+  const waitingTitle = await rp.evaluate(panel, `document.querySelector('.run:not(.done) .run-title')?.textContent ?? document.querySelector('[data-wait-user] .steps-title')?.textContent ?? ''`);
+  const waitingText = await rp.evaluate(panel, `document.querySelector('[data-wait-user]')?.innerText ?? ''`);
+  check("等待确认时不再声称正在点击发送", String(waitingText).includes("等你确认") && !String(waitingText).includes("正在：点「发送」"), { waitingTitle, waitingText });
   // 脚本合成的点击（isTrusted 为 false）不算用户点的。
   await rp.evaluate(panel, '[...document.querySelectorAll(".send-confirm")].at(-1).querySelector(".send-confirm-yes").click(); true');
   await sleep(1500);
@@ -196,13 +199,11 @@ try {
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", text: " ", ...space }, panel);
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...space }, panel);
   await sleep(1200);
-  check("p5 聚焦卡上的「发送」按回车、空格：不发，卡还能点", focused === true && sent() === before5 && !!(await card(panel))?.buttons.includes("发送"), { focused: focused as Json, sentDelta: sent() - before5 });
-  await press(panel, c5.id, "yes");
-  await until(async () => sent() > before5, 10_000, "p5 一秒后再点，服务器收到发送").catch(() => {});
+  check("p5 明确聚焦确认后按回车：只发送一次，随后空格不重复发送", focused === true && sent() === before5 + 1, { focused: focused as Json, sentDelta: sent() - before5 });
   const done5 = await settledCard(panel, SENT_LINE);
   await answered("P5 完成。").catch(() => {});
   const lines5 = (await rp.evaluate(panel, `window.__lines[${JSON.stringify(c5.id)}] ?? []`)) as string[];
-  check("p5 一秒后再点：恰好 1 条；点下去以前卡上写「你确认了发送」，点下去以后才写「已发送」", sent() - before5 === 1 && !("timedOut" in done5) && lines5[0] === "你确认了发送" && lines5.at(-1) === SENT_LINE, { sentDelta: sent() - before5, lines5, done5 } as Json);
+  check("p5 键盘确认：恰好 1 条；执行以前卡上写「你确认了发送」，执行以后才写「已发送」", sent() - before5 === 1 && !("timedOut" in done5) && lines5[0] === "你确认了发送" && lines5.at(-1) === SENT_LINE, { sentDelta: sent() - before5, lines5, done5 } as Json);
 
   // ── p6：等确认时切到别的会话，旧卡不能跟过去；切回来仍回答同一个等待 ──
   const original6 = String(await rp.evaluate(panel, 'document.querySelector("#conversation-menu [aria-checked=true]")?.dataset.conversationId ?? ""'));

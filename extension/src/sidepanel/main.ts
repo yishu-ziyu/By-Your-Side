@@ -4493,8 +4493,10 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if (run) {
         run.root.toggleAttribute("data-wait-user", ev.waiting);
 
-        if (ev.waiting) closeThink(run, eventTime());
-        else {
+        if (ev.waiting) {
+          closeThink(run, eventTime());
+          setRunTitle(run, "等你确认", true);
+        } else {
           setRunTitle(run, "正在：思考", true, "think");
           openThink(run, eventTime());
         }

@@ -2352,25 +2352,27 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-receipt-text { min-width:0; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .site-notes-list { margin:-10px 0 14px; padding:8px 10px 8px 24px; border-radius: var(--r-sm); background:var(--content-subtle); color:var(--text-secondary); font-size:var(--fs-micro); line-height:1.5; }
 .site-notes-list li + li { margin-top:4px; }
-/* 发送确认卡：人话标题为主，技术细节折叠；主按钮实心，次按钮安静。 */
+/* 当前目标与草稿直接构成确认内容，流程状态只由等待事件决定。 */
 #confirm-dock { margin: 0 0 var(--s-2); }
 #confirm-dock[hidden] { display: none; }
 #confirm-dock .send-confirm { margin: 0; }
-.send-confirm { margin:0 0 var(--s-4); padding:var(--s-3) var(--s-4); border:1px solid var(--glass-border); border-radius:var(--r); background:var(--content-bg); font-size:var(--fs-ui); line-height:1.6; color:var(--text-primary); box-shadow: var(--glass-shadow); }
+.send-confirm { margin:0 0 var(--s-4); padding:var(--s-4); border:1px solid var(--glass-border); border-radius:var(--r); background:var(--content-bg); font-size:var(--fs-ui); line-height:1.6; color:var(--text-primary); box-shadow: var(--glass-shadow); }
 .send-confirm:is([data-state=done],[data-state=ended]) { padding:0; border:0; background:transparent; box-shadow:none; }
 .send-confirm-line { margin:0; color:var(--text-tertiary); font-size:var(--fs-meta); }
-.send-confirm-title { margin:0; font-size:var(--fs-read); font-weight:600; line-height:1.45; }
+.send-confirm-title { display:flex; align-items:center; gap:var(--s-2); margin:0; font-size:var(--fs-ui); font-weight:500; line-height:1.45; overflow-wrap:anywhere; }
+.send-confirm-title svg { width:var(--s-4); height:var(--s-4); flex:none; color:var(--text-tertiary); }
+.send-confirm-site { margin:var(--s-1) 0 0; color:var(--text-tertiary); font-size:var(--fs-meta); overflow-wrap:anywhere; }
 .send-confirm-impact { margin: var(--s-1) 0 0; color: var(--text-secondary); font-size: var(--fs-ui); }
-.send-confirm-quote { margin: var(--s-2) 0 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); background: var(--content-subtle); font-size: var(--fs-ui); color: var(--text-primary); }
+.send-confirm-quote { margin:var(--s-5) 0; padding:0; border:0; background:transparent; font-size:var(--fs-read); line-height:1.8; color:var(--text-primary); overflow-wrap:anywhere; }
 .send-confirm-tech { margin-top: var(--s-2); font-size: var(--fs-meta); color: var(--text-tertiary); }
 .send-confirm-tech summary { cursor: pointer; }
 .send-confirm-tech pre { margin: var(--s-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: var(--fs-meta); }
-.send-confirm-wait { margin: var(--s-2) 0 0; color: var(--text-tertiary); font-size: var(--fs-meta); }
-.send-confirm-acts { display:flex; flex-wrap:wrap; gap:var(--s-2); margin-top:var(--s-3); }
-.send-confirm-acts button { border:1px solid var(--content-border); border-radius:var(--r-pill); font:inherit; font-size:var(--fs-ui); font-weight:500; line-height:1.5; padding:6px 16px; cursor:pointer; }
-.send-confirm-yes { flex: 1; background: var(--accent); color: var(--content-bg); border-color: var(--accent); }
+.send-confirm-wait { margin:0 auto 0 0; color:var(--text-tertiary); font-size:var(--fs-meta); font-variant-numeric:tabular-nums; }
+.send-confirm-acts { display:flex; align-items:center; flex-wrap:wrap; gap:var(--s-2); margin-top:var(--s-3); }
+.send-confirm-acts button { border:0; border-radius:var(--r-sm); font:inherit; font-size:var(--fs-ui); font-weight:500; line-height:1.5; padding:var(--s-2) var(--s-3); cursor:pointer; }
+.send-confirm-yes { flex: 0 0 auto; background: var(--accent); color: var(--content-bg); border-color: var(--accent); }
 .send-confirm-yes[data-arming] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--content-bg) 40%, transparent); }
-.send-confirm-no { flex: 0 0 auto; background: var(--content-bg); color: var(--text-secondary); }
+.send-confirm-no { flex: 0 0 auto; background: transparent; color: var(--text-secondary); }
 .send-confirm-acts button:hover:not(:disabled) { filter: brightness(.97); }
 /* 确认框在时，填写读回（「消息现在是」）先收起：要发的内容只在确认框里出现一次。 */
 #messages:has(.send-confirm[data-state=open]) .fill-evidence { display:none; }

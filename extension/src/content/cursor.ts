@@ -168,6 +168,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     anchor: Element | null;
     /** 画框时的目标：单个节点，或 mark 带 through 时从起点到终点的 Range。 */
     observedNode?: Node | Range;
+    textRange?: Range;
     target?: string;
     pad: number;
     label?: string;
@@ -226,35 +227,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       /* 常驻的光标闲置时不长期占用独立合成层。 */
       .cursor:not(.rest) { will-change: transform; }
       .cursor.hidden { opacity: 0; }
-      /* 贴边柔光：墨蓝从视口边缘向内晕开，一段亮光沿边慢走；
-         参照 Gemini in Chrome / ego 的边框光。用户动鼠标时整层让位到很淡。 */
-      .edge {
-        position: absolute; inset: 0; pointer-events: none;
-        opacity: 0; transition: opacity var(--d-micro) var(--e-exit);
-        box-shadow: inset 0 0 0 1px rgba(45,74,134,.30), inset 0 0 16px 1px rgba(52,88,160,.20),
-          inset 0 0 46px 6px rgba(80,120,200,.10);
-      }
-      .edge::before {
-        content: ""; position: absolute; inset: 0; padding: 3px;
-        background: conic-gradient(from var(--sideagent-border-angle, 0deg),
-          transparent 0deg, transparent 230deg, rgba(96,140,225,0) 250deg,
-          rgba(96,140,225,.85) 300deg, rgba(160,195,255,.95) 318deg,
-          rgba(96,140,225,0) 345deg, transparent 360deg);
-        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-        -webkit-mask-composite: xor;
-        mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-        mask-composite: exclude;
-        filter: blur(4px);
-      }
-      .edge.on { opacity: 1; }
-      .edge.on::before { animation: soft-border-flow 6.5s linear infinite; }
-      :host(.user-active) .edge.on { opacity: .18; transition-duration: var(--d-state); }
       :host(.user-active) .cursor:not(.holding):not(.guiding):not(.hidden) { opacity: .3; }
       :host(.user-active) .cursor:not(.holding):not(.guiding):not(.hidden) .label { opacity: 0; }
-      /* 新建即点亮：淡入由样式起点完成，不靠下一帧再改 class（后台页的下一帧可能很晚，晚到的改动会让已发出的确认判为页面已变）。 */
-      @starting-style { .edge.on { opacity: 0; } }
-      @keyframes soft-border-flow { to { --sideagent-border-angle: 360deg; } }
-      @media (prefers-reduced-motion: reduce) { .edge { transition: none; } .edge::before { animation: none !important; } }
       .cursor.rest { opacity: .78; }
       .cursor.rest .label { opacity: 0; }
       .cursor.flip .label { left: auto; right: ${Math.round(CURSOR_SVG_SIZE * 0.51)}px; }
@@ -326,10 +300,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         from { transform: scale(.5); opacity: .95; }
         to { transform: scale(4.2); opacity: 0; }
       }
-      /* 状态统一在右边缘胶囊；光标旁只挂「正在做的这一下」，做完淡出。 */
-      .cursor:not(.holding):not(.acting) .label { display: none !important; }
-      /* 例外：两步之间光标旁挂「球 + 正在思考」，光标不动时也看得出助手还在想。 */
-      .cursor.stating.thinking:not(.acting):not(.guiding):not(.holding) .label { display: inline-flex !important; opacity: 1; }
+      /* 执行状态只留在页边；教学、确认和阅读语音仍留在对应目标旁。 */
+      .cursor:not(.holding):not(.guiding):not(.companion) .label, .cursor.guiding .label { display: none !important; }
       .cursor.rest.thinking { opacity: 1; }
       /* 主助手停靠时可见；多个协作光标闲置时仍收起，以免挡住正文。 */
       .cursor.rest:not(.holding):not([data-primary="true"]) { visibility: hidden; }
@@ -464,19 +436,19 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     const marksShadow = marksHost.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
-      /* 圈要在任何底色上都看得见（HN 的橙色页眉、深色页面）：白色内圈 + 深色描边 + 外发光。 */
+      /* 目标轮廓与文字标记共用颜色，标签不再另起一块实底。 */
       .mark {
         position: absolute; box-sizing: border-box; pointer-events: none;
-        border: 3px solid #fff; border-radius: 6px;
-        box-shadow: 0 0 0 1.5px #111, inset 0 0 0 1.5px #111, 0 0 10px 3px rgba(255,255,255,.7), 0 0 14px 4px rgba(0,0,0,.3);
+        border: 1.5px solid var(--mark-ink, var(--c)); border-radius: 6px;
+        box-shadow: none;
         background: transparent;
       }
       .mark-label {
         position: absolute; left: -3px; top: -28px;
         padding: 1px 8px; border-radius: 99px;
-        background: #111; color: #fff; border: 1.5px solid #fff;
-        box-shadow: 0 2px 8px rgba(0,0,0,.35);
-        font: 600 12px/1.6 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+        background: transparent; color: var(--mark-ink, var(--c)); border: 0;
+        box-shadow: none;
+        font: 400 12px/1.6 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
         letter-spacing: .02em; white-space: nowrap;
       }
       .mark-label.below { top: calc(100% + 6px); }
@@ -492,12 +464,12 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         overflow: visible; pointer-events: none;
       }
       .sketch-svg {
-        filter: drop-shadow(0 0 .7px #111) drop-shadow(0 0 .7px #111) drop-shadow(0 0 5px rgba(255,255,255,.85)) drop-shadow(0 0 8px rgba(0,0,0,.3));
+        filter: none;
       }
       .sketch-svg path {
         fill: none;
-        stroke: #fff;
-        stroke-width: 3.2;
+        stroke: var(--mark-ink, var(--c));
+        stroke-width: 1.3;
         stroke-linecap: round;
         stroke-linejoin: round;
       }
@@ -530,6 +502,14 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       .mark.sketch.boil .boil-path[data-i="1"] { --path-i: 1; }
       .mark.sketch.boil .boil-path[data-i="2"] { --path-i: 2; }
 
+      .mark.guidance .mark-label {
+        box-sizing:border-box; width:max-content; max-width:min(240px, calc(100vw - 24px)); white-space:normal;
+        padding:6px 9px; border:1px solid rgba(45,74,134,.16); border-radius:6px;
+        background:#fbfcfe; color:#26364d;
+      }
+      .mark.text { border:0; box-shadow:none; }
+      .mark.text .mark-label { left:0; top:calc(100% + 2px); padding:0; line-height:1.2; }
+      .mark-stroke { position:absolute; background:color-mix(in srgb, var(--c) 22%, transparent); }
       /* 交给用户时的圈：填好、点过就淡出。 */
       .mark.handoff { transition: opacity .35s ease; }
       .mark.handoff.faded { opacity: 0; }
@@ -648,6 +628,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   function placeMark(mark: LiveMark, rect: SideAgentRect): void {
     applyMarkBox(mark.el, rect, mark.pad, mark.label);
+    if (mark.textRange) { drawTextMark(mark.el, mark.textRange); return; }
 
     if (!mark.drawn || !rect.width || !rect.height) return;
 
@@ -1824,9 +1805,12 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     target?: string,
     options?: MarkOptions,
     observedNode?: Node | Range,
+    explainText = false,
   ): HTMLDivElement | null {
     const opts = { ...defaultMarkOptions, ...options };
-    const isSketch = opts.style === "sketch";
+    const anchor = observedNode ?? resolveAnchor(rect, target);
+    const textRange = explainText ? textMarkRange(anchor) : null;
+    const isSketch = !textRange && opts.style === "sketch";
     const motion = opts.motion ?? "grow";
     const pad = isSketch ? 10 : MARK_PAD;
     const box = viewportRectToDocumentBox(rect, window.scrollX, window.scrollY, pad);
@@ -1834,7 +1818,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (!box) return null;
     ensureMarksDom();
     const el = document.createElement("div");
-    el.className = isSketch ? `mark sketch ${motion === "boil" ? "boil" : "grow"}` : "mark";
+    el.className = textRange ? "mark text" : isSketch ? `mark sketch ${motion === "boil" ? "boil" : "grow"}` : "mark";
+    const node = anchor instanceof Range ? anchor.commonAncestorContainer : anchor;
+    const element = node instanceof Element ? node : node?.parentElement;
+    if (element) el.style.setProperty("--mark-ink", getComputedStyle(element).color);
+    el.classList.toggle("guidance", !explainText);
     el.style.setProperty("--c", inst.color);
 
     const seed = opts.seed ?? (Math.floor(Math.random() * 1000000) + 1);
@@ -1872,11 +1860,13 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     applyMarkBox(el, rect, pad, label);
     marksLayer!.appendChild(el);
 
+    if (textRange) drawTextMark(el, textRange);
     if (labelEl && isSketch) placeSketchLabel(el, labelEl, frame);
     liveMarks.push({
       el,
       anchor: observedNode ? null : resolveAnchor(rect, target),
       observedNode,
+      textRange: textRange ?? undefined,
       target,
       pad,
       label,
@@ -1886,6 +1876,44 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     });
 
     return el;
+  }
+
+  function textMarkRange(node: Node | Range | null): Range | null {
+    if (!node) return null;
+    if (node instanceof Range) return node.cloneRange();
+    const element = node instanceof Element ? node : node.parentElement;
+    if (!element || element.closest('button,a,input,textarea,select,[role="button"],[contenteditable="true"]')) return null;
+    if (node.nodeType !== Node.TEXT_NODE && !element.matches('p,li,blockquote,h1,h2,h3,h4,h5,h6,span')) return null;
+    if (element.querySelector('button,input,textarea,select,[role="button"]')) return null;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    return range.toString().trim() ? range : null;
+  }
+
+  /** Range 会为嵌套的行内节点重复给出矩形，同一行先合并，避免高亮叠色。 */
+  function drawTextMark(el: HTMLElement, range: Range): void {
+    const origin = el.getBoundingClientRect();
+    const lines: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+    for (const rect of Array.from(range.getClientRects())) {
+      if (!rect.width || !rect.height) continue;
+      const line = lines.find(r => Math.abs(r.bottom - rect.bottom) < 3 && rect.left <= r.right + 2 && rect.right >= r.left - 2);
+      if (line) { line.left = Math.min(line.left, rect.left); line.right = Math.max(line.right, rect.right); line.top = Math.min(line.top, rect.top); line.bottom = Math.max(line.bottom, rect.bottom); }
+      else lines.push({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
+    }
+    const label = el.querySelector<HTMLElement>('.mark-label');
+    if (label) {
+      const bounds = range.getBoundingClientRect();
+      label.style.left = `${bounds.left - origin.left}px`;
+      label.style.top = `${bounds.bottom - origin.top + 4}px`;
+    }
+    el.querySelectorAll('.mark-stroke').forEach(stroke => stroke.remove());
+    for (const line of lines) {
+      const stroke = document.createElement('span');
+      stroke.className = 'mark-stroke';
+      const height = Math.max(3, Math.min(7, (line.bottom - line.top) * .24));
+      Object.assign(stroke.style, { left: `${line.left - origin.left}px`, top: `${line.bottom - origin.top - height}px`, width: `${line.right - line.left}px`, height: `${height}px` });
+      el.prepend(stroke);
+    }
   }
 
   /** 按目标框（标注内坐标）画手绘框线：grow 一笔，boil 三帧；返回框线实际占的范围。 */
@@ -1917,40 +1945,31 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return !!painted && painted !== document.documentElement && painted !== document.body;
   }
 
-  /** 名牌挂上之后才量得到真实大小；按标注当前的文档位置换算到视口，检查底下有没有页面文字。 */
+  /** 先夹回视口再检查遮挡，避免边角的长提示挪回页面时盖住目标。 */
   function placeSketchLabel(el: HTMLElement, labelEl: HTMLElement, frame: { x: number; y: number; w: number; h: number }): void {
+    labelEl.style.display = "";
     const size = labelEl.getBoundingClientRect();
     const originX = (parseFloat(el.style.left) || 0) - window.scrollX;
     const originY = (parseFloat(el.style.top) || 0) - window.scrollY;
-    const toView = (b: { x: number; y: number; w: number; h: number }) => ({ x: originX + b.x, y: originY + b.y, w: b.w, h: b.h });
-
-    let at = sketchLabelPosition(frame, { w: size.width, h: size.height }, {
-      inView: (b) => {
-        const v = toView(b);
-
-        return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight;
-      },
-      // 名牌有自己的底色，可以压在页面上；只是不能落到页面外的空白处（比如居中版面两侧的灰边）。
-      clear: (b) => onPageContent(toView(b)) && !coversControl(toView(b)),
+    type Position = { left: number; top: number };
+    const clamp = (p: Position): Position => ({
+      left: Math.max(4 - originX, Math.min(p.left, innerWidth - 4 - size.width - originX)),
+      top: Math.max(4 - originY, Math.min(p.top, innerHeight - 4 - size.height - originY)),
     });
-    const freeOfControls = (b: { x: number; y: number; w: number; h: number }) => !coversControl(toView(b));
-    let at2 = at;
-
-    // 名牌绝不压在别的控件上：先放宽「在页面内容上」，再缩小字，还不行就不挂名牌，只留圈。
-    if (!freeOfControls({ x: at2.left, y: at2.top, w: size.width, h: size.height })) {
-      at2 = sketchLabelPosition(frame, { w: size.width, h: size.height }, { inView: (b) => { const v = toView(b); return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight; }, clear: freeOfControls });
-    }
-    if (!freeOfControls({ x: at2.left, y: at2.top, w: size.width, h: size.height })) {
-      labelEl.classList.add("small");
-      const small = labelEl.getBoundingClientRect();
-      at2 = sketchLabelPosition(frame, { w: small.width, h: small.height }, { inView: () => true, clear: freeOfControls });
-      if (!freeOfControls({ x: at2.left, y: at2.top, w: small.width, h: small.height })) labelEl.style.display = "none";
-    }
-    at = at2;
-
-    // 兜底：无论如何夹在视口里。
-    labelEl.style.left = `${Math.max(4 - originX, Math.min(at.left, window.innerWidth - 4 - size.width - originX))}px`;
-    labelEl.style.top = `${Math.max(4 - originY, Math.min(at.top, window.innerHeight - 4 - size.height - originY))}px`;
+    const clear = (p: Position) => {
+      const overlaps = p.left < frame.x + frame.w && p.left + size.width > frame.x && p.top < frame.y + frame.h && p.top + size.height > frame.y;
+      return !overlaps && !coversControl({ x: originX + p.left, y: originY + p.top, w: size.width, h: size.height });
+    };
+    const candidates = [
+      { left: frame.x + frame.w + 8, top: frame.y + (frame.h - size.height) / 2 },
+      { left: frame.x, top: frame.y + frame.h + 6 },
+      { left: frame.x, top: frame.y - size.height - 6 },
+      { left: frame.x - size.width - 8, top: frame.y + (frame.h - size.height) / 2 },
+    ].map(clamp);
+    const at = candidates.find(clear);
+    if (!at) { labelEl.style.display = "none"; return; }
+    labelEl.style.left = `${at.left}px`;
+    labelEl.style.top = `${at.top}px`;
   }
 
   /** 只撤指定的一条标注（拿住态的确认锚框），不碰模型画的其他标注。 */
@@ -2136,6 +2155,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     // 兜底：无论如何夹在视口里。
     labelEl.style.left = `${Math.max(4 - originX, Math.min(at.left, window.innerWidth - 4 - size.width - originX))}px`;
     labelEl.style.top = `${Math.max(4 - originY, Math.min(at.top, window.innerHeight - 4 - size.height - originY))}px`;
+    const placed = labelEl.getBoundingClientRect();
+    if (coversControl({ x: placed.x, y: placed.y, w: placed.width, h: placed.height })) placeSketchLabel(m.el, labelEl, frame);
   }
 
   /** 改名牌：撤掉旧的，按同一框线摆新的。 */
@@ -2442,17 +2463,10 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     ], D_LAYOUT, E_MOVE);
   }
 
-  async function fadeEdge(): Promise<void> {
-    if (!edge?.classList.contains("on")) return;
-    await playMotion(edge, [{ opacity: getComputedStyle(edge).opacity }, { opacity: 0 }], D_MICRO, E_EXIT);
-    edge.classList.remove("on");
-  }
+  /** 正在操作这一页的成员，驱动页边状态和用户接管时的光标避让。 */
+  const activeMembers = new Set<string>();
 
-  let edge: HTMLDivElement | null = null;
-  /** 正在操作这一页的成员；只要仍有一位在工作，就保留选定的 C 彩边。 */
-  const glowing = new Set<string>();
-
-  // 用户一动鼠标，彩边和光标让位，停下约 1 秒再亮回来（ego 的 user-in-control 预设）。
+  // 用户移动鼠标时，助手光标让位；停下后继续显示目标。
   // 助手经调试协议发出的鼠标事件也是可信事件，但总落在光标刚飞到的点上，据此排除。
   // 不移动光标就派发的鼠标事件（受保护的悬停）先经 expect() 登记落点。
   // 手搭在触控板或鼠标上的抖动通常 1–3px；离上次算数的位置超过 6px 才算用户在用，
@@ -2513,24 +2527,9 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     host?.classList.remove("user-active");
   }
 
-  function renderGlow(): void {
-    if (glowing.size === 0) {
-      edge?.classList.remove("on");
-      watchUser(false);
-
-      return;
-    }
-
-    ensureDom();
-
-    if (!edge?.isConnected) {
-      edge = document.createElement("div");
-      edge.className = "edge";
-      shadow!.prepend(edge);
-    }
-
-    edge.classList.add("on");
-    watchUser(true);
+  function watchActivePage(): void {
+    if (activeMembers.size) ensureDom();
+    watchUser(activeMembers.size > 0);
   }
 
   // ── 右边缘胶囊：本页动作、结果、交给你、别页助手、侧栏关着时的整轮任务，汇成一个 ──────────────
@@ -2698,7 +2697,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     else if (finished && (!feedback || finished[1].action!.at >= feedback.at)) [owner, view] = [finished[0], actionView(finished[1].action!)];
     else if (feedback) [owner, view] = [DEFAULT_ID, feedbackView(feedback)];
     else if (status) [owner, view] = [status[0], statusView(status[1].status!)];
-    else if (glowing.size) [owner, view] = [DEFAULT_ID, statusView({ state: "waiting", text: "", detail: "", sub: "" })];
+    else if (activeMembers.size) [owner, view] = [DEFAULT_ID, statusView({ state: "waiting", text: "", detail: "", sub: "" })];
     else if (remote.length) {
       mainRemote = remote.shift()!;
       view = { tone: "away", a: "在", b: mainRemote.title, end: "arrow", hint: "切换到那一页" };
@@ -2708,7 +2707,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     entryShown = view?.tone === "idle";
 
     // 结果不确定、没做成会一直留着；这期间助手还在读页面或想下一步，停止键也要在。
-    if (view && !view.end && (view.tone === "unk" || view.tone === "err") && (glowing.size || local.some(([, inst]) => inst.status?.state === "waiting" || inst.status?.state === "reading" || inst.status?.state === "translating"))) view = { ...view, end: "stop" };
+    if (view && !view.end && (view.tone === "unk" || view.tone === "err") && (activeMembers.size || local.some(([, inst]) => inst.status?.state === "waiting" || inst.status?.state === "reading" || inst.status?.state === "translating"))) view = { ...view, end: "stop" };
 
     const others: EdgeTabOther[] = remote.map(m => ({ id: m.sessionId, name: displayNameFor(m.sessionId), title: m.title, local: false }));
 
@@ -2828,9 +2827,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     edgeTab = null;
     // Pagehide may freeze this Document in BFCache. Do not revive finished
     // task lighting when pageshow later reuses the same content-script world.
-    glowing.clear();
+    activeMembers.clear();
     watchUser(false);
-    edge = null;
     host?.remove();
     marksHost?.remove();
     host = null;
@@ -3137,8 +3135,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
       setGlow(on: boolean): void | Promise<void> {
         if (on) {
-          glowing.add(id);
-          renderGlow();
+          activeMembers.add(id);
+          watchActivePage();
           renderAmbient();
 
           return;
@@ -3148,11 +3146,10 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         // 失败时照旧停在出错的位置。
         const inst = instances.get(id);
 
-        if (glowing.has(id) && inst?.visible && !inst.resting && !inst.hold && inst.status?.state !== "failed") schedulePark(inst);
-        glowing.delete(id);
+        if (activeMembers.has(id) && inst?.visible && !inst.resting && !inst.hold && inst.status?.state !== "failed") schedulePark(inst);
+        activeMembers.delete(id);
         renderAmbient();
-        if (glowing.size === 0) return fadeEdge();
-        renderGlow();
+        watchActivePage();
       },
 
       showFeedback(view?: FeedbackPillView): void {
@@ -3185,9 +3182,9 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         observedNode?: Node | Range,
       ): void {
         const inst = getInstance(id);
-        const mark = spawnMark(inst, rect, label, target, options, observedNode);
-        // 就地确认：键不在框外，光标飞到目标拿住，双键长在名牌上
         const parsed = resolveImplicitMarkActions(label, actions);
+        const mark = spawnMark(inst, rect, label, target, options, observedNode, !parsed);
+        // 就地确认保留控件外框和原有确认动作，不使用文字高亮。
 
         if (parsed) {
           holdInst(inst, Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2), parsed, target, mark);

@@ -3,6 +3,7 @@
  * 卡上的网站、按钮名、内容都由扩展从网页读出，这里只用 textContent 放进去。
  * 待确认钉在输入框上方；答过或过期只在对话里留一行结果。
  */
+import { createElement as icon, Send } from "lucide";
 import { SEND_ARM_MS, SEND_CONFIRM_PANEL_PORT } from "../relay.js";
 import { HELD_TEXT } from "./steps.js";
 import { confirmCopy, confirmCountdown } from "../../../shared/send-confirm-copy.js";
@@ -176,8 +177,16 @@ function paint(card: Card): void {
   const copy = confirmCopy(view);
   const title = document.createElement("h2");
   title.className = "send-confirm-title";
-  title.textContent = copy.headline;
-  el.append(title);
+  if (copy.kind === "send") {
+    title.append(icon(Send), document.createTextNode(view.recipient?.trim() || view.label.trim() || "发送"));
+    const site = document.createElement("p");
+    site.className = "send-confirm-site";
+    site.textContent = view.host;
+    el.append(title, site);
+  } else {
+    title.textContent = copy.headline;
+    el.append(title);
+  }
 
   if (copy.impact) {
     const impact = document.createElement("p");
@@ -213,10 +222,9 @@ function paint(card: Card): void {
     tick();
     stopTick(card);
     card.tick = window.setInterval(tick, 1000);
-    el.append(wait);
     const acts = document.createElement("div");
     acts.className = "send-confirm-acts";
-    acts.append(button("send", copy.yes, card), button("decline", copy.no, card));
+    acts.append(wait, button("decline", copy.no, card), button("send", copy.yes, card));
     el.append(acts);
   }
 

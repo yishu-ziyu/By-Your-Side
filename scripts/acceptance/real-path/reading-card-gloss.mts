@@ -272,7 +272,7 @@ try {
   else await until(async () => (await inCard<string>(`function(){return this.querySelector('.answer')?.textContent??''}`)).includes("几十年") || undefined, 20_000, "河岸回答");
   const beforeSameWord = seen.length;
   await selectBank("#finance-bank");
-  const currentQuote = await inCard<{text:string; hidden:boolean}>(`function(){const e=this.querySelector('.current-source');return {text:e?.textContent??'',hidden:!e||e.hidden}}`);
+  const currentQuote = await inCard<{text:string; hidden:boolean}>(`function(){const e=this.querySelector('.current-source');return {text:e?.getAttribute('aria-label')??'',hidden:!e||e.hidden}}`);
   check("换段后显示当前引用，选字本身不生成", !currentQuote.hidden && currentQuote.text.includes('bank') && seen.length === beforeSameWord, currentQuote);
 
   await click(await until(() => pointOf("textarea"), 5_000, "同词追问"));
@@ -323,10 +323,16 @@ try {
   const wide = await scene();
   await shot("1-wide");
   check("宽屏空白：卡片在正文右侧，不和这段重叠", wide.card.left >= wide.block.right - 1 && !overlaps(wide.card, wide.block) && wide.place === "beside", { card: wide.card, block: wide.block, place: wide.place });
-  const look = await inCard<{ title: string; asked: boolean; quote: boolean; source: boolean; foot: string[]; bg: string }>(`function(){const q=this.querySelector('.turn .question');return {title:this.querySelector('.head .title')?.textContent??'',asked:!!q&&!q.hidden,quote:!!this.querySelector('.q'),source:!!this.querySelector('.turn > .source'),foot:[...this.querySelectorAll('.foot:not([hidden]) button')].map(b=>b.textContent.trim()),bg:getComputedStyle(this.querySelector('.surface')).backgroundColor}}`);
+  const look = await inCard<{ title: string; asked: boolean; quote: boolean; source: boolean; foot: string[]; bg: string }>(`function(){const q=this.querySelector('.turn .question');return {title:this.querySelector('.head .title')?.textContent??'',asked:!!q&&!q.hidden,quote:!!this.querySelector('.q'),source:!!this.querySelector('.turn > .source'),foot:[...this.querySelectorAll('.foot:not([hidden]) button')].map(b=>b.getAttribute('aria-label')||b.textContent.trim()),bg:getComputedStyle(this.querySelector('.surface')).backgroundColor}}`);
   const light = (look.bg.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number).every((v) => v > 230);
   check("回答窗：标题是「解释」，不重复问题行和选区，底栏有复制、朗读、在侧栏继续", look.title === "解释" && !look.asked && !look.quote && !look.source && ["复制", "朗读", "在侧栏继续"].every((label) => look.foot.includes(label)), look);
   check("纸色：卡片是浅色底", light, look.bg);
+  const hierarchy = await inCard<{ repeated: boolean; sourceInFoot: boolean; iconsNamed: boolean }>(`function(){return {repeated:/快速回答|用深度模型重答/.test(this.querySelector('.meta')?.textContent??''),sourceInFoot:!!this.querySelector('.foot .current-source'),iconsNamed:[...this.querySelectorAll('.foot button.icon')].every(b=>!!b.title&&!!b.getAttribute('aria-label')&&!!b.querySelector('svg'))}}`);
+  check("阅读操作一行，图标保留名称，深度重答不挤在正文下", !hierarchy.repeated && hierarchy.sourceInFoot && hierarchy.iconsNamed, hierarchy);
+  await click((await pointOf('[data-act="answer-more"]'))!);
+  const answerMenu = await inCard<boolean>(`function(){return this.querySelector('.answer-menu')?.checkVisibility() && !this.querySelector('.answer-menu [data-act="deep"]').hidden}`);
+  check("回答菜单可打开，深度重答仍可发现", answerMenu, { answerMenu });
+  await click((await pointOf('[data-act="answer-more"]'))!);
   await click((await pointOf('.foot [data-act="copy"]'))!);
   await sleep(200);
   const copied = await inCard<{ check: boolean; error: string }>(`function(){return {check:this.querySelector('.foot [data-act="copy"]')?.getAttribute('aria-label')==='已复制',error:this.querySelector('.error:not([hidden])')?.textContent??''}}`);
@@ -346,10 +352,12 @@ try {
   await until(async () => (await inCard<string>(`function(){return this.querySelectorAll('.answer')[1]?.textContent??''}`)).includes("完整结尾") || undefined, 20_000, "深度回答写完");
   const deepRequest = seen.find((item) => item.depth === "deep");
   check("深度追问带 deep，打到主模型", !!deepRequest && deepRequest.model === "main-reader", { requests: seen.map(({ model: id, depth }) => ({ model: id, depth })) });
-  await click((await pointOf('[data-act="details"][data-turn="1"]'))!);
+  await click((await pointOf('[data-act="answer-more"]'))!);
+  await click(await until(() => pointOf('.answer-menu [data-act="details"][data-turn="1"]'), 5_000, "回答菜单中的收起操作"));
   const folded = await inCard<{ summary: string; hidden: boolean }>(`function(){const t=this.querySelectorAll('.turn')[1];return {summary:t.querySelector('.answer-summary')?.textContent??'',hidden:!!t.querySelector('.answer')?.hidden}}`);
   check("长回答可收起成第一句", folded.hidden && folded.summary === "几十年后仍清楚可读。", folded);
-  await click((await pointOf('[data-act="details"][data-turn="1"]'))!);
+  await click((await pointOf('[data-act="answer-more"]'))!);
+  await click(await until(() => pointOf('.answer-menu [data-act="details"][data-turn="1"]'), 5_000, "回答菜单中的收起操作"));
 
   const beforeScroll = await scene();
   await rp.evaluate(work, "window.scrollBy(0, 140)");
@@ -452,6 +460,7 @@ try {
   const narrowControls = await inCard<{ask:boolean;more:boolean;close:boolean}>(`function(){const visible=(selector)=>{const e=this.querySelector(selector),r=e?.getBoundingClientRect();return !!r&&r.width>0&&r.left>=0&&r.right<=innerWidth};return {ask:visible('[data-act="ask"]'),more:visible('[data-act="more"]'),close:visible('[data-act="dismiss"]')}}`);
   check("窄窗口钉选多个常用动作时，问、更多和关闭仍可见", narrowControls.ask && narrowControls.more && narrowControls.close, narrowControls);
 } catch (error) {
+  if (!String(error).includes("live-done")) console.error(error);
   if (!String(error).includes("live-done")) check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
 } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({

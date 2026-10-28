@@ -57,14 +57,22 @@ try {
     return await rp.evaluate(work, 'document.querySelector("#hours").dataset.clicks==="1"');
   }, 30000, "真实按钮被点一次", 50);
   check("读整页不画扫视横带", gaze === 0, gaze);
-  const bubble = await until(() => readOverlay<{height:number;width:number;font:number;radius:string;orb:boolean;text:string}>("cursor", `function(){const l=this.querySelector('.cursor.acting .label');if(!l)return null;const s=getComputedStyle(l),r=l.getBoundingClientRect();return {height:r.height,width:r.width,font:parseFloat(s.fontSize),radius:s.borderRadius,orb:!!l.querySelector('.orb-dot'),text:l.innerText}}`), 1500, "动作气泡");
+  const pageStatus = await readOverlay<{ labels: number; glow: boolean }>("cursor", `function(){return {labels:[...this.querySelectorAll('.cursor:not(.holding):not(.guiding):not(.companion) .label')].filter(l=>getComputedStyle(l).display!=='none'&&getComputedStyle(l).opacity!=='0').length,glow:!!this.querySelector('.edge.on')}}`);
+  check("执行状态不再在光标旁重复，页面没有全屏光晕", pageStatus?.labels === 0 && !pageStatus?.glow, pageStatus);
   await rp.screenshot(work, join(out, "cursor.png"));
-  check("小气泡保留原圆角，没有装饰光球", bubble.height <= 28 && bubble.width <= 200 && bubble.font === 12 && bubble.radius === "4px 12px 12px" && !bubble.orb && bubble.text.includes("营业时间"), bubble);
-  const mark = await until(() => readOverlay<{stroke:number;background:string;shadow:string;label:string;left:number;right:number;top:number;bottom:number}>("marks", `function(){const m=this.querySelector('.mark'),p=m?.querySelector('path'),l=m?.querySelector('.mark-label');if(!p||!l)return null;const s=getComputedStyle(l),r=m.getBoundingClientRect();return {stroke:parseFloat(getComputedStyle(p).strokeWidth),background:s.backgroundColor,shadow:s.boxShadow,label:l.innerText,left:r.left,right:r.right,top:r.top,bottom:r.bottom}}`), 15000, "圈画出现");
+  const mark = await until(() => readOverlay<{ strokes:number; background:string; shadow:string; label:string; left:number; right:number; top:number; bottom:number }>("marks", `function(){const m=this.querySelector('.mark.text'),l=m?.querySelector('.mark-label');if(!m||!l)return null;const s=getComputedStyle(l),r=m.getBoundingClientRect();return {strokes:m.querySelectorAll('.mark-stroke').length,background:s.backgroundColor,shadow:s.boxShadow,label:l.innerText,left:r.left,right:r.right,top:r.top,bottom:r.bottom}}`), 15000, "按文字行标注出现");
   await sleep(500);
   await rp.screenshot(work, join(out, "marks.png"));
   const target = await rp.evaluate(work, '(()=>{const r=document.querySelector("#ink").getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}})()') as {left:number;right:number;top:number;bottom:number};
-  check("细圈和无底色标签仍圈住原段落", mark.stroke <= 1.4 && mark.background === "rgba(0, 0, 0, 0)" && mark.shadow === "none" && mark.label === "耐盐雾，保存更久" && mark.left <= target.left && mark.right >= target.right && mark.top <= target.top && mark.bottom >= target.bottom, {mark,target});
+  check("文字标记贴住原段落，注释透明且无阴影", mark.strokes > 0 && mark.background === "rgba(0, 0, 0, 0)" && mark.shadow === "none" && mark.label === "耐盐雾，保存更久" && mark.left <= target.left && mark.right >= target.right && mark.top <= target.top && mark.bottom >= target.bottom, {mark,target});
+  await rp.evaluate(work, 'document.querySelector("article").style.width="230px";window.dispatchEvent(new Event("resize"));true');
+  await sleep(400);
+  const wrapped = await readOverlay<number>("marks", "function(){return this.querySelectorAll('.mark.text .mark-stroke').length}");
+  check("段落换行后标记随文字重排", !!wrapped && wrapped > mark.strokes, { before:mark.strokes, after:wrapped });
+  const labelBottom = await readOverlay<number>("marks", "function(){return this.querySelector('.mark.text .mark-label').getBoundingClientRect().bottom}");
+  const nextTop = Number(await rp.evaluate(work, 'document.querySelector("#ink").nextElementSibling.getBoundingClientRect().top'));
+  check("换行后的注释不覆盖下一段正文", labelBottom !== null && labelBottom <= nextTop, { labelBottom, nextTop });
+  await rp.screenshot(work, join(out, "marks-wrapped.png"));
   await until(async () => await rp.evaluate(panel, 'document.body.innerText.includes("已经圈出保存更久的原因")'), 15000, "任务交付");
   check("只点了一次，圈画没有额外点击", await rp.evaluate(work, 'document.querySelector("#hours").dataset.clicks==="1"'), {});
 } catch (err) { check("流程完成", false, String(err)); }

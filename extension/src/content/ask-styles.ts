@@ -113,11 +113,11 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .head .grip { width: 18px; height: 24px; margin-left: -4px; display: flex; align-items: center; justify-content: center; flex: none; color: var(--ink-mute); opacity: .45; transition: opacity .15s; }
 .head .grip svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .head:hover .grip { opacity: .75; }
-.head .title { flex: 1; min-width: 0; font-size: var(--t-body); font-weight: 600; color: var(--ink-fg); }
+.head .title { flex: 1; min-width: 0; font-size: var(--t-ui); font-weight: 500; color: var(--ink-fg-2); }
 .turn > .source { margin-bottom: 6px; padding-left: 8px; box-shadow: inset 2px 0 0 var(--mark); font-size: var(--t-meta); line-height: 1.5; color: var(--ink-fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-pending .question { color: var(--ink-fg-2); }
 .question svg { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; stroke-width: 2; color: var(--ink-mute); }
-.messages { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-hover) transparent; padding: 6px 14px 12px; max-height: min(420px, 52vh); }
+.messages { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-hover) transparent; padding: 16px 16px 20px; max-height: min(420px, 52vh); }
 .surface.resized .messages { max-height: none; }
 .turn + .turn { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ink-rule); }
 .question { font-size: var(--t-meta); line-height: 1.5; margin-bottom: 6px; color: var(--ink-mute); overflow-wrap: anywhere; white-space: pre-wrap; }
@@ -136,23 +136,23 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .answer table { display: block; max-width: 100%; overflow: auto; border-collapse: collapse; font-size: var(--t-ui); } .answer td, .answer th { padding: 4px 8px; border: 1px solid var(--ink-rule); }
 .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; margin-top: 8px; min-height: 24px; font-size: var(--t-meta); color: var(--ink-mute); }
 .meta:empty { display: none; }
-.meta .dot { opacity: .5; }
 .meta button svg { width: 12px; height: 12px; color: var(--pen); }
 .meta button { height: 24px; padding: 0 6px; margin-left: -6px; border-radius: var(--r-small); font-size: var(--t-meta); color: var(--pen); }
 .meta button + button { margin-left: 0; }
 .status.err { color: var(--warn); }
 .tag { color: var(--ink-fg-2); }
 
-.current-source { align-self: flex-start; max-width: 100%; margin: 2px 8px; color: var(--ink-fg-2); font-size: var(--t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer { display: flex; align-items: flex-end; gap: 6px; padding: 2px 2px 2px 8px; }
-button.depth { height: 24px; margin-bottom: 4px; padding: 0 9px; border-radius: 999px; background: var(--ink-hover); font-size: var(--t-meta); color: var(--ink-fg-2); }
+.foot .current-source { flex: 0 1 auto; min-width: 0; max-width: 60%; justify-content: flex-start; color: var(--ink-mute); font-size: var(--t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.current-source svg { flex:none; }
+.composer { display: flex; align-items: flex-end; gap: 6px; margin: 0 10px; padding: 5px 5px 5px 8px; border-radius: var(--r-inner); background: var(--ink-raised); }
+button.depth { height: 24px; margin-bottom: 4px; padding: 0 9px; border-radius: var(--r-small); background: transparent; font-size: var(--t-meta); color: var(--ink-mute); }
 button.depth[aria-pressed="true"] { color: var(--pen); }
-.foot { display: flex; align-items: center; gap: 2px; padding: 0 8px 4px; }
+.foot { display: flex; align-items: center; gap: 2px; padding: 0 10px 12px; }
 .foot .grow { flex: 1; }
 .foot button { height: 28px; padding: 0 8px; border-radius: var(--r-small); font-size: var(--t-meta); color: var(--ink-fg-2); }
-.foot button svg { width: 13px; height: 13px; }
+.foot button svg { width: 15px; height: 15px; }
+.foot button.icon { width: 28px; padding: 0; color:var(--ink-mute); }
 .pins { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.surface.expanded:not(.composing) .composer { border-top: 1px solid var(--ink-rule); padding-top: 6px; }
 textarea { resize: none; flex: 1; min-width: 0; height: 32px; max-height: 100px; padding: 6px 0; border: 0; background: transparent; outline: none; line-height: 20px; font-size: 14px; color: var(--ink-fg); }
 textarea::placeholder { color: var(--ink-mute); }
 button.send { width: 32px; padding: 0; border-radius: 50%; background: var(--pen); }
