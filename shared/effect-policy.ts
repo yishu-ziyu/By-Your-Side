@@ -19,7 +19,6 @@ export const WRITE_TOOLS = [
   "type_text",
   "press_key",
   "scroll",
-  "js",
   "mark",
   "clear_marks",
   "arm_event",
@@ -47,6 +46,7 @@ interface EffectDecision {
 }
 
 const READ_TOOLS = new Set([
+  "js",
   "snapshot",
   "page_text",
   "read_element",
@@ -87,14 +87,6 @@ export function classifyToolEffect(name: string, params?: Record<string, unknown
       class: "unknown",
       requiresControlGate: true,
       reason: "GET 名字不能证明业务无副作用；带着登录态的请求仍走控制闸门。",
-    };
-  }
-
-  if (name === "js") {
-    return {
-      class: "write",
-      requiresControlGate: true,
-      reason: "通用页面 JS 不能用正则证明只读。",
     };
   }
 

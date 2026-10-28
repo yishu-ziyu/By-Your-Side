@@ -879,7 +879,7 @@ export interface ToolContract {
   type_text: { params: { tabId?: number; text: string; }; data: { typed: true; /** The focused field, read from the page after typing. */ readback?: FieldReadback } };
   press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; /** 回车时焦点在单行 <input> 上：这时没变化才算回车没反应。 */ singleLineInput?: true; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
-  js: { params: { tabId?: number; code: string }; data: { value: unknown; /** 脚本里的发送动作被拦下问过用户：发了没有。 */ sendNote?: string; sendConfirmed?: true } };
+  js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
   screenshot: {
     params: {

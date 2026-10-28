@@ -25,6 +25,7 @@ const site = createServer(async (req, res) => {
 });
 await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 const click = { tool: { name: "click", args: { target: "#send", label: "发送" } } };
+const toolTexts: string[] = [];
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   ...all.map(name => ({ match: `确认场景 ${name}`, steps: name.startsWith("enter-")
@@ -32,7 +33,7 @@ const model = await startScriptedModel([
     : name.startsWith("script-")
       ? [{ tool: { name: "js", args: { code: "document.querySelector('#send').click()", purpose: "发送留言" } } }, { text: "操作结束。" }]
       : [click, { text: "操作结束。" }] })),
-]);
+], undefined, payload => { for (const m of payload.messages ?? []) if (m.role === "tool") toolTexts.push(typeof m.content === "string" ? m.content : JSON.stringify(m.content)); });
 const rp = await launchRealPath();
 const results: Array<{ name: string; pass: boolean; actual: unknown }> = [];
 try {
@@ -46,7 +47,19 @@ try {
     await until(() => rp.evaluate(work, '!!document.querySelector("#draft")'), 10_000, "练习页就绪");
     await rp.click(panel, "#conversation-new"); await until(() => rp.evaluate(panel, idle), 10_000, "新对话就绪");
     const before = posts.length;
+    const toolsBefore = toolTexts.length;
     await rp.click(panel, "#input"); await rp.typeText(panel, `确认场景 ${name}`); await rp.pressEnter(panel);
+    if (name.startsWith("script-")) {
+      await until(() => rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].some(m=>m.textContent.includes("操作结束"))'), 30_000, `${name} 只读拒绝结束`);
+      await sleep(1500);
+      const panelText = String(await rp.evaluate(panel, 'document.querySelector("#messages")?.innerText'));
+      const card = await rp.evaluate(panel, '!!document.querySelector(".send-confirm[data-state=open]")');
+      const sent = posts.length - before;
+      const pass = sent === 0 && !card && toolTexts.slice(toolsBefore).some(t => t.includes("JS 只允许读取页面"));
+      results.push({ name, pass, actual: { sent, readonly: true, card } });
+      console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(results.at(-1)?.actual));
+      continue;
+    }
     await until(() => rp.evaluate(panel, '!!document.querySelector(".send-confirm[data-state=open] .send-confirm-yes")'), 30_000, `${name} 确认卡`);
     if (name.endsWith("-changed")) await rp.evaluate(work, name.includes("ambiguous") ? 'document.querySelector("[aria-label=附注]").value="附注已变化", true' : 'document.querySelector("#draft").value="内容已变化", true');
     if (name.endsWith("-tail")) await rp.evaluate(work, `document.querySelector("#draft").value=${JSON.stringify(initial.slice(0, 120) + "尾部变化")}, true`);
@@ -61,11 +74,6 @@ try {
     await sleep(1500);
     const received = posts.slice(before);
     const expectedSend = name.endsWith("-same");
-    if (name === "script-changed") {
-      await rp.evaluate(panel, 'setTimeout(()=>location.reload(),0), true');
-      await until(() => rp.evaluate(panel, 'document.querySelector("#messages")?.innerText.includes("确认后内容、收件人或目标发生变化，未发送")'), 30_000, "重开侧栏后恢复未发送提示");
-      await sleep(1500);
-    }
     const panelText = String(await rp.evaluate(panel, 'document.querySelector("#messages")?.innerText.slice(-1200)'));
     const correctPost = expectedSend ? received.length === 1 && received[0]?.body === initial && received[0]?.recipient === "小王" && (!name.includes("ambiguous") || received[0]?.note === "附注原文") : received.length === 0;
     const correctNotice = expectedSend || name === "decline" || (panelText.includes("确认后内容、收件人或目标发生变化，未发送") && !panelText.includes("已核对页面"));

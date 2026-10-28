@@ -73,6 +73,10 @@ const ALL_CASES: Case[] = [
   { id: "tool-fetch-send", step: order("POST"), answer: "send" },
   { id: "tool-fetch-get", step: order("GET"), answer: "none" },
 ];
+const isScript = (step: unknown): boolean => {
+  const tool = step && typeof step === "object" ? (step as Record<string, unknown>).tool : null;
+  return !!tool && typeof tool === "object" && ["js", "browser_run"].includes(String((tool as Record<string, unknown>).name));
+};
 const CASES = process.env.ONLY ? ALL_CASES.filter(c => process.env.ONLY!.split(",").includes(c.id)) : ALL_CASES;
 if (!CASES.length || (process.env.ONLY && process.env.ONLY.split(",").some(id => !ALL_CASES.some(c => c.id === id)))) throw new Error("ONLY 包含未知用例，未运行不能算通过。");
 const ask = (id: string) => `用例 ${id}：把消息发出去。`;
@@ -122,9 +126,10 @@ try {
 
   for (const c of CASES) {
     if (c.id === "native-submit" || c.id.startsWith("key-enter")) { await rp.cdp.send("Page.navigate", { url }, work); await sleep(1500); }
+    const readOnly = isScript(c.step); const allBefore = posts.length;
     const before = sendPosts(); const readsBefore = orderReads; const t0 = Date.now(); const tFrom = toolTexts.length;
     await rp.click(panel, "#input"); await rp.typeText(panel, ask(c.id)); await rp.pressEnter(panel);
-    const seen = await until(async () => sendPosts() > before ? "posted" : (await box()) ?? (c.answer === "none" && (saved() > 0 || orderReads > readsBefore) ? "quiet" : null), 20_000, `${c.id} 确认框或请求`, 100).catch(() => "nothing");
+    const seen = await until(async () => sendPosts() > before ? "posted" : (await box()) ?? (readOnly && await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m=>m.textContent.includes(${JSON.stringify(answer(c.id))}))`) ? "readonly-finished" : c.answer === "none" && (saved() > 0 || orderReads > readsBefore) ? "quiet" : null), 20_000, `${c.id} 确认框或请求`, 100).catch(() => "nothing");
     await sleep(600);
     const dlg = typeof seen === "object" ? seen : null;
     const postsBeforeDecision = sendPosts() - before;
@@ -140,7 +145,7 @@ try {
     const cardAfter = await panelCard();
     await rp.screenshot(panel, join(out, `${c.id}-after.png`));
     const retryButtons = await rp.evaluate(panel, `[...document.querySelectorAll('.msg.assistant')].filter(m => m.textContent.includes(${JSON.stringify(answer(c.id))})).at(-1)?.querySelectorAll('.send-declined-card button').length ?? 0`);
-    const row = { chips: chips as Json, answerShown, expectedError: !!c.error, expectedConfirmed: c.confirmed ?? (c.answer === "send" && !c.error), retryButtons: retryButtons as Json, cardAfter, id: c.id, answer: c.answer, confirmShown: !!dlg, postsBeforeDecision, postsAfter: sendPosts() - before, dialogText: dlg?.text ?? null, buttons: dlg?.buttons ?? null, ring: dlg?.ring ?? null, pageButtons: dlg?.pageButtons ?? null, pageNotice: dlg?.pageNotice ?? null, panelCard: card, panelCardAll: cardAll, reads: orderReads - readsBefore, tool: toolTexts.slice(tFrom), secs: (Date.now() - t0) / 1000 };
+    const row = { chips: chips as Json, answerShown, expectedError: readOnly || !!c.error, readOnly, allPostsAfter: posts.length - allBefore, expectedConfirmed: !readOnly && (c.confirmed ?? (c.answer === "send" && !c.error)), retryButtons: retryButtons as Json, cardAfter, id: c.id, answer: c.answer, confirmShown: !!dlg, postsBeforeDecision, postsAfter: sendPosts() - before, dialogText: dlg?.text ?? null, buttons: dlg?.buttons ?? null, ring: dlg?.ring ?? null, pageButtons: dlg?.pageButtons ?? null, pageNotice: dlg?.pageNotice ?? null, panelCard: card, panelCardAll: cardAll, reads: orderReads - readsBefore, tool: toolTexts.slice(tFrom), secs: (Date.now() - t0) / 1000 };
     rows.push(row as never); console.log("ROW", JSON.stringify(row));
   }
 } finally {
@@ -152,11 +157,8 @@ const pass = rows.length === CASES.length && rows.every(r => {
   const hasError = Array.isArray(r.chips) && (r.chips as Array<{ error: boolean }>).some(ch => ch.error);
   if (!r.answerShown || hasError !== r.expectedError) return false;
   const tool = (r.tool as string[]).join("\n");
+  if (r.readOnly) return !r.confirmShown && r.allPostsAfter === 0 && tool.includes("JS 只允许读取页面");
   if (r.answer === "decline" && r.retryButtons !== 1) return false;
-  if (r.id === "fetch-await-send" && (tool.includes("这个请求要等用户确认后才会发出") || !tool.includes("不要重复发送"))) return false;
-  if (r.id === "fetch-reject-send" && !tool.includes("HTTP 503")) return false;
-  if (r.id === "script-error-send" && (!tool.includes("page-computation-failed") || !tool.includes("不要重复发送"))) return false;
-  if (r.id === "save") return !r.confirmShown && saved() === 1;
   if (r.id === "tool-fetch-get") return !r.confirmShown && r.postsAfter === 0 && r.reads === 1 && tool.includes("季度报表打印");
   // 卡的标题写请求真正去的网站，路径和正文收在「技术细节」里；令牌这类字段只写占位，因为卡的内容会存进侧栏记录。
   if (r.id.startsWith("tool-fetch") && !(String(r.panelCard).includes(ORDERS_HOST) && String(r.panelCardAll).includes("/api/orders") && !String(r.panelCardAll).includes("tok-SECRET-42") && String(r.panelCardAll).includes('"passengers":2'))) return false;
