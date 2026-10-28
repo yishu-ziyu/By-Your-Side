@@ -23,11 +23,17 @@ export async function mountDictationSettings(): Promise<void> {
   const status = document.getElementById("dictation-status")!;
   let selected: DictationProvider = "chrome";
   let revision = 0;
+  let verifiedRevision = -1;
   let conflict = false;
   let saving = false;
   let request: AbortController | undefined;
   const drafts = new Map<DictationProvider, string>();
+  const originalKeys = new Map<DictationProvider, string>();
+  const changedKeys = new Set<DictationProvider>();
+  let savedProvider: DictationProvider = "chrome";
+  let savedSource = "own";
   const report = (text: string, tone = "") => { status.textContent = text; status.dataset.tone = tone; };
+  const markUnsaved = () => { status.dataset.unsaved = String(selected !== savedProvider || source.value !== savedSource || changedKeys.size > 0); };
   const cancel = () => { request?.abort(); request = undefined; test.disabled = false; revision += 1; };
   const render = () => {
     document.getElementById("dictation-description")!.textContent = DICTATION_PROVIDERS[selected].description;
@@ -40,15 +46,21 @@ export async function mountDictationSettings(): Promise<void> {
     const mine = revision;
     const value: unknown = (await chrome.storage.local.get(`${DICTATION_KEY_PREFIX}${selected}`))[`${DICTATION_KEY_PREFIX}${selected}`];
     if (mine !== revision) return;
+    originalKeys.set(selected, typeof value === "string" ? value.trim() : "");
     key.value = drafts.get(selected) ?? (typeof value === "string" ? value : "");
   };
   provider.addEventListener("change", () => {
     if (!isDictationProvider(provider.value)) return;
     drafts.set(selected, key.value);
-    cancel(); selected = provider.value; key.value = ""; report("尚未保存"); render(); void loadKey();
+    cancel(); selected = provider.value; key.value = ""; report("尚未保存"); render(); markUnsaved(); void loadKey();
   });
-  source.addEventListener("change", () => { cancel(); render(); report("尚未保存"); });
-  key.addEventListener("input", () => { cancel(); drafts.set(selected, key.value); report("尚未保存"); });
+  source.addEventListener("change", () => { cancel(); render(); report("尚未保存"); markUnsaved(); });
+  key.addEventListener("input", () => {
+    cancel(); drafts.set(selected, key.value);
+    if (key.value.trim() === (originalKeys.get(selected) ?? "")) changedKeys.delete(selected);
+    else changedKeys.add(selected);
+    report("尚未保存"); markUnsaved();
+  });
   test.addEventListener("click", async () => {
     cancel();
     const mine = revision;
@@ -62,22 +74,23 @@ export async function mountDictationSettings(): Promise<void> {
           await chrome.tabs.create({ url: chrome.runtime.getURL("voice-permission.html") });
           throw new Error("请在打开的页面允许麦克风，然后再次测试。");
         }
-        if (mine === revision) report("浏览器支持，麦克风已授权。请用左侧麦克风说一句话验证识别。", "ok");
+        if (mine === revision) { verifiedRevision = mine; report("浏览器支持，麦克风已授权。请用左侧麦克风说一句话验证识别。", "ok"); }
       } else if (selected === "stepfun-realtime") {
         const credential = source.value === "voice" ? (await readVoiceDictationKey()).key : key.value;
         if (!credential.trim() && source.value === "voice") throw new Error("请先配置语音对话密钥，或改为单独填写密钥。");
         const connection = await openRealtimeDictation(credential, controller.signal, () => {}, () => {});
         connection.cancel();
-        if (mine === revision) report("Realtime 3 听写连接成功。请保存后用左侧麦克风试说一句。", "ok");
+        if (mine === revision) { verifiedRevision = mine; report("Realtime 3 听写连接成功。请保存后用左侧麦克风试说一句。", "ok"); }
       } else {
         await transcribeDictation(selected, key.value, dictationWav([new ArrayBuffer(48_000)]), controller.signal);
-        if (mine === revision) report("连接成功。请保存后用左侧麦克风试说一句。", "ok");
+        if (mine === revision) { verifiedRevision = mine; report("连接成功。请保存后用左侧麦克风试说一句。", "ok"); }
       }
     } catch (error) {
       if (mine === revision) report(error instanceof Error ? error.message : "连接失败，请重试。", "err");
     } finally { if (mine === revision) { test.disabled = false; request = undefined; } }
   });
   save.addEventListener("click", async () => {
+    const tested = verifiedRevision === revision;
     cancel();
     if (conflict) { report("其他窗口修改了语音转文字设置，请重新打开此页后再保存。", "err"); return; }
     saving = true; save.disabled = true;
@@ -85,7 +98,16 @@ export async function mountDictationSettings(): Promise<void> {
       const values: Record<string, unknown> = { [DICTATION_CONFIG_KEY]: { provider: selected, keySource: source.value === "voice" ? "voice" : "own" } };
       if (selected !== "chrome" && !(selected === "stepfun-realtime" && source.value === "voice")) values[`${DICTATION_KEY_PREFIX}${selected}`] = key.value.trim();
       await chrome.storage.local.set(values);
-      report(selected !== "chrome" && !(selected === "stepfun-realtime" && source.value === "voice") && !key.value.trim() ? "已保存并清除密钥。填写密钥后才能使用此服务。" : "已保存，下次点击左侧麦克风时生效。", "ok");
+      if (selected !== "chrome" && !(selected === "stepfun-realtime" && source.value === "voice")) {
+        originalKeys.set(selected, key.value.trim());
+        changedKeys.delete(selected);
+      }
+      savedProvider = selected; savedSource = source.value; markUnsaved();
+      const message = selected !== "chrome" && !(selected === "stepfun-realtime" && source.value === "voice") && !key.value.trim()
+        ? "已保存并清除密钥。填写密钥后才能使用此服务。"
+        : tested ? "已保存，下次点击左侧麦克风时生效。刚才的检查已通过，识别仍需试说。"
+          : "已保存，下次点击左侧麦克风时生效。识别服务尚未验证。";
+      report(changedKeys.size ? `${message} 其他服务的密钥修改仍未保存。` : message, "ok");
     } catch { report("保存失败，请重试。", "err"); }
     finally { save.disabled = false; saving = false; }
   });
@@ -100,6 +122,10 @@ export async function mountDictationSettings(): Promise<void> {
   });
   addEventListener("pagehide", cancel);
   const initial = await readDictationSettings();
-  if (revision === 0) { selected = initial.provider; provider.value = selected; source.value = initial.keySource; await loadKey(); render(); }
+  if (revision === 0) {
+    selected = initial.provider; savedProvider = initial.provider; savedSource = initial.keySource;
+    provider.value = selected; source.value = initial.keySource; await loadKey(); render(); markUnsaved();
+    report(selected !== "chrome" && !initial.key ? "未就绪：缺少识别服务密钥。" : "识别服务尚未验证。可先测试，再用左侧麦克风试说一句。");
+  }
   await updateSourceNote();
 }

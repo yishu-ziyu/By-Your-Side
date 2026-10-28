@@ -3,6 +3,7 @@ import { TRACE_MAX_AGE_DAYS } from '../../../shared/run-trace-core.js';
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from '../../../shared/voice-capture-core.js';
 import { CUSTOM_PERSONA_MAX_CHARS } from '../../../shared/voice.js';
 import { CUSTOM_TRANSLATION_STYLE_MAX_CHARS } from '../../../shared/translation-style.js';
+import { BROWSE_INDUCE_AFTER_STEPS, BROWSE_INDUCE_EVERY_MS } from '../shared/browse-habits.js';
 
 const toggleRow = (id: string, title: string, desc: string) => `
   <label class="row">
@@ -43,6 +44,7 @@ export function renderSettings(): void {
     <p id="main-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="fast-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="backup-status" class="settings-status" role="status" aria-live="polite"></p>
+    <p id="connection-draft-note" class="settings-note" hidden>连接有未保存的修改。<button id="connection-draft-return" type="button" class="btn btn-quiet">返回继续填写</button></p>
     <p class="settings-note">备用模型接手时，会话会发送给它的服务商。</p>
     <div class="surface rows">
       <div class="row">
@@ -77,7 +79,7 @@ export function renderSettings(): void {
   <section class="sx" aria-labelledby="voice-title">
     <div class="sx-head">
       <h2 id="voice-title">语音对话</h2>
-      <p class="sx-sub">用声音和助手交谈。先选语音模型，下面的密钥和音色跟着它变。<span id="voice-key-note"></span></p>
+      <p class="sx-sub">用声音和助手交谈。语音会发给所选服务商，按账号或套餐规则使用。先选语音模型，下面的密钥和音色跟着它变。<span id="voice-key-note"></span></p>
     </div>
     <div class="surface rows">
       <div class="row stack">
@@ -115,7 +117,7 @@ export function renderSettings(): void {
   <section class="sx" aria-labelledby="speech-title">
     <div class="sx-head">
       <h2 id="speech-title">朗读结果</h2>
-      <p class="sx-sub">按住说话交代的事做完后，念给你听。和上面的语音对话无关。</p>
+      <p class="sx-sub">按住说话交代的事做完后，念给你听。朗读文字发给 MiniMax，按订阅规则使用。和上面的语音对话无关。</p>
     </div>
     <div class="surface rows">
       <div class="row">
@@ -126,7 +128,7 @@ export function renderSettings(): void {
           <button id="speech-clear" type="button" class="btn btn-quiet" hidden>清除</button>
         </span>
       </div>
-      ${toggleRow("ptt-speak", "念出按住说话的结果", "念回答的第一句和「留给你的」。要用 MiniMax 订阅密钥（sk-cp- 开头）。")}
+      ${toggleRow("ptt-speak", "念出按住说话的结果", '念回答的第一句和「留给你的」。要用 MiniMax 订阅密钥（sk-cp- 开头）。<span id="ptt-speak-state"></span>')}
     </div>
     <p id="speech-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
@@ -199,9 +201,9 @@ export function renderSettings(): void {
   <section class="sx" aria-labelledby="habits-title">
     <div class="sx-head"><h2 id="habits-title">习惯</h2></div>
     <div class="surface rows">
-      ${toggleRow("browse-habits", "从我的浏览里学习习惯", "发现你反复做的事，再询问是否记住。")}
+      ${toggleRow("browse-habits", "从我的浏览里学习习惯", '<span id="browse-state"></span>')}
     </div>
-    <details class="settings-detail"><summary>记录哪些内容，怎样删除？</summary><p>记下网页标题、网址、你点的按钮和链接、搜索词和填写的内容，交给快速模型找出你反复做的事。密码栏和卡号栏的值不记，助手替你做事时的操作也不记。同一件事在 2 天里出现过，就问你要不要记住。记录在侧栏「记忆」里能看、能删。</p></details>
+    <details class="settings-detail" open><summary>记录哪些内容，怎样删除？</summary><p><strong>本机记什么：</strong>网页标题、网址、点击内容、搜索词和填写内容。会尝试排除密码、卡号和验证码字段，但不能保证识别所有敏感内容；助手替你做事时的操作不记。</p><p><strong>什么时候发：</strong>累计至少 ${BROWSE_INDUCE_AFTER_STEPS} 步、距离上次归纳至少 ${BROWSE_INDUCE_EVERY_MS / 60_000} 分钟时，记录可能发给快速模型；没有快速模型时发给主模型，可能产生费用。同一件事出现在 2 天里时，再问你要不要记住。</p><p><strong>暂停和删除：</strong>暂停保留已有记录；已发出的请求可能仍返回。侧栏「记忆 → 看到的操作」可查看最近 50 步并清除记录；清除不会删除另存的记忆。「主动建议」是使用偏好里的独立开关，也可能发送页面摘录。</p></details>
     <p id="habits-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="sx" aria-labelledby="memory-backup-title">
@@ -288,6 +290,7 @@ export function renderSettings(): void {
         <span class="grow"></span>
         <button id="model-save" type="button" class="btn btn-primary">验证并保存</button>
       </div>
+      <p class="d-hint">测试会向服务商发送一次模型请求，可能产生少量费用。</p>
       <p id="model-status" class="settings-status" role="status" aria-live="polite"></p>
     </div>
   </dialog>
