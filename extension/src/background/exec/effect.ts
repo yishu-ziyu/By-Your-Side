@@ -246,7 +246,9 @@ async function clickDownloads(tabId: number, since: number): Promise<EffectDownl
 
   for (;;) {
     // 扩展自己写的记忆备份不是点击引起的下载。
-    items = (await Promise.resolve(chrome.downloads.search({ startedAfter })).catch(() => [])).filter(i => !isOwnBackupDownload(i));
+    const found = await Promise.resolve(chrome.downloads.search({ startedAfter })).catch(() => []);
+    const owned = await Promise.all(found.map(isOwnBackupDownload));
+    items = found.filter((_, index) => !owned[index]);
     const pendingDownload = items.some(i => i.state === "in_progress");
     const docs = (networkRingFor(tabId)?.entries ?? []).filter(e => e.startedAt >= since && e.resourceType === "document");
     const mayBecomeDownload = items.length === 0 && docs.some(e => e.failed !== undefined || e.canceled || e.endedTs === undefined);

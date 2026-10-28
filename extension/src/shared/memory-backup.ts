@@ -53,8 +53,34 @@ export interface MemoryBackup {
   storage: Partial<Record<(typeof BACKUP_STORAGE_KEYS)[number], unknown>>;
 }
 
-export function isOwnBackupDownload(item: { url?: string; finalUrl?: string; byExtensionId?: string }): boolean {
-  return item.byExtensionId === chrome.runtime.id && ((item.url ?? "").startsWith(BACKUP_URL_PREFIX) || (item.finalUrl ?? "").startsWith(BACKUP_URL_PREFIX));
+const BACKUP_DOWNLOAD_KEY = "memory_backup_download";
+let startingBackupDownload: Promise<number> | null = null;
+
+async function downloadUrlHash(url: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url));
+  return [...new Uint8Array(hash)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function startBackupDownload(options: chrome.downloads.DownloadOptions): Promise<number> {
+  const urlHash = await downloadUrlHash(options.url);
+  const started = chrome.downloads.download(options).then(async id => {
+    await chrome.storage.local.set({ [BACKUP_DOWNLOAD_KEY]: { id, urlHash } });
+    return id;
+  });
+  startingBackupDownload = started;
+  try { return await started; }
+  finally { if (startingBackupDownload === started) startingBackupDownload = null; }
+}
+
+export async function isOwnBackupDownload(item: { id: number; url?: string; finalUrl?: string; byExtensionId?: string }): Promise<boolean> {
+  const url = [item.url, item.finalUrl].find(value => value?.startsWith(BACKUP_URL_PREFIX));
+  if (!url) return false;
+  if (item.byExtensionId !== undefined) return item.byExtensionId === chrome.runtime.id;
+  // onCreated can precede Chrome's extension attribution; use the actual download() result, never the MIME prefix alone.
+  await startingBackupDownload?.catch(() => undefined);
+  const saved: unknown = (await chrome.storage.local.get(BACKUP_DOWNLOAD_KEY))[BACKUP_DOWNLOAD_KEY];
+  return !!saved && typeof saved === "object" && "id" in saved && saved.id === item.id
+    && "urlHash" in saved && saved.urlHash === await downloadUrlHash(url);
 }
 
 export function backupFileName(installAt: number): string {
