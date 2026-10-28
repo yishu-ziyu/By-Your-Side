@@ -4,7 +4,9 @@
  *
  * 真扩展、隔离无头 Chrome、本机练习页、本机脚本模型。脚本模型只证明请求里带了什么，不证明真实回答好坏。
  *   npx tsx scripts/acceptance/real-path/reading-card-context.mts --headless [--live] [--model=服务商/模型]
- * --live：换成真实模型（默认 gpt-6-luna），另判回答本身说出了「这个决定」指的是换锌版——这层意思只写在前一段里。
+ * --live：换成真实模型（默认 gpt-6-luna），另判回答本身说出了「这个决定」指的是换锌版——这层意思只写在前一段里；
+ *   再在卡片里追问作者的证据：证据只写在全文末尾的附录里，相邻段落里没有。卡片要交给侧栏同一个助手读全文，
+ *   卡上显示助手在做哪一步，答案写回卡片；点「继续聊天」，侧栏就是那个会话。
  *
  * 判据：
  *   div 排版  请求里有选区前一段的线索句和小节标题。
@@ -146,25 +148,23 @@ try {
     await rp.typeText(work, "作者的证据是什么？");
     await rp.pressEnter(work);
     let previous = "", stable = Date.now();
+    const steps: string[] = [];
     const missing = await until(async () => {
-      const value = String((await rp.cdp.send("Runtime.callFunctionOn", {objectId, functionDeclaration:`function(){return this.querySelectorAll('.answer')[1]?.textContent??''}`, returnByValue:true}, work)).result.value ?? "");
+      const [value, status] = (await rp.cdp.send("Runtime.callFunctionOn", {objectId, functionDeclaration:`function(){const t=this.querySelectorAll('.turn')[1];return [this.querySelectorAll('.answer')[1]?.textContent??'', t?.querySelector('.status')?.textContent??'']}`, returnByValue:true}, work)).result.value as [string, string];
+      if (status && steps.at(-1) !== status) steps.push(status);
       if (value !== previous) { previous = value; stable = Date.now(); }
-      return value.length > 10 && Date.now()-stable > 3000 ? value : undefined;
-    }, 120_000, "缺失证据回答", 500);
-    check("真模型：材料缺少证据时明确说明", /(没有|未|缺少|不足|无法|未提供|未给出|并无|不包含|看不到)[^。！？\n]{0,24}(证据|数据|实验|依据|证明|支持)|(证据|数据|实验|依据)[^。！？\n]{0,24}(没有|不足|缺|未|无法)/.test(missing), {answer:missing.slice(0,500)});
-    await rp.screenshot(work, join(out, "missing-evidence.png"));
+      return value.length > 10 && !/正在|助手在做/.test(status) && Date.now()-stable > 3000 ? value : undefined;
+    }, 240_000, "卡片里的证据回答", 500);
+    check("真模型：卡片交给助手做时显示在做哪一步", steps.some((s) => s.startsWith("助手在做")), { steps });
+    check("真模型：卡片里写回助手读全文找到的问卷依据", /73\s*(名|人)/.test(missing) && /问卷/.test(missing), {answer:missing.slice(0,500)});
+    await rp.screenshot(work, join(out, "card-agent-evidence.png"));
     const handoff = (await rp.cdp.send("Runtime.callFunctionOn", {objectId, functionDeclaration:`function(){const r=this.querySelector('[data-act="handoff"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}}`, returnByValue:true}, work)).result.value as {x:number;y:number};
     for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", {type, button:"left", clickCount:1, ...handoff}, work);
-    await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes('作者的证据是什么') && document.body.innerText.includes('材料')`)) || undefined, 30_000, "侧栏收到问答");
-    await rp.cdp.send("Emulation.setFocusEmulationEnabled", {enabled:true}, panel);
-    await rp.evaluate(panel, `document.querySelector('#input').focus()`);
-    await rp.typeText(panel, "读全文找依据");
-    await rp.pressEnter(panel);
     const continued = await until(async () => {
       const body = String(await rp.evaluate(panel, `document.body.innerText`));
-      return /73\s*(名|人)/.test(body) && /问卷/.test(body) ? body : undefined;
-    }, 180_000, "侧栏读全文找依据", 1000);
-    check("真模型：侧栏承接原问题并找到全文中的问卷", /73\s*(名|人)/.test(continued) && /问卷/.test(continued), {excerpt:continued.slice(-1200)});
+      return body.includes('作者的证据是什么') && /73\s*(名|人)/.test(body) ? body : undefined;
+    }, 30_000, "侧栏是助手做事的那个会话", 1000).catch(async () => String(await rp.evaluate(panel, `document.body.innerText`)));
+    check("真模型：继续聊天转到助手做事的那个会话", continued.includes('作者的证据是什么') && /73\s*(名|人)/.test(continued), {excerpt:continued.slice(-1200)});
     await rp.screenshot(panel, join(out, "handoff-evidence.png"));
     throw new Error("live-done");
   }

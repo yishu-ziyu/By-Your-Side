@@ -1684,6 +1684,12 @@ return receipt;
       return;
     }
 
+    if (message.type === 'reading_import') {
+      await this.get(normalizeConversationId(message.conversationId))?.runtime.session.importReading(message.transcript);
+
+      return;
+    }
+
     if (message.type === 'reading_route') {
       let route: 'reading' | 'task' = 'task';
       try {

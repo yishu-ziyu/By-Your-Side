@@ -1,4 +1,4 @@
-import type { ReadingEvent, ReadingTranscript } from '../../shared/reading.js';
+import { READING_ACT_MARKER, type ReadingEvent, type ReadingTranscript } from '../../shared/reading.js';
 import { SideCallError } from './side-judgment.js';
 
 type ReadingGenerate = (transcript: ReadingTranscript, signal: AbortSignal, onText: (text: string) => void) => Promise<string>;
@@ -26,6 +26,7 @@ export class ReadingRequests {
 
     const publish = (state: ReadingEvent['state'], error?: string) => {
       if (!current()) return;
+      if (state === 'done' && transcript.canAct && text.trim() === READING_ACT_MARKER) return emit({type: 'reading_event', threadId, requestId, state, text: '', act: true});
       emit(error ? {type: 'reading_event', threadId, requestId, state, text, error} : {type: 'reading_event', threadId, requestId, state, text});
     };
 

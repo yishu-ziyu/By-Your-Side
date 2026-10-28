@@ -989,7 +989,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
 
-    if (msg.type === "reading_request" || msg.type === "reading_cancel" || msg.type === "reading_route") return isReadingClientMessage(msg) ? msg : null;
+    if (msg.type === "reading_request" || msg.type === "reading_cancel" || msg.type === "reading_route" || msg.type === "reading_import") return isReadingClientMessage(msg) ? msg : null;
 
     if (msg.type === "nudge_request" || msg.type === "nudge_validate") return isNudgeClientMessage(msg) ? msg : null;
 

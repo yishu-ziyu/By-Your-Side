@@ -1,3 +1,6 @@
+import { answerMarkdown } from '../../../shared/answer-cards.js';
+import type { PageContext } from '../../../shared/protocol.js';
+import type { TaskView } from '../../../shared/task-view.js';
 import { isReadingTranscript, isReadingTurnSource, READING_ANSWER_LIMIT, READING_ROUTE_SELECTION_LIMIT, READING_TURN_LIMIT, type ReadingEvent, type ReadingRoute, type ReadingRouteResult, type ReadingSource, type ReadingTurnSource } from '../../../shared/reading.js';
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
@@ -11,6 +14,12 @@ const ROUTE_WAIT_MS = 12_000;
 
 /** 预取的回答这么久没被认领就取消（分流最多等 ROUTE_WAIT_MS）。 */
 const PREFETCH_MS = ROUTE_WAIT_MS + 8_000;
+
+/** 助手的任务停下后等这么久再收尾：目标核对和交付可能随后才到。 */
+const SETTLE_MS = 800;
+
+/** 当前步骤：和侧栏任务栏一样取正在做的动作，没有就是上一步。 */
+const stepOf = (view: TaskView) => (view.active.at(-1)?.action ?? view.lastAction?.action ?? '正在处理').slice(0, 200);
 
 /** 两次拼出的问答是否逐字相同：只比发给模型的内容，不比请求号、时间和转侧栏的记账。 */
 const transcriptKey = (record: ReadingRecord) => JSON.stringify({...record, requestId: undefined, updatedAt: undefined, handoffError: undefined});
@@ -51,6 +60,10 @@ type Dependencies = {
   select: (conversationId: string, tabId: number) => void;
   /** 说出来的问题，回答用按住说话同一个声音念。 */
   voice: PttVoice;
+  /** 交给助手：和侧栏打字发送一样进这个会话，空闲就开新任务。返回是否送出。 */
+  act: (conversationId: string, text: string, context: PageContext) => Promise<boolean>;
+  /** 停下这个会话的任务：和侧栏「停止」同一条路。 */
+  stopTask: (conversationId: string) => void;
 };
 
 /** One document owns each record. No per-conversation listeners or shared output tab. */
@@ -71,6 +84,8 @@ export function installReading(deps: Dependencies) {
    * 判成问这段、卡片发来同一个问题、拼出的问答逐字相同时认领它；判成任务、又按下说话、拼出来不一样或过期就取消。
    */
   let prefetched: { threadId: string; requestId: string; key: string; latest?: ReadingEvent; timer: ReturnType<typeof setTimeout>; at: number } | null = null;
+  /** 交给助手的那一问在跟哪个会话的任务：deliveries 是助手的交付，text 是最后一段没走交付的回答。 */
+  const runs = new Map<string, { threadId: string; sawRun: boolean; settle?: ReturnType<typeof setTimeout>; deliveries: string[]; text: string }>();
 
   /** 预取是否接上、为什么没接上，写进扩展日志：首字变慢时分得清是听写慢、分流慢，还是预取没被认领。 */
   const notePrefetch = (outcome: string, extra: Record<string, unknown> = {}) => console.info('[reading] prefetch', JSON.stringify({outcome, ...extra}));
@@ -121,16 +136,80 @@ export function installReading(deps: Dependencies) {
     if (composed.correction) record.correctedTurns = [...(record.correctedTurns ?? []), composed.candidate.turns.length - 1];
     record.interruptedTurn = undefined;
     record.depth = composed.candidate.depth;
+    record.canAct = true;
     record.turns = composed.candidate.turns;
     record.transferredConversationId = undefined;
     record.handoffRequestId = undefined;
   };
 
-  /** 回答进度落到这一轮上，推给页面，写完一句就念。 */
+  /** 回答进度落到这一轮上，推给页面，写完一句就念。回答模型说要动手，就交给助手。 */
   const apply = (record: ReadingRecord, event: ReadingEvent) => {
+    if (event.act) return handToAgent(record);
     Object.assign(record.turns.at(-1)!, {state: event.state, answer: event.text, error: event.error});
     publish(record);
     say(record);
+  };
+
+  const agentTurn = (record: ReadingRecord) => readingBusy(record) && record.turns.at(-1)?.agent ? record.turns.at(-1) : undefined;
+
+  const failAgent = (record: ReadingRecord, error: string) => {
+    const turn = agentTurn(record);
+
+    if (!turn) return;
+    if (record.agentConversationId) runs.delete(record.agentConversationId);
+    Object.assign(turn, {state: 'error', error, step: undefined});
+    publish(record);
+  };
+
+  /** 把助手会话还没看过的问答交给它：进助手的上下文，也进侧栏的对话记录。 */
+  const syncAgent = async (record: ReadingRecord, conversationId: string) => {
+    const unseen = record.turns.slice(record.agentSynced ?? 0).filter(turn => !turn.agent);
+
+    if (record.agentSynced === undefined || unseen.length) {
+      deps.send({type: 'reading_import', requestId: crypto.randomUUID(), conversationId, transcript: {threadId: record.threadId, source: record.source, turns: unseen}});
+      await deps.import(conversationId, {...record, turns: unseen});
+    }
+
+    record.agentSynced = record.turns.length;
+  };
+
+  const dispatchAgent = async (record: ReadingRecord) => {
+    const conversationId = record.agentConversationId!, turn = agentTurn(record);
+
+    if (!turn) return;
+    await syncAgent(record, conversationId);
+    const source = [...record.turns].reverse().find(t => t.source)?.source ?? record.source;
+    runs.set(conversationId, {threadId: record.threadId, sawRun: false, deliveries: [], text: ''});
+    const context: PageContext = {tabId: record.source.tabId, title: record.source.title, url: record.source.url, selection: {text: source.text.slice(0, 2000)}};
+
+    if (!await deps.act(conversationId, turn.question, context)) failAgent(record, '未连接到助手。内容已保留，连接恢复后可重试。');
+  };
+
+  /** 这一问要动手：交给侧栏同一个助手。这张卡还没有助手会话就先开一个，侧栏不跟着切过去。 */
+  const handToAgent = (record: ReadingRecord) => {
+    hush(record.threadId);
+    Object.assign(record.turns.at(-1)!, {agent: true, state: 'streaming', answer: '', error: undefined, step: '交给助手'});
+    publish(record);
+
+    if (record.agentConversationId) return void dispatchAgent(record).catch(() => failAgent(record, '没能交给助手。再试一次。'));
+    record.agentRequestId ??= crypto.randomUUID();
+
+    if (!deps.send({type: 'conversation_create', requestId: record.agentRequestId, title: `阅读 · ${record.source.text.slice(0, 28)}`})) failAgent(record, '未连接到助手。内容已保留，连接恢复后可重试。');
+  };
+
+  const finishAgent = (record: ReadingRecord, view: TaskView) => {
+    const conversationId = record.agentConversationId!, run = runs.get(conversationId), turn = agentTurn(record);
+    runs.delete(conversationId);
+
+    if (!turn) return;
+    turn.step = undefined;
+
+    if (!turn.answer.trim() && run?.text.trim()) turn.answer = answerMarkdown(run.text).slice(0, READING_ANSWER_LIMIT);
+
+    if (view.state === 'aborted') turn.state = 'stopped';
+    else if (view.state === 'error' || !turn.answer.trim()) Object.assign(turn, {state: 'error', error: '助手没做完。点「继续聊天」在侧栏看过程。'});
+    else turn.state = 'done';
+    publish(record);
   };
 
   const toPage = (record: ReadingRecord, message: object) => {
@@ -224,8 +303,12 @@ export function installReading(deps: Dependencies) {
 
   const stop = (record: ReadingRecord, announce = true) => {
     if (!record.requestId || !readingBusy(record)) return;
-    deps.send({type: 'reading_cancel', threadId: record.threadId, requestId: record.requestId});
-    record.turns.at(-1)!.state = 'stopped';
+    const turn = record.turns.at(-1)!;
+
+    if (!turn.agent) deps.send({type: 'reading_cancel', threadId: record.threadId, requestId: record.requestId});
+    else if (record.agentConversationId && runs.delete(record.agentConversationId)) deps.stopTask(record.agentConversationId);
+    turn.state = 'stopped';
+    turn.step = undefined;
     hush(record.threadId);
 
     if (announce) publish(record);
@@ -249,7 +332,8 @@ export function installReading(deps: Dependencies) {
 
       if (raw.type === 'reading_get') return {ok: true, record};
 
-      if (raw.type === 'reading_leave') { for (const r of records.values()) if (ownedDocument(r)) stop(r);
+      // 离开这一页时，交给助手的任务照常在侧栏会话里做完。
+      if (raw.type === 'reading_leave') { for (const r of records.values()) if (ownedDocument(r) && !agentTurn(r)) stop(r);
 
  return {ok: true}; }
 
@@ -314,11 +398,22 @@ export function installReading(deps: Dependencies) {
       if (raw.type === 'reading_handoff') {
         await opened;
 
-        if (readingBusy(record)) throw new Error('先停止回答，或等回答写完，再在侧栏继续。');
+        if (readingBusy(record) && !agentTurn(record)) throw new Error('先停止回答，或等回答写完，再在侧栏继续。');
 
         if (record.transferredConversationId) { opening = false; deps.select(record.transferredConversationId, record.source.tabId);
 
  return {ok: true, record}; }
+
+        // 交给过助手的卡转到那个会话，补上它没看过的问答。
+        if (record.agentConversationId) {
+          await syncAgent(record, record.agentConversationId);
+          opening = false;
+          deps.select(record.agentConversationId, record.source.tabId);
+          record.transferredConversationId = record.agentConversationId;
+          publish(record);
+
+          return {ok: true, record};
+        }
 
         record.handoffError = undefined;
         record.handoffRequestId ??= crypto.randomUUID();
@@ -337,7 +432,7 @@ export function installReading(deps: Dependencies) {
   });
 
   const dropTab = (tabId: number) => {
-    void ready.then(() => { for (const [key, r] of records) if (r.source.tabId === tabId) {stop(r); records.delete(key);}
+    void ready.then(() => { for (const [key, r] of records) if (r.source.tabId === tabId) {if (!agentTurn(r)) stop(r); records.delete(key);}
 
  persist(); });
   };
@@ -355,7 +450,7 @@ export function installReading(deps: Dependencies) {
       cancelPrefetch('pressed_again');
       void ready.then(() => {
         for (const r of records.values()) {
-          if (r.source.tabId !== tabId || !readingBusy(r)) continue;
+          if (r.source.tabId !== tabId || !readingBusy(r) || agentTurn(r)) continue;
           r.interruptedTurn = r.turns.length - 1;
           stop(r);
         }
@@ -406,6 +501,12 @@ export function installReading(deps: Dependencies) {
       void ready.then(() => {
         const record = records.get(event.threadId);
 
+        if (record && record.agentRequestId === event.requestId && event.state === 'error') {
+          record.agentRequestId = undefined; failAgent(record, event.error ?? '没能交给助手。再试一次。');
+
+ return;
+        }
+
         if (record && record.handoffRequestId === event.requestId && event.state === 'error') {
           opening = false; record.handoffError = event.error ?? '没能转到侧栏。再试一次。'; record.handoffRequestId = undefined; publish(record);
 
@@ -416,15 +517,60 @@ export function installReading(deps: Dependencies) {
 
  return; }
 
-        if (!record || record.requestId !== event.requestId || !readingBusy(record)) return;
+        if (!record || record.requestId !== event.requestId || !readingBusy(record) || agentTurn(record)) return;
         apply(record, event);
       });
+    },
+    /** 交给助手的那一问：跟着它的任务视图写步骤，收下它的交付，任务停下时收尾。 */
+    server(msg: ServerMessage) {
+      const conversationId = msg.type === 'task_view' ? msg.view.conversationId : msg.type === 'agent_event' ? msg.conversationId : undefined;
+      const run = conversationId ? runs.get(conversationId) : undefined;
+
+      if (!conversationId || !run) return;
+      const record = records.get(run.threadId);
+
+      if (!record || record.agentConversationId !== conversationId || !agentTurn(record)) { runs.delete(conversationId);
+
+ return; }
+      const turn = agentTurn(record)!;
+
+      if (msg.type === 'agent_event') {
+        const event = msg.event;
+
+        if (event.kind === 'user_delivery' && event.delivery.kind !== 'ack') {
+          run.deliveries.push(answerMarkdown(event.delivery.text));
+          turn.answer = run.deliveries.join('\n\n').slice(0, READING_ANSWER_LIMIT);
+          publish(record);
+        } else if (event.kind === 'text_delta') run.text += event.delta;
+        else if (event.kind === 'tool_start') run.text = '';
+
+        return;
+      }
+
+      if (msg.type !== 'task_view') return;
+      const view = msg.view;
+      clearTimeout(run.settle);
+
+      if (view.state === 'running') { run.sawRun = true; turn.step = stepOf(view); publish(record); }
+      else if (view.state === 'paused') { turn.step = '页面现在归你，操作完在侧栏点「交还」'; publish(record); }
+      else if (run.sawRun && ['idle', 'aborted', 'error', 'interrupted'].includes(view.state)) run.settle = setTimeout(() => finishAgent(record, view), SETTLE_MS);
     },
     disconnected() {
       void ready.then(() => { for (const r of records.values()) if (readingBusy(r)) { Object.assign(r.turns.at(-1)!, {state: 'error', error: '连接中断，已保留回答。恢复连接后可以重试。'}); publish(r); } });
     },
     created(message: Extract<ServerMessage, {type: 'conversation_created'}>) {
       void ready.then(async () => {
+        const asking = [...records.values()].find(r => r.agentRequestId === message.requestId);
+
+        if (asking) {
+          asking.agentRequestId = undefined;
+          asking.agentConversationId = message.conversation.id;
+          persist();
+          await dispatchAgent(asking).catch(() => failAgent(asking, '没能交给助手。再试一次。'));
+
+          return;
+        }
+
         const record = [...records.values()].find(r => r.handoffRequestId === message.requestId);
 
         if (!record || record.transferredConversationId === message.conversation.id) return;

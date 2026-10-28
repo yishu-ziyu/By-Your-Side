@@ -901,7 +901,7 @@ function boot(): void {
       item.node.hidden = hasDetails && !item.detailed;
 
       const deep = deepTurns.has(index) || (index === lastIndex && record?.depth === 'deep');
-      const metaKey = [turn.state, turn.error ?? '', hasDetails, item.detailed, interrupted, deep, index === lastIndex, sending].join('|');
+      const metaKey = [turn.state, turn.error ?? '', turn.agent ?? '', turn.step ?? '', hasDetails, item.detailed, interrupted, deep, index === lastIndex, sending].join('|');
 
       if (metaKey !== item.metaKey) {
         item.metaKey = metaKey;
@@ -914,7 +914,8 @@ function boot(): void {
           parts.push(span);
         };
 
-        if (turn.state === 'pending' || turn.state === 'streaming') say('正在回答…');
+        if (turn.agent && (turn.state === 'pending' || turn.state === 'streaming')) say(`助手在做：${turn.step ?? '交给助手'}`);
+        else if (turn.state === 'pending' || turn.state === 'streaming') say('正在回答…');
         else if (turn.state === 'error') say(turn.error ?? '回答没有完成，可以重试。', true);
         else if (interrupted) say('已停在这里，按新要求接着答');
         else if (turn.state === 'stopped') say('已中止，内容已保留');
