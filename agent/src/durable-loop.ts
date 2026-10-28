@@ -1,6 +1,6 @@
 /**
  * 会话循环走 pi-durable 的 Harness：每一轮、每一次工具调用、插话和后续都先写入存储，再交给界面。
- * 扩展重载或浏览器被杀掉时，没做完的运行留在存储里；重开后 continueStored() 从上次提交接着做。
+ * 扩展重载后保留对话与宿主检查点；旧调度任务先取消，用户继续时重新读取页面。
  * 会改页面的工具不标成可重做：执行到一半被打断时，模型只看到「被打断」，不会自动再点一次。
  */
 import type { Context } from "@earendil-works/chord";
@@ -277,8 +277,6 @@ export class DurableAgentLoop implements AgentLoop {
 
   resume(): Promise<void> { return this.submitInput(CONTINUE_TEXT); }
 
-  continueStored(): void { this.harness?.resume(); }
-
   private async waitForIdle(): Promise<void> {
     await this.conversation?.waitForIdle(ctx);
   }
@@ -397,6 +395,12 @@ export class DurableAgentLoop implements AgentLoop {
       },
     }, ctx);
     this.conversation = await this.harness.root(ctx);
+    // Mark every recovered task before enabling the scheduler: even a passive write or wait can resume stale work.
+    // The host checkpoint remains available for an explicit continuation with a fresh page observation.
+    const recovered = await this.harness.inspect(ctx);
+    for (const task of recovered.tasks) await this.harness.abortTask(task.record.id, ctx);
+    for (const submission of recovered.submissions) await this.harness.abortSubmission(submission.id, ctx);
+    if (recovered.tasks.length) await this.harness.waitForIdle(ctx);
     await this.configure();
     await this.loadTranscript();
     const watch = await watchEvents(this.harness, this.conversation.id, ctx);
