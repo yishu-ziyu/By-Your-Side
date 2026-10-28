@@ -6,12 +6,15 @@ import { BROWSE_ON_KEY } from "./browse-habits.js";
 
 /** 离屏宿主 → 后台：记忆库刚写过，排一次备份。 */
 export const MEMORY_CHANGED = "memory_backup_changed";
+export const MEMORY_RESTORED = "memory_backup_restored";
 
 /** chrome.storage.local：这次安装的开始时间（毫秒）。备份文件名带上它，重装后的新安装不会覆盖旧安装留下的那份。 */
 export const BACKUP_INSTALL_KEY = "memory_backup_install";
 
 /** chrome.storage.local：最近一次备份 { at, file }，设置页显示。 */
 export const BACKUP_LAST_KEY = "memory_backup_last";
+export const BACKUP_ERROR_KEY = "memory_backup_error";
+export const MAX_BACKUP_BYTES = 8 * 1024 * 1024;
 
 export const BACKUP_FOLDER = "By-Your-Side";
 
@@ -29,6 +32,7 @@ export const BACKUP_STORAGE_KEYS = [BROWSE_ON_KEY] as const;
  * 恢复时也只认这几份，别的键一律拒绝。
  */
 const BACKUP_DOCUMENTS = ["memories", "tasks", "site-notes", "learned-operations"] as const;
+export function isBackupDocumentKey(key: string): boolean { return BACKUP_DOCUMENTS.some(name => name === key); }
 
 const FORMAT = "by-your-side-memory-backup";
 const VERSION = 1;
@@ -36,6 +40,8 @@ const VERSION = 1;
 /** 与 inproc/document-idb.ts 同一个库；那边的锁名是 `${DB_NAME}:${key}`，恢复时用同名锁，避免和宿主的读改写交错。 */
 const DB_NAME = "sideagent-memory";
 const STORE = "kv";
+export const MEMORY_RESTORE_JOURNAL = "memory-restore-journal-v1";
+export const MEMORY_BACKUP_DIRTY = "memory-backup-dirty-v1";
 
 export interface MemoryBackup {
   format: typeof FORMAT;
@@ -47,8 +53,34 @@ export interface MemoryBackup {
   storage: Partial<Record<(typeof BACKUP_STORAGE_KEYS)[number], unknown>>;
 }
 
-export function isOwnBackupDownload(item: { url?: string; finalUrl?: string }): boolean {
-  return (item.url ?? "").startsWith(BACKUP_URL_PREFIX) || (item.finalUrl ?? "").startsWith(BACKUP_URL_PREFIX);
+const BACKUP_DOWNLOAD_KEY = "memory_backup_download";
+let startingBackupDownload: Promise<number> | null = null;
+
+async function downloadUrlHash(url: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url));
+  return [...new Uint8Array(hash)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function startBackupDownload(options: chrome.downloads.DownloadOptions): Promise<number> {
+  const urlHash = await downloadUrlHash(options.url);
+  const started = chrome.downloads.download(options).then(async id => {
+    await chrome.storage.local.set({ [BACKUP_DOWNLOAD_KEY]: { id, urlHash } });
+    return id;
+  });
+  startingBackupDownload = started;
+  try { return await started; }
+  finally { if (startingBackupDownload === started) startingBackupDownload = null; }
+}
+
+export async function isOwnBackupDownload(item: { id: number; url?: string; finalUrl?: string; byExtensionId?: string }): Promise<boolean> {
+  const url = [item.url, item.finalUrl].find(value => value?.startsWith(BACKUP_URL_PREFIX));
+  if (!url) return false;
+  if (item.byExtensionId !== undefined) return item.byExtensionId === chrome.runtime.id;
+  // onCreated can precede Chrome's extension attribution; use the actual download() result, never the MIME prefix alone.
+  await startingBackupDownload?.catch(() => undefined);
+  const saved: unknown = (await chrome.storage.local.get(BACKUP_DOWNLOAD_KEY))[BACKUP_DOWNLOAD_KEY];
+  return !!saved && typeof saved === "object" && "id" in saved && saved.id === item.id
+    && "urlHash" in saved && saved.urlHash === await downloadUrlHash(url);
 }
 
 export function backupFileName(installAt: number): string {
@@ -84,6 +116,7 @@ export async function readMemoryDocuments(): Promise<Record<string, string>> {
     const [keys, values] = await Promise.all([settle(store.getAllKeys()), settle(store.getAll())]);
     const out: Record<string, string> = {};
 
+    if (keys.includes(MEMORY_RESTORE_JOURNAL)) throw new Error("记忆恢复尚未完成，暂不能读取或备份。");
     keys.forEach((key, i) => { if (isBackupDocument(key) && typeof values[i] === "string") out[key] = values[i]; });
 
     return out;
@@ -92,33 +125,112 @@ export async function readMemoryDocuments(): Promise<Record<string, string>> {
   }
 }
 
-/** 逐份整体替换，每份都在宿主同名的锁里写。 */
-async function writeMemoryDocuments(documents: Record<string, string>): Promise<void> {
-  const db = await openDb();
-
-  try {
-    for (const [key, text] of Object.entries(documents)) {
-      await navigator.locks.request(`${DB_NAME}:${key}`, () => new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE, "readwrite", { durability: "strict" });
-        tx.objectStore(STORE).put(text, key);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error ?? new Error("记忆没能保存"));
-        tx.onabort = () => reject(tx.error ?? new Error("记忆没能保存"));
-      }));
-    }
-  } finally {
-    db.close();
-  }
+function withDocumentLocks<T>(fn: () => Promise<T>, index = 0): Promise<T> {
+  const keys: readonly string[] = [...BACKUP_DOCUMENTS, BROWSE_ON_KEY];
+  const key = keys[index];
+  return key ? navigator.locks.request(`${DB_NAME}:${key}`, () => withDocumentLocks(fn, index + 1)) : fn();
 }
 
-export async function collectBackup(): Promise<MemoryBackup> {
-  const documents = await readMemoryDocuments();
-  const stored = await chrome.storage.local.get([...BACKUP_STORAGE_KEYS]);
-  const storage: MemoryBackup["storage"] = {};
+export function writeBrowseSetting(value: boolean): Promise<void> {
+  return navigator.locks.request(`${DB_NAME}:${BROWSE_ON_KEY}`, async () => {
+    if (await readRestoreJournal()) throw new Error("记忆恢复尚未完成，请稍后重试。");
+    await markMemoryBackupDirty();
+    await chrome.storage.local.set({ [BROWSE_ON_KEY]: value });
+  });
+}
 
-  for (const key of BACKUP_STORAGE_KEYS) if (stored[key] !== undefined) storage[key] = stored[key];
+type RestoreJournal = { documents: Record<string, string>; browsePresent: boolean; browseValue?: boolean };
 
-  return { format: FORMAT, version: VERSION, savedAt: Date.now(), extensionVersion: chrome.runtime.getManifest().version, documents, storage };
+async function replaceMemoryDocuments(documents: Record<string, string>, journal: RestoreJournal | null, markDirty = false): Promise<void> {
+  const db = await openDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite", { durability: "strict" });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("记忆没能保存"));
+      tx.onabort = () => reject(tx.error ?? new Error("记忆没能保存"));
+      const store = tx.objectStore(STORE);
+      try {
+        for (const document of BACKUP_DOCUMENTS) {
+          if (Object.hasOwn(documents, document)) store.put(documents[document], document);
+          else store.delete(document);
+        }
+        if (journal) store.put(journal, MEMORY_RESTORE_JOURNAL);
+        else store.delete(MEMORY_RESTORE_JOURNAL);
+        if (markDirty) store.put(crypto.randomUUID(), MEMORY_BACKUP_DIRTY);
+      } catch (error) { tx.abort(); reject(error); }
+    });
+  } finally { db.close(); }
+}
+
+async function readRestoreJournal(): Promise<RestoreJournal | null> {
+  const db = await openDb();
+  try {
+    const value: unknown = await settle(db.transaction(STORE).objectStore(STORE).get(MEMORY_RESTORE_JOURNAL));
+    if (value === undefined) return null;
+    if (!isRecord(value) || !isRecord(value.documents) || typeof value.browsePresent !== "boolean" || value.browsePresent && typeof value.browseValue !== "boolean") throw new Error("恢复记录损坏，不能覆盖已有记忆。");
+    const documents: Record<string, string> = {};
+    for (const [key, text] of Object.entries(value.documents)) {
+      if (!isBackupDocument(key) || typeof text !== "string") throw new Error("恢复记录损坏，不能覆盖已有记忆。");
+      documents[key] = text;
+    }
+    return { documents, browsePresent: value.browsePresent, ...(value.browsePresent && typeof value.browseValue === "boolean" ? { browseValue: value.browseValue } : {}) };
+  } finally { db.close(); }
+}
+
+async function rollbackRestore(journal: RestoreJournal): Promise<void> {
+  if (journal.browsePresent) await chrome.storage.local.set({ [BROWSE_ON_KEY]: journal.browseValue });
+  else await chrome.storage.local.remove(BROWSE_ON_KEY);
+  await replaceMemoryDocuments(journal.documents, null);
+}
+
+export async function recoverPendingMemoryRestore(): Promise<void> {
+  await withDocumentLocks(async () => { const journal = await readRestoreJournal(); if (journal) await rollbackRestore(journal); });
+}
+
+export async function markMemoryBackupDirty(): Promise<void> {
+  const db = await openDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite", { durability: "strict" });
+      tx.objectStore(STORE).put(crypto.randomUUID(), MEMORY_BACKUP_DIRTY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("待备份状态未保存"));
+      tx.onabort = () => reject(tx.error ?? new Error("待备份状态未保存"));
+    });
+  } finally { db.close(); }
+}
+
+export async function memoryBackupDirty(): Promise<string | null> {
+  const db = await openDb();
+  try { const value: unknown = await settle(db.transaction(STORE).objectStore(STORE).get(MEMORY_BACKUP_DIRTY)); return typeof value === "string" ? value : null; }
+  finally { db.close(); }
+}
+
+export async function clearMemoryBackupDirty(expected: string): Promise<boolean> {
+  const db = await openDb();
+  try {
+    return await new Promise<boolean>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite", { durability: "strict" });
+      const store = tx.objectStore(STORE);
+      const read = store.get(MEMORY_BACKUP_DIRTY);
+      let cleared = false;
+      read.onsuccess = () => { if (read.result === expected) { store.delete(MEMORY_BACKUP_DIRTY); cleared = true; } };
+      tx.oncomplete = () => resolve(cleared);
+      tx.onerror = () => reject(tx.error ?? new Error("待备份状态未更新"));
+      tx.onabort = () => reject(tx.error ?? new Error("待备份状态未更新"));
+    });
+  } finally { db.close(); }
+}
+
+export function collectBackup(): Promise<MemoryBackup> {
+  return withDocumentLocks(async () => {
+    const documents = await readMemoryDocuments();
+    const stored = await chrome.storage.local.get([...BACKUP_STORAGE_KEYS]);
+    const storage: MemoryBackup["storage"] = {};
+    for (const key of BACKUP_STORAGE_KEYS) if (stored[key] !== undefined) storage[key] = stored[key];
+    return { format: FORMAT, version: VERSION, savedAt: Date.now(), extensionVersion: chrome.runtime.getManifest().version, documents, storage };
+  });
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -138,6 +250,7 @@ function isDocumentText(text: string): boolean {
 
 /** 用户选的文件：形状不对就返回原因，不写任何东西。 */
 export function parseBackup(text: string): MemoryBackup | string {
+  if (new TextEncoder().encode(text).byteLength > MAX_BACKUP_BYTES) return "备份文件超过 8 MB，无法恢复。";
   let raw: unknown;
 
   try {
@@ -190,14 +303,30 @@ export function countBackup(documents: Record<string, string>): { memories: numb
 }
 
 export async function restoreBackup(backup: MemoryBackup): Promise<void> {
-  await writeMemoryDocuments(backup.documents);
-
-  if (Object.keys(backup.storage).length) await chrome.storage.local.set(backup.storage);
+  await withDocumentLocks(async () => {
+    const existing = await readRestoreJournal();
+    if (existing) await rollbackRestore(existing);
+    const documents = await readMemoryDocuments();
+    const stored = await chrome.storage.local.get(BROWSE_ON_KEY);
+    const browsePresent = Object.hasOwn(stored, BROWSE_ON_KEY);
+    const browseValue = stored[BROWSE_ON_KEY];
+    if (browsePresent && typeof browseValue !== "boolean") throw new Error("浏览设置无效，不能安全恢复。");
+    const journal: RestoreJournal = { documents, browsePresent, ...(browsePresent && typeof browseValue === "boolean" ? { browseValue } : {}) };
+    await replaceMemoryDocuments(backup.documents, journal);
+    try {
+      if (Object.keys(backup.storage).length) await chrome.storage.local.set(backup.storage);
+      await replaceMemoryDocuments(backup.documents, null, true);
+    } catch (error) {
+      try { await rollbackRestore(journal); } catch { throw new Error("恢复未完成，原数据已保留在恢复记录中；重新打开扩展后会尝试还原。"); }
+      throw error;
+    }
+  });
 }
 
 /** UTF-8 文本 → base64；大文本分段转，避免 String.fromCharCode 参数过多。 */
 export function backupDataUrl(text: string): string {
   const bytes = new TextEncoder().encode(text);
+  if (bytes.byteLength > MAX_BACKUP_BYTES) throw new Error("记忆备份超过 8 MB，无法保存。");
   let binary = "";
 
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));

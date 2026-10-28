@@ -18,7 +18,7 @@ import {
 } from "../inproc/shared.js";
 import { thinkingProfile } from "../../../shared/model-capabilities.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
-import { BACKUP_FOLDER, BACKUP_LAST_KEY, MEMORY_CHANGED, countBackup, parseBackup, readMemoryDocuments, restoreBackup, type MemoryBackup } from "../shared/memory-backup.js";
+import { BACKUP_ERROR_KEY, BACKUP_FOLDER, BACKUP_LAST_KEY, BACKUP_STORAGE_KEYS, MAX_BACKUP_BYTES, MEMORY_CHANGED, MEMORY_RESTORED, countBackup, parseBackup, readMemoryDocuments, restoreBackup, writeBrowseSetting, type MemoryBackup } from "../shared/memory-backup.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
@@ -1704,7 +1704,7 @@ function bindToggle(input: HTMLInputElement, key: string, status: HTMLElement, s
   input.addEventListener("change", () => {
     const enabled = input.checked;
 
-    chrome.storage.local.set({ [key]: enabled }).then(
+    (key === BROWSE_ON_KEY ? writeBrowseSetting(enabled) : chrome.storage.local.set({ [key]: enabled })).then(
       () => setStatus(status, said(enabled), "ok"),
       (error) => {
         input.checked = !enabled;
@@ -1875,26 +1875,31 @@ const setMemoryBackupStatus = (text: string, tone?: "ok" | "err") => {
 };
 
 async function showBackupState(): Promise<void> {
-  const current = countBackup(await readMemoryDocuments().catch(() => ({})));
-  const last = (await chrome.storage.local.get(BACKUP_LAST_KEY))[BACKUP_LAST_KEY] as { at?: unknown; file?: unknown } | undefined;
+  let documents: Record<string, string>;
+  try { documents = await readMemoryDocuments(); }
+  catch { backupDesc.textContent = "记忆恢复尚未完成或恢复记录无法读取；请勿卸载扩展，先检查恢复状态。"; return; }
+  const state = await chrome.storage.local.get([BACKUP_LAST_KEY, BACKUP_ERROR_KEY]);
+  const last = state[BACKUP_LAST_KEY] as { at?: unknown; file?: unknown } | undefined;
 
-  if (!current.memories && !current.tasks) {
+  if (!Object.keys(documents).length) {
     backupDesc.textContent = `重装过扩展？下载文件夹的 ${BACKUP_FOLDER} 里有「记忆备份-日期.json」，选最近的一份可以恢复之前的记忆。`;
   } else if (typeof last?.at === "number" && typeof last.file === "string") {
     backupDesc.textContent = `记忆每次变化都会自动另存到下载文件夹，不上传。上次备份：${new Date(last.at).toLocaleString()}，文件「${last.file}」。`;
   } else {
     backupDesc.textContent = `卸载扩展会删掉记忆，所以记忆每次变化都会自动另存到下载文件夹的 ${BACKUP_FOLDER} 里，不上传。重装后在这里选那份文件。`;
   }
+  if (typeof state[BACKUP_ERROR_KEY] === "string") backupDesc.textContent += ` ${state[BACKUP_ERROR_KEY]}`;
 }
 
 async function applyBackup(backup: MemoryBackup): Promise<void> {
   await restoreBackup(backup);
   // 恢复直接写库、不经宿主，这次安装的备份要另外排一次，否则恢复的内容要等下一次记忆变化才备份。
   void chrome.runtime.sendMessage({ type: MEMORY_CHANGED }).catch(() => {});
+  void chrome.runtime.sendMessage({ type: MEMORY_RESTORED }).catch(() => {});
   backupPending = null;
   backupConfirm.hidden = true;
   const restored = countBackup(backup.documents);
-  setMemoryBackupStatus(`已恢复 ${restored.memories} 条记忆、${restored.tasks} 条过往任务。重新打开侧栏的「记忆」就能看到。`, "ok");
+  setMemoryBackupStatus(`已恢复 ${restored.memories} 条记忆、${restored.tasks} 条过往任务。`, "ok");
   await showBackupState();
 }
 
@@ -1905,19 +1910,28 @@ backupFile.addEventListener("change", async () => {
   backupFile.value = "";
 
   if (!file) return;
+  backupPending = null;
+  backupConfirm.hidden = true;
+  if (file.size > MAX_BACKUP_BYTES) { setMemoryBackupStatus("备份文件超过 8 MB，无法恢复。", "err"); return; }
 
   try {
     const backup = parseBackup(await file.text());
 
     if (typeof backup === "string") { setMemoryBackupStatus(backup, "err"); return; }
 
-    const current = countBackup(await readMemoryDocuments());
+    const documents = await readMemoryDocuments();
+    const storage = await chrome.storage.local.get([...BACKUP_STORAGE_KEYS]);
+    const names: Record<string, string> = { memories: "记忆", tasks: "过往任务", "site-notes": "站点笔记", "learned-operations": "已保存做法" };
+    const existing = Object.keys(documents).map(key => names[key]).filter(Boolean);
+    const removed = Object.keys(documents).filter(key => !(key in backup.documents)).map(key => names[key]).filter(Boolean);
+    const changesSetting = BACKUP_STORAGE_KEYS.some(key => key in backup.storage && key in storage && backup.storage[key] !== storage[key]);
 
-    if (current.memories || current.tasks) {
+    if (existing.length || changesSetting) {
       const incoming = countBackup(backup.documents);
       backupPending = backup;
       backupConfirm.hidden = false;
-      setMemoryBackupStatus(`现在有 ${current.memories} 条记忆、${current.tasks} 条过往任务，恢复会用备份里的 ${incoming.memories} 条记忆、${incoming.tasks} 条过往任务替换它们。确认就点「覆盖并恢复」。`);
+      const removedText = removed.length ? `备份没有${removed.join("、")}，恢复会清除这些内容。` : "";
+      setMemoryBackupStatus(`恢复会替换当前的${existing.length ? existing.join("、") : "浏览设置"}${changesSetting && existing.length ? "和浏览设置" : ""}；备份包含 ${incoming.memories} 条记忆、${incoming.tasks} 条过往任务。${removedText}确认就点「覆盖并恢复」。`);
 
       return;
     }
@@ -1938,4 +1952,7 @@ backupConfirm.addEventListener("click", async () => {
   }
 });
 
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && (BACKUP_LAST_KEY in changes || BACKUP_ERROR_KEY in changes)) void showBackupState();
+});
 void showBackupState();

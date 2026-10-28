@@ -218,7 +218,10 @@ function listenDownloads(): void {
   if (!chrome.downloads?.onCreated?.addListener) return;
   downloadsListening = true;
   chrome.downloads.onCreated.addListener((item) => {
-    if (isOwnBackupDownload(item)) return;
+    void onCreated(item).catch(() => {});
+  });
+  async function onCreated(item: chrome.downloads.DownloadItem): Promise<void> {
+    if (await isOwnBackupDownload(item)) return;
     const now = Date.now();
 
     for (const [id, pending] of unboundChromeDownloads) if (now - pending.at > UNBOUND_TTL_MS) unboundChromeDownloads.delete(id);
@@ -230,7 +233,7 @@ function listenDownloads(): void {
     }
 
     unboundChromeDownloads.set(item.id, { url: item.url, finalUrl: item.finalUrl, at: now });
-  });
+  }
   chrome.downloads.onChanged.addListener((delta) => {
     if (delta.state || delta.error || delta.filename || delta.danger) void refreshChromeDownload(delta.id);
   });
