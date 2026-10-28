@@ -2,8 +2,9 @@
  * 读文章时用按住说话问选中的那段：阅读卡在这段旁边回答并念出来，念到一半按住右 ⌥ 改口，在同一张卡里接着答；
  * 选着文字时说的话按整句意思分流：问这段的进阅读卡，要做事的带着选中的文字交给助手。
  *   npx tsx scripts/acceptance/real-path/voice-reading.mts --headless
+ *   加 --first-only 只验首次问答；--idle-ms=305000 验备用连接到期后在原段再次开口。
  *
- * 真扩展、隔离无头 Chrome、真维基文章（中文《熵》）、真模型（默认测试模型）、真听写（Step Plan）、真念（MiniMax 订阅 Key）。
+ * 真扩展、隔离无头 Chrome、真维基文章（中文《熵》）、真模型（默认测试模型）、真听写（Realtime 3）、真念（MiniMax 订阅 Key）。
  * 人声是 say 合成的，经离屏页的麦克风流放进去；念出的声音从离屏页的 AudioContext 取原始数据。
  * 两者按时间戳和录屏合成一个带声音的视频（voice-reading.mp4），画面上标明这两点：它不能证明真麦克风、扬声器和外放下的停声。
  *
@@ -37,6 +38,10 @@ import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
 
+const firstOnly = process.argv.includes('--first-only');
+const idleMs = Number(process.argv.find(a => a.startsWith('--idle-ms='))?.slice(10) ?? 0);
+if (!Number.isFinite(idleMs) || idleMs < 0 || idleMs > 360_000) throw new Error('--idle-ms 必须在 0–360000 之间');
+const dictationEvents: Array<{ at: number; socketId: string; type: string; transcript?: string }> = [];
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const out = join(REPO, "out/acceptance/real-path", `${stamp}-voice-reading`);
 await mkdir(out, { recursive: true });
@@ -85,7 +90,7 @@ const fixture = scripted ? await startScriptedModel([
   { match: '"question":"这里没看懂', steps: [{ text: OLD, chunkDelayMs: 150 }] },
 ]) : null;
 const plan = await loadModelPlan(DEFAULT_TEST_MODEL);
-const planKey = (await readFile(join(homedir(), ".sideagent", "step-plan.key"), "utf8")).trim();
+const planKey = (await readFile(join(homedir(), ".sideagent", "stepfun-api.key"), "utf8")).trim();
 // SAFETY: Pi 的 auth.json 里 minimax-cn 存 { type: "api_key", key }。
 const speechKey = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { key?: string }>)["minimax-cn"]?.key ?? "";
 
@@ -99,7 +104,7 @@ let inExtension: <T>(expression: string) => Promise<T | null> = async () => null
 
 type Check = { name: string; pass: boolean | null; detail: Json };
 const checks: Check[] = [];
-const record: Record<string, Json> = {};
+const record: Record<string, Json> = { mode: { firstOnly, idleMs } };
 const check = (name: string, pass: boolean | null, detail: Json) => {
   checks.push({ name, pass, detail });
   console.log(`${pass === null ? "NOT RUN" : pass ? "PASS" : "FAIL"} ${name} ${JSON.stringify(detail).slice(0, 600)}`);
@@ -123,7 +128,7 @@ const spoken: Array<{ name: Said; text: string; downAt: number; sayAt: number; u
  * 全程每 50 ms 一份：BYS 光标个数、阅读卡宿主个数、胶囊和卡片是否显示、卡片引用与待答一轮、每轮回答字数、正在写的轮数、陪伴阶段。
  * both：这时允许胶囊和卡片同时在（话交给助手的那两句）。
  */
-type Sample = { t: number; bodies: number | null; hosts: number; capsule: boolean; visible: boolean; quote: string; pending: string | null; lens: number[]; writing: number; phase: string | null; both: boolean };
+type Sample = { t: number; bodies: number | null; hosts: number; capsule: boolean; visible: boolean; quote: string; marked: string; pending: string | null; lens: number[]; writing: number; phase: string | null; both: boolean };
 const samples: Sample[] = [];
 let sampler: ReturnType<typeof setInterval> | undefined;
 let allowBoth = false;
@@ -142,16 +147,17 @@ type CardState = { visible: boolean; quote: string; turns: Turn[]; pending: stri
 const CARD_STATE = `function(){
   const s=this.querySelector('.surface');
   const r=s&&!s.hidden?s.getBoundingClientRect():null;
+  const source=this.querySelector('.current-source');
   const turns=[...this.querySelectorAll('article.turn:not(.voice-pending)')].map(t=>{const a=t.querySelector('.answer');const q=t.querySelector('.question');return {question:q?.textContent??'',spoken:!!q?.querySelector('svg'),tag:q?.querySelector('.tag')?.textContent??'',answer:a?.innerText??'',status:t.querySelector('.status')?.textContent??'',hidden:!a||a.hidden,clipped:!!a&&a.scrollHeight>a.clientHeight+4,source:t.querySelector('.source')?.textContent??''};});
   const p=this.querySelector('article.turn.voice-pending');
-  return {visible:!!r,quote:this.querySelector('.head .q')?.textContent??'',turns,pending:p?(p.querySelector('.question')?.textContent??''):null,rect:r&&{left:r.left,top:r.top,right:r.right,bottom:r.bottom}};
+  return {visible:!!r,quote:source?.getClientRects().length?source.getAttribute('title')?.replace(/^回到选中的原文：/,'')??'':'',turns,pending:p?(p.querySelector('.question')?.textContent??''):null,rect:r&&{left:r.left,top:r.top,right:r.right,bottom:r.bottom}};
 }`;
 /** 采样用的轻量读数：不取回答全文，只取字数。 */
 const CARD_SAMPLE = `function(){
   const s=this.querySelector('.surface');
   const turns=[...this.querySelectorAll('article.turn:not(.voice-pending)')];
   const p=this.querySelector('article.turn.voice-pending');
-  return {visible:!!s&&!s.hidden,quote:this.querySelector('.head .q')?.textContent??'',pending:p?(p.querySelector('.question')?.textContent??''):null,
+  return {visible:!!s&&!s.hidden,quote:this.querySelector('.current-source')?.getAttribute('title')?.replace(/^回到选中的原文：/,'')??'',marked:[...(CSS.highlights?.get(${JSON.stringify(HIGHLIGHT)})??[])].map(r=>r.toString()).join(''),pending:p?(p.querySelector('.question')?.textContent??''):null,
     lens:turns.map(t=>(t.querySelector('.answer')?.textContent??'').length),
     writing:turns.filter(t=>/正在回答/.test(t.querySelector('.status')?.textContent??'')).length};
 }`;
@@ -190,6 +196,31 @@ try {
   // ── 配置：真模型、听写 key、念的订阅 key；直接写扩展存储，和设置页存的是同一份 ──
   const inproc = await rp.attach((await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 30_000, "离屏页")).targetId);
   consoleOf.set(inproc, "inproc");
+  await rp.cdp.send("Network.enable", {}, inproc);
+  // 听写连接的握手、报错和关闭：连不上时看得出是鉴权、限流还是网络。
+  for (const method of ["Network.webSocketCreated", "Network.webSocketHandshakeResponseReceived", "Network.webSocketFrameError", "Network.webSocketClosed"]) {
+    rp.cdp.onEvent(method, (m: { sessionId?: string; params: { requestId: string; url?: string; response?: { status?: number; statusText?: string }; errorMessage?: string } }) => {
+      if (m.sessionId !== inproc) return;
+      sockets.push({ at: Date.now(), event: method.replace("Network.webSocket", ""), id: m.params.requestId, ...(m.params.url ? { url: m.params.url.replace(/\?.*/, "") } : {}), ...(m.params.response ? { status: m.params.response.status ?? null } : {}), ...(m.params.errorMessage ? { error: m.params.errorMessage } : {}) });
+    });
+  }
+  rp.cdp.onEvent("Network.requestWillBeSent", (message: { sessionId?: string; params?: { request?: { url: string; postData?: string } } }) => {
+    const request = message.params?.request;
+    if (message.sessionId !== inproc || !request?.url.includes("minimax")) return;
+    try { speechRequests.push({ at: Date.now(), text: String((JSON.parse(request.postData ?? "{}") as { text?: unknown }).text ?? "") }); } catch { /* 不是 JSON 就不记 */ }
+  });
+
+
+  rp.cdp.onEvent("Network.webSocketFrameReceived", (m: {sessionId?: string; params: {requestId: string; response: {payloadData: string}}}) => {
+    if (m.sessionId !== inproc) return;
+    try {
+      const value: unknown = JSON.parse(m.params.response.payloadData);
+      if (!value || typeof value !== 'object' || !('type' in value) || typeof value.type !== 'string') return;
+      if (!['session.created', 'session.updated', 'conversation.item.input_audio_transcription.completed', 'error'].includes(value.type)) return;
+      dictationEvents.push({at: Date.now(), socketId: m.params.requestId, type: value.type,
+        ...('transcript' in value && typeof value.transcript === 'string' ? {transcript: value.transcript} : {})});
+    } catch { /* 非 JSON 音频帧不作为听写事件。 */ }
+  });
   await rp.cdp.send("Runtime.enable", {}, inproc);
   const worker = (await rp.targets()).find((t) => t.type === "service_worker" && t.url.endsWith("/background.js"));
   if (worker) { const session = await rp.attach(worker.targetId); consoleOf.set(session, "background"); await rp.cdp.send("Runtime.enable", {}, session); }
@@ -200,15 +231,11 @@ try {
   const { targetId: settingsTarget } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html` }) as { targetId: string };
   const settings = await rp.attach(settingsTarget);
   await until(async () => await rp.evaluate(settings, "typeof chrome !== 'undefined' && !!chrome.storage?.local") || undefined, 15_000, "设置页");
-  await rp.evaluate(settings, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
-  await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget });
-  record.model = fixture ? "scripted" : DEFAULT_TEST_MODEL;
-
   // 离屏页：麦克风换成「设备静音 + 脚本放的人声」，和产品录音同一采样率（不同采样率的流接不进去），每次按住新开一路（松开时产品会停掉那一路）；念声的原始样本和停声时刻记下来。
   await rp.evaluate(inproc, `(() => {
     const ctx = new AudioContext({ sampleRate: ${RATE} }); let mic = null;
-    const device = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia = async (c) => { const d = await device(c); mic = ctx.createMediaStreamDestination(); ctx.createMediaStreamSource(d).connect(mic); return mic.stream; };
+    const device = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); window.__micOpens = [];
+    navigator.mediaDevices.getUserMedia = async (c) => { window.__micOpens.push(Date.now()); const d = await device(c); mic = ctx.createMediaStreamDestination(); ctx.createMediaStreamSource(d).connect(mic); return mic.stream; };
     window.__say = async (b64) => { await ctx.resume(); const buf = await ctx.decodeAudioData(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer);
       const src = ctx.createBufferSource(); src.buffer = buf; src.connect(mic); src.start(); return Date.now(); };
     window.__played = []; window.__closed = {};
@@ -228,6 +255,10 @@ try {
     const close = AudioContext.prototype.close;
     AudioContext.prototype.close = function () { if (this.__id && !window.__closed[this.__id]) window.__closed[this.__id] = Date.now(); return close.call(this); };
     return true; })()`);
+  await rp.evaluate(settings, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
+  await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget });
+  record.model = fixture ? "scripted" : DEFAULT_TEST_MODEL;
+
   const drainAudio = async () => {
     // SAFETY: 表达式返回上面记下的两份数据。
     const got = await rp.evaluate(inproc, `(() => { const p = window.__played.splice(0); return { p, c: window.__closed }; })()`) as { p: Array<{ ctx: string; at: number; b64: string }>; c: Record<string, number> };
@@ -236,20 +267,6 @@ try {
   };
   pump = setInterval(() => { void drainAudio().catch(() => {}); }, 300);
   speechResult = async () => JSON.parse(String(await rp.evaluate(inproc, `document.documentElement.dataset.pttSpeech ?? "null"`))) as Json;
-  await rp.cdp.send("Network.enable", {}, inproc);
-  // 听写连接的握手、报错和关闭：连不上时看得出是鉴权、限流还是网络。
-  for (const method of ["Network.webSocketCreated", "Network.webSocketHandshakeResponseReceived", "Network.webSocketFrameError", "Network.webSocketClosed"]) {
-    rp.cdp.onEvent(method, (m: { sessionId?: string; params: { requestId: string; url?: string; response?: { status?: number; statusText?: string }; errorMessage?: string } }) => {
-      if (m.sessionId !== inproc) return;
-      sockets.push({ at: Date.now(), event: method.slice(18), id: m.params.requestId, ...(m.params.url ? { url: m.params.url.replace(/\?.*/, "") } : {}), ...(m.params.response ? { status: m.params.response.status ?? null } : {}), ...(m.params.errorMessage ? { error: m.params.errorMessage } : {}) });
-    });
-  }
-  rp.cdp.onEvent("Network.requestWillBeSent", (message: { sessionId?: string; params?: { request?: { url: string; postData?: string } } }) => {
-    const request = message.params?.request;
-    if (message.sessionId !== inproc || !request?.url.includes("minimax")) return;
-    try { speechRequests.push({ at: Date.now(), text: String((JSON.parse(request.postData ?? "{}") as { text?: unknown }).text ?? "") }); } catch { /* 不是 JSON 就不记 */ }
-  });
-
   // ── 文章和侧栏 ──
   await rp.cdp.send("Page.navigate", { url: ARTICLE }, work);
   await until(async () => (await rp.evaluate(work, `document.readyState === "complete" && !!document.querySelector("[data-sideagent-ask]") && [...document.querySelectorAll("p")].some(p => p.innerText.includes(${JSON.stringify(P1)}))`)) || undefined, 45_000, "维基《熵》与阅读卡宿主");
@@ -428,16 +445,16 @@ try {
     const first = after.find((s) => (s.lens[turn] ?? 0) > 0);
     const before = after.filter((s) => !first || s.t < first.t);
     const cardAt = before.find((s) => s.visible)?.t ?? first?.t;
-    const quoteAt = after.find((s) => s.visible && quotes(s.quote, paragraph))?.t;
-    const waitingSeen = before.some((s) => s.visible && quotes(s.quote, paragraph) && s.pending !== null && (s.phase === "transcribing" || s.phase === "thinking"));
+    const quoteAt = after.find((s) => s.visible && quotes(s.marked, paragraph))?.t;
+    const waitingSeen = before.some((s) => s.visible && quotes(s.marked, paragraph) && s.pending !== null && (s.phase === "transcribing" || s.phase === "thinking"));
     const pendings = before.map((s) => s.pending).filter((p): p is string => p !== null);
     const dictatingFirst = pendings.findIndex((p) => p.includes("听写中"));
     // 分流很快时，待答一轮可能在两次采样之间就被正式一轮接替：那时正式一轮的问题就是听到的话。
     const heardShown = dictatingFirst >= 0 && pendings.slice(dictatingFirst).some((p) => p.includes(heardHint));
     const heardAfter = dictatingFirst >= 0 && (heardShown || !!(await card()).turns[turn]?.question.includes(heardHint));
-    const latency = { releaseToCardMs: cardAt ? cardAt - entry.upAt : null, releaseToQuoteMs: quoteAt ? quoteAt - entry.upAt : null, releaseToFirstCharMs: first ? first.t - entry.upAt : null };
+    const latency = { releaseToCardMs: cardAt ? cardAt - entry.upAt : null, releaseToMarkMs: quoteAt ? quoteAt - entry.upAt : null, releaseToFirstCharMs: first ? first.t - entry.upAt : null };
     record[`latency_${label}`] = latency;
-    check(`等答（${label}）：松开后第一个回答字出来前，卡片已展开、引用这段，待答一轮先写「听写中…」再换成听到的话，BYS 在听写或在想`,
+    check(`等答（${label}）：松开后第一个回答字出来前，卡片已展开、原文仍标记，待答一轮先写「听写中…」再换成听到的话，BYS 在听写或在想`,
       waitingSeen && heardAfter && !!cardAt && !!quoteAt && (!first || (quoteAt <= first.t)),
       { ...latency, heardShown, pendingTrail: [...new Set(pendings)].slice(0, 6), phases: [...new Set(before.map((s) => s.phase))], samplesBeforeFirstChar: before.length });
   };
@@ -479,16 +496,28 @@ try {
 
   // ── 1. 选中第一段，说「这里没看懂」 ──
   const p1 = await selectParagraph(P1);
+  if (idleMs) {
+    console.log(`已选中原文，闲置 ${idleMs} ms 后在原段开口`);
+    await sleep(idleMs);
+    if (idleMs >= 305_000) {
+      const prepared = sockets.filter(e => e.event === 'Created' && typeof e.url === 'string' && e.url.includes('stepfun'));
+      const closed = prepared.map(e => sockets.find(c => c.event === 'Closed' && c.id === e.id));
+      check('闲置：备用连接到期后已关闭，没有自动重新挂起连接', prepared.length > 0 && closed.every(Boolean)
+        && prepared.some((e, i) => Number(closed[i]?.at) - Number(e.at) >= 295_000), {prepared, closed});
+    }
+  }
   const scroll0 = await scrollY();
   const ask = await holdAndSay("ask");
+  const micOpens = await rp.evaluate(inproc, 'window.__micOpens') as number[];
+  check('准备：按住之前没有打开麦克风，按住后不等听写连接就录音', micOpens.length === 1 && micOpens[0]! >= ask.downAt && micOpens[0]! - ask.downAt < 500, {micOpens, downAt: ask.downAt});
   listenCheck("这里没看懂", ask, p1);
   const opened = await until(async () => { await capsuleTrail(ask); const c = await card(); return c.visible && c.turns.length === 1 && c.turns[0]!.answer.length > 20 ? c : undefined; }, 30_000, "阅读卡开始回答");
   await waitingCheck("这里没看懂", ask, p1, 0, "没看懂");
   const mark1 = await marked();
   const quote1 = opened.quote.replace(/[「」…]/g, "");
   const overlapsMark = !!mark1 && !!opened.rect && opened.rect.left < mark1.right && opened.rect.right > mark1.left && opened.rect.top < mark1.bottom && opened.rect.bottom > mark1.top;
-  check("开卡：卡片顶上引用这段原文，这段保持标记，卡片不压在这段上；问题带话筒标记",
-    p1.replace(/\s+/g, " ").startsWith(quote1.slice(0, 12)) && !!mark1 && p1.includes(mark1.text.slice(0, 30)) && !overlapsMark && opened.turns[0]!.spoken && opened.turns[0]!.question.includes("没看懂"),
+  check("开卡：卡片底部的原文按钮可见且指向这段原文，这段保持标记，卡片不压在这段上；问题带话筒标记",
+    !!quote1.trim() && p1.replace(/\s+/g, " ").startsWith(quote1.slice(0, 12)) && !!mark1 && p1.includes(mark1.text.slice(0, 30)) && !overlapsMark && opened.turns[0]!.spoken && opened.turns[0]!.question.includes("没看懂"),
     { quote: opened.quote, marked: mark1?.text.slice(0, 60) ?? null, overlapsMark, question: opened.turns[0]!.question, cardAfterReleaseMs: Date.now() - ask.upAt });
   await rp.screenshot(work, join(out, "1-card.png"));
 
@@ -501,6 +530,8 @@ try {
   check("念：回答写出一句就开始念，念的内容都来自这条回答",
     speechBeforePress.length > 0 && speechBeforePress.every((t) => plain(before.turns[0]!.answer).includes(plain(t).slice(0, 12))),
     { firstAudioAfterReleaseMs: firstAudio.at - ask.upAt, requests: speechBeforePress.map((t) => t.slice(0, 40)), stateAtPress: oldStateAtPress });
+  record.answers = { first: (await card()).turns[0]?.answer ?? '' };
+  if (!firstOnly) {
   const example = await holdAndSay("example");
   await sleep(300);
   await drainAudio();
@@ -590,7 +621,7 @@ try {
   const mark3 = await marked();
   const now = moved ?? await card();
   const newTurn = now.turns[turn];
-  check("换段：新一轮带新段的引用，旧一轮的引用仍是旧段原文、旧回答原样不变；卡片顶上和标黄都换到新段",
+  check("换段：新一轮带新段的引用，旧一轮的引用仍是旧段原文、旧回答原样不变；原文按钮和标黄都换到新段",
     !!moved && !!newTurn && quotes(newTurn.source, p2) && quotes(now.turns[0]!.source, p1) && quotes(now.quote, p2)
       && beforeHere.turns.every((t, i) => now.turns[i]?.answer === t.answer && now.turns[i]?.question === t.question)
       && !!mark3 && p2.includes(mark3.text.slice(0, 30)) && !mark3.text.includes(P1),
@@ -647,6 +678,7 @@ try {
   await rp.screenshot(panel, join(out, "4-panel.png"));
   }
   await drainAudio();
+  }
 } catch (error) {
   check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
   record.panelTail = await panelTail().catch(() => "");
@@ -664,13 +696,13 @@ try {
       maxWritingPlusPending: samples.length ? Math.max(...samples.map((s) => s.writing + (s.pending !== null ? 1 : 0))) : null });
   record.spoken = spoken.map((s) => ({ ...s }));
   record.sockets = sockets;
+  record.dictationEvents = dictationEvents;
   // 每句话松开到听写连接收尾（转写回来）多久，以及那条连接是不是按下前就连好了。
   record.dictation = spoken.map((s) => {
-    // 松开时会新开下一条备用连接，它若断开不算：只看松开前就建好的那条。
-    const before = new Set(sockets.filter((k) => k.event === "reated" && Number(k.at) < s.upAt).map((k) => k.id));
-    const closed = sockets.find((k) => k.event === "losed" && Number(k.at) > s.upAt && before.has(k.id));
-    const opened = sockets.find((k) => k.event === "andshakeResponseReceived" && k.id === closed?.id)?.at;
-    return { name: s.name, releaseToTextMs: closed ? Number(closed.at) - s.upAt : null, readyBeforePress: opened !== undefined && Number(opened) < s.downAt };
+    const next = spoken.find(other => other.downAt > s.downAt)?.downAt ?? Infinity;
+    const final = dictationEvents.find(e => e.type === 'conversation.item.input_audio_transcription.completed' && e.at >= s.upAt && e.at < next);
+    const ready = final && dictationEvents.find(e => e.socketId === final.socketId && e.type === 'session.updated');
+    return {name: s.name, releaseToTextMs: final ? final.at - s.upAt : null, readyBeforePress: ready ? ready.at < s.downAt : null};
   });
   record.speechRequests = speechRequests.map((r) => ({ at: r.at, text: r.text.slice(0, 120) }));
   record.audio = { chunks: played.length, contexts: [...new Set(played.map((p) => p.ctx))].length, closed: Object.fromEntries(closed) };

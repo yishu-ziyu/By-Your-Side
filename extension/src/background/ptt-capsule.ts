@@ -83,7 +83,7 @@ function firstSentence(text: string): string {
 const stepOf = (view: TaskView) => view.active.at(-1)?.action ?? view.lastAction?.action ?? null;
 
 /** 念结果：speak 在不念（没 Key、关了）时返回 null，否则等念完；quiet 时念失败也不在侧栏提示（确认句）。hush 马上停。 */
-export interface PttVoice { speak(text: string, conversationId: string, quiet?: boolean): Promise<PttSpeechReply> | null; hush(): void }
+export interface PttVoice { prepare(): void; speak(text: string, conversationId: string, quiet?: boolean): Promise<PttSpeechReply> | null; hush(): void }
 
 /** 要念的那一句：结果 + 留给你的；等你时说需要你做什么。 */
 function speechFor(capsule: PttCapsule): string | null {
