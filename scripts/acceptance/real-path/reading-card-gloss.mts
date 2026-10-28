@@ -293,13 +293,18 @@ try {
   const quotes = await inCard<string[]>(`function(){return [...this.querySelectorAll('.turn > .source')].map(e=>e.textContent??'')}`);
   check("两处同词的旧回答和新回答各保留出处", quotes.length === 2 && quotes.every(q=>q.includes('bank')), quotes);
   await shot("same-word");
-  await click(await until(() => pointOf('.turn:first-child > .source'), 5_000, "旧出处"));
-  await sleep(900);
-  const riverInView = await rp.evaluate(work, `(() => {const r=document.querySelector('#river-bank').getBoundingClientRect();return r.top >= 0 && r.bottom <= innerHeight})()`);
-  await click(await until(() => pointOf('.current-source'), 5_000, "当前引用"));
-  await sleep(900);
-  const financeInView = await rp.evaluate(work, `(() => {const r=document.querySelector('#finance-bank').getBoundingClientRect();return r.top >= 0 && r.bottom <= innerHeight})()`);
-  check("点击旧出处与当前引用，分别回到两处原文", !!riverInView && !!financeInView, {riverInView, financeInView});
+  const clickable = async (selector: string) => {
+    const point = await pointOf(selector);
+    if (!point) return undefined;
+    const hit = await inCard<boolean>(`function(){const e=this.querySelector(${JSON.stringify(selector)});const hit=this.elementFromPoint(${point.x},${point.y});return !!e && (hit===e || e.contains(hit))}`);
+    return hit ? point : undefined;
+  };
+  await click(await until(() => clickable('.turn:first-child > .source'), 5_000, "旧出处可点击"));
+  const riverInView = await until(async () => (await rp.evaluate(work, `(() => {const r=document.querySelector('#river-bank').getBoundingClientRect();return r.top >= 0 && r.bottom <= innerHeight})()`)) || undefined, 5_000, "回到河岸").catch(() => false);
+  const riverScroll = await rp.evaluate(work, `scrollY`);
+  await click(await until(() => clickable('.current-source'), 5_000, "当前引用可点击"));
+  const financeInView = await until(async () => (await rp.evaluate(work, `(() => {const r=document.querySelector('#finance-bank').getBoundingClientRect();return r.top >= 0 && r.bottom <= innerHeight})()`)) || undefined, 5_000, "回到银行").catch(() => false);
+  check("点击旧出处与当前引用，分别回到两处原文", !!riverInView && !!financeInView, {riverInView, financeInView, riverScroll});
   await click(await until(() => pointOf('[data-act="handoff"]'), 5_000, "在侧栏继续"));
   const panelHandoff = await until(async () => {
     const value = await rp.evaluate(panel, `(() => ({ text:document.body.innerText, cite:document.querySelector('#ask-cite:not([hidden]) #ask-cite-text')?.textContent??'' }))()`) as {text:string;cite:string};
