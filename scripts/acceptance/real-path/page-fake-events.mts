@@ -8,7 +8,7 @@
  *      所以服务器计数只作旁证。
  *   c) 网页选中一段字再派发松开指针或 Shift 松开：不弹划词工具条；工具条开着时网页派发字母键，焦点不被抢走。
  *   每项都用 CDP 派发的真实输入做对照，证明判据看得到扩展的反应。
- * 失败方式：去掉 content/ptt.ts、link-preview.ts 的 isTrusted 判断，或 ask.ts 里选字、按键的判断，对应的一项失败。
+ * 失败方式：去掉 content/ptt.ts 的 isTrusted 判断，或 ask.ts 里选字、按键的判断，对应的一项失败。
  * 没覆盖：ask.ts 的 pagehide（要一段正在生成的阅读回答）、drag-feed.ts 的拖动（要真实拖放），ptt-capsule.ts 的 Esc 在 ptt-capsule 用例第 2 轮。
  */
 import { execFileSync } from "node:child_process";
@@ -130,14 +130,15 @@ try {
   check("a 取消后再按能录，真松开后不再停在「在听」", again === "listening" && afterRelease.length > 0 && afterRelease.at(-1) !== "listening", { again, afterRelease });
 
   // ── b) 链接预览 ──
-  // 对照：真按住 Shift 把鼠标移到链接上，扩展去请求预览。
+  // 已移除的功能：真实悬停也不应产生预览或后台请求。
   await mouse("mouseMoved", corner);
   await key("rawKeyDown", shiftKey, 8);
   await mouse("mouseMoved", await center("#real"), { modifiers: 8 });
-  const realCard = await until(async () => await previewShown() || undefined, 4_000, "真实悬停后预览卡出现").catch(() => false);
+  await sleep(1_500);
+  const realCard = await previewShown();
   await key("keyUp", shiftKey);
   await mouse("mouseMoved", corner);
-  check("b 对照：真按 Shift 悬停，弹出链接预览卡", realCard === true, { realCard, hits: hits.get("/real-target") ?? 0 });
+  check("b 真按 Shift 悬停不弹预览、不发请求", !realCard && (hits.get("/real-target") ?? 0) === 0, { realCard, hits: hits.get("/real-target") ?? 0 });
   await until(async () => !(await previewShown()) || undefined, 3_000, "松开 Shift 后预览卡收起").catch(() => null);
 
   // 网页伪造 Shift 和带 Shift 的悬停。
