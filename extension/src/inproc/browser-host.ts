@@ -15,7 +15,7 @@ import { listArtifacts, writeArtifact, deleteArtifact } from "../shared/durable-
 import { openPiSession } from "./pi-session-idb.js";
 import { openDurableStorage } from "./durable-storage.js";
 import { IdbDocument } from "./document-idb.js";
-import { pushedMiniApps, pushedSelfUse, pushedTranslationStyle, receiveCoreSettings } from "../shared/core-settings.js";
+import { pushedMiniApps, pushedSelfUse, pushedTranslationStyle, pushedContinuation, receiveCoreSettings } from "../shared/core-settings.js";
 import { credentialContents, modelConfig } from "../settings/connections.js";
 
 type Inbound = ClientMessage
@@ -107,6 +107,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const siteNotes = new SiteNotesStore(document("site-notes"));
     const learnedOperations = new LearnedOperationStore(document("learned-operations"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
+      continuationEnabled: pushedContinuation,
       siteNotes,
       store,
       memoryStore,
@@ -126,6 +127,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         taskHistory,
         learnedOperations,
         miniApps: async () => pushedMiniApps(),
+        continuationEnabled: pushedContinuation,
         translationStyle: () => pushedTranslationStyle(),
         });
       },

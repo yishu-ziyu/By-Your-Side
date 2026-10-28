@@ -22,6 +22,8 @@ import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed } from "./memory-runtime.js";
 import { TaskProgress } from "./task-progress.js";
+import { TaskContinuationObserver } from './task-continuation.js';
+import type { TaskContinuation } from '../../shared/task-continuation.js';
 import type { TaskProgressSnapshot, UserDeliveryFacts, VoiceRouteContext, VoiceRouteResult, VoiceTarget } from "../../shared/voice.js";
 import { projectTaskView } from "../../shared/task-view.js";
 import { isTaskActionRequest, type TaskActionRequest, type TaskReceipt } from "../../shared/task-actions.js";
@@ -78,6 +80,33 @@ function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | n
 const WARM_UP_INTERVAL_MS = 30_000;
 
 export class ConversationManager {
+  continuationEnabled: () => boolean = () => false;
+  private readonly observers = new Map<string, TaskContinuationObserver>();
+  private async saveContinuation(id: string): Promise<void> {
+    const entry = this.entries.get(id);
+    if (!entry) throw new Error('委托会话不可用。');
+    await entry.runtime.session.persistTaskResults(this.progress.get(id)!.snapshot());
+    await entry.runtime.session.flushPersistence();
+  }
+  private async wakeContinuation(id: string, pending: TaskContinuation): Promise<boolean> {
+    const entry = this.entries.get(id), progress = this.progress.get(id);
+    if (!entry || !progress || !pending.requestId || !pending.pendingVersion || !this.connected || this.runningTasks() >= 2) return false;
+    const request: TaskActionRequest = { requestId: pending.requestId, conversationId: id, source: 'text', action: 'resume', expectedRunId: progress.snapshot().runId ?? null, text: '条件已复核，继续原委托' };
+    const receipt = await this.dispatcher.dispatch(request, entry.summary.title, async () => {
+      const live = progress.snapshot().continuation;
+      if (!this.continuationEnabled() || !live || live.id !== pending.id || live.goalVersion !== pending.goalVersion || live.controlVersion !== pending.controlVersion || live.state !== 'WAITING_CONDITION' || live.pendingVersion !== pending.pendingVersion || entry.runtime.session.isStreaming() || entry.runtime.session.isHeld() || Date.now() >= live.expiresAt) throw new TaskActionRejected('等待条件已失效，未自动继续。');
+      const running: TaskContinuation = { ...live, state: 'RUNNING', processingVersion: live.pendingVersion, pendingVersion: null, segmentStartedAt: Date.now() };
+      progress.setContinuation(running);
+      await this.saveContinuation(id);
+      if (progress.snapshot().continuation?.controlVersion !== running.controlVersion || progress.snapshot().continuation?.state !== 'RUNNING') throw new TaskActionRejected('委托已停止，未自动继续。');
+      this.pendingStarts.add(id);
+      try { await entry.runtime.session.continueCondition(progress.snapshot()); }
+      catch (error) { this.pendingStarts.delete(id); throw error; }
+      return { status: 'accepted', runId: request.expectedRunId, message: '页面条件已满足，正在继续原任务。' };
+    }, { deferredResume: true });
+    if (receipt.status !== 'accepted') await this.observers.get(id)?.control('pause', receipt.message);
+    return receipt.status === 'accepted';
+  }
   private readonly taskQueue:TaskQueue;
   private readonly pendingStarts=new Set<string>();
   /** 正在并回上一件的另开会话：并回要先送达再停，期间重复点击不再处理。 */
@@ -816,6 +845,7 @@ return { kind: "silent" };}
     if(request.source!=='text'||request.action!=='start'||request.forkedFrom||!request.text?.trim())return false;
 
     if(!['idle','error'].includes(snapshot.state)||!snapshot.runId||!snapshot.goal||!snapshot.recoveryInput||!request.context?.tabId)return false;
+    if (snapshot.continuation && !['COMPLETED','STOPPED','FAILED'].includes(snapshot.continuation.state)) return true;
     const view=projectTaskView(snapshot);
 
     if(!view.resumable)return false;
@@ -1206,6 +1236,11 @@ return receipt;
         && (snapshot.state === 'interrupted' || ['idle','error'].includes(snapshot.state) && (projectTaskView(snapshot).resumable||explicitAmendment))
         ? { ...originalRequest, action: 'resume' as const } : originalRequest;
 
+      if (snapshot.continuation && !['COMPLETED','STOPPED','FAILED'].includes(snapshot.continuation.state) && originalRequest.source === 'text' && originalRequest.action === 'start') {
+        const command = (originalRequest.text ?? '').trim().replace(/[。！!？?\s]/g, '');
+        if (['停止','停止关注','中止','中止关注','取消关注'].includes(command)) request = { ...originalRequest, action: 'abort' };
+        else if (['暂停','暂停关注'].includes(command)) request = { ...originalRequest, action: 'pause' };
+      }
       // 任务不随一轮结束：上一个任务还没做完时，随口补的一句（不必说「继续」）由快速模型判断是不是接着做它；
       // 是就按补充交给原任务（下面 steer 分支：登记为修订、从原任务接着做），目标不变。
       if (request===originalRequest&&await this.continuesOpenTask(originalRequest,snapshot,entry))request={...originalRequest,action:'steer' as const};
@@ -1213,6 +1248,38 @@ return receipt;
       if (request.expectedRunId !== (snapshot.runId??null))throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
 
       if(request.expectedControlVersion!==undefined&&request.expectedControlVersion!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('页面控制权已再次变化，旧计划的后续步骤未执行。');
+
+      const observer = this.observers.get(request.conversationId), delegation = snapshot.continuation;
+      if (observer && delegation && !['COMPLETED','STOPPED','FAILED'].includes(delegation.state) && ['pause','abort','steer','start','resume'].includes(request.action)) {
+        if (request.action === 'pause' || request.action === 'abort') {
+          await observer.control(request.action === 'abort' ? 'stop' : 'pause', request.action === 'abort' ? '用户停止' : '用户暂停');
+          this.controlVersions.set(request.conversationId, (this.controlVersions.get(request.conversationId) ?? 0) + 1);
+          this.queueTaskView(request.conversationId);
+          if (entry.runtime.session.isStreaming()) entry.runtime.session.abort();
+          if (request.action === 'abort') this.progress.get(request.conversationId)!.abort();
+          await this.saveContinuation(request.conversationId);
+          return { status: 'applied', runId: snapshot.runId ?? null, message: request.action === 'abort' ? '关注已停止，已有结果保留。' : '关注已暂停，等待你继续。' };
+        }
+        if (request.action === 'start') await observer.control('stop', '用户发起新任务');
+        if ((request.action === 'steer' || request.action === 'resume') && !entry.runtime.session.isStreaming()) {
+          if (!request.context || request.context.url !== delegation.url) throw new TaskActionRejected('请先回到原委托页面。');
+          await observer.control(request.action === 'steer' ? 'revise' : 'pause', '用户修改或继续原委托');
+          const current = this.progress.get(request.conversationId)!;
+          if (request.action === 'steer') { current.recordRequirement(request.text ?? '', request.context, request.attachments); current.recordUserTurn(request.text ?? '', request.requestId); current.reviseResults(); }
+          const live = current.snapshot().continuation!;
+          current.setContinuation({ ...live, state: 'RUNNING', processingVersion: live.observedVersion, segmentStartedAt: Date.now() });
+          await this.saveContinuation(request.conversationId);
+          try { await entry.runtime.session.continueCondition(current.snapshot(), true); }
+          catch (error) { await observer.control('pause', error instanceof Error ? error.message : '未能继续原委托'); throw error; }
+          return { status: 'accepted', runId: snapshot.runId ?? null, message: '正在按当前要求继续原委托。' };
+        }
+        if (request.action === 'steer') {
+          await observer.control('revise', '用户修改了目标，旧条件已撤销');
+          const c = this.progress.get(request.conversationId)!.snapshot().continuation!;
+          this.progress.get(request.conversationId)!.setContinuation({ ...c, state: 'RUNNING', segmentStartedAt: Date.now() });
+        }
+        snapshot = this.getTaskProgress(request.conversationId)!;
+      }
 
       if (request.action === 'status')return {status:'applied',runId:snapshot.runId??null,message:progressSpeech(snapshot)};
 
@@ -1510,6 +1577,11 @@ return receipt;
       if(message.type==='status'&&isLeadSession(message.sessionId)&&message.state==='running'){this.pendingStarts.delete(id);this.checkpointResumes.delete(id);}
 
       progress.observe(message);
+      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check') {
+        const c = progress.snapshot().continuation;
+        if (c && message.event.status === 'checking' && c.state === 'RUNNING') progress.setContinuation({ ...c, state: 'VERIFYING' });
+        if (c && message.event.status === 'continue' && c.state === 'VERIFYING') progress.setContinuation({ ...c, state: 'RUNNING' });
+      }
       const progressSnapshot=progress.snapshot();
 
       // 只按任务进展起名：会话恢复时发的思考档位等事件不是新进展，否则侧栏一连上就给上百个旧会话同时起名，打爆快速模型。
@@ -1547,13 +1619,19 @@ return receipt;
 
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_end') this.goalContinuing.delete(id);
 
-      if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId)) {
+      if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId) && !progressSnapshot.continuation) {
         void this.fulfillOwedDelivery(id).finally(()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); this.relaySeparateAnswer(id); });
 
         try{this.taskQueue.finish(id,progress.snapshot().state==='aborted'?'cancelled':progress.snapshot().state==='error'?'failed':'completed');}catch{this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'任务结束状态未能保存，请核对已有结果。'}});}
 
         this.pumpTasks();
       }
+
+      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check' && ['done','needs_user','open','blocked','unavailable'].includes(message.event.status)) {
+        void this.observers.get(id)?.settled(message.event.status as 'done'|'needs_user'|'open'|'blocked'|'unavailable').catch(error => console.error('[continuation] could not save verification', error));
+      }
+      if (message.type === 'agent_event' && message.event.kind === 'agent_end' && progressSnapshot.continuation) this.pumpTasks();
+      if (message.type === 'agent_event' && message.event.kind === 'error' && progressSnapshot.continuation) void this.observers.get(id)?.settled('unavailable').catch(error => console.error('[continuation] failure checkpoint unavailable', error));
 
       // 目标核对在交付之后才出结论：任务已空闲时按新结论重记这条过往任务（同一 runId 覆盖）。
       if (message.type === 'agent_event' && message.event.kind === 'goal_check' && message.event.status !== 'continue' && message.event.status !== 'checking' && isLeadSession(message.sessionId) && progress.snapshot().state === 'idle') { this.goalCheckPending.delete(id); this.recordTaskHistory(id); }
@@ -1645,6 +1723,30 @@ return receipt;
       // 纠正询问的网站：用户不在网页上时，取这个任务最近碰过的网页。
       runtime.session.bindVisitedUrls?.(() => this.progress.get(id)?.visitedUrls() ?? []);
       this.entries.set(id, entry);
+      const observer = new TaskContinuationObserver({
+        rpc: runtime.rpc, enabled: () => this.continuationEnabled() && this.connected && !this.queueClosed,
+        snapshot: () => progress.snapshot(), update: value => progress.setContinuation(value),
+        save: () => this.saveContinuation(id), changed: () => {
+          this.queueTaskView(id);
+          const c = progress.snapshot().continuation;
+          if (c?.state === 'COMPLETED') {
+            this.taskQueue.finish(id, 'completed');
+            void this.fulfillOwedDelivery(id).finally(() => { this.recordTaskHistory(id); this.relaySeparateAnswer(id); });
+          }
+          if (c?.state === 'STOPPED') this.taskQueue.finish(id, 'cancelled');
+        },
+        idle: () => !runtime.session.isStreaming() && !runtime.session.isHeld() && this.runningTasks() < 2,
+        modelCalls: () => progress.modelCalls(),
+        wake: value => this.wakeContinuation(id, value),
+        stopExecution: () => { if (runtime.session.isStreaming()) runtime.session.abort(); },
+      });
+      this.observers.set(id, observer);
+      runtime.rpc.continuationPage = () => {
+        const c = progress.snapshot().continuation;
+        return c && !['COMPLETED','STOPPED','FAILED'].includes(c.state) ? { tabId: c.tabId, url: c.url, documentId: c.documentId } : undefined;
+      };
+      runtime.onWaitForCondition?.(input => observer.register(input));
+      if (restoredResults?.continuation) void observer.restore().catch(error => console.error('[continuation] restore stopped', error));
       this.store?.save(this.list());
       this.pending.delete(id);
 
@@ -1966,6 +2068,10 @@ return;}
 
     if(message.type==='user_message'){
       const checkpoint=this.getTaskProgress(id);
+      if (checkpoint?.continuation && !['COMPLETED','STOPPED','FAILED'].includes(checkpoint.continuation.state)) {
+        await this.dispatchTaskAction({ requestId: `continuation-input-${randomUUID()}`, conversationId: id, source: 'text', action: 'start', expectedRunId: checkpoint.runId ?? null, text: message.text, context: message.context, attachments: message.attachments });
+        return;
+      }
 
       if(checkpoint&&(checkpoint.state==='interrupted'||['idle','error'].includes(checkpoint.state)&&checkpoint.nextStep?.delivery==='partial')&&isInterruptedResumeText(message.text)){
         const requestId=`restart-${randomUUID()}`;
@@ -2196,6 +2302,7 @@ return;
     }
   }
   dispose(): void { this.queueClosed=true;this.taskViewDisposed=true;this.taskViewQueued.clear();this.controls.disconnect();
+    for (const observer of this.observers.values()) observer.dispose();
 
 for (const { runtime } of this.entries.values()) runtime.dispose(); }
 }

@@ -5275,7 +5275,7 @@ function handleServerMessage(raw: string): void {
       break;
     case "task_view":
       // 接续入口：投影摘要 + 恢复按钮；checkpoint 损坏由会话摘要明确指出。
-      resumeEntry.apply(msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
+      resumeEntry.apply(msg.view.continuation ? null : msg.view, { checkpointUnavailable: conversations.get(selectedConversationId)?.checkpoint === "unavailable" });
 
       // 续做卡出现或消失后，上一轮过程行的核对状态跟着改：没做完只说一次。
       if (lastRun?.answer && lastRun.receipt && lastRun.root.classList.contains("done") && lastRun.root.isConnected) paintAnsweredTitle(lastRun);
@@ -5938,6 +5938,10 @@ const taskBar = new TaskBar({
   onRetryControl: (action) => {
     if (action === "stop") stopCurrentTask();
     else requestTakeover();
+  },
+  onContinuationControl: (action, view) => {
+    const context = activeTabContext();
+    send({ type: 'task_action', request: { requestId: crypto.randomUUID(), conversationId: view.conversationId, source: 'text', action, expectedRunId: view.runId, expectedControlVersion: view.controlVersion, ...(context ? { context } : {}) } });
   },
 });
 

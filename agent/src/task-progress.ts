@@ -42,6 +42,10 @@ function stepLabel(name: string, params: Record<string, unknown>): string {
 
 /** Runtime receipts drive progress; bounded target bindings are retained, page contents are excluded. */
 export class TaskProgress {
+  private continuation: import('../../shared/task-continuation.js').TaskContinuation | undefined;
+  private modelCallsThisRun = 0;
+  modelCalls(): number { return this.continuation?.modelCalls ?? this.modelCallsThisRun; }
+  setContinuation(value: import('../../shared/task-continuation.js').TaskContinuation): void { this.continuation = structuredClone(value); }
   private goal: string | null = null;
   private startedAt: number | null = null;
   private runId: string | null = null;
@@ -226,6 +230,8 @@ export class TaskProgress {
     this.goal = snapshot.goal;
     this.startedAt = snapshot.startedAt;
     this.runId = snapshot.runId ?? null;
+    this.continuation = snapshot.continuation ? structuredClone(snapshot.continuation) : undefined;
+    this.modelCallsThisRun = snapshot.continuation?.modelCalls ?? 0;
     this.goalCheck = snapshot.goalCheck ? { ...snapshot.goalCheck } : null;
     this.goalPage = snapshot.goalPage ? { ...snapshot.goalPage } : null;
     this.interjections = snapshot.interjections ?? 0;
@@ -233,7 +239,7 @@ export class TaskProgress {
     this.foldedResults = folded && Number.isSafeInteger(folded.count) && Array.isArray(folded.recent)
       ? { count: folded.count, recent: folded.recent.filter((text): text is string => typeof text === "string").slice(-8) } : { count: 0, recent: [] };
     this.aborted = snapshot.state === "aborted";
-    this.interrupted = !!this.runId && !!this.goal && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
+    this.interrupted = !!this.runId && !!this.goal && snapshot.continuation?.state !== 'WAITING_CONDITION' && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
     this.restartRecovery = snapshot.restartRecovery === true || this.interrupted;
     this.interruptionReason=this.interrupted?(snapshot.interruptionReason??'host_restart'):undefined;
     this.lifecycleFrozen=false;
@@ -307,6 +313,8 @@ return;}
     this.goal = String(sanitizeTrace(text.slice(0, 600)));
     this.startedAt = null;
     this.runId = randomUUID();
+    this.continuation = undefined;
+    this.modelCallsThisRun = 0;
     this.aborted = false;
     this.interrupted = false;
     this.restartRecovery = false;
@@ -343,6 +351,11 @@ return;}
   /** 同上，带网页标题：给任务起名用。 */
   visitedPages(): Array<{ url: string; title?: string }> { return [...(this.goalPage ? [this.goalPage] : []), ...this.runSources].map(({ url, title }) => (title ? { url, title } : { url })); }
   abort(): void { this.aborted = true; this.interrupted = false; this.restartRecovery = false;
+    if (this.continuation && !['COMPLETED','STOPPED','FAILED'].includes(this.continuation.state)) this.continuation = {
+      ...this.continuation, state: 'STOPPED', stopReason: '用户停止', controlVersion: this.continuation.controlVersion + 1,
+      activeMs: this.continuation.activeMs + (this.continuation.segmentStartedAt === null ? 0 : this.clock() - this.continuation.segmentStartedAt),
+      segmentStartedAt: null, pendingVersion: null, requestId: null,
+    };
 
  for (const member of new Set([...this.tools.values()].map(t=>t.member))) this.results.abandonMember(member); this.tools.clear(); this.members.clear(); this.turnText = ""; }
   hasFinding(): boolean { return this.ledger.hasFinding(); }
@@ -379,6 +392,15 @@ return;}
 
     if (message.type !== "agent_event") return;
     const e = message.event;
+    if (lead && this.continuation?.state === 'RUNNING' && this.continuation.segmentStartedAt !== null && (e.kind === 'turn_start' || e.kind === 'tool_start')) {
+      const now = this.clock();
+      this.continuation.activeMs += Math.max(0, now - this.continuation.segmentStartedAt);
+      this.continuation.segmentStartedAt = now;
+    }
+    if (lead && (e.kind === 'turn_start' || e.kind === 'goal_check' && e.status === 'checking')) {
+      this.modelCallsThisRun++;
+      if (this.continuation) this.continuation.modelCalls++;
+    }
 
     if (e.kind === "agent_start") {
       if(this.interrupted&&lead){this.ledger.beginRun(this.runId);this.failureLimit=false;}
@@ -589,6 +611,7 @@ if(page)this.recoveryInput.page=page;
       active: [...this.tools.values()].slice(-12).map(({ member, action, since }) => ({ member, action, since })), lastAction: this.lastAction ? { ...this.lastAction } : null, lastReadAt: this.lastReadAt ?? undefined, successVerified: false, conversationContext,
       results: this.results.list(), executionState: this.results.state(), resultState: this.results.state() };
 
+    if (this.continuation) snapshot.continuation = structuredClone(this.continuation);
     if (this.restartRecovery) snapshot.restartRecovery = true;
 
     if (this.interrupted) snapshot.interruptionReason = this.interruptionReason;

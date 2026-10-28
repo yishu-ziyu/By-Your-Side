@@ -194,6 +194,7 @@ export function renderSettings(): void {
     <div class="sx-head"><h2 id="labs-title">实验功能</h2></div>
     <div class="surface rows">
       ${toggleRow("mini-apps", "回答里的小程序", "在回答中调整条件、筛选比较或运行小模拟。")}
+      ${toggleRow("continuous-delegation", "持续关注网页", "交代一次，等待页面结果后自动筛选和标注。仅限原页面和约定期限，需保持浏览器打开。")}
     </div>
     <details class="settings-detail"><summary>小程序可以访问什么？</summary><p>要动手试的问题（调几个条件看结果、筛选比较一批东西、小模拟），助手当场写一个小程序放在回答里。小程序在侧栏的沙箱里运行，不能联网，碰不到你的网页和登录；你在里面改过的东西重开侧栏还在。写小程序比写文字慢几秒。</p></details>
     <p id="labs-status" class="settings-status" role="status" aria-live="polite"></p>

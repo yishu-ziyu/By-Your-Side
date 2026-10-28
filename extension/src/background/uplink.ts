@@ -53,6 +53,7 @@ export class Uplink {
     });
     void this.connectInproc();
   }
+  wake(): void { if (this.transport === null) void this.connectInproc(); }
 
   /** 面板请求重连。 */
   retry(): void {

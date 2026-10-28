@@ -314,6 +314,16 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     if(unavailable.length)data.note=`该元素不支持或尚无有效的 ${unavailable.join('、')} 属性，已返回 null；请观察实际目标状态。`;
 
     if(anchorSource)data.anchorSource=anchorSource;
+    const stableElement = element.nodeType === Node.TEXT_NODE ? element.parentElement : element;
+    if (stableElement instanceof Element) {
+      const stable = stableElement.id ? [`#${CSS.escape(stableElement.id)}`] : ['data-testid','data-test-id','aria-label','name'].flatMap(name => {
+        const value = stableElement.getAttribute(name);
+        return value ? [`${stableElement.tagName.toLowerCase()}[${name}="${CSS.escape(value)}"]`] : [];
+      });
+      for (const selector of stable) {
+        if (document.querySelectorAll(selector).length === 1 && document.querySelector(selector) === stableElement) { data.persistentTarget = `loc=css:${selector}`; break; }
+      }
+    }
 
     return {ok:true,data};
   } catch (error) { return {ok:false,error:error instanceof Error ? error.message : String(error)}; }

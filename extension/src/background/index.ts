@@ -1,4 +1,6 @@
 import { installQuietTabs } from "./quiet-tabs.js";
+import { installContinuationWakeup } from './continuation-wakeup.js';
+import { assertSameDocument } from './observation-document.js';
 import { activeTargetTabs, isPanelUrl, popoutSource } from "./target-window.js";
 import { installEdgePill } from "./edge-pill.js";
 import { installFloatCard } from "./float-card.js";
@@ -693,6 +695,7 @@ void (async () => {
  }
 
  transport.start();
+ installContinuationWakeup(() => transport.wake());
 })();
 
 /** 在跑任务的对话、回答后核对目标还在读页的对话。两者都空时，调试器很快断开，不等满 15 秒。 */
@@ -1653,7 +1656,7 @@ async function executeToolCall(
   params = structuredClone(params);
   // 页面输入一旦派发，后面的“未执行”失败也只能算结果未知。
   let pageEffectStarted = false;
-  const beforeDispatch = Object.assign(async () => {}, { checkNow: () => checkIdentity(), noteEffect: () => { pageEffectStarted = true; } });
+  const beforeDispatch = Object.assign(async () => { await checkContinuationPage(); }, { checkNow: () => checkIdentity(), noteEffect: () => { pageEffectStarted = true; } });
   let result: Extract<ClientMessage, { type: "tool_result" }>;
   let executionFact: import("../../../shared/protocol.js").ToolExecutionFact = "not_executed";
   const sid = normalizeSessionId(sessionId);
@@ -1666,6 +1669,18 @@ async function executeToolCall(
     if(runId&&(abortedRuns.has(runId)||current!==runId))throw new Error('原任务已停止或发生变化，操作未执行。');
 
     if(epoch!==undefined&&epoch<(executionEpochs.get(sid)??0))throw new Error('操作所属控制轮次已失效，操作未执行。');
+  };
+  const checkContinuationPage = async () => {
+    const guard = params.continuationPage;
+    if (guard === undefined) return;
+    if (!guard || typeof guard !== 'object' || !('tabId' in guard) || !('url' in guard) || !('documentId' in guard)
+      || typeof guard.tabId !== 'number' || !Number.isSafeInteger(guard.tabId) || guard.tabId !== params.tabId
+      || typeof guard.url !== 'string' || typeof guard.documentId !== 'string' || !guard.documentId
+      || !['snapshot','page_text','read_element','read_elements','mark','clear_marks'].includes(name)) throw new Error('持续委托的页面约束无效，操作未执行。');
+    const tab = await chrome.tabs.get(guard.tabId);
+    if (tab.url !== guard.url) throw new Error('委托页面已切换，操作未执行。');
+    await assertSameDocument(guard.tabId, guard.documentId);
+    checkIdentity();
   };
 
   const rememberFact = (error: unknown): void => {
@@ -1743,6 +1758,7 @@ async function executeToolCall(
 
     const execute = async () => {
       checkIdentity();
+      await checkContinuationPage();
 
       if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
 

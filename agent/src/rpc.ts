@@ -101,6 +101,7 @@ const DISPATCHED_MAX = 512;
  * worker_tabs inspect）不补，避免把"看哪个页面"的管理动作绑到任务页上。
  */
 const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
+  'page_text',
   "snapshot",
   "read_element",
   "read_elements",
@@ -136,6 +137,7 @@ export class ToolRpc {
   private pageTargetSeq = 0;
 
   beforeCall?: () => Promise<void>;
+  continuationPage?: () => { tabId: number; url: string; documentId: string } | undefined;
 
   constructor(send?: RpcSend) {
     this.sendFn = send ?? null;
@@ -316,6 +318,8 @@ export class ToolRpc {
     const id = randomUUID();
     // 缺省页在出站这一刻落进参数：之后用户切到别的页也不会改这次调用的目标。
     let outParams = this.resolvePageParams(name, params, sessionId);
+    const continuationPage = this.continuationPage?.();
+    if (continuationPage && DEFAULT_TAB_TOOLS.has(name)) outParams = { ...outParams, continuationPage };
 
     if (signal?.aborted) throw Object.assign(new Error("操作已取消，尚未执行"), { executionFact: "not_executed" as const });
 
