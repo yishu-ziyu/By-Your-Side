@@ -1156,9 +1156,6 @@ if(required.includes(key))candidates.set(key,attachment);
     return !!this.displayWork || (this.session?.isStreaming ?? false) || this.starting !== null;
   }
 
-  /** 存储里还有没做完的运行时，重开后接着做，不等用户说「继续」。 */
-  continueStoredRun(): void { this.session?.continueStored?.(); }
-
   get keepsRunAfterDisconnect(): boolean { return this.session?.keepsRunAfterDisconnect === true; }
 
   private runningOrStarting(session: AgentLoop): boolean {
