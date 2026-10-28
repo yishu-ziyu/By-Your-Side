@@ -36,6 +36,16 @@ function pcmFromHex(hex: string): Float32Array<ArrayBuffer> {
 
 export function installPttSpeech(): void {
   let current: { abort: AbortController; context: AudioContext; done: (reply: PttSpeechReply) => void; startedWall: number } | null = null;
+  let connectionHint: HTMLLinkElement | null = null;
+
+  const prepare = () => {
+    connectionHint?.remove();
+    connectionHint = document.createElement("link");
+    connectionHint.rel = "preconnect";
+    connectionHint.href = new URL(SPEECH_URL).origin;
+    connectionHint.crossOrigin = "anonymous";
+    document.head.append(connectionHint);
+  };
 
   const hush = () => {
     const playing = current;
@@ -93,6 +103,8 @@ export function installPttSpeech(): void {
       if (context.state === "suspended") await context.resume().catch(() => {});
       const response = await fetch(SPEECH_URL, {
         method: "POST",
+        // 与匿名预连接使用同一连接池；API key 仍由显式请求头发送。
+        credentials: "omit",
         signal: abort.signal,
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
         body: JSON.stringify({ model: SPEECH_MODEL, text, stream: true, voice_setting: { voice_id: "female-shaonv", speed: 1, vol: 1, pitch: 0 }, audio_setting: { sample_rate: SAMPLE_RATE, format: "pcm", channel: 1 } }),
@@ -141,6 +153,7 @@ export function installPttSpeech(): void {
     // 只认本扩展后台发来（不是网页里的脚本）、带 PTT_SPEECH_TARGET 的命令。
     if (sender.id !== chrome.runtime.id || sender.tab || command?.target !== PTT_SPEECH_TARGET) return;
 
+    if (command.action === "prepare") { prepare(); sendResponse({ ok: true, playedMs: 0 }); return; }
     if (command.action === "hush") { hush(); sendResponse({ ok: true, playedMs: 0 }); return; }
 
     // 只用订阅 Key：后台已经筛过，这里再守一道（MiniMax 按 Key 扣费）。

@@ -449,7 +449,7 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
   }
   const command: PttCommand = { target: PTT_TARGET, phase: raw.phase };
   const releasedAt = Date.now();
-  if (raw.phase === "start") { pttTurn++; reading.interrupt(tabId); pttCapsule.recording(tabId); }
+  if (raw.phase === "start") { pttVoice.prepare(); pttTurn++; reading.interrupt(tabId); pttCapsule.recording(tabId); }
   const turn = pttTurn;
   // SAFETY: 离屏文档对 PttCommand 只回 PttReply；没有接收方时 sendMessage 会抛错。
   const reply = await (chrome.runtime.sendMessage(command) as Promise<PttReply | undefined>).catch(() => undefined);
@@ -523,7 +523,10 @@ chrome.runtime.onMessage.addListener((raw: { type?: unknown } | undefined, sende
  if (raw?.type !== PTT_WARM || sender.id !== chrome.runtime.id || sender.tab?.id == null) return;
  transport.sendClientMessage({ type: "warm_up", connection: true, conversationId: conversationForWindow(sender.tab.windowId) });
  void readVoiceDictationKey().then(({ key }) => {
-  if (key) return chrome.runtime.sendMessage({ target: PTT_TARGET, phase: "warm" } satisfies PttCommand);
+  if (key) {
+   pttVoice.prepare();
+   return chrome.runtime.sendMessage({ target: PTT_TARGET, phase: "warm" } satisfies PttCommand);
+  }
  }).catch(() => {});
 });
 

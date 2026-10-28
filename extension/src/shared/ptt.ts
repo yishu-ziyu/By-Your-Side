@@ -52,7 +52,7 @@ export interface PttCapsuleAction { type: "ptt_capsule_action"; action: "stop" |
 /** 后台 → 离屏文档：念一句（带订阅 Key）或停下。 */
 export const PTT_SPEECH_TARGET = "inproc-speech";
 
-export type PttSpeechCommand = { target: typeof PTT_SPEECH_TARGET; action: "speak"; text: string; key: string } | { target: typeof PTT_SPEECH_TARGET; action: "hush" };
+export type PttSpeechCommand = { target: typeof PTT_SPEECH_TARGET; action: "speak"; text: string; key: string } | { target: typeof PTT_SPEECH_TARGET; action: "hush" | "prepare" };
 
 /** 念完（放了多久）、被打断，或失败。startedAt：第一段声音排定开始放的本机时间（毫秒），只用于分段计时。 */
 export type PttSpeechReply = { ok: true; playedMs: number; startedAt?: number } | { ok: false; reason: "hushed"; startedAt?: number } | { ok: false; reason: "failed"; message: string };

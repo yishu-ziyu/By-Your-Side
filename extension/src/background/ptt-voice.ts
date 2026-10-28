@@ -23,6 +23,7 @@ export function createPttVoice(notice: (conversationId: string, message: string)
     (chrome.runtime.sendMessage(command) as Promise<PttSpeechReply | undefined>).catch(() => undefined);
 
   return {
+    prepare() { if (on && key) void send({ target: PTT_SPEECH_TARGET, action: 'prepare' }); },
     speak(text, conversationId, quiet) {
       if (!on || !key) return null;
 
