@@ -1,3 +1,4 @@
+import { readingVoiceView } from './reading-voice.js';
 import { dictationSettingsView } from "./dictation.js";
 import { TRACE_MAX_AGE_DAYS } from '../../../shared/run-trace-core.js';
 import { VOICE_CAPTURE_MAX_AGE_DAYS } from '../../../shared/voice-capture-core.js';
@@ -75,6 +76,7 @@ export function renderSettings(): void {
   </section>
     </div>
     <div class="settings-panel" data-settings-panel="voice" hidden>
+  ${readingVoiceView}
   ${dictationSettingsView}
   <section class="sx" aria-labelledby="voice-title">
     <div class="sx-head">
