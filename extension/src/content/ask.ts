@@ -1,6 +1,5 @@
 import { installDragFeed } from "./drag-feed.js";
 import { installGhostHud } from "./ghost-hud.js";
-import { installLinkPreview } from "./link-preview.js";
 import { installMarginaliaTracker } from "./marginalia-tracker.js";
 import { installNudge } from "./nudge.js";
 import { installBrowseLog } from "./browse-log.js";
@@ -204,7 +203,6 @@ function boot(): void {
   installDragFeed();
   installMarginaliaTracker();
   installGhostHud();
-  installLinkPreview();
   installNudge();
   installBrowseLog();
   installFloatCard();

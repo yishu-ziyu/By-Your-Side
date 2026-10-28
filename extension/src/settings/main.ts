@@ -20,7 +20,6 @@ import { thinkingProfile } from "../../../shared/model-capabilities.js";
 import { clearDiagnostics, exportDiagnostics } from "../shared/trace-store.js";
 import { BACKUP_FOLDER, BACKUP_LAST_KEY, MEMORY_CHANGED, countBackup, parseBackup, readMemoryDocuments, restoreBackup, type MemoryBackup } from "../shared/memory-backup.js";
 import { SELECTION_BAR_KEY, isSelectionBarOff } from "../shared/ask-selection.js";
-import { LINK_PREVIEW_KEY, isLinkPreviewOff } from "../shared/link-preview.js";
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
@@ -1411,7 +1410,6 @@ async function reloadSettings(): Promise<void> {
   renderTranslationStyles(parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]));
   $<HTMLInputElement>("edge-entry").checked = !isEdgeEntryOff(stored[EDGE_ENTRY_KEY]);
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
-  linkPreview.checked = !isLinkPreviewOff(stored[LINK_PREVIEW_KEY]);
   nudgeToggle.checked = isNudgeOn(stored[NUDGE_KEY]);
   $<HTMLInputElement>("browse-habits").checked = isBrowseOn(stored[BROWSE_ON_KEY]);
   renderBrowseState(isBrowseOn(stored[BROWSE_ON_KEY]));
@@ -1720,7 +1718,6 @@ const selectionBar = $<HTMLInputElement>("selection-bar");
 
 const selectionStatus = $("selection-status");
 
-const linkPreview = $<HTMLInputElement>("link-preview");
 
 const nudgeToggle = $<HTMLInputElement>("nudge");
 
@@ -1737,7 +1734,6 @@ void chrome.commands.getAll().then((commands) => {
     : "关掉后右键「问 By Your Side」仍然可用。快捷键还没有设置，可以在 chrome://extensions/shortcuts 里给「问选中的文字」设一个。";
 });
 
-bindToggle(linkPreview, LINK_PREVIEW_KEY, selectionStatus, (on) => (on ? "链接预览已开启。" : "链接预览已关闭。"));
 
 bindToggle(nudgeToggle, NUDGE_KEY, selectionStatus, (on) => (on ? "主动建议已开启。" : "主动建议已关闭。"));
 
@@ -1795,7 +1791,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => {
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === LINK_PREVIEW_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));

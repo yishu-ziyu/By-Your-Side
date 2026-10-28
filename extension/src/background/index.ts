@@ -2,7 +2,6 @@ import { installQuietTabs } from "./quiet-tabs.js";
 import { activeTargetTabs, isPanelUrl, popoutSource } from "./target-window.js";
 import { installEdgePill } from "./edge-pill.js";
 import { installFloatCard } from "./float-card.js";
-import { installLinkPreview } from "./link-preview.js";
 import { installMarginalia } from "./marginalia.js";
 import { installNudge } from "./nudge.js";
 import { installBrowseHabits } from "./browse-habits.js";
@@ -213,7 +212,6 @@ async function selectForTab(id: string, tabId: number): Promise<void> {
 
 installPageInteractions();
 
-installLinkPreview();
 
 installReinject();
 
