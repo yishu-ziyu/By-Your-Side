@@ -11,9 +11,9 @@ import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, GripVertical } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
-import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff } from '../shared/ask-selection.js';
+import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
@@ -63,7 +63,11 @@ export function selectionSnapshot(): SelectionSnapshot | null {
 }
 
 /** 与样式宽度一致，用于判断正文旁是否放得下回答。 */
-const CARD_WIDTH = 340;
+const CARD_WIDTH = 360;
+
+/** 右下角能拉到多小；再小回答就只剩一条缝。 */
+const CARD_MIN_WIDTH = 320;
+const CARD_MIN_HEIGHT = 240;
 
 const PLACE_MARGIN = 12;
 
@@ -87,7 +91,7 @@ const QUICK_QUESTIONS = PROMPTS.filter(prompt => ['example', 'why', 'evidence'].
 
 const PINS_KEY = 'reading_bar_pins';
 
-/** 卡片顶上引用原文的长度：认得出是哪一段就够。 */
+/** 一轮里换过段时，那轮上面引用原文的长度：认得出是哪一段就够。 */
 const QUOTE_CHARS = 36;
 
 /** 系统默认的双击间隔约 500ms，网页里多数连击在 400ms 内。 */
@@ -198,13 +202,13 @@ function boot(): void {
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
       <div class="bar" role="toolbar" aria-label="划词"><button class="ask" data-act="ask" title="选中后直接打字也能问">问<span class="caret" aria-hidden="true"></span></button><span class="sep" aria-hidden="true"></span><button data-act="explain">解释</button><button data-act="read">朗读</button><span class="pins"></span><button class="icon" data-act="copy-selection" aria-label="复制" title="复制"></button><button class="icon more" data-act="more" aria-label="更多" title="更多" aria-haspopup="menu" aria-expanded="false"></button><button class="icon" data-act="dismiss" aria-label="关闭" title="关闭"></button></div>
-      <div class="head" hidden><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
-      <div class="q quote" hidden></div>
+      <div class="head" hidden><span class="grip" aria-hidden="true"></span><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
       <div class="foot" hidden><button type="button" data-act="copy">复制</button><button type="button" data-act="speak">朗读</button><span class="grow"></span><button type="button" data-act="handoff">在侧栏继续</button></div>
       <div class="error" role="status" hidden></div>
       <form class="composer" hidden><button type="button" class="depth" data-act="depth" aria-pressed="false" title="换成深度模型">快速</button><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问这段话…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
       <div class="chips" role="group" aria-label="常用问题" hidden>${QUICK_QUESTIONS.map(prompt => `<button type="button" data-ask="${prompt.question}">${prompt.label}</button>`).join('')}</div>
+      <div class="resize" title="拖动调整大小，双击恢复" aria-hidden="true"></div>
       <span class="tail" aria-hidden="true"></span>
     </section>
     <div class="menu" role="menu" aria-label="更多" hidden><div class="menu-label">常用</div>${PROMPTS.map(prompt => `<div class="menu-row"><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button><button class="icon small pin" data-pin="${prompt.id}" aria-pressed="false" aria-label="钉到工具条" title="钉到工具条"></button></div>`).join('')}<div class="rule" role="separator"></div><button role="menuitem" data-act="transfer">在侧栏继续</button><div class="rule" role="separator"></div><button role="menuitem" class="dim" data-act="mute-page">这一页不再弹出</button><button role="menuitem" class="dim" data-act="mute-all">关闭划词工具条</button></div>
@@ -220,9 +224,23 @@ function boot(): void {
   el('[data-act="copy-selection"]').append(icon(Copy));
   el('[data-act="copy"]').prepend(icon(Copy));
   el('[data-act="speak"]').prepend(icon(Volume2));
+  el('.grip').append(icon(GripVertical, { width: 14, height: 14 }));
   for (const pin of root.querySelectorAll('[data-pin]')) pin.append(icon(Pin));
 
   const surface = el('.surface');
+  const head = el('.head');
+  const resizeHandle = el('.resize');
+  head.addEventListener('pointerdown', startDrag);
+  head.addEventListener('pointermove', moveDrag);
+  head.addEventListener('pointerup', endDrag);
+  head.addEventListener('pointercancel', endDrag);
+  head.addEventListener('lostpointercapture', endDrag);
+  resizeHandle.addEventListener('pointerdown', startResize);
+  resizeHandle.addEventListener('pointermove', moveResize);
+  resizeHandle.addEventListener('pointerup', endResize);
+  resizeHandle.addEventListener('pointercancel', endResize);
+  resizeHandle.addEventListener('lostpointercapture', endResize);
+  resizeHandle.addEventListener('dblclick', resetSize);
   const menu = el('.menu');
   const more = el('[data-act="more"]');
   const messages = el('.messages');
@@ -288,6 +306,16 @@ function boot(): void {
   let pendingTurn: HTMLElement | null = null;
   /** 回答放在选区哪一边：打开时定一次，之后回答变长也不换边，免得跳位。右侧空白够放时不用这一边。 */
   let side: 'above' | 'below' | null = null;
+  /** 用户把卡拖到别处后记着这一处：不再跟着选区走，滚动也不动。 */
+  let manualPos: { left: number; top: number } | null = null;
+  /** 用户拉过右下角后的大小：跨卡片沿用，存进本地。 */
+  let manualSize: ReadingCardSize | null = null;
+  /** 拉的过程中别的标签页存了新尺寸：松手且没拉动时再用，不打断手指。 */
+  let pendingCardSize: ReadingCardSize | null = null;
+  /** 已经写到卡上的大小：流式回答每次重绘时不重复改样式。 */
+  let appliedSize: ReadingCardSize | null = null;
+  let drag: { pointerId: number; startX: number; startY: number; left: number; top: number; moved: boolean } | null = null;
+  let resize: { pointerId: number; startX: number; startY: number; left: number; top: number; width: number; height: number; moved: boolean } | null = null;
   const highlightName = `by-your-side-reading`;
 
   const highlights = (CSS as typeof CSS & {
@@ -346,10 +374,36 @@ function boot(): void {
   }
 
   function position(): void {
+    if (!visible) {
+      return;
+    }
+
+    const margin = PLACE_MARGIN;
+
+    // 用户把卡拖走后，位置由他定：只把卡收在窗口内，不再跟着选区或滚动走。
+    // 快捷键恢复的卡没有选区（snapshot 为空），手动位置仍然要能用。
+    if (manualPos) {
+      delete surface.dataset.tail;
+      surface.dataset.place = 'manual';
+      if (!manualSize) surface.style.maxHeight = `${innerHeight - margin * 2}px`;
+      const box = surface.getBoundingClientRect();
+      manualPos.left = clamp(manualPos.left, margin, Math.max(margin, innerWidth - box.width - margin));
+      manualPos.top = clamp(manualPos.top, margin, Math.max(margin, innerHeight - box.height - margin));
+      surface.style.left = `${manualPos.left}px`;
+      surface.style.top = `${manualPos.top}px`;
+
+      return;
+    }
+
     // 按住说话问另一段时，卡片一按下就让到那段旁边：不压住用户刚选的字。
     const anchor = voice?.target ?? snapshot;
 
-    if (!visible || !anchor) {
+    if (!anchor) {
+      // 快捷键恢复时没有选区：卡片留在原处，只保证窗口变过之后还在视口里。
+      const box = surface.getBoundingClientRect();
+      surface.style.left = `${clamp(box.left, margin, Math.max(margin, innerWidth - box.width - margin))}px`;
+      surface.style.top = `${clamp(box.top, margin, Math.max(margin, innerHeight - box.height - margin))}px`;
+
       return;
     }
 
@@ -358,7 +412,6 @@ function boot(): void {
     const lines = live ? [...live.getClientRects()].filter(line => line.width > 0 && line.height > 0) : [];
     const first = lines[0] ?? r;
     const last = lines.at(-1) ?? r;
-    const margin = PLACE_MARGIN;
 
     // 还没有回答时是一条贴着选区的胶囊：放在第一行上方，小三角指着它；上方放不下才放到最后一行下方。
     if (!expanded || (!record?.turns.length && voice?.phase !== 'released')) {
@@ -386,7 +439,8 @@ function boot(): void {
 
     const block = pinned ? null : contentBlockOf(anchor.range);
     const blockRect = block?.getBoundingClientRect();
-    const roomy = !!blockRect && innerWidth - blockRect.right >= CARD_WIDTH + BESIDE_GAP + margin;
+    const cardWidth = surface.getBoundingClientRect().width || CARD_WIDTH;
+    const roomy = !!blockRect && innerWidth - blockRect.right >= cardWidth + BESIDE_GAP + margin;
     const besideRegion = roomy && block && blockRect ? {
       left: blockRect.right + 1,
       right: innerWidth - 1,
@@ -397,8 +451,10 @@ function boot(): void {
     const beside = !pinned && !!besideRegion && !!block && gutterBlank(host, block, besideRegion);
     const room = { above: r.top - margin - 8, below: innerHeight - r.bottom - margin - 8 };
     side ??= room.below >= 220 || room.below >= room.above ? 'below' : 'above';
-    const cap = beside ? innerHeight - margin * 2 : pinned ? 540 : Math.max(220, room[side]);
-    surface.style.maxHeight = `${Math.min(innerHeight - margin * 2, cap)}px`;
+    if (!manualSize) {
+      const cap = beside ? innerHeight - margin * 2 : pinned ? 540 : Math.max(220, room[side]);
+      surface.style.maxHeight = `${Math.min(innerHeight - margin * 2, cap)}px`;
+    }
     const box = surface.getBoundingClientRect();
 
     if (beside && blockRect) {
@@ -417,6 +473,36 @@ function boot(): void {
     surface.style.left = `${left}px`;
     surface.style.top = `${top}px`;
     surface.style.setProperty('--origin', pinned ? 'right top' : side === 'above' ? 'bottom center' : 'top center');
+  }
+
+  /** 把用户拉过的大小落到卡上；窗口变小只收显示，不改存着的尺寸。 */
+  function applyManualSize(): void {
+    if (!expanded || !manualSize) {
+      if (!appliedSize) return;
+
+      appliedSize = null;
+      surface.classList.remove('resized');
+      surface.style.removeProperty('width');
+      surface.style.removeProperty('height');
+      surface.style.removeProperty('max-height');
+
+      return;
+    }
+
+    const margin = PLACE_MARGIN;
+    // 窗口比最小尺寸还小时，先保证卡和右下角把手留在视口里。
+    const maxWidth = Math.max(200, innerWidth - margin * 2);
+    const maxHeight = Math.max(160, innerHeight - margin * 2);
+    const width = clamp(manualSize.width, Math.min(CARD_MIN_WIDTH, maxWidth), maxWidth);
+    const height = clamp(manualSize.height, Math.min(CARD_MIN_HEIGHT, maxHeight), maxHeight);
+
+    if (appliedSize?.width === width && appliedSize.height === height) return;
+
+    appliedSize = { width, height };
+    surface.classList.add('resized');
+    surface.style.width = `${width}px`;
+    surface.style.height = `${height}px`;
+    surface.style.maxHeight = 'none';
   }
 
   function highlight(): void {
@@ -452,6 +538,100 @@ function boot(): void {
     if (restoreFocus && lastFocus?.isConnected) {
       lastFocus.focus({ preventScroll: true });
     }
+  }
+
+  /** 标题栏拖动整张卡：拖过就由用户定位置，不再跟着选区走。 */
+  function startDrag(event: PointerEvent): void {
+    if (event.button !== 0 || !expanded || drag || resize || (event.target as Element).closest('button')) return;
+
+    const box = surface.getBoundingClientRect();
+    drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: box.left, top: box.top, moved: false };
+    surface.classList.add('dragging');
+    surface.classList.remove('glide', 'receding');
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function moveDrag(event: PointerEvent): void {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+
+    drag.moved = true;
+    manualPos = { left: drag.left + dx, top: drag.top + dy };
+    position();
+  }
+
+  function endDrag(event: PointerEvent): void {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+
+    drag = null;
+    surface.classList.remove('dragging');
+  }
+
+  /** 右下角拉大小：从当前位置往外拉，拉过就不再自动贴回选区。 */
+  function startResize(event: PointerEvent): void {
+    if (event.button !== 0 || !expanded || drag || resize) return;
+
+    const box = surface.getBoundingClientRect();
+    resize = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: box.left, top: box.top, width: box.width, height: box.height, moved: false };
+    surface.classList.add('resizing');
+    surface.classList.remove('glide', 'receding');
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function moveResize(event: PointerEvent): void {
+    if (!resize || event.pointerId !== resize.pointerId) return;
+
+    const dx = event.clientX - resize.startX;
+    const dy = event.clientY - resize.startY;
+
+    if (!resize.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+
+    resize.moved = true;
+    manualPos ??= { left: resize.left, top: resize.top };
+    const margin = PLACE_MARGIN;
+    const maxWidth = Math.max(200, innerWidth - margin * 2);
+    const maxHeight = Math.max(160, innerHeight - margin * 2);
+    manualSize = {
+      width: clamp(resize.width + dx, Math.min(CARD_MIN_WIDTH, maxWidth), maxWidth),
+      height: clamp(resize.height + dy, Math.min(CARD_MIN_HEIGHT, maxHeight), maxHeight),
+    };
+    applyManualSize();
+    position();
+  }
+
+  function endResize(event: PointerEvent): void {
+    if (!resize || event.pointerId !== resize.pointerId) return;
+
+    const moved = resize.moved;
+    resize = null;
+    surface.classList.remove('resizing');
+
+    if (moved && manualSize) {
+      pendingCardSize = null;
+      void chrome.storage.local.set({ [READING_CARD_SIZE_KEY]: manualSize }).catch(() => { /* 扩展刚重载 */ });
+    }
+    else if (pendingCardSize) {
+      manualSize = pendingCardSize;
+      pendingCardSize = null;
+      applyManualSize();
+      position();
+    }
+  }
+
+  /** 双击右下角回到默认大小；拖动过的位置留着。 */
+  function resetSize(event: MouseEvent): void {
+    event.preventDefault();
+    manualSize = null;
+    resize = null;
+    applyManualSize();
+    void chrome.storage.local.remove(READING_CARD_SIZE_KEY).catch(() => { /* 扩展刚重载 */ });
+    position();
   }
 
   function update(next: ReadingRecord): void {
@@ -495,9 +675,10 @@ function boot(): void {
     const composing = expanded && !turns.length && !waiting;
     surface.classList.toggle('expanded', expanded);
     surface.classList.toggle('composing', composing);
+    applyManualSize();
     el('.bar').hidden = expanded;
-    el('.head').hidden = !answering;
-    el('.q').hidden = !answering;
+    // 打字用的输入卡也能拖：标题栏一直留着，标题写「提问」。
+    el('.head').hidden = !expanded;
     el('.foot').hidden = !answering || !turns.some(turn => turn.answer.trim());
     messages.hidden = !answering;
     el('.composer').hidden = !expanded;
@@ -525,6 +706,8 @@ function boot(): void {
     const waitingSource = waiting ? voice!.target.source.text : undefined;
     // 问过不止一段时，每段第一问上面引用它那段原文：旧回答留着自己的出处，新一轮引用新的一段。
     const several = new Set([...sources, ...(waitingSource ? [waitingSource] : [])]).size > 1;
+    // 选区在页面上高亮时卡里不重复；快捷键恢复时没有选区，第一问至少带上出处。
+    const sourceVisible = Boolean(snapshot?.range?.startContainer.isConnected);
 
     for (const [index, turn] of turns.entries()) {
       if (!answers[index]) {
@@ -546,7 +729,10 @@ function boot(): void {
       }
 
       const item = answers[index]!;
-      setSourceQuote(item.turn, several && (index === 0 || sources[index] !== sources[index - 1]) ? sources[index]! : '');
+      const showsSource = several
+        ? index === 0 || sources[index] !== sources[index - 1]
+        : !sourceVisible && index === 0;
+      setSourceQuote(item.turn, showsSource ? sources[index]! : '');
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
       // 第一问是解释、翻译这类动作时，标题已经说了，不再重复一行。
@@ -634,12 +820,8 @@ function boot(): void {
       messages.scrollTop = messages.scrollHeight;
     }
 
-    // 顶上引用的是这张卡现在理解的那段原文：等回答时是刚按住时选的那段，换了选段就跟着换。
-    const quoted = (waitingSource ?? sources.at(-1) ?? snapshot?.source.text ?? '').replace(/\s+/g, ' ').trim();
+    // 选区在页面上已经高亮，卡里不再重复一遍；一轮里换过段时，各轮自己带出处。
     el('.title').textContent = waiting ? '提问' : actionName(turns.at(-1)?.question ?? '');
-    const quote = el('.q');
-    quote.textContent = quoteOf(quoted);
-    quote.title = quoted.slice(0, 400);
     const busy = readingBusy(record);
     // 生成中输入框有字时，按钮是改口；空着时才是停止。
     const stops = busy && !input.value.trim();
@@ -765,6 +947,9 @@ function boot(): void {
     expanded = true;
     pinned = false;
     side = null;
+    manualPos = null;
+    drag = null;
+    resize = null;
     lastFocus = document.activeElement instanceof HTMLElement && !host.contains(document.activeElement) ? document.activeElement : lastFocus;
     input.value = '';
     render();
@@ -846,6 +1031,9 @@ function boot(): void {
     expanded = true;
     pinned = false;
     side = null;
+    manualPos = null;
+    drag = null;
+    resize = null;
     render();
 
     if (visible) animate('morph');
@@ -918,7 +1106,7 @@ function boot(): void {
     const phase = companionPhase();
     const said = phase === 'listening' || phase === 'transcribing' || phase === 'thinking' || phase === 'speaking' ? phase : null;
     const card = visible && expanded && !surface.hidden ? surface.getBoundingClientRect() : null;
-    // 名牌避开卡片：卡片顶上就是它理解的那段引用，不能被挡住。
+    // 名牌避开卡片：卡片里是要读的回答，不能被挡住。
     window.__sideagent?.cursor?.companion?.({ point: pointerPoint(), voice: said, fly, quiet, ...(card ? { avoid: { x: card.x, y: card.y, width: card.width, height: card.height } } : {}) });
   }
 
@@ -1034,7 +1222,8 @@ function boot(): void {
   function recede(): void {
     if (!visible || !expanded) return;
     quiet = true;
-    surface.classList.toggle('receding', surface.dataset.place !== 'beside');
+    // 拖走的卡片留在原处，但陪读光标和名牌仍要让开正文。
+    if (!manualPos) surface.classList.toggle('receding', surface.dataset.place !== 'beside');
     clearTimeout(quietTimer);
     quietTimer = setTimeout(() => {
       quiet = false;
@@ -1272,9 +1461,27 @@ function boot(): void {
     renderPins();
   };
 
-  void chrome.storage.local.get([SELECTION_BAR_KEY, PINS_KEY]).then(stored => {
+  const applyCardSize = (value: unknown) => {
+    const next = readReadingCardSize(value);
+
+    // 正在拉右下角时先记下，松手没拉动再用，不打断手指。
+    if (resize) {
+      pendingCardSize = next;
+
+      return;
+    }
+
+    manualSize = next;
+    if (visible) {
+      applyManualSize();
+      position();
+    }
+  };
+
+  void chrome.storage.local.get([SELECTION_BAR_KEY, PINS_KEY, READING_CARD_SIZE_KEY]).then(stored => {
     applyBarSetting(isSelectionBarOff(stored[SELECTION_BAR_KEY]));
     applyPins(stored[PINS_KEY]);
+    applyCardSize(stored[READING_CARD_SIZE_KEY]);
   }).catch(() => {
   });
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -1287,6 +1494,7 @@ function boot(): void {
     }
 
     if (area === 'local' && PINS_KEY in changes) applyPins(changes[PINS_KEY]!.newValue);
+    if (area === 'local' && READING_CARD_SIZE_KEY in changes) applyCardSize(changes[READING_CARD_SIZE_KEY]!.newValue);
   });
 
   function changedSelection(keyboard = false): void {
@@ -1321,6 +1529,7 @@ function boot(): void {
     expanded = false;
     pinned = false;
     side = null;
+    manualPos = null;
     closeMenu();
     report();
     render();
@@ -1430,6 +1639,7 @@ function boot(): void {
   const relayout = () => {
     if (!retired()) {
       closeMenu();
+      applyManualSize();
       position();
       pushPointer();
     }
@@ -1438,6 +1648,13 @@ function boot(): void {
   // 双指缩放只改可视视口，不触发 window 的 resize。
   visualViewport?.addEventListener('resize', relayout, { signal });
   visualViewport?.addEventListener('scroll', relayout, { signal });
+  // 网页可以把指针捕获抢到宿主上：抬起事件到不了标题栏或把手时，在这里收尾，状态不留在拖动中。
+  const endGestures = (event: PointerEvent) => {
+    endDrag(event);
+    endResize(event);
+  };
+  window.addEventListener('pointerup', endGestures, { capture: true, signal });
+  window.addEventListener('pointercancel', endGestures, { capture: true, signal });
   resizes.observe(surface);
   window.addEventListener('pagehide', event => {
     if (event.isTrusted && !retired()) {
@@ -1460,6 +1677,9 @@ function boot(): void {
     snapshot = null;
     record = undefined;
     expanded = false;
+    manualPos = null;
+    drag = null;
+    resize = null;
     hide();
     restore.hidden = true;
   };
