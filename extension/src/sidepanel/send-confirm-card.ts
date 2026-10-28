@@ -230,9 +230,9 @@ function button(choice: "send" | "decline", text: string, card: Card): HTMLButto
   b.textContent = text;
   b.disabled = card.answering;
 
-  // 和网页上的确认框一样：「发送」不进 Tab 顺序，只认真实的鼠标点击（键盘触发时 detail 为 0）；脚本合成的点击、刚露出来那一会儿的点击都不算。
+  // 键盘确认必须明确聚焦按钮；输入框里的回车不能批准发送。
   if (choice === "send") {
-    b.tabIndex = -1;
+    b.tabIndex = 0;
     const wait = (card.armedAt ?? 0) - performance.now();
 
     if (wait > 0) {
@@ -245,7 +245,7 @@ function button(choice: "send" | "decline", text: string, card: Card): HTMLButto
   }
 
   b.addEventListener("click", event => {
-    if (!event.isTrusted || (choice === "send" && (event.detail === 0 || performance.now() < (card.armedAt ?? Infinity))) || card.answering || !port) return;
+    if (!event.isTrusted || (choice === "send" && ((event.detail === 0 && document.activeElement !== b) || performance.now() < (card.armedAt ?? Infinity))) || card.answering || !port) return;
     card.answering = true;
     port.postMessage({ id: card.view.id, choice });
     paint(card);

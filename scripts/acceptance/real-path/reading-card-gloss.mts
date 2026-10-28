@@ -305,6 +305,11 @@ try {
   await click(await until(() => clickable('.current-source'), 5_000, "当前引用可点击"));
   const financeInView = await until(async () => (await rp.evaluate(work, `(() => {const r=document.querySelector('#finance-bank').getBoundingClientRect();return r.top >= 0 && r.bottom <= innerHeight})()`)) || undefined, 5_000, "回到银行").catch(() => false);
   check("点击旧出处与当前引用，分别回到两处原文", !!riverInView && !!financeInView, {riverInView, financeInView, riverScroll});
+  await rp.evaluate(work, `document.querySelector('#river-bank').textContent = '原文已更新'`);
+  await click(await until(() => clickable('.turn:first-child > .source'), 5_000, "失效引用可点击"));
+  const staleFeedback = await inCard<string>(`function(){return this.textContent??''}`);
+  check("原文变化后引用明确反馈", staleFeedback.includes('原文位置已变化'), staleFeedback.slice(-300));
+  await shot("stale-source");
   await click(await until(() => pointOf('[data-act="handoff"]'), 5_000, "在侧栏继续"));
   const panelHandoff = await until(async () => {
     const value = await rp.evaluate(panel, `(() => ({ text:document.body.innerText, cite:document.querySelector('#ask-cite:not([hidden]) #ask-cite-text')?.textContent??'' }))()`) as {text:string;cite:string};
