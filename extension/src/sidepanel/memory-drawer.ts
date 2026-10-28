@@ -2,6 +2,7 @@ import type { AgentUiEvent, ClientMessage, ServerMessage } from "../../../shared
 import { MEMORY_KIND_LABEL, MEMORY_TEXT_MAX, normalizeMemoryHostname, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_FOUND_KEY, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, readBrowseEvents, readBrowseFound, readDismissed, type BrowseEvent } from "../shared/browse-habits.js";
+import { MEMORY_RESTORED, writeBrowseSetting } from "../shared/memory-backup.js";
 import type { BrowseHabit } from "../../../shared/browse-habits.js";
 import { MemoryManagementState, memoryKindLabel, memoryScopeLabel, memoryUseLabel, sameMemorySnapshot, type MemoryApplyResult } from "./memory.js";
 import { MemoryHistoryOpen } from "./memory-history-open.js";
@@ -676,7 +677,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
     pause.textContent = browseSeen.on ? "暂停观察" : "继续观察";
     pause.onclick = () => {
       uiEvent("ui_browse_toggle", { on: !browseSeen.on });
-      void chrome.storage.local.set({ [BROWSE_ON_KEY]: !browseSeen.on }).catch(() => { feedback.textContent = "没有保存观察状态，请重试。"; });
+      void writeBrowseSetting(!browseSeen.on).catch(() => { feedback.textContent = "没有保存观察状态，请重试。"; });
     };
     const clear = document.createElement("button");
     clear.type = "button";
@@ -855,6 +856,11 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
     renderMemoryDrawer();
     dispatchMemoryRequest(message, { action: "list" });
   }
+
+  chrome.runtime.onMessage.addListener((message: unknown) => {
+    if (!message || typeof message !== "object" || !("type" in message) || message.type !== MEMORY_RESTORED || memoryDrawer.hidden) return;
+    if (memoryState.noteRev(undefined, memoryEditorBusy())) requestMemoryList();
+  });
 
   function openMemoryDrawer(inspection: MemoryInspection | null = null): void {
     memoryInspection = inspection;
