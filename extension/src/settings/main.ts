@@ -8,7 +8,7 @@ import { mountDictationSettings } from "./dictation.js";
  */
 import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earendil-works/pi-ai";
 import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, KeyRound, Link, Play, Search, X } from "lucide";
-import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
+import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, omitCookies, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
 import { CODEX_CATALOG_TTL_MS, codexIdentity, fetchCodexCatalog, readCodexCatalog } from "../inproc/codex-catalog.js";
 import {
   CODEX_CATALOG_KEY, CUSTOM_PROVIDER_ID, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, modelCredential, resolveVoiceKey, resolveVoiceModel,
@@ -1304,7 +1304,7 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
       const model = probe.resolveModel(r.c);
       const [lowest] = thinkingProfile(model).levels;
       const stream = probe.models.streamSimple(model, { messages: [{ role: "user", content: SPEED_QUESTION, timestamp: Date.now() }] }, {
-        maxTokens: 2048, signal, headers: probe.headersFor(model), sessionId: probe.sessionId,
+        maxTokens: 2048, signal, fetch: omitCookies, headers: probe.headersFor(model), sessionId: probe.sessionId,
         reasoning: lowest === "off" ? undefined : lowest,
         // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型直接用 SSE，和任务里一样。
         ...(model.api === "openai-codex-responses" ? { transport: "sse" as const } : {}),

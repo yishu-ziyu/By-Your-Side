@@ -1108,6 +1108,11 @@ if(required.includes(key))candidates.set(key,attachment);
     return model ? `${model.provider}/${model.id}` : undefined;
   }
 
+  matchesModelConnection(target: { provider: string; modelId: string; baseUrl?: string }): boolean {
+    const model = this.session?.model;
+    return !!model && model.provider === target.provider && model.id === target.modelId && (target.provider !== "custom" || model.baseUrl === target.baseUrl);
+  }
+
   /**
    * 已配置凭据的 provider 下的可选模型（SDK ModelRuntime.getAvailable，含 OAuth 自动刷新）。
    * 返回**全量**并打 featured 标记：过滤交给 UI（默认看精选、可展开全部），
@@ -3730,7 +3735,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         const failed = failedModel(event.messages);
         const head = failed ? `模型请求最终失败（${failed}）：` : "模型请求最终失败：";
         console.error(`[sideagent] ${head}${errText}`);
-        emit({ kind: "error", message: `${head}${errText}` });
+        const model = this.session?.model;
+        const same = model && `${model.provider}/${model.id}` === failed;
+        const runId = this.conversationSnapshot()?.runId;
+        const modelConnection = same && runId && (model.provider !== "custom" || model.baseUrl)
+          ? { provider: model.provider, modelId: model.id, runId, ...(model.provider === "custom" ? { endpointHash: createHash("sha256").update(model.baseUrl).digest("hex") } : {}) }
+          : undefined;
+        emit({ kind: "error", message: `${head}${errText}`, ...(modelConnection ? { modelConnection } : {}) });
       } else if (!this.deliveredResultThisRun && (this.explicitDelivery || runProducedNothing(event.messages))) {
         // 正文已生成但宿主尚在补正式交付，不等于模型无输出；也不能升级成已交付。
         const lastAssistant = event.messages.filter(message => message.role === "assistant").at(-1);

@@ -7,14 +7,16 @@ import {
   PROTOCOL_VERSION,
   STORAGE_SCHEMA_VERSION,
   parseServerMessage,
+  parseClientMessage,
   type ClientMessage,
   type ServerMessage,
 } from "../../../shared/protocol.js";
 import type { ConnState, TransportKind } from "../relay.js";
 import {
-  CODEX_CATALOG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, installVoiceHeaderRule, pickCredentials, resolveVoiceKey, type StoredCredential,
+  CODEX_CATALOG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, installVoiceHeaderRule, modelCredential, pickCredentials, resolveVoiceKey, type StoredCredential,
 } from "../inproc/shared.js";
 import { CORE_SETTING_KEYS } from "../shared/core-settings.js";
+import { CONNECTION_PREFIX, credentialFingerprint, modelConfig, readConnections, withModelSettings } from "../settings/connections.js";
 
 export interface UplinkHandlers {
   onServerMessage(msg: ServerMessage): void;
@@ -41,7 +43,7 @@ export class Uplink {
       if (area !== "local") return;
       const keys = Object.keys(changes);
 
-      if (keys.some((key) => key === INPROC_CONFIG_KEY || key === INPROC_FAST_CONFIG_KEY || key === INPROC_BACKUP_CONFIG_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushModelConfig();
+      if (keys.some((key) => key === INPROC_CONFIG_KEY || key === INPROC_FAST_CONFIG_KEY || key === INPROC_BACKUP_CONFIG_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX) || key.startsWith(CONNECTION_PREFIX))) void this.pushModelConfig();
       if (keys.includes(CODEX_CATALOG_KEY)) void this.pushModelCatalog();
 
       if (keys.some((key) => CORE_SETTING_KEYS.includes(key))) void this.pushCoreSettings();
@@ -166,7 +168,36 @@ export class Uplink {
     const port = chrome.runtime.connect({ name: INPROC_PORT_NAME });
     this.inprocPort = port;
     this.transport = "inproc";
+    const keySaves = new Map<string, { cancelled: boolean }>();
     port.onMessage.addListener((raw) => {
+      if (raw && typeof raw === "object" && raw.type === "inproc_key_cancel" && typeof raw.requestId === "string") {
+        const pending = keySaves.get(raw.requestId);
+        if (pending) pending.cancelled = true;
+        return;
+      }
+      if (raw && typeof raw === "object" && raw.type === "inproc_key_save") {
+        const message = parseClientMessage(JSON.stringify({ ...raw, type: "model_key_save" }));
+        if (!message || message.type !== "model_key_save" || keySaves.has(message.requestId)) return;
+        const pending = { cancelled: false };
+        keySaves.set(message.requestId, pending);
+        void withModelSettings(async () => {
+          const roles = [INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY];
+          const credentialKey = INPROC_CREDENTIAL_PREFIX + message.target.provider;
+          const connectionKey = CONNECTION_PREFIX + message.target.provider;
+          const stored = await chrome.storage.local.get([...roles, credentialKey, connectionKey]);
+          const configs = roles.map(role => modelConfig(stored[role]));
+          const connection = modelConfig(stored[connectionKey]);
+          const allowed = configs.some(config => JSON.stringify(config) === JSON.stringify(message.target)) || message.target.provider !== "custom" && !!stored[credentialKey] || !!connection && connection.provider === message.target.provider && connection.baseUrl === message.target.baseUrl;
+          if (pending.cancelled || this.inprocPort !== port || JSON.stringify(configs) !== message.roles || JSON.stringify(connection) !== message.connection || !allowed || await credentialFingerprint(stored[credentialKey]) !== message.credentialHash) return false;
+          if (pending.cancelled || this.inprocPort !== port) return false;
+          await chrome.storage.local.set({ [credentialKey]: modelCredential(message.target, message.key) });
+          return true;
+        }).then(async ok => {
+          try { if (ok) await this.pushModelConfig(); port.postMessage({ type: "inproc_key_save_result", requestId: message.requestId, ok }); }
+          catch { try { port.postMessage({ type: "inproc_key_save_result", requestId: message.requestId, ok: false }); } catch { /* 端口断开，调用方按结果未知处理。 */ } }
+        }, () => { try { port.postMessage({ type: "inproc_key_save_result", requestId: message.requestId, ok: false }); } catch { /* 端口断开，调用方按结果未知处理。 */ } }).finally(() => keySaves.delete(message.requestId));
+        return;
+      }
       // 心跳只为让 service worker 保持存活；刷新后的订阅令牌落盘。两者都不转给侧栏。
       if (isKeepalive(raw)) return;
 
@@ -174,6 +205,7 @@ export class Uplink {
       else this.handleRaw(raw);
     });
     port.onDisconnect.addListener(() => {
+      for (const pending of keySaves.values()) pending.cancelled = true;
       if (this.inprocPort !== port) return;
       this.handleDisconnect(chrome.runtime.lastError?.message ?? "助手断开了");
     });
@@ -187,7 +219,7 @@ export class Uplink {
   private async pushModelConfig(): Promise<void> {
     if (!this.inprocPort) return;
     const stored = await chrome.storage.local.get(null);
-    this.inprocPort?.postMessage({ type: "inproc_config", config: stored[INPROC_CONFIG_KEY] ?? null, fast: stored[INPROC_FAST_CONFIG_KEY] ?? null, backup: stored[INPROC_BACKUP_CONFIG_KEY] ?? null, credentials: pickCredentials(Object.entries(stored)), codexCatalog: stored[CODEX_CATALOG_KEY] });
+    this.inprocPort?.postMessage({ type: "inproc_config", config: stored[INPROC_CONFIG_KEY] ?? null, fast: stored[INPROC_FAST_CONFIG_KEY] ?? null, backup: stored[INPROC_BACKUP_CONFIG_KEY] ?? null, connections: Object.fromEntries(readConnections(stored)), credentials: pickCredentials(Object.entries(stored)), codexCatalog: stored[CODEX_CATALOG_KEY] });
   }
 
   private async pushModelCatalog(): Promise<void> {

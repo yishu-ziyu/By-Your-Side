@@ -303,6 +303,9 @@ export function isHeldReason(v: unknown): v is HeldReason {
   return (HELD_REASONS as readonly unknown[]).includes(v);
 }
 
+export interface ModelConnectionTarget { provider: string; modelId: string; baseUrl?: string }
+export interface ModelConnectionIdentity { provider: string; modelId: string; runId: string; endpointHash?: string }
+
 export type ClientMessage = ConversationEnvelope & (
   | VoiceClientMessage
   | ReadingClientMessage
@@ -367,10 +370,12 @@ export type ClientMessage = ConversationEnvelope & (
   /** 一键翻译（快捷键、侧栏按钮、边缘胶囊）：这页没有译文就整页翻译，有就还原；不经主模型。 */
   /** 侧栏按钮发出时没有 context，由扩展后台补上活动标签页；交给任务宿主时一定带着。 */
   | { type: "page_translate"; context?: PageContext }
-  /** 模型出错、用户在错误卡上修好原因后，从出错的那一轮接着做。key：刚换的 key，先用上再接着做。auto：错误卡倒计时到点自己发的。 */
-  | { type: "retry_after_error"; key?: string; auto?: true }
-  /** 换 key 面板的「测试连接」：用这个 key 向当前主模型发一句话，结果见 model_key_test_result。 */
-  | { type: "model_key_test"; requestId: string; key: string }
+  /** 模型出错、用户修好原因后，从出错的那一轮接着做。 */
+  | { type: "retry_after_error"; keySaveRequestId?: string; target?: ModelConnectionTarget; expectedRunId?: string; auto?: true }
+  /** 换 key 面板测试出错的连接，不修改正在使用的凭据。 */
+  | { type: "model_key_test"; requestId: string; key: string; target: ModelConnectionTarget; expectedRunId: string }
+  | { type: "model_key_save"; requestId: string; key: string; target: ModelConnectionTarget; expectedRunId: string; roles: string; connection: string; credentialHash: string }
+  | { type: "model_key_cancel"; requestId: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact }
   /** 点「发送」前在网页上等用户确认：waiting 时宿主放宽这次调用的期限，结束时恢复普通期限。 */
   | { type: "tool_waiting_user"; id: string; waiting: boolean; /** 教学这一步在等用户点；没有它就是在等用户确认「发送」。 */ guide?: GuideWait; /** 等确认「发送」时网页上问的是什么；不等了时带结局。 */ send?: SendConfirmView });
@@ -452,6 +457,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "skill_operations_result"; requestId: string; ok: boolean; operations?: SkillOperationSummary[]; error?: string }
   /** reason 是人话；detail 是服务商原文，只进「技术详情」。 */
   | { type: "model_key_test_result"; requestId: string; ok: boolean; ms?: number; reason?: string; detail?: string }
+  | { type: "model_key_save_result"; requestId: string; ok: boolean }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
@@ -542,7 +548,7 @@ export type AgentUiEvent =
       progress?: true;
       /** 只对这一轮有用的说明（如调试提示条）：放在过程行下方，回合结束即收起，不留在回答上方。 */
       aside?: true }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; modelConnection?: ModelConnectionIdentity };
 
 // ── 工具契约 ───────────────────────────────────────────────────────
 
@@ -962,6 +968,15 @@ function isShortText(value: unknown): value is string {
   return typeof value === "string" && value.length <= 2000;
 }
 
+function isModelConnectionTarget(value: unknown): value is ModelConnectionTarget {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const target = value as Record<string, unknown>;
+  if (typeof target.provider !== "string" || !target.provider || target.provider.length > 200 || typeof target.modelId !== "string" || !target.modelId || target.modelId.length > 300) return false;
+  if (target.provider !== "custom") return target.baseUrl === undefined;
+  if (typeof target.baseUrl !== "string" || target.baseUrl.length > 2048) return false;
+  try { return ["http:", "https:"].includes(new URL(target.baseUrl).protocol); } catch { return false; }
+}
+
 export function parseClientMessage(raw: string): ClientMessage | null {
   try {
     const msg = JSON.parse(raw) as ClientMessage;
@@ -1047,11 +1062,13 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "set_thinking" && (typeof msg.model !== "string" || !msg.model.includes("/") || msg.model.length > 240 || !(msg.level === null || isThinkingLevel(msg.level)) || msg.restore !== undefined && msg.restore !== true)) return null;
 
-    if (msg.type === "retry_after_error" && msg.key !== undefined && (typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096)) return null;
+    if (msg.type === "retry_after_error" && (msg.auto !== undefined && msg.auto !== true || msg.target !== undefined && (!isModelConnectionTarget(msg.target) || !validRequestId(msg.expectedRunId) || !validRequestId(msg.keySaveRequestId)) || msg.expectedRunId !== undefined && !validRequestId(msg.expectedRunId))) return null;
 
-    if (msg.type === "retry_after_error" && msg.auto !== undefined && msg.auto !== true) return null;
+    if (msg.type === "model_key_test" && (!validRequestId(msg.requestId) || typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096 || !isModelConnectionTarget(msg.target) || !validRequestId(msg.expectedRunId))) return null;
 
-    if (msg.type === "model_key_test" && (!validRequestId(msg.requestId) || typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096)) return null;
+    if (msg.type === "model_key_save" && (!validRequestId(msg.requestId) || typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096 || !isModelConnectionTarget(msg.target) || !validRequestId(msg.expectedRunId) || typeof msg.roles !== "string" || msg.roles.length > 8192 || typeof msg.connection !== "string" || msg.connection.length > 4096 || typeof msg.credentialHash !== "string" || !/^[a-f0-9]{64}$/.test(msg.credentialHash))) return null;
+
+    if (msg.type === "model_key_cancel" && !validRequestId(msg.requestId)) return null;
 
     if (
       (msg.type === "user_message" || msg.type === "steer") &&
@@ -1194,6 +1211,13 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
       if (input.attachments !== undefined && (!Array.isArray(input.attachments) || !input.attachments.every(isAttachment))) return null;
     }
+
+    if (msg.type === "agent_event" && msg.event?.kind === "error" && msg.event.modelConnection !== undefined) {
+      const c = msg.event.modelConnection;
+      if (!c || typeof c.provider !== "string" || !c.provider || c.provider.length > 200 || typeof c.modelId !== "string" || !c.modelId || c.modelId.length > 300 || !validRequestId(c.runId) || (c.endpointHash !== undefined && (typeof c.endpointHash !== "string" || !/^[a-f0-9]{64}$/.test(c.endpointHash))) || (c.provider === "custom" && !c.endpointHash)) delete msg.event.modelConnection;
+    }
+
+    if (msg.type === "model_key_save_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean")) return null;
 
     if (msg.type === "model_key_test_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean"
       && (msg.ms === undefined || Number.isFinite(msg.ms)) && (msg.reason === undefined || isShortText(msg.reason)) && (msg.detail === undefined || isShortText(msg.detail)))) return null;

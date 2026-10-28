@@ -6,7 +6,7 @@ import { describeModelError } from "../../../shared/user-facing.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
 import { PROBE_TIMEOUT_MS, probeModel, type createModelRuntime, type ModelRuntime } from "./model-runtime.js";
 import { GPT_LIVE_MODEL } from "../../../shared/voice.js";
-import { INPROC_KEEPALIVE_MS, INPROC_PORT_NAME, resolveVoiceModel, type InprocModelConfig, type StoredCredentials } from "./shared.js";
+import { CUSTOM_ENDPOINT_ENV, INPROC_KEEPALIVE_MS, INPROC_PORT_NAME, modelCredential, resolveVoiceModel, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 import { BrowserSocket } from "./voice/browser-socket.js";
 import { VoiceCaptureRecorder } from "../../../shared/voice-capture-core.js";
 import { createVoiceCaptureSink } from "../shared/trace-store.js";
@@ -16,12 +16,14 @@ import { openPiSession } from "./pi-session-idb.js";
 import { openDurableStorage } from "./durable-storage.js";
 import { IdbDocument } from "./document-idb.js";
 import { pushedMiniApps, pushedSelfUse, pushedTranslationStyle, receiveCoreSettings } from "../shared/core-settings.js";
+import { credentialContents, modelConfig } from "../settings/connections.js";
 
 type Inbound = ClientMessage
-  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; credentials: StoredCredentials; codexCatalog?: unknown }
+  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; connections?: unknown; credentials: StoredCredentials; codexCatalog?: unknown }
   | { type: "inproc_catalog"; codexCatalog?: unknown }
   | { type: "inproc_settings"; values: unknown }
-  | { type: "inproc_voice"; configured: boolean; model?: unknown };
+  | { type: "inproc_voice"; configured: boolean; model?: unknown }
+  | { type: "inproc_key_save_result"; requestId: string; ok: boolean };
 
 interface InprocHostDeps {
   createRuntime: typeof createModelRuntime;
@@ -51,6 +53,12 @@ export function startInprocHost(deps: InprocHostDeps): void {
   let fastSelected: InprocModelConfig | null = null;
   let backupSelected: InprocModelConfig | null = null;
   let storedCredentials: StoredCredentials = {};
+  let storedConnections: Record<string, InprocModelConfig> = {};
+  const pendingKeySaves = new Map<string, { conversationId: string; roles: string; connection: string; provider: string; before: string; after: string }>();
+  const cancelledKeySaves = new Set<string>();
+  const savedKeyTransactions = new Map<string, { requestId: string; runId: string; target: string; roles: string; connection: string; credential: string }>();
+  const keySaveReplies = new Map<string, (ok: boolean) => void>();
+  const cancelKeySave = (id: string) => { cancelledKeySaves.add(id); try { port?.postMessage({ type: "inproc_key_cancel", requestId: id }); } catch { /* 端口断开时后台也会取消等待中的保存。 */ } };
   let voiceConfigured = false;
   let voiceModel: unknown;
   let helloReceived = false;
@@ -244,6 +252,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
   }
 
   async function handle(message: Inbound): Promise<void> {
+    if (message.type === "inproc_key_save_result") return;
     if (message.type === "inproc_catalog") {
       await models.applyCodexCatalog(message.codexCatalog);
       if (core && connection) connection.send({ type: "model_info", models: await core.session.availableModels() });
@@ -263,9 +272,11 @@ export function startInprocHost(deps: InprocHostDeps): void {
     }
 
     if (message.type === "inproc_config") {
+      const mainChanged = JSON.stringify(selected) !== JSON.stringify(message.config);
       selected = message.config;
       fastSelected = message.fast ?? null;
       backupSelected = message.backup ?? null;
+      storedConnections = readConnectionMap(message.connections);
       storedCredentials = message.credentials ?? {};
       await models.credentials.load(storedCredentials);
       await models.applyCodexCatalog(message.codexCatalog);
@@ -274,7 +285,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
       const model = models.resolveModel(selected);
 
       if (core) {
-        for (const conversation of core.conversations.list()) {
+        if (mainChanged) for (const conversation of core.conversations.list()) {
           await core.conversations.handleMessage({ type: "set_model", conversationId: conversation.id, model: `${model.provider}/${model.id}` });
         }
       } else {
@@ -310,10 +321,21 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
  return; }
 
-    // 侧栏刚换的 key 先用上再接着做：设置存储随后也会推来同一份，不等它，免得接着做时还拿旧 key。
-    if (message.type === "retry_after_error" && message.key && selected) {
-      storedCredentials = { ...storedCredentials, [selected.provider]: { type: "api_key", key: message.key } };
-      await models.credentials.load(storedCredentials);
+    if (message.type === "model_key_save") { void saveKey(message); return; }
+
+    if (message.type === "retry_after_error" && message.target) {
+      const config = configuredTarget(message.target);
+      const conversationId = message.conversationId ?? "default";
+      const saved = savedKeyTransactions.get(conversationId);
+      savedKeyTransactions.delete(conversationId);
+      const matchesSaved = saved && saved.requestId === message.keySaveRequestId && saved.runId === message.expectedRunId
+        && saved.target === JSON.stringify(modelConfig(config)) && saved.roles === JSON.stringify([selected, fastSelected, backupSelected].map(modelConfig))
+        && saved.connection === JSON.stringify(storedConnections[message.target.provider] ?? null)
+        && saved.credential === credentialContents(storedCredentials[message.target.provider]);
+      if (!matchesSaved || !config || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(conversationId)?.runtime.session.matchesModelConnection(config)) {
+        connection?.send({ type: "agent_event", conversationId: message.conversationId, event: { kind: "error", message: "原模型连接已变化，没有继续。请重新检查连接。" } });
+        return;
+      }
     }
 
     if (message.type === "hello") helloReceived = true;
@@ -332,23 +354,69 @@ export function startInprocHost(deps: InprocHostDeps): void {
     else core.handleMessage(message);
   }
 
+  function sameErrorTask(conversationId: string | undefined, runId: string | undefined): boolean {
+    const task = core?.conversations.getTaskProgress(conversationId ?? "default");
+    return !!runId && task?.runId === runId && task.state === "error";
+  }
+
+  function readConnectionMap(value: unknown): Record<string, InprocModelConfig> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const result: Record<string, InprocModelConfig> = {};
+    for (const [provider, raw] of Object.entries(value)) { const config = modelConfig(raw); if (config?.provider === provider) result[provider] = config; }
+    return result;
+  }
+
+  function configuredTarget(target: { provider: string; modelId: string; baseUrl?: string } | undefined): InprocModelConfig | null {
+    if (!target) return null;
+    const credential = storedCredentials[target.provider];
+    const boundEndpoint = credential?.type === "api_key" ? credential.env?.[CUSTOM_ENDPOINT_ENV] : undefined;
+    if (target.provider === "custom" && boundEndpoint && boundEndpoint !== target.baseUrl) return null;
+    const matches = [selected, fastSelected, backupSelected].filter(config => config && config.provider === target.provider && config.modelId === target.modelId && config.baseUrl === target.baseUrl);
+    if (matches[0]) return matches[0];
+    const connection = storedConnections[target.provider];
+    if (connection && connection.baseUrl === target.baseUrl) return { ...connection, modelId: target.modelId };
+    if (target.provider !== "custom" && target.baseUrl === undefined && storedCredentials[target.provider]) return { provider: target.provider, modelId: target.modelId };
+    return null;
+  }
+
+  async function saveKey(message: Extract<ClientMessage, { type: "model_key_save" }>): Promise<void> {
+    const reply = (ok: boolean) => connection?.send({ type: "model_key_save_result", conversationId: message.conversationId, requestId: message.requestId, ok });
+    try {
+      const config = configuredTarget(message.target);
+      if (cancelledKeySaves.has(message.requestId) || !config || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config) || !port) { reply(false); return; }
+      const ok = await new Promise<boolean>(resolve => {
+        const timer = setTimeout(() => { keySaveReplies.delete(message.requestId); cancelKeySave(message.requestId); resolve(false); }, 9_000);
+        keySaveReplies.set(message.requestId, value => { clearTimeout(timer); resolve(value); });
+        port?.postMessage({ ...message, type: "inproc_key_save" });
+      });
+      const stillCurrent = !cancelledKeySaves.has(message.requestId) && sameErrorTask(message.conversationId, message.expectedRunId) && core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config) === true;
+      log(`key-save: ${JSON.stringify({ stored: ok, cancelled: cancelledKeySaves.has(message.requestId), sameTask: sameErrorTask(message.conversationId, message.expectedRunId), sameModel: core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config) === true })}`);
+      if (ok && stillCurrent) savedKeyTransactions.set(message.conversationId ?? "default", { requestId: message.requestId, runId: message.expectedRunId, target: JSON.stringify(modelConfig(config)), roles: message.roles, connection: message.connection, credential: credentialContents(modelCredential(config, message.key)) });
+      reply(ok && stillCurrent);
+    } catch (error) { log(`key-save: storage failure: ${(error instanceof Error ? error.name : "unknown")}`); reply(false); }
+    finally { pendingKeySaves.delete(message.requestId); cancelledKeySaves.delete(message.requestId); }
+  }
+
   /** 换 key 面板的「测试连接」：用另一份运行时试新 key，不动正在用的凭据。 */
   async function testKey(message: Extract<ClientMessage, { type: "model_key_test" }>): Promise<void> {
     const reply = (result: { ok: boolean; ms?: number; reason?: string; detail?: string }) =>
       connection?.send({ type: "model_key_test_result", conversationId: message.conversationId, requestId: message.requestId, ...result });
 
-    if (!selected) return reply({ ok: false, reason: "还没有连接模型。" });
-    const config = selected;
+    const config = configuredTarget(message.target);
+    if (!config || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config)) return reply({ ok: false, reason: "原连接已变化，请重新打开并核对。" });
+    const binding = JSON.stringify([selected, fastSelected, backupSelected, storedConnections[config.provider], storedCredentials[config.provider]]);
     const started = performance.now();
     const probe = deps.createRuntime(() => undefined);
     const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
 
     try {
-      await probe.credentials.load({ ...storedCredentials, [config.provider]: { type: "api_key", key: message.key } });
+      await probe.credentials.load({ ...storedCredentials, [config.provider]: modelCredential(config, message.key) });
       await probeModel(probe, config, timeout);
+      if (binding !== JSON.stringify([selected, fastSelected, backupSelected, storedConnections[config.provider], storedCredentials[config.provider]]) || !configuredTarget(message.target) || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config)) return reply({ ok: false, reason: "测试期间连接已变化，请重新打开并核对。" });
       reply({ ok: true, ms: Math.round(performance.now() - started) });
     } catch (error) {
-      const raw = error instanceof Error ? error.message : String(error);
+      if (binding !== JSON.stringify([selected, fastSelected, backupSelected, storedConnections[config.provider], storedCredentials[config.provider]]) || !configuredTarget(message.target) || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config)) return reply({ ok: false, reason: "测试期间连接已变化，请重新打开并核对。" });
+      const raw = (error instanceof Error ? error.message : String(error)).split(message.key).join("[密钥已隐藏]");
       const copy = describeModelError(`模型请求最终失败：${raw}`);
 
       const reason = timeout.aborted ? `${PROBE_TIMEOUT_MS / 1000} 秒内没有回复，服务商可能正忙，可以再试一次。`
@@ -375,6 +443,29 @@ export function startInprocHost(deps: InprocHostDeps): void {
     if (core) core.adoptClient(conn);
     let queue = Promise.resolve();
     next.onMessage.addListener((raw: Inbound) => {
+      if (raw.type === "inproc_key_save_result") {
+        if (typeof raw.requestId === "string" && typeof raw.ok === "boolean") { keySaveReplies.get(raw.requestId)?.(raw.ok); keySaveReplies.delete(raw.requestId); }
+        return;
+      }
+      if (raw.type === "model_key_cancel") {
+        log("key-save: panel cancelled");
+        cancelKeySave(raw.requestId);
+        if (!pendingKeySaves.has(raw.requestId)) setTimeout(() => cancelledKeySaves.delete(raw.requestId), 30_000);
+        return;
+      }
+      if (raw.type === "model_key_save") pendingKeySaves.set(raw.requestId, { conversationId: raw.conversationId ?? "default", roles: raw.roles, connection: raw.connection, provider: raw.target.provider, before: credentialContents(storedCredentials[raw.target.provider]), after: credentialContents(modelCredential(raw.target, raw.key)) });
+      else if (raw.type === "inproc_config") {
+        const roles = JSON.stringify([modelConfig(raw.config), modelConfig(raw.fast), modelConfig(raw.backup)]);
+        for (const [id, pending] of pendingKeySaves) {
+          const credential = credentialContents(raw.credentials?.[pending.provider]);
+          const connection = JSON.stringify(readConnectionMap(raw.connections)[pending.provider] ?? null);
+          if (roles !== pending.roles || connection !== pending.connection || credential !== pending.before && credential !== pending.after) { log(`key-save: config invalidated ${JSON.stringify({ roles: roles === pending.roles, connection: connection === pending.connection, before: credential === pending.before, after: credential === pending.after })}`); cancelKeySave(id); }
+        }
+      } else if (raw.type === "set_model" || raw.type === "user_message" || raw.type === "steer" || raw.type === "abort" || raw.type === "task_action") {
+        const conversationId = raw.type === "task_action" ? raw.request.conversationId : raw.conversationId ?? "default";
+        savedKeyTransactions.delete(conversationId);
+        for (const [id, pending] of pendingKeySaves) if (pending.conversationId === conversationId) cancelKeySave(id);
+      }
       queue = queue.then(() => handle(raw)).catch(error => {
         conn.send({ type: "agent_event", event: { kind: "error", message: error instanceof Error ? error.message : String(error) } });
       });
@@ -383,6 +474,8 @@ export function startInprocHost(deps: InprocHostDeps): void {
       if (port !== next) return;
       port = null;
       connection = null;
+      savedKeyTransactions.clear();
+      for (const id of pendingKeySaves.keys()) cancelKeySave(id);
       core?.onClientGone(conn);
     });
   });

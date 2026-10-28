@@ -52,13 +52,22 @@ export function readConnectionChecks(stored: Record<string, unknown>): Map<strin
 
 const ROLE_KEYS = [INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY];
 
-function credentialContents(value: unknown, sameAccount = false): string {
+export function credentialContents(value: unknown, sameAccount = false): string {
   if (!value || typeof value !== 'object') return '';
   const fields = Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'settingsVerificationId'));
   if (sameAccount && fields.type === 'oauth' && typeof fields.accountId === 'string' && fields.accountId) {
     return JSON.stringify({ type: fields.type, accountId: fields.accountId });
   }
-  return JSON.stringify(fields);
+  // chrome.storage can return object properties in a different order from the saved credential.
+  return JSON.stringify(fields, (_key, value: unknown) => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+    : value);
+}
+
+export async function credentialFingerprint(value: unknown): Promise<string> {
+  const bytes = new TextEncoder().encode(credentialContents(value));
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(hash)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export function withModelSettings<T>(write: () => Promise<T>): Promise<T> {
