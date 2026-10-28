@@ -20,6 +20,7 @@ export interface ClientConn {
 }
 
 export interface HostCoreOptions {
+  continuationEnabled?: () => boolean;
   createRuntime: ConstructorParameters<typeof ConversationManager>[0];
   store?: ConversationPersistence;
   memoryStore?: MemoryStore;
@@ -73,6 +74,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
   );
 
   conversations.taskHistory = options.taskHistory;
+  conversations.continuationEnabled = options.continuationEnabled ?? (() => false);
   conversations.learnedOperations = options.learnedOperations;
   conversations.siteNotes = options.siteNotes;
 

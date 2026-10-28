@@ -9,6 +9,8 @@ import { Type } from "typebox";
 import type { MemoryStore } from "./memory-store.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { LearnedOperationStore } from "./learned-operations.js";
+import { isWaitCondition } from '../../shared/task-continuation.js';
+import type { ConditionRegistration } from './task-continuation.js';
 
 const log = (message: string) => console.error(`[sideagent] ${message}`);
 
@@ -16,7 +18,7 @@ export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover" | "artifactPersistence"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore; learnedOperations?: LearnedOperationStore; miniApps?: () => Promise<boolean>; translationStyle?: () => string },
+  options?: Pick<SessionCreateOptions, "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover" | "artifactPersistence" | "continuationEnabled"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore; learnedOperations?: LearnedOperationStore; miniApps?: () => Promise<boolean>; translationStyle?: () => string },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));
@@ -25,6 +27,27 @@ export async function createConversationRuntime(
   let toolSession: BrowserAgentSession | undefined;
   // 交给用户：走与侧栏「接管」相同的暂停通道，宿主接线后才可用。
   let handToUser: ((ask: string, targets?: string[]) => Promise<void>) | undefined;
+  let waitForCondition: ((input: ConditionRegistration) => Promise<unknown>) | undefined;
+  const conditionTool = defineTool({
+    name: 'wait_for_condition', label: '等待页面条件',
+    description: 'Save a finite delegation on the ORIGINAL page and end this execution fragment. Use only when the user asked to wait for results or watch new results. No model runs while waiting. Choose an observed stable UNIQUE native CSS selector or a current @ref; the host resolves refs to a unique stable id/test attribute and persists only that locator. Generic code and whole-page changed conditions are refused. The host rereads without navigation, scrolling, focus or clicks. When the condition holds, the SAME goal resumes automatically, limited to reading, analysis and marking that page. mode=watch requires explicit finite ongoing attention; durationMs reflects the user deadline, maximum one hour; absent a duration use 300000. For new list items use changed on a stable container; process only new stable item identities and preserve prior marks. Do currently executable work before waiting. Do not claim completion.',
+    parameters: Type.Object({
+      condition: Type.Object({ target: Type.String(), property: Type.Union(['exists','text','value','enabled','checked','visible'].map(v => Type.Literal(v))), operator: Type.Union(['equals','contains','changed'].map(v => Type.Literal(v))), expected: Type.Optional(Type.Union([Type.String(), Type.Boolean()])), goalItem: Type.String(), description: Type.String() }),
+      mode: Type.Union([Type.Literal('once'), Type.Literal('watch')]), durationMs: Type.Integer({ minimum: 1000, maximum: 3600000 }),
+    }),
+    execute: async (_id, params) => {
+      let condition = params.condition;
+      if (/^@\d+$/.test(condition.target)) {
+        const read = await rpc.call('read_element', { target: condition.target, properties: ['visible'] });
+        const stable = read && typeof read === 'object' && 'persistentTarget' in read ? read.persistentTarget : undefined;
+        if (typeof stable !== 'string' || stable.length > 1000) throw new Error('这个快照目标没有稳定定位，不能持续关注。请用 read_elements 找到明确结果容器或状态字段的唯一定位。');
+        condition = { ...condition, target: stable };
+      }
+      if (!waitForCondition || !isWaitCondition(condition)) throw new Error('等待条件无效。请选择明确的状态字段或结果容器，使用唯一 CSS 定位；整页变化不能证明条件成立。');
+      const saved = await waitForCondition({ condition, mode: params.mode, durationMs: params.durationMs });
+      return { content: [{ type: 'text' as const, text: '等待条件已保存。当前执行片段结束；条件满足后宿主自动续做，不要保持循环或声称目标完成。' }], details: saved, terminate: true };
+    },
+  });
 
   const handToUserTool = defineTool({
     name: "hand_to_user",
@@ -64,7 +87,7 @@ export async function createConversationRuntime(
       },
       customTools: [...createBrowserTools(rpc, undefined, tabId => control.takeTab(tabId), name => toolSession?.isToolActive(name === "worker_tabs" ? "take_tab" : name) ?? false, { releaseIdleTab: tabId => control.releaseIdleForeignTab(tabId), epoch: () => toolSession?.executionEpoch() ?? 0, canWrite: (toolCallId?:string) => toolSession?.canWriteCurrentInput(toolCallId) ?? false, assertCall: (name, params, toolCallId) => toolSession?.assertTaskResultExecution(name, params, toolCallId), onStep: step => toolSession?.observeProgramStep(step), beforeCopy: async () => toolSession ? toolSession.prepareCopyCheck() : {record() {}}, files: () => toolSession?.fileStore(), attachments: () => toolSession?.userAttachments() ?? [], memoryForValue: value => toolSession?.memoryForValue(value), siteNotesFor: url => toolSession?.siteNotesFor(url) ?? Promise.resolve(null), openForUser: () => toolSession?.userAskedToOpen() ?? false, observeCall: (name, params, result) => toolSession?.observeBrowserCall(name, params, result), learnedOperations: { save: (candidate, runtime) => toolSession!.saveLearnedOperation(candidate, runtime), run: (id, input, runtime) => toolSession!.runSavedLearnedOperation(id, input, runtime), delete: (id, runtime) => toolSession!.deleteLearnedOperation(id, runtime) } }, (blocks, language, signal, meta) => { if (!toolSession) throw new Error("翻译会话不可用");
 
- return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), createTakeTabTool(control), handToUserTool],
+ return toolSession.translatePageBatch(blocks, language, signal, meta); }), ...(options?.customTools ?? []), createTakeTabTool(control), handToUserTool, conditionTool],
     },
   );
 
@@ -267,7 +290,7 @@ export async function createConversationRuntime(
     }
   };
 
-  return { session, control, rpc, handleMessage, onHandToUser(fn: (ask: string, targets?: string[]) => Promise<void>) { handToUser = fn; }, dispose() { session.dispose(); } };
+  return { session, control, rpc, handleMessage, onWaitForCondition(fn: (input: ConditionRegistration) => Promise<unknown>) { waitForCondition = fn; }, onHandToUser(fn: (ask: string, targets?: string[]) => Promise<void>) { handToUser = fn; }, dispose() { session.dispose(); } };
 }
 
 function frozenMembersFromTakeover(msg: Extract<ClientMessage, { type: "takeover" }>): ActiveMemberInput[] {

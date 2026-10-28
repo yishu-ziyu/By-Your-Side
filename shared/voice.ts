@@ -4,6 +4,7 @@ import {isTaskNextStep} from './task-next-step.js';
 import type {Attachment,PageContext} from './protocol.js';
 import { isTaskResultItem, isTaskResultState, type TaskResultItem, type TaskResultState } from './task-results.js';
 import {isTaskRecoveryInput,type TaskRecoveryInput} from './task-recovery.js';
+import { isTaskContinuation, type TaskContinuation } from './task-continuation.js';
 
 export const USER_DELIVERY_KINDS = ["ack", "finding", "reply"] as const;
 
@@ -126,6 +127,7 @@ export interface TaskProgressSnapshot {
   restartRecovery?: boolean;
   interruptionReason?: 'host_restart' | 'connection_lost' | 'manual_continuation';
   recoveryInput?:TaskRecoveryInput;
+  continuation?: TaskContinuation;
   /** Auxiliary effect without a durable result binding must stay uncertain after interruption. */
   untrackedWritePending?:boolean;
   unresolvedEffect?:boolean;
@@ -563,6 +565,7 @@ export function isTaskProgressSnapshot(v: unknown): v is TaskProgressSnapshot {
     && (s.restartRecovery === undefined || typeof s.restartRecovery === "boolean")
     && (s.interruptionReason === undefined || ['host_restart','connection_lost','manual_continuation'].includes(s.interruptionReason))
     && (s.recoveryInput === undefined || isTaskRecoveryInput(s.recoveryInput))
+    && (s.continuation === undefined || isTaskContinuation(s.continuation))
     && (s.untrackedWritePending === undefined || typeof s.untrackedWritePending==='boolean')
     && (s.unresolvedEffect === undefined || typeof s.unresolvedEffect==='boolean')
     && (s.executionAuditComplete === undefined || typeof s.executionAuditComplete==='boolean')

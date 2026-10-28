@@ -12,6 +12,7 @@ import { isUnfinishedItem, USER_DELIVERY_KINDS, type TaskProgressSnapshot, type 
 import { nextStepIgnoringPlaceholder, TASK_NEXT_REASONS, type TaskNextStep } from "./task-next-step.js";
 import { isSupersededUnknown, TASK_RESULT_ITEM_STATUSES, type TaskResultItemStatus } from "./task-results.js";
 import { isTaskMaterials, type TaskMaterialReference } from './task-recovery.js';
+import { isTaskContinuation, type TaskContinuation } from './task-continuation.js';
 
 export const TASK_VIEW_STATES = ["none", "running", "paused", "interrupted", "idle", "aborted", "error"] as const;
 
@@ -34,6 +35,7 @@ export interface TaskView {
   page: TaskViewPage | null;
   /** 已接受请求的材料摘要，身份由本视图 conversationId/runId 绑定。旧记录可缺省。 */
   materials?: TaskMaterialReference[];
+  continuation?: TaskContinuation;
   /** 当前进行中的活动 */
   active: { member: string; action: string; since: number }[];
   lastAction: { action: string; failed: boolean; at: number } | null;
@@ -89,6 +91,15 @@ function waitingFor(snapshot: TaskProgressSnapshot, nextStep: TaskNextStep | und
         return { reason: "tool_failed", detail: null };
       case "runtime_error":
         return { reason: "runtime_error", detail: null };
+      case "condition_wait":
+        return { reason: "condition_wait", detail: snapshot.continuation?.condition.description ?? null };
+      case "condition_invalid":
+        return { reason: "condition_invalid", detail: snapshot.continuation?.lastError ?? null };
+      case "deadline":
+      case "budget":
+        return { reason: nextStep.reason, detail: null };
+      case "continuation_stopped":
+        return { reason: nextStep.reason, detail: snapshot.continuation?.stopReason ?? null };
       default:
         break;
     }
@@ -121,7 +132,7 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     page: snapshot.recoveryInput?.page ? { tabId: snapshot.recoveryInput.page.tabId, urlHash: snapshot.recoveryInput.page.urlHash } : null,
     active: (snapshot.active ?? []).map((a) => ({ member: a.member, action: a.action, since: a.since })),
     lastAction: snapshot.lastAction ? { ...snapshot.lastAction } : null,
-    waiting: waitingFor(snapshot, snapshot.nextStep),
+    waiting: waitingFor(snapshot, snapshot.nextStep ?? nextStepIgnoringPlaceholder(snapshot)),
     results,
     // 与 decideTaskNextStep 同口径：已被取代的 unknown 不再算未完成项
     outstanding,
@@ -139,6 +150,15 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   const materials = snapshot.recoveryInput?.materials;
 
   if (materials) view.materials = materials.map(item => ({ ...item }));
+
+  if (snapshot.continuation) {
+    view.continuation = { ...snapshot.continuation, condition: { ...snapshot.continuation.condition } };
+    const state = snapshot.continuation.state;
+
+    view.resumable = state === 'SUSPENDED' && !!snapshot.recoveryInput;
+
+    if (state !== 'COMPLETED') delete view.goalStatus;
+  }
 
   return view;
 }
@@ -171,6 +191,8 @@ export function isTaskView(value: unknown): value is TaskView {
   if (v.page !== null && (!v.page || typeof v.page !== "object" || !Number.isSafeInteger(v.page.tabId) || typeof v.page.urlHash !== "string")) return false;
 
   if (v.materials !== undefined && !isTaskMaterials(v.materials)) return false;
+
+  if (v.continuation !== undefined && !isTaskContinuation(v.continuation)) return false;
 
   const itemOk = (x: unknown): boolean => {
     if (!x || typeof x !== "object") return false;

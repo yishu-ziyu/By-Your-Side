@@ -8,7 +8,7 @@ import type { TaskProgressSnapshot } from './voice.js';
 // verify_unknown、unknown_with_baseline、unknown_without_baseline 不再产生，只为读入旧任务存档保留。
 export const TASK_NEXT_ACTIONS = ['continue', 'change_method', 'verify_unknown', 'ask_user', 'verify_result', 'deliver', 'wait', 'stop'] as const;
 
-export const TASK_NEXT_REASONS = ['cancelled', 'human_control', 'restart_checkpoint', 'failure_limit', 'unknown_with_baseline', 'unknown_without_baseline', 'in_flight', 'tool_failed', 'remaining', 'readback_required', 'receipts_reviewed', 'open_task', 'runtime_error'] as const;
+export const TASK_NEXT_REASONS = ['cancelled', 'human_control', 'restart_checkpoint', 'failure_limit', 'unknown_with_baseline', 'unknown_without_baseline', 'in_flight', 'tool_failed', 'remaining', 'readback_required', 'receipts_reviewed', 'open_task', 'runtime_error', 'condition_wait', 'condition_invalid', 'deadline', 'budget', 'continuation_stopped'] as const;
 
 /** A host decision about execution and delivery, never a claim of business success. */
 export interface TaskNextStep {
@@ -55,6 +55,34 @@ export function decideTaskNextStep(snapshot: TaskProgressSnapshot, facts: NextSt
 
   if (snapshot.state === 'interrupted') {
     return decide('wait', 'restart_checkpoint', false, 'none');
+  }
+
+  const continuation = snapshot.continuation;
+
+  if (continuation) {
+    if (continuation.state === 'STOPPED') {
+      const reason = continuation.stopReason === 'deadline' ? 'deadline' : continuation.stopReason === 'budget' ? 'budget' : 'continuation_stopped';
+
+      return decide('stop', reason, false, 'partial');
+    }
+
+    if (continuation.state === 'FAILED') return decide('stop', 'condition_invalid', false, 'partial');
+
+    if (continuation.state === 'COMPLETED') return decide('deliver', 'receipts_reviewed', false, 'report');
+
+    if (snapshot.observedAt >= continuation.expiresAt) return decide('stop', 'deadline', false, 'partial');
+    const activeMs = continuation.activeMs + (continuation.segmentStartedAt === null ? 0 : Math.max(0, snapshot.observedAt - continuation.segmentStartedAt));
+
+    if (activeMs >= continuation.maxActiveMs || continuation.modelCalls >= continuation.maxModelCalls
+      || continuation.state === 'WAITING_CONDITION' && continuation.observations >= continuation.maxObservations) return decide('stop', 'budget', false, 'partial');
+
+    if (continuation.state === 'WAITING_USER') return decide('wait', 'human_control', false, 'none');
+
+    if (continuation.state === 'SUSPENDED') return decide('wait', 'condition_invalid', false, 'none');
+
+    if (continuation.state === 'WAITING_CONDITION') return decide('wait', 'condition_wait', false, 'none');
+
+    if (continuation.state === 'VERIFYING') return decide('verify_result', 'readback_required', false, 'partial');
   }
 
   if (facts.failureLimit) {
@@ -121,6 +149,11 @@ export function nextStepInstruction(decision: TaskNextStep): string {
     case 'cancelled': return '原任务已取消，操作未执行。';
     case 'human_control': return '页面现在归你，等待明确交还，不执行写入。';
     case 'restart_checkpoint': return '原任务保留在重启检查点，等待用户明确继续，不自动执行。';
+    case 'condition_wait': return '外部条件尚未满足，已保留原任务；等待条件复核后由宿主安排继续，不执行页面写入，也不把等待当成完成。';
+    case 'condition_invalid': return '等待条件或页面身份无法核实，自动续做已停下；保留已有成果与未完成项，不在其他页面继续。';
+    case 'deadline': return '关注期限已到，停止自动续做；如实说明已有成果和剩余事项，不能称目标已完成。';
+    case 'budget': return '委托预算已用完，停止自动续做；如实说明已有成果和剩余事项，不能称目标已完成。';
+    case 'continuation_stopped': return '持续委托已停止，旧条件和迟到结果不能重新启动；保留已有成果，不执行后续动作。';
     case 'failure_limit': return '原地打转，已停下；说明卡点并请用户决定。';
     case 'unknown_with_baseline':
     case 'unknown_without_baseline': return '有一步的结果未知（可能已经生效）。先重新读页面：没生效就重做或换方法，已经生效就继续。';

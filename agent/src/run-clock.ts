@@ -27,6 +27,7 @@ export class RunClock {
   }
 
   reset():void {this.startedAt=this.now();this.callsAfter=null;}
+  resumeActive(activeMs: number): void { this.startedAt = this.now() - activeMs; this.callsAfter = null; }
 
   private minutes():number {return Math.max(1, Math.round((this.now()-this.startedAt)/60_000));}
 

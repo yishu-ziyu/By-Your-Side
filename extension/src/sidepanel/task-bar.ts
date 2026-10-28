@@ -26,6 +26,11 @@ function waitingCopy(reason: string, detail: string | null): { text: string; det
     readback_required: "助手还要核验页面",
     tool_failed: "上一步没做成",
     runtime_error: "出错了",
+    condition_wait: "条件满足后自动继续",
+    condition_invalid: "关注已暂停，需要核实原页面",
+    deadline: "关注期限已到，已有结果保留",
+    budget: "关注预算已用完，已有结果保留",
+    continuation_stopped: "关注已中止，已有结果保留",
   };
 
   const detailMap: Record<string, string> = {
@@ -183,7 +188,7 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
 
   const controlNote = controlCopy(control, view?.state ?? null, now);
   // 已结束(idle/aborted/error)的任务不在顶部留痕：结论在回答里，要用户处理的事由接续入口负责。
-  const isOngoing = !!view && (view.state === "running" || view.state === "paused" || view.state === "interrupted");
+  const isOngoing = !!view && (view.state === "running" || view.state === "paused" || view.state === "interrupted" || !!view.continuation && view.continuation.state !== 'COMPLETED');
 
   // ── 任务不随一轮结束：没做完的任务留在输入框上方写「还差：…」，做完后让出输入区；
   // 纯聊天、读页问答（没列目标）结束后照旧不留痕。
@@ -204,7 +209,7 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
 
   const goal = view?.goal ?? null;
 
-  const headline = openTask ? (stillOpen ? `${waitingOnUser ? "等你" : blocked ? "没做成" : "还差"}：${clip(stillOpen, 28)}` : "还没做完 · 接着说就行")
+  const headline = view?.continuation && view.continuation.state !== 'RUNNING' ? ({ WAITING_CONDITION: '正在关注', WAITING_USER: '关注已暂停', SUSPENDED: '需要核实原页面', VERIFYING: '正在核对', STOPPED: '已中止关注', FAILED: '关注受阻', COMPLETED: '已核对完成' }[view.continuation.state]) : openTask ? (stillOpen ? `${waitingOnUser ? "等你" : blocked ? "没做成" : "还差"}：${clip(stillOpen, 28)}` : "还没做完 · 接着说就行")
     : view?.state === "idle" ? ""
         : view ? stateHeadline(view.state, view.resumable) : "";
 
@@ -256,6 +261,7 @@ interface TaskBarOptions {
   resolvePage(tabId: number): Promise<{ title?: string; url?: string } | null>;
   /** 控制失败后的重试入口（复用真实控制按钮，不是新权限）。 */
   onRetryControl?(action: "takeover" | "stop"): void;
+  onContinuationControl?(action: 'pause' | 'resume' | 'abort', view: TaskView): void;
   /** 当前选中的会话：不属于它的视图不得改写任务条（切会话/旧 run 重放都不能串）。 */
   currentConversationId?(): string;
   now?(): number;
@@ -423,6 +429,12 @@ export class TaskBar {
     const target = event.target as Element | null;
 
     if (!target || typeof target.closest !== "function") return;
+    const conditionControl = target.closest<HTMLButtonElement>('button[data-continuation-control]');
+    if (conditionControl && this.view) {
+      const action = conditionControl.dataset.continuationControl;
+      if (action === 'pause' || action === 'resume' || action === 'abort') this.opts.onContinuationControl?.(action, this.view);
+      return;
+    }
     if (target.closest(".tb-expand")) {
       this.expanded = !this.expanded;
       const label = this.expanded ? "收起任务详情" : "展开任务详情";
@@ -482,7 +494,7 @@ export class TaskBar {
     // 进行中、已结束由对话里那一行过程灰字讲；任务条只在有它独有的事时出现：
     // 页面归你、停止/接管回执。任务页不是你在看的页时不提醒：过程行和回答已说明。
     // 页面归你时，输入框上方的「你在操作」已经说了；侧栏重开、没有那一行时，任务条照旧说。
-    const own = model.state === "paused" && !this.handoffShown || !!model.control;
+    const own = model.state === "paused" && !this.handoffShown || !!model.control || !!this.view?.continuation && this.view.continuation.state !== 'COMPLETED';
 
     this.el.hidden = !model.visible || !own;
 
@@ -528,6 +540,16 @@ export class TaskBar {
     flag(this.el, "data-expanded", this.expanded && hasDetail);
     this.expandEl.setAttribute("aria-expanded", String(this.expanded && hasDetail));
     this.renderControl(model.control);
+    const continuation = this.view?.continuation;
+    if (continuation && !['COMPLETED','STOPPED','FAILED','VERIFYING'].includes(continuation.state) && !model.control) {
+      this.controlEl.hidden = false;
+      for (const action of [continuation.state === 'WAITING_USER' || continuation.state === 'SUSPENDED' ? 'resume' : 'pause', 'abort'] as const) {
+        const button = this.doc.createElement('button');
+        button.type = 'button'; button.className = 'tb-control-retry'; button.dataset.continuationControl = action;
+        button.textContent = action === 'resume' ? '继续关注' : action === 'pause' ? '暂停关注' : '停止关注';
+        this.controlEl.append(button);
+      }
+    }
 
     if (changed) this.resolvePages();
     this.scheduleTick();

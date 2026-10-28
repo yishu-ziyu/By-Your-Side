@@ -23,6 +23,7 @@ import { SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloud
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
+import { CONTINUATION_KEY } from '../../../shared/task-continuation.js';
 import { EDGE_ENTRY_KEY, isEdgeEntryOff } from "../shared/edge-entry.js";
 import { CUSTOM_TRANSLATION_STYLE_MAX_CHARS, parseTranslationStyle, TRANSLATION_STYLE_KEY, TRANSLATION_STYLES, type TranslationStyle } from "../../../shared/translation-style.js";
 import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
@@ -1415,6 +1416,7 @@ async function reloadSettings(): Promise<void> {
   $<HTMLInputElement>("browse-habits").checked = isBrowseOn(stored[BROWSE_ON_KEY]);
   renderBrowseState(isBrowseOn(stored[BROWSE_ON_KEY]));
   $<HTMLInputElement>("mini-apps").checked = isMiniAppsOn(stored[MINI_APPS_KEY]);
+  $<HTMLInputElement>("continuous-delegation").checked = stored[CONTINUATION_KEY] === true;
   openThreads.checked = stored[OPEN_THREADS_KEY] === true;
   attentionCues.checked = isCuesOn(stored[ATTENTION_CUES_KEY]);
   renderMainModel();
@@ -1748,6 +1750,7 @@ bindToggle($<HTMLInputElement>("browse-habits"), BROWSE_ON_KEY, $("habits-status
 });
 bindToggle($<HTMLInputElement>("edge-entry"), EDGE_ENTRY_KEY, $("translation-status"), (on) => (on ? "已打开，网页右边缘会停着翻译入口。" : "已关闭，⌥T 和侧栏按钮照常可用。"));
 bindToggle($<HTMLInputElement>("mini-apps"), MINI_APPS_KEY, $("labs-status"), (on) => (on ? "已打开，下一个问题起生效。" : "已关闭，已有的小程序不再显示。"));
+bindToggle($<HTMLInputElement>('continuous-delegation'), CONTINUATION_KEY, $('labs-status'), on => on ? '已打开，可在原页面限时关注结果。' : '已关闭，自动关注和续做将中止，原任务记录保留。');
 
 bindToggle(openThreads, OPEN_THREADS_KEY, $("open-threads-status"), (on) => (on ? "已开启，下次打开新对话时出现。" : "已关闭。"));
 

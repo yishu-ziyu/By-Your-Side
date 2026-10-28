@@ -33,6 +33,11 @@ const WAITING_TEXT: Record<string, string> = {
   readback_required: "做了，但助手还没核验",
   tool_failed: "上一步没做成，助手要换个做法",
   runtime_error: "出错了，助手只给你已确认的结果",
+  condition_wait: '条件满足后自动继续',
+  condition_invalid: '关注已暂停，需要核实原页面',
+  deadline: '关注期限已到，已有结果保留',
+  budget: '关注预算已用完，已有结果保留',
+  continuation_stopped: '关注已中止，已有结果保留',
 };
 
 /** 只是在复述某个结果未知、受阻的执行项的等待原因：目标核对判做完后不再为它出卡。 */
