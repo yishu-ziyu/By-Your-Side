@@ -2684,7 +2684,8 @@ async function importReading(record: ReadingRecord): Promise<void> {
     recordAndBroadcastHistory({kind: 'server', msg: {type: 'agent_event', event: {kind: 'agent_end'}, conversationId}});
   }
 
-  await deliverAsk({text:record.source.text,tabId:record.source.tabId,title:record.source.title,url:record.source.url});
+  const current = [...record.turns].reverse().find(turn => turn.source)?.source ?? record.source;
+  await deliverAsk({text:current.text,tabId:record.source.tabId,title:record.source.title,url:record.source.url});
   flushHistory();
 }
 

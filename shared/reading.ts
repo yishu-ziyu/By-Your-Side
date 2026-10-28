@@ -10,6 +10,7 @@ export const READING_TURN_LIMIT = 16;
 export interface ReadingSource {
   text: string;
   surrounding: string;
+  location?: string;
   truncated: boolean;
   tabId: number;
   title: string;
@@ -30,6 +31,7 @@ export interface ReadingTurn {
 export interface ReadingTurnSource {
   text: string;
   surrounding: string;
+  location?: string;
 }
 
 /** 阅读卡的回答档。旧记录没有这个字段，按快速处理。 */
@@ -69,7 +71,7 @@ const states = ['pending', 'streaming', 'done', 'stopped', 'error'];
 export function isReadingTurnSource(v: unknown): v is ReadingTurnSource {
   const s = v as ReadingTurnSource;
 
-  return !!s && typeof s === 'object' && string(s.text, READING_SELECTION_LIMIT) && !!s.text.trim() && string(s.surrounding, READING_CONTEXT_LIMIT);
+  return !!s && typeof s === 'object' && string(s.text, READING_SELECTION_LIMIT) && !!s.text.trim() && string(s.surrounding, READING_CONTEXT_LIMIT) && (s.location === undefined || string(s.location, 2000));
 }
 
 export function isReadingTranscript(v: unknown): v is ReadingTranscript {
@@ -78,7 +80,7 @@ export function isReadingTranscript(v: unknown): v is ReadingTranscript {
 
   return id(t.threadId) && !!s && typeof s === 'object'
     && string(s.text, READING_SELECTION_LIMIT) && !!s.text.trim()
-    && string(s.surrounding, READING_CONTEXT_LIMIT) && typeof s.truncated === 'boolean'
+    && string(s.surrounding, READING_CONTEXT_LIMIT) && (s.location === undefined || string(s.location, 2000)) && typeof s.truncated === 'boolean'
     && Number.isSafeInteger(s.tabId) && s.tabId >= 0 && string(s.title, 500) && string(s.url, 4000)
     && (t.depth === undefined || t.depth === 'fast' || t.depth === 'deep')
     && Array.isArray(t.turns) && t.turns.length <= READING_TURN_LIMIT

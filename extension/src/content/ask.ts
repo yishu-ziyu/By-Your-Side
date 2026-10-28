@@ -32,6 +32,25 @@ interface SelectionSnapshot {
   rect: DOMRect;
 }
 
+function selectionLocation(range: Range): string {
+  const path = (node: Node): number[] => {
+    const result: number[] = [];
+    while (node.parentNode) {
+      result.push(Array.prototype.indexOf.call(node.parentNode.childNodes, node));
+      node = node.parentNode;
+    }
+    return result.reverse();
+  };
+  const location = JSON.stringify([path(range.startContainer), range.startOffset, path(range.endContainer), range.endOffset]);
+  return location.length <= 2000 ? location : '';
+}
+
+function sameSelection(a: SelectionSnapshot | null, b: SelectionSnapshot | null): boolean {
+  if (!a || !b) return false;
+  if (a.range && b.range) return a.range.startContainer === b.range.startContainer && a.range.startOffset === b.range.startOffset && a.range.endContainer === b.range.endContainer && a.range.endOffset === b.range.endOffset;
+  return !!a.source.location && a.source.location === b.source.location;
+}
+
 export function selectionSnapshot(): SelectionSnapshot | null {
   const selection = getSelection();
 
@@ -59,7 +78,7 @@ export function selectionSnapshot(): SelectionSnapshot | null {
 
   const surrounding = selectionSurrounding(range, raw, READING_CONTEXT_LIMIT);
 
-  return { source: { text, surrounding, truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
+  return { source: { text, surrounding, location: selectionLocation(range), truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
 }
 
 /** 与样式宽度一致，用于判断正文旁是否放得下回答。 */
@@ -206,6 +225,7 @@ function boot(): void {
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
       <div class="foot" hidden><button type="button" data-act="copy">复制</button><button type="button" data-act="speak">朗读</button><span class="grow"></span><button type="button" data-act="handoff">在侧栏继续</button></div>
       <div class="error" role="status" hidden></div>
+      <button type="button" class="current-source" data-act="current-source" hidden></button>
       <form class="composer" hidden><button type="button" class="depth" data-act="depth" aria-pressed="false" title="换成深度模型">快速</button><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问这段话…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
       <div class="chips" role="group" aria-label="常用问题" hidden>${QUICK_QUESTIONS.map(prompt => `<button type="button" data-ask="${prompt.question}">${prompt.label}</button>`).join('')}</div>
       <div class="resize" title="拖动调整大小，双击恢复" aria-hidden="true"></div>
@@ -705,7 +725,7 @@ function boot(): void {
     const sources = turns.map((_, index) => sourceOf(index));
     const waitingSource = waiting ? voice!.target.source.text : undefined;
     // 问过不止一段时，每段第一问上面引用它那段原文：旧回答留着自己的出处，新一轮引用新的一段。
-    const several = new Set([...sources, ...(waitingSource ? [waitingSource] : [])]).size > 1;
+    const several = turns.some(turn => !!turn.source) || new Set([...sources, ...(waitingSource ? [waitingSource] : [])]).size > 1;
     // 选区在页面上高亮时卡里不重复；快捷键恢复时没有选区，第一问至少带上出处。
     const sourceVisible = Boolean(snapshot?.range?.startContainer.isConnected);
 
@@ -730,9 +750,9 @@ function boot(): void {
 
       const item = answers[index]!;
       const showsSource = several
-        ? index === 0 || sources[index] !== sources[index - 1]
+        ? index === 0 || !!turn.source
         : !sourceVisible && index === 0;
-      setSourceQuote(item.turn, showsSource ? sources[index]! : '');
+      setSourceQuote(item.turn, showsSource ? sources[index]! : '', index);
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
       // 第一问是解释、翻译这类动作时，标题已经说了，不再重复一行。
@@ -830,6 +850,11 @@ function boot(): void {
     submit.setAttribute('aria-label', label);
     submit.title = label;
     submit.disabled = sending || (!busy && !input.value.trim());
+    const currentSource = candidate ?? snapshot;
+    const sourceButton = el<HTMLButtonElement>('.current-source');
+    sourceButton.hidden = !currentSource?.range?.startContainer.isConnected;
+    sourceButton.textContent = currentSource ? quoteOf(currentSource.source.text) : '';
+    sourceButton.title = '回到选中的原文';
     input.placeholder = candidate ? '问刚选中的这段…' : turns.length ? '接着问…' : '问这段话…';
     const handoff = el<HTMLButtonElement>('[data-act="handoff"]');
     handoff.disabled = busy || sending;
@@ -891,7 +916,7 @@ function boot(): void {
     return record?.source.text ?? '';
   }
 
-  function setSourceQuote(turn: HTMLElement, text: string): void {
+  function setSourceQuote(turn: HTMLElement, text: string, index?: number): void {
     let quote = turn.querySelector<HTMLElement>(':scope > .source');
 
     if (!text) {
@@ -901,8 +926,10 @@ function boot(): void {
     }
 
     if (!quote) {
-      quote = document.createElement('div');
+      quote = document.createElement('button');
+      quote.setAttribute('type', 'button');
       quote.className = 'source';
+      if (index !== undefined) { quote.dataset.act = 'source-turn'; quote.dataset.turn = String(index); }
       turn.prepend(quote);
     }
 
@@ -980,7 +1007,7 @@ function boot(): void {
   }
 
   /** 按住说话这句话对着哪段：按下时抓住的那段；卡开着时带上卡上最近一问。 */
-  function voiceTarget(): { selection?: string; asked?: string; source?: { text: string; surrounding: string; truncated?: boolean } } {
+  function voiceTarget(): { selection?: string; asked?: string; source?: { text: string; surrounding: string; location?: string; truncated?: boolean } } {
     const card = visible && expanded && record?.turns.length ? record : undefined;
     const target = voice?.target ?? selectionSnapshot() ?? (card ? snapshot : null);
 
@@ -988,7 +1015,7 @@ function boot(): void {
     const asked = card?.turns.at(-1)?.question;
 
     // source 与 voiceAsk 发问时带的一样：后台判断去向的同时按它先写回答，拼出的问答才对得上。
-    return { selection: target.source.text, source: { text: target.source.text, surrounding: target.source.surrounding, truncated: target.source.truncated }, ...(asked ? { asked: questionLabel(asked) } : {}) };
+    return { selection: target.source.text, source: { text: target.source.text, surrounding: target.source.surrounding, location: target.source.location, truncated: target.source.truncated }, ...(asked ? { asked: questionLabel(asked) } : {}) };
   }
 
   /** 说的话交给阅读卡：卡开着就接在这张卡里（换了段，这一轮带上新的一段）；没开就在这段旁边开卡。还在回答时就是改口。 */
@@ -1145,7 +1172,7 @@ function boot(): void {
       surface.hidden = true;
     }
 
-    if (card && target.source.text !== snapshot?.source.text) {
+    if (card && !sameSelection(target, snapshot)) {
       side = null;
       glide();
       position();
@@ -1165,7 +1192,7 @@ function boot(): void {
     voice.phase = 'released';
     const target = voice.target;
     const onCard = visible && expanded && !!record?.turns.length;
-    const moved = target.source.text !== snapshot?.source.text;
+    const moved = !sameSelection(target, snapshot);
     selectionVersion++;
     snapshot = target;
 
@@ -1204,7 +1231,7 @@ function boot(): void {
       return;
     }
 
-    if (previous && previous.source.text !== snapshot?.source.text) snapshot = previous;
+    if (previous && !sameSelection(previous, snapshot)) snapshot = previous;
     side = null;
     glide();
 
@@ -1246,7 +1273,7 @@ function boot(): void {
     render();
 
     try {
-      const result = await rpc('reading_send', { question, retry, correction, depth, spoken, ...(source ? { source: { text: source.text, surrounding: source.surrounding, truncated: source.truncated } } : {}) });
+      const result = await rpc('reading_send', { question, retry, correction, depth, spoken, ...(source ? { source: { text: source.text, surrounding: source.surrounding, location: source.location, truncated: source.truncated } } : {}) });
 
       if (record?.threadId !== threadId) {
         return;
@@ -1279,13 +1306,13 @@ function boot(): void {
     const next = candidate;
 
     if (!next || !question.trim()) return send(question, false, readingBusy(record), typedDepth);
-    candidate = null;
-    snapshot = next;
-    side = null;
-    glide();
-    highlight();
-
-    return send(question, false, readingBusy(record), typedDepth, false, next.source);
+    return send(question, false, readingBusy(record), typedDepth, false, next.source, () => {
+      if (candidate === next) candidate = null;
+      snapshot = next;
+      side = null;
+      glide();
+      highlight();
+    });
   }
 
   root.addEventListener('click', event => {
@@ -1389,6 +1416,34 @@ function boot(): void {
       }
       else if (action === 'deep') {
         await send(record!.turns.at(-1)!.question, false, false, 'deep');
+      }
+      else if (action === 'source-turn') {
+        const index = Number(target.dataset.turn);
+        let source: Pick<ReadingSource, 'text' | 'surrounding' | 'location'> | undefined = record?.source;
+        for (let i = 0; i <= index; i++) {
+          const next = record?.turns[i]?.source;
+          if (next) source = next;
+        }
+        if (source?.location) {
+          try {
+            const [start, startOffset, end, endOffset] = JSON.parse(source.location) as [number[], number, number[], number];
+            const find = (path: number[]) => path.reduce<Node | undefined>((parent, child) => parent?.childNodes[child], document);
+            const startNode = find(start), endNode = find(end);
+            if (startNode && endNode) {
+              const range = document.createRange();
+              range.setStart(startNode, startOffset);
+              range.setEnd(endNode, endOffset);
+              if (clipSelection(range.toString().trim()) === source.text && selectionSurrounding(range, range.toString().trim(), READING_CONTEXT_LIMIT) === source.surrounding) {
+                (startNode instanceof Element ? startNode : startNode.parentElement)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              }
+            }
+          } catch { /* 页面结构已变，旧位置无法恢复 */ }
+        }
+      }
+      else if (action === 'current-source') {
+        const range = (candidate ?? snapshot)?.range;
+        const node = range?.startContainer;
+        (node instanceof Element ? node : node?.parentElement)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
       else if (action === 'transfer' || action === 'handoff') {
         closeMenu();
@@ -1508,7 +1563,7 @@ function boot(): void {
     // 卡开着时选另一段不收起回答：记下这段，按住说话或打字问时就问它。
     if (visible && expanded && record?.turns.length) {
       if (next) {
-        candidate = next.source.text !== snapshot?.source.text ? next : null;
+        candidate = !sameSelection(next, snapshot) ? next : null;
         render();
       }
 
@@ -1519,7 +1574,7 @@ function boot(): void {
       return;
     }
 
-    if (!next || root.activeElement || next.source.text === snapshot?.source.text && visible) {
+    if (!next || root.activeElement || sameSelection(next, snapshot) && visible) {
       return;
     }
 

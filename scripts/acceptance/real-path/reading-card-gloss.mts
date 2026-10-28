@@ -21,10 +21,11 @@ import { createServer } from "node:http";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { launchRealPath, requireHeadless, REPO, siteAddress, sleep, until, type Json } from "./harness.mts";
-import { configureViaSettings } from "./inproc-config.mts";
+import { configureViaSettings, DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
+const livePlan = process.argv.includes("--live") ? await loadModelPlan(DEFAULT_TEST_MODEL) : null;
 
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-reading-card-gloss`);
 const shots = join(out, "screenshots");
@@ -50,6 +51,9 @@ const article = (extra: string) => `<!doctype html><html lang="zh"><head><meta c
   <h1>灯塔日志</h1>
   <p>沿海的镇子在国家气象局出现之前，就各自记着天气。</p>
   <p id="para"><span id="para-text">${MARKER}</span> 紫色是因为普通黑墨在盐雾里几个冬天就褪了，而这种紫染料几十年后仍清楚可读。</p>
+  <p>River shoreline: <span id="river-bank">bank</span> means the edge of a river.</p>
+  ${"<p>河流沿岸的记录与航道。</p>".repeat(20)}
+  <p>Financial deposits: <span id="finance-bank">bank</span> means a financial institution.</p>
   <p>每年春天，港务长会把各家的记录摊开，决定哪条航道还安全。</p>
   ${"<p>港务长把各家的天气簿摊在桌上对照，决定哪条航道还安全。</p>".repeat(28)}
 </article>
@@ -79,6 +83,7 @@ type Seen = { model: string; depth: string | null; user: string; reasoning: unkn
 const seen: Seen[] = [];
 
 const model = await startScriptedModel([
+  { match: "这里是什么意思", steps: [{ text: "已收到这处提问。" }] },
   { match: FOLLOW_UP, steps: [{ text: FOLLOW_ANSWER }] },
   { match: "解释这段选中的文字", steps: [{ text: EXPLAIN_ANSWER }] },
   { match: "翻译成中文", steps: [{ text: "灯塔看守人用紫色墨水记下每一场风暴。" }] },
@@ -86,7 +91,7 @@ const model = await startScriptedModel([
   const body = payload as { model?: string; reasoning_effort?: unknown; messages?: Array<{ role?: string; content?: unknown }> };
   const user = (body.messages ?? []).filter((message) => message.role === "user").map((message) => typeof message.content === "string" ? message.content : "").join("\n");
 
-  if (!user.includes(MARKER) && !user.includes("解释这段选中的文字")) return;
+  if (!user.includes(MARKER) && !user.includes("解释这段选中的文字") && !user.includes("这里是什么意思")) return;
   const depth = user.match(/"depth":"(fast|deep)"/)?.[1] ?? null;
   seen.push({ model: body.model ?? "", depth, user, reasoning: body.reasoning_effort ?? null });
 });
@@ -125,11 +130,16 @@ try {
   await until(async () => (await rp.evaluate(work, `location.href.includes("/blank") && document.readyState === "complete" && !!document.querySelector("[data-sideagent-ask]")`)) || undefined, 15_000, "练习页");
   const panel = await rp.attach(await rp.openSidePanel());
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#conversation-new")?.disabled === false`)) || undefined, 60_000, "侧栏就绪");
-  const mainPlan = { providerId: "custom", modelId: "main-reader", credential: { type: "api_key", key: "local-fixture" } };
-  const mainSettings = await configureViaSettings(rp, panel, mainPlan, { baseUrl: model.baseUrl });
-  await rp.cdp.send("Target.closeTarget", { targetId: mainSettings.settingsTargetId }).catch(() => {});
-  const fastSettings = await configureViaSettings(rp, panel, { ...mainPlan, modelId: "fast-reader" }, { baseUrl: model.baseUrl, asFast: true });
-  await rp.cdp.send("Target.closeTarget", { targetId: fastSettings.settingsTargetId }).catch(() => {});
+  if (livePlan) {
+    const items = modelStorageItems(livePlan);
+    await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ ...items, inproc_fast_model_config: items.inproc_model_config })}).then(() => true)`);
+  } else {
+    const mainPlan = { providerId: "custom", modelId: "main-reader", credential: { type: "api_key", key: "local-fixture" } };
+    const mainSettings = await configureViaSettings(rp, panel, mainPlan, { baseUrl: model.baseUrl });
+    await rp.cdp.send("Target.closeTarget", { targetId: mainSettings.settingsTargetId }).catch(() => {});
+    const fastSettings = await configureViaSettings(rp, panel, { ...mainPlan, modelId: "fast-reader" }, { baseUrl: model.baseUrl, asFast: true });
+    await rp.cdp.send("Target.closeTarget", { targetId: fastSettings.settingsTargetId }).catch(() => {});
+  }
   await rp.cdp.send("Target.activateTarget", { targetId: workTargetId }).catch(() => {});
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, work);
@@ -237,6 +247,67 @@ try {
     await until(async () => (await inCard<string>(`function(){return [...this.querySelectorAll(".answer")].map(a=>a.textContent??"").join("\\n")}`)).includes("几十年") ? true : undefined, 30_000, "解释写完");
     await sleep(250);
   };
+
+  // 同词不同位置：检查第二次请求真正携带第二处上下文，而不是只看有回答。
+  await selectMarker("/blank", 1280);
+  const selectBank = async (id: string) => {
+    const box = await rp.evaluate(work, `(() => {const e=document.querySelector(${JSON.stringify(id)}); e.scrollIntoView({block:"center"}); const r=e.getBoundingClientRect(); return {x:r.x, y:r.y+r.height/2, w:r.width};})()`) as {x:number;y:number;w:number};
+    await drag({x:box.x+1,y:box.y}, {x:box.x+box.w-1,y:box.y});
+    await sleep(350);
+    const selected = await rp.evaluate(work, `getSelection().toString()`);
+    if (selected !== 'bank') throw new Error(`未选中 bank：${selected}`);
+  };
+  await selectBank("#river-bank");
+  await click(await until(() => pointOf('[data-act="explain"]'), 5_000, "河岸解释"));
+  const stableAnswer = async (index: number) => {
+    let previous = "", stable = Date.now();
+    return until(async () => {
+      const value = await inCard<string>(`function(){return this.querySelectorAll('.answer')[${index}]?.textContent??''}`);
+      if (value !== previous) { previous = value; stable = Date.now(); }
+      return value.length > 5 && Date.now() - stable > 3000 ? value : undefined;
+    }, 120_000, "真模型回答", 500);
+  };
+  let firstLive = "";
+  if (livePlan) firstLive = await stableAnswer(0);
+  else await until(async () => (await inCard<string>(`function(){return this.querySelector('.answer')?.textContent??''}`)).includes("几十年") || undefined, 20_000, "河岸回答");
+  const beforeSameWord = seen.length;
+  await selectBank("#finance-bank");
+  const currentQuote = await inCard<{text:string; hidden:boolean}>(`function(){const e=this.querySelector('.current-source');return {text:e?.textContent??'',hidden:!e||e.hidden}}`);
+  check("换段后显示当前引用，选字本身不生成", !currentQuote.hidden && currentQuote.text.includes('bank') && seen.length === beforeSameWord, currentQuote);
+
+  await click(await until(() => pointOf("textarea"), 5_000, "同词追问"));
+  await rp.typeText(work, "这里是什么意思");
+  await rp.pressEnter(work);
+  if (livePlan) {
+    const second = await stableAnswer(1);
+    check("真模型：同词分别解释河岸和金融机构", /(河岸|河边|岸边|河流的岸|河的岸)/.test(firstLive) && /(银行|金融机构)/.test(second.split(/[。！？]/)[0] ?? ''), {first:firstLive, second});
+    await shot("live-same-word");
+    throw new Error("live-done");
+  }
+  await until(() => seen.length > beforeSameWord || undefined, 20_000, "金融处请求");
+  const sameWordRequest = seen.at(-1)!.user;
+  const parsedRequest = JSON.parse(sameWordRequest) as { conversation: Array<{source?: string; surrounding?: string}> };
+  const newSource = parsedRequest.conversation.at(-1);
+  check("同词不同位置：第二问带金融处上下文", newSource?.source === 'bank' && !!newSource.surrounding?.includes('Financial deposits: 【此处选中】bank【选中结束】'), {lastTurn: newSource ?? null});
+  await until(async () => (await inCard<string>(`function(){return this.querySelectorAll('.answer')[1]?.textContent??''}`)).includes("已收到") || undefined, 20_000, "第二处回答");
+  const quotes = await inCard<string[]>(`function(){return [...this.querySelectorAll('.turn > .source')].map(e=>e.textContent??'')}`);
+  check("两处同词的旧回答和新回答各保留出处", quotes.length === 2 && quotes.every(q=>q.includes('bank')), quotes);
+  await shot("same-word");
+  await click(await until(() => pointOf('.turn:first-child > .source'), 5_000, "旧出处"));
+  await sleep(900);
+  const riverInView = await rp.evaluate(work, `(() => {const r=document.querySelector('#river-bank').getBoundingClientRect();return r.top >= 0 && r.bottom <= innerHeight})()`);
+  await click(await until(() => pointOf('.current-source'), 5_000, "当前引用"));
+  await sleep(900);
+  const financeInView = await rp.evaluate(work, `(() => {const r=document.querySelector('#finance-bank').getBoundingClientRect();return r.top >= 0 && r.bottom <= innerHeight})()`);
+  check("点击旧出处与当前引用，分别回到两处原文", !!riverInView && !!financeInView, {riverInView, financeInView});
+  await click(await until(() => pointOf('[data-act="handoff"]'), 5_000, "在侧栏继续"));
+  const panelHandoff = await until(async () => {
+    const value = await rp.evaluate(panel, `(() => ({ text:document.body.innerText, cite:document.querySelector('#ask-cite:not([hidden]) #ask-cite-text')?.textContent??'' }))()`) as {text:string;cite:string};
+    return value.text.includes('这里是什么意思') && value.text.includes('已收到这处提问') ? value : undefined;
+  }, 30_000, "侧栏收到已有问答");
+  check("转侧栏：保留提问、回答和当前引用", panelHandoff.cite === 'bank', {cite:panelHandoff.cite, question:panelHandoff.text.includes('这里是什么意思'), answer:panelHandoff.text.includes('已收到这处提问')});
+  await rp.cdp.send("Target.activateTarget", { targetId: workTargetId }).catch(() => {});
+  await rp.cdp.send("Page.bringToFront", {}, work);
 
   await openReading("/blank", 1280);
   const wide = await scene();
@@ -365,8 +436,13 @@ try {
   const reset = await scene();
   await shot("8-reset");
   check("双击右下角：回到默认大小", Math.abs(reset.card.width - 360) < 2, { card: reset.card });
+
+  await rp.evaluate(panel, `chrome.storage.local.set({reading_bar_pins:['translate','define','example','why','evidence']}).then(()=>true)`);
+  await selectMarker("/blank", 360);
+  const narrowControls = await inCard<{ask:boolean;more:boolean;close:boolean}>(`function(){const visible=(selector)=>{const e=this.querySelector(selector),r=e?.getBoundingClientRect();return !!r&&r.width>0&&r.left>=0&&r.right<=innerWidth};return {ask:visible('[data-act="ask"]'),more:visible('[data-act="more"]'),close:visible('[data-act="dismiss"]')}}`);
+  check("窄窗口钉选多个常用动作时，问、更多和关闭仍可见", narrowControls.ask && narrowControls.more && narrowControls.close, narrowControls);
 } catch (error) {
-  check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
+  if (!String(error).includes("live-done")) check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
 } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({
     status: checks.length && checks.every((item) => item.pass) ? "PASS" : "FAIL",

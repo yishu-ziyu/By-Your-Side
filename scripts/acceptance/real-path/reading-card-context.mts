@@ -49,8 +49,10 @@ const CROSS = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title
 <p id="b"><span id="b-text">后来工坊只在贵重订单上用铜版</span>，其余一律用锌版。</p>
 ${"<p>学徒们每天清晨先擦版，再调墨，最后才开始印刷当天的订单。</p>".repeat(6)}</article></body></html>`;
 
+const MISSING = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>阅读材料</title><style>article{max-width:36rem;margin:56px 72px;font:17px/1.75 serif}</style></head><body><article><p><span id="claim">作者认为每天喝一杯紫色饮料能明显提高记忆力。</span></p><p>文中没有描述实验过程。</p>${"<p>背景记录：这是一段和饮料无关的阅读材料。</p>".repeat(120)}<h2>附录：问卷记录</h2><p>作者的依据是一份对 73 名饮用者的问卷，记录了他们自报的记忆变化，没有对照组。</p></article></body></html>`;
+
 const site = createServer((req, res) => {
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end((req.url ?? "").startsWith("/cross") ? CROSS : DIVS);
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end((req.url ?? "").startsWith("/cross") ? CROSS : (req.url ?? "").startsWith("/missing") ? MISSING : DIVS);
 });
 
 await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
@@ -130,12 +132,40 @@ try {
   };
 
   // 要说清是改用锌版，不能是「没说明」「无法确定」或说反了方向。
-  const understood = (a: string) => /(改用|换成|换用|换为|改为)[^。，]{0,6}锌版/.test(a) && !/没有说明|未说明|无法确定|不清楚|没有交代|不是[^。]{0,8}锌|被铜版[^。]{0,4}(代替|取代|替代)|锌版换成铜版|改用铜版/.test(a);
+  const understood = (a: string) => /(改用|改成|换成|换用|换为|改为)[^。，]{0,6}锌版/.test(a) && !/没有说明|未说明|无法确定|不清楚|没有交代|不是[^。]{0,8}锌|被铜版[^。]{0,4}(代替|取代|替代)|锌版换成铜版|改用铜版/.test(a);
   const divs = await explain("/divs", "#pick-text", "#pick-text");
   if (LIVE) {
     check("真模型 div 排版：回答说出「这个决定」是换锌版", understood(divs.answer), { answer: divs.answer.slice(0, 300) });
     const cross = await explain("/cross", "#a-text", "#b-text");
     check("真模型 跨段选中：回答说出「这个决定」是换锌版", understood(cross.answer), { answer: cross.answer.slice(0, 300) });
+    await explain("/missing", "#claim", "#claim");
+    const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as {root:DomNode};
+    const objectId = String((await rp.cdp.send("DOM.resolveNode", {backendNodeId:findShadow(root)!.backendNodeId}, work)).object.objectId);
+    const point = (await rp.cdp.send("Runtime.callFunctionOn", {objectId, functionDeclaration:`function(){const r=this.querySelector('textarea').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}}`, returnByValue:true}, work)).result.value as {x:number;y:number};
+    for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", {type, button:"left", clickCount:1, ...point}, work);
+    await rp.typeText(work, "作者的证据是什么？");
+    await rp.pressEnter(work);
+    let previous = "", stable = Date.now();
+    const missing = await until(async () => {
+      const value = String((await rp.cdp.send("Runtime.callFunctionOn", {objectId, functionDeclaration:`function(){return this.querySelectorAll('.answer')[1]?.textContent??''}`, returnByValue:true}, work)).result.value ?? "");
+      if (value !== previous) { previous = value; stable = Date.now(); }
+      return value.length > 10 && Date.now()-stable > 3000 ? value : undefined;
+    }, 120_000, "缺失证据回答", 500);
+    check("真模型：材料缺少证据时明确说明", /(没有|未|缺少|不足|无法|未提供|未给出|并无|不包含|看不到)[^。！？\n]{0,24}(证据|数据|实验|依据|证明|支持)|(证据|数据|实验|依据)[^。！？\n]{0,24}(没有|不足|缺|未|无法)/.test(missing), {answer:missing.slice(0,500)});
+    await rp.screenshot(work, join(out, "missing-evidence.png"));
+    const handoff = (await rp.cdp.send("Runtime.callFunctionOn", {objectId, functionDeclaration:`function(){const r=this.querySelector('[data-act="handoff"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}}`, returnByValue:true}, work)).result.value as {x:number;y:number};
+    for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", {type, button:"left", clickCount:1, ...handoff}, work);
+    await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes('作者的证据是什么') && document.body.innerText.includes('材料')`)) || undefined, 30_000, "侧栏收到问答");
+    await rp.cdp.send("Emulation.setFocusEmulationEnabled", {enabled:true}, panel);
+    await rp.evaluate(panel, `document.querySelector('#input').focus()`);
+    await rp.typeText(panel, "读全文找依据");
+    await rp.pressEnter(panel);
+    const continued = await until(async () => {
+      const body = String(await rp.evaluate(panel, `document.body.innerText`));
+      return /73\s*(名|人)/.test(body) && /问卷/.test(body) ? body : undefined;
+    }, 180_000, "侧栏读全文找依据", 1000);
+    check("真模型：侧栏承接原问题并找到全文中的问卷", /73\s*(名|人)/.test(continued) && /问卷/.test(continued), {excerpt:continued.slice(-1200)});
+    await rp.screenshot(panel, join(out, "handoff-evidence.png"));
     throw new Error("live-done");
   }
   check("div 排版：请求里有前一段的线索和小节标题", divs.sent.includes(CLUE) && divs.sent.includes(HEADING), { selected: divs.selected, clue: divs.sent.includes(CLUE), heading: divs.sent.includes(HEADING) });
