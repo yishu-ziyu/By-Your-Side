@@ -9,8 +9,11 @@ const MAX_ASK_CHARS = READING_SELECTION_LIMIT;
 
 export const ASK_MENU_ID = "ask-sideagent";
 
-/** chrome.storage.local 键：选中文字后是否自动弹出「问 AI / 解释」工具条。 */
+/** chrome.storage.local 键：选中文字后是否自动弹出「问问这段 / 解释」工具条。 */
 export const SELECTION_BAR_KEY = "sideagent_selection_bar";
+
+/** chrome.storage.local 键：划词工具条和阅读卡是否显示朗读。默认关闭，只有明确存了 true 才开启。 */
+export const READING_ALOUD_KEY = "reading_aloud";
 
 /** chrome.storage.local 键：用户拖过右下角后记住的阅读卡大小。 */
 export const READING_CARD_SIZE_KEY = "reading_card_size";
@@ -34,6 +37,10 @@ export function readReadingCardSize(stored: unknown): ReadingCardSize | null {
 /** 只有明确存了 false 才算关闭；没存过或存了别的值都算开启。 */
 export function isSelectionBarOff(stored: unknown): stored is false {
   return stored === false;
+}
+
+export function isReadingAloudOn(stored: unknown): stored is true {
+  return stored === true;
 }
 
 export const EXPLAIN_PROMPT = "解释这段选中的文字。第一句用一句话写出结论，不要复述问题，不要写「解释如下」。再用读者能懂的话说它在主张什么。不要操作页面。";

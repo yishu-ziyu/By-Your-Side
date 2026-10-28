@@ -10,9 +10,9 @@ import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
 /** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, GripVertical, ArrowUpRight } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, GripVertical, ArrowUpLeft, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
-import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, isSelectionBarOff, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
+import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
@@ -81,7 +81,7 @@ export function selectionSnapshot(): SelectionSnapshot | null {
 }
 
 /** 与样式宽度一致，用于判断正文旁是否放得下回答。 */
-const CARD_WIDTH = 360;
+const CARD_WIDTH = 380;
 
 /** 右下角能拉到多小；再小回答就只剩一条缝。 */
 const CARD_MIN_WIDTH = 320;
@@ -92,8 +92,8 @@ const PLACE_MARGIN = 12;
 /** 正文和回答之间留出的缝。 */
 const BESIDE_GAP = 40;
 
-/** 工具条和选区之间的距离，小三角画在这段距离里。 */
-const LENS_GAP = 10;
+/** 工具条和选区之间留一点气口；胶囊本身不再画三角。 */
+const LENS_GAP = 6;
 
 /** 「更多」里的常用提问；钉上的出现在工具条上。存的是 id，改文案不丢已钉的。 */
 const PROMPTS = [
@@ -103,6 +103,14 @@ const PROMPTS = [
   { id: 'why', label: '为什么重要', question: '这段话为什么重要？' },
   { id: 'evidence', label: '证据是什么', question: '作者的证据是什么？' },
 ] as const;
+
+const PROMPT_ICONS = {
+  translate: Languages,
+  define: SpellCheck,
+  example: Sparkles,
+  why: CircleHelp,
+  evidence: BookOpenText,
+};
 
 /** 输入框下的快捷问题：从常用提问里取跟着读下去最常问的三个。 */
 const QUICK_QUESTIONS = PROMPTS.filter(prompt => ['example', 'why', 'evidence'].includes(prompt.id));
@@ -218,36 +226,43 @@ function boot(): void {
   for (const type of ['keydown', 'keypress', 'keyup'] as const) host.addEventListener(type, event => event.stopPropagation());
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
-      <div class="bar" role="toolbar" aria-label="划词"><button class="ask" data-act="ask" title="选中后直接打字也能问">问<span class="caret" aria-hidden="true"></span></button><span class="sep" aria-hidden="true"></span><button data-act="explain">解释</button><button data-act="read">朗读</button><span class="pins"></span><button class="icon" data-act="copy-selection" aria-label="复制" title="复制"></button><button class="icon more" data-act="more" aria-label="更多" title="更多" aria-haspopup="menu" aria-expanded="false"></button><button class="icon" data-act="dismiss" aria-label="关闭" title="关闭"></button></div>
-      <div class="head" hidden><span class="grip" aria-hidden="true"></span><strong class="title"></strong><button class="icon small" data-act="answer-more" hidden aria-label="回答操作" title="回答操作" aria-haspopup="menu" aria-expanded="false"></button><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
+      <div class="bar" role="toolbar" aria-label="划词"><button class="icon ask" data-act="ask" data-tip="问这段" aria-label="问这段"></button><span class="sep" aria-hidden="true"></span><button class="icon" data-act="explain" data-tip="解释" aria-label="解释"></button><button class="icon" data-act="read" data-tip="朗读" aria-label="朗读" hidden></button><span class="pins"></span><span class="sep" aria-hidden="true"></span><button class="icon" data-act="copy-selection" data-tip="复制" aria-label="复制"></button><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
+      <div class="bar-tip" id="toolbar-tip" role="tooltip" hidden></div>
+      <div class="head" hidden><span class="grip" aria-hidden="true"></span><span class="head-icon" aria-hidden="true"></span><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
-      <div class="foot" hidden><button type="button" class="current-source" data-act="current-source" hidden></button><span class="grow"></span><button type="button" class="icon" data-act="copy" aria-label="复制" title="复制"></button><button type="button" class="icon" data-act="speak" aria-label="朗读" title="朗读"></button><button type="button" class="icon" data-act="handoff" aria-label="在侧栏继续" title="在侧栏继续"></button></div>
+      <div class="foot" hidden><button type="button" class="current-source" data-act="current-source" hidden></button><span class="grow"></span><button type="button" class="icon" data-act="copy" aria-label="复制" title="复制"></button><button type="button" class="icon" data-act="speak" aria-label="朗读" title="朗读" hidden></button><button type="button" class="icon" data-act="answer-more" hidden aria-label="更多回答操作" title="更多回答操作" aria-haspopup="menu" aria-expanded="false"></button><button type="button" class="handoff" data-act="handoff" aria-label="继续聊天" title="继续聊天"></button></div>
       <div class="error" role="status" hidden></div>
-      <form class="composer" hidden><button type="button" class="depth" data-act="depth" aria-pressed="false" title="换成深度模型">快速</button><textarea rows="1" maxlength="2000" aria-label="关于选中文字的问题" placeholder="问这段话…"></textarea><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
+      <form class="composer" hidden><textarea rows="1" maxlength="2000" aria-label="关于这段继续提问" placeholder="问这段…"></textarea><button type="button" class="depth" data-act="depth" aria-pressed="false" title="换成深度回答">快速回答</button><button class="send" type="submit" aria-label="发送问题" title="发送问题"></button></form>
       <div class="chips" role="group" aria-label="常用问题" hidden>${QUICK_QUESTIONS.map(prompt => `<button type="button" data-ask="${prompt.question}">${prompt.label}</button>`).join('')}</div>
       <div class="resize" title="拖动调整大小，双击恢复" aria-hidden="true"></div>
       <span class="tail" aria-hidden="true"></span>
     </section>
-    <div class="menu" role="menu" aria-label="更多" hidden><div class="menu-label">常用</div>${PROMPTS.map(prompt => `<div class="menu-row"><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button><button class="icon small pin" data-pin="${prompt.id}" aria-pressed="false" aria-label="钉到工具条" title="钉到工具条"></button></div>`).join('')}<div class="rule" role="separator"></div><button role="menuitem" data-act="transfer">在侧栏继续</button><div class="rule" role="separator"></div><button role="menuitem" class="dim" data-act="mute-page">这一页不再弹出</button><button role="menuitem" class="dim" data-act="mute-all">关闭划词工具条</button></div>
-    <div class="menu answer-menu" role="menu" aria-label="回答操作" hidden><button role="menuitem" data-act="deep">用深度模型重答</button><button role="menuitem" data-act="details">收起回答</button></div>
+    <div class="menu" role="menu" aria-label="更多问法" hidden><div class="menu-label">更多问法</div>${PROMPTS.map(prompt => `<div class="menu-row"><span class="menu-glyph" aria-hidden="true"></span><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button><button class="icon small pin" data-pin="${prompt.id}" aria-pressed="false" aria-label="固定到工具条" title="固定到工具条"></button></div>`).join('')}<div class="rule" role="separator"></div><button class="menu-action" role="menuitem" data-act="transfer"><span class="menu-action-icon" aria-hidden="true"></span>在侧栏打开</button><div class="rule" role="separator"></div><div class="menu-label">自动显示</div><button role="menuitem" class="dim" data-act="mute-page">此页不再自动显示</button><button role="menuitem" class="dim" data-act="mute-all">所有网页不再自动显示</button></div>
+    <div class="menu answer-menu" role="menu" aria-label="更多回答操作" hidden><button role="menuitem" data-act="deep">用深度回答重答</button><button role="menuitem" data-act="details">收起回答</button></div>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
   document.documentElement.append(host);
   const el = <T extends Element = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
 
-  el('[data-act="explain"]').prepend(icon(Lightbulb));
-  el('[data-act="read"]').prepend(icon(Volume2));
+  el('[data-act="ask"]').append(icon(MessageCircleQuestion));
+  el('[data-act="explain"]').append(icon(Lightbulb));
+  el('[data-act="read"]').append(icon(Volume2));
   el('[data-act="more"]').append(icon(Ellipsis));
   el('[data-act="close"]').append(icon(X));
   el('[data-act="answer-more"]').append(icon(Ellipsis));
+  el('[data-act="handoff"]').replaceChildren(icon(PanelRight), document.createTextNode('继续聊天'));
   el('.answer-menu [data-act="deep"]').prepend(icon(Sparkles));
   el('[data-act="dismiss"]').append(icon(X));
   el('[data-act="copy-selection"]').append(icon(Copy));
   el('[data-act="copy"]').prepend(icon(Copy));
   el('[data-act="speak"]').prepend(icon(Volume2));
   el('.grip').append(icon(GripVertical, { width: 14, height: 14 }));
+  el('.menu-action-icon').append(icon(PanelRight));
+  for (const [index, glyph] of [...root.querySelectorAll('.menu-glyph')].entries()) glyph.append(icon(PROMPT_ICONS[PROMPTS[index]!.id]));
   for (const pin of root.querySelectorAll('[data-pin]')) pin.append(icon(Pin));
 
   const surface = el('.surface');
+  const bar = el('.bar');
+  const barTip = el('.bar-tip');
   const head = el('.head');
   const resizeHandle = el('.resize');
   head.addEventListener('pointerdown', startDrag);
@@ -271,6 +286,8 @@ function boot(): void {
   const restore = el('.restore');
   const error = el('.error');
   const reader = createReadAloud(root);
+  let barTipTimer: ReturnType<typeof setTimeout> | undefined;
+  let barTipTarget: HTMLElement | null = null;
   let snapshot: SelectionSnapshot | null = null;
   let record: ReadingRecord | undefined;
   let opening: Promise<void> | null = null;
@@ -303,7 +320,46 @@ function boot(): void {
   let typedDepth: 'fast' | 'deep' = 'fast';
   /** 钉到工具条上的常用提问。 */
   let pins: string[] = [];
+  /** 朗读默认不出现，只有用户在设置里主动开启后才进入工具条和回答卡。 */
+  let aloudEnabled = false;
   let pinned = false;
+
+  function hideBarTip(): void {
+    clearTimeout(barTipTimer);
+    barTip.hidden = true;
+    barTipTarget?.removeAttribute('aria-describedby');
+    barTipTarget = null;
+  }
+
+  function placeBarTip(target: HTMLElement): void {
+    const targetRect = target.getBoundingClientRect();
+    const tipRect = barTip.getBoundingClientRect();
+    const center = targetRect.left + targetRect.width / 2;
+    const left = clamp(center - tipRect.width / 2, 8, Math.max(8, innerWidth - tipRect.width - 8));
+    const above = targetRect.top - tipRect.height - 9 >= 8;
+
+    barTip.style.left = `${left}px`;
+    barTip.style.top = `${above ? targetRect.top - tipRect.height - 9 : targetRect.bottom + 9}px`;
+    barTip.style.setProperty('--tip-x', `${clamp(center - left, 12, Math.max(12, tipRect.width - 12))}px`);
+    barTip.dataset.side = above ? 'top' : 'bottom';
+  }
+
+  function showBarTip(target: HTMLElement, immediate = false): void {
+    clearTimeout(barTipTimer);
+    barTipTarget?.removeAttribute('aria-describedby');
+    barTipTarget = target;
+
+    const reveal = () => {
+      if (!target.isConnected || target.hidden || expanded || !target.dataset.tip) return;
+      barTip.textContent = target.dataset.tip;
+      barTip.hidden = false;
+      target.setAttribute('aria-describedby', 'toolbar-tip');
+      placeBarTip(target);
+    };
+
+    if (immediate) reveal();
+    else barTipTimer = setTimeout(reveal, 160);
+  }
 
   /**
    * 按住说话的这一次交流，只在页面里：按下时抓住的那段字（之后用户点别处、改选都不影响这一句问的是哪），
@@ -550,6 +606,7 @@ function boot(): void {
   function hide(): void {
     const restoreFocus = Boolean(root.activeElement);
     rememberDraft();
+    hideBarTip();
     closeMenu();
     visible = false;
     surface.hidden = true;
@@ -680,8 +737,14 @@ function boot(): void {
 
   const questionLabel = (question: string) => question === EXPLAIN_PROMPT ? '解释这段文字' : PROMPTS.find(prompt => prompt.question === question)?.label ?? question;
   const preset = (question: string) => question === EXPLAIN_PROMPT || PROMPTS.some(prompt => prompt.question === question);
-  /** 卡片标题用这一问的动作名（解释、翻译…），自己打的问题统一叫「提问」。 */
-  const actionName = (question: string) => question === EXPLAIN_PROMPT ? '解释' : PROMPTS.find(prompt => prompt.question === question)?.label ?? '提问';
+  /** 卡片标题用这一问的动作名（解释、翻译…），自己打的问题统一叫「问这段」。 */
+  const actionName = (question: string) => question === EXPLAIN_PROMPT ? '解释' : PROMPTS.find(prompt => prompt.question === question)?.label ?? '问这段';
+  const actionIcon = (question: string) => {
+    if (question === EXPLAIN_PROMPT) return Lightbulb;
+    const prompt = PROMPTS.find(item => item.question === question);
+
+    return prompt ? PROMPT_ICONS[prompt.id] : MessageCircleQuestion;
+  };
 
   function metaButton(label: string, act: string, turn: number): HTMLButtonElement {
     const button = document.createElement('button');
@@ -698,15 +761,18 @@ function boot(): void {
     const waiting = voice?.phase === 'released';
     const answering = expanded && (turns.length > 0 || waiting);
     const composing = expanded && !turns.length && !waiting;
+    if (expanded) hideBarTip();
     surface.classList.toggle('expanded', expanded);
     surface.classList.toggle('composing', composing);
     applyManualSize();
     el('.bar').hidden = expanded;
     // 打字用的输入卡也能拖：标题栏一直留着，标题写「提问」。
     el('.head').hidden = !expanded;
-    el('.foot').hidden = !expanded;
     const hasAnswer = turns.some(turn => turn.answer.trim());
-    for (const action of ['copy', 'speak', 'handoff']) el(`[data-act="${action}"]`).hidden = !hasAnswer;
+    el('.foot').hidden = !expanded || !hasAnswer;
+    for (const action of ['copy', 'handoff']) el(`[data-act="${action}"]`).hidden = !hasAnswer;
+    el('[data-act="read"]').hidden = !aloudEnabled;
+    el('[data-act="speak"]').hidden = !hasAnswer || !aloudEnabled;
     answerMore.hidden = !hasAnswer;
     messages.hidden = !answering;
     el('.composer').hidden = !expanded;
@@ -845,7 +911,9 @@ function boot(): void {
     }
 
     // 选区在页面上已经高亮，卡里不再重复一遍；一轮里换过段时，各轮自己带出处。
-    el('.title').textContent = waiting ? '提问' : actionName(turns.at(-1)?.question ?? '');
+    const latestQuestion = turns.at(-1)?.question ?? '';
+    el('.title').textContent = actionName(latestQuestion);
+    el('.head-icon').replaceChildren(icon(actionIcon(latestQuestion), { width: 13, height: 13 }));
     const busy = readingBusy(record);
     // 生成中输入框有字时，按钮是改口；空着时才是停止。
     const stops = busy && !input.value.trim();
@@ -854,23 +922,18 @@ function boot(): void {
     submit.setAttribute('aria-label', label);
     submit.title = label;
     submit.disabled = sending || (!busy && !input.value.trim());
-    const currentSource = candidate ?? snapshot;
-    const sourceButton = el<HTMLButtonElement>('.current-source');
-    sourceButton.hidden = !currentSource?.range?.startContainer.isConnected;
-    sourceButton.replaceChildren(document.createTextNode(currentSource?.source.title || '原文'), icon(ArrowUpRight));
-    sourceButton.title = currentSource ? `回到选中的原文：${currentSource.source.text}` : '回到选中的原文';
-    sourceButton.setAttribute('aria-label', sourceButton.title);
-    input.placeholder = candidate ? '问刚选中的这段…' : turns.length ? '接着问…' : '问这段话…';
+    syncSourceLink();
+    input.placeholder = turns.length ? '继续提问…' : '输入问题…';
     const handoff = el<HTMLButtonElement>('[data-act="handoff"]');
     handoff.disabled = busy || sending;
-    const handoffLabel = record?.transferredConversationId ? '回到侧栏' : '在侧栏继续';
-    handoff.replaceChildren(icon(PanelRight));
+    const handoffLabel = record?.transferredConversationId ? '回到侧栏' : '继续聊天';
+    handoff.replaceChildren(icon(PanelRight), document.createTextNode(handoffLabel));
     handoff.setAttribute('aria-label', handoffLabel);
     handoff.title = handoffLabel;
     const depth = el<HTMLButtonElement>('.depth');
-    depth.textContent = typedDepth === 'deep' ? '深度' : '快速';
+    depth.textContent = typedDepth === 'deep' ? '深度回答' : '快速回答';
     depth.setAttribute('aria-pressed', String(typedDepth === 'deep'));
-    depth.title = typedDepth === 'deep' ? '打字问时用深度模型，点一下换回快速' : '打字问时用快速模型，点一下换成深度';
+    depth.title = typedDepth === 'deep' ? '现在用深度回答，点一下换回快速回答' : '现在用快速回答，点一下换成深度回答';
     position();
     pushPointer();
   }
@@ -890,17 +953,49 @@ function boot(): void {
     }, 1200);
   }
 
+  /** 原文还在眼前时不占底栏；滚出视口后才提供「回到原文」。 */
+  function syncSourceLink(): void {
+    const currentSource = candidate ?? snapshot;
+    const range = currentSource?.range;
+    const sourceButton = el<HTMLButtonElement>('.current-source');
+    const connected = Boolean(range?.startContainer.isConnected);
+    const visible = connected && [...range!.getClientRects()].some(rect => rect.bottom >= 0 && rect.top <= innerHeight);
+    sourceButton.hidden = !connected || visible;
+    sourceButton.replaceChildren(icon(ArrowUpLeft, { width: 13, height: 13 }), document.createTextNode('回到原文'));
+    sourceButton.title = currentSource ? `回到原文 · ${currentSource.source.title}` : '回到原文';
+    sourceButton.setAttribute('aria-label', currentSource ? `回到原文：${currentSource.source.text.slice(0, 80)}` : '回到原文');
+  }
+
+  /** 回原文：跨得远时直接到，别让平滑滚动拖几秒；只在附近才用动画。 */
+  function revealSource(node: Node | null | undefined): void {
+    const element = node instanceof Element ? node : node?.parentElement;
+
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    const far = rect.bottom < -innerHeight || rect.top > innerHeight * 2;
+    element.scrollIntoView({ block: 'center', behavior: far ? 'auto' : 'smooth' });
+  }
+
   /** 工具条上「解释」「朗读」后面跟着用户钉上的常用提问，菜单里的图钉同步亮。 */
   function renderPins(): void {
+    hideBarTip();
     el('.pins').replaceChildren(...PROMPTS.filter(prompt => pins.includes(prompt.id)).map(prompt => {
       const button = document.createElement('button');
+      button.className = 'icon';
       button.dataset.prompt = prompt.id;
-      button.textContent = prompt.label;
+      button.dataset.tip = prompt.label;
+      button.setAttribute('aria-label', prompt.label);
+      button.append(icon(PROMPT_ICONS[prompt.id]));
 
       return button;
     }));
 
-    for (const pin of root.querySelectorAll<HTMLElement>('[data-pin]')) pin.setAttribute('aria-pressed', String(pins.includes(pin.dataset.pin!)));
+    for (const pin of root.querySelectorAll<HTMLElement>('[data-pin]')) {
+      const on = pins.includes(pin.dataset.pin!);
+      pin.setAttribute('aria-pressed', String(on));
+      pin.setAttribute('aria-label', on ? '从工具条移除' : '固定到工具条');
+      pin.title = on ? '从工具条移除' : '固定到工具条';
+    }
     if (visible && !expanded) position();
   }
 
@@ -1322,6 +1417,27 @@ function boot(): void {
     });
   }
 
+  bar.addEventListener('pointerover', event => {
+    const button = (event.target as Element).closest<HTMLElement>('[data-tip]');
+    const related = event.relatedTarget;
+
+    if (!button || (related instanceof Node && button.contains(related))) return;
+    showBarTip(button);
+  });
+  bar.addEventListener('pointerout', event => {
+    const button = (event.target as Element).closest<HTMLElement>('[data-tip]');
+    const related = event.relatedTarget;
+
+    if (!button || (related instanceof Node && button.contains(related))) return;
+    hideBarTip();
+  });
+  bar.addEventListener('focusin', event => {
+    const button = (event.target as Element).closest<HTMLElement>('[data-tip]');
+
+    if (button) showBarTip(button, true);
+  });
+  bar.addEventListener('focusout', hideBarTip);
+
   root.addEventListener('click', event => {
     const target = (event.target as Element).closest<HTMLElement>('[data-act],[data-ask],[data-prompt],[data-pin]');
 
@@ -1329,6 +1445,7 @@ function boot(): void {
       return;
     }
 
+    hideBarTip();
     const action = target.dataset.act;
     const quick = target.dataset.ask ?? PROMPTS.find(prompt => prompt.id === target.dataset.prompt)?.question;
     const pin = target.dataset.pin;
@@ -1448,7 +1565,7 @@ function boot(): void {
               range.setStart(startNode, startOffset);
               range.setEnd(endNode, endOffset);
               if (clipSelection(range.toString().trim()) === source.text && selectionSurrounding(range, range.toString().trim(), READING_CONTEXT_LIMIT) === source.surrounding) {
-                (startNode instanceof Element ? startNode : startNode.parentElement)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                revealSource(startNode);
                 located = true;
               }
             }
@@ -1463,7 +1580,7 @@ function boot(): void {
           report('原文位置已变化，摘录仍保留。');
           return;
         }
-        (node instanceof Element ? node : node?.parentElement)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        revealSource(node);
       }
       else if (action === 'transfer' || action === 'handoff') {
         closeMenu();
@@ -1531,6 +1648,13 @@ function boot(): void {
     }
   };
 
+  const applyAloudSetting = (on: boolean) => {
+    aloudEnabled = on;
+    el('[data-act="read"]').hidden = !on;
+    if (!on) el('[data-act="speak"]').hidden = true;
+    if (visible) render();
+  };
+
   const applyPins = (value: unknown) => {
     pins = Array.isArray(value) ? value.filter((id): id is string => PROMPTS.some(prompt => prompt.id === id)) : [];
     renderPins();
@@ -1553,8 +1677,9 @@ function boot(): void {
     }
   };
 
-  void chrome.storage.local.get([SELECTION_BAR_KEY, PINS_KEY, READING_CARD_SIZE_KEY]).then(stored => {
+  void chrome.storage.local.get([SELECTION_BAR_KEY, READING_ALOUD_KEY, PINS_KEY, READING_CARD_SIZE_KEY]).then(stored => {
     applyBarSetting(isSelectionBarOff(stored[SELECTION_BAR_KEY]));
+    applyAloudSetting(isReadingAloudOn(stored[READING_ALOUD_KEY]));
     applyPins(stored[PINS_KEY]);
     applyCardSize(stored[READING_CARD_SIZE_KEY]);
   }).catch(() => {
@@ -1568,6 +1693,7 @@ function boot(): void {
       applyBarSetting(isSelectionBarOff(changes[SELECTION_BAR_KEY]!.newValue));
     }
 
+    if (area === 'local' && READING_ALOUD_KEY in changes) applyAloudSetting(isReadingAloudOn(changes[READING_ALOUD_KEY]!.newValue));
     if (area === 'local' && PINS_KEY in changes) applyPins(changes[PINS_KEY]!.newValue);
     if (area === 'local' && READING_CARD_SIZE_KEY in changes) applyCardSize(changes[READING_CARD_SIZE_KEY]!.newValue);
   });
@@ -1699,11 +1825,13 @@ function boot(): void {
       return;
     }
 
+    hideBarTip();
     closeMenu();
 
     if (expanded) {
       position();
       recede();
+      syncSourceLink();
     }
     else if (visible) {
       hide();
@@ -1713,10 +1841,12 @@ function boot(): void {
   }, { capture: true, signal });
   const relayout = () => {
     if (!retired()) {
+      hideBarTip();
       closeMenu();
       applyManualSize();
       position();
       pushPointer();
+      if (expanded) syncSourceLink();
     }
   };
   window.addEventListener('resize', relayout, { signal });

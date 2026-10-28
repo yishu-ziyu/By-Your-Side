@@ -150,7 +150,8 @@ export function renderSettings(): void {
   <section class="sx" aria-labelledby="selection-title">
     <div class="sx-head"><h2 id="selection-title">划词</h2></div>
     <div class="surface rows">
-      ${toggleRow("selection-bar", "选中文字后显示「问助手 / 解释」", `<span id="ask-shortcut-note">关掉后右键「问 By Your Side」仍然可用。</span>已打开的页面立即生效。`)}
+      ${toggleRow("selection-bar", "选中文字后显示工具条", `<span id="ask-shortcut-note">关掉后右键「问 By Your Side」仍然可用。</span>已打开的页面立即生效。`)}
+      ${toggleRow("reading-aloud", "在划词工具条和回答卡里显示朗读", "默认关闭。开启后才会出现朗读；用浏览器自带的声音，只在本页出声。")}
       ${toggleRow("nudge", "主动建议", "可以帮忙时，在页面右下角显示建议。")}
     </div>
     <details class="settings-detail"><summary>主动建议会读取什么？</summary><p>如果助手能帮上忙，就在页面右下角显示一张小卡。点小卡，侧栏就开始做。每次判断会把当前页面和最近页面的摘录发给快速模型，没设快速模型时发给主模型。同一个页面只判断一次。</p></details>
