@@ -22,7 +22,6 @@ export const ASK_STYLES = `
   --t-body: 15px;
   --t-ui: 13px;
   --t-meta: 12px;
-  --t-quote: 12.5px;
   --t-tiny: 11.5px;
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
@@ -76,7 +75,7 @@ export const ASK_STYLES = `
 [hidden] { display: none !important; }
 .surface, .menu, .restore, .reader { font: var(--t-ui)/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; color: var(--ink-fg); -webkit-font-smoothing: antialiased; }
 .surface { position: fixed; pointer-events: auto; padding: 4px; background: var(--ink); border-radius: var(--r-outer); box-shadow: var(--shadow); max-width: calc(100vw - 24px); }
-.surface.expanded { width: 360px; display: flex; flex-direction: column; max-height: calc(100vh - 24px); }
+.surface.expanded { width: 360px; display: flex; flex-direction: column; max-height: calc(100vh - 24px); padding-bottom: 14px; }
 .surface.composing { width: 440px; }
 button, textarea { font: inherit; color: inherit; }
 button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-shrink: 0; height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-inner); background: transparent; cursor: pointer; white-space: nowrap; transition: background-color .15s, color .15s, transform .15s var(--ease-out); }
@@ -102,14 +101,24 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .surface[data-tail="up"] .tail { bottom: 100%; border-bottom: 7px solid var(--ink); filter: drop-shadow(0 -1px 0 var(--ring)); }
 .surface:not([data-tail]) .tail { display: none; }
 
-.head { display: flex; align-items: center; gap: 4px; height: 34px; padding: 8px 6px 0 14px; font-size: var(--t-meta); color: var(--ink-mute); }
+/* 右下角的缩放把手放在底栏留白里，避开发送按钮；拉过之后回答区跟着变高。 */
+.resize { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; display: none; cursor: nwse-resize; touch-action: none; }
+.surface.expanded .resize { display: block; }
+.resize::before { content: ""; position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; border-right: 2px solid var(--ink-mute); border-bottom: 2px solid var(--ink-mute); border-bottom-right-radius: 2px; opacity: .32; transition: opacity .15s; }
+.resize:hover::before { opacity: .75; }
+@media (hover: none) { .resize::before { opacity: .55; } }
+
+.head { display: flex; align-items: center; gap: 4px; height: 34px; padding: 8px 6px 0 8px; font-size: var(--t-meta); color: var(--ink-mute); cursor: grab; user-select: none; touch-action: none; }
+.surface.dragging .head { cursor: grabbing; }
+.head .grip { width: 18px; height: 24px; margin-left: -4px; display: flex; align-items: center; justify-content: center; flex: none; color: var(--ink-mute); opacity: .45; transition: opacity .15s; }
+.head .grip svg { width: 14px; height: 14px; stroke-width: 1.8; }
+.head:hover .grip { opacity: .75; }
 .head .title { flex: 1; min-width: 0; font-size: var(--t-body); font-weight: 600; color: var(--ink-fg); }
-.q { margin: 6px 14px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quote { font-size: var(--t-quote); color: var(--ink-fg-2); padding-left: 8px; box-shadow: inset 2px 0 0 var(--mark); }
 .turn > .source { margin-bottom: 6px; padding-left: 8px; box-shadow: inset 2px 0 0 var(--mark); font-size: var(--t-meta); line-height: 1.5; color: var(--ink-fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-pending .question { color: var(--ink-fg-2); }
 .question svg { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; stroke-width: 2; color: var(--ink-mute); }
 .messages { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-hover) transparent; padding: 6px 14px 12px; max-height: min(420px, 52vh); }
+.surface.resized .messages { max-height: none; }
 .turn + .turn { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ink-rule); }
 .question { font-size: var(--t-meta); line-height: 1.5; margin-bottom: 6px; color: var(--ink-mute); overflow-wrap: anywhere; white-space: pre-wrap; }
 .answer, .answer-summary { font-size: var(--t-body); line-height: 1.7; letter-spacing: .01em; color: var(--ink-fg); overflow-wrap: anywhere; }

@@ -1,18 +1,19 @@
 /**
  * 划词阅读卡：和侧栏同一套纸色；右边是空白时放在正文旁，有侧栏或窗口窄时浮在选区旁。
  * 回答窗顶上是动作名（解释、翻译…），底栏有复制、朗读、在侧栏继续；输入框左边的芯片切快速/深度。
- * 工具条有复制和关闭，「更多」里的常用提问可以钉到工具条上。
+ * 工具条有复制和关闭，「更多」里的常用提问可以钉到工具条上。标题栏能拖动，右下角能缩放。
  *
  * 真扩展、隔离无头 Chrome、本机练习页、本机脚本模型。脚本模型只证明卡片位置、样子和请求去向，不证明真实回答写得好不好。
  *   npx tsx scripts/acceptance/real-path/reading-card-gloss.mts --headless
  *
  * 判据：
  *   右侧空白  卡片在正文右侧，不和选区所在段落重叠；滚动后仍贴着这段。
- *   回答窗    标题是「解释」，不再重复「解释这段文字」；底栏三个按钮可见；点复制后图标变成对勾。
+ *   回答窗    标题是「解释」，不再重复「解释这段文字」，也不在卡里再引一遍选区；底栏三个按钮可见；点复制后图标变成对勾。
  *   纸色      卡片底色是浅色，和侧栏同一套色阶。
  *   快速/深度  默认请求是快速模型并带 fast；点芯片换成深度后，打字追问打到主模型并带 deep。
  *   钉到工具条 在「更多」里钉上「翻译」，再选中文字时工具条上有「翻译」，点它发出翻译提问、标题是「翻译」。
  *   关闭      工具条上的 × 收起工具条。
+ *   拖动/缩放  拖标题栏后卡片停在新位置，滚动不跟走；拉右下角变大，再划一段仍记住大小；双击右下角回到默认大小。
  *   网页抢键  网页在 document 上监听按键、发现焦点不在输入框就聚焦自己的输入框（Claude 网页版就这样）：在卡片输入框里逐键打字，字仍落在卡片里，网页输入框是空的。
  *   有侧栏    卡片是浮卡，不盖住侧栏。窄窗口退回浮卡。
  */
@@ -170,6 +171,26 @@ try {
     for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, button: "left", clickCount: 1, ...point }, work);
   };
 
+  const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...from }, work);
+    await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", button: "left", buttons: 1, clickCount: 1, ...from }, work);
+
+    for (let i = 1; i <= 8; i++) {
+      await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", button: "left", buttons: 1, x: from.x + (to.x - from.x) * i / 8, y: from.y + (to.y - from.y) * i / 8 }, work);
+    }
+
+    await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", button: "left", clickCount: 1, ...to }, work);
+  };
+
+  const doubleClick = async (point: { x: number; y: number }) => {
+    await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point }, work);
+
+    for (const clickCount of [1, 2]) {
+      await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", button: "left", clickCount, ...point }, work);
+      await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", button: "left", clickCount, ...point }, work);
+    }
+  };
+
   const SCENE = `function(){
     const box = (r) => r && r.width ? {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height} : null;
     const surface = this.querySelector(".surface");
@@ -221,9 +242,9 @@ try {
   const wide = await scene();
   await shot("1-wide");
   check("宽屏空白：卡片在正文右侧，不和这段重叠", wide.card.left >= wide.block.right - 1 && !overlaps(wide.card, wide.block) && wide.place === "beside", { card: wide.card, block: wide.block, place: wide.place });
-  const look = await inCard<{ title: string; asked: boolean; foot: string[]; bg: string }>(`function(){const q=this.querySelector('.turn .question');return {title:this.querySelector('.head .title')?.textContent??'',asked:!!q&&!q.hidden,foot:[...this.querySelectorAll('.foot:not([hidden]) button')].map(b=>b.textContent.trim()),bg:getComputedStyle(this.querySelector('.surface')).backgroundColor}}`);
+  const look = await inCard<{ title: string; asked: boolean; quote: boolean; source: boolean; foot: string[]; bg: string }>(`function(){const q=this.querySelector('.turn .question');return {title:this.querySelector('.head .title')?.textContent??'',asked:!!q&&!q.hidden,quote:!!this.querySelector('.q'),source:!!this.querySelector('.turn > .source'),foot:[...this.querySelectorAll('.foot:not([hidden]) button')].map(b=>b.textContent.trim()),bg:getComputedStyle(this.querySelector('.surface')).backgroundColor}}`);
   const light = (look.bg.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number).every((v) => v > 230);
-  check("回答窗：标题是「解释」，不重复问题行，底栏有复制、朗读、在侧栏继续", look.title === "解释" && !look.asked && ["复制", "朗读", "在侧栏继续"].every((label) => look.foot.includes(label)), look);
+  check("回答窗：标题是「解释」，不重复问题行和选区，底栏有复制、朗读、在侧栏继续", look.title === "解释" && !look.asked && !look.quote && !look.source && ["复制", "朗读", "在侧栏继续"].every((label) => look.foot.includes(label)), look);
   check("纸色：卡片是浅色底", light, look.bg);
   await click((await pointOf('.foot [data-act="copy"]'))!);
   await sleep(200);
@@ -304,6 +325,46 @@ try {
   const narrow = await scene();
   await shot("4-narrow");
   check("窄窗口：退回浮卡", narrow.innerWidth <= 520 && narrow.card.left < narrow.block.right - 8 && narrow.place !== "beside", { innerWidth: narrow.innerWidth, card: narrow.card, block: narrow.block, place: narrow.place });
+
+  await selectMarker("/blank", 1280);
+  await click((await until(() => pointOf('[data-act="ask"]'), 5_000, "问"))!);
+  await sleep(250);
+  const composing = await inCard<{ head: boolean; title: string; grip: boolean }>(`function(){return {head:!this.querySelector('.head').hidden,title:this.querySelector('.head .title')?.textContent??'',grip:!!this.querySelector('.grip svg')}}`);
+  await shot("5-composing");
+  check("输入卡也有标题栏和拖动把手", composing.head && composing.title === "提问" && composing.grip, composing);
+
+  await openReading("/blank", 1280);
+  const beforeDrag = await scene();
+  const head = (await pointOf(".head"))!;
+  await drag(head, { x: head.x + 120, y: head.y + 90 });
+  await sleep(250);
+  const afterDrag = await scene();
+  await shot("6-dragged");
+  check("拖标题栏：卡片移到新位置，不再贴回选区", afterDrag.place === "manual" && afterDrag.card.left > beforeDrag.card.left + 80 && afterDrag.card.top > beforeDrag.card.top + 50, { before: beforeDrag.card, after: afterDrag.card, place: afterDrag.place });
+
+  const beforeManualScroll = await scene();
+  await rp.evaluate(work, "window.scrollBy(0, 160)");
+  await sleep(250);
+  const afterManualScroll = await scene();
+  check("拖走后滚动：卡片留在用户放的位置", Math.abs(afterManualScroll.card.top - beforeManualScroll.card.top) < 2 && Math.abs(afterManualScroll.card.left - beforeManualScroll.card.left) < 2, { before: beforeManualScroll.card, after: afterManualScroll.card });
+
+  const beforeResize = await scene();
+  const grip = (await pointOf(".resize"))!;
+  await drag(grip, { x: grip.x + 110, y: grip.y + 90 });
+  await sleep(250);
+  const afterResize = await scene();
+  await shot("7-resized");
+  check("拉右下角：卡片变大", afterResize.card.width > beforeResize.card.width + 80 && afterResize.card.height > beforeResize.card.height + 60, { before: beforeResize.card, after: afterResize.card });
+
+  await openReading("/blank", 1280);
+  const kept = await scene();
+  check("再划一段：记住上次拉的大小", Math.abs(kept.card.width - afterResize.card.width) < 2 && Math.abs(kept.card.height - afterResize.card.height) < 2, { resized: afterResize.card, kept: kept.card });
+
+  await doubleClick((await pointOf(".resize"))!);
+  await sleep(250);
+  const reset = await scene();
+  await shot("8-reset");
+  check("双击右下角：回到默认大小", Math.abs(reset.card.width - 360) < 2, { card: reset.card });
 } catch (error) {
   check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
 } finally {

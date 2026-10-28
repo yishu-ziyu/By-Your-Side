@@ -12,6 +12,25 @@ export const ASK_MENU_ID = "ask-sideagent";
 /** chrome.storage.local 键：选中文字后是否自动弹出「问 AI / 解释」工具条。 */
 export const SELECTION_BAR_KEY = "sideagent_selection_bar";
 
+/** chrome.storage.local 键：用户拖过右下角后记住的阅读卡大小。 */
+export const READING_CARD_SIZE_KEY = "reading_card_size";
+
+export interface ReadingCardSize {
+  width: number;
+  height: number;
+}
+
+/** 存进来的尺寸只做形状检查；按当前窗口能放多大由卡片自己再收一次。 */
+export function readReadingCardSize(stored: unknown): ReadingCardSize | null {
+  if (!stored || typeof stored !== "object") return null;
+
+  const { width, height } = stored as Record<string, unknown>;
+
+  if (typeof width !== "number" || typeof height !== "number" || !Number.isFinite(width) || !Number.isFinite(height) || width < 200 || height < 160) return null;
+
+  return { width: Math.round(width), height: Math.round(height) };
+}
+
 /** 只有明确存了 false 才算关闭；没存过或存了别的值都算开启。 */
 export function isSelectionBarOff(stored: unknown): stored is false {
   return stored === false;
