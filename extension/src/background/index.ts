@@ -441,6 +441,11 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  const tab = sender.tab;
  const tabId = tab.id!;
  void (async () => {
+  if (raw.phase === "start" && !(await readVoiceDictationKey()).key) {
+   await chrome.tabs.create({ url: chrome.runtime.getURL(`settings.html?readingTab=${tabId}#voice`) });
+   sendResponse({ ok: false, reason: "failed", message: "请先配置网页语音。" });
+   return;
+  }
   const command: PttCommand = { target: PTT_TARGET, phase: raw.phase };
   const releasedAt = Date.now();
   if (raw.phase === "start") { pttTurn++; reading.interrupt(tabId); pttCapsule.recording(tabId); }
