@@ -18,7 +18,7 @@
 
 ## 验证与边界
 
-`reading-card-gloss`、`panel-send-confirm`、`page-assistance-visual` 检查真实扩展在隔离 Chrome 中的操作与可见结果；模型和网站是本机固定材料，不代表真模型或真实网站的表现。截图、构建与检查日志封存在主工作区 `out/design-hierarchy-delivery/`。
+`reading-card-gloss`、`panel-send-confirm`、`page-assistance-visual` 检查真实扩展在隔离 Chrome 中的操作与可见结果；模型和网站是本机固定材料，不代表真模型或真实网站的表现。本轮阅读 30/30、确认 17/17、页面标记 6/6、教学视觉 N/M/R/B 21/21 通过。构建及样式检查通过，日常 Chrome 四项改动资源与验收包哈希一致，上一版保留在同目录 `previous-dist/`。截图、构建与检查日志封存在主工作区 `out/design-hierarchy-delivery/`。
 
 未改版包能被新的页面验收判为失败：旧界面仍有重复状态与全页光晕，没有文本行标记。正式验收不得用旧截图替代当前画面。
 
