@@ -14,7 +14,7 @@
 | 对照 Sider 智能菜单（日常 Chrome 实拍） | 觉得好；学标题与底栏、模型芯片、工具条复制和关闭、更多里放常用提问，“短板都不学” | 学一线产品的结构，不学它的短板（Sider 不看上下文、窗口盖住半页） |
 | 卡片顶部再引一次选中的句子；不能拖、不能缩放 | “提问句跟答案完全有重叠”“没有办法拖拽，没有办法放大放小” | 选区在页面上已经高亮，卡里只留回答；浮卡像窗口一样用标题栏拖、右下角拉，大小记住 |
 
-截图：工作树 `out/look/`（对比页 `index.html`、`sider.html`）。
+截图：工作树 `out/look/`（对比页 `index.html`、`sider.html`）；拖动与缩放 `out/look/reading-card-drag-resize/`（`before-after.png`、`after-states.png`，录屏 `out/recordings/reading-card-gloss-1028-101350/slow.mp4`）。
 
 ## 10-20 设置页层级与间距
 
