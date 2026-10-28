@@ -10,7 +10,7 @@
  * 文件在侧栏本机读成文字（file-read.js 用到时才加载）；瓷贴的进度环跟着真实的读取进度走。
  */
 
-import { isAttachment, type Attachment, type FileAttachment, type ImageAttachment } from "../../../shared/protocol.js";
+import { isAttachment, type Attachment, type FileAttachment, type FileFormat, type ImageAttachment } from "../../../shared/protocol.js";
 import { isCircling, removeCircle, startCircling } from "./circle-select.js";
 import { fileChip, fileMeta } from "./file-chip.js";
 import { readableFormat, unsupportedReason } from "./file-read/formats.js";
@@ -49,13 +49,23 @@ interface AttachmentsManagerOptions {
   menuEl: HTMLElement;
   fileInputEl: HTMLInputElement;
   onChanged?: (count: number, scope?: string) => void;
+  /** 读取进度或完成状态变化；只刷新展示，不触发草稿重写。 */
+  onDisplayChanged?: (scope?: string) => void;
   onError?: (errMessage: string) => void;
+}
+
+export interface AttachmentSnapshot {
+  id: string;
+  name: string;
+  detail: string;
+  state: "reading" | "ready";
 }
 
 interface FileItem {
   kind: "file";
   id: string;
   name: string;
+  format: FileFormat;
   /** 读好之前没有；发消息时只带读好的。 */
   attachment: FileAttachment | null;
   ready: Promise<void>;
@@ -143,7 +153,7 @@ export class AttachmentsManager {
         dom.path.style.strokeDashoffset = "0";
         this.stripEl.appendChild(dom.tile);
 
-        return { kind: "file", id: att.id, name: att.name, attachment: att, ready: Promise.resolve(), dom };
+        return { kind: "file", id: att.id, name: att.name, format: att.format, attachment: att, ready: Promise.resolve(), dom };
       }
 
       const dataUrl = `data:${att.mimeType};base64,${att.dataBase64}`;
@@ -156,6 +166,7 @@ export class AttachmentsManager {
       return { ...att, kind: "image", dataUrl, dom };
     });
     this.updateVisibility();
+    this.notifyDisplayChanged();
   }
   private readonly composerEl: HTMLElement;
   private readonly stripEl: HTMLElement;
@@ -164,6 +175,7 @@ export class AttachmentsManager {
   private readonly menuEl: HTMLElement;
   private readonly fileInputEl: HTMLInputElement;
   private readonly onChanged?: (count: number, scope?: string) => void;
+  private readonly onDisplayChanged?: (scope?: string) => void;
   private readonly onError?: (errMessage: string) => void;
 
   constructor(opts: AttachmentsManagerOptions) {
@@ -174,10 +186,12 @@ export class AttachmentsManager {
     this.menuEl = opts.menuEl;
     this.fileInputEl = opts.fileInputEl;
     this.onChanged = opts.onChanged;
+    this.onDisplayChanged = opts.onDisplayChanged;
     this.onError = opts.onError;
 
     this.bindEvents();
     this.updateVisibility();
+    this.notifyDisplayChanged();
   }
 
   private bindEvents(): void {
@@ -412,7 +426,7 @@ export class AttachmentsManager {
     const dom = this.createFileTileDom(id, { name: file.name, format, size: file.size }, scope, "正在读…");
     let item!: FileItem;
     const ready = (async () => {
-      const progress = (fraction: number) => this.paintProgress(dom, fraction);
+      const progress = (fraction: number) => this.paintProgress(dom, fraction, scope);
 
       try {
         progress(0.04);
@@ -426,14 +440,16 @@ export class AttachmentsManager {
         this.paintProgress(dom, 1);
         dom.tile.classList.add("complete");
         this.updateVisibility(scope);
+        this.notifyDisplayChanged(scope);
       } catch (error) {
         this.removeItem(id, scope);
         this.onError?.(error instanceof Error ? error.message : String(error));
       }
     })();
 
-    item = { kind: "file", id, name: file.name, attachment: null, ready, dom };
+    item = { kind: "file", id, name: file.name, format, attachment: null, ready, dom };
     this.scopeItems(scope).push(item);
+    this.notifyDisplayChanged(scope);
 
     if (scope === this.scopeId) {
       this.stripEl.appendChild(dom.tile);
@@ -443,10 +459,11 @@ export class AttachmentsManager {
     this.updateVisibility(scope);
   }
 
-  private paintProgress(dom: AttachmentItem["dom"], fraction: number): void {
+  private paintProgress(dom: AttachmentItem["dom"], fraction: number, scope = this.scopeId): void {
     const percent = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
     dom.pText.textContent = `${percent}%`;
     dom.path.style.strokeDashoffset = String(FILE_TILE_PERIMETER - (FILE_TILE_PERIMETER * percent) / 100);
+    this.notifyDisplayChanged(scope);
   }
 
   /** 还在读的文件：发送前要等它们读完。 */
@@ -491,6 +508,7 @@ export class AttachmentsManager {
     }
 
     this.updateVisibility(scope);
+    this.notifyDisplayChanged(scope);
 
     // 运行 0% -> 100% 顺时针 Ring 描边与数字动效 (380ms 顺畅感知)
     this.animateTileProgress(item, 380);
@@ -636,6 +654,7 @@ export class AttachmentsManager {
     if (item.kind === "image" && item.circle) removeCircle(item.circle);
     item.dom.tile.classList.add("removing");
     this.updateVisibility(scope);
+    this.notifyDisplayChanged(scope);
     setTimeout(() => { item.dom.tile.remove(); }, 250);
   }
 
@@ -646,6 +665,7 @@ export class AttachmentsManager {
 
     this.items = [];
     this.updateVisibility();
+    this.notifyDisplayChanged();
   }
 
   /** 发消息要带的附件：图片和已读好的文件（还在读的不带，发送前先 whenRead）。 */
@@ -666,11 +686,44 @@ export class AttachmentsManager {
     return this.items.length > 0;
   }
 
+  public snapshot(scope = this.scopeId): AttachmentSnapshot[] {
+    return this.scopeItems(scope).map((item): AttachmentSnapshot => {
+      if (item.kind === "image") {
+        return {
+          id: item.id,
+          name: item.name,
+          detail: item.circle ? `圈选图片 · 圈 ${item.circle}` : "图片 · 已读",
+          state: "ready",
+        };
+      }
+
+      if (!item.attachment) {
+        return {
+          id: item.id,
+          name: item.name,
+          detail: `${item.format.toUpperCase()} · ${item.dom.pText.textContent ?? "正在读取"}`,
+          state: "reading",
+        };
+      }
+
+      return {
+        id: item.id,
+        name: item.name,
+        detail: fileMeta(item.attachment),
+        state: "ready",
+      };
+    });
+  }
+
   private updateVisibility(scope = this.scopeId): void {
     const items = this.scopeItems(scope);
 
     if (scope === this.scopeId) this.stripEl.hidden = items.length === 0;
 
     if (this.onChanged) this.onChanged(items.length, scope);
+  }
+
+  private notifyDisplayChanged(scope = this.scopeId): void {
+    this.onDisplayChanged?.(scope);
   }
 }

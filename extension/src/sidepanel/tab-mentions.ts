@@ -22,8 +22,9 @@ interface TabMentions {
   pages: () => Array<{ tabId: number; title: string; url: string }>;
   items: () => MentionedTab[];
   clear: () => void;
+  remove: (tabId: number) => void;
   /** 切回会话时放回这段会话没发出去的 @ 页面。 */
-  restore: (items: MentionedTab[]) => void;
+  restore: (items: MentionedTab[], options?: { keepStatus?: boolean }) => void;
   isOpen: () => boolean;
 }
 
@@ -268,10 +269,17 @@ export function mountTabMentions(opts: {
     pages: () => picked.filter((p) => p.status !== "unread").map(({ tabId, title, url }) => ({ tabId, title, url })),
     items: () => picked.map((p) => ({ ...p })),
     clear: () => { picked.length = 0; syncStrip(); close(); },
-    restore: (items) => {
+    remove: (tabId) => {
+      const index = picked.findIndex((item) => item.tabId === tabId);
+      if (index < 0) return;
+      picked.splice(index, 1);
+      syncStrip();
+      opts.onChange?.();
+    },
+    restore: (items, options) => {
       picked.length = 0;
       for (const item of items.slice(0, MAX)) {
-        if (typeof item?.tabId === "number") picked.push({ ...item, status: "pending", reason: undefined });
+        if (typeof item?.tabId === "number") picked.push({ ...item, status: options?.keepStatus ? item.status : "pending", reason: options?.keepStatus ? item.reason : undefined });
       }
       syncStrip();
       close();
