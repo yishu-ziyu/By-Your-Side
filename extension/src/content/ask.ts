@@ -186,6 +186,44 @@ const BOOTED = '__sideagentContentAlive';
  * 同一页面只装一份：网页在安装时正在加载，Chrome 按 manifest 装一份，background/reinject.ts 又补装一份，两份都连着扩展，
  * 胶囊、边缘光条、按键就都成了两份。旧的那份还连着就不再装；断开了（扩展重载、更新后）照常装，补装不受影响。
  */
+const WORDS = new Intl.Segmenter('zh', { granularity: 'word' });
+
+/**
+ * 流式回答每来一段都会整段重画；按词切开正文，只给第 shown 个之后的词挂淡入，
+ * 已经读到的字不会跟着闪。代码块不切，保留原样可复制。返回现在的总词数。
+ */
+function fadeNewWords(root: HTMLElement, shown: number): number {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: node => node.parentElement?.closest('pre, code') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  const texts: Text[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) texts.push(node as Text);
+  let count = 0;
+
+  for (const text of texts) {
+    const parts = [...WORDS.segment(text.data)].map(part => part.segment);
+    const start = count;
+    count += parts.length;
+    if (count <= shown) continue;
+    const fragment = document.createDocumentFragment();
+
+    for (const [index, part] of parts.entries()) {
+      if (start + index < shown || !part.trim()) {
+        fragment.append(part);
+        continue;
+      }
+      const word = document.createElement('span');
+      word.className = 'fresh';
+      word.textContent = part;
+      fragment.append(word);
+    }
+
+    text.replaceWith(fragment);
+  }
+
+  return count;
+}
+
 function installedAlready(): boolean {
   const slot = window as unknown as Record<string, (() => boolean) | undefined>;
   let alive = false;
@@ -310,6 +348,8 @@ function boot(): void {
     metaKey: string;
     detailed: boolean;
     text: string;
+    /** 已经显示过的词数：流式重画时只让后面新出来的词淡入。 */
+    words: number;
   }> = [];
 
   /** 哪几轮是用深度模型答的；记录里只存最近一次的档位。 */
@@ -819,7 +859,7 @@ function boot(): void {
         wrapper.append(question, summary, node, meta);
         messages.append(wrapper);
         // 回答默认整段显示：边听边看的内容写完后不缩成一句，用户自己点「收起」才收。
-        answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: true, text: '' });
+        answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: true, text: '', words: 0 });
       }
 
       const item = answers[index]!;
@@ -851,7 +891,11 @@ function boot(): void {
         }
 
         item.text = turn.answer;
+        const live = turn.state === 'pending' || turn.state === 'streaming';
+        item.words = live ? fadeNewWords(item.node, item.words) : 0;
       }
+
+      item.node.classList.toggle('thinking', (turn.state === 'pending' || turn.state === 'streaming') && !turn.answer.trim());
 
       const first = [...item.node.children].find(child => !/^H[1-6]$/.test(child.tagName) && child.textContent?.trim()) ?? item.node.firstElementChild;
       const summaryText = (first?.textContent ?? item.node.textContent ?? '').trim();

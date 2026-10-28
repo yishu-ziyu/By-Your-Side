@@ -26,6 +26,7 @@ export const ASK_STYLES = `
   --t-tiny: 11.5px;
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
+  --ease-word: cubic-bezier(.37, .55, .86, .88);
   /* 和网页上那段字的黄色标记同一种黄：卡里的引用和页面上的标记一眼对得上。 */
   --mark: rgba(232, 180, 30, .9);
 }
@@ -131,6 +132,10 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .turn + .turn { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ink-rule); }
 .question { font-size: var(--t-meta); line-height: 1.5; margin-bottom: 6px; color: var(--ink-mute); overflow-wrap: anywhere; white-space: pre-wrap; }
 .answer, .answer-summary { font-size: var(--t-body); line-height: 1.72; letter-spacing: .01em; color: var(--ink-fg); overflow-wrap: anywhere; }
+.answer .fresh { animation: word-in .4s var(--ease-word) both; }
+.answer.thinking::before { content: ""; display: block; width: 10px; height: 10px; margin: 6px 3px; border-radius: 50%; background: var(--pen); animation: thinking 1.25s ease-in-out infinite; }
+@keyframes word-in { from { opacity: 0; } }
+@keyframes thinking { 50% { transform: scale(1.25); } }
 .answer > :first-child { margin-top: 0; } .answer > :last-child { margin-bottom: 0; }
 .answer p { margin: 8px 0; }
 .answer h1, .answer h2, .answer h3 { font-size: var(--t-body); line-height: 1.5; margin: 12px 0 6px; font-weight: 600; }
@@ -211,5 +216,5 @@ button.send svg { color: var(--on-pen); width: 15px; height: 15px; stroke-width:
 .reader-label { padding: 0 8px; color: var(--ink-fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reader-rate { min-width: 46px; font-variant-numeric: tabular-nums; color: var(--ink-fg-2); }
 @keyframes reader-enter { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) { .surface.enter, .surface.morph, .menu, .reader, .bar-tip { animation: none; } button, .surface, .surface.glide { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .surface.enter, .surface.morph, .menu, .reader, .bar-tip, .answer .fresh, .answer.thinking::before { animation: none; } button, .surface, .surface.glide { transition: none; } }
 `;
