@@ -331,6 +331,8 @@ export type ClientMessage = ConversationEnvelope & (
   /** 可直接运行的技能（核对做成后存下的只读程序）：列出，或删一条。结果都是 skill_operations_result。 */
   | { type: "skill_operations_list"; requestId: string }
   | { type: "skill_operation_delete"; requestId: string; id: string }
+  | { type: "site_note_delete"; requestId: string; host: string; text: string; runId: string }
+  | { type: "site_note_list"; requestId: string }
   | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
@@ -455,6 +457,8 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
   /** 可直接运行的技能列表（删除后返回剩下的）。只给侧栏显示用的字段，不带程序。 */
   | { type: "skill_operations_result"; requestId: string; ok: boolean; operations?: SkillOperationSummary[]; error?: string }
+  | { type: "site_note_delete_result"; requestId: string; ok: boolean; error?: string }
+  | { type: "site_note_list_result"; requestId: string; ok: boolean; notes?: Array<{ host: string; text: string; runId: string }>; error?: string }
   /** reason 是人话；detail 是服务商原文，只进「技术详情」。 */
   | { type: "model_key_test_result"; requestId: string; ok: boolean; ms?: number; reason?: string; detail?: string }
   | { type: "model_key_save_result"; requestId: string; ok: boolean }
@@ -1046,6 +1050,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.type === "skill_operations_list" && !validRequestId(msg.requestId)) return null;
 
+    if (msg.type === "site_note_delete" && !(validRequestId(msg.requestId) && typeof msg.host === "string" && normalizeMemoryHostname(msg.host) === msg.host && typeof msg.text === "string" && msg.text.length > 0 && msg.text.length <= 200 && typeof msg.runId === "string" && msg.runId.length > 0 && msg.runId.length <= 200)) return null;
+    if (msg.type === "site_note_list" && !validRequestId(msg.requestId)) return null;
+
     if (msg.type === "skill_operation_delete" && !(validRequestId(msg.requestId) && validMemoryId(msg.id))) return null;
 
     if (msg.type === "task_history_forget" && (!validRequestId(msg.requestId) || (msg.id !== null && !validMemoryId(msg.id)))) return null;
@@ -1221,6 +1228,9 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
     if (msg.type === "model_key_test_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean"
       && (msg.ms === undefined || Number.isFinite(msg.ms)) && (msg.reason === undefined || isShortText(msg.reason)) && (msg.detail === undefined || isShortText(msg.detail)))) return null;
+
+    if (msg.type === "site_note_delete_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean" && (msg.error === undefined || isShortText(msg.error)))) return null;
+    if (msg.type === "site_note_list_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean" && (msg.error === undefined || isShortText(msg.error)) && (msg.notes === undefined || Array.isArray(msg.notes) && msg.notes.length <= 1000 && msg.notes.every((n: unknown) => { const v = n as { host?: unknown; text?: unknown; runId?: unknown } | null; return !!v && typeof v.host === "string" && normalizeMemoryHostname(v.host) === v.host && typeof v.text === "string" && v.text.length > 0 && v.text.length <= 200 && typeof v.runId === "string" && v.runId.length > 0 && v.runId.length <= 200; })))) return null;
 
     if (msg.type === "skill_operations_result") {
       if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return null;
