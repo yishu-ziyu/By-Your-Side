@@ -175,12 +175,14 @@ try {
   const { nodeId: fileInput } = await rp.cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: "#file-input" }, panel);
   await rp.cdp.send("DOM.setFileInputFiles", { nodeId: fileInput, files: [image] }, panel);
   await until(async () => (await rp.evaluate(panel, `!!document.querySelector("#attachments-strip .tile-56")`)) || undefined, 10_000, "附件出现");
+  await until(async () => (await rp.evaluate(panel, `!!document.querySelector("#materials-tray-root .mt-row[data-kind='attachment']")`)) || undefined, 10_000, "材料夹出现");
   await blurComposer(panel);
   await sleep(500);
   const withTile = await view(panel);
   await rp.screenshot(panel, join(out, "04-tile.png"));
-  await rp.click(panel, "#attachments-strip .tile-dismiss-btn");
-  await until(async () => (await rp.evaluate(panel, `!document.querySelector("#attachments-strip .tile-56")`)) || undefined, 5_000, "附件去掉");
+  await rp.click(panel, "#materials-tray-root .mt-row[data-kind='attachment']");
+  await rp.click(panel, "#materials-tray-root .mt-remove");
+  await until(async () => (await rp.evaluate(panel, `!document.querySelector("#materials-tray-root .mt-row[data-kind='attachment']")`)) || undefined, 5_000, "附件去掉");
   await blurComposer(panel);
   await sleep(350);
   const tileGone = await view(panel);

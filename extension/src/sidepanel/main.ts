@@ -70,6 +70,7 @@ import { chipLabel } from "./models.js";
 import { mountReadingSettings } from "./reading-settings.js";
 import { D_STATE, D_TAP } from "../shared/motion-tokens.js";
 import { AttachmentsManager } from "./attachments.js";
+import { MaterialsTray, type TrayRemoval } from "./materials-tray.js";
 import { hideTabIdsInHtml } from "./tab-id-text.js";
 import { fileChip, fileMeta } from "./file-chip.js";
 import { currentCircleSet, revealCircle } from "./circle-select.js";
@@ -379,6 +380,7 @@ app.innerHTML = `
     <select id="marginalia-mode" aria-label="段落提示模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">解释段落 · 会发给模型</option></select>
     <div id="confirm-dock" hidden></div>
     <div id="task-bar-root"></div>
+    <div id="materials-tray-root"></div>
     <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
       <span id="tab-icon-sq" class="tab-icon-sq"></span>
       <span id="tab-title-text" class="tab-title-text">检测标签页…</span>
@@ -517,7 +519,10 @@ const tabMentions = mountTabMentions({
   composerEl,
   inputEl,
   stripEl: document.getElementById("mention-strip")!,
-  onChange: () => saveDraft(),
+  onChange: () => {
+    saveDraft();
+    materialsTray?.sync();
+  },
 });
 
 let pendingContinueDraft: string | null = null;
@@ -558,6 +563,7 @@ document.getElementById("composer-bar")!.addEventListener("mousedown", (event) =
 const fileInput = document.getElementById("file-input") as HTMLInputElement;
 
 let attachments!: AttachmentsManager;
+let materialsTray: MaterialsTray | null = null;
 
 // 页面感知胶囊与检查器 DOM
 const pagePill = document.getElementById("page-pill") as HTMLElement | null;
@@ -1583,8 +1589,10 @@ async function refreshActiveTabPill(): Promise<void> {
     if (morphSheetUrl) morphSheetUrl.textContent = `URL：${tab.url || "-"}`;
 
     if (morphSheetStatus) morphSheetStatus.textContent = `状态：${tab.status === "complete" ? "已就绪 (complete)" : "加载中 (loading)"}`;
+    materialsTray?.sync();
   } catch {
     if (tabTitleText) tabTitleText.textContent = "活动标签页就绪";
+    materialsTray?.sync();
   }
 }
 
@@ -5820,6 +5828,7 @@ function autoResize(): void {
   // 程序改输入框（恢复草稿、起点建议、附件增减）都经过这里：发送键的样子跟着变。
   syncSteerSend();
   composerEl.classList.toggle("has-text", Boolean(inputEl.value.trim()));
+  materialsTray?.sync();
 }
 
 // 侧栏刚打开时宽度还没展开，那一刻算出的高度会按很窄的宽度折行，变宽后要重算。
@@ -5848,10 +5857,35 @@ attachments = new AttachmentsManager({
       writeDraft(scope, draft, true);
     }
   },
+  onDisplayChanged: (scope) => {
+    if (!scope || scope === selectedConversationId) materialsTray?.sync();
+  },
   onError: (errMsg) => {
     addMsg("msg error", errMsg);
   },
 });
+
+materialsTray = new MaterialsTray({
+  root: document.getElementById("materials-tray-root")!,
+  app,
+  inputHasText: () => Boolean(inputEl.value.trim()),
+  page: () => activeTabInfo ? { tabId: activeTabInfo.id, title: activeTabInfo.title, url: activeTabInfo.url } : null,
+  selection: () => pendingAsk,
+  mentions: () => tabMentions.items(),
+  attachments: () => attachments.snapshot(selectedConversationId),
+  onAdd: () => attachBtn.click(),
+  onMention: () => {
+    const start = inputEl.selectionStart ?? inputEl.value.length;
+    const end = inputEl.selectionEnd ?? start;
+    const before = inputEl.value.slice(0, start);
+    inputEl.setRangeText(before && !/\s$/.test(before) ? " @" : "@", start, end, "end");
+    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+    inputEl.focus({ preventScroll: true });
+  },
+  onAddFiles: (files) => { void attachments.addFiles(files); },
+  onRemove: removeDraftMaterials,
+});
+materialsTray.sync();
 
 // ── 任务条：消费 task_view，材料事实来自实际发出的请求与回执 ──
 function resolveTabPage(tabId: number): Promise<{ title?: string; url?: string } | null> {
@@ -5903,6 +5937,33 @@ function hostOf(url: string): string {
   }
 }
 
+function removeDraftMaterials(items: TrayRemoval[]): () => void {
+  const beforeAsk = pendingAsk;
+  const beforeMentions = tabMentions.items();
+  const beforeAttachments = attachments.getAttachments(selectedConversationId);
+
+  for (const item of items) {
+    if (item.kind === "selection") clearPendingAsk();
+    else if (item.kind === "mention" && item.tabId !== undefined) tabMentions.remove(item.tabId);
+    else if (item.kind === "attachment" && item.attachmentId) attachments.removeItem(item.attachmentId, selectedConversationId);
+  }
+
+  autoResize();
+  saveDraft();
+
+  return () => {
+    if (beforeAsk) {
+      applyPendingAsk(beforeAsk);
+      void chrome.storage?.session?.set({ [ASK_STORE]: { ...beforeAsk, conversationId: selectedConversationId } });
+    }
+    tabMentions.restore(beforeMentions, { keepStatus: true });
+    attachments.restore(beforeAttachments, selectedConversationId);
+    autoResize();
+    saveDraft();
+    materialsTray?.sync();
+  };
+}
+
 function applyPendingAsk(ask: PendingAsk): void {
   pendingAsk = ask;
 
@@ -5914,6 +5975,7 @@ function applyPendingAsk(ask: PendingAsk): void {
   askCiteEl.hidden = false;
   inputEl.focus({ preventScroll: true });
   saveDraft();
+  materialsTray?.sync();
 }
 
 function clearPendingAsk(): void {
@@ -5925,6 +5987,7 @@ function clearPendingAsk(): void {
   if (askCiteText) askCiteText.textContent = "";
   void chrome.storage?.session?.remove(ASK_STORE);
   saveDraft();
+  materialsTray?.sync();
 }
 
 askCiteClose?.addEventListener("click", () => clearPendingAsk());
