@@ -151,7 +151,6 @@ export function renderSettings(): void {
     <div class="sx-head"><h2 id="selection-title">划词</h2></div>
     <div class="surface rows">
       ${toggleRow("selection-bar", "选中文字后显示「问助手 / 解释」", `<span id="ask-shortcut-note">关掉后右键「问 By Your Side」仍然可用。</span>已打开的页面立即生效。`)}
-      ${toggleRow("link-preview", "按住 Shift 停在链接上，预览目标页", "卡片显示目标页面的标题和要点。预览不打开新标签页，也不带你的登录状态。")}
       ${toggleRow("nudge", "主动建议", "可以帮忙时，在页面右下角显示建议。")}
     </div>
     <details class="settings-detail"><summary>主动建议会读取什么？</summary><p>如果助手能帮上忙，就在页面右下角显示一张小卡。点小卡，侧栏就开始做。每次判断会把当前页面和最近页面的摘录发给快速模型，没设快速模型时发给主模型。同一个页面只判断一次。</p></details>
