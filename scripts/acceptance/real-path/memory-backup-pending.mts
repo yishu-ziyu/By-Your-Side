@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, until } from "./harness.mts";
 
 requireHeadless();
+const oversize = process.argv.includes("--oversize");
 const downloadFailure = process.argv.includes("--download-failure");
 const out = join(REPO, "out/acceptance/real-path", `memory-backup-pending-${randomUUID()}`);
 await mkdir(out, { recursive: true });
-const memories = JSON.stringify({ entries: [{ id: "backup-fixture", status: "active", text: "隔离备份内容" }] });
+const memories = JSON.stringify({ entries: [{ id: "backup-fixture", status: "active", text: oversize ? "x".repeat(9 * 1024 * 1024) : "隔离备份内容" }] });
 let rp: Awaited<ReturnType<typeof launchRealPath>> | undefined;
 let result: Record<string, unknown> = {};
 try {
@@ -43,6 +44,13 @@ try {
     const state = await rp.evaluate(settings, 'chrome.storage.local.get(["memory_backup_retry","memory_backup_last","memory_backup_ui_disabled"])') as Record<string, unknown>;
     if (state.memory_backup_last || state.memory_backup_ui_disabled) throw new Error("失败被记成成功或下载界面未恢复");
   }
+  if (oversize) {
+    await until(() => rp!.evaluate(settings, 'document.querySelector("#memory-backup-desc")?.textContent.includes("8 MB")'), 25_000, "超限提示显示");
+    const last = await rp.evaluate(settings, 'chrome.storage.local.get("memory_backup_last").then(s=>s.memory_backup_last??null)');
+    const files = await rp.evaluate(settings, 'chrome.downloads.search({}).then(items=>items.length)');
+    const size = await rp.evaluate(settings, `new Promise(resolve=>{const q=indexedDB.open('sideagent-memory',1);q.onsuccess=()=>{const db=q.result,r=db.transaction('kv').objectStore('kv').get('memories');r.onsuccess=()=>{resolve(r.result.length);db.close()}}})`);
+    result = { oversize, last, files, preserved: size === memories.length, pass: !last && files === 0 && size === memories.length };
+  } else {
   const last = await until(async () => await rp!.evaluate(settings, 'chrome.storage.local.get("memory_backup_last").then(s=>s.memory_backup_last ?? null)') as { file?: string } | null, downloadFailure ? 50_000 : 20_000, "欠下的备份落盘");
   if (!last.file) throw new Error("备份未记录文件名");
   const saved: unknown = JSON.parse(await readFile(join(rp.dirs.downloads, last.file), "utf8"));
@@ -51,6 +59,7 @@ try {
   const retryDelay = failedAt === null ? null : Date.now() - failedAt;
   const cleared = !recovered.memory_backup_error && !recovered.memory_backup_retry && !recovered.memory_backup_ui_disabled;
   result = { file: last.file, matched: doc === memories, downloadFailure, retryDelay, cleared, pass: doc === memories && cleared && (retryDelay === null || retryDelay >= 25_000) };
+  }
 } catch (error) { result = { error: String(error), pass: false }; }
 finally { await writeFile(join(out, "result.json"), JSON.stringify(result, null, 2)); if (rp) { await rp.close(); await rp.remove(); } }
 console.log(JSON.stringify({ ...result, out }));
