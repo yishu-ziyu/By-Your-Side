@@ -90,7 +90,7 @@ button.icon { width: 32px; padding: 0; }
 button.icon.small { width: 24px; height: 24px; border-radius: var(--r-small); }
 button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 
-.bar { display: flex; align-items: center; gap: 2px; }
+.bar { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .bar .ask { font-weight: 500; gap: 8px; background: var(--ink-hover); color: var(--ink-fg); }
 .caret { width: 1.5px; height: 14px; border-radius: 2px; background: var(--pen); animation: caret-pulse 1.05s ease-in-out infinite; }
 .sep { width: 1px; height: 16px; margin: 0 3px; background: var(--ink-rule); flex: none; }
@@ -143,6 +143,7 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .status.err { color: var(--warn); }
 .tag { color: var(--ink-fg-2); }
 
+.current-source { align-self: flex-start; max-width: 100%; margin: 2px 8px; color: var(--ink-fg-2); font-size: var(--t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer { display: flex; align-items: flex-end; gap: 6px; padding: 2px 2px 2px 8px; }
 button.depth { height: 24px; margin-bottom: 4px; padding: 0 9px; border-radius: 999px; background: var(--ink-hover); font-size: var(--t-meta); color: var(--ink-fg-2); }
 button.depth[aria-pressed="true"] { color: var(--pen); }
@@ -150,7 +151,7 @@ button.depth[aria-pressed="true"] { color: var(--pen); }
 .foot .grow { flex: 1; }
 .foot button { height: 28px; padding: 0 8px; border-radius: var(--r-small); font-size: var(--t-meta); color: var(--ink-fg-2); }
 .foot button svg { width: 13px; height: 13px; }
-.pins { display: contents; }
+.pins { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .surface.expanded:not(.composing) .composer { border-top: 1px solid var(--ink-rule); padding-top: 6px; }
 textarea { resize: none; flex: 1; min-width: 0; height: 32px; max-height: 100px; padding: 6px 0; border: 0; background: transparent; outline: none; line-height: 20px; font-size: 14px; color: var(--ink-fg); }
 textarea::placeholder { color: var(--ink-mute); }

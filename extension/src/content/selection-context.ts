@@ -89,5 +89,5 @@ export function selectionSurrounding(range: Range, text: string, limit: number):
   }
   const head = heading && !before.includes(heading) ? `小节：${heading.slice(0, 120)}\n` : '';
 
-  return (head + squash(`${before} ${quote} ${after}`)).slice(0, limit);
+  return (head + squash(`${before} 【此处选中】${quote}【选中结束】 ${after}`)).slice(0, limit);
 }
