@@ -629,7 +629,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
         details.className = "memory-ask-replaces";
         const summary = document.createElement("summary");
         summary.textContent = "删除影响";
-        details.append(summary, "后续任务不再加载这条保存的规则。当前对话、过往任务和站点笔记仍可能影响回答，已执行的网页操作不变。");
+        details.append(summary, "后续任务不再加载这条保存的规则。当前对话和过往任务仍可能影响回答，已执行的网页操作不变。");
         root.append(details);
       }
     } else if (card.phase === "inactive") {

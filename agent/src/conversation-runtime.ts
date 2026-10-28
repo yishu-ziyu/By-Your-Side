@@ -8,7 +8,6 @@ import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import type { MemoryStore } from "./memory-store.js";
 import type { TaskHistoryStore } from "./task-history.js";
-import type { SiteNotesStore } from "./site-notes.js";
 import type { LearnedOperationStore } from "./learned-operations.js";
 
 const log = (message: string) => console.error(`[sideagent] ${message}`);
@@ -17,7 +16,7 @@ export async function createConversationRuntime(
   conversationId: string,
   emit: (msg: ServerMessage) => void,
   modelPattern?: string,
-  options?: Pick<SessionCreateOptions, "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover" | "artifactPersistence"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore; siteNotes?: SiteNotesStore; learnedOperations?: LearnedOperationStore; miniApps?: () => Promise<boolean>; translationStyle?: () => string },
+  options?: Pick<SessionCreateOptions, "customTools" | "loop" | "fallbackModelPattern" | "onModelFailover" | "artifactPersistence"> & { memoryStore?: MemoryStore; taskHistory?: TaskHistoryStore; learnedOperations?: LearnedOperationStore; miniApps?: () => Promise<boolean>; translationStyle?: () => string },
 ) {
   const sendCurrent = (msg: ServerMessage) => emit({ ...msg, conversationId });
   const rpc = new ToolRpc((frame) => sendCurrent(frame));

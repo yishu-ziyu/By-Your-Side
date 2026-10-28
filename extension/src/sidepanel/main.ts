@@ -321,6 +321,7 @@ app.innerHTML = `
       <input id="memory-search" type="search" placeholder="搜索记忆和过往任务" aria-label="搜索记忆和过往任务" autocomplete="off">
     </label>
     <div id="knowledge-body">
+      <details id="site-note-management"><summary>站点用法</summary><button id="site-note-refresh" type="button">刷新</button><div id="site-note-management-body"></div></details>
       <div id="memory-body"></div>
     </div>
   </section>
@@ -2602,6 +2603,65 @@ function addMsg(cls: string, text: string): HTMLElement {
   scrollToEnd();
 
   return div;
+}
+
+const pendingSiteNoteDeletes = new Map<string, (ok: boolean, error?: string) => void>();
+let siteNoteListRequest = "";
+const siteNoteManagement = document.getElementById("site-note-management") as HTMLDetailsElement;
+const siteNoteBody = document.getElementById("site-note-management-body")!;
+
+function requestSiteNotes(): void {
+  siteNoteListRequest = crypto.randomUUID();
+  const requestId = siteNoteListRequest;
+  siteNoteBody.textContent = "正在读取…";
+  if (!send({ type: "site_note_list", requestId })) { siteNoteBody.textContent = "未连接，无法读取。请刷新重试。"; return; }
+  setTimeout(() => { if (siteNoteListRequest === requestId) { siteNoteListRequest = ""; siteNoteBody.textContent = "读取超时，请刷新重试。"; } }, 15000);
+}
+siteNoteManagement.addEventListener("toggle", () => { if (siteNoteManagement.open) requestSiteNotes(); });
+document.getElementById("site-note-refresh")!.addEventListener("click", requestSiteNotes);
+memoryOpen.addEventListener("click", () => { if (!memoryDrawer.hidden && siteNoteManagement.open) requestSiteNotes(); });
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (sender.id === chrome.runtime.id && message?.type === "site_notes_changed" && !memoryDrawer.hidden && siteNoteManagement.open) requestSiteNotes();
+});
+
+function renderSiteNoteList(msg: Extract<ServerMessage, { type: "site_note_list_result" }>): void {
+  if (msg.requestId !== siteNoteListRequest) return;
+  siteNoteListRequest = "";
+  siteNoteBody.replaceChildren();
+  if (!msg.ok || !msg.notes) { siteNoteBody.textContent = `无法读取：${msg.error || "未知错误"}`; return; }
+  const paused = document.createElement("p");
+  paused.textContent = "自动学习和使用已暂停。已有站点用法仍可查看或删除。";
+  siteNoteBody.append(paused);
+  if (!msg.notes.length) { const empty = document.createElement("p"); empty.textContent = "暂无站点用法"; siteNoteBody.append(empty); }
+  for (const note of msg.notes) {
+    const row = document.createElement("p");
+    const label = document.createElement("span");
+    label.textContent = `${note.host}：${note.text} `;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "删除";
+    const status = document.createElement("span");
+    button.onclick = () => {
+      const requestId = crypto.randomUUID();
+      button.disabled = true;
+      status.textContent = "正在删除…";
+      const timer = setTimeout(() => {
+        if (!pendingSiteNoteDeletes.delete(requestId)) return;
+        button.disabled = false;
+        status.textContent = "删除结果未知，请重新打开列表核对。";
+      }, 15000);
+      pendingSiteNoteDeletes.set(requestId, (ok, error) => {
+        clearTimeout(timer);
+        if (ok) { row.remove(); void chrome.runtime.sendMessage({ type: "site_notes_changed" }).catch(() => {}); }
+        else { button.disabled = false; status.textContent = `删除失败：${error || "未知错误"}`; }
+      });
+      if (!send({ type: "site_note_delete", requestId, ...note })) {
+        pendingSiteNoteDeletes.delete(requestId); clearTimeout(timer); button.disabled = false; status.textContent = "未连接，删除失败。";
+      }
+    };
+    row.append(label, button, status);
+    siteNoteBody.append(row);
+  }
 }
 
 /** 站点笔记写下了：这一轮下面一行小字，点「查看」展开笔记原文。 */
@@ -5081,6 +5141,13 @@ function handleServerMessage(raw: string): void {
 
  return; }
 
+  if (msg.type === "site_note_delete_result") {
+    pendingSiteNoteDeletes.get(msg.requestId)?.(msg.ok, msg.error);
+    pendingSiteNoteDeletes.delete(msg.requestId);
+    return;
+  }
+  if (msg.type === "site_note_list_result") { renderSiteNoteList(msg); return; }
+
   if (msg.type === "memory_result") {
     handleMemoryResult(msg);
 
@@ -5277,7 +5344,7 @@ function handleBgMessage(envelope: BgToPanel): void {
 
   if (envelope.kind === "server") {
     if (envelope.conversationId && envelope.conversationId !== selectedConversationId
-      && !envelope.msg.type.startsWith("conversation_") && envelope.msg.type !== "memory_result" && envelope.msg.type !== "task_history_result" && envelope.msg.type !== "skill_operations_result"
+      && !envelope.msg.type.startsWith("conversation_") && envelope.msg.type !== "memory_result" && envelope.msg.type !== "task_history_result" && envelope.msg.type !== "skill_operations_result" && envelope.msg.type !== "site_note_delete_result" && envelope.msg.type !== "site_note_list_result"
       // 模型目录是全局事实（一次枚举、全部会话通用）：别会话捎来的 model_info 放行进内层，
       // 由内层只收目录、不收模型。live 复现：225 条 models=163 在这里被整条丢弃。
       && envelope.msg.type !== "model_info") return;
