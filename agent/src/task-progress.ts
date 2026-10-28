@@ -65,7 +65,7 @@ export class TaskProgress {
   private latestResult: NonNullable<VoiceConversationContext["latestResult"]> | null = null;
   private readonly ledger: UserDeliveryLedger;
   private readonly members = new Map<string, "running" | "paused" | "idle" | "error">();
-  private readonly tools = new Map<string, { member: string; name: string; action: string; since: number; target: string | null; tabId:number|null; readVersion:number; write:boolean; durableEffect:boolean; readOnlyScript?:boolean; tabAction?:string }>();
+  private readonly tools = new Map<string, { member: string; name: string; action: string; since: number; target: string | null; tabId:number|null; readVersion:number; write:boolean; durableEffect:boolean; tabAction?:string }>();
   private readonly readback=new TaskReadback();
   private readonly completedReads=new Map<string,{name:string;readVersion:number}>();
   private failureLimit=false;
@@ -476,7 +476,6 @@ return;}
         const entry: Parameters<typeof this.tools.set>[1] = { member, name: e.name, action: stepLabel(e.name, e.params), since: this.clock(), target,
         tabId:this.readback.pageFor(member,typeof e.params.tabId==='number'?e.params.tabId:undefined),readVersion:this.readback.version(),write,durableEffect,tabAction };
 
-        if (e.name === 'js' && e.params.readonly === true) entry.readOnlyScript = true;
         this.tools.set(`${member}:${e.toolCallId}`, entry);
       }
 
@@ -515,8 +514,8 @@ if(page)this.recoveryInput.page=page;
         if (!e.isError && e.executionFact === "executed") this.noteRunSource(pendingNav);
       }
 
-      // 声明只读的页面脚本超时或结果未知：只是没拿到读数，按「失败、没有副作用」记。
-      const fact = started.readOnlyScript && e.executionFact === 'unknown' ? 'not_executed' as const : e.executionFact;
+      // 执行事实只认宿主报告，不从模型参数推断。
+      const fact = e.executionFact;
 
       if (!this.aborted) {
         this.lastAction = { action: started.action, failed: e.isError, at: this.clock() };

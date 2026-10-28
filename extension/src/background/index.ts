@@ -1710,7 +1710,7 @@ async function executeToolCall(
       guide_step:(p,s)=>guideStep(p,s,sendGuard),
       // 回车、脚本也可能把东西发出去：和点「发送」走同一个确认。
       press_key:(p,s)=>reportSendClick(sendGuard, pressKeyGuarded(p,s,sendGuard)),
-      js:(p,s)=>reportSendClick(sendGuard, evaluateJs(p,s,undefined,sendGuard)),
+      js:(p,s)=>evaluateJs(p,s),
     };
 
     const handler = name === "observe_page"
