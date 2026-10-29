@@ -224,7 +224,8 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
     }
 
     const found = pick(rules, messages);
-    const step: Step = found ? found.rule.steps[found.step]! : { text: textOf(messages.at(-1)?.content).includes("Reply with the single word OK") ? "OK" : "好的。" };
+    const picked: Step = found ? found.rule.steps[found.step]! : { text: textOf(messages.at(-1)?.content).includes("Reply with the single word OK") ? "OK" : "好的。" };
+    const step = withRecheck(picked, textOf(messages.at(-1)?.content));
     const atMs = Date.now() - origin;
 
     if ("status" in step) {
@@ -253,4 +254,37 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
     translate,
     close: () => new Promise<void>((done) => { server.closeAllConnections(); server.close(() => done()); }),
   };
+}
+
+const RECHECK_MARK = "\nRECHECK:";
+
+/** 转发复核请求时，在脚本结论后面接上 RECHECK 和要补的字段：照首轮结论判继续时，把这些字段并进结论。 */
+export const recheckProbe = (probe: string, fields: { verificationSubject: string; evidence: string }) => `${probe}${RECHECK_MARK}${JSON.stringify(fields)}`;
+
+function withRecheck(step: Step, lastUser: string): Step {
+  const at = lastUser.indexOf(RECHECK_MARK);
+  if (at < 0 || !("text" in step) || typeof step.text !== "string") return step;
+  try {
+    // SAFETY: 首轮结论是用例自己写的 JSON；补的字段由 recheckProbe 生成。
+    const verdict = JSON.parse(step.text) as { status?: string };
+    if (verdict.status !== "continue") return step;
+    return { ...step, text: JSON.stringify({ ...verdict, ...(JSON.parse(lastUser.slice(at + RECHECK_MARK.length)) as object) }) };
+  } catch { return step; }
+}
+
+/**
+ * 目标核对的复核请求（输入里带 verification）：产品只在复核仍判继续、核对对象没变、且 evidence 能在复核读数（或回答）里原样找到时才接着做。
+ * 返回复核时继续要带上的字段；不是复核请求时返回 null。
+ */
+export function reverifyContinue(body: string): { verificationSubject: string; evidence: string } | null {
+  // SAFETY: 产品发出的 OpenAI 兼容请求体；核对输入是 user 消息里的一段 JSON。
+  const request = JSON.parse(body) as { messages?: ChatMessage[] };
+  const user = (request.messages ?? []).find((m) => m.role === "user");
+  let input: { lastReply?: string; verification?: { finding?: { verificationSubject?: string }; reads?: Array<{ data?: string }> } };
+  try { input = JSON.parse(textOf(user?.content)) as typeof input; } catch { return null; }
+  if (!input.verification) return null;
+  const verificationSubject = input.verification.finding?.verificationSubject ?? "page";
+  const source = verificationSubject === "answer" ? input.lastReply ?? "" : (input.verification.reads ?? []).map((read) => read.data ?? "").find((data) => data.trim()) ?? "";
+  const evidence = source.split("\n").map((line) => line.trim()).find((line) => line.length > 0 && !/^[a-z_]+:$/i.test(line))?.slice(0, 60) ?? "";
+  return { verificationSubject, evidence };
 }

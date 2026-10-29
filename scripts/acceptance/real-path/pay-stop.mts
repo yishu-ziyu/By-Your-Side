@@ -8,7 +8,7 @@
  *   c) 「下一步」「提交评论」照常点到（服务器各 1 条），「支付宝」单选项照常选中。
  *   d) 网页脚本程序（browser_run）去点付款按钮：被拒绝，/pay 不增加。
  *   f) 结账表单里点进优惠码框再按回车（回车会提交带「立即支付」的表单）：没有按，/checkout 0 条，助手收到「可能直接付款」。
- *   g) js 工具里的脚本直接 click() 付款按钮、requestSubmit() 结账表单、click() 开放 shadow DOM 里的「立即支付」：都被拦下，/pay、/checkout、/shadow-pay 不增加；网页圈出按钮；助手收到「不点付款按钮」。
+ *   g) js 工具里的脚本直接 click() 付款按钮、requestSubmit() 结账表单、click() 开放 shadow DOM 里的「立即支付」：都被拦下，/pay、/checkout、/shadow-pay 不增加；助手收到只能读页面的拒绝。
  * 失败方式：让 isPayLabel 永远返回 false，a 的服务器收到 /pay（反例结果见验收文件）；f、g 在修复前的构建上服务器各收到请求。
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -221,7 +221,8 @@ try {
   await sleep(1000);
   const toolG = toolTexts.slice(from);
   const noteG = await payNote();
-  check("g 脚本 click() 付款按钮、requestSubmit() 结账表单、click() shadow DOM 里的付款按钮：/pay、/checkout、/shadow-pay 不增加，网页圈出按钮，助手收到「不点付款按钮」", count("/pay") === 1 && count("/checkout") === 0 && count("/shadow-pay") === 0 && clearBeforeG && !!noteG?.ring && toolG.some(t => t.includes("does not click payment buttons")), { pay: count("/pay"), checkout: count("/checkout"), shadowPay: count("/shadow-pay"), clearBeforeG, note: noteG, tool: toolG });
+  // js 工具只允许无副作用的读取：脚本里的点击和提交整段不执行，付款提示也就不会出现。
+  check("g 脚本 click() 付款按钮、requestSubmit() 结账表单、click() shadow DOM 里的付款按钮：/pay、/checkout、/shadow-pay 不增加，助手收到只能读页面的拒绝", count("/pay") === 1 && count("/checkout") === 0 && count("/shadow-pay") === 0 && clearBeforeG && toolG.some(t => t.includes("JS 只允许读取页面")), { pay: count("/pay"), checkout: count("/checkout"), shadowPay: count("/shadow-pay"), clearBeforeG, note: noteG, tool: toolG });
   await rp.screenshot(work, join(out, "g-page.png"));
   await panelShot("g-panel.png");
 } catch (error) { check("流程完成", false, String(error)); } finally {

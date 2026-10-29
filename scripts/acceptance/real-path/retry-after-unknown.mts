@@ -2,7 +2,7 @@
  * 一步写入的结果未知之后，助手重读页面、对同一个目标再做一次：网站收到，侧栏给出最终回答，没有放弃或「没有重复执行」的话
  * 。只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
  *   npx tsx scripts/acceptance/real-path/retry-after-unknown.mts --headless
- * 路径：snapshot 拿到「保存」按钮的 @ref → 页面重渲染，按钮 3 秒内不可见（模型用 js 模拟）→ click @ref：
+ * 路径：snapshot 拿到「保存」按钮的 @ref → 页面重渲染，按钮 3 秒内不可见（本脚本经调试协议模拟）→ click @ref：
  * 量不到元素位置，回执「结果未知」→ 等按钮回来再 snapshot → 对同一个 @ref 再 click → 回答。
  * 判据：第一次点击的回执写着结果未知且网站没收到；第二次点击送达（/save 计数 1）；侧栏有最终回答，
  * 没有「没有重复执行」「已暂停」「不能自动重做」「查不清」，也没有把这件事标成没做完。
@@ -50,8 +50,9 @@ const retryClick = { tool: { name: "click", args: { target: "@0" } } };
 const steps: Step[] = [
   { tool: { name: "tabs", args: { action: "active" } } },
   { tool: { name: "snapshot", args: {} } },
-  // 页面重渲染：按钮 3 秒内不可见，同一个元素随后回来。
-  { tool: { name: "js", args: { code: "(() => { const b = document.querySelector('#save'); b.style.display = 'none'; setTimeout(() => { b.style.display = ''; }, 3000); return 'rerendering'; })()" } } },
+  // 页面重渲染：按钮 3 秒内不可见，同一个元素随后回来。js 工具只能读页面，藏按钮由本脚本经调试协议做（见 inspect 回调）；
+  // 这一步只读，留着让后面各步的回执序号不变，并给藏按钮留出时间。
+  { tool: { name: "js", args: { code: "document.querySelector('#save') ? 'rerendering' : 'gone'" } }, delayMs: 500 },
   firstClick,
   // 重读页面：等按钮回来再看。
   { tool: { name: "snapshot", args: {} }, delayMs: 3500 },
@@ -62,6 +63,8 @@ const steps: Step[] = [
 const payloads: Payload[] = [];
 const savesAtReceipt: Record<number, number> = {};
 let ref: string | null = null;
+let hidden = false;
+let workSession: string | null = null;
 
 const model = await startScriptedModel([{ match: MARK, steps }], undefined, payload => {
   // SAFETY: 脚本模型把产品的 OpenAI 兼容请求体原样交给这里；Payload 只取其中可选的 tools 与 messages。
@@ -70,6 +73,12 @@ const model = await startScriptedModel([{ match: MARK, steps }], undefined, payl
   const tools = (p.messages ?? []).filter(m => m.role === "tool");
 
   if (p.tools?.length && tools.length > 0 && !(tools.length in savesAtReceipt)) savesAtReceipt[tools.length] = saves;
+
+  // 模型拿到 snapshot 的结果、要发下一步时，页面开始重渲染。
+  if (tools.length === 2 && !hidden && workSession) {
+    hidden = true;
+    void rp.evaluate(workSession, "(() => { const b = document.querySelector('#save'); b.style.display = 'none'; setTimeout(() => { b.style.display = ''; }, 3000); return true; })()");
+  }
 
   if (!ref && tools.length >= 2) {
     const line = textOf(tools[1]!.content).split(/\\n|\n/).find(l => l.includes('button "保存"'));
@@ -88,6 +97,7 @@ let panelText = "";
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
   const work = await rp.attach(blank.targetId);
+  workSession = work;
   await rp.cdp.send("Page.navigate", { url: origin }, work);
   const panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);

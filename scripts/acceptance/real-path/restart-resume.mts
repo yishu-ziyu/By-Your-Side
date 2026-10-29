@@ -1,5 +1,5 @@
 /**
- * 改页面的工具已经做完、模型下一句还没回来时重载扩展：重开侧栏后任务自己做完，不用再打「继续」，提交只发生一次。
+ * 改页面的工具已经做完、模型下一句还没回来时强杀浏览器：重开侧栏后任务不自己接着做，用户点「继续原任务」后做完，提交只发生一次。
  *   npx tsx scripts/acceptance/real-path/restart-resume.mts --headless
  *   npx tsx scripts/acceptance/real-path/restart-resume.mts --headless --wipe
  * --wipe 在重开前清掉 pi-durable 的存储，任务不该自己做完（用来证明这条用例会失败）。
@@ -10,6 +10,7 @@ import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
+import type { Step } from "./scripted-model.mts";
 
 requireHeadless();
 
@@ -31,14 +32,23 @@ await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 
 const answer = { text: ANSWER, delayMs: 120_000 };
 let sawToolResult = false;
+// 用户点「继续原任务」后的那次请求：对话里还带着强杀前那次点击的结果吗（真模型靠它知道已经点过）。
+let continuationCarriesClick: boolean | null = null;
+const submitRule = { match: "提交按钮", steps: [{ tool: { name: "click", args: { target: "#submit", label: "提交" } } }, answer] as Step[] };
 const model = await startModel();
 
 function startModel() {
   return import("./scripted-model.mts").then(({ startScriptedModel }) => startScriptedModel([
     { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
-    { match: "提交按钮", steps: [{ tool: { name: "click", args: { target: "#submit", label: "提交" } } }, answer] },
+    submitRule,
   ], undefined, payload => {
-    if ((payload.messages ?? []).some(message => message.role === "tool")) sawToolResult = true;
+    const messages = payload.messages ?? [];
+    if (messages.some(message => message.role === "tool")) sawToolResult = true;
+    if (continuationCarriesClick === null && JSON.stringify(messages).includes("[RESTART CONTINUATION]")) {
+      continuationCarriesClick = messages.some(message => message.role === "tool");
+      // 像读过记录的模型那样：已经点过，只回答。
+      submitRule.steps = [answer];
+    }
   }));
 }
 
@@ -93,11 +103,21 @@ try {
     assert.equal(hits, 1, "清掉存储后也不该再点一次");
     assert.equal(body.includes(ANSWER), false, "清掉存储后任务不该自己答完");
   } else {
-    await until(async () => (await text()).includes(ANSWER) || undefined, 60_000, "重开后答完");
+    // 重启后不自己接着做：等用户看过页面、点「继续原任务」才做完。
+    assert.equal((await text()).includes(ANSWER), false, "用户点继续之前任务不该自己答完");
+    await until(async () => await rp.evaluate(againId, `(() => { const r = document.querySelector("#resume-entry-root"); return !!r && !r.hidden && !!r.querySelector(".resume-action"); })()`) || undefined, 15_000, "侧栏出现「继续原任务」");
+    // 强杀后浏览器只剩空白页；只在原任务那一页上才让继续，像用户那样先把它打开。
+    const reopened = await rp.cdp.send("Target.createTarget", { url: `http://127.0.0.1:${port}/` });
+    await rp.cdp.send("Target.activateTarget", { targetId: reopened.targetId });
+    await sleep(400);
+    await rp.click(againId, "#resume-entry-root .resume-action");
+    await until(async () => (await text()).includes(ANSWER) || undefined, 60_000, "点继续后答完");
     await sleep(500);
     evidence.hits = hits;
     evidence.after = (await text()).slice(0, 500);
     await writeFile(join(out, "evidence.json"), JSON.stringify(evidence, null, 2));
+    evidence.continuationCarriesClick = continuationCarriesClick;
+    assert.equal(continuationCarriesClick, true, "继续时发给模型的对话里要有强杀前那次点击的结果");
     assert.equal(hits, 1, "重开后不能再点一次提交");
     assert.ok((await text()).includes(ANSWER), "侧栏应当显示做完的回答");
   }
