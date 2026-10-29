@@ -1261,10 +1261,8 @@ return receipt;
           await this.saveContinuation(request.conversationId);
           return { status: 'applied', runId: snapshot.runId ?? null, message: request.action === 'abort' ? '关注已停止，已有结果保留。' : '关注已暂停，等待你继续。' };
         }
-        if (request.action === 'start') {
-          await observer.control('stop', '用户发起新任务');
-          this.emit({ type: 'agent_event', conversationId: request.conversationId, event: { kind: 'notice', message: '原来的网页关注已停止，已有结果保留；现在处理你的新问题。' } });
-        }
+        // Like a running task, a live watch keeps this conversation; a new question is offered a separate one.
+        if (request.action === 'start') throw new TaskActionRejected('原来的网页关注还在进行。要另开会话处理这个新问题吗？', true);
         if (request.action === 'resume') {
           if (delegation.state === 'WAITING_CONDITION') return { status: 'applied', runId: snapshot.runId ?? null, message: `仍在关注：${delegation.condition.description}` };
           if (delegation.state === 'RUNNING' || delegation.state === 'VERIFYING') return { status: 'applied', runId: snapshot.runId ?? null, message: '正在按原委托处理。' };
