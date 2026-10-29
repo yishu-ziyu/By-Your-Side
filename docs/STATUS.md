@@ -16,6 +16,8 @@
 三个网站的六种内置用法已在日常 Chrome 逐项验过；同一参数明确失败两次后拦下原样重试。重载扩展不再同时给旧会话重新起名；操作失败原因交给助手，下拉框找不到选项时保留原选中项。「记进 flomo」可写入并读回核对。详见[方法与验收范围](evals/20261023-site-methods.md)。
 
 
+10-29 13:16：实验功能「持续关注网页」已装进日常扩展，默认关闭：交代一次，等页面结果出来后自动筛选、标注并核对；关注期间问别的事提示另开会话。受控练习页通过，实站（维基百科）仍失败，未达发布门槛（[验收](evals/20261029-continuous-delegation.md)）。备份 `out/daily-dist-backup-20261029-before-continuous-delegation`。
+
 10-27 16:17：只读任务做成后可存成「直接运行」的技能（/ 菜单，仅原网站），换词复用重读当前页；真模型维基百科通过，提速未测（[验收](evals/20261027-learned-operations.md)）。备份 `dist-20261027-1617-before-skills-run-directly`。
 
 10-27：Codex 模型列表更新，试连失败保留上次结果。备份 `out/model-catalog-refresh-backup/previous-dist`。
