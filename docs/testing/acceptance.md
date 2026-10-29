@@ -13,6 +13,15 @@
 - **真实网站护栏**：训练集与独立测试集网站不重叠，分析者只看训练集过程记录；改前改后两份预构建扩展须在同一时段并排跑。
 - **CI**：E2E 工作流还没在 Linux 上跑通过。
 
+## 每日核心验收
+
+当前自用 Mac 每天 03:00 跑核心集，只用隔离扩展、无头 Chrome、本机练习页和脚本模型。非核心用例、真实模型与日常 Chrome 的任务不自动跑。
+
+- 每轮从本机主目录的 HEAD 生成独立快照，不改工作目录，不自动拉取远端。并发上限为 2，默认不录屏。
+- 入口是 `~/.config/devin/jobs/bys-core-nightly.py`，定时配置在同目录的 `com.yishuziyu.bys-core-nightly.plist`。配置不常驻重跑。
+- 历史保存在 `~/.config/devin/jobs/bys-core-history/`，包括源码标识、逐项结果、日志和截图。`latest.json` 指向完整核心运行，过滤试跑另记到 `latest-smoke.json`。失败或缺结果都不会记成通过。
+- 安装时核心 51/51 通过，系统调度试跑也通过。交还与超时误报修复已装日常，后台和侧栏代码已核对；真模型、真网站未跑。旧版备份在主目录 `out/daily-dist-backup-20261029-before-core-acceptance`。
+
 ## 录屏与慢放
 
 单跑一个真实路径用例时，网页和侧栏会被自动并排录下来。关浏览器后在 `out/recordings/<用例>-<时间>/` 出三样东西：真实速度、0.25 倍慢放、带时间戳的逐帧总览。查闪烁、跳动、先后顺序这类问题时，用 `npm run frames -- <目录> <起秒> <止秒>` 把这段时间里的帧拼成图，一帧一帧看。用法见 [`recording.mts`](../../scripts/acceptance/real-path/recording.mts) 文件头。
