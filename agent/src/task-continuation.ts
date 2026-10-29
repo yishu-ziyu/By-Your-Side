@@ -7,6 +7,7 @@ export interface ConditionRegistration { condition: WaitCondition; mode: 'once' 
 type Observation = { version: string; value: string | boolean; documentId: string; url: string };
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const terminal = (c: TaskContinuation) => ['COMPLETED', 'STOPPED', 'FAILED'].includes(c.state);
+const POLL_MS = 2000;
 
 /** Owns passive observation only. All model execution is admitted by the host dispatcher. */
 export class TaskContinuationObserver {
@@ -64,8 +65,9 @@ export class TaskContinuationObserver {
       activeMs: prior.activeMs + (prior.segmentStartedAt === null ? 0 : now - prior.segmentStartedAt) } : {
       schema: 1, id: randomUUID(), goalVersion: 1, controlVersion: 0, state: 'WAITING_CONDITION', mode: input.mode,
       tabId, url: snapshot.goalPage.url, documentId: '', condition: structuredClone(input.condition), createdAt: now, expiresAt: now + input.durationMs,
-      observations: 0, maxObservations: 720, activeMs: Math.max(0, now - (snapshot.startedAt ?? now)), maxActiveMs: 180_000,
-      modelCalls: this.host.modelCalls?.() ?? 0, maxModelCalls: 60, pollMs: 2000, baseline: null,
+      // The user's deadline ends a quiet watch; the observation cap only bounds a runaway schedule.
+      observations: 0, maxObservations: 2 * Math.ceil(input.durationMs / POLL_MS), activeMs: Math.max(0, now - (snapshot.startedAt ?? now)), maxActiveMs: 180_000,
+      modelCalls: this.host.modelCalls?.() ?? 0, maxModelCalls: 60, pollMs: POLL_MS, baseline: null,
       observedVersion: null, processingVersion: null, processedVersion: null, pendingVersion: null, requestId: null, segmentStartedAt: null,
     };
     const observation = await this.read(c);
@@ -158,6 +160,28 @@ export class TaskContinuationObserver {
       activeMs: c.activeMs + (c.segmentStartedAt === null ? 0 : this.now() - c.segmentStartedAt), segmentStartedAt: null,
       pendingVersion: null, requestId: null, ...(action === 'stop' ? { stopReason: reason } : { lastError: reason }) });
     if (action !== 'stop') this.schedule();
+  }
+  /** Explicit user resume returns to waiting; a reloaded copy of the same resource may be rebound, another resource never. */
+  async resume(context?: { tabId?: number; url?: string }) {
+    const c = this.host.snapshot().continuation;
+    if (!c || !['WAITING_USER', 'SUSPENDED'].includes(c.state)) throw new Error('关注当前不能继续。');
+    if (!this.host.enabled()) throw new Error('持续委托尚未开启。');
+    this.invalidate();
+    const generation = this.generation;
+    const tabs = [c.tabId, ...(context?.tabId && context.tabId !== c.tabId && context.url === c.url ? [context.tabId] : [])];
+    let bound: { tabId: number; observation: Observation } | undefined;
+    let failure: unknown;
+    for (const tabId of tabs) {
+      try { bound = { tabId, observation: await this.read({ ...c, tabId, documentId: '' }) }; break; }
+      catch (error) { failure = error; }
+    }
+    // A refused resume stays paused, and the deadline check must keep running.
+    if (!bound) { this.schedule(); throw new Error(`未能继续关注：${failure instanceof Error ? failure.message : '请先回到原委托页面。'}`); }
+    if (!this.current(c, generation)) { this.schedule(); throw new Error('委托已变化，未继续关注。'); }
+    const { lastError: _, ...rest } = c;
+    await this.commit({ ...rest, tabId: bound.tabId, documentId: bound.observation.documentId, state: 'WAITING_CONDITION', controlVersion: c.controlVersion + 1,
+      observations: c.observations + 1, observedVersion: bound.observation.version, processingVersion: null, pendingVersion: null, requestId: null, segmentStartedAt: null });
+    this.schedule(0);
   }
   async settled(status: 'done' | 'needs_user' | 'open' | 'blocked' | 'unavailable') {
     const c = this.host.snapshot().continuation;

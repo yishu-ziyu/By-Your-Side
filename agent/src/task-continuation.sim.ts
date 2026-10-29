@@ -25,7 +25,7 @@ function simulation() {
     save: async () => { saves++; if (failSave) throw new Error('保存失败'); },
     wake: async c => { wakes++; requests.push(c.requestId!); snapshot.continuation = { ...c, state: 'RUNNING', processingVersion: c.pendingVersion, pendingVersion: null, segmentStartedAt: time }; return true; },
   });
-  return { observer, snapshot, requests, register: (mode: 'once' | 'watch' = 'once', next = condition) => observer.register({ condition: next, mode, durationMs: 60_000 }),
+  return { observer, snapshot, requests, register: (mode: 'once' | 'watch' = 'once', next = condition, durationMs = 60_000) => observer.register({ condition: next, mode, durationMs }),
     value: (next: string) => { value = next; }, time: (next: number) => { time = next; }, document: (next: string) => { documentId = next; }, url: (next: string) => { url = next; },
     enable: (next: boolean) => { enabled = next; }, failSave: () => { failSave = true; }, failRead: () => { failRead = true; }, gate: (next: Promise<void>) => { readGate = next; },
     counts: () => ({ wakes, saves }), continuation: () => snapshot.continuation! };
@@ -124,5 +124,37 @@ test('模拟：暂停仍消耗总期限，到期不能被用户以外的事件�
   try {
     await s.register(); await s.observer.control('pause', '用户暂停'); s.time(62_000); s.value('完成'); await s.observer.poll();
     assert.equal(s.continuation().state, 'STOPPED'); assert.equal(s.continuation().stopReason, 'deadline'); assert.equal(s.counts().wakes, 0);
+  } finally { s.observer.dispose(); }
+});
+
+test('模拟：一小时关注按期限结束，不因观察次数提前停下', async () => {
+  const s = simulation();
+  try {
+    await s.register('watch', condition, 3_600_000); s.snapshot.state = 'idle';
+    const { createdAt, expiresAt, pollMs } = s.continuation();
+    for (let at = createdAt + pollMs; at < expiresAt; at += pollMs) { s.time(at); await s.observer.poll(); }
+    assert.equal(s.continuation().state, 'WAITING_CONDITION');
+    s.time(expiresAt); await s.observer.poll();
+    assert.equal(s.continuation().state, 'STOPPED'); assert.equal(s.continuation().stopReason, 'deadline');
+  } finally { s.observer.dispose(); }
+});
+
+test('模拟：暂停后继续关注回到等待，条件满足前不唤醒；重载后重绑同一资源，换资源拒绝', async () => {
+  const s = simulation();
+  try {
+    await s.register(); s.snapshot.state = 'idle';
+    await s.observer.control('pause', '用户暂停');
+    const paused = s.continuation().controlVersion;
+    await s.observer.resume();
+    assert.equal(s.continuation().state, 'WAITING_CONDITION'); assert.ok(s.continuation().controlVersion > paused);
+    await s.observer.poll(); assert.equal(s.counts().wakes, 0);
+    s.document('document-2'); await s.observer.poll();
+    assert.equal(s.continuation().state, 'SUSPENDED');
+    await s.observer.resume();
+    assert.equal(s.continuation().state, 'WAITING_CONDITION'); assert.equal(s.continuation().documentId, 'document-2'); assert.equal(s.continuation().lastError, undefined);
+    s.value('完成'); await s.observer.poll(); assert.equal(s.counts().wakes, 1);
+    await s.observer.control('pause', '用户暂停'); s.url('https://example.com/other');
+    await assert.rejects(s.observer.resume(), /未能继续关注/);
+    assert.equal(s.continuation().state, 'WAITING_USER');
   } finally { s.observer.dispose(); }
 });
