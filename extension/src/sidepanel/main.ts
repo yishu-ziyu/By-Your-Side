@@ -3166,6 +3166,10 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   // 同一个位置：Agent 在做时是「我来」，页面归你时是「你继续」。
   takeoverBtn.hidden = !flags.takeoverVisible && !flags.userHasPage;
   takeoverBtn.dataset.mode = flags.userHasPage ? "handback" : "takeover";
+  const handingOver = teamView?.phase === "draining" || teamView?.phase === "restoring";
+  takeoverBtn.disabled = handingOver;
+  const handback = handoffCard?.querySelector<HTMLButtonElement>(".btn-primary");
+  if (handback) handback.disabled = !flags.userHasPage || handingOver;
   takeoverBtn.textContent = flags.userHasPage ? "交还" : "接管";
   takeoverBtn.title = flags.userHasPage ? "交还：助手先重读页面，再接着做。" : "接管：助手暂停，由你操作页面。操作完，点「交还」。";
   steerRibbon.setRunning(running && !flags.userHasPage);
@@ -4075,6 +4079,7 @@ function showHandoffCard(ask: string): void {
   done.type = "button";
   done.className = "btn-primary";
   done.textContent = "做好了，交还";
+  done.disabled = !panelLive(sessionRun.values(), teamView).userHasPage || teamView?.phase === "draining" || teamView?.phase === "restoring";
   done.onclick = () => port?.postMessage({ kind: "control", action: "handback", conversationId: selectedConversationId } satisfies PanelToBg);
   const hint = document.createElement("span");
   hint.className = "handoff-note";
@@ -4114,7 +4119,6 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   if (ev.name === "hand_to_user") {
     run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
     syncRunOrb(run);
-    run.graph.user(true);
     showHandoffCard(String(ev.params.ask ?? ""));
 
     return;

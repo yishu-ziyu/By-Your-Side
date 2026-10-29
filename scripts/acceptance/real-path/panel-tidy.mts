@@ -12,7 +12,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
-import { startScriptedModel } from "./scripted-model.mts";
+import { recheckProbe, reverifyContinue, startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
 
@@ -59,6 +59,8 @@ const mainSystems: string[] = [];
 
 const verdicts: string[] = [];
 let goalChecks = 0;
+/** 最近一次首轮核对给的结论：复核照它再判。 */
+let lastFirst = "VERDICT-DONE";
 
 const proxy = createServer(async (req, res) => {
   let body = "";
@@ -75,7 +77,12 @@ const proxy = createServer(async (req, res) => {
 
     if (system.includes("You interpret the CURRENT direct user message")) body = JSON.stringify({ ...payload, messages: [{ role: "user", content: "DECISION::none" }] });
 
-    if (system.startsWith("You check whether a browser assistant has finished the user's goal")) { goalChecks++; body = JSON.stringify({ ...payload, messages: [{ role: "user", content: verdicts.shift() ?? "VERDICT-DONE" }] }); }
+    if (system.startsWith("You check whether a browser assistant has finished the user's goal")) {
+      // 复核照首轮结论再判一次，不占用排好的下一条结论。
+      const again = reverifyContinue(body);
+      if (!again) { goalChecks++; lastFirst = verdicts.shift() ?? "VERDICT-DONE"; }
+      body = JSON.stringify({ ...payload, messages: [{ role: "user", content: again ? recheckProbe(lastFirst, again) : lastFirst }] });
+    }
   }
 
   try {

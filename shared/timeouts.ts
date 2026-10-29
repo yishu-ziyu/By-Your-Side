@@ -54,7 +54,8 @@ export function describeTimeout(raw: string): TimeoutCopy | null {
   const ms = /ms\b/i.test(text) && Number.isFinite(waited) ? waited : Number.NaN;
   const sec = Number.isFinite(ms) ? SEC(ms) : Number.isFinite(waited) ? Math.max(1, Math.round(waited)) : 0;
 
-  if (/结果未知|送达情况未知/.test(text)) {
+  // 「送达情况未知」也出现在连接被拒这类立刻失败的报错里：没写超时就不是等出来的，不能说「等了 N 秒」。
+  if (/结果未知|送达情况未知/.test(text) && /超时|timed out|timeout|没有回应/i.test(text)) {
     const n = sec || SEC(FETCH_READ_MS);
     return { kind: "page", title: "不知道做成没有", copy: `等了 ${n} 秒没有回音，请求可能已经发出。先看一眼网页上的结果，再决定要不要重做。`, waitedSec: n, retry: false };
   }

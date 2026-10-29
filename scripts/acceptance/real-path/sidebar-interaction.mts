@@ -82,7 +82,7 @@ try {
       answerFont: style?.fontFamily ?? null,
       answerSize: style ? Number.parseFloat(style.fontSize) : null,
       answerLineHeight: style ? Number.parseFloat(style.lineHeight) : null,
-      actions: actions ? { rect: rect(actions), opacity: Number(getComputedStyle(actions).opacity), button: ((b) => b ? (b.getAttribute('aria-label') ?? b.textContent.replace('↵', '').trim()) : null)(actions.querySelector('button')), buttonRect: rect(actions.querySelector('button')) } : null,
+      actions: actions ? { rect: rect(actions), opacity: Number(getComputedStyle(actions).opacity), button: ((b) => b ? (b.getAttribute('aria-label') ?? (b.querySelector('.answer-face:not(.answer-face-done)') ?? b).textContent.replace('↵', '').trim()) : null)(actions.querySelector('button')), buttonRect: rect(actions.querySelector('button')) } : null,
       resultText: shown(q('#task-result-card')) ? q('#task-result-card').innerText : null,
     };
   })()`) as {
@@ -208,16 +208,26 @@ try {
 
   const shadowRead = async (expression: string) => (await rp!.cdp.send("Runtime.callFunctionOn", { objectId:shadow, returnByValue:true, functionDeclaration:`function(){return ${expression};}` }, work)).result.value;
   await until(async () => await shadowRead(`this.querySelector('.surface').classList.contains('expanded')`) || undefined, 5000, "快捷键消息展开阅读卡");
-  const point = await shadowRead(`(() => {const r=this.querySelector('[data-act="handoff"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
-  await rp.cdp.send("Input.dispatchMouseEvent", { type:"mousePressed", ...point, button:"left", clickCount:1 }, work);
-  await rp.cdp.send("Input.dispatchMouseEvent", { type:"mouseReleased", ...point, button:"left", clickCount:1 }, work);
+  for (const action of ["close", "more", "transfer"]) {
+    const point = await until(async () => await shadowRead(`(() => {const e=this.querySelector('[data-act="${action}"]');const r=e.getBoundingClientRect();const x=r.x+r.width/2,y=r.y+r.height/2;const hit=this.elementFromPoint(x,y);return r.width>0&&r.height>0&&(hit===e||e.contains(hit))?{x,y}:null})()`), 5000, `划词操作 ${action} 可点击`);
+    await rp.cdp.send("Input.dispatchMouseEvent", { type:"mousePressed", ...point, button:"left", clickCount:1 }, work);
+    await rp.cdp.send("Input.dispatchMouseEvent", { type:"mouseReleased", ...point, button:"left", clickCount:1 }, work);
+    if (action === "close") {
+      const textPoint = await rp.evaluate(work, "(() => {const r=document.querySelector('p').getBoundingClientRect();return {x:r.x+5,y:r.y+r.height/2}})()");
+      await rp.cdp.send("Input.dispatchMouseEvent", { type:"mousePressed", ...textPoint, button:"left", clickCount:3 }, work);
+      await rp.cdp.send("Input.dispatchMouseEvent", { type:"mouseReleased", ...textPoint, button:"left", clickCount:3 }, work);
+    }
+  }
   await until(async () => await rp!.evaluate(panel, `!document.querySelector('#ask-cite').hidden`) || undefined, 5000, "选区转入引用");
   const cite = await rp.evaluate(panel, `({ text:document.querySelector('#ask-cite-text').textContent, host:document.querySelector('#ask-cite-host').textContent, focus:document.activeElement.id })`);
   check("划词转入保留原文、站点和输入焦点且不发模型请求", cite.text === "米娅负责编辑。" && cite.host.startsWith('127.0.0.1') && cite.focus === 'input' && model.requests.length === afterSave, cite);
   await rp.typeText(panel, "引用草稿");
   await rp.screenshot(panel, join(artifacts, "selection-cite.png"));
-  await rp.click(panel, "#ask-cite-close");
-  check("去掉引用不清空正文", await rp.evaluate(panel, `document.querySelector('#ask-cite').hidden && document.querySelector('#input').value === '引用草稿'`), null);
+  if (await rp.evaluate(panel, `document.querySelector("#materials-tray-root .mt-toggle")?.getAttribute("aria-expanded") !== "true"`)) await rp.click(panel, "#materials-tray-root .mt-toggle");
+  await rp.click(panel, "#materials-tray-root .mt-row[data-kind='selection']");
+  await rp.click(panel, "#materials-tray-root .mt-remove");
+  const removed = await rp.evaluate(panel, `({hidden:document.querySelector('#ask-cite').hidden,input:document.querySelector('#input').value})`);
+  check("去掉引用不清空正文", removed.hidden && removed.input === '引用草稿', removed);
   await rp.evaluate(panel, `document.querySelector('#input').value='';document.querySelector('#input').dispatchEvent(new Event('input',{bubbles:true}));`);
   await rp.detach(worker);
 
@@ -257,7 +267,7 @@ try {
     const done = await shot("3-done", width);
     check(`${width}px 无横向溢出`, done.documentWidth <= width + 1 && done.overflow.length === 0, { documentWidth: done.documentWidth, overflow: done.overflow });
     check(`${width}px 回答为系统字体 15px、约 26px 行高`, systemReading(done), { font: done.answerFont, size: done.answerSize, lineHeight: done.answerLineHeight });
-    check(`${width}px 复制操作可见且紧凑`, !!done.actions && done.actions.opacity >= 0.9 && done.actions.rect.height <= 30 && /^复制/.test(done.actions.button ?? "") && !!done.actions.buttonRect && done.actions.buttonRect.width <= 64, done.actions);
+    check(`${width}px 复制操作可见且紧凑`, !!done.actions && done.actions.opacity >= 0.9 && done.actions.rect.height <= 30 && /^复制/.test(done.actions.button ?? "") && !!done.actions.buttonRect && done.actions.buttonRect.width <= 80, done.actions);
     check(`${width}px 完成后输入框上方不重复已完成`, !done.taskBar && !(done.resultText ?? "").includes("已完成"), { taskBar: done.taskBar, resultText: done.resultText });
   }
 
