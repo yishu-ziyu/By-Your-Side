@@ -1790,7 +1790,7 @@ return receipt;
 
         if (signal.aborted || !entry) throw new Error('阅读请求不可用');
 
-        return entry.runtime.session.answerReading(transcript, signal, onText);
+        return entry.runtime.session.answerReading(transcript, signal, onText, message.requestId);
       }, event => this.emit(event));
 
       return;
