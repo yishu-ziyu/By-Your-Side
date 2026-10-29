@@ -4,7 +4,7 @@
  * fixture website are scripted. --case=stop checks a late change after stopping;
  * --case=irrelevant adds unrelated mutations before the actual result.
  * --case=watch verifies two batches without repeating the first, then stops.
- * Control cases: pause, revise, navigate, reload, disable, restart (scripted model only).
+ * Control cases: pause, revise, navigate, reload, disable, restart, new-task (scripted model only).
  * Boundary cases: already, deadline, exists, disabled-default (scripted model only).
  * Add --live [--model=openai-codex/gpt-6-luna] for natural real-model planning and verification.
  * npx tsx scripts/acceptance/real-path/condition-continuation.mts --headless [--case=once|stop|irrelevant|watch] [--live]
@@ -21,7 +21,7 @@ import { redactCredentialText } from '../../../shared/untrusted.js';
 
 requireHeadless();
 const scenario = process.argv.find(arg => arg.startsWith('--case='))?.slice(7) ?? 'once';
-const controlCases = ['pause', 'revise', 'navigate', 'reload', 'disable', 'restart'];
+const controlCases = ['pause', 'revise', 'navigate', 'reload', 'disable', 'restart', 'new-task'];
 const boundaryCases = ['already', 'deadline', 'exists', 'disabled-default'];
 assert.ok(['once', 'stop', 'irrelevant', 'watch', ...controlCases, ...boundaryCases].includes(scenario), 'supported case');
 const live = process.argv.includes('--live');
@@ -44,6 +44,8 @@ const FINAL_SECOND = '【第二批已核对】新增丙：95分，大于等于80
 const WAKE = '[CONDITION CONTINUATION]';
 const SECOND_WAKE = '"processedVersion":"';
 const REVISION = '把筛选阈值改为95分及以上，其他要求保持；仍等待新的结果，不要标注90分。';
+const NEW_QUESTION = '另一个问题：这页标题是什么？';
+const NEW_ANSWER = '这页标题是“结果生成与筛选”。';
 const REVISED_FINAL = '【修订目标已核对】仅标注丙95分，满足修订后的95分及以上；甲90分和乙60分不符合，没有标注。';
 type Payload = { at: number; tools?: unknown[]; messages?: Array<{ role: string; content?: string | Array<{ text?: string }> | null }> };
 const payloads: Payload[] = [];
@@ -76,6 +78,7 @@ const model = live ? null : await startScriptedModel([
   { match: '"userMessage"', steps: [{ text: JSON.stringify({ feedback: 'none', aspect: null, lasting: false, rule: '', evidence: '' }) }] },
   { match: '"task":', steps: [{ text: JSON.stringify({ title: '结果筛选' }) }] },
   { match: REVISION, steps: revisionSteps },
+  { match: NEW_QUESTION, steps: [{ text: NEW_ANSWER }] },
   // Each wake is a new user-shaped host prompt. The second one includes a committed processing position.
   { match: SECOND_WAKE, steps: secondBatch },
   { match: WAKE, steps: follow },
@@ -170,9 +173,10 @@ try {
   const assertUserInputs = async () => {
     userMessageTexts = await browser.evaluate(panel, `Array.from(document.querySelectorAll('#messages .msg.user')).map(node=>(node.querySelector('.user-msg-text')?.textContent??node.textContent??'').trim())`) as string[];
     userMessages = userMessageTexts.length;
-    const hasExplicitControl = scenario === 'pause' || scenario === 'revise';
-    assert.equal(userMessages, hasExplicitControl ? 2 : 1, 'only the original goal and necessary explicit user control appear as user messages');
-    if (scenario === 'pause') assert.equal(userMessageTexts[1], '继续原任务', 'the added user bubble is solely the explicit resume button control');
+    const extraInputs = scenario === 'pause' ? 2 : scenario === 'revise' || scenario === 'new-task' ? 1 : 0;
+    assert.equal(userMessages, 1 + extraInputs, 'only the original goal and necessary explicit user control appear as user messages');
+    if (scenario === 'pause') assert.deepEqual(userMessageTexts.slice(1), ['继续原任务', '继续原任务'], 'the added user bubbles are solely the explicit resume button controls');
+    if (scenario === 'new-task') assert.equal(userMessageTexts[1], NEW_QUESTION, 'the added user bubble is solely the new question');
     if (scenario === 'revise') assert.equal(userMessageTexts[1], REVISION, 'the added user bubble is solely the exact goal revision');
   };
   await browser.screenshot(work, join(artifacts, 'before-page.png'));
@@ -272,11 +276,34 @@ try {
     controlEvidence = { beforeRequests: before, afterRequests: requestCount(), oldUrl: waiting.continuation!.url, oldDocumentId: waiting.continuation!.documentId, state: ending.continuation!.state };
     await saveControlEvidence(); return;
   }
+  if (scenario === 'new-task') {
+    const before = requestCount();
+    await runStage('用户在同一页面输入框问另一个问题', async () => { await browser.click(panel, '#input'); await browser.typeText(panel, NEW_QUESTION); await browser.pressEnter(panel); });
+    await runStage('新问题按普通任务回答', () => until(() => browser.evaluate(panel, `document.querySelector('#messages')?.textContent.includes(${JSON.stringify(NEW_ANSWER)})`), 30_000, 'new question answered'));
+    const visible = String(await browser.evaluate(panel, 'document.querySelector("#messages")?.innerText ?? ""'));
+    assert.ok(visible.includes('原来的网页关注已停止'), 'the user is told the old watch ended');
+    assert.ok(!visible.includes('请先回到原委托页面'), 'the new question is not rejected as a delegation revision');
+    assert.ok(modelRequests().every(request => request.rule !== WAKE), 'the new question never becomes a condition continuation');
+    const answered = requestCount();
+    conditionAt = Date.now(); await publishFirst();
+    await runStage('旧关注停止后发布结果', () => sleep(4500));
+    assert.equal(requestCount(), answered, 'the stopped watch does not wake on the late result');
+    assert.equal(await probe<number>('ns.markLayerCount()') ?? 0, 0, 'the stopped watch does not annotate');
+    controlEvidence = { beforeRequests: before, answeredRequests: answered, afterRequests: requestCount(), oldWatchLastState: (await latest())?.continuation?.state ?? null };
+    await saveControlEvidence(); return;
+  }
   if (scenario === 'pause') {
     const before = requestCount();
     await runStage('用户点击真实暂停关注按钮', () => browser.click(panel, 'button[data-continuation-control="pause"]'));
     const paused = await runStage('确认关注已暂停', () => until(async () => { const view = await latest(); return view?.continuation?.state === 'WAITING_USER' ? view : undefined; }, 15_000, 'pause accepted'));
     assert.ok(paused.continuation!.controlVersion > waiting.continuation!.controlVersion, 'pause invalidates the prior control version');
+    await runStage('结果未出时点击真实继续关注按钮', () => browser.click(panel, 'button[data-continuation-control="resume"]'));
+    await runStage('确认回到等待', () => until(async () => { const view = await latest(); return view?.continuation?.state === 'WAITING_CONDITION' ? view : undefined; }, 15_000, 'resume returns to waiting'));
+    await runStage('继续关注后条件未满足时保持安静', () => sleep(4500));
+    assert.equal(requestCount(), before, 'resuming before the condition holds calls no model');
+    assert.equal((await latest())?.continuation?.state, 'WAITING_CONDITION', 'resume keeps waiting for the condition');
+    await runStage('再次点击真实暂停关注按钮', () => browser.click(panel, 'button[data-continuation-control="pause"]'));
+    await runStage('确认再次暂停', () => until(async () => { const view = await latest(); return view?.continuation?.state === 'WAITING_USER' ? view : undefined; }, 15_000, 'second pause accepted'));
     conditionAt = Date.now(); await publishFirst();
     await runStage('条件满足时仍等待用户继续', () => sleep(4500));
     assert.equal(requestCount(), before, 'paused condition cannot call the model');

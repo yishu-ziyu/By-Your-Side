@@ -845,10 +845,10 @@ return { kind: "silent" };}
     if(request.source!=='text'||request.action!=='start'||request.forkedFrom||!request.text?.trim())return false;
 
     if(!['idle','error'].includes(snapshot.state)||!snapshot.runId||!snapshot.goal||!snapshot.recoveryInput||!request.context?.tabId)return false;
-    if (snapshot.continuation && !['COMPLETED','STOPPED','FAILED'].includes(snapshot.continuation.state)) return true;
+    const delegating=!!snapshot.continuation&&!['COMPLETED','STOPPED','FAILED'].includes(snapshot.continuation.state);
     const view=projectTaskView(snapshot);
 
-    if(!view.resumable)return false;
+    if(!view.resumable&&!delegating)return false;
     const session=entry.runtime.session;
 
     if(!session.available||session.isStreaming())return false;
@@ -1240,6 +1240,7 @@ return receipt;
         const command = (originalRequest.text ?? '').trim().replace(/[。！!？?\s]/g, '');
         if (['停止','停止关注','中止','中止关注','取消关注'].includes(command)) request = { ...originalRequest, action: 'abort' };
         else if (['暂停','暂停关注'].includes(command)) request = { ...originalRequest, action: 'pause' };
+        else if (continuation) request = continuation.amendment ? { ...originalRequest, action: 'steer', text: continuation.amendment } : { ...originalRequest, action: 'resume' };
       }
       // 任务不随一轮结束：上一个任务还没做完时，随口补的一句（不必说「继续」）由快速模型判断是不是接着做它；
       // 是就按补充交给原任务（下面 steer 分支：登记为修订、从原任务接着做），目标不变。
@@ -1260,12 +1261,23 @@ return receipt;
           await this.saveContinuation(request.conversationId);
           return { status: 'applied', runId: snapshot.runId ?? null, message: request.action === 'abort' ? '关注已停止，已有结果保留。' : '关注已暂停，等待你继续。' };
         }
-        if (request.action === 'start') await observer.control('stop', '用户发起新任务');
-        if ((request.action === 'steer' || request.action === 'resume') && !entry.runtime.session.isStreaming()) {
+        if (request.action === 'start') {
+          await observer.control('stop', '用户发起新任务');
+          this.emit({ type: 'agent_event', conversationId: request.conversationId, event: { kind: 'notice', message: '原来的网页关注已停止，已有结果保留；现在处理你的新问题。' } });
+        }
+        if (request.action === 'resume') {
+          if (delegation.state === 'WAITING_CONDITION') return { status: 'applied', runId: snapshot.runId ?? null, message: `仍在关注：${delegation.condition.description}` };
+          if (delegation.state === 'RUNNING' || delegation.state === 'VERIFYING') return { status: 'applied', runId: snapshot.runId ?? null, message: '正在按原委托处理。' };
+          try { await observer.resume(request.context); }
+          catch (error) { throw new TaskActionRejected(error instanceof Error ? error.message : '未能继续关注。'); }
+          this.queueTaskView(request.conversationId);
+          return { status: 'applied', runId: snapshot.runId ?? null, message: '已继续关注，条件满足后自动处理。' };
+        }
+        if (request.action === 'steer' && !entry.runtime.session.isStreaming()) {
           if (!request.context || request.context.url !== delegation.url) throw new TaskActionRejected('请先回到原委托页面。');
-          await observer.control(request.action === 'steer' ? 'revise' : 'pause', '用户修改或继续原委托');
+          await observer.control('revise', '用户修改了原委托');
           const current = this.progress.get(request.conversationId)!;
-          if (request.action === 'steer') { current.recordRequirement(request.text ?? '', request.context, request.attachments); current.recordUserTurn(request.text ?? '', request.requestId); current.reviseResults(); }
+          current.recordRequirement(request.text ?? '', request.context, request.attachments); current.recordUserTurn(request.text ?? '', request.requestId); current.reviseResults();
           const live = current.snapshot().continuation!;
           current.setContinuation({ ...live, state: 'RUNNING', processingVersion: live.observedVersion, segmentStartedAt: Date.now() });
           await this.saveContinuation(request.conversationId);
