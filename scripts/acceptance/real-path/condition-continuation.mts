@@ -173,10 +173,9 @@ try {
   const assertUserInputs = async () => {
     userMessageTexts = await browser.evaluate(panel, `Array.from(document.querySelectorAll('#messages .msg.user')).map(node=>(node.querySelector('.user-msg-text')?.textContent??node.textContent??'').trim())`) as string[];
     userMessages = userMessageTexts.length;
-    const extraInputs = scenario === 'pause' ? 2 : scenario === 'revise' || scenario === 'new-task' ? 1 : 0;
+    const extraInputs = scenario === 'pause' ? 2 : scenario === 'revise' ? 1 : 0;
     assert.equal(userMessages, 1 + extraInputs, 'only the original goal and necessary explicit user control appear as user messages');
     if (scenario === 'pause') assert.deepEqual(userMessageTexts.slice(1), ['继续原任务', '继续原任务'], 'the added user bubbles are solely the explicit resume button controls');
-    if (scenario === 'new-task') assert.equal(userMessageTexts[1], NEW_QUESTION, 'the added user bubble is solely the new question');
     if (scenario === 'revise') assert.equal(userMessageTexts[1], REVISION, 'the added user bubble is solely the exact goal revision');
   };
   await browser.screenshot(work, join(artifacts, 'before-page.png'));
@@ -279,18 +278,25 @@ try {
   if (scenario === 'new-task') {
     const before = requestCount();
     await runStage('用户在同一页面输入框问另一个问题', async () => { await browser.click(panel, '#input'); await browser.typeText(panel, NEW_QUESTION); await browser.pressEnter(panel); });
-    await runStage('新问题按普通任务回答', () => until(() => browser.evaluate(panel, `document.querySelector('#messages')?.textContent.includes(${JSON.stringify(NEW_ANSWER)})`), 30_000, 'new question answered'));
-    const visible = String(await browser.evaluate(panel, 'document.querySelector("#messages")?.innerText ?? ""'));
-    assert.ok(visible.includes('原来的网页关注已停止'), 'the user is told the old watch ended');
-    assert.ok(!visible.includes('请先回到原委托页面'), 'the new question is not rejected as a delegation revision');
-    assert.ok(modelRequests().every(request => request.rule !== WAKE), 'the new question never becomes a condition continuation');
-    const answered = requestCount();
+    await runStage('出现另开会话的提示', () => until(() => browser.evaluate(panel, `!!document.querySelector('.receipt-decision')?.textContent.includes('另开会话')`), 15_000, 'new conversation offer'));
+    assert.equal(requestCount(), before, 'the offer itself calls no model');
+    assert.equal((await latest())?.continuation?.state, 'WAITING_CONDITION', 'asking another question keeps the watch');
+    await browser.screenshot(panel, join(artifacts, 'offer-panel.png'));
+    await runStage('用户点击另开会话', () => browser.click(panel, '.receipt-decision div > button:first-child'));
+    await runStage('新问题在新会话里回答', () => until(() => browser.evaluate(panel, `document.querySelector('#messages')?.textContent.includes(${JSON.stringify(NEW_ANSWER)})`), 30_000, 'new question answered'));
+    await browser.screenshot(panel, join(artifacts, 'new-conversation-panel.png'));
+    assert.equal((await latest())?.continuation?.state, 'WAITING_CONDITION', 'the original watch is still waiting after the other answer');
     conditionAt = Date.now(); await publishFirst();
-    await runStage('旧关注停止后发布结果', () => sleep(4500));
-    assert.equal(requestCount(), answered, 'the stopped watch does not wake on the late result');
-    assert.equal(await probe<number>('ns.markLayerCount()') ?? 0, 0, 'the stopped watch does not annotate');
-    controlEvidence = { beforeRequests: before, answeredRequests: answered, afterRequests: requestCount(), oldWatchLastState: (await latest())?.continuation?.state ?? null };
-    await saveControlEvidence(); return;
+    ending = await runStage('原会话的关注照常唤醒并核对', () => until(async () => { const view = await latest(); return view?.continuation?.state === 'COMPLETED' && view.continuation.processedVersion ? view : undefined; }, 60_000, 'original watch completed'));
+    finalAt = Date.now();
+    views = await readViews(); marks = await probe('ns.marksState()'); layerCount = await probe<number>('ns.markLayerCount()') ?? 0;
+    assert.equal(ending.runId, waiting.runId, 'the watch keeps its original task identity');
+    assert.equal(layerCount, 1, 'the original watch marks the qualifying result');
+    assert.equal(modelRequests().filter(request => request.rule === WAKE && request.tools && request.step === 0).length, 1, 'exactly one wake for the original watch');
+    assert.ok(modelRequests().some(request => request.rule === NEW_QUESTION), 'the new question reached the model as its own task');
+    await browser.screenshot(work, join(artifacts, 'after-page.png')); await browser.screenshot(panel, join(artifacts, 'after-panel.png'));
+    controlEvidence = { beforeRequests: before, offered: true, forked: true, finalState: ending.continuation!.state };
+    stage('另开会话反例核验完成', controlEvidence); return;
   }
   if (scenario === 'pause') {
     const before = requestCount();
