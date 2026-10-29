@@ -163,7 +163,8 @@ try {
   const toolsSince = (from: number) => toolTexts.slice(from);
 
   const WAITING = "等你确认发送";
-  const DOCKED = "要在";
+  // 确认卡标题写要发给谁：这里是练习页的标题。
+  const TARGET = "留言练习页";
 
   /** 侧栏最后一个过程行：标题和每一步的文字、是否标成失败。 */
   const lastRun = async () => (await rp.evaluate(panel, `(() => { const run = [...document.querySelectorAll(".run-steps")].at(-1); return run ? { title: run.querySelector(".run-title")?.textContent ?? "", steps: [...run.querySelectorAll(".chip:not(.prep)")].map(c => ({ text: c.querySelector(".chip-label")?.textContent ?? "", error: c.classList.contains("error") || !!c.querySelector(".act-failed") })) } : null; })()`)) as { title: string; steps: Array<{ text: string; error: boolean }> } | null;
@@ -179,14 +180,14 @@ try {
   const boxA = await confirmBox();
   check("a 助手点「发送」：网页出现「等你在侧栏确认」，侧栏出现确认卡，用户决定前服务器 0 条", !!boxA?.pageText.includes("等你在侧栏确认") && sent() === 0, { pageText: boxA?.pageText ?? null, text: boxA?.text ?? null, sent: sent() });
   const siteHost = `127.0.0.1:${siteAddress(site).port}`;
-  check("a 确认卡写明网站、按钮名和表单里那一栏要发的内容，不写别的栏", !!boxA?.text.includes(siteHost) && !!boxA.text.includes("「发送」") && !!boxA.text.includes("周五下午三点开会。") && !boxA.text.includes("备忘") && !/POST\s+\//.test(boxA.text), { text: boxA?.text ?? null, siteHost });
+  check("a 确认卡写明目标、网站和表单里那一栏要发的内容，不写别的栏", !!boxA?.text.startsWith(TARGET) && !!boxA.text.includes(siteHost) && !!boxA.text.includes("周五下午三点开会。") && !boxA.text.includes("备忘") && !/POST\s+\//.test(boxA.text), { text: boxA?.text ?? null, siteHost });
 
   if (!boxA) throw new Error("没有确认卡，后面的用例无从做起");
   await rp.screenshot(work, join(out, "a-confirm.png"));
   const waitingA = await lastRun();
   await rp.screenshot(panel, join(out, "a-panel-waiting.png"));
   const dockA = await rp.evaluate(panel, `(() => { const dock = document.querySelector("#confirm-dock"); const card = dock?.querySelector(".send-confirm"); return { inDock: !!card && !dock.hidden, wait: card?.querySelector(".send-confirm-wait")?.textContent ?? "", title: card?.querySelector(".send-confirm-title")?.textContent ?? "" }; })()`) as { inDock: boolean; wait: string; title: string };
-  check("a 等确认时：卡钉在输入框上方，并显示倒计时", dockA.inDock && dockA.title.includes(DOCKED) && /已等/.test(dockA.wait) && !waitingA?.title.includes(WAITING), { run: waitingA, dock: dockA });
+  check("a 等确认时：卡钉在输入框上方，并显示倒计时", dockA.inDock && dockA.title === TARGET && /\d{2}:\d{2} 后取消/.test(dockA.wait) && !waitingA?.title.includes(WAITING), { run: waitingA, dock: dockA });
   await rp.evaluate(panel, `document.querySelector('.send-confirm-yes').click()`);
   await sleep(200);
   check("合成点击不批准发送", sent() === 0, { sent: sent() });

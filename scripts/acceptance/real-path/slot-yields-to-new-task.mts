@@ -10,7 +10,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
-import { startScriptedModel } from "./scripted-model.mts";
+import { recheckProbe, reverifyContinue, startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
 
@@ -43,7 +43,9 @@ const proxy = createServer(async (req, res) => {
   if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
     // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as { model?: string; stream?: boolean };
-    forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: "GOAL-CHECK-CONTINUE" }] });
+    // 复核照首轮结论（继续）再判一次，带上复核读数里的原文。
+    const again = reverifyContinue(body);
+    forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: again ? recheckProbe("GOAL-CHECK-CONTINUE", again) : "GOAL-CHECK-CONTINUE" }] });
   }
 
   // 产品取消请求（停掉续做）时，把取消传给脚本模型，它才记得下「没写完就关了」。

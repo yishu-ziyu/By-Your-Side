@@ -180,6 +180,8 @@ try {
   await sleep(500);
   const withTile = await view(panel);
   await rp.screenshot(panel, join(out, "04-tile.png"));
+  // 材料栏默认收起，先展开才点得到附件那一行。
+  if (await rp.evaluate(panel, `document.querySelector("#materials-tray-root .mt-toggle")?.getAttribute("aria-expanded") !== "true"`)) await rp.click(panel, "#materials-tray-root .mt-toggle");
   await rp.click(panel, "#materials-tray-root .mt-row[data-kind='attachment']");
   await rp.click(panel, "#materials-tray-root .mt-remove");
   await until(async () => (await rp.evaluate(panel, `!document.querySelector("#materials-tray-root .mt-row[data-kind='attachment']")`)) || undefined, 5_000, "附件去掉");

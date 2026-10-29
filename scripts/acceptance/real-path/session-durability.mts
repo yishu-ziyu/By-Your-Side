@@ -16,22 +16,25 @@ requireHeadless();
 const code=randomUUID(), csv=`代号,数量\n${code},7\n`, requests: Array<{messages?: unknown[];tools?: unknown[]}> = [];
 
 const model=await startScriptedModel([
+ // 测试页只有画布、没有正文：宿主先问这一句要读多少页面。保存文件只用到局部，不要整页。放最前，免得被下面按任务原话匹配走。
+ {match:'{"requests":',steps:[{text:'{"scope":"local"}'}]},
  {match:'保存恢复材料',steps:[{tool:{name:'artifacts',args:{command:'create',filename:'resume.csv',content:csv,deliver:true}}},{tool:{name:'screenshot',args:{forUser:true}}},{text:'材料已保存。'}]},
  {match:'恢复核对',steps:[{tool:{name:'artifacts',args:{command:'get',filename:'resume.csv'}}},{text:'恢复核对完毕。'}]},
  // 用户说继续时模型选择重做这一步：宿主照常执行，不拦。
- {match:'继续原任务',steps:[{tool:{name:'browser_run',args:{code:"return await browser.js({code: `fetch('/commit',{method:'POST'}).then(r=>r.text())`});"}}},{text:'防重复核对结束。'}]},
- {match:'防重复验收',steps:[{tool:{name:'browser_run',args:{code:"return await browser.js({code: `fetch('/commit',{method:'POST'}).then(r=>r.text())`});"}}},{text:'防重复核对结束。'}]},
+ {match:'继续原任务',steps:[{tool:{name:'click',args:{target:'#commit',label:'记一笔'}}},{text:'防重复核对结束。'}]},
+ {match:'防重复验收',steps:[{tool:{name:'click',args:{target:'#commit',label:'记一笔'}}},{text:'防重复核对结束。'}]},
  {match:'保存故障验收',steps:[{tool:{name:'artifacts',args:{command:'create',filename:'failure.csv',content:'item,count\nA,1\n',deliver:true}}},{text:'存储故障已核对。'}]},
  {match:'删除恢复文件',steps:[{tool:{name:'artifacts',args:{command:'delete',filename:'resume.csv'}}},{text:'已删除恢复文件。'}]},
 ],undefined,p=>requests.push(p));
 
 let commits=0;
 
+// 第一次提交不回应：提交已经发出、结果一直没回来时浏览器被强杀。之后的提交照常回。
 const site=createServer((q,r)=>{if(q.url==='/commit'){commits++;
 
-return;}
+if(commits>1)r.writeHead(204).end();return;}
 
-return r.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end('<!doctype html><title>恢复验收</title><canvas width="1100" height="800"></canvas><script>const c=document.querySelector("canvas").getContext("2d"),d=c.createImageData(1100,800);crypto.getRandomValues(d.data.subarray(0,65536));for(let i=65536;i<d.data.length;i++)d.data[i]=d.data[i%65536];for(let i=3;i<d.data.length;i+=4)d.data[i]=255;c.putImageData(d,0,0);</script>');});
+return r.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end('<!doctype html><title>恢复验收</title><form method="post" action="/commit"><button id="commit">记一笔</button></form><canvas width="1100" height="800"></canvas><script>const c=document.querySelector("canvas").getContext("2d"),d=c.createImageData(1100,800);crypto.getRandomValues(d.data.subarray(0,65536));for(let i=65536;i<d.data.length;i++)d.data[i]=d.data[i%65536];for(let i=3;i<d.data.length;i+=4)d.data[i]=255;c.putImageData(d,0,0);</script>');});
 
 await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));
 
@@ -121,13 +124,15 @@ try{
  const work2=await rp.cdp.send('Target.createTarget',{url:`http://127.0.0.1:${siteAddress(site).port}`});await rp.cdp.send('Target.activateTarget',{targetId:work2.targetId});await sleep(300);
  await rp.click(panel,'#input');await rp.typeText(panel,'防重复验收：向当前页提交一次，完成后停止。');await rp.pressEnter(panel);
  await until(async()=>commits===1||undefined,20000,'真实提交已发生，回执挂起');
- // 重启后存储里的这一轮自己接着做完：做到一半的提交不自动重放，模型看到它被打断、可能做了一部分。
+ // 重启后不自己接着做，做到一半的提交不自动重放；用户打开原页面、点「继续原任务」后，续做材料进入模型。
  const restartOffset=requests.length;await rp.restart({abrupt:true});await open();
- await until(async()=>requests.slice(restartOffset).some(r=>r.tools?.length&&/interrupted and may have partially run/.test(JSON.stringify(r.messages)))||undefined,30000,'恢复材料进入模型');
  await sleep(1500);assert.equal(commits,1,'重启不自动重放');
  const recoveryPage=await rp.cdp.send('Target.createTarget',{url:`http://127.0.0.1:${siteAddress(site).port}`});await rp.cdp.send('Target.activateTarget',{targetId:recoveryPage.targetId});await sleep(300);
- // 结果未知不拦重做：用户说继续后，模型重做这一步，宿主照常执行。
- await send('继续原任务。','防重复核对结束');await until(async()=>commits===2||undefined,10000,'继续后宿主不拦重做');
+ await until(async()=>await rp.evaluate(panel,`(()=>{const r=document.querySelector("#resume-entry-root");return !!r&&!r.hidden&&!!r.querySelector(".resume-action")})()`)||undefined,15000,'侧栏出现「继续原任务」');
+ await rp.click(panel,'#resume-entry-root .resume-action');
+ await until(async()=>requests.slice(restartOffset).some(r=>r.tools?.length&&JSON.stringify(r.messages).includes('[RESTART CONTINUATION]'))||undefined,30000,'续做材料进入模型');
+ // 结果未知不拦重做：模型选择重做这一步，宿主照常执行。
+ await until(async()=>commits===2||undefined,10000,'继续后宿主不拦重做');await until(async()=>(await state()).text?.includes('防重复核对结束')||undefined,30000,'防重复核对结束');
  evidence.noReplay={commitsAfterRestart:1,commitsAfterContinue:commits,browserCrash:true};
  const inproc=await until(async()=>(await rp.targets()).find(t=>t.url.endsWith('/inproc.html')),10000,'恢复核心');const ips=await rp.attach(inproc.targetId);
  await rp.evaluate(ips,`(()=>{const put=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(value,key){if(this.transaction.db.name==='sideagent-session-data'&&String(key).startsWith('artifact:'))throw new Error('acceptance-disk-failure');return put.call(this,value,key);};return true;})()`);

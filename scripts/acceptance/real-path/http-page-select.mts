@@ -40,9 +40,8 @@ const check = (name: string, pass: boolean, actual: Json) => { checks.push({ nam
 
 const errors: Array<{ source: string; text: string; url: string }> = [];
 
-type DomNode = { nodeName: string; nodeValue?: string; backendNodeId: number; children?: DomNode[]; shadowRoots?: DomNode[] };
+type DomNode = { nodeName: string; nodeValue?: string; attributes?: string[]; backendNodeId: number; children?: DomNode[]; shadowRoots?: DomNode[] };
 
-const domText = (n: DomNode): string => (n.nodeValue ?? '') + [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(domText).join('');
 
 const findAll = (n: DomNode, test: (x: DomNode) => boolean, acc: DomNode[] = []): DomNode[] => { if (test(n)) acc.push(n); for (const c of [...(n.children ?? []), ...(n.shadowRoots ?? [])]) findAll(c, test, acc); return acc; };
 
@@ -81,7 +80,8 @@ try {
   await rp.cdp.send('DOM.enable', {}, work);
   const explain = await until(async () => {
     const root = (await rp.cdp.send('DOM.getDocument', { depth: -1, pierce: true }, work)).root as DomNode;
-    const button = findAll(root, n => n.nodeName === 'BUTTON' && domText(n).trim() === '解释')[0];
+    // 工具条只有图标，按钮名在 aria-label 上。
+    const button = findAll(root, n => n.nodeName === 'BUTTON' && (n.attributes ?? []).some((value, i, all) => i % 2 === 1 && all[i - 1] === 'aria-label' && value === '解释'))[0];
 
     if (!button) return undefined;
     const { object } = await rp.cdp.send('DOM.resolveNode', { backendNodeId: button.backendNodeId }, work);

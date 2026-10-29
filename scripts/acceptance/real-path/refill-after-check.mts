@@ -16,7 +16,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
-import { startScriptedModel } from "./scripted-model.mts";
+import { recheckProbe, reverifyContinue, startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
 
@@ -110,6 +110,9 @@ const model = await startScriptedModel([
 /** 接下来的目标核对依次怎么回；没排上的判完成。 */
 const verdicts: string[] = [];
 
+/** 最近一次首轮核对给的结论：复核照它再判。 */
+let lastFirst = "VERDICT-DONE";
+
 const proxy = createServer(async (req, res) => {
   let body = "";
 
@@ -119,7 +122,10 @@ const proxy = createServer(async (req, res) => {
   if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
     // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as Record<string, unknown>;
-    forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: verdicts.shift() ?? "VERDICT-DONE" }] });
+    // 复核照首轮结论再判一次，不占用排好的下一条结论。
+    const again = reverifyContinue(body);
+    if (!again) lastFirst = verdicts.shift() ?? "VERDICT-DONE";
+    forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: again ? recheckProbe(lastFirst, again) : lastFirst }] });
   }
 
   try {

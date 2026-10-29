@@ -64,22 +64,27 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false, s
   const payloads: Payload[] = [];
   const acksAtReceipt: Record<number, number> = {};
   const wrongAtReceipt: Record<number, number> = {};
+  let workSession: string | null = null;
+  let replaced = false;
 
   const model = await startScriptedModel([{ match: MARK, steps: [
     { tool: { name: "tabs", args: { action: "active" } } },
     { tool: { name: "snapshot", args: {} } },
     { tool: { name: rerender ? "mark" : "click", args: { target: "text=已读" } } },
-    ...(rerender ? [{ tool: { name: "js", args: { code: "(() => { const old = document.querySelector('#ack'); const next = old.cloneNode(true); old.replaceWith(next); return next.textContent; })()" } } }] : []),
+    ...(rerender ? [{ tool: { name: "js", args: { code: "document.querySelector('#ack').textContent" } } }] : []),
     // 紧接着用 CSS 再点一次：上一步若被记成「结果未知」，这一步会被锁拦下。
     { tool: { name: "click", args: rerender ? { target: "text=已读", point: [40, 70] } : { target: "#ack" } } },
     { text: `【${MARK}结束】` },
-  ] }], undefined, payload => {
+  ] }], undefined, async payload => {
     // SAFETY: 脚本模型把产品的 OpenAI 兼容请求体原样交给这里；Payload 只取其中可选的 tools 与 messages。
     const p = payload as Payload;
     payloads.push(p);
     const toolResults = (p.messages ?? []).filter(m => m.role === "tool").length;
 
     if (p.tools?.length && toolResults > 0 && !(toolResults in acksAtReceipt)) { acksAtReceipt[toolResults] = acks; wrongAtReceipt[toolResults] = wrong; }
+    if (rerender && p.tools?.length && toolResults === 3 && !replaced && workSession) {
+      replaced = await rp.evaluate(workSession, "(() => { const old = document.querySelector('#ack'); const next = old.cloneNode(true); old.replaceWith(next); return !old.isConnected && next.isConnected; })()") as boolean;
+    }
   });
 
   const rp = await launchRealPath();
@@ -91,6 +96,7 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false, s
   try {
     const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
     const work = await rp.attach(blank.targetId);
+    workSession = work;
     await rp.cdp.send("Page.navigate", { url: origin }, work);
     const panel = await rp.attach(await rp.openSidePanel());
     await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
@@ -128,6 +134,7 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false, s
       assert.equal(acksAtReceipt[4], 1, "following CSS click went through (no unknown-result lock)");
       assert.doesNotMatch(receipts[3] ?? "", /结果未知|未再次|没有重复执行/, "following CSS click was not blocked by the unknown-result lock");
     } else {
+      if (rerender) assert.ok(replaced, "the fixture replaced the marked button before the next action");
       assert.equal(buttonText, "已读", "control page keeps the text");
       assert.equal(acksAtReceipt[3], rerender ? 0 : 1, rerender ? "mark does not click the button" : "text= click reached the site once");
       assert.doesNotMatch(receipts[2] ?? "", /TARGET_GONE/, "no TARGET_GONE on the control page");

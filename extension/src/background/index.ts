@@ -1348,6 +1348,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
     for (const m of team.view()?.members ?? []) statusBySession.set(m.sessionId, "user");
     emitLocalStatus("user");
     emitTeam();
+    emitHandoffPhase("user");
     void showUserControlGuarded();
 
     return;
@@ -1905,7 +1906,6 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
   emitHandoffPhase("leaving");
   await hidePresence(members.map((m) => key(m.sessionId)), true);
-  emitHandoffPhase("user");
 
   for (const m of members) void suppressCursorStatus(key(m.sessionId));
   const requestId = remoteRequestId ?? nextControlRequestId("takeover");
@@ -1939,6 +1939,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
     if (pending?.action === "takeover" && pending.pageTabId == null) gate.commitTakeover(result.generation);
     emitLocalStatus("user");
+    emitHandoffPhase("user");
     emitNotice("已接管。助手没有连接，不会再改页面。");
   }
 }

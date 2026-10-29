@@ -25,7 +25,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
-import { startScriptedModel } from "./scripted-model.mts";
+import { recheckProbe, reverifyContinue, startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
 
@@ -117,15 +117,24 @@ const verdicts: Array<{ holdMs: number; probe: "VERDICT-CONTINUE" | "VERDICT-CON
 
 const checks: Array<{ probe: string; receivedAt: number; releasedAt: number }> = [];
 
+/** 最近一次首轮核对给的结论：复核照它再判。 */
+let lastFirst: "VERDICT-CONTINUE" | "VERDICT-CONTINUE-BARE" | "VERDICT-DONE" = "VERDICT-DONE";
+
 const proxy = createServer(async (req, res) => {
   let body = "";
 
   req.setEncoding('utf8'); for await (const chunk of req) body += chunk;
   let forward = body;
 
-  if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
+  const again = req.method === "POST" && body.includes(GOAL_CHECK_PREFIX) ? reverifyContinue(body) : null;
+
+  if (again) {
+    // 复核：照首轮结论再判一次，判继续时带上复核读数里的原文。
+    forward = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), messages: [{ role: "user", content: recheckProbe(lastFirst, again) }] });
+  } else if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
     const receivedAt = Date.now();
     const next = verdicts.shift() ?? { holdMs: 0, probe: "VERDICT-DONE" as const };
+    lastFirst = next.probe;
     await sleep(next.holdMs);
 
     // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。

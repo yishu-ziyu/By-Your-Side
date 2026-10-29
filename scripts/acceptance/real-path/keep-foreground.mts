@@ -190,15 +190,17 @@ try {
   part = "d";
   await rp.cdp.send("Page.bringToFront", {}, user);
   await ask(ASK.d);
-  await until(async () => await rp.evaluate(panel, '!!document.querySelector(".handoff-card") && document.querySelector("#takeover-btn")?.dataset.mode === "handback"'), 45_000, "侧栏出现「需要你来这一步」且页面归用户");
+  await until(async () => await rp.evaluate(panel, 'document.querySelector(".handoff-card .btn-primary")?.disabled === false && document.querySelector("#takeover-btn")?.dataset.mode === "handback"'), 45_000, "侧栏出现「需要你来这一步」且页面归用户");
   await Promise.all(pending);
   const atHandoff = await sample("交给用户");
   samples.push(atHandoff);
   const dSwitch = samples.find(s => s.part === "d" && s.after === "tabs 结果");
   check("d 助手切回表单页后活动页仍是「我的页面」；交给用户时表单页已是活动标签", dSwitch?.activeId === userId && atHandoff.activeId === formId, { afterSwitch: dSwitch as unknown as Json, atHandoff: atHandoff as unknown as Json, formId });
   await rp.screenshot(work, join(out, "d-handoff.png"));
+  await rp.screenshot(panel, join(out, "d-handoff-panel.png"));
   await rp.click(panel, ".handoff-card .btn-primary");
   await answered(FINAL.d);
+  await rp.screenshot(panel, join(out, "d-handback-panel.png"));
 
   // ── c：点 target=_blank 的链接：跟到新页，并把用户的页放回前台 ──
   part = "c";

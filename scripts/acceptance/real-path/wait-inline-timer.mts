@@ -4,11 +4,11 @@
  * 脚本模型：空会话 → 首字前挂 16 秒 → 回答；新会话里一步之后再想 5 秒；先送思考摘要、19 秒后才出正文；
  * 核对判「没做完」后接着做的那一轮挂 20 秒；再一问一直回 500。
  *   a) 空会话看得到起点建议，没有过程行。
- *   b) 首字前 3 秒：第一行是「正在思考」加「N 秒」，没有「已等」、没有间隔点、标题不扫光、没有百分号。
- *   c) 满 15 秒没回音：标题改成「还没有回音」，秒数继续数，仍不扫光、不写百分号。
+ *   b) 首字前 3 秒：第一行是「正在：思考」加「N 秒」，没有「已等」、没有间隔点、标题不扫光、没有百分号。
+ *   c) 超过 10 秒还没出字：标题改成「仍在处理」，秒数写「已 N 秒」继续数，仍不扫光、不写百分号。
  *   d) 一步之后的长思考：只报这段秒数，不写百分号，标题不是「还没有回音」。
  *   e) 模型出错时错误卡看得到。
- *   f) 思考摘要已经流进来、16 秒还没出正文：标题仍是「正在思考」，不换成「还没有回音」。
+ *   f) 思考摘要已经流进来、16 秒还没出正文：标题是「正在：思考」或「仍在处理」，不是没有回应的说法。
  *   g) 核对后接着做、16 秒还没回音：标题仍是「还没做完，接着做」，不被「还没有回音」盖掉。
  * 失败方式：仍写「已等」、标题还在扫光、超时标题不变、长步骤出现 %、空会话或错误卡没了、思考或重试时标题被换掉。
  */
@@ -16,7 +16,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, type Json } from "./harness.mts";
-import { startScriptedModel } from "./scripted-model.mts";
+import { recheckProbe, reverifyContinue, startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
 
@@ -55,6 +55,7 @@ const model = await startScriptedModel([
 // 目标核对经这里改写成脚本结论：只有 ASK_CONT 的第一次核对判「没做完」，其余都判做完。
 const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished the user's goal";
 let continued = false;
+let lastVerdict = "GOAL-CHECK-DONE";
 const modelOrigin = new URL(model.baseUrl).origin;
 const relay = createServer(async (req, res) => {
   try {
@@ -62,7 +63,10 @@ const relay = createServer(async (req, res) => {
     for await (const part of req) parts.push(part as Buffer);
     let body = Buffer.concat(parts).toString("utf8");
     if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
-      const verdict = !continued && body.includes(ASK_CONT) ? "GOAL-CHECK-CONTINUE" : "GOAL-CHECK-DONE";
+      // 复核照首轮结论再判一次，带上复核读数里的原文。
+      const again = reverifyContinue(body);
+      const verdict = again ? recheckProbe(lastVerdict, again) : !continued && body.includes(ASK_CONT) ? "GOAL-CHECK-CONTINUE" : "GOAL-CHECK-DONE";
+      if (!again) lastVerdict = verdict;
       if (verdict === "GOAL-CHECK-CONTINUE") continued = true;
       // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
       body = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), messages: [{ role: "user", content: verdict }] });
@@ -125,7 +129,7 @@ try {
   };
 
   const liveOk = (r: Read) => {
-    const secs = Number(/^(\d+) 秒$/.exec(r.time)?.[1] ?? NaN);
+    const secs = Number(/^(?:已 )?(\d+) 秒$/.exec(r.time)?.[1] ?? NaN);
     const noDot = r.before === "none" || r.before === "normal" || r.before === '""' || r.before === "";
     const noShine = r.shine === "none" || r.shine === "" || !r.shine.includes("runShine");
     return { secs, noDot, noShine, noWaitWord: !r.time.includes("已等") && !r.all.includes("已等"), noPct: !r.title.includes("%") && !r.time.includes("%") && !/%/.test(r.all) };
@@ -138,13 +142,13 @@ try {
   const waiting = await read();
   await rp.screenshot(panel, join(out, "waiting.png"));
   const waitLive = liveOk(waiting);
-  check("b 首字前是「正在思考 N 秒」，没有已等、间隔点和扫光", waiting.title === "正在思考" && waitLive.secs >= 3 && waitLive.noWaitWord && waitLive.noDot && waitLive.noShine && waitLive.noPct, { title: waiting.title, time: waiting.time, before: waiting.before, shine: waiting.shine, secs: waitLive.secs });
+  check("b 首字前是「正在：思考」加「N 秒」，没有已等、间隔点和扫光", waiting.title === "正在：思考" && waitLive.secs >= 3 && waitLive.noWaitWord && waitLive.noDot && waitLive.noShine && waitLive.noPct, { title: waiting.title, time: waiting.time, before: waiting.before, shine: waiting.shine, secs: waitLive.secs });
 
-  await until(async () => { const r = await read(); return r.title === "还没有回音" || shownSecs(r) >= 16 ? true : undefined; }, 18_000, "首字前等满 15 秒", 100);
+  await until(async () => { const r = await read(); return shownSecs(r) >= 16 ? true : undefined; }, 18_000, "首字前等满 15 秒", 100);
   const stale = await read();
   await rp.screenshot(panel, join(out, "timeout.png"));
   const staleLive = liveOk(stale);
-  check("c 满 15 秒标题改成「还没有回音」，秒数继续数", stale.title === "还没有回音" && staleLive.secs >= 15 && staleLive.noWaitWord && staleLive.noDot && staleLive.noShine && staleLive.noPct, { title: stale.title, time: stale.time, shine: stale.shine, secs: staleLive.secs });
+  check("c 超过 10 秒标题改成「仍在处理」，秒数继续数", stale.title === "仍在处理" && staleLive.secs >= 15 && staleLive.noWaitWord && staleLive.noDot && staleLive.noShine && staleLive.noPct, { title: stale.title, time: stale.time, shine: stale.shine, secs: staleLive.secs });
 
   await rp.click(panel, "#conversation-new");
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#input")?.value === "" && document.querySelector("#send-btn")?.disabled===false'), 15_000, "新会话");
@@ -173,7 +177,7 @@ try {
   await rp.screenshot(panel, join(out, "thinking-long.png"));
   const spine = await rp.evaluate(panel, '(()=>{const t=[...document.querySelectorAll("#messages details.thinking")].at(-1);return t?getComputedStyle(t,"::before").content:null})()');
   check("f 思考块左侧没有竖线", spine === "none", spine);
-  check("f 思考摘要在流、16 秒没出正文：标题仍是「正在思考」", thinkingLong.title === "正在思考" && thinkingLong.thinking && !thinkingLong.all.includes(ANSWER_THINK), { title: thinkingLong.title, time: thinkingLong.time, thinking: thinkingLong.thinking });
+  check("f 思考摘要在流、16 秒没出正文：标题是在做事的说法，不是没有回应", ["正在：思考", "仍在处理"].includes(thinkingLong.title) && thinkingLong.thinking && !thinkingLong.all.includes(ANSWER_THINK), { title: thinkingLong.title, time: thinkingLong.time, thinking: thinkingLong.thinking });
   await until(async () => (await read()).all.includes(ANSWER_THINK) ? true : undefined, 15_000, "思考之后的回答", 100);
 
   await fresh("接着做用的新会话");
