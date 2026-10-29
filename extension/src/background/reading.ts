@@ -1,11 +1,14 @@
 import { answerMarkdown } from '../../../shared/answer-cards.js';
 import type { PageContext } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
-import { isReadingTranscript, isReadingTurnSource, READING_ANSWER_LIMIT, READING_ROUTE_SELECTION_LIMIT, READING_TURN_LIMIT, type ReadingEvent, type ReadingRoute, type ReadingRouteResult, type ReadingSource, type ReadingTurnSource } from '../../../shared/reading.js';
+import { isReadingTranslation, isReadingTranscript, isReadingTurnSource, READING_ANSWER_LIMIT, READING_ROUTE_SELECTION_LIMIT, READING_TURN_LIMIT, type ReadingEvent, type ReadingRoute, type ReadingRouteResult, type ReadingSource, type ReadingTurnSource } from '../../../shared/reading.js';
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import type { PttVoice } from './ptt-capsule.js';
 import { READING_VOICE, type ReadingVoiceMessage } from '../shared/ptt.js';
+
+import { TraceRecorder } from '../../../shared/run-trace-core.js';
+import { createTraceSink } from '../shared/trace-store.js';
 
 const STORE = 'readingRecords';
 
@@ -69,6 +72,22 @@ type Dependencies = {
 /** One document owns each record. No per-conversation listeners or shared output tab. */
 export function installReading(deps: Dependencies) {
   const records = new Map<string, ReadingRecord>();
+  const diagnostics = new Map<string, { requestId: string; trace: TraceRecorder; terminal: string; displayed: boolean }>();
+  const beginDiagnostic = (record: ReadingRecord) => {
+    if (!record.requestId) return;
+    const trace = new TraceRecorder(createTraceSink);
+    trace.setRun(record.requestId);
+    diagnostics.set(record.threadId, { requestId: record.requestId, trace, terminal: '', displayed: false });
+    trace.record('reading_start', { requestId: record.requestId, threadId: record.threadId, transcript: record });
+  };
+  const finishDiagnostic = (record: ReadingRecord) => {
+    const diagnostic = diagnostics.get(record.threadId), turn = record.turns.at(-1);
+    if (!diagnostic || diagnostic.requestId !== record.requestId || !turn || readingBusy(record)) return;
+    const key = JSON.stringify(turn);
+    if (diagnostic.terminal === key) return;
+    diagnostic.terminal = key;
+    diagnostic.trace.record('reading_result', { requestId: record.requestId, threadId: record.threadId, turn });
+  };
   let opening = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const routes = new Map<string, (route: ReadingRoute) => void>();
@@ -115,10 +134,12 @@ export function installReading(deps: Dependencies) {
     const previousTurns = retry ? record.turns.slice(0, -1) : record.turns;
     const given = raw.source && typeof raw.source === 'object' ? raw.source as Record<string, unknown> : undefined;
     const pointed = given && typeof given.text === 'string' && typeof given.surrounding === 'string'
-      ? {text: given.text, surrounding: given.surrounding, ...(typeof given.location === 'string' ? {location: given.location} : {})} : retry ? last.source : undefined;
+      ? {text: given.text, surrounding: given.surrounding, ...(typeof given.truncated === 'boolean' ? {truncated: given.truncated} : {}), ...(typeof given.location === 'string' ? {location: given.location} : {})} : retry ? last.source : undefined;
 
     if (pointed && !isReadingTurnSource(pointed)) throw new Error('选中的文字太长，或读不出来。');
     const turnSource: ReadingTurnSource | undefined = pointed;
+    const source = pointed ?? [...previousTurns].reverse().find(turn => turn.source)?.source ?? record.source;
+    if (isReadingTranslation(question) && source.truncated) throw new Error('选中的文字太长，无法完整翻译。请缩小选区后重试。');
 
     if (previousTurns.length >= READING_TURN_LIMIT) throw new Error('这段问答太长了。点「在侧栏继续」。');
     const depth = raw.depth === 'deep' ? 'deep' as const : 'fast' as const;
@@ -297,6 +318,7 @@ export function installReading(deps: Dependencies) {
 
   const publish = (record: ReadingRecord) => {
     record.updatedAt = Date.now();
+    finishDiagnostic(record);
     persist();
     toPage(record, {type: 'reading_update', record});
   };
@@ -309,6 +331,7 @@ export function installReading(deps: Dependencies) {
     else if (record.agentConversationId && runs.delete(record.agentConversationId)) deps.stopTask(record.agentConversationId);
     turn.state = 'stopped';
     turn.step = undefined;
+    finishDiagnostic(record);
     hush(record.threadId);
 
     if (announce) publish(record);
@@ -351,6 +374,7 @@ export function installReading(deps: Dependencies) {
 
             if (!oldest) throw new Error('打开的阅读卡太多了。先关掉一张。');
             records.delete(oldest.threadId);
+            diagnostics.delete(oldest.threadId);
           }
 
           record = {threadId: crypto.randomUUID(), source, turns: [], documentKey: documentKey(sender), modelConversationId: deps.selected(), updatedAt: Date.now()};
@@ -369,6 +393,17 @@ export function installReading(deps: Dependencies) {
 
  return {ok: true, record}; }
 
+      if (raw.type === 'reading_rendered') {
+        const diagnostic = diagnostics.get(record.threadId);
+        if (diagnostic && diagnostic.requestId === raw.requestId && !diagnostic.displayed && !readingBusy(record)
+          && typeof raw.text === 'string' && raw.text.length <= READING_ANSWER_LIMIT * 2) {
+          diagnostic.displayed = true;
+          diagnostic.trace.record('reading_display', { requestId: raw.requestId, threadId: record.threadId, text: raw.text });
+          await diagnostic.trace.flush();
+        }
+        return {ok: true};
+      }
+
       if (raw.type === 'reading_send') {
         const composed = compose(record, raw);
         const {turn, retry, last, busy, spoken} = composed;
@@ -380,6 +415,7 @@ export function installReading(deps: Dependencies) {
 
         if (adopted) { clearTimeout(adopted.timer); prefetched = null; notePrefetch('adopted', {ms: Date.now() - adopted.at, chars: adopted.latest?.text.length ?? 0}); } else cancelPrefetch(prefetched ? 'mismatch' : 'none');
         record.requestId = adopted?.requestId ?? crypto.randomUUID();
+        beginDiagnostic(record);
         hush();
 
         if (spoken) speaking = {threadId: record.threadId, requestId: record.requestId, said: 0, busy: false};
@@ -391,6 +427,7 @@ export function installReading(deps: Dependencies) {
         publish(record);
 
         if (adopted?.latest) apply(record, adopted.latest);
+        await diagnostics.get(record.threadId)?.trace.flush();
 
         return {ok: true, record};
       }
@@ -432,7 +469,7 @@ export function installReading(deps: Dependencies) {
   });
 
   const dropTab = (tabId: number) => {
-    void ready.then(() => { for (const [key, r] of records) if (r.source.tabId === tabId) {if (!agentTurn(r)) stop(r); records.delete(key);}
+    void ready.then(() => { for (const [key, r] of records) if (r.source.tabId === tabId) {if (!agentTurn(r)) stop(r); records.delete(key); diagnostics.delete(key);}
 
  persist(); });
   };

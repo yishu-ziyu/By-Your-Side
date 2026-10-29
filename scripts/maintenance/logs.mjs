@@ -3,6 +3,7 @@
  * 找加载了本仓库 extension/dist 的浏览器配置，复制它的 IndexedDB 到临时目录再解码（不打开正在用的文件），
  * 只读 sideagent-diagnostics 库。本机记录保留原文（凭据除外），所以这里的输出不脱敏，只留在本机 out/。
  *
+ *   npm run logs -- --reading --match "原文片段"   划词原文、请求、回答与显示记录
  *   npm run logs                              记录里的全部运行，一行一个
  *   npm run logs -- --since today             只看今天（也可以给 ISO 时间）
  *   npm run logs -- --run 4f08c043            这次运行的步骤时间线
@@ -32,6 +33,8 @@ const args = process.argv.slice(2);
 const option = (name) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
 const sinceArg = option("--since");
 const runPrefix = option("--run");
+const readingOnly = args.includes("--reading");
+const matchText = option("--match");
 let since = null;
 if (sinceArg === "today") { since = new Date(); since.setHours(0, 0, 0, 0); }
 else if (sinceArg) { since = new Date(sinceArg); if (Number.isNaN(since.getTime())) fail(`--since 看不懂：${sinceArg}`); }
@@ -40,8 +43,9 @@ function fail(message) { console.error(message); process.exit(1); }
 
 const voiceFile = option("--file");
 if (voiceFile) {
-  if (!args.includes("--voice")) fail("--file 只和 --voice 一起用。");
+  if (!args.includes("--voice") && !readingOnly) fail("--file 要和 --voice 或 --reading 一起用。");
   const lines = readFileSync(voiceFile, "utf8").split("\n").filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
+  if (readingOnly) { printReading(lines); process.exit(0); }
   voiceTimings(lines.filter((e) => !since || new Date(e.at) >= since));
   process.exit(0);
 }
@@ -298,6 +302,21 @@ function voiceTimings(lines) {
   if (!any) console.log("这段时间没有带分段计时的语音轮次（要用加了计时的扩展说过话才有）。");
 }
 
+function printReading(events) {
+  const reading = events.filter(e => e.type?.startsWith('reading_') && (!since || new Date(e.time) >= since));
+  const ids = new Set(reading.filter(e => (!runPrefix || e.data?.requestId?.startsWith(runPrefix)) && (!matchText || JSON.stringify(e.data).includes(matchText))).map(e => e.data?.requestId).filter(Boolean));
+  if (!ids.size) console.log('没有匹配的划词记录。');
+  for (const id of ids) {
+    console.log(`\n划词 ${id}`);
+    const rows = reading.filter(e => e.data?.requestId === id).sort((a,b) => a.time.localeCompare(b.time));
+    for (const e of rows) console.log(`${e.time}  ${e.type}\n${JSON.stringify(e.data, null, 2)}`);
+    if (!rows.some(e => e.type === 'reading_result')) console.log('缺少结束记录：结果无法判断。');
+    if (!rows.some(e => e.type === 'reading_display')) console.log('缺少显示记录：是否显示给用户无法判断。');
+  }
+}
+
+if (readingOnly) { printReading(traces); process.exit(0); }
+
 if (!runPrefix) {
   const seen = new Set();
   // 用户在上一件事没做完时接着说的话，会接回原任务（restart_resume）：开始记录里写的是原任务的话，不是这次说的话，所以单独标出来。
@@ -312,7 +331,10 @@ if (!runPrefix) {
     const tags = [continued.has(e.runId) ? "接着原任务" : "", steers.get(e.runId) ? `中途插话 ${steers.get(e.runId)} 次` : "", reactions.get(e.runId) ? `侧栏操作 ${reactions.get(e.runId)} 次` : ""].filter(Boolean).join("，");
     console.log(`${local(e.time)}  ${modelName(e.data?.model)}  ${tags ? `[${tags}] ` : ""}${oneLine(e.data?.text, 60)}  ${e.runId}`);
   }
-  if (!seen.size) console.log("这段时间没有运行。");
+  const reading = traces.filter(e => e.type === 'reading_start');
+  for (const e of reading) console.log(`${local(e.time)}  划词  ${oneLine(e.data?.transcript?.turns?.at(-1)?.question, 60)}  ${e.data?.requestId}`);
+  if (reading.length) console.log('查看划词详情：npm run logs -- --reading --match "原文片段"');
+  if (!seen.size && !reading.length) console.log("这段时间没有运行。");
   process.exit(0);
 }
 

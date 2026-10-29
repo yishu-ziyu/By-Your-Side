@@ -13,7 +13,7 @@ import { extensionAlive } from "./alive.js";
 import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
-import { READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
+import { READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
@@ -97,7 +97,7 @@ const LENS_GAP = 6;
 
 /** 「更多」里的常用提问；钉上的出现在工具条上。存的是 id，改文案不丢已钉的。 */
 const PROMPTS = [
-  { id: 'translate', label: '翻译', question: '把这段翻译成中文；本来就是中文就翻成英文。' },
+  { id: 'translate', label: '翻译', question: READING_TRANSLATE_QUESTION },
   { id: 'define', label: '定义', question: '这段里的关键词是什么意思？' },
   { id: 'example', label: '举个例子', question: '举个例子' },
   { id: 'why', label: '为什么重要', question: '这段话为什么重要？' },
@@ -755,6 +755,8 @@ function boot(): void {
     position();
   }
 
+  let renderedReceipt = '';
+
   function update(next: ReadingRecord): void {
     if (record?.threadId === next.threadId && record.updatedAt > next.updatedAt) {
       return;
@@ -771,6 +773,12 @@ function boot(): void {
 
     if (expanded) {
       render();
+      const turn = next.turns.at(-1);
+      const key = `${next.requestId}:${turn?.state}:${turn?.answer}`;
+      if (turn && next.requestId && !readingBusy(next) && key !== renderedReceipt) {
+        renderedReceipt = key;
+        void rpc('reading_rendered', { requestId: next.requestId, text: answers.at(-1)?.node.innerText ?? '' }).catch(() => { renderedReceipt = ''; });
+      }
     }
   }
 
@@ -1419,11 +1427,11 @@ function boot(): void {
   }
 
   /** 打字问：卡开着时新选了一段，问的就是那一段，接在同一张卡里。 */
-  function typed(question: string): Promise<void> {
+  function typed(question: string, depth: 'fast' | 'deep' = typedDepth): Promise<void> {
     const next = candidate;
 
-    if (!next || !question.trim()) return send(question, false, readingBusy(record), typedDepth);
-    return send(question, false, readingBusy(record), typedDepth, false, next.source, () => {
+    if (!next || !question.trim()) return send(question, false, readingBusy(record), depth);
+    return send(question, false, readingBusy(record), depth, false, next.source, () => {
       if (candidate === next) candidate = null;
       snapshot = next;
       side = null;
@@ -1476,7 +1484,7 @@ function boot(): void {
 
         // 从工具条或菜单点的：卡还没展开就先在原地展开，和「解释」一样。
         if (!expanded) await openReading();
-        await send(quick);
+        await typed(quick, 'fast');
       }
       else if (action === 'ask') {
         await openReading();
@@ -1484,7 +1492,7 @@ function boot(): void {
       else if (action === 'explain') {
         const opened = openReading();
         await opened;
-        await send(EXPLAIN_PROMPT);
+        await typed(EXPLAIN_PROMPT, 'fast');
       }
       else if (action === 'more') {
         if (menu.hidden) openMenu();
