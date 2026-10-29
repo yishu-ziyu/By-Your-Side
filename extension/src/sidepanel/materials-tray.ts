@@ -354,7 +354,8 @@ export class MaterialsTray {
     this.root.replaceChildren(...(draft ? [shell] : []));
     const delivery = this.delivery();
 
-    if (delivery) {
+    // The "另开会话" card in the conversation already states this rejection and offers the choice.
+    if (delivery && !(delivery.receipt?.status === "rejected" && delivery.receipt.newConversationRequest)) {
       const receipt = delivery.receipt;
       const state = receipt?.status ?? "sending";
       const line = document.createElement("div");
