@@ -582,6 +582,15 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     await cdp.ready();
     await loadExtension(cdp);
     await openBackgroundWindow(cdp);
+    const setup = browserControls(cdp, id);
+    const target = (await cdp.send("Target.createTarget", { url: "chrome://extensions/", background: true })).targetId;
+    try {
+      const page = await setup.attach(target);
+      await until(async () => await setup.evaluate(page, "!!globalThis.chrome?.developerPrivate") || undefined, 10_000, "隔离浏览器的扩展管理页");
+      await setup.evaluate(page, "chrome.developerPrivate.updateProfileConfiguration({inDeveloperMode:true})");
+    } finally {
+      await cdp.send("Target.closeTarget", { targetId: target }).catch(() => {});
+    }
   } catch (error) {
     chrome.kill("SIGKILL");
     tempDir.release();

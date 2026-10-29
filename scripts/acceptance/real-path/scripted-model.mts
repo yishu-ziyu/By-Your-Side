@@ -140,7 +140,7 @@ const THROTTLE_BODY = JSON.stringify({ error: { type: "permission_error", messag
 const OVERFLOW_BODY = JSON.stringify({ error: { message: "This model's maximum context length is 8192 tokens. However, your messages resulted in 9000 tokens.", type: "invalid_request_error", code: "context_length_exceeded" } });
 
 /** overflow：主任务请求的原文让它返回 true 时，回超窗口错误（模拟上下文窗口满了）。 */
-export async function startScriptedModel(rules: Rule[], translate?: TranslateOptions, inspect?: (payload: { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] }) => void, overflow?: (raw: string) => boolean) {
+export async function startScriptedModel(rules: Rule[], translate?: TranslateOptions, inspect?: (payload: { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] }) => void | Promise<void>, overflow?: (raw: string) => boolean) {
   const origin = Date.now();
   const requests: ModelRequest[] = [];
   let calls = 0;
@@ -165,7 +165,7 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
     const raw = await body(req);
     const payload = JSON.parse(raw) as { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] };
     const messages = payload.messages ?? [];
-    inspect?.(payload);
+    await inspect?.(payload);
 
     if (overflow && payload.tools?.length && overflow(raw)) {
       requests.push({ atMs: Date.now() - origin, rule: "overflow", step: 0, status: 400, tools: true });
