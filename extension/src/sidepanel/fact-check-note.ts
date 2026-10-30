@@ -1,5 +1,5 @@
 /**
- * 交付后的事实核对（agent/src/fact-check.ts）挂在被核对的那条回答下面：只在有对不上的地方时出现，都对得上就不出声。
+ * 交付后的事实核对（agent/src/fact-check.ts）先由助手自己改正回答；改过仍对不上才挂在那条回答下面，都对得上就不出声。
  * 按回答开头找那一条，找不到（回答已被续做换掉）就不画：挂到别的回答下会让人以为说的是那一条。
  */
 const squash = (text: string) => text.replace(/[\s*_`#>|]/g, "");
@@ -27,7 +27,7 @@ export function renderFactCheck(event: { answer: string; problems: string[] }, m
   note.setAttribute("role", "note");
   const title = document.createElement("div");
   title.className = "fact-check-title";
-  title.textContent = `请核对 ${event.problems.length} 处`;
+  title.textContent = `对照网页，有 ${event.problems.length} 处对不上`;
   const list = document.createElement("ul");
 
   for (const problem of event.problems) {
