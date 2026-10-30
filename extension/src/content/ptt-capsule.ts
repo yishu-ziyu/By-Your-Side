@@ -1,5 +1,7 @@
 import type { OrbState } from '../shared/voice-orb.js';
 import { mountVoiceOrb } from '../shared/orb-style.js';
+import { syncColorTone } from '../shared/color-tone.js';
+import { PAPER_TOKENS } from './ask-styles.js';
 import { EDGE_PILL_OPEN } from '../shared/edge-pill.js';
 import { OVERLAY_ATTR, OVERLAY_KIND_PTT_CAPSULE } from '../shared/overlay.js';
 import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttCapsuleAction } from '../shared/ptt.js';
@@ -21,47 +23,47 @@ const WORD: Record<PttCapsule['phase'], string> = { listening: '在听', transcr
 
 const ORB_STATE: Record<PttCapsule['phase'], OrbState> = { listening: 'listening', transcribing: 'thinking', doing: 'thinking', waiting: 'idle', done: 'idle', stopped: 'idle', failed: 'error' };
 
-const STYLE = `
-:host{all:initial}
+// 和划词卡同一种纸：黑色块压在白网页上太突兀。
+const STYLE = `${PAPER_TOKENS}
 .wrap{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;
-  max-width:min(560px,calc(100vw - 32px));color:#fff;font:13px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+  max-width:min(560px,calc(100vw - 32px));color:var(--ink-fg);font:13px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
   z-index:2147483647;animation:in .22s cubic-bezier(.23,1,.32,1)}
 @keyframes in{from{opacity:0;transform:translate(-50%,8px) scale(.97)}}
-.cap,.card{box-sizing:border-box;background:rgba(24,24,22,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.12)}
-.cap{display:flex;align-items:center;gap:12px;min-width:300px;padding:9px 12px 9px 9px;border-radius:24px;box-shadow:0 18px 48px rgba(0,0,0,.34)}
+.cap,.card{box-sizing:border-box;background:var(--ink);box-shadow:var(--shadow)}
+.cap{display:flex;align-items:center;gap:12px;min-width:300px;padding:9px 12px 9px 9px;border-radius:24px}
 /* 卡片不撑宽：宽度跟着胶囊走。 */
-.card{width:0;min-width:100%;max-height:220px;overflow:hidden;padding:12px 14px;border-radius:18px;box-shadow:0 12px 32px rgba(0,0,0,.26);
+.card{width:0;min-width:100%;max-height:220px;overflow:hidden;padding:12px 14px;border-radius:18px;
   display:flex;flex-direction:column;gap:6px;animation:grow .22s cubic-bezier(.23,1,.32,1)}
 @keyframes grow{from{opacity:0;transform:translateY(6px)}}
 .card .title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rows{display:flex;flex-direction:column;gap:2px;margin:0 -6px}
-.row{display:flex;gap:10px;align-items:baseline;min-width:0;padding:3px 6px;border-radius:8px;color:rgba(255,255,255,.86)}
-.row.tagged{background:rgba(255,255,255,.1);color:#fff}
+.row{display:flex;gap:10px;align-items:baseline;min-width:0;padding:3px 6px;border-radius:8px;color:var(--ink-fg-2)}
+.row.tagged{background:var(--ink-raised);color:var(--ink-fg)}
 .row .label{flex:0 1 auto;max-width:55%;min-width:0;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .row.solo .label{flex:1;max-width:none}
 .row .tag{flex:none;font-size:11px;font-weight:600;color:#141413;background:#f2c27b;border-radius:99px;padding:0 6px}
 .row .value{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
-.card .more{font-size:12px;color:rgba(255,255,255,.58)}
+.card .more{font-size:12px;color:var(--ink-mute)}
 canvas{width:36px;height:36px;flex:none}
 .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .line{display:flex;gap:8px;align-items:baseline;min-width:0}
 .word{font-weight:600;flex:none}
-.detail{color:rgba(255,255,255,.86);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.detail{color:var(--ink-fg-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cap[data-phase=done] .detail,.cap[data-phase=waiting] .detail,.cap[data-phase=failed] .detail{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .heard,.left{font-size:12px;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.heard{color:rgba(255,255,255,.58)}
-.left{color:rgba(255,255,255,.86)}
-.left b{color:#f2c27b;font-weight:600}
+.heard{color:var(--ink-mute)}
+.left{color:var(--ink-fg-2)}
+.left b{color:var(--pen);font-weight:600}
 .bars{display:flex;gap:3px;align-items:center;height:26px}
-.bars i{width:3px;height:3px;border-radius:2px;background:rgba(255,255,255,.88);transition:height 90ms linear}
-.side{display:flex;gap:6px;align-items:center;flex:none;color:rgba(255,255,255,.5);font-size:12px;white-space:nowrap}
-kbd{border:1px solid rgba(255,255,255,.28);border-radius:5px;padding:0 5px;font:inherit;color:rgba(255,255,255,.8)}
-button{all:unset;box-sizing:border-box;padding:5px 11px;border-radius:99px;background:rgba(255,255,255,.14);color:#fff;font-weight:600;cursor:pointer}
-button:hover{background:rgba(255,255,255,.22)}
-button.primary{background:#fff;color:#141413}
-button.x{padding:4px 7px;background:transparent;color:rgba(255,255,255,.55);font-weight:400}
-button.x:hover{color:#fff;background:rgba(255,255,255,.1)}
-button:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
+.bars i{width:3px;height:3px;border-radius:2px;background:var(--ink-fg);transition:height 90ms linear}
+.side{display:flex;gap:6px;align-items:center;flex:none;color:var(--ink-mute);font-size:12px;white-space:nowrap}
+kbd{border:1px solid var(--ink-rule);border-radius:5px;padding:0 5px;font:inherit;color:var(--ink-fg-2)}
+button{all:unset;box-sizing:border-box;padding:5px 11px;border-radius:99px;background:var(--ink-raised);color:var(--ink-fg);font-weight:600;cursor:pointer}
+button:hover{background:var(--ink-hover)}
+button.primary{background:var(--pen);color:var(--on-pen)}
+button.x{padding:4px 7px;background:transparent;color:var(--ink-mute);font-weight:400}
+button.x:hover{color:var(--ink-fg);background:var(--ink-hover)}
+button:focus-visible{outline:2px solid var(--pen);outline-offset:2px}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){.wrap{animation:fade .2s ease-out}.card{animation:fade .2s ease-out}.bars i{transition:none}}
 @keyframes fade{from{opacity:0}}`;
@@ -75,6 +77,7 @@ export function createPttCapsule() {
   const host = document.createElement('div');
   host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_PTT_CAPSULE);
   host.style.cssText = 'all:initial;position:fixed;z-index:2147483647';
+  syncColorTone(host);
   const root = host.attachShadow({ mode: 'closed' });
   root.innerHTML = `<style>${STYLE}</style><div class="wrap"><div class="card" hidden><div class="title"></div><div class="rows"></div><div class="more"></div></div><div class="cap" role="status" aria-live="polite"><canvas aria-hidden="true"></canvas>
 <div class="bars" aria-hidden="true">${'<i></i>'.repeat(BARS)}</div>
