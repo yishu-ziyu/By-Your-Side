@@ -4,7 +4,7 @@
  * 网页只画出目标和去侧栏确认的提示；确认按钮只在扩展侧栏里。
  */
 import { OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM } from "../shared/overlay.js";
-import { isSendLabel } from "../shared/mark-actions.js";
+import { sendLabelKind } from "../shared/mark-actions.js";
 import { readCurrentDocument } from "./exec/page-readiness.js";
 import { bringForwardForUser } from "./foreground.js";
 import { SEND_ARM_MS, SEND_CONFIRM_PANEL_PORT } from "../relay.js";
@@ -212,13 +212,20 @@ function showSendConfirm(attr: string, kind: string, portName: string, label: st
 }
 
 /**
- * 按钮名以「发送 / Send」开头时，先在网页上问用户；用户点「发送」才返回 true，其余结局都抛「没执行」。
- * 名字不是发送的按钮直接返回 false，不多等一步。
+ * 发送类按钮（见 sendLabelKind）先在侧栏问用户；用户点「发送」才返回 true，其余结局都抛「没执行」。
+ * 名字不是发送的按钮、框里没字的「回复」直接返回 false，不多等一步。
  */
 export async function confirmSendIfNeeded(tabId: number, label: string, guard: SendGuard | undefined, readContent: () => Promise<string | SendDetails | undefined>): Promise<boolean> {
-  if (!guard || !isSendLabel(label)) return false;
+  const kind = sendLabelKind(label);
 
-  return confirmSend(tabId, label, guard, readContent);
+  if (!guard || !kind) return false;
+
+  if (kind === "send") return confirmSend(tabId, label, guard, readContent);
+  const read = await readContent().catch(() => undefined);
+
+  if (!(typeof read === "string" ? read : read?.content)) return false;
+
+  return confirmSend(tabId, label, guard, async () => read);
 }
 
 /** 脚本、回车、网络请求这些路径：调用方已经认定是在发东西，不再看按钮名，直接问同一个确认。 */

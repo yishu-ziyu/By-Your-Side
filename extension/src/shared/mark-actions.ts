@@ -57,11 +57,26 @@ function isDestructiveLabel(text: string): boolean {
   return false;
 }
 
-/** 只取上面危险词里的「发送 / Send」：点这类按钮前先停下问用户。 */
-export function isSendLabel(text: string): boolean {
+/**
+ * 把内容发给别人、发出去就收不回的按钮：点之前先停下问用户。
+ * send：发送、发布、发表、Post 这类，一点就发。reply：「回复」「评论」在很多网站上只是展开输入框，框里有字时才算发。
+ * 只认整个名字，「发布时间」这类排序、筛选按钮不算。不含「提交」：报名、填表都靠它，用户让提交就是授权提交。
+ * 页面里判回车时也用这一份（按 toString 传进页面函数），所以函数必须自包含。
+ */
+export function sendLabelKind(text: string): "send" | "reply" | null {
   const t = text.trim().replace(/\s+/g, " ");
 
-  return t.startsWith("发送") || /^send(\s|$)/i.test(t);
+  if (t.startsWith("发送") || /^send(\s|$)/i.test(t)) return "send";
+
+  if (/^(发布|发表|发帖)(评论|回复|动态|帖子|文章|微博)?$/.test(t) || /^(post|publish|tweet)( (it|now|comment|reply))?$/i.test(t)) return "send";
+
+  if (/^(回复|评论|reply|comment)$/i.test(t)) return "reply";
+
+  return null;
+}
+
+export function isSendLabel(text: string): boolean {
+  return sendLabelKind(text) !== null;
 }
 
 /**

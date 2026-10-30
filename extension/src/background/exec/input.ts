@@ -25,7 +25,7 @@ import { observedNodeRange, observedNodeRect } from "../observed-node-rect.js";
 import { refindDetachedRef } from "../ref-refind.js";
 import { cursorContext } from "../cursor-context.js";
 import { oneLine } from "../util.js";
-import { isPayLabel, isSendLabel, resolveImplicitMarkActions } from "../../shared/mark-actions.js";
+import { isPayLabel, isSendLabel, resolveImplicitMarkActions, sendLabelKind } from "../../shared/mark-actions.js";
 import { confirmSend, confirmSendIfNeeded, readRecipientInPage, recheckConfirmedSend, type SendDetails, type SendGuard } from "../send-confirm.js";
 import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
@@ -2731,17 +2731,17 @@ function keyWouldPayInPage(isPay: (text: string) => boolean, enter: boolean): st
 }
 
 /** 回车会不会把东西发出去：焦点在有字的多行输入框、可编辑区，或焦点所在表单里有「发送」按钮。序列化进页面，必须自包含。 */
-function enterWouldSendInPage(): { label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null; send: boolean } | null {
+function enterWouldSendInPage(kindOf: (text: string) => "send" | "reply" | null): { label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null; send: boolean } | null {
   let el = document.activeElement as HTMLElement | null;
   while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
   if (!el) return null;
   // 用户在确认框上点「发送」会把焦点带走：确认后按这个记号把焦点放回去再按回车。
   Object.defineProperty(window, "__sideagentEnterTarget", { value: el, configurable: true, enumerable: false });
-  const isSend = (t: string) => { const s = t.trim().replace(/\s+/g, " "); return s.startsWith("发送") || /^send(\s|$)/i.test(s); };
-  const scope = el.closest("form,[role=dialog],[role=form]") ?? el.parentElement?.parentElement?.parentElement ?? null;
-  const sendBtn = scope ? [...scope.querySelectorAll<HTMLElement>("button,[role=button],input[type=submit]")].find(b => isSend(b.getAttribute("aria-label") || b.innerText || (b as HTMLInputElement).value || "")) : undefined;
   const multi = el.tagName === "TEXTAREA" || el.isContentEditable;
   const content = ((el as HTMLTextAreaElement).value ?? el.innerText ?? "").replace(/\s+/g, " ").trim();
+  const isSend = (t: string) => { const kind = kindOf(t); return kind === "send" || (kind === "reply" && !!content); };
+  const scope = el.closest("form,[role=dialog],[role=form]") ?? el.parentElement?.parentElement?.parentElement ?? null;
+  const sendBtn = scope ? [...scope.querySelectorAll<HTMLElement>("button,[role=button],input[type=submit]")].find(b => isSend(b.getAttribute("aria-label") || b.innerText || (b as HTMLInputElement).value || "")) : undefined;
   const send = (multi && !!content) || (!!sendBtn && !!el.closest("form"));
   let r = (sendBtn ?? el).getBoundingClientRect();
   if (r.bottom < 0 || r.top > innerHeight) { (sendBtn ?? el).scrollIntoView({ block: "center" }); r = (sendBtn ?? el).getBoundingClientRect(); }
@@ -2777,7 +2777,7 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
 
   if (info && tab.id != null && info.key === "Enter" && !shift) {
     const tabId = tab.id;
-    const read = await sendCommand<{ result?: { value?: ReturnType<typeof enterWouldSendInPage> } }>(tabId, "Runtime.evaluate", { expression: `(${enterWouldSendInPage.toString()})()`, returnByValue: true }).catch(() => undefined);
+    const read = await sendCommand<{ result?: { value?: ReturnType<typeof enterWouldSendInPage> } }>(tabId, "Runtime.evaluate", { expression: `(${enterWouldSendInPage.toString()})(${sendLabelKind.toString()})`, returnByValue: true }).catch(() => undefined);
     const hit = read?.result?.value;
 
     if (hit?.send) {
