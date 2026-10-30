@@ -2206,7 +2206,7 @@ details.run-steps.done .chip.error { background: transparent; }
 #conversation-menu { position:absolute; top:40px; left:10px; right:10px; z-index:30; padding:6px; max-height:55vh; overflow:auto; background:var(--glass-surface-elevated); backdrop-filter:var(--glass-blur); border:1px solid var(--glass-border-subtle); border-radius: var(--r); box-shadow:var(--popover-shadow); animation: convMenuIn var(--d-tap) var(--e-enter); }
 #conversation-menu .conversation-menu-filter { display:block; width:100%; margin:0 0 6px; padding:7px 8px; border:1px solid var(--content-border); border-radius: var(--r-sm); background:var(--content-bg); color:var(--text-primary); font:inherit; font-size:var(--fs-meta); }
 #conversation-menu .conversation-menu-group { padding:8px 8px 4px; font-family:var(--mono); font-size:var(--fs-micro); letter-spacing:.08em; color:var(--text-tertiary); text-transform:uppercase; }
-#conversation-menu button { display:flex; align-items:center; gap:10px; width:100%; padding:11px 9px; border:0; border-radius:var(--r-tail); font:inherit; color:var(--text-primary); background:none; text-align:left; cursor:pointer; }
+#conversation-menu > button { display:flex; align-items:center; gap:10px; width:100%; padding:11px 9px; border:0; border-radius:var(--r-tail); font:inherit; color:var(--text-primary); background:none; text-align:left; cursor:pointer; }
 #conversation-menu .conversation-menu-mark { position:relative; flex:none; width:16px; text-align:center; font-size:var(--fs-meta); color:var(--text-secondary); }
 #conversation-menu .conversation-menu-mark[data-kind="waiting"] { color:var(--err); }
 #conversation-menu .conversation-menu-mark[data-kind="error"] { color:var(--err); }
@@ -2218,8 +2218,8 @@ details.run-steps.done .chip.error { background: transparent; }
 #conversation-menu .conversation-menu-meta { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:none; }
 #conversation-menu .conversation-menu-site { width:16px; height:16px; border-radius: var(--s-1); background:var(--content-subtle); color:var(--text-secondary); font-size: var(--fs-glyph); line-height:16px; text-align:center; }
 #conversation-menu .conversation-menu-updated { color:var(--text-tertiary); font-size:var(--fs-micro); white-space:nowrap; }
-#conversation-menu button small { color:var(--text-secondary); font-size:var(--fs-micro); white-space:nowrap; }
-#conversation-menu button:hover { background:var(--content-subtle-hover); }
+#conversation-menu > button small { color:var(--text-secondary); font-size:var(--fs-micro); white-space:nowrap; }
+#conversation-menu > button:hover { background:var(--content-subtle-hover); }
 #conversation-menu button[aria-checked=true] { background:var(--accent-soft); }
 #conversation-menu button.conversation-row-flash { animation: convRowFlash var(--d-state) var(--e-enter); }
 @keyframes convMenuIn { from { opacity: 0; } to { opacity: 1; } }
