@@ -421,8 +421,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
 
 /** 按住说话没成的那一行说明。 */
 function pttFailureText(reply: Extract<PttReply, { ok: false }>): string {
- // 按住说话认的是右 Alt（macOS 上叫右 ⌥）：只有 macOS 写符号。
- if (reply.reason === "empty") return `按住${/Mac/i.test(navigator.userAgent) ? "右 ⌥" : "右 Alt"}说话时，没有听到声音。再说一次。`;
+ if (reply.reason === "empty") return "按住说话时，没有听到声音。再说一次。";
 
  if (reply.reason === "timeout") return "听写超时了，再说一次试试。";
 

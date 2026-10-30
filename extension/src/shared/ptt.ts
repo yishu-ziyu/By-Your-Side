@@ -5,6 +5,28 @@
 import type { CardPreview } from "../../../shared/answer-cards.js";
 import type { DictationResult } from "../inproc/ptt-dictation.js";
 
+/** 按住说话用哪个键（KeyboardEvent.code，设置页写）；没存或存的不认识时按系统给默认。 */
+export const PTT_KEY = "ptt_key";
+
+/**
+ * 能当按住说话键的：单独按住不打字、打字时也很少单独按住。
+ * Shift、左 Ctrl、左 ⌘ 打字和快捷键里按住太久会误开麦，不收；右 Alt 在 AltGr 键盘上会打出字符，所以只在 Mac 上作默认。
+ */
+export const PTT_KEY_CHOICES: readonly string[] = ["AltRight", "ControlRight", "MetaRight", "AltLeft", ...Array.from({ length: 19 }, (_, i) => `F${i + 1}`)];
+
+const onMac = () => /Mac/i.test(navigator.userAgent);
+
+export const pttKeyOf = (stored: unknown): string =>
+  typeof stored === "string" && PTT_KEY_CHOICES.includes(stored) ? stored : onMac() ? "AltRight" : "ControlRight";
+
+/** 按键在这台电脑上的叫法：Mac 写符号，别的系统写字。 */
+export function pttKeyLabel(code: string): string {
+  const side = code.endsWith("Right") ? "右" : code.endsWith("Left") ? "左" : "";
+  const base = code.replace(/(Right|Left)$/, "");
+  const name = onMac() ? ({ Alt: "⌥", Control: "⌃", Meta: "⌘" } as Record<string, string>)[base] : ({ Alt: "Alt", Control: "Ctrl", Meta: "Win" } as Record<string, string>)[base];
+  return name ? `${side} ${name}` : code;
+}
+
 /** 网页脚本发给后台：按住开始、松开、取消。 */
 export interface PttPageMessage { type: "ptt"; phase: "start" | "stop" | "cancel" }
 
