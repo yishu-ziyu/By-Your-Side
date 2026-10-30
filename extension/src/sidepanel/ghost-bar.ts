@@ -63,7 +63,8 @@ export function createGhostBar(root: HTMLElement): GhostBar {
     timing.textContent = text;
     timing.classList.toggle('failed', !ok);
     timing.hidden = false;
-    timingTimer = setTimeout(() => { timing.hidden = true; }, TIMING_VISIBLE_MS);
+    // 失败的原因留到下一次操作替换它；成功的耗时看一眼就够，自己收起。
+    if (ok) timingTimer = setTimeout(() => { timing.hidden = true; }, TIMING_VISIBLE_MS);
   };
 
   const probe = async (current: number, retryEmpty: boolean) => {

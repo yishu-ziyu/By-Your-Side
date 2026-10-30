@@ -153,13 +153,19 @@ function linkifyCircleRefs(answer: HTMLElement): void {
       button.dataset.ref = String(n);
       button.textContent = String(n);
       button.title = `回到页面上的第 ${n} 圈`;
+      // 「原处已变化」一直留到这一圈再点能回去为止：自己消失的话，用户从网页回头就看不到原因。
       button.onclick = () => void revealCircle(refs.target, n).then((ok) => {
-        if (ok || button.nextElementSibling?.classList.contains("circle-ref-gone")) return;
+        const shown = button.nextElementSibling?.classList.contains("circle-ref-gone") ? button.nextElementSibling : null;
+
+        if (ok) { shown?.remove();
+
+ return; }
+
+        if (shown) return;
         const gone = document.createElement("span");
         gone.className = "circle-ref-gone";
         gone.textContent = "原处已变化";
         button.after(gone);
-        setTimeout(() => gone.remove(), 2400);
       });
       fragment.append(button);
     }
