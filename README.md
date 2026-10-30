@@ -3,7 +3,8 @@
   <h1>By Your Side</h1>
   <p><em>在你的 Chrome 里，陪你读网页，也替你动手。</em></p>
   <p>
-    <a href="docs/guides/getting-started.md">安装</a> ·
+    <a href="https://chromewebstore.google.com/detail/by-your-side/emmojfmjolcafmjicpdaeljfgmefacng">Chrome 商店安装</a> ·
+    <a href="docs/guides/getting-started.md">源码安装</a> ·
     <a href="docs/guides/usage.md">使用说明</a> ·
     <a href="docs/STATUS.md">当前状态</a>
   </p>
@@ -36,6 +37,10 @@
 ## 快速开始
 
 支持 Chrome 和其他基于 Chromium 的浏览器（Edge、Brave、Arc 等），Windows、macOS、Linux 都能装；Firefox、Safari 不支持。目前只在 macOS + Chrome 上完整测过。源码安装需要 Node.js 22.19 以上。
+
+**推荐安装商店版：**从 [Chrome 网上应用店](https://chromewebstore.google.com/detail/by-your-side/emmojfmjolcafmjicpdaeljfgmefacng)安装，打开侧栏后连接模型。Chrome 会自动检查并安装已发布的更新。商店版会汇集经过验证的改动发布；紧急修复可能单独发布，更新需经过商店审核。
+
+**源码安装开发版：**开发版更新更频繁，需要自行重新构建并在扩展程序页面重新加载：
 
 ```bash
 git clone https://github.com/yishu-ziyu/By-Your-Side.git
