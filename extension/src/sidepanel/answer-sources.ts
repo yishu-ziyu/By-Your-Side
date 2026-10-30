@@ -22,7 +22,7 @@ import { isPopout, targetWindowId } from "./target-window.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 import { USER_DELIVERY_SOURCE_MAX, type UserDeliverySourceRef } from "../../../shared/voice.js";
 import { sourceLabel } from "./delivery-presentation.js";
-import { captureCitationContext, citationValues, toast } from "./sonar-citations.js";
+import { captureCitationContext, citationValues, noteFailure, toast } from "./sonar-citations.js";
 import { answerPanelSection, refreshAnswerPanel, siteGlyph } from "./answer-actions.js";
 import { createElement as icon, ExternalLink } from "lucide";
 import { bindMotionIcon } from "./motion-icon.js";
@@ -105,12 +105,12 @@ async function pinpointClaim(tabId: number, url: string, claim: string): Promise
   return null;
 }
 
-async function openAnswerSource(source: UserDeliverySourceRef, claim: string | null): Promise<void> {
+async function openAnswerSource(from: Element, source: UserDeliverySourceRef, claim: string | null): Promise<void> {
   let opened: Awaited<ReturnType<typeof bringSourceTab>>;
 
   try { opened = await bringSourceTab(source.url); } catch { opened = null; }
 
-  if (!opened?.tab.id) { toast("来源页打不开");
+  if (!opened?.tab.id) { noteFailure(from, "来源页打不开");
 
  return; }
 
@@ -190,7 +190,7 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     // 没有标题时第三列已经是地址，右边不再重复一遍。
     if (!source.title?.trim()) { button.classList.add("untitled"); untitled.push({ key, text, where }); }
 
-    button.onclick = () => void openAnswerSource(source, null);
+    button.onclick = () => void openAnswerSource(button, source, null);
     item.append(button);
     list.append(item);
   }
@@ -225,7 +225,7 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
 
     if (!entry) continue;
     // 正文里指向已读页面的链接和它的角标做同一件事，不再一个开新标签、一个定位出处。
-    link.onclick = (ev) => { ev.preventDefault(); void openAnswerSource(entry.source, claimOf(link)); };
+    link.onclick = (ev) => { ev.preventDefault(); void openAnswerSource(link, entry.source, claimOf(link)); };
 
     // 站点图标长在链接文字前面，不在后面另挂胶囊；站名和标题放在悬停提示里。
     const glyph = siteGlyph(entry.source.url, entry.host);

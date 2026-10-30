@@ -3,7 +3,7 @@ import { isPopout, targetWindowId } from "./target-window.js";
 import { Check, createElement as icon, Ellipsis, Undo2 } from "lucide";
 import { WORKING_TABS_STORAGE_KEY, executionKey } from "../../../shared/protocol.js";
 import { imagePlaceholdersAsText } from "../shared/answer-html.js";
-import { toast } from "./sonar-citations.js";
+import { noteFailure } from "./sonar-citations.js";
 import { answerMarkdown } from "../../../shared/answer-cards.js";
 import { answerFillUndoOf as fillUndoOf, fillUndoLabel, isFillUndoPending, onFillUndoChange, requestFillUndo } from "./fill-undo.js";
 import { isShortened, visibleBody, visibleMarkdown } from "./answer-shorten.js";
@@ -162,11 +162,7 @@ const COPIED_MS = 1500;
 
 /** 动作没做成：在一排末尾看得见地写出来（复制成功时这一格只给读屏，这里要撤掉）。 */
 export function showFailed(answer: HTMLElement): void {
-  const feedback = answer.querySelector<HTMLElement>(".answer-action-feedback");
-
-  if (!feedback) return;
-  feedback.classList.remove("answer-feedback-sr");
-  feedback.textContent = "没做成";
+  noteFailure(answer, "没做成");
 }
 
 /** 复制成功：复制按钮原地变成画出来的对勾，1.5 秒后变回；主按钮不是复制时（比如还原）在一排末尾写一句，同样到时清掉。读屏都念“已复制”。 */
@@ -379,12 +375,18 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
 
   button.onclick = async () => {
     uiEvent("ui_answer_show_tab");
-    removeShowTab(button);
+    button.disabled = true;
     const now = await chrome.tabs.get(tabId).catch(() => null);
 
-    if (!now) { toast("那一页已经关掉了");
+    // 按钮留在原处写明关掉了：直接拿掉的话，用户回头只看到按钮没了，不知道发生过什么。
+    if (!now) {
+      button.replaceChildren(...button.querySelectorAll(".answer-source-glyph"), "那一页已关掉");
+      button.title = "那一页已经关掉了";
+      button.setAttribute("aria-label", "那一页已经关掉了");
 
- return; }
+      return;
+    }
+    removeShowTab(button);
 
     const targetWindow = await targetWindowId();
     await chrome.tabs.update(tabId, { active: true }).catch(() => undefined);

@@ -156,10 +156,12 @@ try {
   assert.ok(!/=\s*\d/.test(seen.cardText), `R2: no raw formula shown anywhere in the card: ${seen.cardText}`);
   assert.deepEqual(seen.buttons, [FOLLOW, "切到订阅页看", "切到已关掉的页"], "R3: buttons drawn");
 
-  // R3：切到已关掉的页 → 提示，不切页。
+  // R3：切到已关掉的页 → 回答底部写明关掉了、按钮变灰，不切页；过了以前轻提示消失的 2.4 秒仍看得见。
   await rp.evaluate(panel, `[...document.querySelectorAll(".gen-card .gc-btn")].find(b => b.textContent === "切到已关掉的页").click(), true`);
-  const closedToast = await until(async () => await rp.evaluate(panel, `document.querySelector(".source-toast")?.textContent`) as string || undefined, 5_000, "已关页提示");
-  assert.equal(closedToast, "那一页已经关掉了", "R3: closed tab tells the user");
+  await sleep(3_000);
+  const closedNote = await rp.evaluate(panel, `(() => { const b = [...document.querySelectorAll(".gen-card .gc-btn")].find(b => b.textContent === "切到已关掉的页"); const f = b?.closest(".msg.assistant")?.querySelector(".answer-action-feedback"); const row = f?.closest(".answer-actions"); return { text: f?.textContent, shown: !!f && f.getClientRects().length > 0 && getComputedStyle(row).opacity === "1", disabled: b?.disabled }; })()`) as { text?: string; shown: boolean; disabled?: boolean };
+  await rp.screenshot(panel, join(artifacts, "closed-tab-note.png"));
+  assert.deepEqual(closedNote, { text: "那一页已经关掉了", shown: true, disabled: true }, `R3: closed tab stays explained under the answer: ${JSON.stringify(closedNote)}`);
 
   // R3：先让另一页在前台，再点「切到订阅页看」→ 订阅页回到前台。
   await rp.evaluate(panel, `chrome.tabs.create({ url: "about:blank", active: true }).then(() => true)`);
