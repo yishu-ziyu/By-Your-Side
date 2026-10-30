@@ -621,6 +621,23 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     }
 
     // screenshots: page + side panel side by side (what the judge prompt calls the window), and the panel alone
+    // blind-review tasks: the run gets a perturbed prompt, the reviewer sees the panel as if the plain prompt had been sent
+    if (task.display_prompt) {
+      await evalIn(ps, `(() => { const from = ${JSON.stringify(rec.typed_prompt ?? task.prompt)}, to = ${JSON.stringify(task.display_prompt)};
+        const bubble = [...document.querySelectorAll('#messages .msg.user')].at(-1); if (!bubble) return;
+        const w = document.createTreeWalker(bubble, NodeFilter.SHOW_TEXT);
+        for (let n = w.nextNode(); n; n = w.nextNode()) if (n.data.includes(from)) { n.data = n.data.replace(from, to); return; }
+        bubble.firstElementChild ? (bubble.firstElementChild.textContent = to) : (bubble.textContent = to); })()`).catch((e) => rec.errors.push(`display prompt: ${e.message}`));
+    }
+    // self-contained copy of the panel (styles inlined, scripts dropped) so a reviewer can scroll the whole answer and open its links
+    if (task.snapshot_panel) {
+      const html = await evalIn(ps, `(() => { const css = [...document.styleSheets].map((s) => { try { return [...s.cssRules].map((r) => r.cssText).join('\\n'); } catch { return ''; } }).join('\\n');
+        const doc = document.documentElement.cloneNode(true); doc.querySelectorAll('script, link[rel=stylesheet]').forEach((e) => e.remove());
+        const style = document.createElement('style'); style.textContent = css; doc.querySelector('head').append(style);
+        doc.querySelectorAll('a[href]').forEach((a) => { a.target = '_blank'; a.rel = 'noopener'; });
+        return '<!doctype html>' + doc.outerHTML; })()`).catch((e) => { rec.errors.push(`panel snapshot: ${e.message}`); return null; });
+      if (html) writeFileSync(join(outDir, `${task.id}-panel.html`), html);
+    }
     const pagePng = join(outDir, `${task.id}-page.png`), panelPng = join(outDir, `${task.id}-panel.png`), shot = join(outDir, `${task.id}.png`);
     await rp.screenshot(pageSid, pagePng).catch((e) => rec.errors.push(`page screenshot: ${e.message}`));
     await rp.screenshot(ps, panelPng).catch(() => {});
