@@ -71,6 +71,7 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { BrowseDay, BrowseHabit } from "../../shared/browse-habits.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
+import { checkFacts, seenThisRun, worthChecking, type FactCheckInput } from "./fact-check.js";
 import { asksUser, checkGoal, goalReadEvidence, defersWork, recordHostGoalCheck, recordUnavailableGoalCheck, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CHECK_PROMPT, GOAL_CHECK_PROMPT_SHA, GOAL_GATE_WAIT_MS, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalCheckTrace, type GoalCheckTraceContext, type GoalVerification, type GoalVerdict } from "./goal-check.js";
 import { GoalLedger } from "./goal-ledger.js";
 import { ContinuePolicy } from "./continue-policy.js";
@@ -3251,7 +3252,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
               this.finishAgentEnd(event);
             }
 
-            if (checkGoal) void this.checkGoalAfterDelivery(event, gate);
+            // 事实核对排在目标核对之后：两者都要读当前页，同时读会抢调试器；目标核对判继续时这份回答会被换掉，不再核对。
+            void (checkGoal ? this.checkGoalAfterDelivery(event, gate) : Promise.resolve()).then(() => this.checkFactsAfterDelivery(event));
           }
 
           break;
@@ -3358,6 +3360,41 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       if (timer) clearTimeout(timer);
       letGo();
       this.runTrace.recordAt(correlation, "goal_check_span", { phase: "end" });
+    }
+  }
+
+  /** 回答交给用户之后，逐条核对回答里的事实；只把对不上的几句交给侧栏挂在这条回答下面。失败只记诊断，不打扰用户。 */
+  private async checkFactsAfterDelivery(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): Promise<void> {
+    const epoch = this.controlEpoch;
+    const answer = this.runReplyText(event.messages).trim();
+    const request = this.activeGoal ?? "";
+    const seen = seenThisRun(this.session?.agent.state.messages ?? event.messages, request);
+    const input: FactCheckInput = { request, answer, seen: seen.text, pageNow: "" };
+    const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+
+    const correlation = this.runTrace.traceCorrelation();
+    const skip = (reason: string) => { this.runTrace.recordAt(correlation, "fact_check", { skipped: reason, seenChars: input.seen.length, roles: seen.roles }); };
+
+    if (!input.request) return skip("no_request");
+    if (!host || !model) return skip("no_model");
+    if (!worthChecking(input)) return skip("nothing_to_check");
+    // 没有目标核对时这里在 agent_end 的处理里就被叫到，这一轮还没收完尾：等它停下，等不到就是用户已开了新一轮。
+    for (let waited = 0; this.isStreaming() && waited < 5_000; waited += 100) await new Promise(resolve => setTimeout(resolve, 100));
+    if (this.isStreaming() || epoch !== this.controlEpoch) return skip("busy");
+    const startedAt = Date.now();
+
+    try {
+      const tabId = this.rpc?.getPageTarget?.(this.memberId) ?? null;
+      // SAFETY: snapshot 工具回 { text, … }；读不到就只对照这一轮读过的内容。
+      const page = tabId !== null && this.rpc ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown }>).catch(() => null) : null;
+      input.pageNow = typeof page?.text === "string" ? page.text : "";
+      const problems = await checkFacts(host, model, input, AbortSignal.timeout(100_000));
+      this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, problems: problems.length, pageNow: input.pageNow.length > 0, seenChars: input.seen.length, roles: seen.roles });
+      // 用户已经开了新一轮或停下：结论只进诊断，不再挂到侧栏。
+      if (epoch !== this.controlEpoch || this.isStreaming()) return;
+      this.callbacks.emit({ kind: "fact_check", status: "done", answer: answer.slice(0, 160), problems: problems.map(p => p.text) });
+    } catch (error) {
+      this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, failed: error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160) });
     }
   }
 

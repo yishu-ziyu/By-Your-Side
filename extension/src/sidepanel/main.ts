@@ -3,6 +3,7 @@ import { createMarginalia } from "./marginalia.js";
 import { installDropzone } from "./dropzone.js";
 import { attachSourceCitations, captureCitationContext, type CitationContext } from "./sonar-citations.js";
 import { attachAnswerSources } from "./answer-sources.js";
+import { renderFactCheck } from "./fact-check-note.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
 import { answerSkeleton } from "./run-heartbeat.js";
@@ -4457,6 +4458,9 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "answer_sources":
       receiveSourceExcerpts(ev.sources);
+      break;
+    case "fact_check":
+      renderFactCheck(ev, messagesEl);
       break;
     case "text_delta":
       // 回答开始出字：这段思考结束。
