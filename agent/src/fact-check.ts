@@ -1,4 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { redactCredentialText } from "../../shared/untrusted.js";
 import { isJsonObject, parseJsonReply, sideJudgment, type SideCallHost } from "./side-judgment.js";
 
 /**
@@ -36,8 +37,8 @@ function prompt(input: FactCheckInput): string {
   return [
     `USER REQUEST: ${input.request}`,
     `ASSISTANT ANSWER:\n${input.answer}`,
-    `PAGE NOW (snapshot, form values included):\n<<<\n${input.pageNow.slice(0, PAGE_NOW_CHARS) || "(unavailable)"}\n>>>`,
-    `WHAT THE ASSISTANT READ (latest last):\n<<<\n${input.seen.slice(-FACT_CHECK_SEEN_CHARS)}\n>>>`,
+    `PAGE NOW (snapshot, form values included):\n<<<\n${redactCredentialText(input.pageNow).slice(0, PAGE_NOW_CHARS) || "(unavailable)"}\n>>>`,
+    `WHAT THE ASSISTANT READ (latest last):\n<<<\n${redactCredentialText(input.seen).slice(-FACT_CHECK_SEEN_CHARS)}\n>>>`,
   ].join("\n\n");
 }
 
