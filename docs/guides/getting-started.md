@@ -2,7 +2,9 @@
 
 [文档导航](../README.md) · [使用说明](usage.md) · [给 AI 助手的安装说明](install-for-agents.md)
 
-本产品是开发预览版。Chrome 和其他基于 Chromium 的浏览器（Edge、Brave、Arc 等）都能装，系统不限；Firefox、Safari 缺侧栏和调试器接口，装不上。目前只在 macOS + Chrome 上完整测过，下面以它为例；成品分发尚未完成。产品只有扩展一种形态，不用另装本机程序。
+本产品是开发预览版。Chrome 和其他基于 Chromium 的浏览器（Edge、Brave、Arc 等）都能装，系统不限；Firefox、Safari 缺侧栏和调试器接口，装不上。目前只在 macOS + Chrome 上完整测过，下面以它为例。产品只有扩展一种形态，不用另装本机程序。
+
+也可以从 [Chrome 网上应用店](https://chromewebstore.google.com/detail/by-your-side/emmojfmjolcafmjicpdaeljfgmefacng)安装商店版，Chrome 会自动检查并安装已发布的更新。商店版汇集经过验证的改动，紧急修复可能单独发布；每次更新需经过商店审核。下面的源码安装适合想体验频繁开发更新的用户，更新后需自行构建并重新加载。
 
 想让 AI 编程助手（Claude Code、Codex、Cursor 等）替你装，对它说这一句就行：
 
