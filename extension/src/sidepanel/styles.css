@@ -2076,30 +2076,44 @@ details.run-steps.done .chip.error { background: transparent; }
   color: #fff !important;
 }
 
-.morph-icon-send {
+/* Transitions icon swap：两个图标同帧换状态；高频按钮缩小幅度，不旋转。 */
+#send-btn.kinetic-morph-button :is(.morph-icon-send, .morph-icon-stop) {
   position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
-  transition: opacity var(--d-state) ease, transform var(--d-layout) var(--spring-bounce);
+  pointer-events: none;
+  transition: opacity var(--d-state) ease-in-out,
+              filter var(--d-state) ease-in-out,
+              transform var(--d-state) ease-in-out;
 }
 
-#send-btn.kinetic-morph-button.stopping .morph-icon-send {
-  opacity: 0;
-  transform: rotate(90deg) scale(0.3);
-}
-
-.morph-icon-stop {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  transform: scale(0.3) rotate(-90deg);
-  transition: opacity var(--d-state) ease, transform var(--d-layout) var(--spring-bounce);
-}
-
+#send-btn.kinetic-morph-button:not(.stopping) .morph-icon-send,
 #send-btn.kinetic-morph-button.stopping .morph-icon-stop {
   opacity: 1;
-  transform: scale(1) rotate(0deg);
+  filter: blur(0);
+  transform: scale(1);
+}
+
+#send-btn.kinetic-morph-button .morph-icon-stop,
+#send-btn.kinetic-morph-button.stopping .morph-icon-send {
+  opacity: 0;
+  filter: blur(2px);
+  transform: scale(0.5);
+}
+
+#send-btn.kinetic-morph-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #send-btn.kinetic-morph-button,
+  #send-btn.kinetic-morph-button :is(.morph-icon-send, .morph-icon-stop) {
+    transition: none;
+  }
+  #send-btn.kinetic-morph-button :is(.morph-icon-send, .morph-icon-stop) { filter: none; }
+  #send-btn.kinetic-morph-button:active { transform: none; }
 }
 
 [hidden] {
