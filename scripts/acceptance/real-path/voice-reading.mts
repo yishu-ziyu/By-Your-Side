@@ -2,7 +2,7 @@
  * 读文章时用按住说话问选中的那段：阅读卡在这段旁边回答并念出来，念到一半按住右 ⌥ 改口，在同一张卡里接着答；
  * 选着文字时说的话按整句意思分流：问这段的进阅读卡，要做事的带着选中的文字交给助手。
  *   npx tsx scripts/acceptance/real-path/voice-reading.mts --headless
- *   加 --first-only 只验首次问答；--idle-ms=305000 验备用连接到期后在原段再次开口。
+ *   加 --first-only 只验首次问答；--routes-only 跳过改口和换段，只验首次问答与三类分流；--idle-ms=305000 验备用连接到期后在原段再次开口。
  *
  * 真扩展、隔离无头 Chrome、真维基文章（中文《熵》）、真模型（默认测试模型）、真听写（Realtime 3）、真念（MiniMax 订阅 Key）。
  * 人声是 say 合成的，经离屏页的麦克风流放进去；念出的声音从离屏页的 AudioContext 取原始数据。
@@ -39,6 +39,7 @@ import { startScriptedModel } from "./scripted-model.mts";
 requireHeadless();
 
 const firstOnly = process.argv.includes('--first-only');
+const routesOnly = process.argv.includes('--routes-only');
 const idleMs = Number(process.argv.find(a => a.startsWith('--idle-ms='))?.slice(10) ?? 0);
 if (!Number.isFinite(idleMs) || idleMs < 0 || idleMs > 360_000) throw new Error('--idle-ms 必须在 0–360000 之间');
 const dictationEvents: Array<{ at: number; socketId: string; type: string; transcript?: string }> = [];
@@ -85,7 +86,8 @@ const fixture = scripted ? await startScriptedModel([
   { match: '"utterance":"我问的是这里', steps: [{ text: '{"route":"reading"}' }] },
   { match: '"question":"我问的是这里', steps: [{ text: HERE }] },
   { match: '"utterance":"举个例子', steps: [{ text: '{"route":"reading"}' }] },
-  { match: '"utterance":"这里没看懂', steps: [{ text: '{"route":"reading"}' }] },
+  // 分流比预回答慢时，明确的阅读回答仍应先出来。
+  { match: '"utterance":"这里没看懂', steps: [{ text: '{"route":"reading"}', ...(scripted ? { delayMs: 4000 } : {}) }] },
   { match: '"question":"举个例子', steps: [{ text: EXAMPLE }] },
   { match: '"question":"这里没看懂', steps: [{ text: OLD, chunkDelayMs: 150 }] },
 ]) : null;
@@ -104,7 +106,7 @@ let inExtension: <T>(expression: string) => Promise<T | null> = async () => null
 
 type Check = { name: string; pass: boolean | null; detail: Json };
 const checks: Check[] = [];
-const record: Record<string, Json> = { mode: { firstOnly, idleMs } };
+const record: Record<string, Json> = { mode: { firstOnly, routesOnly, idleMs } };
 const check = (name: string, pass: boolean | null, detail: Json) => {
   checks.push({ name, pass, detail });
   console.log(`${pass === null ? "NOT RUN" : pass ? "PASS" : "FAIL"} ${name} ${JSON.stringify(detail).slice(0, 600)}`);
@@ -457,6 +459,7 @@ try {
     check(`等答（${label}）：松开后第一个回答字出来前，卡片已展开、原文仍标记，待答一轮先写「听写中…」再换成听到的话，BYS 在听写或在想`,
       waitingSeen && heardAfter && !!cardAt && !!quoteAt && (!first || (quoteAt <= first.t)),
       { ...latency, heardShown, pendingTrail: [...new Set(pendings)].slice(0, 6), phases: [...new Set(before.map((s) => s.phase))], samplesBeforeFirstChar: before.length });
+    return latency;
   };
 
   /** 判据「跟字」的一次读数：光标对着标黄那段的最后一行（不在视口时不画在正文上：不显示或停在卡片边上）；卡片和每轮回答都没收起。 */
@@ -512,7 +515,12 @@ try {
   check('准备：按住之前没有打开麦克风，按住后不等听写连接就录音', micOpens.length === 1 && micOpens[0]! >= ask.downAt && micOpens[0]! - ask.downAt < 500, {micOpens, downAt: ask.downAt});
   listenCheck("这里没看懂", ask, p1);
   const opened = await until(async () => { await capsuleTrail(ask); const c = await card(); return c.visible && c.turns.length === 1 && c.turns[0]!.answer.length > 20 ? c : undefined; }, 30_000, "阅读卡开始回答");
-  await waitingCheck("这里没看懂", ask, p1, 0, "没看懂");
+  const waiting = await waitingCheck("这里没看懂", ask, p1, 0, "没看懂");
+  const heardAt = dictationEvents.find(e => e.type === 'conversation.item.input_audio_transcription.completed' && e.at >= ask.upAt)?.at ?? ask.upAt;
+  const slowRouteDoneMs = heardAt + 4000 - ask.upAt;
+  if (scripted) check('提速：预回答先明确是阅读提问时，不等慢分流才显示第一个字',
+    (waiting.releaseToFirstCharMs ?? Infinity) < slowRouteDoneMs,
+    { releaseToFirstCharMs: waiting.releaseToFirstCharMs, slowRouteDoneMs });
   const mark1 = await marked();
   const quote1 = opened.quote.replace(/[「」…]/g, "");
   const overlapsMark = !!mark1 && !!opened.rect && opened.rect.left < mark1.right && opened.rect.right > mark1.left && opened.rect.top < mark1.bottom && opened.rect.bottom > mark1.top;
@@ -531,7 +539,7 @@ try {
     speechBeforePress.length > 0 && speechBeforePress.every((t) => plain(before.turns[0]!.answer).includes(plain(t).slice(0, 12))),
     { firstAudioAfterReleaseMs: firstAudio.at - ask.upAt, requests: speechBeforePress.map((t) => t.slice(0, 40)), stateAtPress: oldStateAtPress });
   record.answers = { first: (await card()).turns[0]?.answer ?? '' };
-  if (!firstOnly) {
+  if (!firstOnly && !routesOnly) {
   const example = await holdAndSay("example");
   await sleep(300);
   await drainAudio();
@@ -639,7 +647,8 @@ try {
     still1.visible && jump !== null && jump <= 2 && still1.turns.length === still0.turns.length && still1.turns.every((t, i) => t.answer === still0.turns[i]?.answer),
     { jumpPx: jump, turns: still1.turns.length, visible: still1.visible });
 
-  if (!scripted) {
+  }
+  if (!scripted && (!firstOnly || routesOnly)) {
   // ── 7. 分流 ──
   const usersBefore = (await panelUsers()).length;
   const turnsBeforeRemember = await turnsNow();
@@ -665,7 +674,7 @@ try {
   const flomo = await until(async () => { const u = await panelUsers(); return u.length > usersBeforeFlomo.length ? u.at(-1) : undefined; }, 30_000, "侧栏出现「记进 flomo」").catch(() => undefined);
   await stopTask();
   // 侧栏里这句话下面的选中文字标签只露前 18 个字。
-  const carried = !!flomo && flomo.replace(/\s+/g, "").includes(p2.replace(/\s+/g, "").slice(0, 8));
+  const carried = !!flomo && flomo.replace(/\s+/g, "").includes((routesOnly ? p1 : p2).replace(/\s+/g, "").slice(0, 8));
   check("分流：「把这段记进 flomo」交给助手，侧栏出现这句话并带着选中的文字，卡片不多出一轮",
     !!flomo && /flomo|浮墨/i.test(flomo) && carried && (await turnsNow()) === cardTurns,
     { message: flomo ?? null, carried, cardTurns: [cardTurns, await turnsNow()] });
@@ -678,7 +687,6 @@ try {
   await rp.screenshot(panel, join(out, "4-panel.png"));
   }
   await drainAudio();
-  }
 } catch (error) {
   check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
   record.panelTail = await panelTail().catch(() => "");
