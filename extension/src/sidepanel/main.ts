@@ -1992,6 +1992,8 @@ let leadToolUsed = false;
 let goalNote: string | null = null;
 /** 核对判继续、回答没出（交付前对清单）：接着做的是第几件、一共几件。 */
 let goalStep: { at: number; of: number } | null = null;
+/** 核对判继续是因为回答和网页对不上：过程行写「对照网页改正回答」。 */
+let goalForFacts = false;
 
 /** 一段连续工具调用的 chip 行 + 共享详情区（最多展开一个）。 */
 interface ChipGroup {
@@ -4582,17 +4584,19 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       // 回答之后宿主自己接着做：标题说明为什么又动起来，第二行写核对发现了什么，直到这一轮结束。
       if (goalNote !== null) {
         const run = ensureRun();
-        setRunTitle(run, goalStep ? `还在做第 ${goalStep.at} 件（共 ${goalStep.of} 件）` : "还没做完，接着做", true, "think");
+        setRunTitle(run, goalForFacts ? "对照网页改正回答" : goalStep ? `还在做第 ${goalStep.at} 件（共 ${goalStep.of} 件）` : "还没做完，接着做", true, "think");
         run.checkNote = goalNote;
         renderRunMeta(run);
         goalNote = null;
         goalStep = null;
+        goalForFacts = false;
       }
 
       break;
     case "goal_check": {
       goalNote = ev.status === "continue" ? checkNoteForUser(ev.finding, ev.remaining) : null;
       goalStep = ev.status === "continue" ? ev.step ?? null : null;
+      goalForFacts = ev.status === "continue" && ev.reason === "facts";
 
       resumeEntry.holdForCheck(ev.status === "checking");
       // 用户说了不止一件事：回答扣到核对之后，这几秒过程行写在对清单，不让屏幕停着。

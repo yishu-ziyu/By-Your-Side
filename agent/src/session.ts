@@ -71,7 +71,7 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { BrowseDay, BrowseHabit } from "../../shared/browse-habits.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
-import { checkFacts, seenThisRun, worthChecking, type FactCheckInput } from "./fact-check.js";
+import { checkFacts, factFixPrompt, seenThisRun, worthChecking, type FactCheckFlag, type FactCheckInput } from "./fact-check.js";
 import { asksUser, checkGoal, goalReadEvidence, defersWork, recordHostGoalCheck, recordUnavailableGoalCheck, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CHECK_PROMPT, GOAL_CHECK_PROMPT_SHA, GOAL_GATE_WAIT_MS, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalCheckTrace, type GoalCheckTraceContext, type GoalVerification, type GoalVerdict } from "./goal-check.js";
 import { GoalLedger } from "./goal-ledger.js";
 import { ContinuePolicy } from "./continue-policy.js";
@@ -3363,7 +3363,10 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
   }
 
-  /** 回答交给用户之后，逐条核对回答里的事实；只把对不上的几句交给侧栏挂在这条回答下面。失败只记诊断，不打扰用户。 */
+  /** 已经为事实核对改正过一次回答的任务：再对不上就交给用户看，不再接着改。 */
+  private factFixRuns = new Set<string>();
+
+  /** 回答交给用户之后，逐条核对回答里的事实；对不上就让助手自己改正一次，改过仍对不上才挂到回答下面。失败只记诊断，不打扰用户。 */
   private async checkFactsAfterDelivery(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): Promise<void> {
     const epoch = this.controlEpoch;
     const answer = this.runReplyText(event.messages).trim();
@@ -3392,10 +3395,32 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, problems: problems.length, pageNow: input.pageNow.length > 0, seenChars: input.seen.length, roles: seen.roles });
       // 用户已经开了新一轮或停下：结论只进诊断，不再挂到侧栏。
       if (epoch !== this.controlEpoch || this.isStreaming()) return;
+      if (problems.length && this.fixFacts(problems, epoch)) return;
       this.callbacks.emit({ kind: "fact_check", status: "done", answer: answer.slice(0, 160), problems: problems.map(p => p.text) });
     } catch (error) {
       this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, failed: error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160) });
     }
+  }
+
+  /**
+   * 用户看不到页面，「请核对」只能把查证推回给用户：由助手对照页面改正回答，侧栏照目标核对判继续那样收起旧回答。
+   * 每个任务只改一次，避免核对和改正互相拉锯。开不起来时返回 false，由调用方把核对结论挂到回答下面。
+   */
+  private fixFacts(problems: FactCheckFlag[], epoch: number): boolean {
+    const runId = this.deliveryRunId(), session = this.session;
+
+    if (!runId || !session || this.factFixRuns.has(runId) || session.isStreaming || epoch !== this.controlEpoch) return false;
+    this.factFixRuns.add(runId);
+    this.runTrace.record("fact_fix", { problems: problems.length });
+    this.callbacks.emit({ kind: "goal_check", status: "continue", reason: "facts", finding: `回答里有 ${problems.length} 处和网页对不上` });
+    this.callbacks.setStatus('running');
+    this.deliveredResultThisRun = false;
+    void session.prompt(factFixPrompt(problems)).catch(error => {
+      if (this.deliveryRunId() === runId && !session.isStreaming) this.callbacks.setStatus(this.hold.isHeld() ? 'user' : 'idle');
+      this.emitError(error);
+    });
+
+    return true;
   }
 
   private async reverifyGoal(original: GoalVerdict, checkInput: GoalCheckInput, model: Parameters<typeof checkGoal>[1], headers: Parameters<typeof checkGoal>[4], trace: GoalCheckTraceContext, context: { runId: string | null; tabId: number | null; pageText: string; endedOn: string; pageMissing: boolean; current: () => boolean }): Promise<{ verdict: GoalVerdict; retryFingerprint: string | null } | null> {
