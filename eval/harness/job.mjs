@@ -620,6 +620,12 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       rec.downloads.push({ kind: "memory store after the run (active entries)", name: "memory.json", path: dst, bytes: statSync(dst).size });
     }
 
+    // fact check runs after delivery: give it time to land under the answer before the snapshot
+    if (task.wait_fact_check) {
+      const t0 = Date.now();
+      rec.fact_check = await until(async () => evalIn(ps, "(() => { const a = [...document.querySelectorAll('#messages .msg.assistant[data-fact-checked]')].at(-1); return a ? { count: Number(a.dataset.factChecked), problems: [...a.querySelectorAll('.fact-check li')].map((li) => li.textContent) } : null; })()").then((v) => v || undefined), 150_000, "fact check").catch(() => null);
+      if (rec.fact_check) rec.fact_check.seconds = Math.round((Date.now() - t0) / 1000);
+    }
     // screenshots: page + side panel side by side (what the judge prompt calls the window), and the panel alone
     const pagePng = join(outDir, `${task.id}-page.png`), panelPng = join(outDir, `${task.id}-panel.png`), shot = join(outDir, `${task.id}.png`);
     await rp.screenshot(pageSid, pagePng).catch((e) => rec.errors.push(`page screenshot: ${e.message}`));

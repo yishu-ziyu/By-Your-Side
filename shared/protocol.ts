@@ -504,6 +504,8 @@ export type AgentUiEvent =
   /** 站点笔记：做成的任务结束后记下的这个网站的用法（只关于网站、不关于用户），侧栏在这一轮下面写一行「记下了…用法」。title 是那次打开这个网站时的页面标题。 */
   | { kind: "site_notes"; host: string; title?: string; notes: string[] }
   | { kind: "answer_sources"; sources: import("./answer-source.js").AnswerSource[] }
+  /** 交付后的事实核对（agent/src/fact-check.ts）：problems 是给用户看的几句，空就是都对得上；answer 是被核对的回答开头，侧栏据此挂到那条回答下。 */
+  | { kind: "fact_check"; status: "done"; answer: string; problems: string[] }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
