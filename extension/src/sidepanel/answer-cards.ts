@@ -13,7 +13,7 @@ import { isPopout, targetWindowId } from "./target-window.js";
 import { createElement as icon, LayoutGrid, Table2 } from "lucide";
 import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, evaluate, fillRefs, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
-import { captureCitationContext, toast } from "./sonar-citations.js";
+import { captureCitationContext, clearFailure, noteFailure } from "./sonar-citations.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 
@@ -884,9 +884,10 @@ async function revealRow(row: HTMLElement): Promise<void> {
   if (!linked) return;
   const reply = await chrome.runtime.sendMessage({ type: "PINPOINT_DOM_TARGET", action: "reveal", source: linked.source, tabId: linked.tabId }).catch(() => null);
 
-  if (!reply?.ok) { toast(reply?.error ?? "原文已变化，请重新核对。");
+  if (!reply?.ok) { noteFailure(row, reply?.error ?? "原文已变化，请重新核对。");
 
  return; }
+  clearFailure(row);
   const tab = await chrome.tabs.get(linked.tabId).catch(() => null);
 
   if (tab && (tab.windowId !== await targetWindowId() || isPopout)) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined);
@@ -1195,7 +1196,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
     const tabId = Number(button.dataset.cardTab);
     const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId).catch(() => null) : null;
 
-    if (!tab?.id) { toast("那一页已经关掉了");
+    if (!tab?.id) { button.disabled = true; noteFailure(button, "那一页已经关掉了");
 
  return; }
     await chrome.tabs.update(tab.id, { active: true }).catch(() => undefined);
