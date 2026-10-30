@@ -107,9 +107,21 @@ function propValue(node: AxNodeLite, name: string): unknown {
   return p?.value?.value;
 }
 
+/**
+ * 图标字体画的字（Unicode 私有区，常由 CSS ::before 生成）没有字义：评分星星不论几星都是同样 5 个字形，
+ * 当成文字读会被说成「5 星」。只有图标的一段写成 [图标]，夹在文字里的直接去掉。
+ */
+const ICON_GLYPHS = /[\uE000-\uF8FF\u{F0000}-\u{FFFFD}\u{100000}-\u{10FFFD}]/gu;
+
+export function withoutIconGlyphs(text: string): string {
+  const cleaned = text.replace(ICON_GLYPHS, "");
+
+  return cleaned.trim() || cleaned === text ? cleaned : "[图标]";
+}
+
 /** 静态文本节点说的话；其它角色返回 null。用于折叠「父节点名字 + 子静态文本」的重复。 */
 function staticTextOf(node: AxNodeLite): string | null {
-  return (node.role?.value ?? "") === "StaticText" ? String(node.name?.value ?? "") : null;
+  return (node.role?.value ?? "") === "StaticText" ? withoutIconGlyphs(String(node.name?.value ?? "")) : null;
 }
 
 /** 节点自身是否值得占一行（不含 ref 前缀）。 */
@@ -117,7 +129,7 @@ function describe(node: AxNodeLite, parent: AxNodeLite | undefined, inputs: Read
   const role = node.role?.value ?? "";
 
   if (DROP_SUBTREE_ROLES.has(role)) return null;
-  const name = node.name?.value ?? "";
+  const name = withoutIconGlyphs(String(node.name?.value ?? ""));
   // 页面把文字截成「…」显示、元素自带更完整的 title/aria 时，同时给出完整值（规则见 shared/page-readout.ts）。
   const full = name ? fullerText(name, [node.description?.value, role === "StaticText" ? parent?.description?.value : undefined]) : undefined;
   const fullPart = full ? ` full=${JSON.stringify(clip(full, MAX_LINE_TEXT))}` : "";
@@ -346,7 +358,7 @@ function axTreeLines(nodes: AxNodeLite[], inputs: ReadonlyMap<number, InputRange
       return;
     }
 
-    const name = String(node.name?.value ?? "");
+    const name = withoutIconGlyphs(String(node.name?.value ?? ""));
     // 零尺寸节点（宽或高为 0）点不到也填不进：不给 ref。有名字的留一行并标 zero-size（如勾选状态），
     // 没名字的和零尺寸文字不占行；子节点照常展开，它们有自己的盒子。
     // 零尺寸控件自己的文字（提交按钮的「Go」）也不给 ref：点它落到的是那个零尺寸控件。
