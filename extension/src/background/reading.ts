@@ -102,7 +102,7 @@ export function installReading(deps: Dependencies) {
    * 选着文字说的话在判断去向的同时先写回答：只发请求、不改卡片记录、不推给页面、不念，最新的回答进度先存在这里。
    * 判成问这段、卡片发来同一个问题、拼出的问答逐字相同时认领它；判成任务、又按下说话、拼出来不一样或过期就取消。
    */
-  let prefetched: { threadId: string; requestId: string; key: string; latest?: ReadingEvent; timer: ReturnType<typeof setTimeout>; at: number } | null = null;
+  let prefetched: { threadId: string; requestId: string; key: string; latest?: ReadingEvent; timer: ReturnType<typeof setTimeout>; at: number; decide: (route: ReadingRoute | null) => void } | null = null;
   /** 交给助手的那一问在跟哪个会话的任务：deliveries 是助手的交付，text 是最后一段没走交付的回答。 */
   const runs = new Map<string, { threadId: string; sawRun: boolean; settle?: ReturnType<typeof setTimeout>; deliveries: string[]; text: string }>();
 
@@ -113,6 +113,7 @@ export function installReading(deps: Dependencies) {
     if (!prefetched) return;
     notePrefetch(reason, {ms: Date.now() - prefetched.at, chars: prefetched.latest?.text.length ?? 0});
     clearTimeout(prefetched.timer);
+    prefetched.decide(null);
     deps.send({type: 'reading_cancel', threadId: prefetched.threadId, requestId: prefetched.requestId});
     prefetched = null;
   };
@@ -413,7 +414,7 @@ export function installReading(deps: Dependencies) {
         // 预取的那一路拼出的问答逐字相同才认领；不同就取消它，照常发问。
         const adopted = prefetched && prefetched.threadId === record.threadId && prefetched.key === transcriptKey(record) ? prefetched : null;
 
-        if (adopted) { clearTimeout(adopted.timer); prefetched = null; notePrefetch('adopted', {ms: Date.now() - adopted.at, chars: adopted.latest?.text.length ?? 0}); } else cancelPrefetch(prefetched ? 'mismatch' : 'none');
+        if (adopted) { clearTimeout(adopted.timer); adopted.decide('reading'); prefetched = null; notePrefetch('adopted', {ms: Date.now() - adopted.at, chars: adopted.latest?.text.length ?? 0}); } else cancelPrefetch(prefetched ? 'mismatch' : 'none');
         record.requestId = adopted?.requestId ?? crypto.randomUUID();
         beginDiagnostic(record);
         hush();
@@ -493,15 +494,18 @@ export function installReading(deps: Dependencies) {
         }
       });
     },
-    /** 判断去向的同时先写这句话的阅读回答（见 prefetched）；这一页没有开着的卡、卡还在回答或拼不出来就不预取。 */
-    prefetch(tabId: number, question: string, source: unknown) {
+    /**
+     * 判断去向的同时先写这句话的阅读回答。第一个明确内容或交助手的结果也能决定去向；
+     * null 表示预取没启动、被取消或没答成，仍由单独的分流判断兜底。
+     */
+    prefetch(tabId: number, question: string, source: unknown): Promise<ReadingRoute | null> {
       cancelPrefetch('replaced');
-      void ready.then(() => {
+      return ready.then(() => {
         const record = [...records.values()].filter(r => r.source.tabId === tabId).sort((a, b) => a.updatedAt - b.updatedAt).at(-1);
 
         if (!record || readingBusy(record)) { notePrefetch('skipped', {reason: record ? 'busy' : 'no_card'});
 
- return; }
+ return null; }
         let next: ReadingRecord;
 
         try {
@@ -509,14 +513,16 @@ export function installReading(deps: Dependencies) {
           advance(next, compose(next, {question, correction: true, depth: 'fast', spoken: true, source}));
         } catch (error) { notePrefetch('skipped', {reason: error instanceof Error ? error.message : 'compose'});
 
- return; }
+ return null; }
         const requestId = crypto.randomUUID();
 
         const transcript: ReadingRecord = {...next, requestId};
 
-        if (!deps.send({type: 'reading_request', requestId, transcript, conversationId: next.modelConversationId})) return;
-        prefetched = {threadId: record.threadId, requestId, key: transcriptKey(next), timer: setTimeout(() => cancelPrefetch('expired'), PREFETCH_MS), at: Date.now()};
-        notePrefetch('started');
+        if (!deps.send({type: 'reading_request', requestId, transcript, conversationId: next.modelConversationId})) return null;
+        return new Promise<ReadingRoute | null>(resolve => {
+          prefetched = {threadId: record.threadId, requestId, key: transcriptKey(next), timer: setTimeout(() => cancelPrefetch('expired'), PREFETCH_MS), at: Date.now(), decide: resolve};
+          notePrefetch('started');
+        });
       });
     },
     cancelPrefetch,
@@ -550,7 +556,11 @@ export function installReading(deps: Dependencies) {
  return;
         }
 
-        if (prefetched?.requestId === event.requestId) { prefetched.latest = event;
+        if (prefetched?.requestId === event.requestId) {
+          prefetched.latest = event;
+          if (event.act) prefetched.decide('task');
+          else if (event.text.trim()) prefetched.decide('reading');
+          else if (event.state === 'error' || event.state === 'stopped') prefetched.decide(null);
 
  return; }
 

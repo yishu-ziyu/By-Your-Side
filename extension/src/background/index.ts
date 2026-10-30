@@ -548,9 +548,11 @@ async function routeSpoken(tab: chrome.tabs.Tab, conversationId: string, text: s
 
  if (!selection) return handOffSpoken(tab, conversationId, text, pttId, undefined, turn);
  const startedAt = Date.now();
- // 判断去向要一两秒：同时先把阅读回答写起来（不显示、不念），判成问这段时卡片直接接上；判成任务或作废就取消。
- reading.prefetch(tab.id!, text, source);
- const route = await reading.route(text, selection, asked);
+ // 阅读回答和单独的分流同时开始：预回答先给出明确去向就直接接上，否则仍等分流，避免回答已经写好却白等。
+ const prefetched = reading.prefetch(tab.id!, text, source);
+ const routed = reading.route(text, selection, asked);
+ const early = await Promise.race([prefetched, routed]);
+ const route = early ?? await routed;
 
  if (turn !== pttTurn) { reading.cancelPrefetch('stale'); return; }
  pttTiming(pttId, conversationId, `routed_${route}`);
