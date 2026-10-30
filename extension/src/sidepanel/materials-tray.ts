@@ -354,8 +354,8 @@ export class MaterialsTray {
     this.root.replaceChildren(...(draft ? [shell] : []));
     const delivery = this.delivery();
 
-    // The "另开会话" card in the conversation already states this rejection and offers the choice.
-    if (delivery && !(delivery.receipt?.status === "rejected" && delivery.receipt.newConversationRequest)) {
+    // The "另开会话" and "还没有连接模型" cards in the conversation already state this rejection and offer the next step.
+    if (delivery && !(delivery.receipt?.status === "rejected" && (delivery.receipt.newConversationRequest || delivery.receipt.needsModel))) {
       const receipt = delivery.receipt;
       const state = receipt?.status ?? "sending";
       const line = document.createElement("div");
@@ -487,11 +487,12 @@ export class MaterialsTray {
       await navigator.clipboard.writeText(text);
       this.showNote("摘要已复制");
     } catch {
-      this.showNote("复制失败，请重试");
+      this.showNote("复制失败，请重试", { stays: true });
     }
   }
 
-  private showNote(text: string): void {
+  /** stays：没做成的原因留到下一次提示替换它，不像成功提示那样自己消失。 */
+  private showNote(text: string, { stays = false } = {}): void {
     const existing = this.root.querySelector(".mt-note");
 
     if (existing) existing.remove();
@@ -500,6 +501,6 @@ export class MaterialsTray {
     note.setAttribute("role", "status");
     note.textContent = text;
     this.root.append(note);
-    setTimeout(() => note.remove(), 1_800);
+    if (!stays) setTimeout(() => note.remove(), 1_800);
   }
 }
