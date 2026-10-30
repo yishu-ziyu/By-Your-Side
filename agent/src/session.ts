@@ -1273,6 +1273,55 @@ if(required.includes(key))candidates.set(key,attachment);
     }
   }
 
+  /**
+   * 「切到某标签」快捷通道第一步：读全部已开标签。读不到返回 null，调用方回退完整智能体路径。
+   * 只收 http(s) 页：扩展页、空白页没有可切给用户看的意义。
+   */
+  async quickNavTabList(): Promise<Array<{ id: number; title: string; url: string }> | null> {
+    if (!this.rpc) return null;
+
+    try {
+      const data = (await this.rpc.call("list_tabs", {}, PRE_OBSERVATION_TIMEOUT_MS)) as { tabs?: TabInfo[] };
+
+      if (!Array.isArray(data?.tabs)) return null;
+
+      return data.tabs
+        .filter((tab) => typeof tab.id === "number" && typeof tab.url === "string" && /^https?:/.test(tab.url))
+        .map((tab) => ({ id: tab.id, title: tab.title ?? "", url: tab.url }));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 宿主已确定目标的「切到某标签」：走正式 tabs 工具（回执、执行事实、工作标签页归属全保留），
+   * 不经模型。只返回是否经读回确认到了用户眼前；没确认到就不算完成，调用方如实说。
+   */
+  async runQuickNavSwitch(tabId: number): Promise<{ shown: boolean }> {
+    if (!this.session || this.isStreaming() || !this.canWriteCurrentInput()) throw new Error("当前任务正在执行或页面由用户接管，未执行快速切换。");
+
+    const epoch = this.controlEpoch, runId = this.deliveryRunId();
+    const revision = this.conversationSnapshot()?.goalPlan?.revision;
+    const controller = new AbortController();
+    const current = () => epoch === this.controlEpoch && runId === this.deliveryRunId() && revision === this.conversationSnapshot()?.goalPlan?.revision && !this.hold.isHeld();
+
+    this.callbacks.setStatus("running");
+    const work = this.invokeDisplayTool(this.session, "tabs", { action: "show", tabId }, controller.signal, current, () => {});
+    this.displayWork = work.then(() => {}, () => {});
+    this.displayAbort = controller;
+
+    try {
+      const result = await work;
+      const verification = (result as { details?: { verification?: { verified?: boolean } } } | undefined)?.details?.verification;
+
+      return { shown: verification?.verified === true };
+    } finally {
+      if (this.displayAbort === controller) this.displayAbort = null;
+      this.displayWork = null;
+      this.callbacks.setStatus(this.hold.isHeld() ? "user" : "idle");
+    }
+  }
+
   async executeRealtimeBrowserTool(name: string, args: Record<string, unknown>, signal: AbortSignal, identity?: {inputId?: string; runId?: string | null}): Promise<unknown> {
     let toolCallId: string | undefined;
     let readback: RealtimeFillReadback | undefined;
@@ -1879,7 +1928,12 @@ return;}
     let timer: ReturnType<typeof setTimeout> | undefined;
     const operationsRead = this.learnedOperations?.operationsFor(url).catch(() => [] as LearnedOperation[]) ?? Promise.resolve([] as LearnedOperation[]);
     const operations = timeoutMs === undefined ? await operationsRead : await Promise.race([operationsRead, new Promise<LearnedOperation[]>(resolve => { timer = setTimeout(() => resolve([]), timeoutMs); })]).finally(() => clearTimeout(timer));
-    const host = methodHint || operations.length ? new URL(url).hostname : "";
+    let host = "";
+
+    if (methodHint || operations.length) {
+      try { host = new URL(url).hostname; } catch { host = ""; }
+    }
+
     if (!host) return null;
     const runId = this.deliveryRunId();
 
@@ -3424,7 +3478,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   }
 
   private async reverifyGoal(original: GoalVerdict, checkInput: GoalCheckInput, model: Parameters<typeof checkGoal>[1], headers: Parameters<typeof checkGoal>[4], trace: GoalCheckTraceContext, context: { runId: string | null; tabId: number | null; pageText: string; endedOn: string; pageMissing: boolean; current: () => boolean }): Promise<{ verdict: GoalVerdict; retryFingerprint: string | null } | null> {
-    const { runId, tabId, pageText, endedOn, pageMissing, current } = context;
+    const { runId, tabId, pageText, endedOn, current } = context;
     const lastReply = checkInput.lastReply;
     let verdict = original;
     let retryFingerprint: string | null = null;
@@ -3667,7 +3721,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       if (verdict.finding) continuing.finding = verdict.finding;
       // 回答还扣着：丢掉它，侧栏不出回答，过程行写做到第几件。已经放出（等核对超时）时照原来的做法由侧栏收起。
-      const undone = (verdict.items ?? []).filter(item => !item.done);
 
       // 不给扣着的那一轮收尾：能走到核对，说明它不是停止、接管、出错或工具失败收的尾，收尾里那些说明都用不上；
       // 没被模型读到的补充留给接着做的这一轮读。
@@ -4023,11 +4076,15 @@ const OPEN_TAB_TITLE_MAX = 80;
 
 /** 只留网址的 origin+pathname：查询串和锚点可能带私人信息。chrome:// 这类的 origin 是 "null"，改用协议加主机。 */
 function tabAddress(url: string): string {
-  if (!URL.canParse(url)) return url ? "(unreadable address)" : "(no address)";
-  const u = new URL(url);
-  const address = u.origin !== "null" ? `${u.origin}${u.pathname}` : `${u.protocol}${u.host ? `//${u.host}` : ""}${u.pathname}`;
+  try {
+    if (!URL.canParse(url)) return url ? "(unreadable address)" : "(no address)";
+    const u = new URL(url);
+    const address = u.origin !== "null" ? `${u.origin}${u.pathname}` : `${u.protocol}${u.host ? `//${u.host}` : ""}${u.pathname}`;
 
-  return address.length > 200 ? `${address.slice(0, 200)}…` : address;
+    return address.length > 200 ? `${address.slice(0, 200)}…` : address;
+  } catch {
+    return "(unreadable address)";
+  }
 }
 
 /**
