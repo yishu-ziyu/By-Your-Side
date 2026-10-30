@@ -487,11 +487,12 @@ export class MaterialsTray {
       await navigator.clipboard.writeText(text);
       this.showNote("摘要已复制");
     } catch {
-      this.showNote("复制失败，请重试");
+      this.showNote("复制失败，请重试", { stays: true });
     }
   }
 
-  private showNote(text: string): void {
+  /** stays：没做成的原因留到下一次提示替换它，不像成功提示那样自己消失。 */
+  private showNote(text: string, { stays = false } = {}): void {
     const existing = this.root.querySelector(".mt-note");
 
     if (existing) existing.remove();
@@ -500,6 +501,6 @@ export class MaterialsTray {
     note.setAttribute("role", "status");
     note.textContent = text;
     this.root.append(note);
-    setTimeout(() => note.remove(), 1_800);
+    if (!stays) setTimeout(() => note.remove(), 1_800);
   }
 }
