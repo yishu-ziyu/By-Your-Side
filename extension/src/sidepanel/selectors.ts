@@ -19,7 +19,8 @@ export function conversationOutcome(
 ): ConversationOutcome {
   if (c.checkpoint === "unavailable") return { kind: "error", icon: "!", line: c.ending || "恢复失败" };
   if (c.checkpoint === "interrupted") return { kind: "stopped", icon: "‖", line: c.ending || "任务中断了" };
-  if (c.state === "running") return { kind: "running", icon: "·", line: c.ending || "正在做" };
+  // ending 是上一轮的结局，新一轮开始时不清；进行中照它写，会把正在做的事说成做完了。
+  if (c.state === "running") return { kind: "running", icon: "·", line: "正在做" };
   if (c.state === "user") return { kind: "waiting", icon: "●", line: extra?.task?.next || c.ending || "页面现在归你" };
 
   const task = extra?.task;
