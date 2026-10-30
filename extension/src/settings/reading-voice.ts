@@ -1,10 +1,12 @@
 import { readVoiceDictationKey } from '../shared/dictation-config.js';
 import { openRealtimeDictation, type RealtimeDictation } from '../shared/dictation-realtime.js';
 import { INPROC_VOICE_KEY } from '../inproc/shared.js';
+import { PTT_KEY, PTT_KEY_CHOICES, pttKeyLabel, pttKeyOf } from '../shared/ptt.js';
 
-export const readingVoiceView = `<section class="sx" aria-labelledby="reading-voice-title"><div class="sx-head"><h2 id="reading-voice-title">读网页时用声音提问</h2><p class="sx-sub">按住右 ⌥ 说话。试说只显示文字，不发送给助手。语音发给阶跃星辰 Realtime 3，按量计费；朗读未配置也能看文字回答。</p></div><div class="surface rows"><label class="row"><span class="row-main">Realtime 3 密钥</span><span class="row-ctl"><input id="reading-voice-key" class="d-input" type="password" autocomplete="off" aria-label="网页语音密钥" /></span></label><div class="row"><span id="reading-voice-state" class="row-main" role="status"></span><span class="row-ctl"><button id="reading-voice-action" class="btn btn-primary" type="button">试说一句</button><button id="reading-voice-return" class="btn" type="button" hidden>回到原文继续提问</button></span></div></div><p id="reading-voice-text" role="status"></p></section>`;
+export const readingVoiceView = `<section class="sx" aria-labelledby="reading-voice-title"><div class="sx-head"><h2 id="reading-voice-title">读网页时用声音提问</h2><p class="sx-sub">在网页上按住下面这个键说话。试说只显示文字，不发送给助手。语音发给阶跃星辰 Realtime 3，按量计费；朗读未配置也能看文字回答。</p></div><div class="surface rows"><div class="row"><span class="row-main"><span class="row-title">按住说话的键</span><span id="ptt-key-desc" class="row-desc" role="status"></span></span><span class="row-ctl"><button id="ptt-key-change" class="btn" type="button"></button></span></div><label class="row"><span class="row-main">Realtime 3 密钥</span><span class="row-ctl"><input id="reading-voice-key" class="d-input" type="password" autocomplete="off" aria-label="网页语音密钥" /></span></label><div class="row"><span id="reading-voice-state" class="row-main" role="status"></span><span class="row-ctl"><button id="reading-voice-action" class="btn btn-primary" type="button">试说一句</button><button id="reading-voice-return" class="btn" type="button" hidden>回到原文继续提问</button></span></div></div><p id="reading-voice-text" role="status"></p></section>`;
 
 export async function mountReadingVoice(): Promise<void> {
+  mountPttKey();
   const key = document.querySelector<HTMLInputElement>('#reading-voice-key')!;
   const action = document.querySelector<HTMLButtonElement>('#reading-voice-action')!;
   const back = document.querySelector<HTMLButtonElement>('#reading-voice-return')!;
@@ -66,4 +68,28 @@ export async function mountReadingVoice(): Promise<void> {
   });
   addEventListener('pagehide', cancel);
   document.getElementById('settings-nav')?.addEventListener('click', () => { cancel(); action.disabled = false; action.textContent = '试说一句'; state.textContent = '试说已中止。'; });
+}
+
+/** 「改…」之后按下的下一个键就是新键；按 Esc 或点别处放弃。 */
+function mountPttKey(): void {
+  const desc = document.querySelector<HTMLElement>('#ptt-key-desc')!;
+  const change = document.querySelector<HTMLButtonElement>('#ptt-key-change')!;
+  let current = pttKeyOf(undefined);
+  let waiting = false;
+  const show = (note?: string) => {
+    change.textContent = waiting ? '按下新键…' : `${pttKeyLabel(current)}　改…`;
+    desc.textContent = note ?? (waiting ? '按 Esc 放弃。' : '单独按住它说话，松开发出去。');
+  };
+  const stop = (note?: string) => { waiting = false; show(note); };
+  void chrome.storage.local.get(PTT_KEY).then(got => { current = pttKeyOf(got[PTT_KEY]); show(); });
+  change.addEventListener('click', () => { waiting = true; show(); });
+  change.addEventListener('blur', () => { if (waiting) stop(); });
+  change.addEventListener('keydown', event => {
+    if (!waiting) return;
+    event.preventDefault();
+    if (event.code === 'Escape') { stop(); return; }
+    if (!PTT_KEY_CHOICES.includes(event.code)) { show(`这个键打字时常用，换一个：${['AltRight', 'ControlRight', 'MetaRight'].map(pttKeyLabel).join('、')}，或 F1–F19。`); return; }
+    current = event.code;
+    void chrome.storage.local.set({ [PTT_KEY]: current }).then(() => stop(`已改成 ${pttKeyLabel(current)}，打开着的网页马上生效。`), () => stop('没存上，请再试一次。'));
+  });
 }
