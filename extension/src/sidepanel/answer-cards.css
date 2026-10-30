@@ -218,3 +218,9 @@
 .send-declined-card ~ .send-declined-card { display: none; }
 .gc-diagram-code { margin-top: 6px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 .gc-diagram-code > summary { cursor: pointer; }
+
+/* 交付后核对出的几处：回答下面一小块，提醒色标题，正文次要色；没有问题时不出现。 */
+.msg.assistant .fact-check { margin: var(--s-3) 0 0; padding: var(--s-2) var(--s-3); border-radius: var(--r); background: var(--content-subtle); }
+.msg.assistant .fact-check-title { font-size: var(--fs-meta); line-height: var(--lh-ui); font-weight: 600; color: var(--warn); }
+.msg.assistant .fact-check ul { margin: var(--s-1) 0 0; padding-left: var(--s-3); }
+.msg.assistant .fact-check li { font-size: var(--fs-meta); line-height: var(--lh-ui); color: var(--text-secondary); }
