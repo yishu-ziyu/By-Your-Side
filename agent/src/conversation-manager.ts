@@ -32,6 +32,7 @@ import {normalizeSpeech,progressSpeech} from './voice-receipt.js';
 import {TaskControlBroker} from './task-control.js';
 import {VoiceTurnGate} from './voice-turn.js';
 import {isFactFreeClosedUtterance,isVoiceBackchannel,isVoiceSilenceRequest,type VoiceIntentPlan} from './voice-intent.js';
+import {matchQuickNavTab,parseQuickNavIntent} from '../../shared/quick-nav.js';
 import type {VoiceTurnPreparation} from './voice-model.js';
 import {VoiceIntentError} from './voice-errors.js';
 import {pageRecoveryKey} from './task-recovery.js';
@@ -131,6 +132,8 @@ export class ConversationManager {
   private readonly voiceTurns=new VoiceTurnGate();
   /** 每个会话当前在跑的提案请求：新一句话到来时先取消它，不让旧候选继续占模型预算。 */
   private readonly voiceTurnAborts=new Map<string,AbortController>();
+  /** 每个会话运行时的消息泵：宿主合成的事件（快捷通道交付/核对）从这里进，和真实事件同一套记账与下发。 */
+  private readonly messagePumps=new Map<string,(message:ServerMessage)=>void>();
   voiceTargets(){return [...this.list().map(c=>({id:c.id,title:c.title,runId:this.getTaskProgress(c.id)?.runId??null,controlVersion:this.controlVersions.get(c.id)??0})),...this.taskQueue.list().filter(j=>['queued','suspended'].includes(j.state)&&!this.entries.has(j.request.conversationId)).map(j=>({id:j.request.conversationId,title:j.title,runId:null,controlVersion:0}))];}
   isVoiceTask(origin:string,target:string){const job=this.taskQueue.get(target);
 
@@ -1176,6 +1179,72 @@ return;}
     return entry.runtime.session.executeRealtimeBrowserTool(call.name,call.args,signal,{inputId:call.inputId,runId:progress.snapshot().runId ?? null});
   }
 
+  /**
+   * 「切到某标签」快捷通道：识别和匹配都不调模型；匹配不到返回 null，调用方走常规启动。
+   * 执行走正式 tabs 工具（回执、执行事实、工作标签页归属全保留），读回确认到了用户眼前
+   * 才交付一句话；没确认到如实拒绝，不假装完成。
+   */
+  private async tryQuickNavSwitch(request: TaskActionRequest, entry: ConversationEntry): Promise<Pick<TaskReceipt, 'status' | 'message' | 'runId'> | null> {
+    const intent = parseQuickNavIntent(request.text ?? '');
+
+    if (!intent) return null;
+
+    const tabs = await entry.runtime.session.quickNavTabList?.().catch(() => null) ?? null;
+
+    if (!tabs?.length) return null;
+
+    const tab = matchQuickNavTab(intent.target, tabs);
+
+    if (!tab) return null;
+
+    const targetProgress = this.progress.get(request.conversationId)!;
+    const beforeAccept = targetProgress.snapshot();
+    targetProgress.request(request.text ?? '', request.context, request.attachments);
+    // 切换由宿主当场完成并交付，不留下「待完成的目标」：否则下一轮开头会被当成上一件的补充，走进智能体循环。
+    targetProgress.goals.clear();
+    const acceptedRunId = targetProgress.snapshot().runId ?? null;
+
+    try {
+      if (entry.runtime.session.persistAcceptedTask) await entry.runtime.session.persistAcceptedTask(targetProgress.snapshot(), request.attachments);
+      else {
+        await entry.runtime.session.persistRecoveryAttachments?.(acceptedRunId, request.attachments);
+        await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
+      }
+    } catch (error) {
+      targetProgress.restoreResults(beforeAccept);
+      throw new TaskActionRejected(`任务未能保存到本地，尚未接收、没有启动：${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    this.taskQueue.bindRun(request.conversationId, acceptedRunId);
+    if (entry.summary.title === '新会话') entry.summary.title = (request.text ?? '').trim().slice(0, 36) || entry.summary.title;
+    this.publishRunIdentity(request.conversationId);
+    this.pendingStarts.add(request.conversationId);
+    // 先回「已接收」回执再执行：侧栏的用户气泡等回执落地才渲染，而运行的状态行以它为前提；
+    // 挤在回执前面发事件，过程行就永远出不来。执行排在回执之后一个宏任务（页面环境没有 setImmediate）。
+    setTimeout(() => { void this.completeQuickNavSwitch(request.conversationId, entry, tab, acceptedRunId); }, 0);
+
+    return { status: 'accepted', runId: acceptedRunId, message: `已接收新任务：${request.text ?? ''}` };
+  }
+
+  /** 快捷通道的执行段：先回执后跑（见 tryQuickNavSwitch）。切换没生效就如实说，不补假完成。 */
+  private async completeQuickNavSwitch(conversationId: string, entry: ConversationEntry, tab: { id: number; title: string; url: string }, runId: string | null): Promise<void> {
+    try {
+      const landed = await entry.runtime.session.runQuickNavSwitch(tab.id);
+
+      if (!landed.shown) throw new Error('标签页存在，但没能确认它已切到你眼前。');
+
+      const delivery = createUserDelivery({ conversationId, runId, kind: 'finding', text: `已切到「${tab.title}」（${tab.url}）。` });
+      // 交付和核对结论都过消息泵：记账、过往任务、下发和真实运行同一套。
+      this.messagePumps.get(conversationId)?.({ type: 'agent_event', event: { kind: 'user_delivery', delivery } });
+      this.messagePumps.get(conversationId)?.({ type: 'agent_event', event: { kind: 'goal_check', status: 'done' } });
+    } catch (error) {
+      // 回执已出、这一轮真实发生过：不 rollback 登记，把失败摆出来（工具回执里已有红步骤）。
+      this.messagePumps.get(conversationId)?.({ type: 'agent_event', event: { kind: 'notice', message: `快速切换没有完成：${error instanceof Error ? error.message : String(error)}` } });
+    } finally {
+      this.pendingStarts.delete(conversationId);
+    }
+  }
+
   async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
 
@@ -1405,6 +1474,14 @@ return receipt;
 
         if(!entry.runtime.session.available)throw new TaskActionRejected('当前执行模型不可用，任务未启动。');
 
+        // 确定性小意图快捷通道：纯「切到某标签」且能唯一匹配已开标签时，宿主直接执行，跳过模型循环。
+        // 识别、匹配全都不调模型；匹配不到在这里安静地继续常规启动。
+        if (request.source === 'text' && !request.attachments?.length && !request.pages?.length) {
+          const quickReceipt = await this.tryQuickNavSwitch(request, entry);
+
+          if (quickReceipt) return quickReceipt;
+        }
+
         // A click that moves a rejected voice request consumes only that matching proposal.
         if (request.forkedFrom) {
           const source = request.forkedFrom;
@@ -1565,7 +1642,7 @@ return receipt;
       };
     }
 
-    const promise = this.factory(id, (message) => {
+    const pump = (message: ServerMessage) => {
       // A rejected checkpoint must not be replaced by a late runtime event.
       if (summary.checkpoint === 'unavailable') return;
       const currentRun=progress.snapshot().runId;
@@ -1664,7 +1741,10 @@ return receipt;
       }
 
       if (message.type === "status" || message.type === "model_info") this.store?.save(this.list());
-    }, summary).then((runtime) => {
+    };
+    // 宿主合成的事件（快捷通道的交付、核对结论）也走这条泵，和会话真实事件同一套记账与下发。
+    this.messagePumps.set(id, pump);
+    const promise = this.factory(id, pump, summary).then((runtime) => {
       summary.model = runtime.session.modelName();
       runtime.onHandToUser?.((ask, targets) => this.handToUser(id, ask, targets));
       runtime.control.setTabCoordinator?.(async (owner, members) => {
