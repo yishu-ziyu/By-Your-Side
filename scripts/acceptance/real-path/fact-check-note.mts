@@ -12,17 +12,21 @@ import {REPO,launchRealPath,requireHeadless,siteAddress,sleep,until} from './har
 import {startScriptedModel} from './scripted-model.mts';
 requireHeadless();
 const out=join(REPO,'out/acceptance/real-path',`${new Date().toISOString().replace(/[:.]/g,'-')}-fact-check-note`);await mkdir(out,{recursive:true});
-const site=createServer((_req,res)=>res.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end(`<!doctype html><title>耳机</title><main><h1>Aura 降噪耳机</h1><p>限时价 ¥899</p></main>`));
+const apiKey='sk-AbCd1234EfGh5678IjKl9012';
+const recovery='ABCD-EF12-34GH';
+const password='PasswordFixture1234';
+const site=createServer((_req,res)=>res.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end(`<!doctype html><title>密钥管理</title><main><h1>Aura 降噪耳机</h1><p>限时价 ¥899</p><p>API key: ${apiKey}</p><p>恢复码 ${recovery}</p><label>密码 <input type="password" value="${password}"></label><label>备注 <input value="普通备注"></label></main>`));
 await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${siteAddress(site).port}/`;
 const PROBLEM='请核对价格：页面写的是 ¥899，回答写成 ¥999。';
 const read={tool:{name:'browser_run',args:{label:'读价格',code:`const s=await browser.navigate({url:${JSON.stringify(origin)}});return s.text.slice(0,400);`}}};
+const factPrompts:string[]=[];
 const model=await startScriptedModel([
  // the delivery fact check carries the user's words after "USER REQUEST:"; the main conversation never does
  {match:'USER REQUEST: 核对验收甲',steps:[{text:JSON.stringify({problems:[PROBLEM]})}]},
  {match:'USER REQUEST: 核对验收乙',steps:[{text:JSON.stringify({problems:[]})}]},
  {match:'核对验收甲',steps:[read,{text:'这副耳机现在卖 ¥999。'}]},
  {match:'核对验收乙',steps:[read,{text:'这副耳机限时价 ¥899。'}]},
-]);
+],undefined,payload=>{for(const message of payload.messages??[]){const text=typeof message.content==='string'?message.content:(message.content??[]).map(part=>part.text??'').join('');if(text.includes('PAGE NOW (snapshot, form values included):'))factPrompts.push(text);}});
 const rp=await launchRealPath();let error='';let panel='';const evidence:Record<string,unknown>={};
 const answers=`[...document.querySelectorAll('#messages .msg.assistant')].map(a=>({text:a.innerText.slice(0,80),checked:a.dataset.factChecked??null,note:a.querySelector('.fact-check')?.innerText??null}))`;
 try{
@@ -33,6 +37,14 @@ try{
   await until(async()=>{const a=await rp.evaluate(panel,answers) as Array<{checked:string|null}>;return a.length>=(mark.endsWith('甲')?1:2)&&a.at(-1)!.checked!==null||undefined;},90000,`fact check landed (${mark})`);
  }
  const before=await rp.evaluate(panel,answers) as Array<{text:string;checked:string|null;note:string|null}>;evidence.before=before;
+ assert.equal(factPrompts.length,2,'both answers reached the fact-check model');
+ for(const prompt of factPrompts){
+  const page=prompt.split('PAGE NOW (snapshot, form values included):\n<<<\n')[1]?.split('\n>>>')[0]??'';
+  assert.ok(page.includes('限时价 ¥899'),'current page snapshot reached the fact-check model');
+  assert.ok(page.includes('普通备注'),'ordinary form value remains available for verification');
+  for(const secret of [apiKey,recovery,password])assert.ok(!prompt.includes(secret),'fixture credential must not reach the fact-check model');
+  assert.ok(page.includes('[redacted]'),'credential redaction is visible in the page snapshot');
+ }
  await rp.screenshot(panel,join(out,'notes.png'));
  assert.equal(before.length,2,'two answers');
  assert.match(before[0]!.note??'',/请核对 1 处/,'note under the first answer');
