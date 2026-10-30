@@ -208,6 +208,9 @@ try {
   const errorBlur = await view(panel);
   await rp.screenshot(panel, join(out, "06-error.png"));
   check("出错后失焦：工具还在", erred.errorCard && rowShown(errorBlur), errorBlur);
+  // 没连模型时发一句话：只由那张卡说明一次；点进输入框时的预热不再各报一行红字，输入框上方也不再重复一行「未送达」。
+  const repeats = await rp.evaluate(panel, `({ cards: document.querySelectorAll(".needs-model-card").length, errors: document.querySelectorAll(".msg.error").length, banner: !!document.querySelector("#materials-tray-root .mt-delivery") })`);
+  check("没连模型：同一件事只说一次", JSON.stringify(repeats) === JSON.stringify({ cards: 1, errors: 0, banner: false }), repeats);
 
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", {
     width: 320,

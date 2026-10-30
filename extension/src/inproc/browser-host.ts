@@ -233,6 +233,9 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
+    // 预热是点进输入框时侧栏自己发的，用户真发出的那句话有「还没有连接模型」卡片说明。
+    if (message.type === "warm_up") return;
+
     // 主动建议是后台自己发起的：没配模型就静静地不建议，不在会话里报错。
     if (message.type === "nudge_request") {
       connection?.send({ type: "nudge_result", requestId: message.requestId, nudge: null });
