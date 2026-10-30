@@ -216,6 +216,10 @@ try {
   await rp.screenshot(panel, join(out, "p6-other-conversation.png"));
   check("p6 等待确认时切到新会话：旧卡消失，确认区收起", away6.visible === 0 && away6.dockHidden, away6);
   await rp.click(panel, "#conversation-switcher");
+  // 用户报告：会话行的按钮样式漏到这一行的「继续」上，按钮撑满整行，提示文字被挤成一字一行。
+  const other6 = await until(async () => await rp.evaluate(panel, `(() => { const r = document.querySelector("#conversation-other"); if (!r) return undefined; const p = r.querySelector("p").getBoundingClientRect(), b = r.querySelector("button").getBoundingClientRect(), row = r.getBoundingClientRect(); return { text: r.innerText.replace(/\\s+/g, " "), row: row.width, line: p.width, lineHeight: p.height, button: b.width, lineHeightPx: parseFloat(getComputedStyle(r.querySelector("p")).lineHeight) }; })()`), 5_000, "菜单顶部出现另一个任务") as { text: string; row: number; line: number; lineHeight: number; button: number; lineHeightPx: number };
+  await rp.screenshot(panel, join(out, "p6-other-task-row.png"));
+  check("p6 菜单顶部「另有 1 个任务还没做完」横排可读：文字占大半行、最多两行，「继续」按钮只占自身宽度", other6.line > other6.row * 0.5 && other6.lineHeight <= other6.lineHeightPx * 2 + 1 && other6.button < other6.row * 0.3, other6);
   // 菜单最高占半屏：原会话那行可能在可见范围以外，先滚进来再点，和用户一样。
   const menu6 = await rp.evaluate(panel, `(() => { const b = document.querySelector('#conversation-menu [data-conversation-id="${original6}"]'); b?.scrollIntoView({ block: "nearest" }); return { found: !!b, ids: [...document.querySelectorAll("#conversation-menu [data-conversation-id]")].map(e => e.dataset.conversationId + ":" + e.getAttribute("aria-checked")) }; })()`) as Json;
   await rp.click(panel, `#conversation-menu [data-conversation-id="${original6}"]`);
