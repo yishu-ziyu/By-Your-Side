@@ -1,9 +1,9 @@
 /**
- * 网页里的按住说话：右 ⌥ 的判定见 ptt-keys.ts，
+ * 网页里的按住说话：按键判定见 ptt-keys.ts，
  * 判定结果报给后台；录音与听写在离屏文档里，网页拿不到声音也拿不到 key。
  * 开始录音被拒绝时不能继续进入听写状态。
  */
-import type { PttPageMessage } from "../shared/ptt.js";
+import { PTT_KEY, pttKeyOf, type PttPageMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
 import { createPttCapsule } from "./ptt-capsule.js";
 import { createPttKeys } from "./ptt-keys.js";
@@ -40,6 +40,14 @@ export function installPushToTalkKeys(companion?: PttCompanion): void {
 
   const capsule = createPttCapsule();
 
+  let key = pttKeyOf(undefined);
+  void chrome.storage.local.get(PTT_KEY).then(got => { key = pttKeyOf(got[PTT_KEY]); });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !(PTT_KEY in changes)) return;
+    keys.reset();
+    key = pttKeyOf(changes[PTT_KEY].newValue);
+  });
+
   const keys = createPttKeys({
     // 光标接手时，上一轮留在底部的结果胶囊一起收掉：同一时刻只有一个 BYS 在听。
     onStart: () => { interaction++; if (companion?.start()) capsule.hide(); else capsule.show({ phase: "listening" }); started = report("start"); },
@@ -52,7 +60,7 @@ export function installPushToTalkKeys(companion?: PttCompanion): void {
       });
     },
     onCancel: () => { interaction++; companion?.cancel(); capsule.hide(); void report("cancel"); },
-  });
+  }, () => key);
 
   // 只认用户真按的键：网页脚本派发的按键也会进到这里，不挡的话任何网页都能替用户按住说话、打开麦克风。
   for (const type of ["keydown", "keyup"] as const) {

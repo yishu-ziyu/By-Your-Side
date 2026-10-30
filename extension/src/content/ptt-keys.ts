@@ -1,6 +1,6 @@
 /**
- * 按住说话的按键判定：只认右 ⌥。
- * 单独按住超过 PTT_HOLD_MS 才开始；中间按了别的键说明 ⌥ 在当修饰键用，不开始或取消；Esc、失焦取消。
+ * 按住说话的按键判定：只认设置里选的那一个键。
+ * 单独按住超过 PTT_HOLD_MS 才开始；中间按了别的键说明它在当修饰键用，不开始或取消；Esc、失焦取消。
  * 只管判定，不碰 DOM，录音与发送由调用方接。
  */
 
@@ -18,9 +18,7 @@ interface PttKeys {
   reset: () => void;
 }
 
-const KEY = "AltRight";
-
-export function createPttKeys(handlers: PttKeyHandlers): PttKeys {
+export function createPttKeys(handlers: PttKeyHandlers, key: () => string): PttKeys {
   let state: "idle" | "armed" | "recording" | "spent" = "idle";
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -33,13 +31,13 @@ export function createPttKeys(handlers: PttKeyHandlers): PttKeys {
     disarm();
 
     if (state === "recording") handlers.onCancel();
-    // 取消后到松开右 ⌥ 之前，这一次按住都不再算。
+    // 取消后到松开按键之前，这一次按住都不再算。
     state = state === "idle" ? "idle" : "spent";
   };
 
   return {
     handle(event) {
-      if (event.code === KEY) {
+      if (event.code === key()) {
         if (event.type === "keydown") {
           if (event.repeat || state !== "idle") return state === "recording";
           state = "armed";
