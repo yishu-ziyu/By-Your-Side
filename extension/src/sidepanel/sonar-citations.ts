@@ -27,6 +27,24 @@ export function toast(text: string): void {
   setTimeout(() => note.remove(), 2400);
 }
 
+/** 没做成的原因写进那条回答底部一排并一直留着：用户点完往往在看网页，回头时会自己消失的提示早没了。 */
+export function noteFailure(from: Element, text: string): void {
+  const feedback = from.closest(".msg.assistant")?.querySelector<HTMLElement>(".answer-action-feedback");
+
+  if (!feedback) { toast(text);
+
+ return; }
+  feedback.classList.remove("answer-feedback-sr");
+  feedback.textContent = text;
+}
+
+/** 同一处再点成功了，先前写下的原因就不再成立。 */
+export function clearFailure(from: Element): void {
+  const feedback = from.closest(".msg.assistant")?.querySelector<HTMLElement>(".answer-action-feedback");
+
+  if (feedback && !feedback.classList.contains("answer-feedback-sr")) feedback.textContent = "";
+}
+
 /** 正文里第一处写着 value 的文字（不进链接、代码、界面文字、已标过的数字）。 */
 function findNumberText(answer: HTMLElement, value: string): { node: Text; at: number } | null {
   const walker = document.createTreeWalker(answer, NodeFilter.SHOW_TEXT, {
@@ -99,8 +117,9 @@ export async function attachSourceCitations(answer: HTMLElement, context: Citati
       try {
         const reply = await chrome.runtime.sendMessage({ type: 'PINPOINT_DOM_TARGET', action: 'reveal', source, tabId });
 
-        if (!reply?.ok) toast(reply?.error ?? '未能定位原文。');
-      } catch { toast('来源页面连接已断开，请重新核对。'); }
+        if (reply?.ok) clearFailure(mark);
+        else noteFailure(mark, reply?.error ?? '未能定位原文。');
+      } catch { noteFailure(mark, '来源页面连接已断开，请重新核对。'); }
       finally { busy = false; }
     };
 

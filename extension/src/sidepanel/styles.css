@@ -3314,6 +3314,9 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .answer-actions { gap: 2px; min-height: 28px; margin-top: 6px; transition: opacity var(--m-quick) var(--e-swift); }
 .msg.assistant:not(.answer-latest) > .answer-actions { opacity: 0; }
 .msg.assistant:hover > .answer-actions, .msg.assistant:focus-within > .answer-actions, .msg.assistant:has(> .answer-panel:not([hidden])) > .answer-actions { opacity: 1; }
+/* 写着没做成的原因时，旧回答这一排也不藏：原因要等用户回头看见。 */
+.msg.assistant > .answer-actions:has(> .answer-action-feedback:not(:empty):not(.answer-feedback-sr)) { opacity: 1; }
+.answer-actions .answer-show-tab:disabled:hover { background: transparent; color: inherit; }
 .answer-actions button { width: 28px; height: 28px; border-radius: var(--r-sm); }
 .answer-actions .answer-sources-btn { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: var(--fs-code); color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[hidden] { display: none; }

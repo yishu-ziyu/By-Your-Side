@@ -56,7 +56,7 @@ try {
   const compiled = await transform(await readFile(join(REPO,'extension/src/shared/page-translation.ts'),'utf8'),{loader:'ts',format:'iife',globalName:'TranslationAPI'});
   await rp.evaluate(worker,compiled.code+';globalThis.__translationAcceptance=TranslationAPI.translationInPage');
   const observationSource=await readFile(join(REPO,'extension/src/background/exec/snapshot.ts'),'utf8');
-  const oracle=await transform(observationSource.slice(observationSource.indexOf('export function readTranslationDisplay()')),{loader:'ts',format:'iife',globalName:'DisplayAPI'});
+  const oracle=await transform('export '+observationSource.slice(observationSource.indexOf('function readTranslationDisplay(')),{loader:'ts',format:'iife',globalName:'DisplayAPI'});
   await rp.evaluate(worker,oracle.code+';globalThis.__translationDisplayAcceptance=DisplayAPI.readTranslationDisplay');
   await rp.evaluate(work,'window.originalNode=document.querySelector("#original").firstChild;window.originalText=originalNode.data;window.originalClicks=0;document.querySelector("#original").onclick=()=>window.originalClicks++;window.headerHeightBefore=document.querySelector("#dark-header").offsetHeight');
   const command=async(value:TranslationCommand)=>rp.evaluate(worker,`chrome.scripting.executeScript({target:{tabId:${tabId}},world:'ISOLATED',func:globalThis.__translationAcceptance,args:[${JSON.stringify(value)}]}).then(rs=>rs[0].result)`);
@@ -232,9 +232,9 @@ try {
   await rp.cdp.send('Page.navigate',{url:origin+'/replacement'},work);
   await until(async()=>await rp.evaluate(work,'!!document.querySelector("[data-sideagent-ask]")'),10000,'new document');
   await rp.evaluate(panel,`document.querySelector('.num-cite')?.scrollIntoView({block:'center'})`);
-  await rp.click(panel,'.num-cite');await sleep(200);
-  const old=await rp.evaluate(panel,`!!document.querySelector('.source-toast')`);
-  check('导航后不把旧回答绑定到新页',old,null);
+  await rp.click(panel,'.num-cite');await sleep(3000);
+  const old=await rp.evaluate(panel,`(()=>{const f=document.querySelector('.num-cite')?.closest('.msg.assistant')?.querySelector('.answer-action-feedback');return !!f?.textContent&&f.getClientRects().length>0;})()`);
+  check('导航后不把旧回答绑定到新页，原因留在回答底部',old,null);
 } finally {
   await writeFile(join(out,'result.json'),JSON.stringify({checks,notCovered:['操作系统跨窗口手感','供应商模型引用正确率'],modelRequests:model.requests},null,2));
   await rp.close();await rp.remove();await model.close();await new Promise<void>(r=>site.close(()=>r()));
