@@ -79,3 +79,8 @@
 - 改样子先找原件，没有原件不出方案：按[原件清单](docs/design/references.md)挑（含用户的设计笔记和设计技能），提案把原件截图放旁边（10-19：凭感觉画的示意被判为丑、普通）。
 - 视觉提案给真实扩展里能点的原型，不给静态示意；图标用开源图标库，不用 emoji。
 - 给用户看之前：`npm run gallery` 出前后总览，自己对着原件看；`npm run check:style` 不许新增写死的字号、圆角、颜色；用户的评价记进[口味记录](docs/design/taste.md)，出方案前先读。
+
+## Cursor Cloud specific instructions
+
+- 真实路径验收在 Linux 上要先设 `EGO_ACCEPTANCE_CHROME=/usr/local/bin/chrome-for-testing`。查找只认 macOS 的 Playwright 缓存，不设就会报找不到 Chrome for Testing。用例加 `--headless`。脚本模型不需要密钥。
+- 依赖和这块 Chrome 已由环境安装备好。默认检查仍是 `npm run check:code`。
