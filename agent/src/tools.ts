@@ -1110,7 +1110,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "wait_event",
       label: "Wait page event",
-      description: "Consume a previously armed host token. Fails on forged/expired tokens. One-shot. For a download it then waits (up to 60 s, or timeoutMs if longer) until Chrome's downloads API reports the file complete or interrupted; only a completed receipt means the file was saved.",
+      description: "Consume a previously armed host token. Fails on forged/expired tokens. One-shot. For a download it then waits (up to 60 s, or timeoutMs if longer) until Chrome's downloads API reports the file complete or interrupted; only a completed receipt means the file was saved. A safe captured image or document also returns download.attachment.name: pass that name to upload_file to transfer the original bytes in this conversation. attachmentError means the saved file is not available for automatic upload.",
       parameters: Type.Object({
         token: Type.String({ minLength: 8, maxLength: 120 }),
         timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 120000 })),
@@ -1154,7 +1154,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "download_url",
       label: "Download link",
-      description: "Save a user's requested HTTP(S) file link into Chrome's download folder, including a PDF currently open in Chrome's reader. Opening the PDF is not downloading it. Only completed=true confirms it was saved; if completed is not true, the save is unconfirmed: tell the user, never start another download. Chrome decides safety; do not bypass danger holds.",
+      description: "Download an HTTP(S) file link, including PNG/JPEG images and PDFs, into Chrome's download folder. On safe completion, supported responses up to 50 MB also return attachment.name: use upload_file with that filename to upload these exact original bytes in the same task, without asking the user to attach them. attachmentError means the file was saved but no usable original was captured. Only completed=true confirms it was saved; if incomplete, report that state without repeating the download. Chrome decides safety; do not bypass danger holds.",
       parameters: Type.Object({ url: Type.String({ minLength: 1 }), filename: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })), timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 20000 })), tabId: Type.Optional(Type.Integer()) }),
       execute: async (_id, params) => {
         // SAFETY: download_url RPC 的返回结构由 ToolContract 与扩展处理器一致定义。
