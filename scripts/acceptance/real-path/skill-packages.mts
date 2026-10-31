@@ -41,6 +41,7 @@ if(${input}.format==="txt")text=lines.filter(line=>line&&line!=="WEBVTT"&&!line.
 else text=lines.filter(line=>line!=="WEBVTT").join("\\n").replaceAll(".000",",000");
 return {status:"observed",data:{language:${input}.language,format:${input}.format,text},sourceUrl:file.url,appliedInput:${input}};`;
 const rules: Rule[] = [
+  { match: "PAGE NOW (snapshot, form values included):", steps: [{ text: JSON.stringify({ problems: [] }) }] },
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   { match: '"visitedHosts"', steps: [{ text: JSON.stringify({ notes: [] }) }] },
   { match: FIRST, steps: [{ tool: { name: "browser_run", args: { code: program('{language:"en",format:"txt"}') } } }, { text: "ALPHA subtitle line one" }] },
@@ -86,6 +87,13 @@ const navigate = async (video: string) => {
   await until(() => rp.evaluate(work, `location.search===${JSON.stringify(`?video=${video}`)}&&document.readyState==="complete"&&!!document.querySelector("video track")`), 15_000, `${video} 页面加载`);
 };
 const pageSkill = (expression: string) => `(()=>{const host=document.querySelector("[data-sideagent-skill-packages]");const root=host?.shadowRoot;return ${expression}})()`;
+const clickPageSkill = async () => {
+  const point = await rp.evaluate(work, pageSkill(`(()=>{const r=root.querySelector("[data-skill-id]").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`)) as { x: number; y: number };
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point }, work);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 }, work);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 }, work);
+};
+
 try {
   work = await rp.attach((await rp.targets()).find(target => target.url === "about:blank")!.targetId);
   await navigate("alpha");
@@ -129,7 +137,10 @@ try {
   await until(() => rp.evaluate(work, `document.readyState==="complete"&&!!document.querySelector("[data-sideagent-skill-packages]")?.shadowRoot?.querySelector("[data-skill-id]")`), 20_000, "刷新且侧栏关闭后网页按钮恢复");
   await settleModel();
   const beforePage = model.requests.length;
-  await rp.evaluate(work, pageSkill(`root.querySelector("[data-skill-id]").click(),true`));
+  const forgedStarted = await rp.evaluate(work, pageSkill(`(()=>{const b=root.querySelector("[data-skill-id]");b.click();b.dispatchEvent(new MouseEvent("click",{bubbles:true,composed:true}));return !!root.querySelector(".result");})()`));
+  check("网页伪造点击不能启动已保存技能", forgedStarted === false, { forgedStarted });
+  if (forgedStarted) throw new Error("网页脚本触发了技能运行");
+  await clickPageSkill();
   await until(() => rp.evaluate(work, pageSkill(`root.textContent.includes("BETA subtitle line one")&&root.textContent.includes("未调用模型")`)), 30_000, "网页按钮直接读到 BETA");
   check("网页按钮不依赖侧栏且不调用模型", model.requests.length === beforePage, { before: beforePage, after: model.requests.length });
   await rp.screenshot(work, join(out, "page-result.png"));
@@ -138,7 +149,7 @@ try {
   await until(() => rp.evaluate(work, pageSkill(`!!root.querySelector("[data-skill-id]")`)), 15_000, "失败页按钮");
   await settleModel();
   const beforeFailure = model.requests.length;
-  await rp.evaluate(work, pageSkill(`root.querySelector("[data-skill-id]").click(),true`));
+  await clickPageSkill();
   await until(() => rp.evaluate(work, pageSkill(`root.textContent.includes("没有运行成功")`)), 30_000, "网页按钮显示失败");
   check("失败运行同样没有调用模型", model.requests.length === beforeFailure, { before: beforeFailure, after: model.requests.length });
   await rp.screenshot(work, join(out, "page-failure.png"));

@@ -106,7 +106,10 @@ function install(): () => void {
       button.dataset.skillId = id;
       button.title = `运行${config.name}`;
       button.append(icon(Zap), document.createTextNode(config.name));
-      button.addEventListener("click", () => { void run(id, config, button); });
+      button.addEventListener("click", event => {
+        if (!event.isTrusted) return;
+        void run(id, config, button);
+      });
       entries.append(button);
     }
     dock.append(entries);
