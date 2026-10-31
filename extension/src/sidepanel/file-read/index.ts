@@ -2,12 +2,12 @@
  * 侧栏附上的文件在本机读成文字（file-read.js，用到时才加载，不拖慢侧栏打开）。
  * 返回的附件只带文字和必要的图，原文件只在不大时随附件留着，供 upload_file 原样上传。
  */
-import { FILE_BYTES_KEEP_MAX, FILE_TEXT_MAX, type FileAttachment, type FileFormat } from "../../../../shared/protocol.js";
+import { FILE_BYTES_KEEP_MAX, FILE_READ_MAX_BYTES, FILE_TEXT_MAX, type FileAttachment, type FileFormat } from "../../../../shared/protocol.js";
 import { OfficeError, readDocx, readPptx, readXlsx } from "./ooxml.js";
 import { PdfError, readPdf } from "./pdf.js";
 import { cleanText, decodeText, htmlText } from "./text.js";
 import { ZipError, ZipReader } from "./zip.js";
-import { FILE_READ_MAX_BYTES, readableFormat, unsupportedReason } from "./formats.js";
+import { readableFormat, unsupportedReason } from "./formats.js";
 
 export class FileReadError extends Error {}
 
@@ -46,6 +46,9 @@ export async function readAttachmentFile(file: File, id: string, onProgress: (fr
 
   if (file.size === 0) throw new FileReadError(`${file.name} 是空文件。`);
   const bytes = new Uint8Array(await file.arrayBuffer());
+  // PDF 解析可能把字节所有权转给 worker；先留下原件身份和可上传副本，再交给解析器。
+  const originalSha256 = await sha256(bytes);
+  const originalBase64 = file.size <= FILE_BYTES_KEEP_MAX ? base64(bytes) : undefined;
   const format = sniff(bytes, declared);
   let text: string;
   let parts: FileAttachment["parts"];
@@ -98,11 +101,11 @@ export async function readAttachmentFile(file: File, id: string, onProgress: (fr
   const mimeType = file.type || (format === "pdf" ? "application/pdf" : format === "csv" ? "text/csv" : "application/octet-stream");
 
   return {
-    id, type: "file", name: file.name, mimeType, size: file.size, sha256: await sha256(bytes), format, text,
+    id, type: "file", name: file.name, mimeType, size: file.size, sha256: originalSha256, format, text,
     ...(parts ? { parts } : {}),
     ...(truncated ? { truncated: true as const } : {}),
     ...(pageImages ? { pageImages } : {}),
-    ...(file.size <= FILE_BYTES_KEEP_MAX ? { dataBase64: base64(bytes) } : {}),
+    ...(originalBase64 ? { dataBase64: originalBase64 } : {}),
     ...(note ? { note: note.slice(0, 600) } : {}),
   };
 }

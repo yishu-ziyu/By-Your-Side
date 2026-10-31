@@ -27,6 +27,14 @@
  */
 import { isOwnBackupDownload } from "../shared/memory-backup.js";
 import {
+  abandonDownloadBodyCapture,
+  enableDownloadBodyCapture,
+  handleDownloadBodyCapture,
+  noteDownloadBodyCaptureDetached,
+  releaseDownloadBodyCapture,
+  takeDownloadBodyCapture,
+} from "./download-capture.js";
+import {
   applyChromeDownload,
   armPageEvent,
   armPayload,
@@ -137,6 +145,7 @@ function listenTabPopups(): void {
     if (matched) notifyWaiters(matched);
   });
   chrome.tabs.onRemoved?.addListener((tabId) => {
+    noteDownloadBodyCaptureDetached(tabId);
     disposeTabArms(ledger, tabId, "page destroyed");
 
     for (const [token, timer] of armTimers) {
@@ -153,6 +162,18 @@ function listenTabPopups(): void {
 }
 
 async function onDebuggerEvent(tabId: number, method: string, params: Record<string, unknown>): Promise<void> {
+  if (method === "Fetch.requestPaused") {
+    await handleDownloadBodyCapture(tabId, params, () => {
+      for (const arm of ledger.arms.values()) {
+        if (arm.tabId === tabId && arm.kind === "download" && (arm.status === "armed" || arm.status === "matched")) return arm.token;
+      }
+
+      return undefined;
+    });
+
+    return;
+  }
+
   if (method === "Page.javascriptDialogOpening") {
     const type = String(params.type ?? "alert") as JsDialogType;
 
@@ -337,6 +358,7 @@ export async function enablePageEventCapture(tabId: number, _opts?: { mode?: "fr
 
 export function notePageEventsDetached(tabId: number): void {
   enabled.delete(tabId);
+  noteDownloadBodyCaptureDetached(tabId);
   disposeTabArms(ledger, tabId, "CAPTURE_INCOMPLETE: debugger detached; arm a new event after observing again");
 
   for (const arm of ledger.arms.values()) {
@@ -371,6 +393,8 @@ export async function armEventForTab(input: {
   let interceptStarted = false;
 
   try {
+    if (input.type === "download") await enableDownloadBodyCapture(input.tabId, arm.token);
+
     if (input.type === "filechooser") {
       await beforeDispatch?.();
       beforeDispatch?.checkNow?.();
@@ -412,6 +436,11 @@ async function resetArmSideEffects(arm: ArmedPageEvent): Promise<void> {
   clearArmTimer(arm.token);
 
   try {
+    if (arm.kind === "download") {
+      if (arm.status !== "consumed") abandonDownloadBodyCapture(arm.token);
+      await releaseDownloadBodyCapture(arm.tabId, arm.token);
+    }
+
     if (arm.kind === "filechooser") {
       await chrome.debugger.sendCommand({ tabId: arm.tabId }, "Page.setInterceptFileChooserDialog", {
         enabled: false,
@@ -422,18 +451,27 @@ async function resetArmSideEffects(arm: ArmedPageEvent): Promise<void> {
   }
 }
 
+async function consumedPayload(consumed: ArmedPageEvent, timeoutMs?: number): Promise<ReturnType<typeof armPayload>> {
+  await resetArmSideEffects(consumed);
+  release(consumed);
+
+  if (consumed.downloadId) await waitDownloadSettled(consumed.downloadId, downloadSettleMs(timeoutMs));
+  const payload = armPayload(consumed, ledger.downloads);
+  if (consumed.kind !== "download") return payload;
+  const capturedFile = takeDownloadBodyCapture(
+    consumed.token,
+    String(payload.url ?? ""),
+    payload.completed === true,
+    typeof payload.danger === "string" ? payload.danger : undefined,
+  );
+
+  return capturedFile ? { ...payload, capturedFile } : payload;
+}
+
 export async function waitArmedEvent(token: string, timeoutMs?: number): Promise<ReturnType<typeof armPayload>> {
   const arm = requireArm(ledger, token);
 
-  if (arm.status === "matched") {
-    const consumed = consumeArm(ledger, token);
-    await resetArmSideEffects(consumed);
-    release(consumed);
-
-    if (consumed.downloadId) await waitDownloadSettled(consumed.downloadId, downloadSettleMs(timeoutMs));
-
-    return armPayload(consumed, ledger.downloads);
-  }
+  if (arm.status === "matched") return consumedPayload(consumeArm(ledger, token), timeoutMs);
 
   if (arm.status !== "armed") {
     throw new Error(`INVALID_ARGUMENT: event token is ${arm.status}`);
@@ -475,13 +513,7 @@ export async function waitArmedEvent(token: string, timeoutMs?: number): Promise
     };
   });
 
-  const consumed = consumeArm(ledger, matched.token);
-  await resetArmSideEffects(consumed);
-  release(consumed);
-
-  if (consumed.downloadId) await waitDownloadSettled(consumed.downloadId, downloadSettleMs(timeoutMs));
-
-  return armPayload(consumed, ledger.downloads);
+  return consumedPayload(consumeArm(ledger, matched.token), timeoutMs);
 }
 
 /** 下载开始后另给一段等完成的时间；调用方给了更长的 timeoutMs 就按它。 */

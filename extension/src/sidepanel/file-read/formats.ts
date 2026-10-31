@@ -1,10 +1,7 @@
 /**
  * 哪些文件能读、读不了时怎么说。侧栏一开就要用，所以和解析代码（file-read.js）分开，不随侧栏加载 pdf.js。
  */
-import type { FileFormat } from "../../../../shared/protocol.js";
-
-/** 超过这个大小不读：pdf.js 和 zip 都要把整个文件放进内存。 */
-export const FILE_READ_MAX_BYTES = 50 * 1024 * 1024;
+import { FILE_READ_MAX_BYTES, type FileFormat } from "../../../../shared/protocol.js";
 
 const TEXT_EXTENSIONS = new Set([
   "txt", "md", "markdown", "rst", "log", "json", "jsonl", "ndjson", "xml", "yaml", "yml", "toml", "ini", "cfg", "conf", "env",

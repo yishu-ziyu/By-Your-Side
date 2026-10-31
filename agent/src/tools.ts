@@ -14,7 +14,8 @@ import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
 import { formatEffectReport } from "../../shared/effect.js";
 import { formatFetchReply, fetchFailureReason, type FetchReply } from "./fetch-result.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
-import { isLeadSession, type Attachment, type TabInfo, type ToolContract, type ToolName, type UploadFilePayload } from "../../shared/protocol.js";
+import { isLeadSession, type Attachment, type FileAttachment, type TabInfo, type ToolContract, type ToolName, type UploadFilePayload } from "../../shared/protocol.js";
+import { createHash } from "node:crypto";
 import { FOREIGN_TAB_ERROR } from "../../shared/control.js";
 import { WRITE_TOOLS } from "../../shared/effect-policy.js";
 import { plainDownloadError } from "../../shared/user-facing.js";
@@ -126,7 +127,12 @@ function downloadReceipt(download: Omit<NonNullable<ToolContract["wait_event"]["
   const name = download.suggestedFilename || download.url;
 
   if (download.completed && download.path) {
-    return `Download complete, confirmed by Chrome's downloads API: "${name}" saved to ${download.path}${download.bytes !== undefined ? ` (${download.bytes} B)` : ""}.`;
+    const saved = `Download complete, confirmed by Chrome's downloads API: "${name}" saved to ${download.path}${download.bytes !== undefined ? ` (${download.bytes} B)` : ""}.`;
+
+    if (download.attachment) return `${saved} Its content is available in this conversation as "${download.attachment.name}"; use read_attachment to inspect it${download.attachment.truncated ? " (text was cut off at the size limit; do not claim to have read the whole file)" : ""}.`;
+    if (download.attachmentError) return `${saved} The file was saved, but its content could not be read automatically: ${download.attachmentError}. Ask the user to select the file if content access is needed.`;
+
+    return saved;
   }
 
   if (download.failure) {
@@ -236,25 +242,61 @@ interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSign
 /** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
-export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: { epoch: () => number; canWrite: (toolCallId?: string) => boolean; /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */ releaseIdleTab?: (tabId?: number) => Promise<boolean>; assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void; onStep?: (step: ProgramStep) => void; beforeCopy?: () => Promise<PreparedCopy>;  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile；不传则程序里没有 saveFile，调用时返回 undefined 表示这个会话没有文件区。 */ files?: () => ArtifactStore | undefined; /** 用户在侧栏附上的文件，给 upload_file 按文件名取用。 */ attachments?: () => readonly Attachment[]; /** 填的值来自本轮带上的哪条记忆，网页上那一格标「记得的」。 */ memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined; /** 这个网址所在网站的站点笔记（这一轮还没带过时）；附在打开、跳转结果后面。 */ siteNotesFor?: (url: string) => Promise<string | null>; /** 用户这一句就是要打开网页来看：tabs open 开出的页直接放到眼前。 */ openForUser?: () => boolean; /** 每次浏览器调用执行完（含程序里的步骤）：参数里的 tabId 已补成实际标签页。只观察，不影响结果。 */ observeCall?: (name: string, params: Record<string, unknown>, result: unknown) => void; learnedOperations?: { save: (candidate: unknown, runtime: LearnedOperationRuntime) => Promise<unknown>; run: (id: string, input: unknown, runtime: LearnedOperationRuntime) => Promise<unknown>; delete: (id: string, runtime: LearnedOperationRuntime) => Promise<unknown> } }, translateBatch?: TranslateBatch): ToolDefinition[] {
+interface BrowserToolExecution {
+  epoch: () => number;
+  canWrite: (toolCallId?: string) => boolean;
+  /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */
+  releaseIdleTab?: (tabId?: number) => Promise<boolean>;
+  assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void;
+  onStep?: (step: ProgramStep) => void;
+  beforeCopy?: () => Promise<PreparedCopy>;
+  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile。 */
+  files?: () => ArtifactStore | undefined;
+  /** 用户附上或任务内下载的文件。 */
+  attachments?: () => readonly Attachment[];
+  downloadAttachment?: (input: { id: string; name: string; mimeType: string; dataBase64: string }) => Promise<FileAttachment>;
+  downloadOriginal?: (attachment: Attachment) => string | undefined;
+  memoryForValue?: (value: string) => { id: string; text: string; createdAt: number } | undefined;
+  siteNotesFor?: (url: string) => Promise<string | null>;
+  openForUser?: () => boolean;
+  observeCall?: (name: string, params: Record<string, unknown>, result: unknown) => void;
+  learnedOperations?: {
+    save: (candidate: unknown, runtime: LearnedOperationRuntime) => Promise<unknown>;
+    run: (id: string, input: unknown, runtime: LearnedOperationRuntime) => Promise<unknown>;
+    delete: (id: string, runtime: LearnedOperationRuntime) => Promise<unknown>;
+  };
+}
+
+export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: BrowserToolExecution, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
   /** 站点笔记只给主会话；放在页面原文标记之外，取不到就不附。 */
   const siteNotesAfter = async (url: string): Promise<string> => (sid ? null : await execution?.siteNotesFor?.(url).catch(() => null)) ?? "";
   const files = execution?.files;
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
 
-  /** upload_file 按文件名取本会话的文件：先找 artifacts / saveFile 存下的，再找用户附上的；找不到就列出可用的名字。 */
-  const uploadPayload = (name: string): UploadFilePayload => {
+  /** upload_file 按文件名取本会话的文件：先找 artifacts / saveFile 存下的，再找用户附上或下载的；找不到就列出可用的名字。 */
+  const uploadPayload = async (name: string): Promise<UploadFilePayload> => {
     const store = files?.();
     const saved = store?.get(name);
 
     if (store && saved !== undefined) return { name, type: UPLOAD_TYPES.get(name.split(".").pop()?.toLowerCase() ?? "") ?? "", ...(store.isImage(name) ? { base64: saved } : { text: saved }) };
     const attached = execution?.attachments?.() ?? [];
     const match = attached.filter(a => a.name === name).at(-1);
+    const base64 = match?.type === "file" ? execution?.downloadOriginal?.(match) ?? match.dataBase64 : match?.dataBase64;
 
-    if (match?.dataBase64) return { name, type: match.mimeType, base64: match.dataBase64 };
+    if (match && base64) {
+      if (match.type === "file") {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
 
-    if (match) throw new Error(`${name} 超过 5 MB，侧栏只留了读出的文字、没留原文件，所以传不上去，操作未执行。请用户在网页上自己选这个文件。`);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        if (createHash("sha256").update(bytes).digest("hex") !== match.sha256) throw new Error(`${name} 的原件核对不一致，操作未执行。请重新选择原文件。`);
+      }
+
+      return { name, type: match.mimeType, base64 };
+    }
+
+    if (match) throw new Error(`${name} 只留了读出的文字、没留原文件，所以传不上去，操作未执行。请重新选择原文件。`);
     const available = [...new Set([...(store?.names() ?? []), ...attached.map(a => a.name)])];
 
     throw new Error(`找不到文件 ${JSON.stringify(name)}，操作未执行。${available.length ? `可上传的文件：${available.join("、")}。` : "本会话还没有文件：先用 artifacts 创建，或请用户在侧栏附上。"}`);
@@ -289,6 +331,31 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     throw new Error(
       `通用页面 JS 不可用：工具 ${missing.join("、")} 当前未启用，操作未执行。请改用 snapshot 或 read_element 观察页面。`,
     );
+  };
+
+  const registerDownload = async (result: unknown): Promise<unknown> => {
+    if (!result || typeof result !== "object") return result;
+    const data = result as ToolContract["wait_event"]["data"];
+    const download = data.download;
+    const captured = download?.capturedFile;
+    if (!download || !captured) return result;
+    const publicDownload: NonNullable<ToolContract["wait_event"]["data"]["download"]> = { ...download };
+    delete publicDownload.capturedFile;
+
+    try {
+      if (!execution?.downloadAttachment) throw new Error("当前会话不能读取下载文件");
+      const attachment = await execution.downloadAttachment({
+        id: `download-${download.downloadId}`,
+        name: download.suggestedFilename || download.url,
+        mimeType: captured.mimeType,
+        dataBase64: captured.dataBase64,
+      });
+      publicDownload.attachment = { id: attachment.id, name: attachment.name, ...(attachment.truncated ? { truncated: true as const } : {}) };
+    } catch (error) {
+      publicDownload.attachmentError = (error instanceof Error ? error.message : String(error)).slice(0, 300);
+    }
+
+    return { ...data, download: publicDownload };
   };
 
   // 每次工具执行的身份（轮次、调用 ID、停止信号）显式绑定到一个 call 上，不靠 AsyncLocalStorage：
@@ -402,14 +469,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     assertNotAborted();
     if (execution && epoch !== undefined && execution.epoch() !== epoch) throw new Error(STALE_STEP_MESSAGE);
     const result = await invokeReleasingIdleOwner(gated ? epoch : undefined);
-    preparedCopy?.record(result);
-    try { execution?.observeCall?.(name, callParams, result); } catch { /* observation is not control */ }
+    const publicResult = name === "wait_event" ? await registerDownload(result) : result;
+    preparedCopy?.record(publicResult);
+    try { execution?.observeCall?.(name, callParams, publicResult); } catch { /* observation is not control */ }
     // Private integrity evidence never enters model programs, side-panel text or traces.
-    if (name === 'fill' && result && typeof result === 'object' && 'copyProof' in result) {
-      const { copyProof: _copyProof, ...publicResult } = result;
-      return publicResult;
+    if (name === 'fill' && publicResult && typeof publicResult === 'object' && 'copyProof' in publicResult) {
+      const { copyProof: _copyProof, ...withoutProof } = publicResult;
+      return withoutProof;
     }
-    return result;
+    return publicResult;
   };
 
   return call;
@@ -1001,13 +1069,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "upload_file",
       label: "Upload file",
       description:
-        'The only way to upload a file to a page: put files into a file upload field (<input type=file>) of the working tab, without the OS file picker. Do not build File, Blob or DataTransfer objects or post the form yourself in browser_run or js. To upload a file you create, first save it with artifacts, then call upload_file. Files come from this conversation, named by filename: files saved with artifacts or browser.saveFile, and files the user attached in the side panel. No local disk paths. Do not click the file input or a "choose file" button and do not arm a filechooser: that opens the OS file picker, which you cannot use. Call upload_file directly. target takes the same locator forms as click and may point at the file input, its label, or a custom upload button that contains it. Omit target when the page has exactly one file input; hidden inputs count, and snapshot often does not show them. The receipt lists the files read back from the input. This only selects the files: then check the page, and if the task says to upload, submit the form (for example click its Upload button) and verify the result.',
+        'The only way to upload a file to a page: put files into a file upload field (<input type=file>) of the working tab, without the OS file picker. Do not build File, Blob or DataTransfer objects or post the form yourself in browser_run or js. To upload a file you create, first save it with artifacts, then call upload_file. Files come from this conversation, named by filename: files saved with artifacts or browser.saveFile, files the user attached in the side panel, and files downloaded earlier in this task. No local disk paths. Do not click the file input or a "choose file" button and do not arm a filechooser: that opens the OS file picker, which you cannot use. Call upload_file directly. target takes the same locator forms as click and may point at the file input, its label, or a custom upload button that contains it. Omit target when the page has exactly one file input; hidden inputs count, and snapshot often does not show them. The receipt lists the files read back from the input. This only selects the files: then check the page, and if the task says to upload, submit the form (for example click its Upload button) and verify the result.',
       parameters: Type.Object({
         files: Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 8, description: 'File names from this conversation, e.g. ["hello.txt"]' }),
         target: Type.Optional(Type.String({ description: 'File input, its label, or an upload button containing it: "@N" ref, "loc=css:..." locator, or raw CSS selector. Omit when the page has one file input.' })),
       }),
       execute: async (_id, params) => {
-        const payload = params.files.map(name => uploadPayload(name.trim()));
+        const payload = await Promise.all(params.files.map(name => uploadPayload(name.trim())));
         const data = (await call("upload_file", { files: payload, ...(params.target ? { target: params.target } : {}) })) as ToolContract["upload_file"]["data"];
         const list = data.files.map(f => `${f.name} (${f.size} B)`).join(", ");
 
