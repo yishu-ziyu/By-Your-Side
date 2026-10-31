@@ -378,7 +378,7 @@ function closeForm(restoreFocus = true): void {
   form.remove();
   renderProviders();
   renderConnectionDraftNotice();
-  if (restoreFocus && returnTo && !document.querySelector<HTMLElement>('[data-settings-panel="connections"]')?.hidden) {
+  if (restoreFocus && returnTo && !document.querySelector<HTMLElement>('[data-settings-panel="models"]')?.hidden) {
     [...document.querySelectorAll<HTMLButtonElement>('.provider-option')].find(button => button.dataset.entryKey === returnTo)?.focus();
   }
 }
@@ -1121,6 +1121,7 @@ function renderMainModel(): void {
   const groups = modelOptionGroups(config);
   // 一家都没连时下拉里只有「还没有选择」：换成一个按钮，直接带到服务商列表。
   const none = !config && !groups.length;
+  document.getElementById("settings")!.classList.toggle("is-unconnected", none);
   mainSelect.hidden = none;
   $("main-pick").hidden = !none;
   mainSelect.replaceChildren(...config ? [] : [new Option("还没有选择", "")], ...groups);

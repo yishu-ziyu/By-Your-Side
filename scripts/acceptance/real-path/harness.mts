@@ -411,7 +411,7 @@ export async function exportDiagnosticsViaSettings(
   };
 
   try {
-    // 诊断记录在「数据与诊断」分页里，没切过去时按钮是隐藏的、点不到。
+    // 诊断记录在「记忆与数据」分页里，没切过去时按钮是隐藏的、点不到。
     await until(async () => (await rp.evaluate(settings, `!!document.querySelector('[data-settings-page="data"]')`)) || undefined, 15_000, "设置页导航");
     await rp.click(settings, '[data-settings-page="data"]');
     await until(async () => (await rp.evaluate(settings, `!!document.querySelector("#trace-export")?.getClientRects().length`)) || undefined, 15_000, "设置页诊断记录区");
