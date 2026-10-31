@@ -35,7 +35,7 @@
 
 ## 证据与跟进
 
-[旧版原件](evidence/before.json) · [新版原件](evidence/after.json) · [最终回归](evidence/confirmed.json) · [旧版失败断言](evidence/negative.json) · [重启恢复](evidence/restart.log)。
+[旧版原件](evidence/before.json) · [新版原件](evidence/after.json) · [最终回归](evidence/confirmed.json) · [旧版失败断言](evidence/negative.json) · [重启恢复](evidence/restart.txt)。
 
 在日常真实数据上测量，并覆盖较长历史和较低性能设备。尚未承诺具体目标。
 

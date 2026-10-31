@@ -162,7 +162,7 @@ def render_case(folder):
 <section><h2>每次测量都留下来</h2><img class="figure" src="exports/samples.svg" alt="前后各五次的重载耗时散点分布"><p class="caption">{esc(c['order'])}。{esc(c['interpretation'])}</p><details><summary>展开全部数值与口径</summary><table><tr><th>指标</th><th>之前的中位数</th><th>现在的中位数</th><th>变化</th></tr>{rows}</table><h3>重载到侧栏可用</h3><table><tr><th>各自运行序号</th><th>之前</th><th>现在</th></tr>{sample_rows}</table><p class="caption">{esc(c['timingOrigin'])}</p></details></section>
 <section><h2>可以怎样对外讲</h2><p class="copy">{esc(copy)}</p><p class="meta">引用条件：每段 {c['recordKiB']} KiB，每版 {c['runsPerVersion']} 次，{esc(c['environment'])}。</p>{bullets(record['limits'])}</section>
 <section><h2>下一步验证</h2><p>{esc(record['followup'])}</p><a href="../../perspectives/2026-10-31-speed-and-effort.html">这次讨论留下的产品理解 →</a></section>
-<details><summary>原始证据与复现</summary><div class="links"><a href="evidence/before.json">旧版原件</a><a href="evidence/after.json">新版原件</a><a href="evidence/confirmed.json">最终回归</a><a href="evidence/negative.json">旧版失败断言</a><a href="evidence/restart.log">重启恢复检查</a></div><p class="meta">{esc(record['source'])}<br>旧版 {record['baseline']} → 新版 {record['implementation']}；不是商店发布记录。</p><pre>{esc(record['reproduce'])}</pre></details>'''
+<details><summary>原始证据与复现</summary><div class="links"><a href="evidence/before.json">旧版原件</a><a href="evidence/after.json">新版原件</a><a href="evidence/confirmed.json">最终回归</a><a href="evidence/negative.json">旧版失败断言</a><a href="evidence/restart.txt">重启恢复检查</a></div><p class="meta">{esc(record['source'])}<br>旧版 {record['baseline']} → 新版 {record['implementation']}；不是商店发布记录。</p><pre>{esc(record['reproduce'])}</pre></details>'''
     (folder / 'index.html').write_text(document(record['title'], body))
     markdown = f'''# {record['title']}
 
@@ -190,7 +190,7 @@ def render_case(folder):
 
 ## 证据与跟进
 
-[旧版原件](evidence/before.json) · [新版原件](evidence/after.json) · [最终回归](evidence/confirmed.json) · [旧版失败断言](evidence/negative.json) · [重启恢复](evidence/restart.log)。
+[旧版原件](evidence/before.json) · [新版原件](evidence/after.json) · [最终回归](evidence/confirmed.json) · [旧版失败断言](evidence/negative.json) · [重启恢复](evidence/restart.txt)。
 
 ''' + record['followup'] + '\n\n[产品理解](../../perspectives/2026-10-31-speed-and-effort.md) · [返回产品记录](../../README.md)\n'
     (folder / 'README.md').write_text(markdown)
