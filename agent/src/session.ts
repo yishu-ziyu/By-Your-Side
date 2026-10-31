@@ -3500,11 +3500,11 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const answer = this.runReplyText(event.messages).trim();
     const request = this.activeGoal ?? "";
     const seen = seenThisRun(this.session?.agent.state.messages ?? event.messages, request);
-    const input: FactCheckInput = { request, answer, seen: seen.text, pageNow: "" };
+    const input: FactCheckInput = { request, answer, seen: seen.text, images: seen.images, pageNow: "" };
     const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
 
     const correlation = this.runTrace.traceCorrelation();
-    const skip = (reason: string) => { this.runTrace.recordAt(correlation, "fact_check", { skipped: reason, seenChars: input.seen.length, roles: seen.roles }); };
+    const skip = (reason: string) => { this.runTrace.recordAt(correlation, "fact_check", { skipped: reason, seenChars: input.seen.length, images: seen.images.length, roles: seen.roles }); };
 
     if (lastAssistantError(event.messages)) return skip("model_error");
     if (this.expectedStoppedAgentEnd || this.hold.isHeld()) return skip("stopped");
@@ -3522,7 +3522,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const page = tabId !== null && this.rpc ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown }>).catch(() => null) : null;
       input.pageNow = typeof page?.text === "string" ? page.text : "";
       const problems = await checkFacts(host, model, input, AbortSignal.timeout(100_000));
-      this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, problems: problems.length, findings: problems, pageNow: input.pageNow.length > 0, seenChars: input.seen.length, roles: seen.roles });
+      this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, problems: problems.length, findings: problems, pageNow: input.pageNow.length > 0, seenChars: input.seen.length, images: seen.images.length, roles: seen.roles });
       // 用户已经开了新一轮或停下：结论只进诊断，不再挂到侧栏。
       if (!current() || this.isStreaming()) {
         this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "superseded", problems: problems.length });
