@@ -10,12 +10,14 @@ type RunContext = {
   snapshot: TaskProgressSnapshot | null;
   goal: string;
   failed: readonly { tool: string; reason: string }[];
+  progress?: number;
 };
 type Continuation = { prompt: string } | { settle: Exclude<GoalVerdict["status"], "continue">; overBudget?: true };
 
 export class ContinuePolicy {
   private runId: string | null = null;
   private attempts = 0;
+  private lastProgress = 0;
   private startedAt: number | null = null;
   private evidence: { scope: string; seen: Set<string> } | null = null;
   private nudgePage: { runId: string | null; page: string } | null = null;
@@ -23,7 +25,7 @@ export class ContinuePolicy {
   constructor(private readonly now: () => number = Date.now) {}
 
   reset(): void {
-    this.runId = null; this.attempts = 0; this.startedAt = null; this.evidence = null; this.nudgePage = null;
+    this.runId = null; this.attempts = 0; this.lastProgress = 0; this.startedAt = null; this.evidence = null; this.nudgePage = null;
   }
 
   mayCheck(runId: string): boolean {
@@ -31,10 +33,10 @@ export class ContinuePolicy {
     return this.runId !== runId || this.attempts <= GOAL_CONTINUE_MAX;
   }
 
-  beforeCheck(input: { runId: string | null; reply: string; partial: boolean; pageNow: string | null; pageText: string; goalPage: TaskProgressSnapshot["goalPage"] }, observe?: (rule: string, facts: Record<string, unknown>) => void): GoalVerdict | null {
+  beforeCheck(input: { runId: string | null; reply: string; partial: boolean; pageNow: string | null; pageText: string; goalPage: TaskProgressSnapshot["goalPage"]; progress?: number }, observe?: (rule: string, facts: Record<string, unknown>) => void): GoalVerdict | null {
     const pageAtNudge = this.nudgePage?.runId === input.runId ? this.nudgePage.page : null;
     const hash = (page: string | null) => page === null ? null : createHash("sha256").update(page).digest("hex");
-    if (gaveUpWithoutChange({ ...input, pageAtNudge })) {
+    if ((input.progress ?? 0) <= this.lastProgress && gaveUpWithoutChange({ ...input, pageAtNudge })) {
       observe?.("gave_up_without_change", { partial: input.partial, pageUnchanged: true, pageAtNudgeSha: hash(pageAtNudge), pageNowSha: hash(input.pageNow) });
       return { status: "open", remaining: null, cause: "gave_up_page_unchanged" };
     }
@@ -52,8 +54,11 @@ export class ContinuePolicy {
   next(verdict: GoalVerdict, ctx: RunContext): Continuation {
     this.selectRun(ctx.runId);
     if (verdict.status !== "continue") return { settle: verdict.status };
+    const progress = ctx.progress ?? 0;
+    if (progress > this.lastProgress) { this.attempts = 0; this.startedAt = null; }
+    this.lastProgress = progress;
     // 只改写回答、问用户的那一轮不动网页，一轮就完：换目标本身常已用掉两分钟，不能因此把没说实话的回答留给用户。
-    // 限制的是自动续做阶段，前面的正常查找与执行不能预先耗尽这份预算。
+    // Only consecutive continuations without new host-observed evidence consume the stopping budget.
     const elapsed = this.startedAt === null ? 0 : this.now() - this.startedAt;
     const withinBudget = verdict.repair === "ask_user" || elapsed < GOAL_CONTINUE_WITHIN_MS;
     if (this.attempts >= GOAL_CONTINUE_MAX || !withinBudget) return { settle: "open", ...(!withinBudget ? { overBudget: true } : {}) };
@@ -90,6 +95,6 @@ export class ContinuePolicy {
   }
 
   private selectRun(runId: string | null): void {
-    if (runId && this.runId !== runId) { this.runId = runId; this.attempts = 0; this.startedAt = null; }
+    if (runId && this.runId !== runId) { this.runId = runId; this.attempts = 0; this.startedAt = null; this.lastProgress = 0; }
   }
 }
