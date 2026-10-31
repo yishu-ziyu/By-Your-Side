@@ -11,6 +11,7 @@ dist/
 /.codex/
 /.cursor/
 /.kimi-code/
+/.kimi-tmp/
 /.omo/
 /.serena/
 /.statamcp/
