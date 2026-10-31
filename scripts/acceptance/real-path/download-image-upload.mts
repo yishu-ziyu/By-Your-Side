@@ -1,6 +1,6 @@
 /** PNG download → upload regression: real extension, Chrome downloads and receiving HTTP server.
  * Scripted model fixes tool order; --live uses the configured ChatGPT plan with user authorization.
- * npx tsx scripts/acceptance/real-path/download-image-upload.mts --headless [--live]
+ * npx tsx scripts/acceptance/real-path/download-image-upload.mts --headless [--live --thinking=medium]
  */
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
@@ -13,6 +13,7 @@ import { loadModelPlan, modelStorageItems } from "./inproc-config.mts";
 const headed = process.argv.includes("--headed");
 if (!headed) requireHeadless();
 const live = process.argv.includes("--live");
+const thinking = process.argv.includes("--thinking=medium") ? "medium" : undefined;
 const ASK = "将资料表中的六件商品所有字段和主图填入下面的商品表单：前三张用直接链接下载，后三张点击下载链接取得，然后上传对应的原图，最后点保存商品。";
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-download-image-upload`);
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=", "base64");
@@ -96,6 +97,10 @@ try {
     : { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   if (live) items.inproc_fast_model_config = items.inproc_model_config;
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
+  if (live && thinking) {
+    await rp.evaluate(panel, `localStorage.setItem('sideagent.thinkingLevels',${JSON.stringify(JSON.stringify({"openai-codex/gpt-6-luna": "medium"}))})`);
+    await rp.cdp.send("Page.reload", {}, panel);
+  }
   const ready = 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';
   await until(async () => await rp.evaluate(panel, ready), 60_000, "侧栏就绪");
   await rp.cdp.send("Target.activateTarget", { targetId: blank.targetId });
@@ -121,13 +126,17 @@ try {
 } catch (error) { check("流程完成", false, String(error)); }
 finally {
   clearInterval(progress);
+  if (panelId && live) {
+    const journals = await rp.evaluate(panelId, `(async()=>{const root=await (await navigator.storage.getDirectory()).getDirectoryHandle('pi-durable');const out=[];async function walk(dir,path){for await(const [name,entry] of dir.entries()){if(entry.kind==='directory')await walk(entry,path+'/'+name);else if(name.endsWith('.jsonl')){const file=await entry.getFile();if(file.size<8000000)out.push({path:path+'/'+name,text:await file.text()});}}}await walk(root,'pi-durable');return out;})()`).catch(String);
+    await writeFile(join(out, "journals.json"), JSON.stringify(journals, null, 2));
+  }
   if (panelId) {
     const answer = await rp.evaluate(panelId, 'document.body.innerText').catch(String);
     await writeFile(join(out, "answer.txt"), String(answer));
     await rp.screenshot(panelId, join(out, "answer.png")).catch(() => {});
   }
   if (workId) await rp.screenshot(workId, join(out, "received.png")).catch(() => {});
-  await writeFile(join(out, "result.json"), JSON.stringify({ live, checks, received, requests, modelRequests: model.requests, toolResults: [...toolResults] }, null, 2));
+  await writeFile(join(out, "result.json"), JSON.stringify({ live, thinking: thinking ?? "default", checks, received, requests, modelRequests: model.requests, toolResults: [...toolResults] }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); site.closeAllConnections(); site.close();
 }
 console.log(`证据：${out}`);
