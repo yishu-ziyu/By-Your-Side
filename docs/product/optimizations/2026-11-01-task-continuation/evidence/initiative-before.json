@@ -1,0 +1,19 @@
+{
+  "status": "FAIL",
+  "evidence": [
+    {
+      "approval": false,
+      "text": "阅读第一项和第二项，把两项名称完整列出来。\n存成技能\n来自页面：继续读取练习\n\n我只读完了第一项青松，第二项还没读完。要不要我接着读取第二项再整理？",
+      "checks": [
+        {
+          "status": "needs_user",
+          "adjustedBy": "asksUser",
+          "decidedBy": "model"
+        }
+      ],
+      "continued": 0,
+      "submitted": 0
+    }
+  ],
+  "error": "AssertionError [ERR_ASSERTION]: 普通继续请示不能覆盖核对的continue结论"
+}

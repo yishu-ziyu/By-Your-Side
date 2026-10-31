@@ -31,7 +31,7 @@ import {RunClock} from "./run-clock.js";
 import { VoiceIntentError } from "./voice-errors.js";
 import { TaskActionRejected } from "./task-dispatcher.js";
 import {isAttachment} from '../../shared/protocol.js';
-import {pageRecoveryKey,attachmentRecoveryKey} from './task-recovery.js';
+import {pageRecoveryKey,attachmentRecoveryKey,recoveryPage} from './task-recovery.js';
 import {assertTaskStepExecution, nextStepIgnoringPlaceholder} from '../../shared/task-next-step.js';
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
 import {type VoiceIntentPlan} from './voice-intent.js';
@@ -2554,6 +2554,24 @@ return;}
    * explicitly continue it. Re-read the current page before prompting the model and
    * keep the original run/results identity so execution gates can prevent replays.
    */
+  async recoveryContext(snapshot: TaskProgressSnapshot, current?: PageContext): Promise<PageContext> {
+    const expected = snapshot.recoveryInput?.page;
+    if (!expected) {
+      if (current) return current;
+      throw new TaskActionRejected('没有可核对的原任务页面，请先打开要继续的网页。');
+    }
+    if (!this.rpc) throw new TaskActionRejected('浏览器尚未连接，原任务仍保留。');
+    const tabs = await this.rpc.call('list_tabs', {}, PRE_OBSERVATION_TIMEOUT_MS);
+    const resolved = recoveryPage(expected, current, tabs);
+    const label = snapshot.recoveryInput?.materials?.find(item => item.key === `page:${expected.tabId}:${expected.urlHash}`)?.label;
+    const target = label ? `「${label}」` : '原任务页面';
+    if (!resolved.page) throw new TaskActionRejected(resolved.ambiguous
+      ? `找到多个符合原任务记录的页面，请切到要继续的那一页，再说“继续”。`
+      : `没找到${target}，它可能已关闭或跳到了其他内容。请重新打开该页，再说“继续”；原任务记录仍保留。`);
+    if (current?.tabId !== resolved.page.tabId) this.callbacks.emit({ kind: 'notice', message: `接回原任务页面「${resolved.page.title || '原页面'}」；先核对页面，再接着做。` });
+    return resolved.page;
+  }
+
   async resumeInterruptedTask(snapshot: TaskProgressSnapshot, context?: PageContext, attachments?: Attachment[], pages?: PageContext[]): Promise<void> {
     const resumeEpoch=this.controlEpoch;
 
@@ -2583,6 +2601,7 @@ return;}
     }
 
     this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset(); this.runClock?.reset();
+    this.continuePolicy.reset();
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
     this.activeGoal = snapshot.goal;

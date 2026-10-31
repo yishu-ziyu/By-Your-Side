@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "a 第一次续做已执行，超过预算后不再开始下一次",
+      "pass": true,
+      "actual": {
+        "thirdAnswer": false,
+        "continued": 2,
+        "overBudget": true
+      }
+    },
+    {
+      "name": "b 过程行写「还没做成」",
+      "pass": true,
+      "actual": {
+        "line": "还没做成"
+      }
+    }
+  ]
+}

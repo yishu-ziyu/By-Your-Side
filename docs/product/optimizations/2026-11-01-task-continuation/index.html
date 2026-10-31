@@ -1,0 +1,61 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>继续，应该接回原任务 · By Your Side</title><style>
+:root{color-scheme:light;--ink:#202b3a;--muted:#647182;--blue:#245dcc;--line:#dce1e7;--paper:#fafbf9}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",sans-serif}
+main{max-width:1080px;margin:auto;padding:44px 40px 80px}a{color:var(--blue);text-underline-offset:4px}nav{display:flex;justify-content:space-between;gap:24px;align-items:center;padding-bottom:20px;border-bottom:1px solid var(--line);font-size:13px}
+.brand{font-weight:650;letter-spacing:.03em;color:var(--ink);text-decoration:none}nav div{display:flex;gap:20px}.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}header{padding:54px 0 32px}h1{font-size:42px;line-height:1.25;font-weight:620;letter-spacing:-.045em;margin:14px 0 20px}h2{font-size:23px;line-height:1.4;margin:0 0 20px}h3{font-size:17px;margin:24px 0 8px}p{margin:0 0 16px}.lead{font-size:18px;max-width:650px;color:var(--muted)}section{padding:32px 0;border-top:1px solid var(--line)}.figure{width:100%;height:auto;display:block;background:white;border:1px solid var(--line)}.split{display:grid;grid-template-columns:1fr 1fr;gap:48px}.links{display:flex;gap:20px;flex-wrap:wrap;font-size:14px;margin:16px 0}.status{font-size:13px;color:var(--blue)}.meta{font-size:13px;color:var(--muted)}blockquote{margin:18px 0;padding:6px 0 6px 20px;border-left:2px solid var(--blue);font-size:20px;line-height:1.65}.entry{display:grid;grid-template-columns:145px 1fr;gap:28px}.entry .figure{margin-top:20px}.entry h2{font-size:29px;letter-spacing:-.02em;margin:8px 0 12px}.entry h2 a{color:var(--ink);text-decoration:none}.intro{max-width:620px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}th{color:var(--muted);font-weight:500}ul{padding-left:20px}li{margin:8px 0}details{margin:20px 0}summary{cursor:pointer;color:var(--blue)}pre{overflow:auto;background:#f0f3f6;padding:20px;font-size:12px}footer{padding-top:30px;font-size:12px;color:var(--muted)}.caption{margin-top:10px;color:var(--muted);font-size:13px}.copy{font-size:20px;max-width:770px}.count{font-size:48px;font-variant-numeric:tabular-nums;color:var(--blue);line-height:1.1;margin-bottom:14px}@media(max-width:720px){main{padding:24px 20px 60px}h1{font-size:34px}header{padding:36px 0 24px}.entry,.split{grid-template-columns:1fr;gap:16px}nav{align-items:flex-start}nav div{gap:12px;flex-wrap:wrap}.entry h2{font-size:25px}table{font-size:12px}th,td{padding:10px 5px}}@media print{nav,.links{display:none}main{max-width:none;padding:0}section{break-inside:avoid}details>*{display:block}body{background:white}}
+</style><main><nav><a class="brand" href="../../index.html">BY YOUR SIDE / 产品记录</a><div><a href="../../index.html#optimizations">优化</a><a href="../../index.html#perspectives">理解</a><a href="../../index.html#directions">跟进</a></div></nav><article><h1>继续，应该接回原任务</h1>
+<p>2026-11-01 · 行为修复 · 真实隔离扩展验证</p>
+<p>用户反馈了两件相连的事：助手明知任务没做完，却停下来；输入“继续”或点击“继续原任务”后，又反复要求回到原页面。</p>
+<h2>为什么会这样</h2>
+<p>本轮<a href="evidence/incident-decisions.json">真实诊断的控制决策节选</a>中，目标核对明确判定应继续读取材料并完成画布；主程序却因为回答里有“要不要接着做”，把结论改成了等待用户。随后另一次核对仍判继续，又被从整项任务开始计算的自动续做时限挡住。</p>
+<p>恢复流程还把侧栏当前带入的页面与原任务工作页直接比较。助手自己打开的图集、图片页，与用户停留或查看设置的页面可以不同；用户没有主动改变任务，也会被拒绝。旧流程没有替用户找回仍然打开的原页面。</p>
+<h2>现在怎样处理</h2>
+<ul>
+<li>已核实仍有可执行内容时，普通“要不要接着做”不再强行改成等待用户；真实提交确认、个人信息及明确的用户确认条件仍保留。</li>
+<li>自动续做时限从续做阶段开始计算，不消耗前面的正常查找时间；续做仍有次数和时间上限，不能无限循环。</li>
+<li>直接说“继续”和点击按钮共用恢复路径：按保存的页面身份查找活标签，重新读回核对后继续。原页关闭时说明页面名称；重开后可继续，无须重述任务。</li>
+<li>用户停留的页面不被当成原页面操作。多个候选无法唯一确认时，仍需用户选定；不靠相似标题猜页面。</li>
+</ul>
+<h2>可核对的结果</h2>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>在设置页直接输入“继续”</td>
+<td>旧版复现拒绝；修复后找回原页并答完</td>
+</tr>
+<tr>
+<td>在设置页点击继续按钮</td>
+<td>修复后通过</td>
+</tr>
+<tr>
+<td>原页已关闭，随后在后台重新打开</td>
+<td>先说明缺页，重开后通过</td>
+</tr>
+<tr>
+<td>恢复已有点击结果的任务</td>
+<td>三种恢复场景中，实际提交均仍为一次</td>
+</tr>
+<tr>
+<td>多余的继续请示</td>
+<td>旧版停下；修复后无需用户再次回答，列完两项内容</td>
+</tr>
+<tr>
+<td>“提交前让我确认”</td>
+<td>没有自动续做，实际提交为零</td>
+</tr>
+<tr>
+<td>自动续做到达时限</td>
+<td>没有再开始下一次；假时钟验证也覆盖次数上限</td>
+</tr>
+</tbody></table>
+<p>这是受控回归，模型回复由本机脚本提供。它证明这些程序路径已打通，不等于证明真实模型能完成任意复杂任务，也不代表本次音乐图集和画布已经交付。</p>
+<h2>原件与跟进</h2>
+<p><a href="evidence/resume-before.json">旧版恢复失败</a> · <a href="evidence/resume-text.json">文字继续</a> · <a href="evidence/resume-button.json">按钮继续</a> · <a href="evidence/resume-missing.json">关闭后重开</a> · <a href="evidence/initiative-before.json">旧版多余请示</a> · <a href="evidence/initiative-after.json">推进与确认保护</a> · <a href="evidence/budget.json">真实时限</a> · <a href="evidence/timing-simulation.txt">假时钟边界</a>。</p>
+<p>原任务的完整读取、Spotify 链接查找与画布结果，仍需要真实模型的后续交付来证明。后续应观察是否还存在“明知剩余工作可做，却交还给用户”的新原因，而不是把这次局部修复当成任务能力的终点。</p>
+<p><a href="../../perspectives/2026-11-01-continuing-a-task.html">相关产品理解</a> · <a href="../../guide.html">返回产品记录</a></p>
+</article><div class="links"><a href="README.md">Markdown 原文</a></div><footer>本地产品档案 · 数据图由归档样本生成 · 对外引用请保留测试条件</footer></main></html>

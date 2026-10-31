@@ -1422,19 +1422,19 @@ return receipt;
 
         if(!entry.runtime.session.available)throw new TaskActionRejected('当前执行模型不可用，原任务仍保留在检查点。');
 
-        if(!request.context?.tabId)throw new TaskActionRejected('继续前需要打开原任务页面，让我先重新读取当前状态。');
-        this.taskPages.set(request.conversationId,request.context.tabId);
         this.pendingStarts.add(request.conversationId);
         this.checkpointResumes.add(request.conversationId);
         const version=this.controlVersions.get(request.conversationId)??0;
 
         try{
           await entry.runtime.session.waitForStop?.();
+          const context = await entry.runtime.session.recoveryContext(snapshot, request.context);
           const now=this.getTaskProgress(request.conversationId);
 
           if(!this.connected||!stillCurrent()||!now||now.runId!==snapshot.runId||now.state!=='interrupted'||version!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('原检查点已取消或发生变化，恢复任务未启动。');
+          this.taskPages.set(request.conversationId, context.tabId);
           this.progress.get(request.conversationId)!.prepareResume();
-          await entry.runtime.session.resumeInterruptedTask(snapshot,request.context,request.attachments,request.pages);
+          await entry.runtime.session.resumeInterruptedTask(snapshot,context,request.attachments,request.pages);
         }
         catch(error){this.pendingStarts.delete(request.conversationId);this.checkpointResumes.delete(request.conversationId);throw error;}
 

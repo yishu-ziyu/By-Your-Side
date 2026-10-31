@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: 自动续做的时限不包含此前正常执行的时间，仍保留两分钟和三次上限
+ok 1 - 自动续做的时限不包含此前正常执行的时间，仍保留两分钟和三次上限
+  ---
+  duration_ms: 1.130416
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2467.486333

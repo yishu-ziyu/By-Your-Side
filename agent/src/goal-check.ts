@@ -203,10 +203,7 @@ function parseGoalCheckReply(text: string, evidence?: CitationEvidence) {
   return {...reply,citationChecks};
 }
 
-/**
- * 助手这一轮最后在问用户（结尾是问句）时一律算「等用户」，不交给模型判断：
- * 实测快速模型把「要我现在点 SIGN UP 提交吗？」判成「助手能自己做」，宿主催它接着做，绕过了用户「提交前让我确认」的要求。
- */
+/** 检测问话，不把这个语言信号本身当作必须停工的依据。 */
 export function asksUser(reply: string): boolean {
   // 问句后面常跟一句说明（「回复"确认"我就提交。」），所以看结尾约 100 字里有没有问号；
   // 也认不带问号的请求：「请把你想用来订阅的邮箱发我」、「请提供…」「告诉我…」「回复我…」。
@@ -217,6 +214,18 @@ export function asksUser(reply: string): boolean {
 
   return /[?？]/u.test(asked.slice(-100))
     || /请(把|提供|告诉|确认|回复|选择|发给?我|输入|填写你)|告诉我|发(给)?我|回复(我|「|“|")|需要你(的|提供|确认|先)|等你(确认|回复|提供)|please (provide|tell|confirm|reply|send)|let me know/iu.test(tail);
+}
+
+/** 真实的输入或对外操作确认仍要等用户；普通“要不要接着做”不能推翻已核实的未完成项。 */
+function hasUserDependency(input: GoalCheckInput): boolean {
+  if (input.replyForm) return true;
+  if (!asksUser(input.lastReply)) return false;
+  const tail = input.lastReply.replace(/https?:\/\/[^\s)）\]」"'<>]+/g, '').trimEnd().slice(-240);
+  const questions = tail.split(/(?<=[。！？!?；;\n])|(?<=\.)\s+/).filter(asksUser).join('\n');
+  const consequential = /提交|发送|发布|付款|支付|购买|下单|转账|删除|注册|订阅|授权|\b(send|submit|publish|pay|purchase|buy|delete|sign\s*up|register|subscribe|authorize)\b/i;
+  const personal = /邮箱|邮件地址|手机号|电话号码|密码|验证码|身份证|银行卡|\b(email|phone|password|verification code|credit card)\b/i;
+  const explicitGate = /(?:先|之前|前|等|等待).{0,12}(?:我|用户).{0,8}(?:确认|同意|批准)|(?:我|用户).{0,8}(?:确认|同意|批准).{0,8}(?:再|后|才)|\b(ask me|my approval|confirm before|confirmation before|wait for my)\b/i;
+  return consequential.test(questions) || personal.test(questions) || explicitGate.test(input.goal.join('\n'));
 }
 
 /**
@@ -660,9 +669,9 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     const items = Array.isArray(parsed.items) ? parsed.items.flatMap(item => item && typeof item === "object" && typeof (item as GoalItem).text === "string" && typeof (item as GoalItem).done === "boolean"
       ? [{ text: (item as GoalItem).text.trim().replace(/\s+/g, " ").slice(0, 30), done: (item as GoalItem).done }] : []).filter(item => item.text).slice(0, 12) : [];
     const adjustments: string[] = [];
-    const waitsForUser = asksUser(input.lastReply) || !!input.replyForm;
+    const waitsForUser = hasUserDependency(input);
     const unfinishedItems = parsed.status === "done" && items.some(item => !item.done);
-    if (parsed.status === "continue" && waitsForUser) adjustments.push(input.replyForm && !asksUser(input.lastReply) ? "replyForm" : "asksUser");
+    if (parsed.status === "continue" && waitsForUser) adjustments.push(input.replyForm ? "replyForm" : "user_dependency");
     if (unfinishedItems) adjustments.push("unfinishedItems");
     const status = parsed.status === "continue" && waitsForUser ? "needs_user"
       : unfinishedItems ? (waitsForUser ? "needs_user" : "open") : parsed.status;
