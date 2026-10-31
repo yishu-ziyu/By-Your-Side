@@ -129,7 +129,7 @@ function downloadReceipt(download: Omit<NonNullable<ToolContract["wait_event"]["
   if (download.completed && download.path) {
     const saved = `Download complete, confirmed by Chrome's downloads API: "${name}" saved to ${download.path}${download.bytes !== undefined ? ` (${download.bytes} B)` : ""}.`;
 
-    if (download.attachment) return `${saved} Its content is available in this conversation as "${download.attachment.name}"; use upload_file to upload the original, or read_attachment to inspect its available text${download.attachment.truncated ? " (text was cut off at the size limit; do not claim to have read the whole file)" : ""}.`;
+    if (download.attachment) return `${saved} Its content is available in this conversation as "${download.attachment.name}"; use upload_file to upload the original, or read_attachment to read its contents (including images)${download.attachment.truncated ? " (text was cut off at the size limit; do not claim to have read the whole file)" : ""}.`;
     if (download.attachmentError) return `${saved} The file was saved, but its content could not be read automatically: ${download.attachmentError}. Ask the user to select the file if content access is needed.`;
 
     return saved;
@@ -690,7 +690,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         rpc.noteToolFact?.(id, "executed");
 
-        const json = JSON.stringify({ value: result.value, steps: result.steps });
+        const json = JSON.stringify({ ...(result.imageSources.length ? { imageSources: result.imageSources } : {}), value: result.value, steps: result.steps });
 
         // 程序常带回网页正文：与 snapshot 一样标成不可信页面数据并遮掉凭据；超长时写明截了多少，别让模型以为拿全了。
         const shown = json.length > MAX_JS_RESULT_CHARS

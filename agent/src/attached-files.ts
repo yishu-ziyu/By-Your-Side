@@ -71,6 +71,7 @@ export function withAttachedFiles(text: string, attachments: Attachment[] | unde
     }
 
     if (head.trim()) lines.push(wrapPageContent(head, { title: file.name }));
+    else if (file.format === "image") lines.push(`[Use read_attachment with name ${JSON.stringify(file.name)} to read the original pixels directly.]`);
     else if (!file.pageImages?.length) lines.push("[No text could be extracted from this file.]");
 
     if (rest > 0) lines.push(`[Shown: characters 1–${head.length} of ${file.text.length}. The rest is not in this message: before answering about later parts, call read_attachment with name "${file.name}" and an offset, or with a query to find passages.]`);

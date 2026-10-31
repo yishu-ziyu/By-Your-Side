@@ -1,11 +1,4 @@
-/**
- * 一次请求做了 3 分钟还没回话：助手被叫停去回话，之后多调的工具被挡下，不再碰页面。
- * 只装扩展、隔离构建、本机脚本模型；脚本模型不看提醒、照旧往下调工具，用本机站点记下的访问看哪些步真的执行了。约 3.5 分钟。
- *   npx tsx scripts/acceptance/real-path/run-clock.mts --headless
- *   a) 满 3 分钟后的第一条工具结果里写明停下来回话。
- *   b) 提醒之后放行两步（/grace1、/grace2），第三步（/third）被挡下，页面没被打开。
- * 失败方式：没有计时，a、b 都失败。
- */
+/** 长任务超过三分钟后仍能完成剩余网页操作；隔离扩展、本机脚本模型，约三分半。 */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -28,7 +21,7 @@ await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const at = (path: string) => ({ name: "navigate", args: { url: `http://127.0.0.1:${siteAddress(site).port}${path}` } });
 
 const TASK = "计时核对：把这期视频的字幕找出来";
-const DONE = "找了三分多钟没找到字幕，先停在这里。";
+const DONE = "已完成全部四个页面的整理。";
 // 每段停 5 秒、不超过断流计时：3 分多钟一直在出字，然后才调第一个工具。
 const slow = Array.from({ length: 38 }, () => ({ text: "…", delayMs: 5_000 }));
 const notes: string[] = [];
@@ -61,9 +54,9 @@ try {
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(DONE)}))`) || undefined, 300_000, "最后的回话");
   await rp.screenshot(panel, join(out, "panel.png"));
   const first = notes[0] ?? "";
-  check("a 满 3 分钟后的第一条工具结果写明停下来回话", first.includes("[Time]") && first.includes("Reply to the user now"), { first: first.slice(-300), results: notes.length });
+  check("a 满 3 分钟后提醒继续已授权工作", first.includes("[Time]") && first.includes("continue the remaining authorized work"), { first: first.slice(-300), results: notes.length });
   const pages = hits.filter(path => path !== "/favicon.ico");
-  check("b 提醒后放行两步，第三步被挡下没打开页面", pages.includes("/grace2") && !pages.includes("/third"), { pages });
+  check("b 提醒后所有剩余页面均实际打开", pages.includes("/grace1") && pages.includes("/grace2") && pages.includes("/third"), { pages });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.length > 0 && checks.every(c => c.pass) ? "PASS" : "FAIL", checks, notes }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); site.close();
