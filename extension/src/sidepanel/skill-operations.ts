@@ -3,13 +3,16 @@
  * 侧栏只拿名字、说明、网站来显示和删除；程序本身不经过侧栏。
  */
 import type { ClientMessage, ServerMessage, SkillOperationSummary } from "../../../shared/protocol.js";
+import { skillPackageConfig } from "./skill-packages.js";
 
 type Settle = (operations: SkillOperationSummary[] | null) => void;
+type RunSettle = (msg: Extract<ServerMessage, { type: "skill_operation_run_result" }>) => void;
 
 let send: ((msg: ClientMessage) => boolean) | null = null;
 let known: SkillOperationSummary[] = [];
 let loaded = false;
 const pending = new Map<string, Settle>();
+const pendingRuns = new Map<string, RunSettle>();
 const listeners = new Set<() => void>();
 
 export function connectSkillOperations(sendMessage: (msg: ClientMessage) => boolean): void {
@@ -51,6 +54,16 @@ export function deleteSkillOperation(id: string, done: (ok: boolean) => void): b
   return request({ type: "skill_operation_delete", requestId: crypto.randomUUID(), id }, operations => done(!!operations && !operations.some(item => item.id === id)));
 }
 
+export function runSkillOperation(id: string, input: Record<string, unknown>, tabId: number | undefined, done: RunSettle): boolean {
+  if (!send) return false;
+  const requestId = crypto.randomUUID();
+  pendingRuns.set(requestId, done);
+  const msg: ClientMessage = { type: "skill_operation_run", requestId, id, input, ...(tabId !== undefined ? { tabId } : {}) };
+  if (send(msg)) return true;
+  pendingRuns.delete(requestId);
+  return false;
+}
+
 /** 后台回的列表。另一个窗口删改后发出的结果也收：列表只有后台那一份，哪个窗口看到的都该一样。 */
 export function receiveSkillOperations(msg: Extract<ServerMessage, { type: "skill_operations_result" }>): void {
   const settle = pending.get(msg.requestId);
@@ -65,6 +78,12 @@ export function receiveSkillOperations(msg: Extract<ServerMessage, { type: "skil
   settle?.(msg.ok ? msg.operations ?? [] : null);
 }
 
+export function receiveSkillOperationRun(msg: Extract<ServerMessage, { type: "skill_operation_run_result" }>): void {
+  const settle = pendingRuns.get(msg.requestId);
+  pendingRuns.delete(msg.requestId);
+  settle?.(msg);
+}
+
 /** 当前网页所在网站（完整来源）的技能：技能只在存下它的那个网站上能直接运行。 */
 export function skillOperationsFor(url: string | null): SkillOperationSummary[] {
   if (!url) return [];
@@ -72,7 +91,7 @@ export function skillOperationsFor(url: string | null): SkillOperationSummary[] 
   try {
     const origin = new URL(url).origin;
 
-    return known.filter(item => item.site === origin);
+    return known.filter(item => item.site === origin && skillPackageConfig(item.id)?.slash !== false);
   } catch {
     return [];
   }

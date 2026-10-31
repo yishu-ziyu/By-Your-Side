@@ -16,6 +16,7 @@ import { isUserDelivery, isVoiceClientMessage, isVoiceServerMessage, type UserDe
 import { isTaskActionRequest, isTaskReceipt, taskId, type TaskActionRequest, type TaskReceipt } from "./task-actions.js";
 import { isTaskView } from "./task-view.js";
 import type { CopyTextRange } from "./copy-range.js";
+import { isJsonObject, isJsonSchema, isLearnedOperationResult, type JsonObject, type JsonSchema, type LearnedOperationResult } from "./learned-operations.js";
 export type { CopyTextRange } from "./copy-range.js";
 
 export const PROTOCOL_VERSION = 1;
@@ -331,9 +332,10 @@ export type ClientMessage = ConversationEnvelope & (
   /** 过往任务的「这里别用」与撤销「忘掉」（放回删掉的那条）。结果都是 task_history_result。 */
   | { type: "task_history_site"; requestId: string; id: string; hostname: string; off: boolean }
   | { type: "task_history_restore"; requestId: string; task: TaskHistoryEntry }
-  /** 可直接运行的技能（核对做成后存下的只读程序）：列出，或删一条。结果都是 skill_operations_result。 */
+  /** 可直接运行的技能：列表和删除返回 skill_operations_result；直接运行返回 skill_operation_run_result。 */
   | { type: "skill_operations_list"; requestId: string }
   | { type: "skill_operation_delete"; requestId: string; id: string }
+  | { type: "skill_operation_run"; requestId: string; id: string; input: JsonObject; tabId?: number }
   | { type: "site_note_delete"; requestId: string; host: string; text: string; runId: string }
   | { type: "site_note_list"; requestId: string }
   | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
@@ -458,8 +460,9 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask" | "site" | "unforget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number; alreadySaved?: true; /** action=ask 失败且这条询问已作废（不在了、替换目标被改过）：侧栏不再给按钮。 */ askClosed?: true }
   /** 过往任务列表（删除后返回剩下的），从新到旧。 */
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
-  /** 可直接运行的技能列表（删除后返回剩下的）。只给侧栏显示用的字段，不带程序。 */
+  /** 技能列表只带显示和配置所需字段，不带程序；运行结果带真实数据，不经模型改写。 */
   | { type: "skill_operations_result"; requestId: string; ok: boolean; operations?: SkillOperationSummary[]; error?: string }
+  | { type: "skill_operation_run_result"; requestId: string; ok: boolean; result?: LearnedOperationResult; error?: string }
   | { type: "site_note_delete_result"; requestId: string; ok: boolean; error?: string }
   | { type: "site_note_list_result"; requestId: string; ok: boolean; notes?: Array<{ host: string; text: string; runId: string }>; error?: string }
   /** reason 是人话；detail 是服务商原文，只进「技术详情」。 */
@@ -968,14 +971,14 @@ export interface GuideStepResult {
 
 // ── 编解码守卫 ─────────────────────────────────────────────────────
 
-/** 协议里的可选说明文字（错误原因等）。 */
-export interface SkillOperationSummary { id: string; name: string; purpose: string; site: string }
+/** 侧栏据输入契约生成配置表单；技能程序仍只留在后台。 */
+export interface SkillOperationSummary { id: string; name: string; purpose: string; site: string; inputSchema: JsonSchema }
 
 function isSkillOperationSummary(value: unknown): value is SkillOperationSummary {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
 
-  return validMemoryId(item.id) && isShortText(item.name) && isShortText(item.purpose) && isShortText(item.site);
+  return validMemoryId(item.id) && isShortText(item.name) && isShortText(item.purpose) && isShortText(item.site) && isJsonSchema(item.inputSchema, true);
 }
 
 function isShortText(value: unknown): value is string {
@@ -1064,6 +1067,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (msg.type === "site_note_list" && !validRequestId(msg.requestId)) return null;
 
     if (msg.type === "skill_operation_delete" && !(validRequestId(msg.requestId) && validMemoryId(msg.id))) return null;
+
+    if (msg.type === "skill_operation_run" && !(validRequestId(msg.requestId) && validMemoryId(msg.id) && isJsonObject(msg.input) && JSON.stringify(msg.input).length <= 16_384
+      && (msg.tabId === undefined || Number.isSafeInteger(msg.tabId) && msg.tabId >= 0))) return null;
 
     if (msg.type === "task_history_forget" && (!validRequestId(msg.requestId) || (msg.id !== null && !validMemoryId(msg.id)))) return null;
 
@@ -1249,6 +1255,10 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 
       if (msg.error !== undefined && !isShortText(msg.error)) return null;
     }
+
+    if (msg.type === "skill_operation_run_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean"
+      && (msg.result === undefined || isLearnedOperationResult(msg.result)) && (msg.error === undefined || isShortText(msg.error))
+      && (msg.ok ? !!msg.result : typeof msg.error === "string" && !!msg.error))) return null;
 
     if (msg.type === "task_history_result") {
       if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return null;
