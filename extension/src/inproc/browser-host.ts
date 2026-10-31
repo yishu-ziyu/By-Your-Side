@@ -321,7 +321,9 @@ export function startInprocHost(deps: InprocHostDeps): void {
           await core.conversations.handleMessage({ type: "set_model", conversationId: conversation.id, model: `${model.provider}/${model.id}` });
         }
       } else {
+        const coreStarted = performance.now();
         const started = await ensureCore();
+        performance.measure('sideagent.startup.core', { start: coreStarted });
 
         if (helloReceived && connection) started.sendHelloOk(connection);
 

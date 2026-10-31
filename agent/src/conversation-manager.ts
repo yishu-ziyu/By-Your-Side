@@ -181,12 +181,16 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
     });}
 
   async ensureDefault(): Promise<ConversationEntry> {
-    for (const summary of this.store?.load() ?? []) {
-      const restoring = !this.entries.has(summary.id) && !this.pending.has(summary.id);
-      const entry = await this.create(summary.id, summary.title, summary);
-      const reading = restoring ? this.store?.readingFor?.(summary.id) : undefined;
+    const summaries = this.store?.load() ?? [];
+    // 每个会话的日志与检查点独立；限制同时恢复的数量，避免长记录一起占满内存。
+    for (let at = 0; at < summaries.length; at += 4) {
+      await Promise.all(summaries.slice(at, at + 4).map(async summary => {
+        const restoring = !this.entries.has(summary.id) && !this.pending.has(summary.id);
+        const entry = await this.create(summary.id, summary.title, summary);
+        const reading = restoring ? this.store?.readingFor?.(summary.id) : undefined;
 
-      if (reading) await entry.runtime.session.importReading(reading);
+        if (reading) await entry.runtime.session.importReading(reading);
+      }));
     }
 
     return this.create(DEFAULT_CONVERSATION_ID, "新会话");
@@ -1805,7 +1809,7 @@ return receipt;
       });
       runtime.session.bindDeliveryRun?.(() => this.progress.get(id)?.snapshot().runId ?? null);
 
-      for (const [model, level] of this.thinkingPreferences) runtime.session.setThinking(model, level);
+      for (const [model, level] of this.thinkingPreferences) runtime.session.setThinking(model, level, true);
       runtime.session.emitThinkingLevel();
       // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。
       runtime.session.bindVoiceTurnGate?.(this.voiceTurns);
@@ -2096,7 +2100,7 @@ return;}
       if (!current) return;
       current.setThinking(message.model, message.level, message.restore);
       this.thinkingPreferences.set(message.model, message.level);
-      for (const entry of this.entries.values()) if (entry.runtime.session !== current) entry.runtime.session.setThinking(message.model,message.level,message.restore);
+      for (const entry of this.entries.values()) if (entry.runtime.session !== current) entry.runtime.session.setThinking(message.model,message.level,true);
 
       return;
     }
