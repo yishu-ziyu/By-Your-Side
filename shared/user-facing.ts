@@ -67,6 +67,10 @@ export function isQuotaError(message: string | undefined): boolean {
 /** 错误卡按种类给按钮：auth 换 key，busy 倒计时自动重试或换模型，quota 稍后重试或换模型，missing 换模型，network 重试。 */
 export type ModelErrorKind = "auth" | "busy" | "quota" | "missing" | "network" | "other";
 
+export function isModelTimeoutError(text: string): boolean {
+  return /timeout|timed out|超时/i.test(text);
+}
+
 export interface ModelErrorCopy { kind: ModelErrorKind; title: string; copy: string; model?: string; modelConnection?: ModelConnectionIdentity; detail: string }
 
 /**
@@ -121,7 +125,7 @@ function classifyModelError(text: string, model: string | undefined): Pick<Model
 
   if (/\b5\d\d\b|overload|unavailable|bad gateway|internal server error/i.test(text)) return { kind: "busy", title: "模型服务暂时出错", copy: "对方繁忙或故障，已自动重试几次。可以稍后再试，或换个模型立刻继续。" };
 
-  if (/timeout|timed out|超时/i.test(text)) {
+  if (isModelTimeoutError(text)) {
     const timeout = describeTimeout(text);
     return { kind: "busy", title: timeout?.title ?? "模型没有回应", copy: timeout?.copy ?? "这次没有拿到回答。可以重试，或换个模型立刻继续。" };
   }

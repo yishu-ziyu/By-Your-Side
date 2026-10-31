@@ -275,7 +275,7 @@ export async function createConversationRuntime(
         break;
       case "retry_after_error":
         // 倒计时自己发的重试落空（任务已在跑或已结束）时不提示：用户没有点任何东西。
-        if (!session.retryAfterModelError() && !msg.auto) sendCurrent({ type: "agent_event", event: { kind: "notice", message: "没有要接着做的出错任务：任务已经在跑，或已经结束。" } });
+        if (!session.retryAfterModelError(msg.auto ? "automatic" : "user") && !msg.auto) sendCurrent({ type: "agent_event", event: { kind: "notice", message: "没有要接着做的出错任务：任务已经在跑，或已经结束。" } });
         break;
       case "tool_result":
         rpc.handleResult(msg.id, msg.ok, msg.data, msg.error, msg.executionFact);

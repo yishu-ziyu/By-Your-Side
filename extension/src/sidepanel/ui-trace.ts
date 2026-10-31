@@ -15,10 +15,10 @@ export function setUiRunSource(source: () => string | null): void {
   currentRunId = source;
 }
 
-export function uiEvent(type: `ui_${string}`, data: UiEventData = {}): void {
+export function uiEvent(type: `ui_${string}`, data: UiEventData = {}, runId: string | null = currentRunId()): void {
   try {
     recorder ??= new TraceRecorder(createTraceSink);
-    recorder.setRun(currentRunId());
+    recorder.setRun(runId);
     recorder.record(type, data);
   } catch { /* 诊断永远不打断界面。 */ }
 }

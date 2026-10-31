@@ -13,15 +13,15 @@ function answerFor(start: string, messages: HTMLElement): HTMLElement | null {
   return answers.find((answer) => squash(answer.dataset.markdown ?? answer.textContent ?? "").startsWith(key)) ?? null;
 }
 
-export function renderFactCheck(event: { answer: string; problems: string[] }, messages: HTMLElement): void {
+export function renderFactCheck(event: { answer: string; problems: string[] }, messages: HTMLElement): HTMLElement | null {
   const answer = answerFor(event.answer, messages);
 
-  if (!answer) return;
+  if (!answer) return null;
   answer.querySelector(":scope > .fact-check")?.remove();
   // 核对过、都对得上时界面上什么都没有：留一个标记，验收据此区分「核对过了」和「还没核对完」。
   answer.dataset.factChecked = String(event.problems.length);
 
-  if (!event.problems.length) return;
+  if (!event.problems.length) return answer;
   const note = document.createElement("div");
   note.className = "fact-check";
   note.setAttribute("role", "note");
@@ -40,4 +40,5 @@ export function renderFactCheck(event: { answer: string; problems: string[] }, m
   const actions = answer.querySelector(":scope > .answer-actions");
 
   if (actions) actions.before(note); else answer.append(note);
+  return answer;
 }

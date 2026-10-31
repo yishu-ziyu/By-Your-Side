@@ -89,6 +89,15 @@ try {
   const activeAfterB = await rp.evaluate(panel, `chrome.tabs.query({ active: true }).then((tabs) => tabs[0]?.url ?? "")`) as string;
   check("b 客气变体同样走快捷通道（仍 0 模型请求且切过去了）", requestsAfterB === 0 && activeAfterB === URL_B, { requestsAfterB, activeAfterB, expectUrl: URL_B });
 
+  const originalTarget = await rp.evaluate(panel, `chrome.tabs.create({url:${JSON.stringify(URL_B + 'original')},active:false}).then(t=>t.id)`) as number;
+  const target = await until(async () => (await rp.targets()).find(t => t.url === URL_B + 'original') || undefined, 10000, 'original target');
+  const targetSession = await rp.attach(target.targetId);
+  await rp.evaluate(targetSession, `document.title='X'`);
+  await sleep(300);
+  await say('将页面切换到x', '已切到「X」');
+  const originalActive = await rp.evaluate(panel, `chrome.tabs.query({active:true}).then(tabs=>tabs.some(t=>t.id===${originalTarget}))`);
+  check('原始报告的切页请求直接到前台，不调用模型', originalActive === true && model.requests.length === 0, { originalActive, modelRequests: model.requests.length });
+
   // c) 匹配不到：回退完整路径，模型被调用。
   const requestsBeforeC = model.requests.length;
   await say(FALLBACK, "完整路径接管");

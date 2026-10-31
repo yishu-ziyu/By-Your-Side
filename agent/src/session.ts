@@ -1223,7 +1223,7 @@ if(required.includes(key))candidates.set(key,attachment);
    * 去掉记录末尾那条出错的回复再接着跑：已完成的工具步骤和结果都还在上下文里，不重做。
    * 只有空闲、没被接管、最后一条确实是出错的回复时才接着做；否则返回 false。
    */
-  retryAfterModelError(): boolean {
+  retryAfterModelError(source: "automatic" | "user" = "user"): boolean {
     const session = this.session;
 
     if (!session || this.isStreaming() || this.hold.isHeld()) return false;
@@ -1233,7 +1233,7 @@ if(required.includes(key))candidates.set(key,attachment);
     if (last?.role !== "assistant" || last.stopReason !== "error") return false;
     session.agent.state.messages = messages.slice(0, -1);
     this.deliveredResultThisRun = false;
-    this.runTrace.record("retry_after_error", { error: last.errorMessage });
+    this.runTrace.record("retry_after_error", { error: last.errorMessage, source });
     void (session.resume ? session.resume() : session.agent.continue()).catch(error => this.emitError(error));
 
     return true;
@@ -3432,6 +3432,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const correlation = this.runTrace.traceCorrelation();
     const skip = (reason: string) => { this.runTrace.recordAt(correlation, "fact_check", { skipped: reason, seenChars: input.seen.length, roles: seen.roles }); };
 
+    if (lastAssistantError(event.messages)) return skip("model_error");
+    if (this.expectedStoppedAgentEnd || this.hold.isHeld()) return skip("stopped");
     if (!input.request) return skip("no_request");
     if (!host || !model) return skip("no_model");
     if (!worthChecking(input)) return skip("nothing_to_check");
@@ -3448,9 +3450,16 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const problems = await checkFacts(host, model, input, AbortSignal.timeout(100_000));
       this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, problems: problems.length, pageNow: input.pageNow.length > 0, seenChars: input.seen.length, roles: seen.roles });
       // 用户已经开了新一轮或停下：结论只进诊断，不再挂到侧栏。
-      if (epoch !== this.controlEpoch || this.isStreaming()) return;
-      if (problems.length && this.fixFacts(problems, epoch)) return;
+      if (epoch !== this.controlEpoch || this.isStreaming()) {
+        this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "superseded", problems: problems.length });
+        return;
+      }
+      if (problems.length && this.fixFacts(problems, epoch)) {
+        this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "correction_started", problems: problems.length });
+        return;
+      }
       this.callbacks.emit({ kind: "fact_check", status: "done", answer: answer.slice(0, 160), problems: problems.map(p => p.text) });
+      this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "sent_to_ui", problems: problems.length });
     } catch (error) {
       this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, failed: error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160) });
     }

@@ -10,7 +10,7 @@
  */
 import { createElement as icon, Check } from "lucide";
 import type { ModelConnectionIdentity, ModelConnectionTarget, ModelOption } from "../../../shared/protocol.js";
-import type { ModelErrorCopy } from "../../../shared/user-facing.js";
+import { isModelTimeoutError, type ModelErrorCopy } from "../../../shared/user-facing.js";
 import { displayName } from "./models.js";
 
 /** 手动「稍后重试」等多久：循环自己已在 0.5、1 秒各重试过一次，再等太短多半还是 429。 */
@@ -375,7 +375,8 @@ export function mountErrorCards(host: ErrorCardHost) {
       clearTimers();
       recovering = null;
       shown = copy;
-      auto = live;
+      // 宿主已经耗尽超时重试预算，侧栏不能再开启一轮相同等待。
+      auto = live && !isModelTimeoutError(copy.detail);
 
       if (card?.isConnected) {
         const fresh = render(copy);

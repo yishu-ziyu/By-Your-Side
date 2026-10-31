@@ -10,6 +10,7 @@ import { createAssistantMessageEventStream, isContextOverflow, type Api, type As
 import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { toToolDeclaration } from "@earendil-works/pi-ai/utils/transcript";
 import { isTransientModelError } from "../../shared/provider-busy.js";
+import { isModelTimeoutError } from "../../shared/user-facing.js";
 import { createRegistry, defineExtension, defineTool, Harness, hook, MemoryStorage, ProviderDoc, watchEvents, GenerationTask, type AgentEvent as DurableEvent, type Conversation, type EntryRecord, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentSessionEvent, AgentSessionEventListener, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { RunNotStarted, type AgentLoop } from "./agent-loop.js";
@@ -74,6 +75,8 @@ export class DurableAgentLoop implements AgentLoop {
   private prompts = 0;
   private partial: AssistantMessage | undefined;
   private lastAssistant: AssistantMessage | undefined;
+  private retryLimit = MAX_RETRIES;
+  private retryAttempt: number | undefined;
   /** 已经送到界面的正文。短回答往往一次写完，没有逐字增量，收尾时要把没送出的部分补上。 */
   private streamedText = "";
   private streamedThinking = "";
@@ -286,8 +289,11 @@ export class DurableAgentLoop implements AgentLoop {
    * 只改发出的请求，存储里的记录不变。pi-durable 认不出的暂时错误补上它认得的说法，交给它的自动重试。
    */
   private request(send: (messages: Message[]) => AssistantMessageEventStream, model: Model<Api>, messages: Message[]): AssistantMessageEventStream {
+    const observed = (stream: AssistantMessageEventStream) => retryable(stream, message => {
+      this.retryLimit = isModelTimeoutError(message.errorMessage ?? "") ? 1 : MAX_RETRIES;
+    });
     const earlier = elideBefore(messages, runFloor(messages, this.runInput));
-    if (this.elide) return retryable(send(earlier ?? messages));
+    if (this.elide) return observed(send(earlier ?? messages));
     const out = createAssistantMessageEventStream();
     void (async () => {
       const held: AssistantMessageEvent[] = [];
@@ -298,7 +304,7 @@ export class DurableAgentLoop implements AgentLoop {
           this.elide = true;
           this.emit({ type: "compaction_start", reason: "overflow" });
           this.emit({ type: "compaction_end", reason: "overflow", result: undefined, aborted: false, willRetry: true });
-          for await (const retried of retryable(send(earlier))) out.push(retried);
+          for await (const retried of observed(send(earlier))) out.push(retried);
           out.end();
           return;
         }
@@ -309,7 +315,7 @@ export class DurableAgentLoop implements AgentLoop {
       for (const start of held) out.push(start);
       out.end();
     })();
-    return retryable(out);
+    return observed(out);
   }
 
   /** 和外层换备用模型用同一个判断：拿一条典型的暂时错误问它这次能不能换。 */
@@ -388,7 +394,7 @@ export class DurableAgentLoop implements AgentLoop {
       registry,
       settings: {
         // 每次决定重试时现读：能换备用模型时不在原模型上重试，交给外层去换。
-        get retry() { return { maxRetries: loop.retryGate?.(loop.transientProbe()) === false ? 0 : MAX_RETRIES, baseDelayMs: 500 }; },
+        get retry() { return { maxRetries: loop.retryGate?.(loop.transientProbe()) === false ? 0 : loop.retryLimit, baseDelayMs: 500 }; },
         compaction: { enabled: false },
         steeringMode: "all",
         followUpMode: "all",
@@ -532,10 +538,11 @@ export class DurableAgentLoop implements AgentLoop {
     }
     if (event.type === "tool_execution_end") { this.onToolEnd(event.toolCallId, event.toolName, event.entry); return; }
     if (event.type === "auto_retry_start") {
-      this.emit({ type: "auto_retry_start", attempt: event.attempt, maxAttempts: MAX_RETRIES, delayMs: Math.max(0, event.at - Date.now()), errorMessage: event.errorMessage.replace(RETRY_MARK, "") });
+      this.emit({ type: "auto_retry_start", attempt: event.attempt, maxAttempts: this.retryLimit, delayMs: Math.max(0, event.at - Date.now()), errorMessage: event.errorMessage.replace(RETRY_MARK, "") });
       return;
     }
-    if (event.type === "auto_retry_end") { this.emit({ type: "auto_retry_end", success: true, attempt: event.attempt }); return; }
+    // durable 的 end 只表示退避结束；下一次模型结果到达后才能判断重试成败。
+    if (event.type === "auto_retry_end") { this.retryAttempt = event.attempt; return; }
     if (event.type === "compaction_start") { this.emit({ type: "compaction_start", reason: event.reason === "overflow" ? "overflow" : event.reason === "manual" ? "manual" : "threshold" }); return; }
     if (event.type === "run_end") await this.onRunEnd();
   }
@@ -600,6 +607,10 @@ export class DurableAgentLoop implements AgentLoop {
     const stored = entry.model?.[0];
     if (!stored || stored.role === "system") return;
     const message = withoutRetryMark(stored);
+    if (message.role === "assistant" && this.retryAttempt !== undefined) {
+      this.emit({ type: "auto_retry_end", success: message.stopReason !== "error" && message.stopReason !== "aborted", attempt: this.retryAttempt });
+      this.retryAttempt = undefined;
+    }
     // 自动重试成功后，前一条出错的回复不再算这一轮的结果：旧核心重试前就把它从历史里拿掉了。
     const previous = this.messages.at(-1);
     if (message.role === "assistant" && previous?.role === "assistant" && previous.stopReason === "error") this.messages.pop();
@@ -626,6 +637,10 @@ export class DurableAgentLoop implements AgentLoop {
       return;
     }
     const end: AgentSessionEvent = { type: "agent_end", messages: this.messages.slice(this.runStart), willRetry: false };
+    if (this.retryAttempt !== undefined) {
+      this.emit({ type: "auto_retry_end", success: false, attempt: this.retryAttempt });
+      this.retryAttempt = undefined;
+    }
     this.busy = false;
     this.emit(end);
     this.markRunEnd?.();
@@ -731,10 +746,11 @@ function elideBefore(messages: readonly Message[], floor: number): Message[] | n
  * pi-durable 只按 pi-ai 的说法判断能不能重试。扩展里断网报「Failed to fetch」、服务商用中文说并发满了、工具参数写跑了，
  * 这些我们也当暂时错误，在错误后面补一个它认得的词（RETRY_MARK）。
  */
-function retryable(stream: AssistantMessageEventStream): AssistantMessageEventStream {
+function retryable(stream: AssistantMessageEventStream, onError?: (message: AssistantMessage) => void): AssistantMessageEventStream {
   const out = createAssistantMessageEventStream();
   void (async () => {
     for await (const event of stream) {
+      if (event.type === "error") onError?.(event.error);
       if (event.type === "error" && event.reason === "error" && isTransientModelError(event.error) && !isRetryableAssistantError(event.error)) {
         out.push({ ...event, error: { ...event.error, errorMessage: `${event.error.errorMessage ?? ""}${RETRY_MARK}` } });
       } else out.push(event);

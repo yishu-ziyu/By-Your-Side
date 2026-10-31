@@ -4461,9 +4461,16 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     case "answer_sources":
       receiveSourceExcerpts(ev.sources);
       break;
-    case "fact_check":
-      renderFactCheck(ev, messagesEl);
+    case "fact_check": {
+      const answer = renderFactCheck(ev, messagesEl);
+      if (!replayingHistory) uiEvent("ui_fact_check", {
+        outcome: answer ? "applied" : "answer_missing",
+        problems: ev.problems.length,
+        documentVisible: !document.hidden,
+        answerId: answer?.dataset.deliveryId ?? null,
+      }, runId ?? null);
       break;
+    }
     case "text_delta":
       // 回答开始出字：这段思考结束。
       if (currentRun) closeThink(currentRun, eventTime());
