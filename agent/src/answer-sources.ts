@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { ANSWER_SOURCE_MAX_CHARS, capturedCite, isAnswerSource, type AnswerSource } from '../../shared/answer-source.js';
+import { ANSWER_SOURCE_MAX_CHARS, capturedCite, isAnswerSource, proseCites, type AnswerSource } from '../../shared/answer-source.js';
 import { redactCredentialText } from '../../shared/untrusted.js';
 import { diagramLabel, splitAnswer } from '../../shared/answer-cards.js';
 
@@ -74,6 +74,8 @@ export class AnswerSources {
 
   /** Decorate only text already present in the model's read result; never append unseen material. */
   mark(text: string): string {
+    // Sources are stored redacted; match against the same form, or one credential-looking line leaves the whole read unmarked.
+    text = redactCredentialText(text);
     const hits: Array<{ start: number; end: number; source: AnswerSource }> = [];
     for (const source of this.candidates.values()) {
       for (const needle of new Set([source.text, JSON.stringify(source.text).slice(1, -1)])) {
@@ -112,7 +114,10 @@ export class AnswerSources {
       .flatMap(block => block.kind === 'diagram' ? Object.values(block.cites).flatMap(cite => {
         const match = capturedCite(cite,this.records);
         return match ? [match.source] : [];
-      }) : []);
+      }) : []).concat(proseCites(text).flatMap(cite => {
+        const match = capturedCite(cite,this.records,4);
+        return match ? [match.source] : [];
+      }));
     return [...new Map(sources.map(source=>[source.id,source])).values()];
   }
 }

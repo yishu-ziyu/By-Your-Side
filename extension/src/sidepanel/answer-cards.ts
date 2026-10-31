@@ -1,4 +1,5 @@
 import { resolveDiagramCite, type AnswerSourceMap } from "../../../shared/answer-source.js";
+import { withEvidence } from "./answer-evidence.js";
 /**
  * 侧栏怎么画回答里的卡片（解析和取数在 shared/answer-cards.ts，
  * 流式时按已放出的前缀算出整段 HTML，再由 patchAnswer 按组件对比：已画出的组件节点不动，只补新出现的、刚写完的。
@@ -371,7 +372,14 @@ export function renderAnswerHtml(text: string, renderProse: (markdown: string) =
   const ref = new RegExp(`\uE000${nonce}([A-Za-z_][\\w-]*)\uE001([^\uE002<]*)\uE002`, "g");
   const refs = (html: string) => html.replace(ref, (_all, id: string, value: string) => `<span data-gc-ref="${esc(id)}">${value}</span>`);
 
-  return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "") : p.card ? cardHtml(p.card, sources) : "")).join("");
+  const counter = { n: 0 };
+
+  return parts.map((p) => {
+    if (!("prose" in p)) return p.card ? cardHtml(p.card, sources) : "";
+    if (!p.prose.trim()) return "";
+    const evidence = withEvidence(resolveProse(p.prose, cards, bold), sources, nonce, counter);
+    return evidence.finish(refs(withMermaidDiagrams(evidence.prose, renderProse)));
+  }).join("");
 }
 
 /** 写完的 ```mermaid 代码块。 */

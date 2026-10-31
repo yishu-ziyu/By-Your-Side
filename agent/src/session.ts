@@ -1721,15 +1721,18 @@ return;}
       const total = typeof main?.totalChars === "number" ? main.totalChars : text.length;
       const clip = (value: string, what: string) => value.length > PRE_OBSERVATION_TEXT_MAX ? `${value.slice(0, PRE_OBSERVATION_TEXT_MAX)}\n[${what} shortened to its first ${PRE_OBSERVATION_TEXT_MAX} characters.]` : value;
 
-      const completeSource = typeof main?.totalChars === "number" && total <= text.length;
-      if (completeSource) this.quoteSources.add(text, typeof main?.url === "string" ? main.url : treeUrl ?? context.url);
-      const citedText = completeSource ? this.quoteSources.mark(text) : text;
+      // A partial read still registers what the model saw: a fact's anchor only has to be in the shown text.
+      const sourceFrom = typeof main?.url === "string" ? main.url : treeUrl ?? context.url;
+      const shownTree = ax && clip(ax, "Accessibility tree");
+      if (text) this.quoteSources.add(text, sourceFrom);
+      if (shownTree) this.quoteSources.add(shownTree, sourceFrom);
+      const citedText = text ? this.quoteSources.mark(text) : text;
       await this.persistQuoteSources();
       if (epoch !== this.controlEpoch || run !== this.deliveryRunId() || this.hold.isHeld()) return null;
       const body = [
         this.sourcePreparationOnly && '[SOURCE NOT READY] The full source is not available. The host permits only same-page reading and wait_for_condition. If the user requested waiting for future results, register an independently checkable condition and end this fragment. Do not analyze, mark or deliver a final answer until the source is ready. If waiting was not authorized, explain that the source is unavailable.',
-        text && (total > text.length ? `${citedText}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part. Source catalog: unavailable for this partial read; read_element on the complete intended source registers source IDs.]` : citedText),
-        ax && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${clip(ax, "Accessibility tree")}`,
+        text && (total > text.length ? `${citedText}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part. Its source ID covers only this part.]` : citedText),
+        shownTree && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${this.quoteSources.mark(shownTree)}`,
       ].filter(Boolean).join("\n\n");
 
       const observation = freshPageObservationText(context, body, text ? (ax ? "both" : "text") : "tree", role);
@@ -3796,8 +3799,20 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
   private collectQuoteSources(name: string, result: unknown): void {
     const details = result && typeof result === "object" && "details" in result ? result.details : result;
-    if (["navigate", "tabs", "browser_run"].includes(name)) {
-      if (details && typeof details === "object" && "page" in details) this.collectQuoteSources("snapshot", details.page);
+    const record = details && typeof details === "object" ? details as Record<string, unknown> : {};
+    const add = (text: unknown, from: unknown) => { if (typeof text === "string") this.quoteSources.add(text, typeof from === "string" && from ? from : "读取的页面"); };
+    if (name === "navigate" || name === "tabs") {
+      const page = record.page as Record<string, unknown> | undefined;
+      if (page && typeof page === "object") add(page.text, page.url ?? record.url);
+      return;
+    }
+    if (name === "snapshot") { add(record.text, record.url); return; }
+    if (name === "browser_run") {
+      // a program's value is whatever it returned; page texts usually come back keyed by their URL
+      const value = record.value;
+      if (typeof value === "string") add(value, "脚本读到的页面");
+      else if (Array.isArray(value)) for (const item of value.slice(0, 64)) { if (item && typeof item === "object") add(item.text, item.url); }
+      else if (value && typeof value === "object") for (const [key, text] of Object.entries(value).slice(0, 64)) add(text, /^https?:\/\//.test(key) ? key : "脚本读到的页面");
       return;
     }
     if (name !== "read_element") return;
@@ -3816,7 +3831,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   }
 
   private async referenceReadResult(name: string, result: Awaited<ReturnType<ToolDefinition["execute"]>>): Promise<Awaited<ReturnType<ToolDefinition["execute"]>>> {
-    if (!["read_element", "browser_run"].includes(name) || ("isError" in result && result.isError)) return result;
+    if (!["read_element", "browser_run", "navigate", "snapshot", "tabs"].includes(name) || ("isError" in result && result.isError)) return result;
     this.collectQuoteSources(name, result);
     const content = result.content.map(part => part.type === "text" ? { ...part, text: this.quoteSources.mark(part.text) } : part);
     await this.persistQuoteSources();

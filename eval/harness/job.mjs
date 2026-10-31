@@ -631,7 +631,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     }
     // self-contained copy of the panel (styles inlined, scripts dropped) so a reviewer can scroll the whole answer and open its links
     if (task.snapshot_panel) {
-      const html = await evalIn(ps, `(() => { const css = [...document.styleSheets].map((s) => { try { return [...s.cssRules].map((r) => r.cssText).join('\\n'); } catch { return ''; } }).join('\\n');
+      const html = await evalIn(ps, `(() => { const rules = (sheet) => { try { return [...sheet.cssRules].map((r) => r.styleSheet ? rules(r.styleSheet) : r.cssText).join('\\n'); } catch { return ''; } }; const css = [...document.styleSheets].map(rules).join('\\n');
         const doc = document.documentElement.cloneNode(true); doc.querySelectorAll('script, link[rel=stylesheet]').forEach((e) => e.remove());
         const style = document.createElement('style'); style.textContent = css; doc.querySelector('head').append(style);
         doc.querySelectorAll('a[href]').forEach((a) => { a.target = '_blank'; a.rel = 'noopener'; });

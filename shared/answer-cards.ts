@@ -1,4 +1,4 @@
-import { resolveDiagramCite, type AnswerSourceMap, type DiagramCite } from "./answer-source.js";
+import { withoutProseCites, resolveDiagramCite, type AnswerSourceMap, type DiagramCite } from "./answer-source.js";
 /**
  * 回答里的卡片：解析与取数，侧栏、语音、复制共用。
  * 侧栏怎么画在 extension/src/sidepanel/answer-cards.ts；模型怎么写在 agent/src/prompt.ts 的「Answer cards」一节。
@@ -666,6 +666,7 @@ export function fillRefs(text: string, values: ReadonlyMap<string, string>, mark
 
 /** 念出来、写进结果摘要用的文字：只要卡片外的正文；正文为空时用卡片标题。 */
 export function answerSpeech(text: string): string {
+  text = withoutProseCites(text);
   if (!MAY_HAVE_CARD.test(text) && !text.includes("{=")) return text;
   const parts = splitAnswer(text);
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
@@ -683,6 +684,7 @@ export function diagramLabel(source: string, node: string): string {
 
 /** 复制为 Markdown：卡片换成等价的 Markdown（数字格、步骤、选项、表格、清单），按钮不复制。 */
 export function answerMarkdown(text: string, sources?: AnswerSourceMap): string {
+  text = withoutProseCites(text);
   if (!MAY_HAVE_CARD.test(text) && !text.includes("{=")) return text;
   const parts = splitAnswer(text);
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
