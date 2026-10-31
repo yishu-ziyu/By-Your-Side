@@ -87,7 +87,7 @@ try {
   await rp.click(panel,'#header-more');await rp.click(panel,'#model-settings-open');
   const settings=await rp.attach((await until(async()=>(await rp.targets()).find(t=>t.url.split("#")[0]!.endsWith('/settings.html')),10000,'settings')).targetId);
   await until(async()=>await rp.evaluate(settings,'document.querySelectorAll(".provider-option").length>3'),10000,'providers');
-  await rp.click(settings, '[data-settings-page="connections"]');
+  await rp.click(settings, '[data-settings-page="models"]');
   await rp.evaluate(settings,'document.querySelector("#provider-more").open=true');
   await rp.click(settings,'.provider-option[data-provider="custom"]');
 
@@ -204,11 +204,16 @@ try {
     await sleep(300);check('投喂不自动调用模型',model.requests.length===requestCount,model.requests.length);
 
 
+    const removeFeed = async () => {
+      if (await rp.evaluate(panel, 'document.querySelector(".mt-toggle")?.getAttribute("aria-expanded")==="false"')) await rp.click(panel,'.mt-toggle');
+      await rp.click(panel,'.mt-row[data-kind="selection"][data-removable]');
+      await rp.click(panel,'.mt-remove');
+    };
     if(process.argv.includes('--feed=remove')) {
-      await rp.click(panel,'#ask-cite-close');
+      await removeFeed();
       check('移除投喂保留正文',await rp.evaluate(panel,'document.querySelector("#input").value.length>0 && document.querySelector("#ask-cite").hidden'),null);
     } else {
-      await rp.click(panel,'#ask-cite-close');
+      await removeFeed();
       check('移除投喂保留正文',await rp.evaluate(panel,'document.querySelector("#input").value.length>0 && document.querySelector("#ask-cite").hidden'),null);
       await rp.cdp.send('Input.dispatchDragEvent',{type:'dragCancel',...dragPoint,data},work);
       await rp.cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...dragPoint,button:'left',clickCount:1},work);

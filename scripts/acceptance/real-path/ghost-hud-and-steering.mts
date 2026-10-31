@@ -115,7 +115,7 @@ try {
   await rp.click(panel, '#header-more'); await rp.click(panel, '#model-settings-open');
   const settings = await rp.attach((await until(async () => (await rp.targets()).find(t => t.url.split("#")[0]!.endsWith('/settings.html')), 10000, 'settings')).targetId);
   await until(async () => await rp.evaluate(settings, 'document.querySelectorAll(".provider-option").length>3'), 10000, 'providers');
-  await rp.click(settings, '[data-settings-page="connections"]');
+  await rp.click(settings, '[data-settings-page="models"]');
   await rp.evaluate(settings, 'document.querySelector("#provider-more").open=true');
   await rp.click(settings, '.provider-option[data-provider="custom"]');
 

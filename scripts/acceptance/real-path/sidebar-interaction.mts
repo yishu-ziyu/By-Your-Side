@@ -123,7 +123,7 @@ try {
   const settingsTarget = await until(async () => (await rp!.targets()).find((t) => t.type === "page" && t.url.split("#")[0]!.endsWith("/settings.html")), 10_000, "设置页");
   const settings = await rp.attach(settingsTarget.targetId);
   await until(async () => (await rp!.evaluate(settings, `document.querySelectorAll('.provider-option').length`)) > 3 || undefined, 15_000, "模型选项");
-  await rp.click(settings, '[data-settings-page="connections"]');
+  await rp.click(settings, '[data-settings-page="models"]');
   await rp.evaluate(settings, `document.querySelector('#provider-more').open = true; true`);
   await rp.click(settings, `.provider-option[data-provider="custom"]`);
 
