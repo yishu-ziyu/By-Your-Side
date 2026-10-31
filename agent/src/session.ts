@@ -71,7 +71,7 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { BrowseDay, BrowseHabit } from "../../shared/browse-habits.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
-import { checkFacts, factFixPrompt, seenThisRun, worthChecking, type FactCheckFlag, type FactCheckInput } from "./fact-check.js";
+import { checkFacts, factFixPrompt, resolveUnconfirmedFacts, seenThisRun, worthChecking, type FactCheckFlag, type FactCheckInput } from "./fact-check.js";
 import { asksUser, checkGoal, goalReadEvidence, defersWork, recordHostGoalCheck, recordUnavailableGoalCheck, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CHECK_PROMPT, GOAL_CHECK_PROMPT_SHA, GOAL_GATE_WAIT_MS, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalCheckTrace, type GoalCheckTraceContext, type GoalVerification, type GoalVerdict } from "./goal-check.js";
 import { GoalLedger } from "./goal-ledger.js";
 import { ContinuePolicy } from "./continue-policy.js";
@@ -867,6 +867,9 @@ if(required.includes(key))candidates.set(key,attachment);
       const runClock = new RunClock();
 
       const extensionFactories = [
+        { name: "sideagent-fact-repair", hidden: true, factory: ((pi) => {
+          pi.on("tool_call", event => resultHost?.guardFactRepair(event.toolName));
+        }) as import("@earendil-works/pi-coding-agent").ExtensionFactory },
         { name: "sideagent-tool-failure-boundary", hidden: true, factory: failurePolicy.extension() },
         { name: "sideagent-no-progress-boundary", hidden: true, factory: noProgressPolicy.extension() },
         // 排在两条边界之后：它们比的是工具原本的结果，追加的下一步提示不能让重复的错误看起来像新内容。
@@ -3452,12 +3455,24 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
   }
 
-  /** 已经为事实核对改正过一次回答的任务：再对不上就交给用户看，不再接着改。 */
+  /** 已经为事实核对改正过一次回答的任务：再有缺口就明确答案的不确定性，不再启动模型纠正。 */
   private factFixRuns = new Set<string>();
+  private factRepairEpoch: number | null = null;
+  private factRepairReads = 0;
 
-  /** 回答交给用户之后，逐条核对回答里的事实；对不上就让助手自己改正一次，改过仍对不上才挂到回答下面。失败只记诊断，不打扰用户。 */
+  private guardFactRepair(tool: string): { block: true; reason: string } | undefined {
+    if (this.factRepairEpoch !== this.controlEpoch) return;
+    if (tool === "send_user_message") return;
+    if (["snapshot", "read_element", "read_elements"].includes(tool) && this.factRepairReads++ === 0) return;
+
+    return { block: true, reason: "事实核对只允许补读一次相关来源。请依据已有证据给出答案，无法确认的内容明确说明；不要执行网页操作。" };
+  }
+
+  /** 回答交给用户之后，逐条核对回答里的事实；对不上就让助手自己改正一次，改过仍有缺口就在答案中明确。失败只记诊断，不打扰用户。 */
   private async checkFactsAfterDelivery(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): Promise<void> {
     const epoch = this.controlEpoch;
+    const runId = this.deliveryRunId();
+    const current = () => epoch === this.controlEpoch && runId === this.deliveryRunId();
     const answer = this.runReplyText(event.messages).trim();
     const request = this.activeGoal ?? "";
     const seen = seenThisRun(this.session?.agent.state.messages ?? event.messages, request);
@@ -3474,7 +3489,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     if (!worthChecking(input)) return skip("nothing_to_check");
     // 没有目标核对时这里在 agent_end 的处理里就被叫到，这一轮还没收完尾：等它停下，等不到就是用户已开了新一轮。
     for (let waited = 0; this.isStreaming() && waited < 5_000; waited += 100) await new Promise(resolve => setTimeout(resolve, 100));
-    if (this.isStreaming() || epoch !== this.controlEpoch) return skip("busy");
+    if (this.isStreaming() || !current()) return skip("busy");
     const startedAt = Date.now();
 
     try {
@@ -3483,9 +3498,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const page = tabId !== null && this.rpc ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown }>).catch(() => null) : null;
       input.pageNow = typeof page?.text === "string" ? page.text : "";
       const problems = await checkFacts(host, model, input, AbortSignal.timeout(100_000));
-      this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, problems: problems.length, pageNow: input.pageNow.length > 0, seenChars: input.seen.length, roles: seen.roles });
+      this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, problems: problems.length, findings: problems, pageNow: input.pageNow.length > 0, seenChars: input.seen.length, roles: seen.roles });
       // 用户已经开了新一轮或停下：结论只进诊断，不再挂到侧栏。
-      if (epoch !== this.controlEpoch || this.isStreaming()) {
+      if (!current() || this.isStreaming()) {
         this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "superseded", problems: problems.length });
         return;
       }
@@ -3493,7 +3508,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "correction_started", problems: problems.length });
         return;
       }
-      this.callbacks.emit({ kind: "fact_check", status: "done", answer: answer.slice(0, 160), problems: problems.map(p => p.text) });
+      const replacement = problems.length ? resolveUnconfirmedFacts(answer, problems) : undefined;
+      if (replacement && this.session) {
+        await this.session.sendCustomMessage({ customType: "fact-resolution", display: false,
+          content: `本次运行的上下文，不是用户消息。上一份回答已按证据修订，后续引用以此为准：\n${replacement}` }, { triggerTurn: false });
+        if (!current() || this.isStreaming()) return;
+      }
+      this.callbacks.emit({ kind: "fact_check", status: "done", answer, problems: [], ...(replacement ? { replacement } : {}) });
       this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "sent_to_ui", problems: problems.length });
     } catch (error) {
       this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, failed: error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160) });
@@ -3502,21 +3523,23 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
   /**
    * 用户看不到页面，「请核对」只能把查证推回给用户：由助手对照页面改正回答，侧栏照目标核对判继续那样收起旧回答。
-   * 每个任务只改一次，避免核对和改正互相拉锯。开不起来时返回 false，由调用方把核对结论挂到回答下面。
+   * 每个任务只改一次，避免核对和改正互相拉锯。开不起来时返回 false，由调用方消除答案中未证实的肯定说法。
    */
   private fixFacts(problems: FactCheckFlag[], epoch: number): boolean {
     const runId = this.deliveryRunId(), session = this.session;
 
     if (!runId || !session || this.factFixRuns.has(runId) || session.isStreaming || epoch !== this.controlEpoch) return false;
     this.factFixRuns.add(runId);
-    this.runTrace.record("fact_fix", { problems: problems.length });
-    this.callbacks.emit({ kind: "goal_check", status: "continue", reason: "facts", finding: `回答里有 ${problems.length} 处和网页对不上` });
+    this.factRepairEpoch = epoch;
+    this.factRepairReads = 0;
+    this.runTrace.record("fact_fix", { problems });
+    this.callbacks.emit({ kind: "goal_check", status: "continue", reason: "facts", finding: "正在核实回答中的来源" });
     this.callbacks.setStatus('running');
     this.deliveredResultThisRun = false;
     void session.prompt(factFixPrompt(problems)).catch(error => {
       if (this.deliveryRunId() === runId && !session.isStreaming) this.callbacks.setStatus(this.hold.isHeld() ? 'user' : 'idle');
       this.emitError(error);
-    });
+    }).finally(() => { if (this.factRepairEpoch === epoch) this.factRepairEpoch = null; });
 
     return true;
   }
