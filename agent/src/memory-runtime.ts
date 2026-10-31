@@ -1123,7 +1123,9 @@ export class MemoryRuntime {
     const tasks = this.options.history ? await this.options.history.list().catch(() => []) : [];
 
     if (!this.current(turn)) return null;
-    const selection = selectMemoryContext({ entries, tasks, hostname, text: turn.text, now: Date.now() });
+    const semantic = entries.some(entry => entry.experience) ? await this.store.select(turn.query).catch(() => []) : [];
+    if (!this.current(turn)) return null;
+    const selection = selectMemoryContext({ entries, tasks, hostname, text: turn.text, semanticIds: semantic.map(entry => entry.id), now: Date.now() });
     // 挑选之后被忘记、修改或替换的不带：记「用过」时按版本再核对一次。
     const current = new Map((await this.store.markUsed(selection.entries.map(({ entry }) => entry))).map(entry => [entry.id, entry]));
 

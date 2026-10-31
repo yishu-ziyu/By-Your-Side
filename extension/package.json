@@ -15,11 +15,13 @@
     "@earendil-works/pi-agent-core": "1.0.4",
     "@earendil-works/pi-ai": "1.0.4",
     "@earendil-works/pi-durable": "1.0.4",
+    "@huggingface/transformers": "4.3.2",
     "@sideagent/agent": "file:../agent",
     "dompurify": "3.4.16",
     "lucide": "1.39.0",
     "marked": "18.0.11",
     "pdfjs-dist": "6.4.299",
-    "pele": "1.6.0"
+    "pele": "1.6.0",
+    "rememori": "0.7.0"
   }
 }

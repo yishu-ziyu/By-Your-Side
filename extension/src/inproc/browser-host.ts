@@ -1,6 +1,7 @@
 /** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
-import { createConversationRuntime, GptLiveSession, LearnedOperationStore, MemoryStore, RealtimeVoiceSession, SiteNotesStore, TaskHistoryStore, startHostCore, useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useStyleSignals, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
+import { createConversationRuntime, GptLiveSession, LearnedOperationStore, MemoryStore, RealtimeVoiceSession, SiteNotesStore, TaskHistoryStore, startHostCore, useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useSemanticMemory, useStyleSignals, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
 import type { SessionLogPort } from "@sideagent/agent/browser-core";
+import { BrowserSemanticMemory } from "./semantic-memory.js";
 import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import { describeModelError } from "../../../shared/user-facing.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
@@ -101,7 +102,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const document = deps.document ?? ((name: string) => new IdbDocument(name));
     // 关于用户本人的几份记录：模拟用户模式下只读，写入在这里丢掉（记忆运行时另外不判断、不问）。
     const personal = (name: Parameters<typeof document>[0]) => readOnlyWhileSelfUse(document(name));
-    const memoryStore = usePausedMemory(useStyleSignals(useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(personal("memories")), personal("pending-memory")), personal("habits")), personal("style-signals")), pushedSelfUse);
+    const memoryStore = useSemanticMemory(usePausedMemory(useStyleSignals(useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(personal("memories")), personal("pending-memory")), personal("habits")), personal("style-signals")), pushedSelfUse), new BrowserSemanticMemory());
     const taskHistory = new TaskHistoryStore(personal("tasks"));
     // 旧站点笔记只供用户查看和删除，不交给会话。
     const siteNotes = new SiteNotesStore(document("site-notes"));
