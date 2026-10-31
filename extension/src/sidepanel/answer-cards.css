@@ -218,3 +218,15 @@
 .send-declined-card ~ .send-declined-card { display: none; }
 .gc-diagram-code { margin-top: 6px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 .gc-diagram-code > summary { cursor: pointer; }
+
+/* 回答里的依据：角标跟在事实后面，原文摊在回答下面；对不上和找不到用提醒色，没给出处用灰。 */
+.msg.assistant .ev-ref { font-size: var(--fs-micro); line-height: 1; margin-left: 1px; padding: 0 var(--s-1); border-radius: var(--s-1); color: var(--text-tertiary); background: var(--content-subtle); vertical-align: super; }
+.msg.assistant .ev-ref[data-state="partial"], .msg.assistant .ev-ref[data-state="missing"] { color: var(--warn); }
+.msg.assistant .ev-list { display: grid; gap: var(--s-2); margin: var(--s-3) 0 0; padding: var(--s-2) 0 0; border-top: 1px solid var(--content-border); }
+.msg.assistant .ev-item { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: var(--s-2); align-items: start; }
+.msg.assistant .ev-n { font-size: var(--fs-micro); line-height: var(--lh-ui); color: var(--text-tertiary); text-align: center; }
+.msg.assistant .ev-quote { font-size: var(--fs-meta); line-height: var(--lh-ui); color: var(--text-secondary); overflow-wrap: anywhere; }
+.msg.assistant .ev-quote mark { background: var(--content-subtle); color: var(--text-primary); border-radius: var(--s-1); padding: 0 2px; }
+.msg.assistant .ev-meta { font-size: var(--fs-micro); line-height: var(--lh-ui); color: var(--text-tertiary); }
+.msg.assistant .ev-warn, .msg.assistant .ev-item[data-state="missing"] .ev-quote { color: var(--warn); }
+.msg.assistant .ev-item[data-state="none"] .ev-quote { color: var(--text-tertiary); }
