@@ -4165,8 +4165,11 @@ details.run-steps.run-quieting .run-time { animation: none; }
 #memory-open::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; }
 
 
-/* 用到的记忆：不再接在回答句子后面，单独一行小字放在回答下面。 */
-.memory-used-toggle { display: block; width: fit-content; margin: 6px 0 0; color: var(--text-tertiary); }
+/* 用到的记忆：回答下的安静脚注；展开看完整原文，控制操作常显。 */
+.msg.assistant .memory-used-toggle { display: block; width: fit-content; max-width: 100%; min-height: 40px; margin: 5px 0 0 -6px; padding: 6px; color: var(--text-tertiary); line-height: 1.5; text-align: left; white-space: normal; }
+.msg.assistant .memory-used-line .memory-used-text { flex: 1 1 calc(100% - 24px); overflow: visible; white-space: normal; text-overflow: clip; }
+.msg.assistant .memory-used-line .memory-used-actions { flex: 0 0 100%; gap: 14px; padding-left: 23px; opacity: 1; }
+.msg.assistant .memory-used-line .memory-used-actions button { min-height: 40px; }
 
 /* 文件卡：一行排开，左边类型图标（图片用缩略图），右边灰色图标按钮（打开、下载、展开）。
    墨蓝留给助手在页面上的动作；次要操作用图标，不做成一排带底色的按钮（Refactoring UI「Semantics are secondary」）。 */

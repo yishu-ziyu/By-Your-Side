@@ -362,9 +362,9 @@ try {
   const expectedN = 2;
   check("R1", "请求里带了两条记忆和一条过往任务", sent.email && sent.lang && sent.task, sent);
   check("R1", "过往任务只带做成了什么，不带当时回答里的页面信息（「299 元」）", !sent.oldReply, sent);
-  // YIS-86：行内点名第一条（「按你说过的「<原文>」」），多条加「等 N 条」。
-  const named = /^按你说过的「(.+?)…?」等 (\d+) 条 ›$/.exec(line1?.text ?? "");
-  check("R1", `问邮箱：首句末尾显示「按你说过的「邮箱…」等 ${expectedN} 条 ›」，不算「回复用中文」`, !!line1 && !!named && line1.count === expectedN && Number(named[2]) === expectedN && EMAIL.startsWith(named[1]!), { line: line1?.text ?? null, count: line1?.count ?? null, expectedN });
+  // 行内点名第一条，多条加「等 N 条」。
+  const named = /^参考了你记住的「(.+?)…?」等 (\d+) 条 ›$/.exec(line1?.text ?? "");
+  check("R1", `问邮箱：首句末尾显示「参考了你记住的「邮箱…」等 ${expectedN} 条 ›」，不算「回复用中文」`, !!line1 && !!named && line1.count === expectedN && Number(named[2]) === expectedN && EMAIL.startsWith(named[1]!), { line: line1?.text ?? null, count: line1?.count ?? null, expectedN });
   check("R1", "灰字接在回答首句末尾，列表紧跟首句，默认折起", !!line1 && line1.inFirstSentence && line1.listHidden, { inFirstSentence: line1?.inFirstSentence ?? null, listHidden: line1?.listHidden ?? null });
   await shot("R1-collapsed");
 

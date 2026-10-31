@@ -171,7 +171,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     const text = first.kind === "entry" ? first.entry.text : first.task.done || first.task.goal;
     const short = text.length > 16 ? `${text.slice(0, 15)}…` : text;
 
-    return `${first.kind === "entry" ? "按你说过的" : "按上次做过的"}「${short}」${line.items.size > 1 ? `等 ${line.items.size} 条` : ""}`;
+    return `${first.kind === "entry" ? "参考了你记住的" : "按上次做过的"}「${short}」${line.items.size > 1 ? `等 ${line.items.size} 条` : ""}`;
   }
 
   function renderUsedLine(line: MemoryUsedLine): void {
@@ -237,7 +237,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     glyph.innerHTML = USED_GLYPHS[item.kind === "entry" ? item.entry.kind : "past"];
     const text = document.createElement("span");
     text.className = "memory-used-text";
-    // 过往任务显示做成了什么（和带给助手的一样），没有时显示原话目标。一行放不下就截断，悬停看全文。
+    // 过往任务显示做成了什么（和带给助手的一样），没有时显示原话目标；完整原文在展开区换行。
     text.textContent = item.kind === "entry" ? item.entry.text : item.task.done || item.task.goal;
     text.title = text.textContent;
     const actions = document.createElement("span");
@@ -245,10 +245,9 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     const rerender = () => { if (line.el.isConnected || line === pendingUsedLine) renderUsedLine(line); };
 
     if (item.state === "used") {
-      actions.append(usedButton("忘记", "forget", item, () => runUsedAction(item, "forget", rerender)));
-
       // 没有当前网站（扩展页、空白页）就没有「这里」可言。
       if (line.hostname) actions.append(usedButton("在这个网站不用", "not-here", item, () => runUsedAction(item, "not-here", rerender, line.hostname!)));
+      actions.append(usedButton("忘记", "forget", item, () => runUsedAction(item, "forget", rerender)));
     } else {
       const note = document.createElement("span");
       note.className = "memory-used-note";
