@@ -60,6 +60,7 @@ npm ci && npm run build
 
 - [使用说明](docs/guides/usage.md)：全部交互和权限边界
 - [当前状态](docs/STATUS.md)：现在做到哪、还差什么
+- [产品记录](docs/product/README.md)：优化证据、产品理解与可视化宣发素材
 - [架构](docs/architecture.md)：结构上的理由和边界
 - [AGENTS.md](AGENTS.md) · [开发检查](docs/development/checks.md)：参与开发
 - [文档总入口](docs/README.md)：所有文档

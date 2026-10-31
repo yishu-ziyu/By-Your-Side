@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>速度与思考档位 · By Your Side</title><style>
+:root{color-scheme:light;--ink:#202b3a;--muted:#647182;--blue:#245dcc;--line:#dce1e7;--paper:#fafbf9}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",sans-serif}
+main{max-width:1080px;margin:auto;padding:44px 40px 80px}a{color:var(--blue);text-underline-offset:4px}nav{display:flex;justify-content:space-between;gap:24px;align-items:center;padding-bottom:20px;border-bottom:1px solid var(--line);font-size:13px}
+.brand{font-weight:650;letter-spacing:.03em;color:var(--ink);text-decoration:none}nav div{display:flex;gap:20px}.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}header{padding:54px 0 32px}h1{font-size:42px;line-height:1.25;font-weight:620;letter-spacing:-.045em;margin:14px 0 20px}h2{font-size:23px;line-height:1.4;margin:0 0 20px}h3{font-size:17px;margin:24px 0 8px}p{margin:0 0 16px}.lead{font-size:18px;max-width:650px;color:var(--muted)}section{padding:32px 0;border-top:1px solid var(--line)}.figure{width:100%;height:auto;display:block;background:white;border:1px solid var(--line)}.split{display:grid;grid-template-columns:1fr 1fr;gap:48px}.links{display:flex;gap:20px;flex-wrap:wrap;font-size:14px;margin:16px 0}.status{font-size:13px;color:var(--blue)}.meta{font-size:13px;color:var(--muted)}blockquote{margin:18px 0;padding:6px 0 6px 20px;border-left:2px solid var(--blue);font-size:20px;line-height:1.65}.entry{display:grid;grid-template-columns:145px 1fr;gap:28px}.entry .figure{margin-top:20px}.entry h2{font-size:29px;letter-spacing:-.02em;margin:8px 0 12px}.entry h2 a{color:var(--ink);text-decoration:none}.intro{max-width:620px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}th{color:var(--muted);font-weight:500}ul{padding-left:20px}li{margin:8px 0}details{margin:20px 0}summary{cursor:pointer;color:var(--blue)}pre{overflow:auto;background:#f0f3f6;padding:20px;font-size:12px}footer{padding-top:30px;font-size:12px;color:var(--muted)}.caption{margin-top:10px;color:var(--muted);font-size:13px}.copy{font-size:20px;max-width:770px}.count{font-size:48px;font-variant-numeric:tabular-nums;color:var(--blue);line-height:1.1;margin-bottom:14px}@media(max-width:720px){main{padding:24px 20px 60px}h1{font-size:34px}header{padding:36px 0 24px}.entry,.split{grid-template-columns:1fr;gap:16px}nav{align-items:flex-start}nav div{gap:12px;flex-wrap:wrap}.entry h2{font-size:25px}table{font-size:12px}th,td{padding:10px 5px}}@media print{nav,.links{display:none}main{max-width:none;padding:0}section{break-inside:avoid}details>*{display:block}body{background:white}}
+</style><main><nav><a class="brand" href="../index.html">BY YOUR SIDE / 产品记录</a><div><a href="../index.html#optimizations">优化</a><a href="../index.html#perspectives">理解</a><a href="../index.html#directions">跟进</a></div></nav><article><h1>速度与思考档位</h1>
+<p>记录日期：2026-10-31。来源：这次关于重载等待、重复报错和产品记录的对话。以下区分用户原话、已确认规则和整理者的理解。</p>
+<h2>用户原话</h2>
+<blockquote>
+<p>关于连接中的话，要给出具体的缩短时间方案，然后来验证。</p>
+</blockquote>
+<blockquote>
+<p>比如一个模型没有中间档，只有高档；那当用户选择中间档的时候，就映射到最低档相当于是保守一点</p>
+</blockquote>
+<blockquote>
+<p>对于一些重要的数据和指标，我们要通过非常有效的可视化把它们保存起来。</p>
+</blockquote>
+<h2>从过去到现在</h2>
+<p>过去的实现会在恢复不支持的档位时生成聊天错误，并在重载后累积。这是对旧行为的观察，不代表用户曾认可这个行为。</p>
+<p>现在确认的规则：优先映射到不高于用户选择的可用档位；不存在更低档时，取模型支持的最低档。只有高档的模型，选择中档也落到高档。实际生效值应当可见，恢复设置不应反复要求用户处理。</p>
+<h2>整理者的理解</h2>
+<p>这次讨论把两类负担一起减少了：等待时间，以及为模型差异反复作选择的负担。优化是否成立，既要看用户少等了多久，也要看原有会话和控制权是否保留。</p>
+<p>这条理解来自本次讨论，不代替用户对整个产品的长期定义。<a href="../optimizations/2026-10-31-startup/index.html">本次优化证据</a>单独保存。</p>
+<h2>往后跟进</h2>
+<p>已提出：把优化证据、产品理解及其变化，长期留在项目的同一位置，作为后续宣发材料。</p>
+<p>仍待验证：<a href="../directions/guide.html">真实日常数据上的启动表现</a>。以后观点变化时新建记录，并链接本篇；不覆盖今天的理解。</p>
+</article><div class="links"><a href="2026-10-31-speed-and-effort.md">Markdown 原文</a></div><footer>本地产品档案 · 数据图由归档样本生成 · 对外引用请保留测试条件</footer></main></html>

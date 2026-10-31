@@ -1,0 +1,42 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>产品记录 · By Your Side</title><style>
+:root{color-scheme:light;--ink:#202b3a;--muted:#647182;--blue:#245dcc;--line:#dce1e7;--paper:#fafbf9}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",sans-serif}
+main{max-width:1080px;margin:auto;padding:44px 40px 80px}a{color:var(--blue);text-underline-offset:4px}nav{display:flex;justify-content:space-between;gap:24px;align-items:center;padding-bottom:20px;border-bottom:1px solid var(--line);font-size:13px}
+.brand{font-weight:650;letter-spacing:.03em;color:var(--ink);text-decoration:none}nav div{display:flex;gap:20px}.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}header{padding:54px 0 32px}h1{font-size:42px;line-height:1.25;font-weight:620;letter-spacing:-.045em;margin:14px 0 20px}h2{font-size:23px;line-height:1.4;margin:0 0 20px}h3{font-size:17px;margin:24px 0 8px}p{margin:0 0 16px}.lead{font-size:18px;max-width:650px;color:var(--muted)}section{padding:32px 0;border-top:1px solid var(--line)}.figure{width:100%;height:auto;display:block;background:white;border:1px solid var(--line)}.split{display:grid;grid-template-columns:1fr 1fr;gap:48px}.links{display:flex;gap:20px;flex-wrap:wrap;font-size:14px;margin:16px 0}.status{font-size:13px;color:var(--blue)}.meta{font-size:13px;color:var(--muted)}blockquote{margin:18px 0;padding:6px 0 6px 20px;border-left:2px solid var(--blue);font-size:20px;line-height:1.65}.entry{display:grid;grid-template-columns:145px 1fr;gap:28px}.entry .figure{margin-top:20px}.entry h2{font-size:29px;letter-spacing:-.02em;margin:8px 0 12px}.entry h2 a{color:var(--ink);text-decoration:none}.intro{max-width:620px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}th{color:var(--muted);font-weight:500}ul{padding-left:20px}li{margin:8px 0}details{margin:20px 0}summary{cursor:pointer;color:var(--blue)}pre{overflow:auto;background:#f0f3f6;padding:20px;font-size:12px}footer{padding-top:30px;font-size:12px;color:var(--muted)}.caption{margin-top:10px;color:var(--muted);font-size:13px}.copy{font-size:20px;max-width:770px}.count{font-size:48px;font-variant-numeric:tabular-nums;color:var(--blue);line-height:1.1;margin-bottom:14px}@media(max-width:720px){main{padding:24px 20px 60px}h1{font-size:34px}header{padding:36px 0 24px}.entry,.split{grid-template-columns:1fr;gap:16px}nav{align-items:flex-start}nav div{gap:12px;flex-wrap:wrap}.entry h2{font-size:25px}table{font-size:12px}th,td{padding:10px 5px}}@media print{nav,.links{display:none}main{max-width:none;padding:0}section{break-inside:avoid}details>*{display:block}body{background:white}}
+</style><main><nav><a class="brand" href="index.html">BY YOUR SIDE / 产品记录</a><div><a href="index.html#optimizations">优化</a><a href="index.html#perspectives">理解</a><a href="index.html#directions">跟进</a></div></nav><article><h1>产品记录</h1>
+<p>这里保存 By Your Side 为什么改变、改变了什么，以及支持这些判断的证据。供自己回看，也供后续写产品介绍、更新说明和宣发材料。</p>
+<p><strong>先打开 <a href="index.html">可视化总览</a>。</strong> 当前能力与下一步仍以 <a href="../STATUS.md">STATUS</a> 为准；这里保留每个时点的理解和实测记录。</p>
+<table>
+<thead>
+<tr>
+<th>内容</th>
+<th>固定位置</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>有前后证据的优化</td>
+<td><a href="optimizations/2026-10-31-startup/index.html">optimizations</a>：问题、改法、实测、图、适用范围</td>
+</tr>
+<tr>
+<td>你的产品理解</td>
+<td><a href="perspectives/2026-10-31-speed-and-effort.html">perspectives</a>：原话、当时的判断、后来如何变化</td>
+</tr>
+<tr>
+<td>未来方向与跟进</td>
+<td><a href="directions/guide.html">directions</a>：待验证问题、验证结果、决定</td>
+</tr>
+</tbody></table>
+<h2>第一条记录</h2>
+<p><a href="optimizations/2026-10-31-startup/index.html">Optimization 001：重载后，更快回到对话</a>。图表由原始五次测量重新计算，不手填百分比。案例内附可直接引用的短文案与测试条件。</p>
+<h2>后续怎样积累</h2>
+<ul>
+<li>优化：在 <code>optimizations/YYYY-MM-DD-主题/</code> 保存 <code>record.json</code> 和原始证据；写清用户变化、前后负载、统计口径、验证与未验证范围。完成后运行 <code>npm run product:build</code>，重算图、案例和总览。</li>
+<li>产品理解：从 <a href="templates/perspective.html">理解记录模板</a> 新建一篇。用户原话与整理者理解分开；旧判断保留，新判断链接旧篇，不把现在的认识写成一直如此。</li>
+<li>未来方向：先记录要验证的问题。验证后链接实际结果，再写继续、调整或放弃；未来想法不当作现有功能宣传。</li>
+<li>对外引用：带上图中的实验条件。保留全部样本；“中位数缩短”不能改写成“每一次都更快”。技术定位与本机路径不放入宣传图。</li>
+</ul>
+<h2>文件与导出</h2>
+<p><code>record.json</code> 是案例说明，<code>evidence/</code> 是归档原件。<code>README.md</code>、<code>index.html</code>、<code>exports/summary.svg</code>、<code>exports/samples.svg</code> 与 PNG 由脚本生成；不要手工改生成的数字。</p>
+<p>SVG 随版本保存，PNG 留在案例的 <code>exports/</code>，需要时可重新生成。生成器使用 Python 3 与 <code>requirements.txt</code> 中的绘图库；本机已可直接运行。新机器可用独立环境安装依赖，再运行构建命令。</p>
+<p>这里不自动收集私人会话，不自动发布。截图仍遵循项目素材约定；当前案例的图只使用隔离实验数据。</p>
+</article><div class="links"><a href="README.md">Markdown 原文</a></div><footer>本地产品档案 · 数据图由归档样本生成 · 对外引用请保留测试条件</footer></main></html>

@@ -1,0 +1,73 @@
+[
+  {
+    "id": "sidebar",
+    "label": "重载到侧栏可用",
+    "kind": "elapsed",
+    "primary": true,
+    "before": [
+      1217,
+      1098,
+      1098,
+      1155,
+      1115
+    ],
+    "beforeMedian": 1115,
+    "after": [
+      969,
+      1289,
+      798,
+      773,
+      752
+    ],
+    "afterMedian": 798,
+    "reductionPercent": 28.430493273542602
+  },
+  {
+    "id": "host",
+    "label": "后台就绪",
+    "kind": "measure",
+    "area": "background",
+    "measure": "sideagent.startup.ready",
+    "before": [
+      931,
+      744.1999999880791,
+      752,
+      807.6000000238419,
+      761.5
+    ],
+    "beforeMedian": 761.5,
+    "after": [
+      642.4000000357628,
+      780.8999999761581,
+      353,
+      328.69999998807907,
+      288.10000002384186
+    ],
+    "afterMedian": 353,
+    "reductionPercent": 53.64412344057781
+  },
+  {
+    "id": "restore",
+    "label": "会话恢复",
+    "kind": "measure",
+    "area": "host",
+    "measure": "sideagent.startup.core",
+    "before": [
+      752,
+      664.3999999761581,
+      668.6999999880791,
+      716.4000000357628,
+      680
+    ],
+    "beforeMedian": 680,
+    "after": [
+      443,
+      630.5999999642372,
+      266.10000002384186,
+      241.5999999642372,
+      204.20000004768372
+    ],
+    "afterMedian": 266.10000002384186,
+    "reductionPercent": 60.86764705531738
+  }
+]
