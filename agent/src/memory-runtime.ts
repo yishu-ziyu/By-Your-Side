@@ -1125,7 +1125,8 @@ export class MemoryRuntime {
     if (!this.current(turn)) return null;
     const semantic = entries.some(entry => entry.experience) ? await this.store.select(turn.query).catch(() => []) : [];
     if (!this.current(turn)) return null;
-    const selection = selectMemoryContext({ entries, tasks, hostname, text: turn.text, semanticIds: semantic.map(entry => entry.id), now: Date.now() });
+    const semanticIds = new Set(semantic.map(entry => entry.id));
+    const selection = selectMemoryContext({ entries, tasks, hostname, text: turn.text, semanticIds: [...semanticIds], now: Date.now() });
     // 挑选之后被忘记、修改或替换的不带：记「用过」时按版本再核对一次。
     const current = new Map((await this.store.markUsed(selection.entries.map(({ entry }) => entry))).map(entry => [entry.id, entry]));
 
@@ -1136,8 +1137,8 @@ export class MemoryRuntime {
     this.usedThisTurn = selection.entries.map(item => item.entry);
     const refersBack = REFERS_TO_EARLIER_TASK.test(turn.text);
     const named = (rule: MemoryContextRule, text: string) => ((rule === "asked" || rule === "in-validity") && refersBack) || isNamedForRequest(text, turn.text);
-    // A memory the user saved for this site is always named here; a past task on this site was recorded automatically, so it must match the request.
-    const shown = selection.entries.filter(({ entry, rule }) => rule === "site" || named(rule, entry.text)).map(item => item.entry);
+    // 语义命中已经按当前请求挑选，字面重叠不再把它从来源里滤掉；长期习惯仍不逐条提醒。
+    const shown = selection.entries.filter(({ entry, rule }) => rule === "site" || semanticIds.has(entry.id) || named(rule, entry.text)).map(item => item.entry);
     const shownTasks = selection.tasks.filter(({ task, rule }) => named(rule, [task.goal, ...task.revisions, task.done ?? ""].join("\n"))).map(item => item.task);
     selection.totalChars = selection.entries.reduce((n, { entry }) => n + entry.text.length, 0) + selection.tasks.reduce((n, { task }) => n + taskContextChars(task), 0);
 

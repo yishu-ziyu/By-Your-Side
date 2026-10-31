@@ -54,7 +54,11 @@ const proxy = createServer(async (req, res) => {
 });
 await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
 
-const rp = await launchRealPath({ chromeArgs: offline ? ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1", "--no-proxy-server"] : [] });
+const HOST = "research.test";
+const siteServer = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<!doctype html><title>用户研究</title><p>访谈录音</p>"));
+await new Promise<void>(resolve => siteServer.listen(0, "127.0.0.1", resolve));
+const hostRule = `MAP ${HOST} 127.0.0.1:${siteAddress(siteServer).port}`;
+const rp = await launchRealPath({ chromeArgs: [`--host-resolver-rules=${hostRule}${offline ? ", MAP * ~NOTFOUND, EXCLUDE 127.0.0.1" : ""}`, "--no-proxy-server"] });
 let panel = "";
 let error: string | null = null;
 const evidence: Record<string, unknown> = { offline, semanticTurns: 0 };
@@ -89,11 +93,38 @@ async function turn(): Promise<string> {
   return requests[mark] ?? "";
 }
 
+async function usedItem(id: string): Promise<{ state: string; note: string; buttons: string[] } | null> {
+  return await rp.evaluate(panel, `(() => {
+    const item = [...document.querySelectorAll(".memory-used-item")].filter(node => node.dataset.usedId === ${JSON.stringify(id)}).at(-1);
+    return item ? { state: item.dataset.state, note: item.querySelector(".memory-used-note")?.textContent ?? "", buttons: [...item.querySelectorAll("button")].map(button => button.textContent) } : null;
+  })()`) as { state: string; note: string; buttons: string[] } | null;
+}
+
+async function clickUsed(id: string, label: string): Promise<void> {
+  const found = await rp.evaluate(panel, `(() => {
+    const items = [...document.querySelectorAll(".memory-used-item")].filter(node => node.dataset.usedId === ${JSON.stringify(id)}).reverse();
+    const button = items.map(item => [...item.querySelectorAll("button")].find(node => node.textContent === ${JSON.stringify(label)})).find(Boolean);
+    if (!button) return false;
+    button.setAttribute("data-acceptance-click", "1");
+    button.scrollIntoView({ block: "center" });
+    return true;
+  })()`);
+  assert.ok(found, `来源里可以点「${label}」`);
+  await rp.click(panel, "[data-acceptance-click]");
+  await rp.evaluate(panel, `document.querySelector("[data-acceptance-click]")?.removeAttribute("data-acceptance-click"); true`);
+  await sleep(1000);
+}
+
 try {
+  const blank = await until(async () => (await rp.targets()).find(target => target.type === "page" && target.url === "about:blank"), 10_000, "初始标签页");
+  const work = await rp.attach(blank.targetId);
+  await rp.cdp.send("Page.navigate", { url: `http://${HOST}/` }, work);
+  await until(async () => await rp.evaluate(work, `location.hostname === ${JSON.stringify(HOST)} && document.readyState === "complete"`) || undefined, 15_000, "研究网站");
   const ext = await rp.attach((await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/voice-permission.html` })).targetId);
   await until(async () => await rp.evaluate(ext, `document.readyState === "complete"`) || undefined, 10_000, "扩展页");
   await rp.evaluate(ext, `(async () => { const db = await new Promise((resolve, reject) => { const request = indexedDB.open("sideagent-memory", 1); request.onupgradeneeded = () => request.result.createObjectStore("kv"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
     const tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").put(${JSON.stringify(seeded)}, "memories"); await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); db.close(); return true; })()`);
+  await rp.cdp.send("Target.activateTarget", { targetId: blank.targetId });
   panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   const configured = await configureViaSettings(rp, panel, { providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "local-demo-no-secret" } }, { baseUrl: `http://127.0.0.1:${siteAddress(proxy).port}/v1` });
@@ -120,15 +151,70 @@ try {
     evidence.inprocLogs = inproc.logs();
     assert.ok(prompt.includes(TARGET), "真实本地模型在换说法后找到了目标记忆");
     assert.equal(prompt.includes(UNRELATED), false, "无关记忆没有被带入");
+    const usedLine = await rp.evaluate(panel, `(() => {
+      const answer = [...document.querySelectorAll("#messages .msg.assistant")].at(-1);
+      const line = answer?.querySelector(".memory-used-line");
+      const toggle = answer?.querySelector(".memory-used-toggle");
+      return line && toggle ? {
+        open: line.dataset.open,
+        label: toggle.textContent,
+        items: [...line.querySelectorAll(".memory-used-item")].map(item => ({ id: item.dataset.usedId, text: item.querySelector(".memory-used-text")?.textContent })),
+      } : null;
+    })()`) as { open: string; label: string; items: Array<{ id: string; text: string }> } | null;
+    evidence.usedLine = usedLine;
+    assert.ok(usedLine?.label.startsWith("参考了你记住的"), "回答下说明参考了哪条语义记忆");
+    assert.equal(usedLine.open, "false", "来源默认折起");
+    assert.deepEqual(usedLine.items, [{ id: "semantic-target", text: TARGET }], "只列出本次语义命中的原文");
     await rp.screenshot(panel, join(artifacts, "semantic-recall.png"));
 
-    for (let index = 0; index < 3 && !(await rp.evaluate(panel, `document.querySelector("#header-menu").matches(":popover-open")`)); index++) { await rp.click(panel, "#header-more"); await sleep(300); }
-    await rp.click(panel, "#memory-open");
-    await until(async () => await rp.evaluate(panel, `!!document.querySelector('[data-memory-id="semantic-target"][data-memory-action="forget"]')`) || undefined, 15_000, "记忆面板找到目标");
-    await rp.click(panel, '[data-memory-id="semantic-target"][data-memory-action="forget"]');
-    await rp.click(panel, '[data-memory-id="semantic-target"][data-memory-action="confirm-forget"]');
-    await until(async () => await rp.evaluate(panel, `!document.querySelector('.memory-row[data-memory-id="semantic-target"]')`) || undefined, 15_000, "目标记忆已忘记");
-    await rp.click(panel, "#memory-close");
+    await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].at(-1).querySelector(".memory-used-toggle").setAttribute("data-acceptance-click", "1"); true`);
+    await rp.click(panel, "[data-acceptance-click]");
+    await rp.evaluate(panel, `document.querySelector("[data-acceptance-click]")?.removeAttribute("data-acceptance-click"); true`);
+    await sleep(600);
+    const expanded = await rp.evaluate(panel, `(() => {
+      const line = [...document.querySelectorAll("#messages .msg.assistant")].at(-1).querySelector(".memory-used-line");
+      const item = line.querySelector(".memory-used-item");
+      return {
+        open: line.dataset.open,
+        whiteSpace: getComputedStyle(item.querySelector(".memory-used-text")).whiteSpace,
+        actionOpacity: getComputedStyle(item.querySelector(".memory-used-actions")).opacity,
+        buttons: [...item.querySelectorAll("button")].map(button => button.textContent),
+      };
+    })()`) as { open: string; whiteSpace: string; actionOpacity: string; buttons: string[] };
+    evidence.expanded = expanded;
+    assert.equal(expanded.open, "true", "来源可以原地展开");
+    assert.equal(expanded.whiteSpace, "normal", "完整原文换行显示，不截成省略号");
+    assert.equal(expanded.actionOpacity, "1", "控制操作不用悬停也能看见");
+    assert.deepEqual(expanded.buttons, ["在这个网站不用", "忘记"], "展开后能在这个网站停用或忘记");
+    await rp.screenshot(panel, join(artifacts, "semantic-recall-expanded.png"));
+    await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] }, panel);
+    await sleep(300);
+    evidence.reducedMotion = await rp.evaluate(panel, `getComputedStyle([...document.querySelectorAll("#messages .msg.assistant")].at(-1).querySelector(".memory-used-line")).transitionDuration`);
+    assert.equal(evidence.reducedMotion, "0s", "减少动态效果时展开不播动效");
+    await rp.screenshot(panel, join(artifacts, "semantic-recall-dark.png"));
+    await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }, { name: "prefers-reduced-motion", value: "no-preference" }] }, panel);
+
+    await clickUsed("semantic-target", "在这个网站不用");
+    const notHere = await usedItem("semantic-target");
+    assert.equal(notHere?.state, "not-here", "网站停用状态可见");
+    assert.equal(notHere?.note, `在 ${HOST} 不用`, "网站停用说明对应当前网站");
+    const withoutHere = await turn();
+    assert.equal(withoutHere.includes(TARGET), false, "在这个网站不用后，下一轮不再带入");
+    await clickUsed("semantic-target", "撤销");
+    assert.equal((await usedItem("semantic-target"))?.state, "used", "网站停用可以撤销");
+    const restoredHere = await turn();
+    assert.ok(restoredHere.includes(TARGET), "撤销网站停用后，下一轮重新带入");
+
+    await clickUsed("semantic-target", "忘记");
+    assert.equal((await usedItem("semantic-target"))?.state, "forgotten", "忘记状态可见");
+    await clickUsed("semantic-target", "撤销");
+    assert.equal((await usedItem("semantic-target"))?.state, "used", "忘记可以撤销");
+    const afterUndo = await turn();
+    assert.ok(afterUndo.includes(TARGET), "撤销忘记后，下一轮重新带入");
+    evidence.controls = { withoutHere: withoutHere.includes(TARGET), restoredHere: restoredHere.includes(TARGET), afterUndo: afterUndo.includes(TARGET) };
+    await clickUsed("semantic-target", "忘记");
+    assert.equal((await usedItem("semantic-target"))?.state, "forgotten", "最终忘记已生效");
+    await rp.screenshot(panel, join(artifacts, "semantic-forgotten.png"));
     const worker = await rp.serviceWorker();
     assert.ok(worker, "扩展后台存在");
     await rp.evaluate(ext, `setTimeout(() => chrome.runtime.reload(), 0); true`);
@@ -151,6 +237,8 @@ try {
   await rp.remove().catch(() => undefined);
   proxy.closeAllConnections();
   proxy.close();
+  siteServer.closeAllConnections();
+  siteServer.close();
   await upstream.close().catch(() => undefined);
 }
 
