@@ -129,7 +129,7 @@ function downloadReceipt(download: Omit<NonNullable<ToolContract["wait_event"]["
   if (download.completed && download.path) {
     const saved = `Download complete, confirmed by Chrome's downloads API: "${name}" saved to ${download.path}${download.bytes !== undefined ? ` (${download.bytes} B)` : ""}.`;
 
-    if (download.attachment) return `${saved} Its content is available in this conversation as "${download.attachment.name}"; use read_attachment to inspect it${download.attachment.truncated ? " (text was cut off at the size limit; do not claim to have read the whole file)" : ""}.`;
+    if (download.attachment) return `${saved} Its content is available in this conversation as "${download.attachment.name}"; use upload_file to upload the original, or read_attachment to inspect its available text${download.attachment.truncated ? " (text was cut off at the size limit; do not claim to have read the whole file)" : ""}.`;
     if (download.attachmentError) return `${saved} The file was saved, but its content could not be read automatically: ${download.attachmentError}. Ask the user to select the file if content access is needed.`;
 
     return saved;
@@ -338,9 +338,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     const data = result as ToolContract["wait_event"]["data"];
     const download = data.download;
     const captured = download?.capturedFile;
-    if (!download || !captured) return result;
+    if (!download) return result;
+    if (!captured) return download.completed && !download.danger
+      ? { ...data, download: { ...download, attachmentError: "没有取得可用的下载原件（响应类型、长度或捕获条件不满足），不能直接上传；请用户附上文件" } }
+      : result;
     const publicDownload: NonNullable<ToolContract["wait_event"]["data"]["download"]> = { ...download };
     delete publicDownload.capturedFile;
+
+    if (!download.completed || download.danger) return { ...data, download: publicDownload };
 
     try {
       if (!execution?.downloadAttachment) throw new Error("当前会话不能读取下载文件");
@@ -469,7 +474,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     assertNotAborted();
     if (execution && epoch !== undefined && execution.epoch() !== epoch) throw new Error(STALE_STEP_MESSAGE);
     const result = await invokeReleasingIdleOwner(gated ? epoch : undefined);
-    const publicResult = name === "wait_event" ? await registerDownload(result) : result;
+    let publicResult = name === "wait_event" ? await registerDownload(result) : result;
+    if (name === "download_url") {
+      const registered = await registerDownload({ download: result });
+      if (registered && typeof registered === "object" && "download" in registered) publicResult = registered.download;
+    }
     preparedCopy?.record(publicResult);
     try { execution?.observeCall?.(name, callParams, publicResult); } catch { /* observation is not control */ }
     // Private integrity evidence never enters model programs, side-panel text or traces.

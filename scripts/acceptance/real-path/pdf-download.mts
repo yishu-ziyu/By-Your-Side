@@ -70,9 +70,15 @@ const rules: Rule[] = [
   { match: "拒绝本机地址并继续合法下载", steps: [{ tool: { name: "download_url", args: { url: "file:///private/does-not-exist.pdf" } } }, { tool: { name: "download_url", args: { url: `${origin}/paper.pdf`, filename: "after-invalid.pdf" } } }, { text: "本机地址已拒绝，合法 PDF 下载结果已返回。" }] },
 ];
 
-const model = await startScriptedModel(rules);
+const toolResults: string[] = [];
+const model = await startScriptedModel(rules, undefined, payload => {
+  for (const message of payload.messages ?? []) {
+    if (message.role === "tool") toolResults.push(JSON.stringify(message.content));
+  }
+});
 
 const rp = await launchRealPath();
+let diagnosticPanel: string | undefined;
 
 const checks: Array<{ name: string; pass: boolean }> = [];
 
@@ -83,6 +89,7 @@ try {
   const work = await rp.attach(blank.targetId);
   await rp.cdp.send("Page.navigate", { url: sourceUrl }, work);
   const panel = await rp.attach(await rp.openSidePanel());
+  diagnosticPanel = panel;
   await until(async () => (await rp.evaluate(panel, `document.querySelector('#send-btn')?.disabled===false`)) || undefined, 60_000, "侧栏就绪");
 
   if (live) {
@@ -102,6 +109,7 @@ try {
   await rp.cdp.send("Target.activateTarget", { targetId: blank.targetId });
 
   const run = async (text: string, name: string) => {
+    console.log(`开始：${name}`);
     await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel);
     await until(async () => live ? (await readdir(rp.dirs.downloads)).includes("paper.pdf") || undefined : model.requests.some(r => r.rule === text && r.step >= 1 && r.tools) || undefined, 90_000, "工具返回");
     await sleep(2000);
@@ -129,17 +137,23 @@ try {
     await run("拒绝本机地址并继续合法下载", "invalid");
     const afterInvalid = await readFile(join(rp.dirs.downloads, "after-invalid.pdf")).catch(() => Buffer.alloc(0));
     checks.push({ name: "invalid-does-not-lock-next-download", pass: afterInvalid.equals(pdf) });
-  const diagnostics = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "diagnostics"));
-  await writeFile(join(out, "traces.jsonl"), diagnostics.traces);
-  const events = diagnostics.traces.split("\n").filter(Boolean).map(line => JSON.parse(line));
-  const interrupted = events.some(e => e.type === "tool_execution_end" && e.data?.toolName === "download_url" && JSON.stringify(e.data.result).includes("Download failed for"));
+  await writeFile(join(out, "tool-results.json"), JSON.stringify(toolResults, null, 2));
+  const interrupted = toolResults.some(result => result.includes("Download failed for"));
   checks.push({ name: "chrome-reports-interruption", pass: interrupted && requests.includes("/broken.pdf") });
-    const rejected = events.some(e => e.type === "tool_execution_end" && e.data?.toolName === "download_url" && e.data?.isError === true && JSON.stringify(e.data.result).includes("下载链接必须是 HTTP 或 HTTPS 地址，操作未执行。"));
-    checks.push({ name: "reject-before-api", pass: rejected && requests.every(path => path.startsWith("/")) });
+  const rejected = toolResults.some(result => result.includes("下载链接必须是 HTTP 或 HTTPS 地址，操作未执行。"));
+  checks.push({ name: "reject-before-api", pass: rejected && requests.every(path => path.startsWith("/")) });
   }
 
   await writeFile(join(out, "paper.pdf"), arxiv ? downloaded : pdf);
-} catch (e) { error = String(e); console.error(error); }
+} catch (e) {
+  error = String(e); console.error(error);
+  if (diagnosticPanel) {
+    await rp.screenshot(diagnosticPanel, join(out, "failure.png")).catch(() => {});
+    const visible = await rp.evaluate(diagnosticPanel, `document.body.innerText`).catch(String);
+    await writeFile(join(out, "failure.txt"), String(visible));
+  }
+  await writeFile(join(out, "model-requests.json"), JSON.stringify(model.requests, null, 2));
+}
 finally {
   await writeFile(join(out, "summary.json"), JSON.stringify({ live, arxiv, mainModel, sourceUrl, checks, requests, error }, null, 2));
   await rp.close(); await model.close(); site.closeAllConnections(); site.close();

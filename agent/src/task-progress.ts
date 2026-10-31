@@ -86,6 +86,13 @@ export class TaskProgress {
     this.results = new TaskResultBook(clock);
   }
 
+  private foldCompletedResultsIfFull(): void {
+    if (this.results.list().length < MAX_TASK_RESULTS) return;
+    // Only completed receipts are folded; unresolved and in-flight effects still occupy their slots.
+    const folded = this.results.fold();
+    if (folded.length) this.foldedResults = { count: this.foldedResults.count + folded.length, recent: [...this.foldedResults.recent, ...folded].slice(-8) };
+  }
+
   registerResults(intents: readonly TaskResultRegistration[]): void { this.results.register(intents); }
   reviseResults(): void { this.results.revise();this.failureLimit=false; }
   stopAfterFailures():void { this.failureLimit=true; }
@@ -200,12 +207,7 @@ export class TaskProgress {
 
     if(interjected){
       this.interjections+=1;
-      // 账本满了、用户在任务进行中又说了话：已完成的结果收起来，账本腾出位置给接下来的动作。
-      // 只在空闲时清账的话，任务里做满 64 项之后再插话，所有动作都会被拒。
-      // 没满时不收：侧栏任务卡和「已做完」的说法都照旧。
-      const folded=this.results.list().length>=MAX_TASK_RESULTS?this.results.fold():[];
-
-      if(folded.length)this.foldedResults={count:this.foldedResults.count+folded.length,recent:[...this.foldedResults.recent,...folded].slice(-8)};
+      this.foldCompletedResultsIfFull();
     }
 
     // Only the caller that just registered this input can revoke it before acceptance.
@@ -571,6 +573,7 @@ if(page)this.recoveryInput.page=page;
         if(started.durableEffect&&OPAQUE_EFFECT_TOOLS.has(e.name)&&fact!=='not_executed')this.opaqueEffectRan=true;
 
         if(resultLocksWhenUnknown({tool:e.name,evidence:{effectful:started.durableEffect}})&&e.isError&&fact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.unresolvedEffect=true;
+        this.foldCompletedResultsIfFull();
       }
     } else if (e.kind === "tool_late_result") {
       // 晚到/重复回执只按原 SDK 调用身份关联当前 run 的未决结果。

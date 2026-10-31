@@ -38,7 +38,7 @@ function sniff(bytes: Uint8Array, format: FileFormat): FileFormat {
 }
 
 export async function readAttachmentFile(file: File, id: string, onProgress: (fraction: number) => void = () => {}): Promise<FileAttachment> {
-  const declared = readableFormat(file);
+  const declared = /^image\/(png|jpeg|gif|webp|avif|bmp|x-icon)$/.test(file.type) ? "image" : readableFormat(file);
 
   if (!declared) throw new FileReadError(unsupportedReason(file));
 
@@ -56,7 +56,9 @@ export async function readAttachmentFile(file: File, id: string, onProgress: (fr
   let note: string | undefined;
 
   try {
-    if (format === "pdf") {
+    if (format === "image") {
+      text = "图片原件可用于上传；尚未提取图片中的文字。";
+    } else if (format === "pdf") {
       const pdf = await readPdf(bytes, onProgress);
       ({ text, note } = pdf);
       parts = { kind: "page", count: pdf.pages };
