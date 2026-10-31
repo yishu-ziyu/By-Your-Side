@@ -66,7 +66,9 @@ export class ContinuePolicy {
     const tried = ctx.failed.length ? ` Already tried in this task and failed: ${ctx.failed.map(item => `${item.tool} — ${item.reason}`).join("; ")}. Do not repeat them; take a different approach.` : "";
     const completed = (verdict.items ?? []).filter(item => item.done);
     const preserve = completed.length ? ` These requirements are already satisfied: ${JSON.stringify(completed.map(item => item.text))}. Preserve their existing results; do not refill, save or send them again.` : "";
-    const repairScope = verdict.verificationSubject === "answer"
+    const repairScope = verdict.repair === "complete_task"
+      ? " The answer reports unfinished execution of the original request. Continue the remaining authorized requirements using the available tools, including the necessary page or file changes. Do not merely rewrite the partial report. This check grants no new permissions; preserve completed work and every user confirmation requirement."
+      : verdict.verificationSubject === "answer"
       ? " The discrepancy is in your written answer, not in the page or files: do not change files, write to pages or repeat browser writes. If correcting it needs information you have not read, read or search for it first (opening and reading pages is fine), then correct the answer."
       : verdict.verificationSubject === "file"
         ? " Correct only the affected saved file and explain the correction. Do not change the page or repeat browser writes."
