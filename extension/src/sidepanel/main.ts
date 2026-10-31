@@ -4495,7 +4495,11 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       receiveSourceExcerpts(ev.sources);
       break;
     case "fact_check": {
-      const answer = renderFactCheck(ev, messagesEl);
+      const answer = renderFactCheck(ev, messagesEl, (answer, text) => {
+        answer.dataset.markdown = text;
+        if (answer === currentAssistant) currentAssistantText = text;
+        revealText(answer, text, { render: renderMarkdown, live: false, final: true, after: () => attachAnswerActions(answer) });
+      });
       if (!replayingHistory) uiEvent("ui_fact_check", {
         outcome: answer ? "applied" : "answer_missing",
         problems: ev.problems.length,

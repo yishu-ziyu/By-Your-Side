@@ -1,7 +1,7 @@
 /**
  * 侧栏少些杂讯。只装扩展、隔离无头 Chrome、真侧栏、本机脚本模型。
  *   npx tsx scripts/acceptance/real-path/panel-tidy.mts --headless
- *   a) 同一网站有一条过往任务：问无关的事，发给模型的请求里没有过往任务，回答下没有「按上次做过的」；问相关的事，两者都有。
+ *   a) 同一网站有一条过往任务：问无关的事，发给模型的请求里没有过往任务，回答下没有「本轮提供的过往任务」；问相关的事，两者都有。
  *   b) 用户没要文件，助手在程序里存了中间文件：侧栏没有卡片；用户要 CSV：有卡片。
  *   c) 助手改过网页后说做不成，核对判继续、催一次；催后网页没变又说做不成：不再催，核对也不再问模型。
  * 失败方式：过往任务不比相关就带；中间文件也出卡片；催后网页没变仍接着催（最多 5 次）。
@@ -31,9 +31,10 @@ const site = createServer((req, res) => {
 
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 
-const PAST_GOAL = "在这家店订阅保温杯的到货提醒";
+const PAST_GOAL = "对了，登录一下我的少数派吧";
+const PAST_REVISIONS = ["我会去发文章", "你先看看我之前发过的文章，还有一些被官方推流了", "现在我想看看有没有些新的活动是我可以参加的。", "其实我们就要利用好这些渠道，才能让我们的项目被看见。"];
 
-const ASK = { unrelated: "这页的价格是多少", related: "保温杯到货提醒订阅成功了吗", work: "整理一下流程图数据备用", csv: "把商品导出成 CSV 文件", draw: "在画板上画一个登录流程图" };
+const ASK = { unrelated: "这些任务的评测集我能搞到吗？", related: "少数派登录成功了吗", work: "整理一下流程图数据备用", csv: "把商品导出成 CSV 文件", draw: "在画板上画一个登录流程图" };
 
 const GIVE_UP = ["我没能完成流程图：画布上还没有方框。", "流程图还没画到画布上：缺四个方框和箭头。"];
 
@@ -152,20 +153,21 @@ try {
 
   // a) 预置这个网站的一条过往任务（库名、键与 memory-used-line.mts 相同），再开新对话。
   const now = Date.now();
-  const task = { id: "seed-task", conversationId: "seed", goal: PAST_GOAL, revisions: [], hosts: [SITE], outcome: "complete", summary: "已订阅保温杯到货提醒。", unfinished: [], startedAt: now - 3_600_000, endedAt: now - 3_000_000 };
+  const task = { id: "seed-task", conversationId: "seed", goal: PAST_GOAL, revisions: PAST_REVISIONS, hosts: [SITE], outcome: "complete", summary: "已登录少数派。", unfinished: [], startedAt: now - 3_600_000, endedAt: now - 3_000_000 };
   await rp.evaluate(ext, `(async () => { const db = await new Promise((res, rej) => { const r = indexedDB.open("sideagent-memory"); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
     const tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").put(${JSON.stringify(JSON.stringify({ format: 1, tasks: [task] }) + "\n")}, "tasks");
     await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); db.close(); return true; })()`);
   await rp.click(panel, "#conversation-new");
   await sleep(1_000);
   const unrelated = await turn(ASK.unrelated, "99 元");
+  await rp.screenshot(panel, join(out, "a-unrelated.png"));
   const related = await turn(ASK.related, "已经生效");
   evidence.a = { unrelated: { tasksInPrompt: unrelated.system.includes(TASKS_HEADER), line: unrelated.view.usedLine }, related: { tasksInPrompt: related.system.includes(TASKS_HEADER) && related.system.includes(PAST_GOAL), line: related.view.usedLine } };
   await rp.screenshot(panel, join(out, "a-related.png"));
   assert.ok(unrelated.system.length > 0 && !unrelated.system.includes(TASKS_HEADER), "a: 无关请求的系统提示里没有过往任务");
   assert.ok(!unrelated.view.usedLine, `a: 无关请求的回答下没有记忆行（实际：${unrelated.view.usedLine}）`);
   assert.ok(related.system.includes(TASKS_HEADER) && related.system.includes(PAST_GOAL), "a: 相关请求的系统提示里有这条过往任务");
-  assert.ok(related.view.usedLine?.startsWith("按上次做过的"), `a: 相关请求的回答下有「按上次做过的」（实际：${related.view.usedLine}）`);
+  assert.ok(related.view.usedLine?.startsWith("本轮提供的过往任务"), `a: 相关请求的回答下有「本轮提供的过往任务」（实际：${related.view.usedLine}）`);
 
   // b) 中间文件没有卡片；用户要的 CSV 有卡片。
   await turn(ASK.work, "已整理好");

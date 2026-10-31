@@ -171,7 +171,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     const text = first.kind === "entry" ? first.entry.text : first.task.done || first.task.goal;
     const short = text.length > 16 ? `${text.slice(0, 15)}…` : text;
 
-    return `${first.kind === "entry" ? "参考了你记住的" : "按上次做过的"}「${short}」${line.items.size > 1 ? `等 ${line.items.size} 条` : ""}`;
+    return `${first.kind === "entry" ? "参考了你记住的" : "本轮提供的过往任务"}「${short}」${line.items.size > 1 ? `等 ${line.items.size} 条` : ""}`;
   }
 
   function renderUsedLine(line: MemoryUsedLine): void {
