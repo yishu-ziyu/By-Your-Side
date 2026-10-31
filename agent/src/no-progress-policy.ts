@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { GOAL_CHECK_BOOKKEEPING_TOOLS } from './goal-check.js';
 import type {ExtensionFactory} from '@earendil-works/pi-coding-agent';
 import { isWriteTool } from '../../shared/effect-policy.js';
 import {toolAction} from '../../shared/user-facing.js';
@@ -62,9 +64,11 @@ export class NoProgressPolicy {
   private weight=0;
   private steps=new Map<string,{effect:boolean;waited:boolean}>();
   private stopped=false;
+  private evidenceVersion=0;
+  get progressVersion():number {return this.evidenceVersion;}
   constructor(private readonly onStop:(stop:NoProgressStop)=>void) {}
 
-  reset():void {this.seen.clear();this.streak=[];this.weight=0;this.steps.clear();this.stopped=false;}
+  reset():void {this.seen.clear();this.streak=[];this.weight=0;this.steps.clear();this.stopped=false;this.evidenceVersion=0;}
 
   /** browser_run 里的步骤：写类步骤是真实动作，等待步骤说明这是有意的轮询。 */
   noteProgramStep(step:{parentId:string;name:string;phase:string;error?:string}):void {
@@ -103,7 +107,16 @@ export class NoProgressPolicy {
 
         for(const segment of segments)if(!this.seen.has(segment))fresh+=1;
         this.remember(segments);
-        const novel=fresh>0&&fresh>=segments.size*NOVELTY_MIN_SHARE;
+        let newImage=false;
+        for(const part of event.content){
+          if(part.type!=='image')continue;
+          const key='image:'+createHash('sha256').update(part.mimeType).update(part.data).digest('hex');
+          if(!this.seen.has(key))newImage=true;
+          this.remember([key]);
+        }
+        const novel=newImage||fresh>0&&fresh>=segments.size*NOVELTY_MIN_SHARE;
+        // Progress comes from newly observed content, not another report or another identical write acknowledgement.
+        if(novel&&!event.isError&&!GOAL_CHECK_BOOKKEEPING_TOOLS.has(event.toolName))this.evidenceVersion++;
         const effect=!event.isError&&(isEffectStep(event.toolName)||event.toolName==='send_user_message'||fileChange||programSaved||step.effect);
 
         if(effect||(novel&&!event.isError)){this.streak=[];this.weight=0;

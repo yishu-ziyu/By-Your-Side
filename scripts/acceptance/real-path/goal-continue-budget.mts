@@ -1,5 +1,5 @@
 /**
- * 自动续做阶段超过两分钟：不再开启下一次续做，由用户决定是否继续。
+ * 自动续做阶段没有新证据且超过两分钟：不再开启下一次续做。
  * 只装扩展、隔离构建、本机脚本模型（目标核对也由脚本回「接着做」）。约 2.5 分钟。
  *   npx tsx scripts/acceptance/real-path/goal-continue-budget.mts --headless
  *   a) 允许第一次续做；续做超过两分钟后不再发第三次请求。
@@ -35,7 +35,7 @@ const checkStep = { text: CONTINUE_JSON };
 const model = await startScriptedModel([
   // 目标核对的输入带 lastReply；接着做的那一轮以 [GOAL CHECK] 开头，也带着原话，所以都排在原话前面。
   { match: `"lastReply"`, steps: [checkStep] },
-  { match: "[GOAL CHECK]", steps: [{ tool: { name: 'fill', args: { target: '#progress', value: '第一轮续做进展', label: '整理进度' } } }, continueStep] },
+  { match: "[GOAL CHECK]", steps: [continueStep] },
   // 用过浏览器工具的一轮才核对；打开一页才有过程行，核对结论写在过程行上。
   { match: TASK, steps: [{ tool: { name: "navigate", args: { url: `http://127.0.0.1:${siteAddress(site).port}/` } } }, { text: FIRST }] },
 ], undefined, payload => {
@@ -69,7 +69,7 @@ try {
   const line = await rp.evaluate(panel, `[...document.querySelectorAll(".run-check")].map(e => e.textContent.replace("·", "").trim()).filter(Boolean).at(-1) ?? ""`) as string;
   await rp.screenshot(panel, join(out, "panel.png"));
   const traces = await rp.evaluate(panel, `new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;const tx=db.transaction('trace-lines');const q=tx.objectStore('trace-lines').getAll();q.onsuccess=()=>resolve(q.result.map(x=>JSON.parse(x.line)));tx.oncomplete=()=>db.close()}})`) as Array<{type:string;data:{overBudget?:boolean}}>;
-  check("a 第一次续做已执行，超过预算后不再开始下一次", !text.includes(THIRD) && model.requests.filter(r => r.rule === "[GOAL CHECK]").length === 2 && traces.some(t=>t.type==='goal_check'&&t.data.overBudget), { thirdAnswer: text.includes(THIRD), continued: model.requests.filter(r => r.rule === "[GOAL CHECK]").length, overBudget:traces.some(t=>t.type==='goal_check'&&t.data.overBudget) });
+  check("a 第一次续做已执行，超过预算后不再开始下一次", !text.includes(THIRD) && model.requests.filter(r => r.rule === "[GOAL CHECK]").length === 1 && traces.some(t=>t.type==='goal_check'&&t.data.overBudget), { thirdAnswer: text.includes(THIRD), continued: model.requests.filter(r => r.rule === "[GOAL CHECK]").length, overBudget:traces.some(t=>t.type==='goal_check'&&t.data.overBudget) });
   check("b 过程行写「还没做成」", line === "还没做成", { line });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.length > 0 && checks.every(c => c.pass) ? "PASS" : "FAIL", checks }, null, 2));

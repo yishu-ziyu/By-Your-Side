@@ -3644,7 +3644,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const proof = original.verificationSubject === 'file' ? checkInput.files?.map(file => [file.filename, file.content])
         : original.verificationSubject === 'answer' ? lastReply
           : reads.length ? [endedOn, reads.map(read => [read.tabId, read.target, (read.source === "page_snapshot" ? freshPage?.text ?? read.data : read.data).replace(/\[ref=\d+\]/g, "")])] : [endedOn, pageText];
-      const fingerprint = createHash('sha256').update(JSON.stringify([original.verificationSubject ?? 'page', proof])).digest('hex');
+      const fingerprint = createHash('sha256').update(JSON.stringify([original.verificationSubject ?? 'page', proof, original.repair === 'complete_task' ? this.noProgressPolicy?.progressVersion ?? 0 : null])).digest('hex');
       if (this.continuePolicy.seenEvidence(scope, fingerprint)) {
         verdict = { ...original, status: 'open', cause: 'retry_evidence_unchanged' };
         recordHostGoalCheck(model, verificationInput, "retry_evidence_unchanged", verdict, trace, { fingerprint, seenEvidence: true });
@@ -3708,12 +3708,12 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       check.adjustedBy = check.adjustedBy ? `${check.adjustedBy}+${rule}` : rule;
       check.verdict = next;
     };
-    const flushChecks = (extra: { attempt?: number; pageMovedTo?: string; overBudget?: boolean } = {}) => {
+    const flushChecks = (extra: { attempt?: number; pageMovedTo?: string; overBudget?: boolean; progressVersion?: number } = {}) => {
       const pending = pendingChecks.slice(writtenChecks);
       for (const [index, check] of pending.entries()) {
         const last = index === pending.length - 1;
         this.runTrace.recordAt(checkCorrelation, "goal_check", { ...check, ...check.verdict, attempt: last && extra.attempt !== undefined ? extra.attempt : null, ...(pageRead ? { pageRead } : {}),
-          ...(last && extra.pageMovedTo ? { pageMovedTo: extra.pageMovedTo } : {}), ...(last && extra.overBudget ? { overBudget: true } : {}) });
+          ...(last && extra.pageMovedTo ? { pageMovedTo: extra.pageMovedTo } : {}), ...(last && extra.overBudget ? { overBudget: true } : {}), ...(last && extra.progressVersion !== undefined ? { progressVersion: extra.progressVersion } : {}) });
       }
       writtenChecks = pendingChecks.length;
     };
@@ -3745,7 +3745,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       let beforeRule = "email_step";
       let beforeFacts: Record<string, unknown> | undefined;
-      verdict = this.continuePolicy.beforeCheck({ runId, reply: lastReply, partial, pageNow, pageText, goalPage: snapshot?.goalPage }, (rule, facts) => { beforeRule = rule; beforeFacts = facts; });
+      verdict = this.continuePolicy.beforeCheck({ runId, reply: lastReply, partial, pageNow, pageText, goalPage: snapshot?.goalPage, progress: this.noProgressPolicy?.progressVersion }, (rule, facts) => { beforeRule = rule; beforeFacts = facts; });
       if (verdict && model && checkInput) recordHostGoalCheck(model, checkInput, beforeRule, verdict, newCheck(undefined, checkStarted), beforeFacts);
       if (!verdict && model) {
         const sessionId = `${this.session!.sessionId}-goal-check`;
@@ -3797,7 +3797,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     if (!current()) { abandon(); return; }
 
-    const continuation = verdict ? this.continuePolicy.next(verdict, { runId, snapshot, goal: this.activeGoal ?? "", failed: this.goalLedger.failuresFor(runId) }) : null;
+    const continuation = verdict ? this.continuePolicy.next(verdict, { runId, snapshot, goal: this.activeGoal ?? "", failed: this.goalLedger.failuresFor(runId), progress: this.noProgressPolicy?.progressVersion }) : null;
 
     if (verdict && continuation && "prompt" in continuation && this.session && !movedTo) {
       const session = this.session;
@@ -3838,7 +3838,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       }
       emit(continuing);
       this.callbacks.setStatus('running');
-      flushChecks({ attempt });
+      flushChecks({ attempt, progressVersion: this.noProgressPolicy?.progressVersion ?? 0 });
       this.mainEffort.raise(session.model, "goal_unfinished");
       this.deliveredResultThisRun = false;
       void session.prompt(continuation.prompt)
@@ -3867,7 +3867,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           at: Date.now(),
         };
       }
-      // 催满次数或跑得太久仍判「没做完」：留作「还差」，交给用户决定；不再自动接着做。
+      // Consecutive continuations without new evidence stop; completed work and user dependencies keep their own verdicts.
       const settled: Extract<AgentUiEvent, { kind: "goal_check" }> = { kind: "goal_check", status: continuation && "settle" in continuation ? continuation.settle : "open" };
 
       if (verdict.remaining) settled.remaining = verdict.remaining;
