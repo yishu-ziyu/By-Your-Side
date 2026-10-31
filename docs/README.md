@@ -9,6 +9,7 @@
 | 怎么检查、怎么测？ | [开发检查](development/checks.md) · [验收入口](testing/acceptance.md) · [云电脑节点](testing/cloud-nodes.md) |
 | 怎么协作、文档怎么写？ | [协作方式](development/collaboration.md) · [文档维护](development/documentation.md) · [术语表](glossary.md) |
 | 为什么是这个方向？ | [路线与决定](ROADMAP.md) |
+| 优化成果和产品理解存在哪里？ | [产品记录与可视化](product/README.md) |
 
 ## 设计理由与边界
 

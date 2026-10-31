@@ -44,7 +44,8 @@
     "frames": "tsx scripts/acceptance/real-path/recording.mts",
     "gym": "tsx scripts/gym/run.mts",
     "gym:report": "node scripts/gym/report.mjs",
-    "gym:replay": "node scripts/gym/replay.mjs"
+    "gym:replay": "node scripts/gym/replay.mjs",
+    "product:build": "python3 scripts/maintenance/product-notes.py"
   },
   "devDependencies": {
     "marked": "18.0.11",

@@ -1,0 +1,79 @@
+{
+  "id": "2026-10-31-startup",
+  "number": "001",
+  "date": "2026-10-31",
+  "title": "重载后，更快回到对话",
+  "status": "已验证 · 已更新本地开发版",
+  "scope": "Chrome 扩展重载与会话恢复",
+  "problem": "每次重载后，侧栏停留在“连接中”，用户要等内部助手恢复会话，才能继续使用。",
+  "changes": [
+    "恢复一段会话时，只读取这段会话的正文，避免反复读取全部记录。",
+    "最多同时恢复四段会话；仍等全部恢复完成，才报告就绪。"
+  ],
+  "conditions": {
+    "conversations": 32,
+    "recordKiB": 512,
+    "runsPerVersion": 5,
+    "environment": "隔离的无头 Chrome，真实扩展，本机脚本模型",
+    "statistic": "中位数",
+    "order": "先旧版、后新版；未随机交错",
+    "interpretation": "比较同一构造负载下的本地启动；不代表远端模型响应速度或所有用户设备。",
+    "timingOrigin": "侧栏可用：从脚本触发扩展重载至真实侧栏的模型目录与就绪状态可用，包含100毫秒调度、驱动打开侧栏和轮询开销。后台就绪是扩展内部的分段计时。"
+  },
+  "metrics": [
+    {
+      "id": "sidebar",
+      "label": "重载到侧栏可用",
+      "kind": "elapsed",
+      "primary": true
+    },
+    {
+      "id": "host",
+      "label": "后台就绪",
+      "kind": "measure",
+      "area": "background",
+      "measure": "sideagent.startup.ready"
+    },
+    {
+      "id": "restore",
+      "label": "会话恢复",
+      "kind": "measure",
+      "area": "host",
+      "measure": "sideagent.startup.core"
+    }
+  ],
+  "evidence": {
+    "before": {
+      "path": "evidence/before.json",
+      "sha256": "e68fac950dcd11e089447309e18f5d6ef14b1e979b1ab82d333a6225e4ac0388"
+    },
+    "after": {
+      "path": "evidence/after.json",
+      "sha256": "74c4108708c69ac7f13efe423084158de346d5d68dc192dfb8760119eb942fb2"
+    },
+    "confirmed": {
+      "path": "evidence/confirmed.json",
+      "sha256": "a81547361d6ff8717abd75073452ffb6317ffdaf961486bfbc9810de8d4b986a"
+    },
+    "negative": {
+      "path": "evidence/negative.json",
+      "sha256": "a1c83132a3fa18744910295dde0e3f3fbbbd54c54fdf35828d09bef80c952e98"
+    }
+  },
+  "validation": [
+    "32 段旧会话仍能从列表找到。",
+    "重载后发送新消息，实际模型输入仍带着旧会话原文。",
+    "强制重启后任务不会自行续跑；手动继续后提交次数仍为一次。",
+    "缺少“中”档时映射到“低”；只有“高”档时映射到“高”，不新增聊天错误。"
+  ],
+  "limits": [
+    "每版仅五次样本，不据此推断 P95 或长期稳定性；新版也有单次比旧版更慢。",
+    "日常侧栏已确认可用；日常真实数据上的精确耗时尚未测量。",
+    "这是本地开发版改动，未据此声称 Chrome 商店版已发布。"
+  ],
+  "followup": "在日常真实数据上测量，并覆盖较长历史和较低性能设备。尚未承诺具体目标。",
+  "implementation": "1e64e1dc",
+  "baseline": "3da9b2cc",
+  "source": "本项目启动优化；原始结果从 out/startup-ready-20261031 按字节归档。",
+  "reproduce": "SIDEAGENT_RECORD=0 SIDEAGENT_ACCEPTANCE_DIST=<预构建扩展目录> node --import tsx scripts/acceptance/real-path/startup-ready.mts --headless --rounds=5 --conversations=32 --record-kib=512；旧版加 --baseline。"
+}

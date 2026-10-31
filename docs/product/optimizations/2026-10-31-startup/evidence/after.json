@@ -1,0 +1,1000 @@
+{
+  "baseline": false,
+  "count": 32,
+  "bytes": 524288,
+  "rounds": [
+    {
+      "round": 0,
+      "elapsedMs": 969,
+      "stages": {
+        "background": [
+          {
+            "name": "sideagent.startup.offscreen",
+            "ms": 156.80000001192093,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.ready",
+            "ms": 642.4000000357628,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.settings",
+            "ms": 1.800000011920929,
+            "detail": null
+          }
+        ],
+        "host": [
+          {
+            "name": "sideagent.startup.core",
+            "ms": 443,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.700000047683716,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.600000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 5.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.600000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.9000000357627869,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 0.9000000357627869,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.900000035762787,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.5999999642372131,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 0.30000001192092896,
+            "detail": null
+          }
+        ]
+      },
+      "errors": []
+    },
+    {
+      "round": 1,
+      "elapsedMs": 1289,
+      "stages": {
+        "background": [
+          {
+            "name": "sideagent.startup.offscreen",
+            "ms": 96.89999997615814,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.ready",
+            "ms": 780.8999999761581,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.settings",
+            "ms": 52.5,
+            "detail": null
+          }
+        ],
+        "host": [
+          {
+            "name": "sideagent.startup.core",
+            "ms": 630.5999999642372,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.600000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 6.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 7.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 8.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.900000035762787,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.600000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.599999964237213,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.099999964237213,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 5.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 5.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 0.8999999761581421,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.099999964237213,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.099999964237213,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.7000000476837158,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.400000035762787,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.900000035762787,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 0.30000001192092896,
+            "detail": null
+          }
+        ]
+      },
+      "errors": []
+    },
+    {
+      "round": 2,
+      "elapsedMs": 798,
+      "stages": {
+        "background": [
+          {
+            "name": "sideagent.startup.offscreen",
+            "ms": 65.10000002384186,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.ready",
+            "ms": 353,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.settings",
+            "ms": 4.199999988079071,
+            "detail": null
+          }
+        ],
+        "host": [
+          {
+            "name": "sideagent.startup.core",
+            "ms": 266.10000002384186,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 5.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 6.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.2000000476837158,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.400000035762787,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.9000000357627869,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.400000035762787,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.900000035762787,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.7999999523162842,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.799999952316284,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.299999952316284,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 5.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 0.40000003576278687,
+            "detail": null
+          }
+        ]
+      },
+      "errors": []
+    },
+    {
+      "round": 3,
+      "elapsedMs": 773,
+      "stages": {
+        "background": [
+          {
+            "name": "sideagent.startup.offscreen",
+            "ms": 68.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.ready",
+            "ms": 328.69999998807907,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.settings",
+            "ms": 4.800000011920929,
+            "detail": null
+          }
+        ],
+        "host": [
+          {
+            "name": "sideagent.startup.core",
+            "ms": 241.5999999642372,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.7000000476837158,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.599999964237213,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.599999964237213,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.600000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.200000047683716,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.2000000476837158,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.600000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.700000047683716,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 5.099999964237213,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 0.3999999761581421,
+            "detail": null
+          }
+        ]
+      },
+      "errors": []
+    },
+    {
+      "round": 4,
+      "elapsedMs": 752,
+      "stages": {
+        "background": [
+          {
+            "name": "sideagent.startup.offscreen",
+            "ms": 65.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.ready",
+            "ms": 288.10000002384186,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.settings",
+            "ms": 5,
+            "detail": null
+          }
+        ],
+        "host": [
+          {
+            "name": "sideagent.startup.core",
+            "ms": 204.20000004768372,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.299999952316284,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.0999999642372131,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.099999964237213,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.699999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.100000023841858,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.400000035762787,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.900000035762787,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.0999999642372131,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 1.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.399999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          }
+        ]
+      },
+      "errors": []
+    }
+  ],
+  "restoredConversations": 32,
+  "restoredInput": true,
+  "mappings": [
+    {
+      "chip": "缺中档模型·低",
+      "errors": []
+    },
+    {
+      "chip": "仅高档模型·高",
+      "errors": []
+    }
+  ],
+  "status": "PASS"
+}

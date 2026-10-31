@@ -1,0 +1,214 @@
+{
+  "baseline": false,
+  "count": 16,
+  "bytes": 262144,
+  "rounds": [
+    {
+      "round": 0,
+      "elapsedMs": 1224,
+      "stages": {
+        "background": [
+          {
+            "name": "sideagent.startup.offscreen",
+            "ms": 162.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.ready",
+            "ms": 876,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.settings",
+            "ms": 1.600000023841858,
+            "detail": null
+          }
+        ],
+        "host": [
+          {
+            "name": "sideagent.startup.core",
+            "ms": 673.1000000238419,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.200000047683716,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 5.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 6.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 7.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.199999988079071,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.800000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.899999976158142,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 4.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 3.5,
+            "detail": null
+          },
+          {
+            "name": "sideagent.startup.session-read",
+            "ms": 2.300000011920929,
+            "detail": null
+          }
+        ]
+      },
+      "errors": [
+        "这个模型不支持所选思考档位。"
+      ]
+    }
+  ],
+  "error": "AssertionError [ERR_ASSERTION]: 恢复不支持的档位应自动映射，不能产生对话错误\n+ actual - expected\n\n+ [\n+   '这个模型不支持所选思考档位。'\n+ ]\n- []\n\n    at <anonymous> (/Users/mahaoxuan/Desktop/AI-products/bys-perf-startup-ready/scripts/acceptance/real-path/startup-ready.mts:85:27)",
+  "targets": [
+    {
+      "targetId": "67A934FDA6707DDDA818891CB4964C65",
+      "type": "service_worker",
+      "title": "Service Worker chrome-extension://nkeimhogjdpnpccoofpliimaahmaaome/thunk.js",
+      "url": "chrome-extension://nkeimhogjdpnpccoofpliimaahmaaome/thunk.js",
+      "attached": false,
+      "canAccessOpener": false,
+      "browserContextId": "44ED71543622345DD5FA13BD4FC12769"
+    },
+    {
+      "targetId": "9AF9E4F6F9DBC2C8B15F914098F80845",
+      "type": "service_worker",
+      "title": "Service Worker chrome-extension://glbjnfimcajjenihimblfaponejbkoph/background.js",
+      "url": "chrome-extension://glbjnfimcajjenihimblfaponejbkoph/background.js",
+      "attached": false,
+      "canAccessOpener": false,
+      "browserContextId": "44ED71543622345DD5FA13BD4FC12769"
+    },
+    {
+      "targetId": "E5A427FDAC3CD58FCB789ACBCF78736D",
+      "type": "service_worker",
+      "title": "Service Worker chrome-extension://baefbodplbjnjnmokmedolaejljffklc/background.js",
+      "url": "chrome-extension://baefbodplbjnjnmokmedolaejljffklc/background.js",
+      "attached": true,
+      "canAccessOpener": false,
+      "browserContextId": "44ED71543622345DD5FA13BD4FC12769"
+    },
+    {
+      "targetId": "EDA8BF6062A5819B179D2D37A0B258C1",
+      "type": "worker",
+      "title": "",
+      "url": "",
+      "attached": false,
+      "parentId": "834BF82C2F30F67D1441A25A0534087E",
+      "canAccessOpener": false,
+      "parentFrameId": "834BF82C2F30F67D1441A25A0534087E",
+      "browserContextId": "44ED71543622345DD5FA13BD4FC12769"
+    },
+    {
+      "targetId": "60B2F6E23D2F184FC4584C49F3812E88",
+      "type": "page",
+      "title": "about:blank",
+      "url": "about:blank",
+      "attached": false,
+      "canAccessOpener": false,
+      "browserContextId": "44ED71543622345DD5FA13BD4FC12769"
+    },
+    {
+      "targetId": "23EC5AE10A514E118B6D25B15BD7C8B9",
+      "type": "browser_ui",
+      "title": "Omnibox Popup",
+      "url": "chrome://omnibox-popup.top-chrome/",
+      "attached": false,
+      "canAccessOpener": false,
+      "browserContextId": "44ED71543622345DD5FA13BD4FC12769"
+    },
+    {
+      "targetId": "92BF61087556DEFC29BB9CA61EE80553",
+      "type": "browser_ui",
+      "title": "Omnibox Popup",
+      "url": "chrome://omnibox-popup.top-chrome/omnibox_popup_aim.html",
+      "attached": false,
+      "canAccessOpener": false,
+      "browserContextId": "44ED71543622345DD5FA13BD4FC12769"
+    },
+    {
+      "targetId": "834BF82C2F30F67D1441A25A0534087E",
+      "type": "background_page",
+      "title": "By Your Side agent",
+      "url": "chrome-extension://baefbodplbjnjnmokmedolaejljffklc/inproc.html",
+      "attached": true,
+      "canAccessOpener": false,
+      "browserContextId": "44ED71543622345DD5FA13BD4FC12769"
+    },
+    {
+      "targetId": "E9A77C0C549871E77F22A8DBB8FF0C87",
+      "type": "page",
+      "title": "By Your Side",
+      "url": "chrome-extension://baefbodplbjnjnmokmedolaejljffklc/sidepanel.html",
+      "attached": true,
+      "canAccessOpener": false,
+      "browserContextId": "44ED71543622345DD5FA13BD4FC12769"
+    }
+  ],
+  "chromeStderr": "\nDevTools listening on ws://127.0.0.1:56253/devtools/browser/892cee8f-ed0f-469e-8dcc-dedafec57ea8\n[31004:26116601:1031/234010.965189:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116593:1031/234010.965462:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116601:1031/234010.966018:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116593:1031/234010.966056:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116601:1031/234010.966304:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116593:1031/234010.966337:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116601:1031/234010.966449:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116593:1031/234010.966472:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116601:1031/234010.966618:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116593:1031/234010.966724:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116601:1031/234011.401176:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116593:1031/234011.401295:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116601:1031/234012.397011:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n[31004:26116593:1031/234012.397074:ERROR:ui/display/mac/cv_display_link_mac.mm:188] CVDisplayLinkCreateWithCGDisplay failed. CVReturn: -6670\n",
+  "panel": "新会话\n记忆\n这个模型不支持所选思考档位。\n+\nfixture",
+  "status": "FAIL"
+}
