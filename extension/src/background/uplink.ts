@@ -32,6 +32,7 @@ export class Uplink {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /** 正在建 offscreen 文档：同时到达的第二次连接不再重复创建（重复创建会失败并误拆活连接）。 */
   private connecting = false;
+  private connectStarted = 0;
 
   constructor(handlers: UplinkHandlers) {
     this.handlers = handlers;
@@ -97,6 +98,7 @@ export class Uplink {
     if (!msg) return;
 
     if (msg.type === "hello_ok") {
+      performance.measure("sideagent.startup.ready", { start: this.connectStarted });
       this.retryAttempt = 0;
       this.handlers.onConnState("connected", this.transport ?? undefined, msg.model);
     } else if (msg.type === "hello_error") {
@@ -145,6 +147,7 @@ export class Uplink {
     this.teardown();
     this.handlers.onConnState("connecting", undefined);
     this.connecting = true;
+    this.connectStarted = performance.now();
 
     try {
       const existing = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
@@ -210,9 +213,12 @@ export class Uplink {
       if (this.inprocPort !== port) return;
       this.handleDisconnect(chrome.runtime.lastError?.message ?? "助手断开了");
     });
+    performance.measure("sideagent.startup.offscreen", { start: this.connectStarted });
+    const settingsStarted = performance.now();
     await this.pushCoreSettings();
     await this.pushModelConfig();
     await this.pushVoiceKey();
+    performance.measure("sideagent.startup.settings", { start: settingsStarted });
     port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
   }
 

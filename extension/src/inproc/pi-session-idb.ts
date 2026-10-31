@@ -15,16 +15,20 @@ const appendLine = (key: string) => (line: string) => durableTransaction(true, a
 });
 
 export async function openPiSession(conversationId: string): Promise<SessionLog> {
+  const started = performance.now();
   const found = await durableTransaction(false, async store => {
     const range = IDBKeyRange.bound(`${DIRECTORY}/`, `${DIRECTORY}/￿`);
-    const [keys, items] = await Promise.all([readRequest(store.getAllKeys(range)), readRequest<Item[]>(store.getAll(range))]);
-
-    // Pi picked the most recently changed log with this id.
-    const matches = keys.map((key, index) => ({ key: String(key), item: items[index]! }))
-      .filter(({ key, item }) => !item.directory && !key.slice(DIRECTORY.length + 1).includes('/') && key.endsWith(`_${conversationId}.jsonl`));
+    const keys = await readRequest(store.getAllKeys(range));
+    // 恢复某个会话时不能把其他会话正文也搬进内存；同 id 的多个旧文件仍按修改时间取最新。
+    const candidates = keys.map(String)
+      .filter(key => !key.slice(DIRECTORY.length + 1).includes('/') && key.endsWith(`_${conversationId}.jsonl`));
+    const matches = (await Promise.all(candidates.map(async key => ({ key, item: await readRequest<Item>(store.get(key)) }))))
+      .filter(({ item }) => !item.directory);
 
     return matches.sort((left, right) => right.item.modifiedAt - left.item.modifiedAt)[0];
   });
+
+  performance.measure('sideagent.startup.session-read', { start: started });
 
   if (found) {
     const { log, repaired } = SessionLog.load(found.item.text, appendLine(found.key));

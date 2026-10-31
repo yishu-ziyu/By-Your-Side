@@ -724,7 +724,12 @@ if(required.includes(key))candidates.set(key,attachment);
   setThinking(modelId: string, level: import('../../shared/protocol.js').ThinkingLevel | null, restore = false): void {
     const slash = modelId.indexOf('/');
     const model = this.modelRuntime?.getModel(modelId.slice(0,slash), modelId.slice(slash+1));
-    if (!model || level !== null && !thinkingChoice(model)?.levels.includes(level)) throw new Error('这个模型不支持所选思考档位。');
+    if (!model) {
+      // 恢复偏好不能把已移除的模型或未初始化的旧会话变成当前对话的错误。
+      if (restore) return;
+      throw new Error(this.initError ?? '这个模型目前不可用，请重新选择模型。');
+    }
+    // MainEffort 按能力表向下取档；没有更低档时取最低档，界面只接收实际生效值。
     this.mainEffort.prefer(modelId,level,this.session?.model,restore);
     if (this.modelName() === modelId) this.emitThinkingLevel();
   }

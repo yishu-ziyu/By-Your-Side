@@ -24,7 +24,7 @@ function startIndex(levels: readonly ModelThinkingLevel[], start: ModelThinkingL
 
 export function thinkingChoice(model: Model<Api>): { levels: ModelThinkingLevel[]; default: ModelThinkingLevel } | undefined {
   const { levels, start } = thinkingProfile(model);
-  return levels.length > 1 ? { levels, default: levels[startIndex(levels, start)]! } : undefined;
+  return levels.length > 1 || levels[0] !== 'off' ? { levels, default: levels[startIndex(levels, start)]! } : undefined;
 }
 
 export class MainEffort {
