@@ -107,12 +107,13 @@ import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
-import { connectSkillOperations, deleteSkillOperation, knownSkillOperations, onSkillOperationsChange, receiveSkillOperations, refreshSkillOperations, skillOperationsLoaded } from "./skill-operations.js";
+import { connectSkillOperations, deleteSkillOperation, knownSkillOperations, onSkillOperationsChange, receiveSkillOperationRun, receiveSkillOperations, refreshSkillOperations, runSkillOperation, skillOperationsLoaded } from "./skill-operations.js";
 import { mountChapters } from "./chapters.js";
 import { activeTargetTab, isFloat, isPopout, popoutConversation, targetWindowId } from "./target-window.js";
 import { FLOAT_CARD_DEFAULT_RECT, FLOAT_CARD_KEY, readFloatCard } from "../shared/float-card.js";
 import { bindMotionIcon } from "./motion-icon.js";
 import { mountDottedGlow } from "./dotted-glow.js";
+import { skillResultText } from "../shared/skill-result.js";
 
 syncColorTone();
 
@@ -483,10 +484,42 @@ installChromeQuiet({
 
 const steerRibbon = createSteerRibbon(composerEl, inputEl, (text) => sendInput(text));
 
-// 「/ 技能」：选中后把正文放进输入框，走正常发送路径（带当前页面上下文）。
+// 提示词技能照常进入对话；可执行技能从 / 和网页按钮共用同一个直接运行入口。
 const slashSkills = mountSlashSkills({
   composerEl, inputEl,
   run: (text) => { inputEl.value = text; inputEl.dispatchEvent(new Event("input")); sendInput(); },
+  runOperation: (operation, input) => {
+    const card = addMsg("msg assistant skill-operation-result", "");
+    card.dataset.skillId = operation.id;
+    const paint = (msg?: Extract<ServerMessage, { type: "skill_operation_run_result" }>): void => {
+      card.replaceChildren();
+      const head = document.createElement("div");
+      head.className = "skill-operation-result-head";
+      const title = document.createElement("strong");
+      title.textContent = operation.name;
+      const meta = document.createElement("span");
+      meta.textContent = "直接运行 · 未调用模型";
+      head.append(title, meta);
+      const body = document.createElement("pre");
+      if (!msg) body.textContent = "正在读取当前页面…";
+      else if (!msg.ok) {
+        card.dataset.state = "error";
+        body.textContent = `没有运行成功：${msg.error ?? "连接中断，请再试一次。"}`;
+      } else if (!msg.result || msg.result.status !== "observed" && msg.result.status !== "empty") {
+        card.dataset.state = "error";
+        body.textContent = `没有运行成功：${msg.result && "reason" in msg.result ? msg.result.reason : "没有取得结果"}`;
+      } else {
+        const result = msg.result;
+        card.dataset.state = result.status;
+        body.textContent = skillResultText(result.data);
+        if (result.status === "empty") meta.textContent += " · 没有读到内容";
+      }
+      card.append(head, body);
+      scrollToEnd();
+    };
+    paint();
+    if (!runSkillOperation(operation.id, input, activeTabContext()?.tabId, paint)) paint({ type: "skill_operation_run_result", requestId: "", ok: false, error: "助手没连上，请再试一次。" });
+  },
   verifiedRequest: isLatestVerifiedRequest,
 });
 connectSkillOperations(msg => send(msg));
@@ -5194,6 +5227,12 @@ function handleServerMessage(raw: string): void {
 
   if (msg.type === "skill_operations_result") {
     receiveSkillOperations(msg);
+
+    return;
+  }
+
+  if (msg.type === "skill_operation_run_result") {
+    receiveSkillOperationRun(msg);
 
     return;
   }

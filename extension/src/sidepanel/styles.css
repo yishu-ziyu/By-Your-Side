@@ -3019,6 +3019,13 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .pskill-check input { margin: 2px 0 0; accent-color: var(--accent); }
 .answer-actions .skill-undo { width: auto; padding: 0 8px; font-size: var(--fs-code); color: var(--text-secondary); }
 .pskill-form { display: flex; flex-direction: column; gap: 10px; }
+.pskill-op-row { grid-template-columns: 22px minmax(0, 1fr) auto auto auto; }
+.skill-operation-result { padding: var(--s-3); border: 1px solid var(--content-border); border-radius: var(--r); background: var(--content-bg); }
+.skill-operation-result-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-2); }
+.skill-operation-result-head strong { color: var(--text-primary); font-size: var(--fs-ui); }
+.skill-operation-result-head span { color: var(--text-tertiary); font-size: var(--fs-meta); }
+.skill-operation-result pre { max-height: 40vh; overflow: auto; margin: var(--s-3) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); font: var(--fs-code)/1.65 var(--mono); }
+.skill-operation-result[data-state="error"] pre { color: var(--err); }
 .msg.user .pskill-save { display: block; margin: 4px 0 -2px auto; border: 0; background: transparent; padding: 0; font: inherit; font-size: var(--fs-micro); color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity var(--m-quick) var(--e-glide); }
 .msg.user:hover .pskill-save, .msg.user .pskill-save:focus-visible { opacity: 1; }
 .msg.user .pskill-save:hover { color: var(--text-primary); }
