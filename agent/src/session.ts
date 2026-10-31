@@ -946,7 +946,7 @@ if(required.includes(key))candidates.set(key,attachment);
           })] : []),
           ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
           ...(artifactStore ? [createArtifactsTool({ emit: event => callbacks.emit(event), store: artifactStore })] : []),
-          createReadAttachmentTool(() => resultHost?.userAttachments() ?? []),
+          createReadAttachmentTool(() => resultHost?.userAttachments() ?? [], file => resultHost?.downloadedOriginal(file), () => resultHost?.modelSeesImages() ?? false),
         ];
 
       const restored = options.loop.session ? await PiSessionPersistence.open(options.loop.session) : undefined;
@@ -3585,6 +3585,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const fetched = await Promise.all(targets.map(async (probe) => {
         const { target } = probe;
         const readTabId: number = probe.tabId ?? tabId;
+        const unreadable = () => ({ failed: true as const, bodySnapshot: target === 'body' && readTabId === tabId });
         if (!current()) return null;
         try {
           let referencePage = pageText;
@@ -3593,20 +3594,22 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             referencePage = fresh && typeof fresh === 'object' && 'text' in fresh && typeof fresh.text === 'string' ? fresh.text : '';
             if (!current()) return null;
           }
-          if (/^@/.test(target) && (!/^@\d+$/.test(target) || !referencePage.includes(`[ref=${target.slice(1)}]`))) return { failed: true as const };
+          if (/^@/.test(target) && (!/^@\d+$/.test(target) || !referencePage.includes(`[ref=${target.slice(1)}]`))) return unreadable();
           const value = await this.rpc!.call('read_element', { tabId: readTabId, target }, 4_000, this.memberId);
           const evidence = goalReadEvidence(value);
-          if (evidence === null) return { failed: true as const };
+          if (evidence === null) return unreadable();
           const data = redactCredentialText(evidence);
           const content = value && typeof value === 'object' && 'value' in value && typeof value.value === 'string' ? value.value
             : value && typeof value === 'object' && 'text' in value && typeof value.text === 'string' ? value.text : '';
           return { failed: false as const, target, readTabId, data, content };
         } catch {
-          return { failed: true as const };
+          return unreadable();
         }
       }));
       for (const item of fetched) {
         if (!item) break;
+        // 图片文档可能没有可提取的 body 文字；后面的同页 snapshot 仍须成功且 URL 不变，才能继续核对。
+        if (item.failed && item.bodySnapshot) continue;
         if (item.failed || item.data.length + reads.reduce((sum, read) => sum + read.data.length, 0) > 64_000) { readFailed = true; break; }
         reads.push({ target: item.target, tabId: item.readTabId, data: item.data });
         readContents.push(item.content);

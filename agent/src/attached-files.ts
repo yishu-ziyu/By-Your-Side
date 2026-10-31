@@ -71,6 +71,7 @@ export function withAttachedFiles(text: string, attachments: Attachment[] | unde
     }
 
     if (head.trim()) lines.push(wrapPageContent(head, { title: file.name }));
+    else if (file.format === 'image') lines.push(`[Use read_attachment with name ${JSON.stringify(file.name)} to see the original image directly.]`);
     else if (!file.pageImages?.length) lines.push("[No text could be extracted from this file.]");
 
     if (rest > 0) lines.push(`[Shown: characters 1–${head.length} of ${file.text.length}. The rest is not in this message: before answering about later parts, call read_attachment with name "${file.name}" and an offset, or with a query to find passages.]`);
@@ -118,11 +119,11 @@ function search(file: FileAttachment, query: string): string {
   return `${hits.length} passage(s) in ${file.name} matching ${JSON.stringify(query)}${hits.length === SEARCH_HITS_MAX ? " (first 8 shown; narrow the query for more)" : ""}:\n${wrapPageContent(body, { title: file.name })}`;
 }
 
-export function createReadAttachmentTool(attachments: () => readonly Attachment[]) {
+export function createReadAttachmentTool(attachments: () => readonly Attachment[], original?: (file: Attachment) => string | undefined, seesImages: () => boolean = () => true) {
   return defineTool({
     name: "read_attachment",
     label: "Read attached file",
-    description: "Read a file the user attached or a file downloaded during this task (PDF, Word, Excel, PowerPoint, CSV, text). For newly downloaded files, use the exact filename from the download receipt. Read by offset (a character position, as given in the message or a previous read), or pass query to find passages containing those words. The text marks boundaries as [Page N], [Sheet: name] or [Slide N]; Excel rows start with their row number.",
+    description: "Read a file the user attached or a file downloaded during this task (images, PDF, Word, Excel, PowerPoint, CSV, text). Images return their original pixels directly; no need to open or screenshot them. For newly downloaded files, use the exact filename from the download receipt. Text files: read by offset (a character position), or pass query to find passages. Text marks boundaries as [Page N], [Sheet: name] or [Slide N]; Excel rows start with their row number.",
     parameters: Type.Object({
       name: Type.String({ minLength: 1, description: "File name exactly as attached, e.g. \"report.pdf\"" }),
       offset: Type.Optional(Type.Integer({ minimum: 0, description: "Character position to start reading from" })),
@@ -130,13 +131,24 @@ export function createReadAttachmentTool(attachments: () => readonly Attachment[
       query: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: "Words to search for instead of reading by offset" })),
     }),
     execute: async (_id, params) => {
-      const files = attachments().filter(isFile);
+      const files = attachments();
       const file = files.filter(item => item.name === params.name.trim()).at(-1);
 
       if (!file) {
         throw new Error(files.length
           ? `没有叫 ${JSON.stringify(params.name)} 的附件。这次对话里附上的文件：${[...new Set(files.map(item => item.name))].join("、")}。`
           : "这次对话里用户没有附上文件。");
+      }
+
+      if (file.type === 'image' || file.format === 'image') {
+        if (!seesImages()) throw new Error('当前模型不能看图，请选择支持图片的模型后再读取。');
+        const data = file.dataBase64 ?? original?.(file);
+        if (!data) throw new Error('这张图片的原件已不在当前任务材料中，请重新下载或附上原图。');
+        if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimeType)) throw new Error('这张图片的格式不支持直接读取。');
+        return { content: [
+          { type: 'text' as const, text: wrapPageContent(`Original image: ${file.name}. Read the attached image; text offsets and searches do not apply.`, { title: file.name }) },
+          { type: 'image' as const, data, mimeType: file.mimeType },
+        ], details: { name: file.name, mimeType: file.mimeType } };
       }
 
       const text = params.query?.trim() ? search(file, params.query.trim()) : readSlice(file, params.offset ?? 0, params.maxChars ?? READ_DEFAULT);
