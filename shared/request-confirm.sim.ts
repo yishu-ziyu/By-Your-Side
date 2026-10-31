@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { classifyRequest, needsRequestConfirm } from "./request-confirm.js";
 import { confirmCopy } from "./send-confirm-copy.js";
 import { describeTimeout } from "./timeouts.js";
-import { liveStatus, runMetaLine, LIVE_ESCALATE_MS } from "./run-status.js";
+import { liveStatus, runMetaLine } from "./run-status.js";
 
 test("搜索类 POST 放行，写入和拿不准的要确认", () => {
   const ieee = {
@@ -84,13 +84,9 @@ test("超时原文收成带耗时的中文", () => {
   assert.match(stall.copy, /30 秒/);
 });
 
-test("过程行 10 秒内写正在做，超过才升级", () => {
-  const live = liveStatus({ step: "搜索论文标题", from: 0, now: LIVE_ESCALATE_MS });
-  assert.deepEqual(live, { title: "正在：搜索论文标题", time: "10 秒", escalated: false });
-  const stuck = liveStatus({ step: "搜索论文标题", from: 0, now: LIVE_ESCALATE_MS + 1000 });
-  assert.equal(stuck?.escalated, true);
-  assert.equal(stuck?.title, "仍在处理");
-  assert.match(stuck?.time ?? "", /已 /);
+test("过程行一直写正在做的那一步，等久了也不换成笼统的说法", () => {
+  assert.deepEqual(liveStatus({ step: "搜索论文标题", from: 0, now: 10_000 }), { title: "正在：搜索论文标题", time: "10 秒" });
+  assert.deepEqual(liveStatus({ step: "搜索论文标题", from: 0, now: 75_000 }), { title: "正在：搜索论文标题", time: "1 分 15 秒" });
   assert.equal(runMetaLine(21, 7), "已试了 21 步，其中 7 次没做成，已换别的方法");
   assert.equal(runMetaLine(2, 0), null);
   assert.equal(runMetaLine(1, 1), null);

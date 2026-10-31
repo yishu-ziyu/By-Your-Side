@@ -3124,46 +3124,8 @@ details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data
   from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
   to { -webkit-mask-position: -50% 0; mask-position: -50% 0; }
 }
-/* 回答位置的骨架：后面一接上回答、卡片或出错，就收成 0 高、淡出，条叠在回答底下，回答不往下跳。 */
-.answer-skeleton {
-  --sk-base: var(--content-subtle);
-  --sk-hi: var(--content-bg);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transition: opacity var(--d-state) var(--e-exit);
-  pointer-events: none;
-}
-.answer-skeleton i {
-  display: block;
-  height: 12px;
-  border-radius: var(--r-tail);
-  background: linear-gradient(105deg, var(--sk-base) 0 40%, var(--sk-hi) 50%, var(--sk-base) 60% 100%) 100% 0 / 300% 100%;
-  animation: var(--sk-anim, skeletonSweep var(--m-sweep) var(--e-sweep) infinite);
-}
-/* 等你的时候回答位置不放骨架；不等了、还没出字就再放回来。 */
-details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer-skeleton { display: none; }
-.answer-skeleton i:nth-child(1) { width: 92%; margin-top: 7px; }
-.answer-skeleton i:nth-child(2) { width: 78%; }
-.answer-skeleton i:nth-child(3) { width: 60%; }
-/* 任务卡和接续入口常挂在末尾却没内容（不显示），不算接上了东西。 */
-.answer-skeleton:has(~ :not(.ai-task-card, #resume-entry-root)),
-.answer-skeleton:has(~ .ai-task-card #resume-entry-root:not([hidden]) > *, ~ #resume-entry-root:not([hidden]) > *),
-.answer-skeleton[data-state="gone"] {
-  --sk-anim: none;
-  height: 0;
-  /* 抵掉 #messages 的行距：回答落在骨架第一条的位置。 */
-  margin-bottom: calc(-1 * var(--s-2));
-  opacity: 0;
-}
-@keyframes skeletonSweep { to { background-position: 0 0; } }
-@media (prefers-color-scheme: dark) {
-  .answer-skeleton { --sk-hi: color-mix(in oklch, var(--content-subtle), var(--text-primary) 12%); }
-}
 @media (prefers-reduced-motion: reduce) {
   details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
-  .answer-skeleton { transition: none; }
-  .answer-skeleton i { animation: none; background: var(--sk-base); }
 }
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 176px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
@@ -3278,8 +3240,6 @@ details.run-steps .run-body details.thinking.narration > pre, details.run-steps.
 
 /* 进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */
 details.run-steps:not(.done) > summary { flex-wrap: wrap; row-gap: 0; }
-details.run-steps > summary > .run-escalate { display: inline-flex; gap: var(--s-2); flex-basis: 100%; margin-top: 2px; }
-details.run-steps > summary > .run-escalate button { border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-secondary); font: inherit; font-size: var(--fs-meta); padding: 2px 10px; cursor: pointer; }
 .chip .run-escalate { display: inline-flex; gap: var(--s-1); margin-left: var(--s-2); }
 .chip .run-escalate button { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: var(--fs-meta); padding: 0; cursor: pointer; }
 details.run-steps > summary > .run-meta { flex-basis: 100%; overflow-wrap: anywhere; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
@@ -4531,3 +4491,23 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
 .mt-delivery[data-state="failed"],
 .mt-delivery[data-state="rejected"] { color: var(--warn); }
 .mt-delivery-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 进行中的步骤表：每步一行，右边用时；做完收成回执。 */
+details.run-steps.live-list.live-generic:not([data-wait-user]) > summary { display: none; }
+.live-steps { display: flex; flex-direction: column; gap: 2px; margin: var(--s-1) 0 var(--s-2); font-size: var(--fs-ui); color: var(--text-secondary); }
+.live-step { display: flex; align-items: center; gap: var(--s-2); min-height: 26px; }
+.live-step-mark { display: inline-flex; width: 16px; height: 16px; flex: none; color: var(--text-tertiary); }
+.live-step-mark svg { width: 16px; height: 16px; }
+.live-step-mark[data-state="running"] svg { animation: liveStepSpin 1.2s linear infinite; color: var(--accent); }
+.live-step-mark[data-state="failed"] { color: var(--warn); }
+.live-step-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-step[data-state="running"] .live-step-label { color: var(--text-primary); }
+.live-step-time { flex: none; font-variant-numeric: tabular-nums; color: var(--text-tertiary); font-size: var(--fs-meta); }
+.live-step-open { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0 -4px 0 -2px; padding: 0; border: 0; background: none; color: var(--text-tertiary); cursor: pointer; }
+.live-step-open svg { width: 14px; height: 14px; transition: transform var(--d-state) var(--e-enter); }
+.live-step-open[aria-expanded="true"] svg { transform: rotate(90deg); }
+.live-step-thought { margin: 0 0 var(--s-1) calc(16px + var(--s-2) + 14px); color: var(--text-tertiary); font-size: var(--fs-meta); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.live-step-skip { flex: none; border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-secondary); font: inherit; font-size: var(--fs-meta); padding: 1px 10px; cursor: pointer; }
+.live-step-skip:disabled { cursor: default; color: var(--text-tertiary); }
+@keyframes liveStepSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .live-step-mark[data-state="running"] svg { animation: none; } }
