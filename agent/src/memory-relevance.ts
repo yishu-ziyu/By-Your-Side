@@ -88,6 +88,15 @@ export function isNamedForRequest(memory: string, query: string): boolean {
   return false;
 }
 
+/** Pronouns shared by unrelated requests must not make a past task relevant. */
+export function isRelevantPastTask(memory: string, query: string, forDisplay = false): boolean {
+  const terms = forDisplay ? namingTerms : memoryTerms;
+  const subjects = (text: string) => terms(text.replace(/这些|那些|这个|那个|一些|我们|你们|他们|它们|这次|那次/gu, " "));
+  const asked = subjects(query);
+
+  return [...subjects(memory)].some(term => asked.has(term));
+}
+
 function namingTerms(text: string): Set<string> {
   const terms = memoryTerms(text);
   const fillerOnly = new Set<string>();

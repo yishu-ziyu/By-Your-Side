@@ -15,7 +15,7 @@ import { InProcessLock, type DocumentPersistence } from "./document-persistence.
 import { formatTaskHistory, type TaskHistoryStore } from "./task-history.js";
 import { decideMemory, looksSecret, placeMemory, type MemoryComplete, type MemoryConversation, type MemoryDecision, type MemoryPlacement } from "./memory-decision.js";
 import { MEMORY_CONTEXT_MAX_CHARS, selectMemoryContext, taskContextChars, type MemoryContextRule, type MemoryContextSelection } from "./memory-context.js";
-import { isNamedForRequest, isRelevantMemory } from "./memory-relevance.js";
+import { isNamedForRequest, isRelevantMemory, isRelevantPastTask } from "./memory-relevance.js";
 import { dismiss as dismissHabit, emptyHabitState, observe as observeHabit, type HabitState } from "./memory-habit.js";
 import { CORRECTION_ASK_PROMPT, CorrectionParseError, isUserCorrection, correctionAskInput, correctionMessageKey, correctionRuleKey, decideCorrectionAsk, parseCorrectionVerdict, type CorrectionVerdict } from "./memory-correction.js";
 
@@ -1139,7 +1139,11 @@ export class MemoryRuntime {
     const named = (rule: MemoryContextRule, text: string) => ((rule === "asked" || rule === "in-validity") && refersBack) || isNamedForRequest(text, turn.text);
     // 语义命中已经按当前请求挑选，字面重叠不再把它从来源里滤掉；长期习惯仍不逐条提醒。
     const shown = selection.entries.filter(({ entry, rule }) => rule === "site" || semanticIds.has(entry.id) || named(rule, entry.text)).map(item => item.entry);
-    const shownTasks = selection.tasks.filter(({ task, rule }) => named(rule, [task.goal, ...task.revisions, task.done ?? ""].join("\n"))).map(item => item.task);
+    const shownTasks = selection.tasks.filter(({ task, rule }) => {
+      if ((rule === "asked" || rule === "in-validity") && refersBack) return true;
+
+      return isRelevantPastTask([task.goal, ...task.revisions, task.done ?? ""].join("\n"), turn.text, true);
+    }).map(item => item.task);
     selection.totalChars = selection.entries.reduce((n, { entry }) => n + entry.text.length, 0) + selection.tasks.reduce((n, { task }) => n + taskContextChars(task), 0);
 
     this.onRecord?.("memory_context", {
