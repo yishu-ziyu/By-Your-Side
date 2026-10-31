@@ -1125,7 +1125,8 @@ export class MemoryRuntime {
     if (!this.current(turn)) return null;
     const semantic = entries.some(entry => entry.experience) ? await this.store.select(turn.query).catch(() => []) : [];
     if (!this.current(turn)) return null;
-    const semanticIds = new Set(semantic.map(entry => entry.id));
+    // select also returns literal matches; permanent preferences must not be relabeled as recalled task evidence.
+    const semanticIds = new Set(semantic.filter(entry => entry.experience && entry.version === 1).map(entry => entry.id));
     const selection = selectMemoryContext({ entries, tasks, hostname, text: turn.text, semanticIds: [...semanticIds], now: Date.now() });
     // 挑选之后被忘记、修改或替换的不带：记「用过」时按版本再核对一次。
     const current = new Map((await this.store.markUsed(selection.entries.map(({ entry }) => entry))).map(entry => [entry.id, entry]));
