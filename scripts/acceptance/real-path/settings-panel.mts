@@ -41,7 +41,7 @@ const choose = async (role: string, provider: string, id: string) => {
   await click(`#${role}-model-options [data-pick="target"]`);
 };
 const openCustom = async () => {
-  await nav('connections');
+  await nav('models');
   if (await rp.evaluate(page, `document.querySelector('#provider-custom').children.length === 0`)) await click('#connection-add');
   await click('[data-provider="custom"]');
   assert.equal(await rp.evaluate(page, `document.querySelector('#connection-dialog').open`), true);
@@ -50,12 +50,20 @@ try {
   const { targetId } = await rp.cdp.send('Target.createTarget', { url: `chrome-extension://${rp.extensionId}/settings.html` });
   page = await rp.attach(targetId);
   await until(async () => await rp.evaluate(page, `document.querySelector('#main-model') !== null`) || undefined, 15000, '设置页加载');
+  await rp.evaluate(page, `location.hash = 'toString'`);
+  await until(async () => await rp.evaluate(page, `location.hash === '#models' && document.querySelector('[data-settings-panel="models"]').checkVisibility()`) || undefined, 5000, '异常链接回退模型页');
+  await rp.evaluate(page, `location.hash = 'connections'`);
+  await until(async () => await rp.evaluate(page, `location.hash === '#models' && document.querySelector('[data-settings-panel="models"] .connections-section').checkVisibility()`) || undefined, 5000, '旧连接链接并入模型页');
   await rp.screenshot(page, join(out, '01-first-use.png'));
-  assert.equal(await rp.evaluate(page, `document.querySelectorAll('[data-settings-page]').length`), 6, '设置页应有六个独立入口');
-  checked.push('六页导航与首次使用');
+  assert.equal(await rp.evaluate(page, `document.querySelectorAll('[data-settings-page]').length`), 7, '设置页应有七个独立入口');
+  assert.equal(await rp.evaluate(page, `['.fast-model-row','.backup-model-row','.speed-settings'].every(s => !document.querySelector(s).checkVisibility())`), true, '首次无连接时不显示快速、备用和测速');
+  const firstOrder = await rp.evaluate(page, `({connection:document.querySelector('.connections-section').getBoundingClientRect().top,models:document.querySelector('.model-section').getBoundingClientRect().top})`) as { connection: number; models: number };
+  assert.ok(firstOrder.connection < firstOrder.models, '首次无连接时先看到连接服务商');
+  checked.push('七页导航、首次空状态隐藏无意义模型设置、连接优先');
   if (!process.argv.includes('--navigation-only')) {
     await rp.evaluate(page, `chrome.storage.local.set({inproc_model_config:{provider:'stepfun',modelId:'step-3.7-flash'},'inproc_cred:stepfun':{type:'api_key',key:'acceptance-not-a-real-key'}})`);
     await until(async () => (await text('#main-model-picker')).includes('step-3.7-flash') || undefined, 5000, '主模型显示');
+    assert.equal(await rp.evaluate(page, `['.fast-model-row','.backup-model-row','.speed-settings'].every(s => document.querySelector(s).checkVisibility())`), true, '连接后显示快速、备用和测速');
     await rp.screenshot(page, join(out, '02-models.png'));
     const secondTarget = await rp.cdp.send('Target.createTarget', { url: `chrome-extension://${rp.extensionId}/settings.html#models`, newWindow: true, background: true });
     const second = await rp.attach(secondTarget.targetId);
@@ -144,17 +152,23 @@ try {
     await until(async () => await stored('color_tone') === 'warm' || undefined, 5000, '暖纸底色保存');
     assert.equal(await rp.evaluate(page, 'document.documentElement.dataset.tone'), 'warm');
     await rp.screenshot(page, join(out, '06-appearance.png'));
-    await nav('preferences');
+    await nav('web');
     const before = await rp.evaluate(page, `document.querySelector('#selection-bar').checked`);
     await click('#selection-bar');
     await until(async () => await rp.evaluate(second, `document.querySelector('#selection-bar').checked === ${JSON.stringify(!before)}`) || undefined, 5000, '另一窗口同步偏好');
     await rp.cdp.send('Page.reload', {}, page);
-    await until(async () => await rp.evaluate(page, `document.querySelector('#settings-nav button.active')?.dataset.settingsPage === 'preferences' && document.querySelector('#selection-bar').checked === ${JSON.stringify(!before)}`) || undefined, 15000, '重开后保留页面和偏好');
+    await until(async () => await rp.evaluate(page, `document.querySelector('#settings-nav button.active')?.dataset.settingsPage === 'web' && document.querySelector('#selection-bar').checked === ${JSON.stringify(!before)}`) || undefined, 15000, '重开后保留页面和偏好');
     await rp.screenshot(page, join(out, '07-preferences.png'));
+    await nav('tasks');
+    assert.equal(await rp.evaluate(page, `document.querySelector('#open-threads').checkVisibility() && document.querySelector('#attention-cues').checkVisibility()`), true, '继续任务与提示音同在任务页');
+    await rp.screenshot(page, join(out, '07b-tasks.png'));
+    await nav('labs');
+    assert.equal(await rp.evaluate(page, `document.querySelector('#mini-apps').checkVisibility() && document.querySelector('#continuous-delegation').checkVisibility()`), true, '实验功能独立成页');
+    await rp.screenshot(page, join(out, '07c-labs.png'));
     await nav('data');
     assert.ok((await text('[data-settings-panel="data"]')).includes('诊断记录'));
     await rp.screenshot(page, join(out, '08-data.png'));
-    checked.push('语音、音色、底色、偏好重开和跨窗口同步、诊断入口');
+    checked.push('语音、音色、底色、网页偏好重开和跨窗口同步、任务、实验功能与诊断入口');
     await nav('models');
     await rp.cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }] }, page);
     await rp.screenshot(page, join(out, '09-models-dark.png'));

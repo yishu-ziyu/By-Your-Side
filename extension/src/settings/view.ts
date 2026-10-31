@@ -21,9 +21,9 @@ export function renderSettings(): void {
     <span class="settings-brand-note">By Your Side</span>
   </aside>
   <div class="settings-pane">
-    <header class="settings-page-head"><h1 id="settings-page-title">模型</h1><button class="btn btn-quiet" type="button" id="manage-connections">管理连接</button></header>
+    <header class="settings-page-head"><h1 id="settings-page-title">模型与连接</h1><button class="btn btn-quiet" type="button" id="manage-connections">管理连接</button></header>
     <div class="settings-panel" data-settings-panel="models">
-  <section class="sx" aria-labelledby="model-title">
+  <section class="sx model-section" aria-labelledby="model-title">
     <div class="sx-head">
       <h2 id="model-title">模型</h2>
       <p class="sx-sub"></p>
@@ -33,11 +33,11 @@ export function renderSettings(): void {
         <span class="row-main"><span class="row-title">主模型</span><span id="main-desc" class="row-desc"></span></span>
         <span class="row-ctl pick"><span id="main-icon"></span><select id="main-model" class="sel" aria-label="主模型"></select><button id="main-pick" type="button" class="btn" hidden>去选服务商</button></span>
       </div>
-      <div class="row">
+      <div class="row fast-model-row">
         <span class="row-main"><span class="row-title">快速模型</span><span class="row-desc">解释与翻译</span></span>
         <span class="row-ctl"><select id="fast-model" class="sel" aria-label="快速模型"></select></span>
       </div>
-      <div class="row">
+      <div class="row backup-model-row">
         <span class="row-main"><span class="row-title">备用模型</span><span class="row-desc">主模型出错时接手</span></span>
         <span class="row-ctl"><select id="backup-model" class="sel" aria-label="备用模型"></select></span>
       </div>
@@ -46,8 +46,8 @@ export function renderSettings(): void {
     <p id="fast-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="backup-status" class="settings-status" role="status" aria-live="polite"></p>
     <p id="connection-draft-note" class="settings-note" hidden>连接有未保存的修改。<button id="connection-draft-return" type="button" class="btn btn-quiet">返回继续填写</button></p>
-    <p class="settings-note">备用模型接手时，会话会发送给它的服务商。</p>
-    <div class="surface rows">
+    <p class="settings-note backup-note">备用模型接手时，会话会发送给它的服务商。</p>
+    <div class="surface rows speed-settings">
       <div class="row">
         <span class="row-main"><span class="row-title">比较模型速度</span><span class="row-desc">用同一个简单问题问一遍已连接的模型，看几秒开口、答没答对。</span></span>
         <span class="row-ctl"><button id="speed-test" type="button" class="btn">测一下</button></span>
@@ -55,10 +55,8 @@ export function renderSettings(): void {
       <div id="speed-results" class="speed" hidden></div>
     </div>
   </section>
-    </div>
-    <div class="settings-panel" data-settings-panel="connections" hidden>
-  <section class="sx" aria-labelledby="connections-title">
-    <div class="sx-head"><h2 id="connections-title">连接</h2><p class="sx-sub">用已有订阅登录，或添加服务商密钥。添加连接后，再选择使用的模型。</p></div>
+  <section class="sx connections-section" aria-labelledby="connections-title">
+    <div class="sx-head"><h2 id="connections-title">连接服务商</h2><p class="sx-sub">用已有订阅登录，或添加服务商密钥。添加连接后，再选择使用的模型。</p></div>
     <div class="connection-toolbar"><span id="connection-count"></span><button type="button" class="btn" id="connection-add">添加连接</button></div>
     <div class="surface plist">
       <div class="search">
@@ -146,7 +144,7 @@ export function renderSettings(): void {
       </div>
 </div></section>
     </div>
-    <div class="settings-panel" data-settings-panel="preferences" hidden>
+    <div class="settings-panel" data-settings-panel="web" hidden>
   <section class="sx" aria-labelledby="selection-title">
     <div class="sx-head"><h2 id="selection-title">划词</h2></div>
     <div class="surface rows">
@@ -176,6 +174,8 @@ export function renderSettings(): void {
     </div>
     <p id="translation-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
+    </div>
+    <div class="settings-panel" data-settings-panel="tasks" hidden>
   <section class="sx" aria-labelledby="open-threads-title">
     <div class="sx-head"><h2 id="open-threads-title">继续上次的事</h2></div>
     <div class="surface rows">
@@ -184,14 +184,16 @@ export function renderSettings(): void {
     <p id="open-threads-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="sx" aria-labelledby="cues-title">
-    <div class="sx-head"><h2 id="cues-title">声音</h2></div>
+    <div class="sx-head"><h2 id="cues-title">提示音</h2></div>
     <div class="surface rows">
-      ${toggleRow("attention-cues", "提示音", "你没在看开着侧栏的窗口时，任务做完响一声；要你确认或动手时响另一声。")}
+      ${toggleRow("attention-cues", "任务状态提示音", "你没在看开着侧栏的窗口时，任务做完响一声；要你确认或动手时响另一声。")}
     </div>
     <p id="cues-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
+    </div>
+    <div class="settings-panel" data-settings-panel="labs" hidden>
   <section class="sx" aria-labelledby="labs-title">
-    <div class="sx-head"><h2 id="labs-title">实验功能</h2></div>
+    <div class="sx-head"><h2 id="labs-title">实验功能</h2><p class="sx-sub">可能会调整或下线，关掉不影响日常对话和网页操作。</p></div>
     <div class="surface rows">
       ${toggleRow("mini-apps", "回答里的小程序", "在回答中调整条件、筛选比较或运行小模拟。")}
       ${toggleRow("continuous-delegation", "持续关注网页", "交代一次，等待页面结果后自动筛选和标注。仅限原页面和约定期限，需保持浏览器打开。")}
@@ -206,7 +208,7 @@ export function renderSettings(): void {
     <div class="surface rows">
       ${toggleRow("browse-habits", "从我的浏览里学习习惯", '<span id="browse-state"></span>')}
     </div>
-    <details class="settings-detail" open><summary>记录哪些内容，怎样删除？</summary><p><strong>本机记什么：</strong>网页标题、网址、点击内容、搜索词和填写内容。会尝试排除密码、卡号和验证码字段，但不能保证识别所有敏感内容；助手替你做事时的操作不记。</p><p><strong>什么时候发：</strong>累计至少 ${BROWSE_INDUCE_AFTER_STEPS} 步、距离上次归纳至少 ${BROWSE_INDUCE_EVERY_MS / 60_000} 分钟时，记录可能发给快速模型；没有快速模型时发给主模型，可能产生费用。同一件事出现在 2 天里时，再问你要不要记住。</p><p><strong>暂停和删除：</strong>暂停保留已有记录；已发出的请求可能仍返回。侧栏「记忆 → 看到的操作」可查看最近 50 步并清除记录；清除不会删除另存的记忆。「主动建议」是使用偏好里的独立开关，也可能发送页面摘录。</p></details>
+    <details class="settings-detail"><summary>记录哪些内容，怎样删除？</summary><p><strong>本机记什么：</strong>网页标题、网址、点击内容、搜索词和填写内容。会尝试排除密码、卡号和验证码字段，但不能保证识别所有敏感内容；助手替你做事时的操作不记。</p><p><strong>什么时候发：</strong>累计至少 ${BROWSE_INDUCE_AFTER_STEPS} 步、距离上次归纳至少 ${BROWSE_INDUCE_EVERY_MS / 60_000} 分钟时，记录可能发给快速模型；没有快速模型时发给主模型，可能产生费用。同一件事出现在 2 天里时，再问你要不要记住。</p><p><strong>暂停和删除：</strong>暂停保留已有记录；已发出的请求可能仍返回。侧栏「记忆 → 看到的操作」可查看最近 50 步并清除记录；清除不会删除另存的记忆。「主动建议」是网页体验里的独立开关，也可能发送页面摘录。</p></details>
     <p id="habits-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="sx" aria-labelledby="memory-backup-title">
