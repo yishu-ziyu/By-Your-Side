@@ -3,10 +3,12 @@
  *
  *   npx tsx scripts/probes/image-recovery-run.mts --self-check --images <原图目录> --prior-trace <trace-relevant.json>
  *   npx tsx scripts/probes/image-recovery-run.mts --print-budget
- *   SIDEAGENT_ACCEPTANCE_DIST=<固定扩展> npx tsx scripts/probes/image-recovery-run.mts --live --arm web --images <原图目录> --out out/single-image-diagnosis/three-image-recovery
+ *   默认模型仍是 minimax-cn/MiniMax-M3，默认档位 low。
+ *   Grok 4.5 必须写 --model xai/grok-4.5 --effort low。off 不是这个模型的档；不传手动档时产品用 medium。
+ *   SIDEAGENT_ACCEPTANCE_DIST=<固定扩展> npx tsx scripts/probes/image-recovery-run.mts --live --arm web --model xai/grok-4.5 --effort low --images <原图目录> --out <目录>
  *   同上，把 --arm web 换成 --arm attachment：只附上第 3、6 张原件，页面不提供原图。
  *
- * --live 先发一次与图集无关的预检，主请求的 thinking 与 --effort 一致后才发送图集任务。
+ * --live 先发一次与图集无关的预检。主请求的模型 id 必须是 --model；MiniMax 再对 thinking，Grok 再对 reasoning.effort。不符就不发图集任务。
  * 预检不符、扩展目录未固定、或本机没有该模型登录时退出，不开始正式任务。
  * 下载目录由 harness 指到临时目录，不写用户的「下载」。
  */
@@ -15,8 +17,9 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   PROPOSED_BUDGET, RecoveryLedger, attemptKind, beginFormalTask, classifyStop, coverPositions,
-  expectedThinking, imageFact, imagesInPayload, leakedAnswers, overBudget, selfCheck, sha256,
-  sniffImage, taskPrompt, type HttpAttempt, type ThinkingWire,
+  effortMatches, expectedEffort, imageFact, imagesInPayload, leakedAnswers, normalizeReasoning,
+  overBudget, providerRequestPatterns, selfCheck, sha256, sniffImage, taskPrompt,
+  type EffortWire, type HttpAttempt,
 } from "./image-recovery-ledger.mts";
 
 const args = process.argv.slice(2);
@@ -67,7 +70,7 @@ const modelRef = option("--model") ?? "minimax-cn/MiniMax-M3";
 const effort = option("--effort") ?? "low";
 const dist = option("--dist") ?? process.env.SIDEAGENT_ACCEPTANCE_DIST;
 if ((arm !== "web" && arm !== "attachment") || !images || !out) {
-  console.error("用法：--live --arm web|attachment --images <原图目录> --out <目录> [--model minimax-cn/MiniMax-M3] [--effort low]");
+  console.error("用法：--live --arm web|attachment --images <原图目录> --out <目录> [--model minimax-cn/MiniMax-M3] [--effort low]。Grok 用 --model xai/grok-4.5 --effort low");
   process.exit(1);
 }
 
@@ -85,7 +88,14 @@ try {
   }
   const leaks = leakedAnswers(taskPrompt(arm));
   if (leaks.length) throw new Error(`prompt_leaks:${leaks.join(",")}`);
-  const expected = await expectedThinking(modelRef, effort);
+  let expected: EffortWire;
+  try {
+    expected = await expectedEffort(modelRef, effort);
+  } catch (error) {
+    ledger.stopReason = String(error).includes("没有档位") ? "effort_unsupported" : "harness_error";
+    ledger.error = String(error);
+    throw error;
+  }
   const originals = new Map<string, number>();
   const files = new Map<number, Uint8Array>();
   for (const page of [1, 3, 6]) {
@@ -95,7 +105,7 @@ try {
     originals.set(fact.sha256, page);
     ledger.originals.push({ page, ...imageFact(bytes, null, originals), matchesOriginalPage: page });
   }
-  ledger.notes.push(`expectedThinking=${JSON.stringify(expected)}`);
+  ledger.notes.push(`expectedEffort=${JSON.stringify(expected)}`);
   ledger.notes.push(`dist=${JSON.stringify(await distFingerprint(dist))}`);
   ledger.notes.push("辅助调用保持开启，与日常路径相同；只在账本里与主请求分开。");
   await writeFile(join(out, "positions.json"), `${JSON.stringify(coverPositions(), null, 2)}\n`);
@@ -127,20 +137,20 @@ try {
   await until(() => browser!.evaluate(panel, `document.querySelector("#send-btn")?.disabled === false`), 45_000, "panel ready");
   const host = await until(async () => (await browser!.targets()).find(target => target.url.endsWith("/inproc.html")), 30_000, "host");
   const hostSession = await browser.attach(host.targetId);
-  const tap = createTap(browser, hostSession, originals, expected);
+  const tap = createTap(browser, hostSession, originals, expected, modelRef);
   ledger.attempts = tap.attempts;
   await tap.enable();
 
   await send(browser, panel, "只回复一个字：好。不要调用工具。");
   const preflight = await tap.waitForMain(PROPOSED_BUDGET.preflightWallClockMs);
   ledger.preflight = preflight;
-  if (!preflight?.thinking) {
+  if (!preflight?.model) {
     ledger.stopReason = "preflight_incomplete";
     await stopIfRunning(browser, panel);
     throw new Error("preflight_incomplete");
   }
   const gate = await beginFormalTask({
-    wireThinking: preflight.thinking,
+    wire: { model: preflight.model, thinking: preflight.thinking, reasoning: preflight.reasoning },
     chipText: String(await browser.evaluate(panel, `document.querySelector("#think-chip")?.innerText ?? ""`)),
     expected,
     start: async () => { ledger.taskStarted = true; },
@@ -283,7 +293,7 @@ async function startGallery(files: Map<number, Uint8Array>, hits: Array<{ atMs: 
   return server;
 }
 
-function createTap(browser: LiveBrowser, hostSession: string, originals: Map<string, number>, expected: ThinkingWire) {
+function createTap(browser: LiveBrowser, hostSession: string, originals: Map<string, number>, expected: EffortWire, modelRef: string) {
   const attempts: HttpAttempt[] = [];
   let phase: "preflight" | "task" = "preflight";
   let blocking = false;
@@ -324,7 +334,7 @@ function createTap(browser: LiveBrowser, hostSession: string, originals: Map<str
       const blocked = blocking
         || (phase === "preflight" && preflightHttp >= PROPOSED_BUDGET.preflightHttpAttempts)
         || (phase === "task" && overBudget({ elapsedMs: 0, mainRequests: taskMain, httpAttempts: taskHttp }) !== null);
-      let parsed: { model?: string; max_tokens?: number; thinking?: { type?: string; budget_tokens?: number; display?: string } } = {};
+      let parsed: { model?: string; max_tokens?: number; max_output_tokens?: number; thinking?: { type?: string; budget_tokens?: number; display?: string }; reasoning?: unknown } = {};
       if (request.postData) {
         try { parsed = JSON.parse(request.postData) as typeof parsed; } catch { parsed = {}; }
       }
@@ -333,9 +343,10 @@ function createTap(browser: LiveBrowser, hostSession: string, originals: Map<str
       const hedge = bodyHash !== "" && [...inflightBody.values()].includes(bodyHash);
       const retry = previousFailed;
       previousFailed = false;
+      const maxTokens = typeof parsed.max_tokens === "number" ? parsed.max_tokens : typeof parsed.max_output_tokens === "number" ? parsed.max_output_tokens : null;
       const kind = attemptKind({
         purpose: null,
-        maxTokens: typeof parsed.max_tokens === "number" ? parsed.max_tokens : null,
+        maxTokens,
         imageCount: images.length,
         hedge,
         retry,
@@ -346,16 +357,19 @@ function createTap(browser: LiveBrowser, hostSession: string, originals: Map<str
         budget_tokens: typeof parsed.thinking.budget_tokens === "number" ? parsed.thinking.budget_tokens : null,
         display: typeof parsed.thinking.display === "string" ? parsed.thinking.display : null,
       } : null;
+      const reasoning = normalizeReasoning(parsed.reasoning);
+      const model = typeof parsed.model === "string" ? parsed.model : null;
       const attempt: HttpAttempt = {
         n: attempts.length + 1,
         atMs: Date.now(),
         phase,
         kind,
         purpose: null,
-        model: typeof parsed.model === "string" ? parsed.model : null,
-        maxTokens: typeof parsed.max_tokens === "number" ? parsed.max_tokens : null,
+        model,
+        maxTokens,
         thinking,
-        tierMatches: thinking && (kind === "main" || kind === "preflight") ? thinking.type === expected.type && thinking.budget_tokens === expected.budget_tokens && thinking.display === expected.display : null,
+        reasoning,
+        tierMatches: kind === "main" || kind === "preflight" ? effortMatches({ model, thinking, reasoning }, expected) : null,
         images,
         responseStatus: null,
         stopClass: blocked ? "experiment_budget" : null,
@@ -371,11 +385,11 @@ function createTap(browser: LiveBrowser, hostSession: string, originals: Map<str
       } else {
         await browser.cdp.send("Fetch.continueRequest", { requestId }, hostSession);
       }
-      if (kind === "preflight" && thinking) finishWait(attempt);
+      if (kind === "preflight" && model) finishWait(attempt);
     })().catch(error => {
       attempts.push({
         n: attempts.length + 1, atMs: Date.now(), phase, kind: "main", purpose: null, model: null, maxTokens: null,
-        thinking: null, tierMatches: null, images: [], responseStatus: null,
+        thinking: null, reasoning: null, tierMatches: null, images: [], responseStatus: null,
         stopClass: classifyStop({ blockedByController: false, controllerActive: blocking, status: null, errorText: String(error) }),
         blockedByController: false, note: "observer_error",
       });
@@ -385,9 +399,9 @@ function createTap(browser: LiveBrowser, hostSession: string, originals: Map<str
 
   return {
     attempts,
-    enable: () => browser.cdp.send("Fetch.enable", { patterns: ["*minimaxi.com*", "*minimax.io*"].flatMap(urlPattern => [{ urlPattern, requestStage: "Request" }, { urlPattern, requestStage: "Response" }]) }, hostSession),
+    enable: () => browser.cdp.send("Fetch.enable", { patterns: providerRequestPatterns(modelRef) }, hostSession),
     waitForMain: (wallMs: number) => new Promise<HttpAttempt | null>(resolve => {
-      const existing = attempts.find(item => item.kind === "preflight" && item.thinking && !item.blockedByController);
+      const existing = attempts.find(item => item.kind === "preflight" && item.model && !item.blockedByController);
       if (existing) { resolve(existing); return; }
       const timer = setTimeout(() => resolve(null), wallMs);
       waiters.push(attempt => { clearTimeout(timer); resolve(attempt); });

@@ -1,20 +1,26 @@
 /**
  * 三图恢复实验的账本与档位核对。只观察请求，不改产品策略。
  *
- * 档位以服务商请求体里的 thinking 为准，不看滑块下标，也不看芯片上的瞬时文字。
+ * 档位以该模型实际请求体为准，不看滑块下标，也不看芯片上的瞬时文字。
  * MiniMax-M3 走 anthropic-messages：产品把「关」写成不传 reasoning，线上是 thinking.type=disabled；
  * 低档是 thinking.type=enabled 且 budget_tokens 为该模型默认低档预算。字符串 "off" 反而会进另一套参数，不能当成关或低档。
+ * xai/grok-4.5 走 openai-responses，请求里没有 thinking.type。低档是 reasoning.effort=low。
+ * 它的 thinkingLevelMap.off 是 null；把 off 传进组包会被夹成 low，所以 --effort off 直接拒绝。
+ * 不传手动档位时，产品从 medium 起算（agent/src/main-effort.ts）。这次对照要低档，必须写 --effort low。
  *
  * 复跑：
  *   npx tsx scripts/probes/image-recovery-run.mts --self-check --images <原图目录> --prior-trace <trace-relevant.json>
  *   npx tsx scripts/probes/image-recovery-run.mts --print-budget
- *   SIDEAGENT_ACCEPTANCE_DIST=<固定扩展目录> npx tsx scripts/probes/image-recovery-run.mts --live --arm web|attachment --images <原图目录> --out out/single-image-diagnosis/three-image-recovery
+ *   默认模型仍是 minimax-cn/MiniMax-M3。Grok 必须写 --model xai/grok-4.5 --effort low。
+ *   SIDEAGENT_ACCEPTANCE_DIST=<固定扩展> npx tsx scripts/probes/image-recovery-run.mts --live --arm web|attachment --model xai/grok-4.5 --effort low --images <原图目录> --out <目录>
  */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
-import { streamSimple } from "@earendil-works/pi-ai/api/anthropic-messages";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
+import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
+import { streamSimple as streamResponses } from "@earendil-works/pi-ai/api/openai-responses";
 import { sanitizeTraceForStore } from "../../shared/trace-sanitize.ts";
 
 /** 上一轮 6 次总请求里，标题和一次未完成的送图占掉了额度，第 6 张的完成回合被拦下。这里只给准备路径留出余量，不放到数十轮。 */
@@ -39,6 +45,25 @@ export interface ThinkingWire {
   display: string | null;
 }
 
+export interface ReasoningWire {
+  effort: string | null;
+  summary: string | null;
+}
+
+/** 预检要核对的请求字段。anthropic 用 thinking；其他协议用 reasoning。两者都没有时只核模型 id，并写明没有思考字段。 */
+export interface EffortWire {
+  modelRef: string;
+  api: string;
+  thinking: ThinkingWire | null;
+  reasoning: ReasoningWire | null;
+  note: string | null;
+}
+
+export const NO_THINKING_WIRE = "no thinking wire; product default effort";
+
+/** Grok 4.5 这次对照用的模型与档位。低档在目录里是真实的 low；off 不是。 */
+export const GROK_LIVE = { model: "xai/grok-4.5", effort: "low" } as const;
+
 export interface ImageFact {
   sha256: string;
   bytes: number;
@@ -61,6 +86,7 @@ export interface HttpAttempt {
   model: string | null;
   maxTokens: number | null;
   thinking: ThinkingWire | null;
+  reasoning: ReasoningWire | null;
   tierMatches: boolean | null;
   images: ImageFact[];
   responseStatus: number | null;
@@ -69,23 +95,36 @@ export interface HttpAttempt {
   note: string | null;
 }
 
-const wireCache = new Map<string, { thinking: ThinkingWire; max_tokens: number | null }>();
+const ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
-/** 用 pi-ai 真正组包时的 onPayload 取 thinking，不手写预算表。apiKey 只用于通过本地组包，不返回、不落盘。 */
-export async function captureProviderThinking(modelRef: string, reasoning: string | undefined): Promise<{ thinking: ThinkingWire; max_tokens: number | null }> {
-  const key = `${modelRef}\0${reasoning ?? ""}`;
-  const cached = wireCache.get(key);
-  if (cached) return cached;
+function builtinModel(modelRef: string) {
   const slash = modelRef.indexOf("/");
   if (slash <= 0) throw new Error(`模型 id 需要写成服务商/模型，收到 ${modelRef}`);
-  const model = getBuiltinModel(modelRef.slice(0, slash) as "minimax-cn", modelRef.slice(slash + 1) as "MiniMax-M3");
-  if (model.api !== "anthropic-messages") throw new Error(`${modelRef} 的协议是 ${model.api}，不能用 MiniMax 的 thinking 字段核对档位`);
-  let captured: { thinking?: { type?: string; budget_tokens?: number; display?: string }; max_tokens?: number | null } | undefined;
-  const stream = streamSimple(model, { messages: [{ role: "user", content: "tier-check", timestamp: 0 }] }, {
+  return getBuiltinModel(modelRef.slice(0, slash) as "xai", modelRef.slice(slash + 1) as "grok-4.5");
+}
+
+/** 与 main-effort.ts 相同：未登记起始档时用 medium，再取不高于它的最高一档。 */
+export function restingLevel(levels: readonly string[]): string {
+  const atOrBelow = levels.filter(level => ORDER.indexOf(level as typeof ORDER[number]) <= ORDER.indexOf("medium"));
+  const index = atOrBelow.length ? levels.indexOf(atOrBelow.at(-1)!) : 0;
+  return levels[index] ?? "off";
+}
+
+export function supportedLevels(modelRef: string): string[] {
+  return [...getSupportedThinkingLevels(builtinModel(modelRef))];
+}
+
+/** 用 pi-ai 真正组包时的 onPayload 取字段，不手写预算表。apiKey 只用于本地组包，不返回、不落盘。 */
+async function capturePayload(modelRef: string, reasoning: string | undefined): Promise<Record<string, unknown>> {
+  const model = builtinModel(modelRef);
+  const streamSimple = model.api === "anthropic-messages" ? streamAnthropic : model.api === "openai-responses" ? streamResponses : null;
+  if (!streamSimple) return {};
+  let captured: Record<string, unknown> | undefined;
+  const stream = streamSimple(model as never, { messages: [{ role: "user", content: "tier-check", timestamp: 0 }] }, {
     ...(reasoning === undefined ? {} : { reasoning: reasoning as "low" }),
     apiKey: "local-tier-check",
     maxRetries: 0,
-    onPayload: (payload: { thinking?: { type?: string; budget_tokens?: number; display?: string }; max_tokens?: number | null }) => {
+    onPayload: (payload: Record<string, unknown>) => {
       captured = payload;
       return payload;
     },
@@ -94,19 +133,65 @@ export async function captureProviderThinking(modelRef: string, reasoning: strin
     },
   });
   await stream.result();
-  if (!captured?.thinking?.type) throw new Error(`${modelRef} 在 reasoning=${reasoning ?? "省略"} 时没有组出 thinking`);
-  const wire = {
-    thinking: normalizeThinking(captured.thinking),
-    max_tokens: typeof captured.max_tokens === "number" ? captured.max_tokens : null,
-  };
-  wireCache.set(key, wire);
-  return wire;
+  return captured ?? {};
 }
 
-/** 产品主循环的「关」是不传 reasoning。字符串 "off" 不是这个参数。 */
+function assertSupported(modelRef: string, effort: string): void {
+  const levels = supportedLevels(modelRef);
+  if (levels.includes(effort)) return;
+  throw new Error(`${modelRef} 没有档位 ${effort}。可用：${levels.join("、")}。不存在的档不会夹成 ${levels[0] ?? "默认"} 再放行。`);
+}
+
+/**
+ * 该模型在这个档位上实际会放进请求体的字段。
+ * anthropic-messages 仍用 thinking。其他协议不要求 thinking.type / budget_tokens。
+ */
+export async function expectedEffort(modelRef: string, effort: string): Promise<EffortWire> {
+  assertSupported(modelRef, effort);
+  const model = builtinModel(modelRef);
+  const reasoningArg = effort === "off" ? undefined : effort;
+  if (model.api !== "anthropic-messages" && model.api !== "openai-responses") {
+    return { modelRef, api: model.api, thinking: null, reasoning: null, note: NO_THINKING_WIRE };
+  }
+  const payload = await capturePayload(modelRef, reasoningArg);
+  const thinking = model.api === "anthropic-messages" ? normalizeThinking(payload.thinking) : null;
+  const reasoning = model.api === "openai-responses" ? normalizeReasoning(payload.reasoning) : null;
+  return {
+    modelRef,
+    api: model.api,
+    thinking,
+    reasoning,
+    note: thinking || reasoning ? null : NO_THINKING_WIRE,
+  };
+}
+
+/** MiniMax 路径：只要 anthropic thinking。产品的「关」是不传 reasoning，不是字符串 "off"。 */
+export async function captureProviderThinking(modelRef: string, reasoning: string | undefined): Promise<{ thinking: ThinkingWire; max_tokens: number | null }> {
+  const model = builtinModel(modelRef);
+  if (model.api !== "anthropic-messages") {
+    const effort = await expectedEffort(modelRef, reasoning ?? "off");
+    throw new Error(`${modelRef} 的协议是 ${model.api}，没有 thinking.type。${effort.note ?? `reasoning=${JSON.stringify(effort.reasoning)}`}`);
+  }
+  const payload = await capturePayload(modelRef, reasoning);
+  const thinking = normalizeThinking(payload.thinking);
+  if (!thinking) throw new Error(`${modelRef} 在 reasoning=${reasoning ?? "省略"} 时没有组出 thinking`);
+  return { thinking, max_tokens: typeof payload.max_tokens === "number" ? payload.max_tokens : null };
+}
+
 export async function expectedThinking(modelRef: string, effort: string): Promise<ThinkingWire> {
   const reasoning = effort === "off" ? undefined : effort;
   return (await captureProviderThinking(modelRef, reasoning)).thinking;
+}
+
+/** 监听该模型目录里的接口主机。MiniMax 仍同时看 minimaxi.com 与 minimax.io。 */
+export function providerRequestPatterns(modelRef: string): Array<{ urlPattern: string; requestStage: "Request" | "Response" }> {
+  const model = builtinModel(modelRef);
+  const hosts = new Set<string>([new URL(model.baseUrl).host]);
+  if (model.provider === "minimax-cn" || model.provider === "minimax") {
+    hosts.add("api.minimaxi.com");
+    hosts.add("api.minimax.io");
+  }
+  return [...hosts].flatMap(host => (["Request", "Response"] as const).map(requestStage => ({ urlPattern: `*${host}*`, requestStage })));
 }
 
 export function normalizeThinking(value: unknown): ThinkingWire | null {
@@ -120,23 +205,50 @@ export function normalizeThinking(value: unknown): ThinkingWire | null {
   };
 }
 
+export function normalizeReasoning(value: unknown): ReasoningWire | null {
+  if (!value || typeof value !== "object") return null;
+  const reasoning = value as { effort?: unknown; summary?: unknown };
+  if (typeof reasoning.effort !== "string" && reasoning.effort !== undefined) return null;
+  return {
+    effort: typeof reasoning.effort === "string" ? reasoning.effort : null,
+    summary: typeof reasoning.summary === "string" ? reasoning.summary : null,
+  };
+}
+
 export function sameThinking(actual: ThinkingWire | null, expected: ThinkingWire): boolean {
   return !!actual && actual.type === expected.type && actual.budget_tokens === expected.budget_tokens && actual.display === expected.display;
 }
 
+export function modelIdMatches(actual: string | null | undefined, modelRef: string): boolean {
+  if (!actual) return false;
+  const id = modelRef.includes("/") ? modelRef.slice(modelRef.indexOf("/") + 1) : modelRef;
+  return actual === modelRef || actual === id;
+}
+
+/** 先对模型 id。有 thinking 就对 thinking；否则对 reasoning。两者都没有时只要求模型 id，并保留 note。 */
+export function effortMatches(actual: { model?: string | null; thinking?: unknown; reasoning?: unknown }, expected: EffortWire): boolean {
+  if (!modelIdMatches(actual.model, expected.modelRef)) return false;
+  if (expected.thinking) return sameThinking(normalizeThinking(actual.thinking), expected.thinking);
+  if (expected.reasoning) {
+    const got = normalizeReasoning(actual.reasoning);
+    return !!got && got.effort === expected.reasoning.effort && got.summary === expected.reasoning.summary;
+  }
+  return expected.note === NO_THINKING_WIRE;
+}
+
 /**
- * 芯片文字和滑块下标不参与判定。正式任务开始前调用：不相等就不要发任务。
+ * 芯片文字和滑块下标不参与判定。正式任务开始前调用：模型或档位字段不符就不要发任务。
  */
 export async function beginFormalTask(input: {
-  wireThinking: unknown;
+  wire: { model?: string | null; thinking?: unknown; reasoning?: unknown };
   chipText?: string;
   sliderIndex?: number;
-  expected: ThinkingWire;
+  expected: EffortWire;
   start: () => Promise<void>;
 }): Promise<"started" | "tier_mismatch"> {
   void input.chipText;
   void input.sliderIndex;
-  if (!sameThinking(normalizeThinking(input.wireThinking), input.expected)) return "tier_mismatch";
+  if (!effortMatches(input.wire, input.expected)) return "tier_mismatch";
   await input.start();
   return "started";
 }
@@ -446,17 +558,21 @@ export async function selfCheck(input: { images: string; priorTrace: string }): 
   check("字符串 off 既不是关档也不是低档", !sameThinking(offString, off) && !sameThinking(offString, low), offString);
   check("上一轮 disabled 请求不能当成低档", !sameThinking({ type: "disabled", budget_tokens: null, display: null }, low));
 
+  const miniExpected = await expectedEffort("minimax-cn/MiniMax-M3", "low");
+  check("MiniMax 期望仍只看 thinking，不发明别的字段", sameThinking(miniExpected.thinking, low) && miniExpected.reasoning === null && miniExpected.note === null, miniExpected);
   let started = false;
   const gate = await beginFormalTask({
-    wireThinking: { type: "disabled" },
+    wire: { model: "MiniMax-M3", thinking: { type: "disabled" } },
     chipText: "MiniMax-M3\n·\n中",
     sliderIndex: 0,
-    expected: low,
+    expected: miniExpected,
     start: async () => { started = true; },
   });
   check("档位不符时正式任务不会开始", gate === "tier_mismatch" && !started, { gate, started });
-  const passGate = await beginFormalTask({ wireThinking: low, chipText: "随便", sliderIndex: 99, expected: low, start: async () => { started = true; } });
+  const passGate = await beginFormalTask({ wire: { model: "MiniMax-M3", thinking: low }, chipText: "随便", sliderIndex: 99, expected: miniExpected, start: async () => { started = true; } });
   check("线上参数相符才开始任务，不看芯片和滑块", passGate === "started" && started);
+  const wrongModel = await beginFormalTask({ wire: { model: "grok-4.5", thinking: low }, expected: miniExpected, start: async () => { started = false; } });
+  check("模型 id 不符不开始任务", wrongModel === "tier_mismatch" && started);
 
   const pages = [1, 3, 6] as const;
   const originals = new Map<string, number>();
@@ -499,7 +615,7 @@ export async function selfCheck(input: { images: string; priorTrace: string }): 
     ledger.stopReason = "ui_scrape_failed";
     ledger.attempts.push({
       n: 1, atMs: 0, phase: "task", kind: "main", purpose: null, model: "MiniMax-M3", maxTokens: 512000,
-      thinking: off, tierMatches: false, images: [], responseStatus: 529, stopClass: classifyStop({ blockedByController: false, controllerActive: false, status: 529 }),
+      thinking: off, reasoning: null, tierMatches: false, images: [], responseStatus: 529, stopClass: classifyStop({ blockedByController: false, controllerActive: false, status: 529 }),
       blockedByController: false, note: null,
     });
   } finally {
@@ -519,6 +635,48 @@ export async function selfCheck(input: { images: string; priorTrace: string }): 
     && attemptKind({ purpose: null, maxTokens: 512000, imageCount: 0, hedge: false, retry: true, phase: "task" }) === "retry"
     && attemptKind({ purpose: null, maxTokens: 200, imageCount: 0, hedge: false, retry: false, phase: "preflight" }) === "auxiliary"
     && attemptKind({ purpose: null, maxTokens: 512000, imageCount: 0, hedge: false, retry: false, phase: "preflight" }) === "preflight");
+
+  const effortSource = await readFile(new URL("../../agent/src/main-effort.ts", import.meta.url), "utf8");
+  const grokLevels = supportedLevels(GROK_LIVE.model);
+  check("产品未选手动档时仍从 medium 起算", /const START: ModelThinkingLevel = "medium"/.test(effortSource));
+  check("Grok 4.5 可用 low、medium、high，没有 off", grokLevels.join(",") === "low,medium,high", grokLevels);
+  check("因此 Grok 不选手动档时是 medium", restingLevel(grokLevels) === "medium");
+  let grokOff = "";
+  try {
+    await expectedEffort(GROK_LIVE.model, "off");
+  } catch (error) {
+    grokOff = String(error);
+  }
+  check("Grok 拒绝 --effort off，避免被夹成 low", grokOff.includes("没有档位 off"), grokOff);
+  const grokLow = await expectedEffort(GROK_LIVE.model, GROK_LIVE.effort);
+  check("Grok 低档没有 thinking.type，线上是 reasoning.effort=low", grokLow.thinking === null && grokLow.reasoning?.effort === "low" && grokLow.reasoning.summary === "auto" && grokLow.note === null, grokLow);
+  const grokPatterns = providerRequestPatterns(GROK_LIVE.model).map(item => item.urlPattern);
+  const miniPatterns = providerRequestPatterns("minimax-cn/MiniMax-M3").map(item => item.urlPattern);
+  check("Grok 预检监听 api.x.ai，不套 MiniMax 主机", grokPatterns.some(item => item.includes("api.x.ai")) && !grokPatterns.some(item => item.includes("minimaxi.com")), grokPatterns);
+  check("MiniMax 预检仍监听 minimaxi.com", miniPatterns.some(item => item.includes("minimaxi.com")));
+  let grokStarted = false;
+  const grokGate = await beginFormalTask({
+    wire: { model: "grok-4.5", reasoning: { effort: "low", summary: "auto" } },
+    chipText: "Grok 4.5 · 低",
+    sliderIndex: 0,
+    expected: grokLow,
+    start: async () => { grokStarted = true; },
+  });
+  check("Grok 预检对上模型 id 和 reasoning.effort 才开始", grokGate === "started" && grokStarted);
+  const grokWrong = await beginFormalTask({
+    wire: { model: "grok-4.5", thinking: { type: "enabled", budget_tokens: 2048, display: "summarized" } },
+    expected: grokLow,
+    start: async () => { grokStarted = false; },
+  });
+  check("只带 MiniMax thinking、没有 reasoning.effort 时 Grok 不开始", grokWrong === "tier_mismatch" && grokStarted);
+  const grokOtherModel = await beginFormalTask({
+    wire: { model: "MiniMax-M3", reasoning: { effort: "low", summary: "auto" } },
+    expected: grokLow,
+    start: async () => undefined,
+  });
+  check("Grok 预检模型 id 不符不开始", grokOtherModel === "tier_mismatch");
+  const bare = { modelRef: "example/plain", api: "other", thinking: null, reasoning: null, note: NO_THINKING_WIRE } as const;
+  check("没有思考字段时只核模型 id，并注明产品默认", effortMatches({ model: "plain" }, bare) && !effortMatches({ model: "other" }, bare) && bare.note === NO_THINKING_WIRE);
 
   return failures;
 }
