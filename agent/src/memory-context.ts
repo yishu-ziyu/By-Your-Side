@@ -32,6 +32,8 @@ interface MemoryContextInput {
   hostname: string | null;
   /** 用户这句原话：判断是否在问过往、自动总结的网站做法是否对得上这件事。 */
   text: string;
+  /** 已由 MemoryStore 按身份、版本与网站范围复核过的语义命中。 */
+  semanticIds?: readonly string[];
   now: number;
 }
 
@@ -71,6 +73,7 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
   };
 
   const newestFirst = [...input.entries].sort((a, b) => b.updatedAt - a.updatedAt);
+  const semanticIds = new Set(input.semanticIds ?? []);
   const facts = { used: 0, chars: 0 };
   const dated = { used: 0, chars: 0 };
 
@@ -93,14 +96,14 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
 
     if (!withinValidity(entry.validity, input.now)) { skipped.expired++; continue; }
 
-    // 自动总结的网站做法要对得上这件事，不论改过几次：没改过的按对象严格对，用户改过或恢复过的按词宽松对
-    // （与 MemoryStore.select 一致）。用户确认过的网站做法（method，不是自动总结）在该网站总是带，不按字面筛；
-    // 到处适用的做法与用户自述的事实照常带。
+    // 语义命中只放宽未改过的自动总结；用户确认的做法、网站范围与有效期规则不变。
     if (entry.scope.kind === "site" && entry.experience) {
-      const relevant = entry.experience && entry.version === 1 ? isRelevantExperience(entry.experience.topic ?? entry.text, input.text) : isRelevantMemory(entry.text, input.text);
+      const relevant = entry.version === 1
+        ? semanticIds.has(entry.id) || isRelevantExperience(entry.experience.topic ?? entry.text, input.text)
+        : isRelevantMemory(entry.text, input.text);
 
       if (!relevant) continue;
-    } else if (entry.experience && entry.version === 1 && !isRelevantExperience(entry.experience.topic ?? entry.text, input.text)) continue;
+    } else if (entry.experience && entry.version === 1 && !semanticIds.has(entry.id) && !isRelevantExperience(entry.experience.topic ?? entry.text, input.text)) continue;
 
     if (take(entry.text.length, facts, MEMORY_CONTEXT_CAPS.facts)) pickedEntries.push({ entry, rule });
   }

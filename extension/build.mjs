@@ -67,7 +67,7 @@ const browserSwaps = {
     // 任务核心（agent/src）里只在本机才用的模块：诊断记录写文件。
     swap(/^\.\/run-trace\.js$/, path.join(shims, "run-trace.ts"), true);
     swap(/^node:crypto$/, path.join(shims, "node-crypto.ts"), false);
-    swap(/^node:fs(\/promises)?$/, path.join(shims, "node-fs.ts"), false);
+    swap(/^(?:node:)?fs(?:\/promises)?$/, path.join(shims, "node-fs.ts"), false);
     swap(/^node:path$/, path.join(shims, "node-path.ts"), false);
     swap(/^node:os$/, path.join(shims, "node-os.ts"), false);
     swap(/^node:perf_hooks$/, path.join(shims, "node-perf-hooks.ts"), false);
@@ -147,5 +147,16 @@ await cp(path.join(root, "assets/voices"), path.join(dist, "voices"), { recursiv
 await cp(path.join(root, "assets/orbs"), path.join(dist, "orbs"), { recursive: true });
 
 await cp(path.join(root, "assets/fonts"), path.join(dist, "fonts"), { recursive: true });
+
+// 本地语义模型的 WASM 运行时随扩展分发，不请求 CDN。
+await mkdir(path.join(dist, "ort"), { recursive: true });
+for (const file of [
+  "ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm",
+  "ort-wasm-simd-threaded.asyncify.mjs", "ort-wasm-simd-threaded.asyncify.wasm",
+  "ort-wasm-simd-threaded.jspi.mjs", "ort-wasm-simd-threaded.jspi.wasm",
+  "ort-wasm-simd-threaded.jsep.mjs", "ort-wasm-simd-threaded.jsep.wasm",
+]) {
+  await copyFile(path.join(root, "../node_modules/onnxruntime-web/dist", file), path.join(dist, "ort", file));
+}
 
 console.log("dist/ 构建完成");

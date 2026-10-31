@@ -50,6 +50,19 @@ export interface MemoryQuery {
   url?: string;
 }
 
+export interface SemanticMemoryIndex {
+  sync(entries: MemoryEntry[]): Promise<void>;
+  select(query: MemoryQuery): Promise<Array<{ id: string; version: number }>>;
+}
+
+const semanticIndexes = new WeakMap<MemoryStore, SemanticMemoryIndex>();
+
+/** 语义索引只是派生数据；未就绪或失败时仍使用原关键词挑选。 */
+export function useSemanticMemory(store: MemoryStore, index: SemanticMemoryIndex): MemoryStore {
+  semanticIndexes.set(store, index);
+  return store;
+}
+
 const randomUUID = () => globalThis.crypto.randomUUID();
 
 /** saveMethod：要替换的那条在询问之后被改过、撤下或不再生效。 */
@@ -479,8 +492,20 @@ export class MemoryStore {
   async select(query: MemoryQuery): Promise<MemoryEntry[]> {
     assertQuery(query);
     const hostname = hostnameFromUrl(query.url);
+    const entries = await this.read();
+    const applicable = entries.filter(entry => entry.status === "active" && scopeAllows(entry.scope, hostname) && usableOnHost(entry, hostname));
+    const literal = applicable.filter(entry => isEntryRelevant(entry, query.text));
+    const index = semanticIndexes.get(this);
 
-    return cloneEntries((await this.read()).filter((entry) => entry.status === "active" && scopeAllows(entry.scope, hostname) && usableOnHost(entry, hostname) && isEntryRelevant(entry, query.text)));
+    if (!index) return cloneEntries(literal);
+
+    try {
+      await index.sync(entries);
+      const semantic = new Map((await index.select(query)).map(hit => [hit.id, hit.version]));
+      return cloneEntries(applicable.filter(entry => isEntryRelevant(entry, query.text) || semantic.get(entry.id) === entry.version));
+    } catch {
+      return cloneEntries(literal);
+    }
   }
 
   async resolveSelected(selected: Array<{ id: string; version: number }>, query: MemoryQuery): Promise<MemoryEntry[]> {
@@ -493,8 +518,9 @@ export class MemoryStore {
     const wanted = new Map(selected.map(({ id, version }) => [id, version]));
     const hostname = hostnameFromUrl(query.url);
 
+    // select 已按当次请求挑选；这里只防止挑选后被改掉、忘掉或跨网站使用，不再用语义无法通过的字面规则重筛。
     return cloneEntries((await this.read()).filter((entry) =>
-      wanted.get(entry.id) === entry.version && entry.status === "active" && scopeAllows(entry.scope, hostname) && usableOnHost(entry, hostname) && isEntryRelevant(entry, query.text),
+      wanted.get(entry.id) === entry.version && entry.status === "active" && scopeAllows(entry.scope, hostname) && usableOnHost(entry, hostname),
     ));
   }
 
