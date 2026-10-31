@@ -17,6 +17,13 @@ const BODY_READ_TIMEOUT_MS = 10_000;
 
 const enabledTabs = new Set<number>();
 const activeTokens = new Map<number, Set<string>>();
+const directLinks = new Map<string, { url: string; filename?: string }>();
+
+export function captureDirectLink(tabId: number, token: string, url: string, filename?: string): void {
+  if (!enabledTabs.has(tabId)) throw new Error("无法捕获下载响应，下载未执行。");
+  directLinks.set(token, { url, filename });
+}
+
 const captures = new Map<string, CaptureRecord>();
 let capturedBytes = 0;
 
@@ -42,9 +49,10 @@ function eligible(params: Record<string, unknown>): { bytes: number; mimeType: s
   const mimeType = header(params, "content-type").split(";", 1)[0]!.trim().toLowerCase();
   const attachment = /^\s*attachment(?:\s*;|\s*$)/i.test(header(params, "content-disposition"));
   const readable = mimeType === "application/pdf" || mimeType === "application/json" || mimeType === "application/octet-stream"
+    || /^image\/(png|jpeg|gif|webp|avif|bmp|x-icon)$/.test(mimeType)
     || mimeType.startsWith("text/") || /(?:wordprocessingml|spreadsheetml|presentationml)/.test(mimeType);
 
-  // The download attribute can make an ordinary text or PDF response a download; attachment covers server-driven downloads.
+  // The download attribute can turn an inline response into a download.
   if (!attachment && !readable) return null;
 
   return { bytes, mimeType };
@@ -59,8 +67,10 @@ function textBase64(text: string): string {
   return btoa(binary);
 }
 
-async function continueResponse(tabId: number, requestId: string): Promise<void> {
-  await chrome.debugger.sendCommand({ tabId }, "Fetch.continueResponse", { requestId }).catch(() => {});
+async function continueResponse(tabId: number, requestId: string, responseHeaders?: unknown[], responseCode?: number): Promise<void> {
+  await chrome.debugger.sendCommand({ tabId }, "Fetch.continueResponse", { requestId, ...(responseHeaders ? { responseHeaders, responseCode } : {}) }).catch(async () => {
+    await chrome.debugger.sendCommand({ tabId }, "Fetch.failRequest", { requestId, errorReason: "Aborted" }).catch(() => {});
+  });
 }
 
 /** Optional capture must never make arming the real download fail. */
@@ -82,6 +92,7 @@ export async function enableDownloadBodyCapture(tabId: number, token: string): P
 
 /** Stop intercepting for this arm. Completed bodies remain available until wait_event consumes them. */
 export async function releaseDownloadBodyCapture(tabId: number, token: string): Promise<void> {
+  directLinks.delete(token);
   const tokens = activeTokens.get(tabId);
   tokens?.delete(token);
   if (tokens?.size) return;
@@ -99,6 +110,7 @@ export function abandonDownloadBodyCapture(token: string): void {
 
 export function noteDownloadBodyCaptureDetached(tabId: number): void {
   enabledTabs.delete(tabId);
+  for (const token of activeTokens.get(tabId) ?? []) directLinks.delete(token);
   activeTokens.delete(tabId);
 
   for (const [token, capture] of captures) if (capture.tabId === tabId) abandonDownloadBodyCapture(token);
@@ -126,9 +138,25 @@ export async function handleDownloadBodyCapture(
   const requestId = typeof params.requestId === "string" ? params.requestId : "";
   if (!requestId) return;
   const token = enabledTabs.has(tabId) ? armedToken() : undefined;
-  const wanted = token ? eligible(params) : null;
+  const direct = token ? directLinks.get(token) : undefined;
+  const requestUrl = (params.request as Record<string, unknown> | undefined)?.url;
+  const matchesDirect = direct && requestUrl === direct.url;
+  const status = Number(params.responseStatusCode);
+  if (matchesDirect && status >= 300 && status < 400) {
+    const location = header(params, "location");
+    if (location) direct.url = new URL(location, direct.url).href;
+  }
+  // Force only the requested response to download, so inline images and PDFs do not replace the working page.
+  const responseHeaders = matchesDirect && status >= 200 && (status < 300 || status >= 400)
+    ? [...(Array.isArray(params.responseHeaders) ? params.responseHeaders : []).filter(item =>
+      String(item.name).toLowerCase() !== "content-disposition"),
+      { name: "Content-Disposition", value: direct.filename
+        ? `attachment; filename*=UTF-8''${encodeURIComponent(direct.filename)}` : header(params, "content-disposition").replace(/^inline/i, "attachment") || "attachment" }]
+    : undefined;
+  const resume = () => continueResponse(tabId, requestId, responseHeaders, status);
+  const wanted = token && (!direct || matchesDirect) ? eligible(params) : null;
   if (!token || !wanted) {
-    await continueResponse(tabId, requestId);
+    await resume();
     return;
   }
 
@@ -141,18 +169,19 @@ export async function handleDownloadBodyCapture(
     const result = await Promise.race([command, timeout]).finally(() => { if (timer) clearTimeout(timer); }) as { body?: unknown; base64Encoded?: unknown };
     if (settled || typeof result.body !== "string") return;
     const dataBase64 = result.base64Encoded === true ? result.body : textBase64(result.body);
+    const actualBytes = dataBase64.length * 3 / 4 - (dataBase64.endsWith("==") ? 2 : dataBase64.endsWith("=") ? 1 : 0);
+    if (!Number.isSafeInteger(actualBytes) || actualBytes <= 0 || actualBytes > FILE_READ_MAX_BYTES) return;
     const previous = captures.get(token);
     const previousBytes = previous?.bytes ?? 0;
-    if (capturedBytes - previousBytes + wanted.bytes > CAPTURE_TOTAL_MAX) return;
-    const requestUrl = (params.request as Record<string, unknown> | undefined)?.url;
+    if (capturedBytes - previousBytes + actualBytes > CAPTURE_TOTAL_MAX) return;
     if (typeof requestUrl !== "string") return;
     if (previous) abandonDownloadBodyCapture(token);
-    captures.set(token, { tabId, token, url: requestUrl, bytes: wanted.bytes, dataBase64, mimeType: wanted.mimeType });
-    capturedBytes += wanted.bytes;
+    captures.set(token, { tabId, token, url: requestUrl, bytes: actualBytes, dataBase64, mimeType: wanted.mimeType });
+    capturedBytes += actualBytes;
   } catch {
     // A missing auxiliary copy does not change the browser's real download.
   } finally {
     settled = true;
-    await continueResponse(tabId, requestId);
+    await resume();
   }
 }

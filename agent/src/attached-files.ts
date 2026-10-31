@@ -21,7 +21,7 @@ const SEARCH_CONTEXT = 300;
 const PART_NAMES = { page: "pages", sheet: "sheets", slide: "slides" } as const;
 
 const FORMAT_NAMES: Record<FileAttachment["format"], string> = {
-  pdf: "PDF", docx: "Word document", xlsx: "Excel workbook", pptx: "PowerPoint deck", csv: "CSV table", text: "text file", html: "HTML page",
+  pdf: "PDF", docx: "Word document", xlsx: "Excel workbook", pptx: "PowerPoint deck", csv: "CSV table", text: "text file", html: "HTML page", image: "image file",
 };
 
 export const isFile = (attachment: Attachment): attachment is FileAttachment => attachment.type === "file";

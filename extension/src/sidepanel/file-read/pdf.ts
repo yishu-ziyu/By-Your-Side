@@ -72,7 +72,8 @@ async function renderPage(doc: PDFDocumentProxy, pageNumber: number): Promise<st
   // 扫描件常是透明底：先铺白，免得 JPEG 把透明处压成黑色。
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvas, canvasContext: context, viewport }).promise;
+  // Offscreen documents do not receive animation frames; print rendering runs without waiting for one.
+  await page.render({ canvas, canvasContext: context, viewport, intent: "print" }).promise;
   page.cleanup();
 
   if (looksBlank(canvas)) return null;

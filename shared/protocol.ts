@@ -120,7 +120,7 @@ export const FILE_BYTES_KEEP_MAX = 5 * 1024 * 1024;
 /** 没有文字层的 PDF（扫描件）最多把前几页画成图交给助手看。 */
 export const FILE_PAGE_IMAGES_MAX = 4;
 
-export const FILE_FORMATS = ["pdf", "docx", "xlsx", "pptx", "csv", "text", "html"] as const;
+export const FILE_FORMATS = ["pdf", "docx", "xlsx", "pptx", "csv", "text", "html", "image"] as const;
 
 export type FileFormat = (typeof FILE_FORMATS)[number];
 
@@ -631,6 +631,9 @@ export interface AnchorSource {
 
 /** Chrome 下载回执：完成与否只看 chrome.downloads。 */
 export interface DownloadReceipt {
+  capturedFile?: { dataBase64: string; mimeType: string };
+  attachment?: { id: string; name: string; truncated?: true };
+  attachmentError?: string;
   downloadId: string;
   tabId: number;
   url: string;
