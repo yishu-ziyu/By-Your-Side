@@ -137,7 +137,7 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   const page = await rp.attach(target.targetId);
   await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".provider-option").length`)) > 3 || undefined, 15_000, "设置页渲染服务商");
 
-  await rp.click(page, '[data-settings-page="connections"]');
+  await rp.click(page, '[data-settings-page="models"]');
   const add = await rp.evaluate(page, `document.querySelector('#provider-more').hidden`);
   if (add) await rp.click(page, '#connection-add');
 

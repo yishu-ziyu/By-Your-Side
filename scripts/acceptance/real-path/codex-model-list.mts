@@ -20,6 +20,7 @@ try {
   const target=await rp.cdp.send('Target.createTarget',{url:'about:blank'});
   page=await rp.attach(target.targetId);
   await rp.cdp.send('Network.enable',{},page);
+  await rp.cdp.send('Page.enable',{},page);
   const requests:string[]=[];
   const off=rp.cdp.onEvent('Fetch.requestPaused',(event:{sessionId?:string;params?:{requestId:string;request:{url:string}}})=>{
     if(event.sessionId!==page || !event.params)return;
@@ -30,8 +31,8 @@ try {
   });
   await rp.cdp.send('Fetch.enable',{patterns:[{urlPattern:'*chatgpt.com/backend-api/codex/models*',requestStage:'Request'}]},page);
   await rp.cdp.send('Page.navigate',{url:`chrome-extension://${rp.extensionId}/settings.html`},page);
-  await until(async()=>await rp.evaluate(page,`document.readyState==='complete' && !!document.querySelector('[data-settings-page="connections"]')`)||undefined,15000,'设置页');
-  await rp.evaluate(page,`document.querySelector('[data-settings-page="connections"]').click()`);
+  await until(async()=>await rp.evaluate(page,`document.readyState==='complete' && !!document.querySelector('[data-settings-page="models"]')`)||undefined,15000,'设置页');
+  await rp.evaluate(page,`document.querySelector('[data-settings-page="models"]').click()`);
   await until(async()=>await rp.evaluate(page,`!!document.querySelector('.provider-option[data-provider="openai-codex"]')`)||undefined,15000,'账号连接');
   await rp.click(page,'.provider-option[data-provider="openai-codex"]');
   const meta=()=>rp.evaluate(page,`document.querySelector('#model-meta').innerText`) as Promise<string>;
@@ -55,9 +56,14 @@ try {
   await rp.click(page,'#model-toggle');
   assert.match((evidence.accountA as {meta:string}).meta,/显示上次结果/);
   await rp.screenshot(page,join(out,'account-a-offline.png'));
-  await rp.evaluate(page,`location.reload()`);
-  await until(async()=>await rp.evaluate(page,`!!document.querySelector('[data-settings-page="connections"]')`)||undefined,15000,'重开设置');
-  await rp.evaluate(page,`document.querySelector('[data-settings-page="connections"]').click()`);
+  console.log("重开设置：处理测试输入的未保存确认");
+  const unload = rp.cdp.waitForEvent('Page.javascriptDialogOpening', 5000, { sessionId: page, predicate: (event: {params?: {type?: string}}) => event.params?.type === 'beforeunload' });
+  const reload = rp.cdp.send('Page.reload', {}, page);
+  evidence.reloadDialog = (await unload).params.type;
+  await rp.cdp.send('Page.handleJavaScriptDialog', { accept: true }, page);
+  await reload;
+  await until(async()=>await rp.evaluate(page,`!!document.querySelector('[data-settings-page="models"]')`)||undefined,15000,'重开设置');
+  await rp.evaluate(page,`document.querySelector('[data-settings-page="models"]').click()`);
   await until(async()=>await rp.evaluate(page,`!!document.querySelector('.provider-option[data-provider="openai-codex"]')`)||undefined,15000,'重开连接');
   await rp.click(page,'.provider-option[data-provider="openai-codex"]');
   await until(async()=>String(await meta()).includes('更新失败')||undefined,20000,'重开后的失败提示');

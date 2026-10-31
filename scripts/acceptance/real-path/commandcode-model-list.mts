@@ -20,7 +20,7 @@ try {
   await rp.evaluate(page, `chrome.storage.local.set({inproc_model_config:{provider:'commandcode',modelId:'xiaomi/mimo-v2.6-flash'},'inproc_cred:commandcode':{type:'api_key',key:'fixture-commandcode-key'}})`);
   await rp.evaluate(page, `location.reload()`);
   await until(async () => await rp.evaluate(page, `!!document.querySelector('.provider-option[data-provider="commandcode"]')`) || undefined, 15000, '连接页出现 Command Code');
-  await rp.evaluate(page, `document.querySelector('[data-settings-page="connections"]')?.click()`);
+  await rp.evaluate(page, `document.querySelector('[data-settings-page="models"]')?.click()`);
   await rp.click(page, '.provider-option[data-provider="commandcode"]');
   await until(async () => await rp.evaluate(page, `/列表里有 (\\d+) 个/.exec(document.querySelector('#model-meta').textContent)?.[1] > 2`) || undefined, 15000, '清单到达后模型数超过内置的 2 个');
   await rp.click(page, '#model-toggle');
