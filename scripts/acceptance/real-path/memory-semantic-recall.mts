@@ -23,13 +23,15 @@ const ASK = "第一轮研究完成了，接下来怎样处理这些录音";
 const TARGET = "做用户访谈后，先逐条整理受访者原话，再归纳共同需求";
 const UNRELATED = "发布浏览器扩展前，先备份上一个版本";
 const ANSWER = "先逐条整理受访者原话，再归纳共同需求。";
+const STYLE = "无论怎样回答，都请简洁明了";
 const NOW = Date.now();
 const memory = (id: string, text: string) => ({
   id, factId: id, version: 1, text, scope: { kind: "all" }, sourceConversationId: "seed",
   createdAt: NOW - 60_000, updatedAt: NOW - 60_000, kind: "method", useCount: 0, status: "active", formatVersion: 3,
   experience: { runId: `${id}-run`, topic: text, evidence: [text] },
 });
-const seeded = JSON.stringify({ format: 3, rev: 1, entries: [memory("semantic-target", TARGET), memory("semantic-unrelated", UNRELATED)] }) + "\n";
+const { experience: _experience, ...styleBase } = memory("steady-style", STYLE);
+const seeded = JSON.stringify({ format: 3, rev: 1, entries: [memory("semantic-target", TARGET), memory("semantic-unrelated", UNRELATED), { ...styleBase, kind: "profile" }] }) + "\n";
 
 const upstream = await startScriptedModel([
   { match: ASK, steps: [{ text: ANSWER }] },
@@ -139,6 +141,8 @@ try {
     evidence.inprocLogs = inproc.logs();
     assert.equal(prompt.includes(TARGET), false, "模型不可用时不错误带入语义记忆");
     assert.equal(prompt.includes(UNRELATED), false, "模型不可用时不错误带入无关记忆");
+    assert.ok(prompt.includes(STYLE), "长期沟通习惯继续提供给模型");
+    assert.equal(await usedItem("steady-style"), null, "仅泛词重合的长期习惯不伪装为本次语义命中");
   } else {
     let prompt = "";
     const deadline = Date.now() + 240_000;
