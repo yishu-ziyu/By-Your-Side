@@ -1,4 +1,5 @@
-import { createElement as icon, Check, ChevronRight, Clock, LoaderCircle, X as XIcon } from "lucide";
+import { createElement as icon, Check, ChevronRight, Clock, X as XIcon } from "lucide";
+import { createOrb, type OrbHandle } from "./orb.js";
 import { spokenDuration } from "./steps.js";
 
 /** 页面上的一步过了这么久还没回来，才在那一行给「跳过这一步」。 */
@@ -109,15 +110,28 @@ export function mountLiveSteps(onSkip: () => void): LiveSteps {
       el.hidden = list.length === 0;
     },
     finish() {
+      for (const row of rows.values()) setMark(row.mark, "done");
       el.remove();
     },
   };
 }
 
+const orbs = new WeakMap<HTMLElement, OrbHandle>();
+
+/** 正在做的那一步用和工具行一样的光球，不换成转圈图标。 */
 function setMark(box: HTMLElement, state: "running" | "waiting" | "done" | "failed"): void {
   if (box.dataset.state === state) return;
-  const graphic = icon(state === "done" ? Check : state === "failed" ? XIcon : state === "waiting" ? Clock : LoaderCircle);
-  graphic.setAttribute("aria-hidden", "true");
+  orbs.get(box)?.dispose();
+  orbs.delete(box);
   box.dataset.state = state;
+  if (state === "running") {
+    const orb = createOrb("solving", 16);
+    orb.setRunning(true);
+    orbs.set(box, orb);
+    box.replaceChildren(orb.el);
+    return;
+  }
+  const graphic = icon(state === "done" ? Check : state === "failed" ? XIcon : Clock);
+  graphic.setAttribute("aria-hidden", "true");
   box.replaceChildren(graphic);
 }

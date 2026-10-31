@@ -4498,7 +4498,7 @@ details.run-steps.live-list.live-generic:not([data-wait-user]) > summary { displ
 .live-step { display: flex; align-items: center; gap: var(--s-2); min-height: 26px; }
 .live-step-mark { display: inline-flex; width: 16px; height: 16px; flex: none; color: var(--text-tertiary); }
 .live-step-mark svg { width: 16px; height: 16px; }
-.live-step-mark[data-state="running"] svg { animation: liveStepSpin 1.2s linear infinite; color: var(--accent); }
+.live-step-mark > canvas.orb-live, .live-step-mark > canvas.orb-settle { animation: none; }
 .live-step-mark[data-state="failed"] { color: var(--warn); }
 .live-step-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-step[data-state="running"] .live-step-label { color: var(--text-primary); }
@@ -4509,5 +4509,3 @@ details.run-steps.live-list.live-generic:not([data-wait-user]) > summary { displ
 .live-step-thought { margin: 0 0 var(--s-1) calc(16px + var(--s-2) + 14px); color: var(--text-tertiary); font-size: var(--fs-meta); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .live-step-skip { flex: none; border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-secondary); font: inherit; font-size: var(--fs-meta); padding: 1px 10px; cursor: pointer; }
 .live-step-skip:disabled { cursor: default; color: var(--text-tertiary); }
-@keyframes liveStepSpin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .live-step-mark[data-state="running"] svg { animation: none; } }
