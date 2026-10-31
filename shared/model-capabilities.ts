@@ -116,9 +116,9 @@ export function unlistedModel(provider: string, id: string, siblings: readonly M
   });
 }
 
-/** 实测登记的首个事件等待上限；没有登记为 undefined。 */
+/** 在线目录会增加模型；同一 ChatGPT 传输协议的排队预算不依赖静态模型清单。 */
 export function firstEventTimeout(model: Pick<Model<Api>, "provider" | "id">): number | undefined {
-  return MEASURED.get(key(model))?.firstEventMs;
+  return MEASURED.get(key(model))?.firstEventMs ?? (model.provider === "openai-codex" ? 30_000 : undefined);
 }
 
 /** 实测登记的对冲时间点；没有登记为 undefined。 */

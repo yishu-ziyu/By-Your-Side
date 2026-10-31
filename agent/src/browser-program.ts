@@ -174,6 +174,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   value: unknown;
   steps: number;
   images: Array<{ type: "image"; data: string; mimeType: string }>;
+  imageSources: Array<{ imageIndex: number; tabId?: number; url?: string; width?: number; height?: number }>;
   /** 宿主按意图改写过的写法，各附一句规范写法；模型下次照写就不再靠宽容。 */
   notes: string[];
 }> {
@@ -197,6 +198,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   let program: QuickJSHandle | undefined;
   const pending = new Set<QuickJSDeferredPromise>();
   const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
+  const imageSources: Array<{ imageIndex: number; tabId?: number; url?: string; width?: number; height?: number }> = [];
   /** 已结束的步骤，按顺序；assert 停下时随结构化错误交给宿主。 */
   const trail: ProgramStep[] = [];
   /** 停下时如果是带结构的错误（assert），所有停止路径都抛它本身，不压成一行文字。 */
@@ -794,12 +796,20 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
           const data = shot.imageBase64;
           const mediaType = typeof shot.mediaType === "string" ? shot.mediaType : "image/png";
 
-          if (typeof data === "string") images.splice(0, images.length, { type: "image", data, mimeType: mediaType });
+          if (typeof data === "string") {
+            images.push({ type: "image", data, mimeType: mediaType });
+            imageSources.push({ imageIndex: images.length,
+              ...(typeof shot.tabId === "number" ? { tabId: shot.tabId } : {}),
+              ...(typeof shot.url === "string" ? { url: redactUrlCredentials(shot.url) } : {}),
+              ...(typeof shot.pixelWidth === "number" ? { width: shot.pixelWidth } : {}),
+              ...(typeof shot.pixelHeight === "number" ? { height: shot.pixelHeight } : {}),
+            });
+          }
           // 去掉 base64 后把真实截图元数据（像素/CSS 视口/DPR/tab/url/source 等）交给程序；
           // 程序内可核对坐标系与页面身份，图片走 images 通道。
           const meta = { ...shot };
           delete meta.imageBase64;
-          value = { ...meta, image: "attached to program result" };
+          value = { ...meta, image: "attached to program result", imageIndex: images.length };
         }
 
         const json = JSON.stringify(value ?? null);
@@ -884,7 +894,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
           if (value.length > 128_000) throw new Error("Program output too large; return a concise result");
 
-          return { value: JSON.parse(value), steps, images, notes: [...notes] };
+          return { value: JSON.parse(value), steps, images, imageSources, notes: [...notes] };
         } finally { state.value.dispose(); }
       }
 

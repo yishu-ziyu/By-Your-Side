@@ -23,6 +23,7 @@ import { measuredModelIds, providerConcurrency, thinkingProfile, unlistedModel, 
 import { gatedCall, gatedStream, ProviderGate, type ModelQueueWait, type QueuePurpose } from "./provider-gate.js";
 import { COMMANDCODE_PROVIDER_ID, CUSTOM_PROVIDER_ID, CUSTOM_ENDPOINT_ENV, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 import { codexIdentity, readCodexCatalog } from "./codex-catalog.js";
+import { compactCodexImages } from "./model-image-payload.js";
 
 // Pi 默认用变量路径按需加载订阅登录模块，打包后找不到文件；这里把设备码类登录直接打进来。
 // 需要本机回调服务的（Claude 订阅、OpenRouter）浏览器里用不了，明确报错。
@@ -460,7 +461,9 @@ function createCoreModelPort(
     };
 
     // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型默认先试 WebSocket，必失败再退回 SSE，每次都留一条假的连接失败。直接用 SSE。
-    return model.api === "openai-codex-responses" ? { ...merged, transport: "sse" as const } : merged;
+    return model.api === "openai-codex-responses" ? { ...merged, transport: "sse" as const,
+      onPayload: async (payload: unknown, selected: Model<Api>) => compactCodexImages(await merged.onPayload?.(payload, selected) ?? payload),
+    } : merged;
   };
 
   const gate = new ProviderGate(providerConcurrency);

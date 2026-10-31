@@ -1,0 +1,32 @@
+[
+  {
+    "variant": "compressed",
+    "chars": 525413,
+    "status": 200,
+    "headersMs": 5165,
+    "firstEventMs": 5750.900000035763,
+    "firstContentMs": 8854,
+    "types": [
+      "response.created",
+      "response.in_progress",
+      "response.output_item.added",
+      "response.reasoning_summary_part.added",
+      "response.reasoning_summary_text.delta"
+    ]
+  },
+  {
+    "variant": "original",
+    "chars": 2862365,
+    "status": 200,
+    "headersMs": 15068.399999976158,
+    "firstEventMs": 15417.199999988079,
+    "firstContentMs": 19879.399999976158,
+    "types": [
+      "response.created",
+      "response.in_progress",
+      "response.output_item.added",
+      "response.reasoning_summary_part.added",
+      "response.reasoning_summary_text.delta"
+    ]
+  }
+]
