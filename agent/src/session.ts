@@ -946,7 +946,7 @@ if(required.includes(key))candidates.set(key,attachment);
           })] : []),
           ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
           ...(artifactStore ? [createArtifactsTool({ emit: event => callbacks.emit(event), store: artifactStore })] : []),
-          createReadAttachmentTool(() => resultHost?.userAttachments() ?? []),
+          createReadAttachmentTool(() => resultHost?.userAttachments() ?? [], file => resultHost?.downloadedOriginal(file), () => resultHost?.modelSeesImages() ?? false),
         ];
 
       const restored = options.loop.session ? await PiSessionPersistence.open(options.loop.session) : undefined;
