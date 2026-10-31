@@ -508,7 +508,7 @@ export type AgentUiEvent =
   | { kind: "site_notes"; host: string; title?: string; notes: string[] }
   | { kind: "answer_sources"; sources: import("./answer-source.js").AnswerSource[] }
   /** 交付后的事实核对（agent/src/fact-check.ts）：problems 是给用户看的几句，空就是都对得上；answer 是被核对的回答开头，侧栏据此挂到那条回答下。 */
-  | { kind: "fact_check"; status: "done"; answer: string; problems: string[] }
+  | { kind: "fact_check"; status: "done"; answer: string; problems: string[]; replacement?: string }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
