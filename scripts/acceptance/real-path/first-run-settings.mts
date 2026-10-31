@@ -17,8 +17,7 @@ try {
   await until(async () => await rp.evaluate(page, `document.querySelector('#main-pick')?.checkVisibility()`) || undefined, 15000, '首次出现连接入口');
   await rp.screenshot(page, join(out, '1-first-screen.png'));
   assert.equal(await rp.evaluate(page, `document.querySelector('#main-model-picker').checkVisibility()`), false);
-  await rp.click(page, '#main-pick');
-  await until(async () => await rp.evaluate(page, `document.querySelector('[data-settings-panel="connections"]').checkVisibility()`) || undefined, 5000, '进入连接页');
+  assert.equal(await rp.evaluate(page, `document.querySelector('[data-settings-panel="models"] .connections-section').checkVisibility()`), true, '首次打开直接看到连接服务商');
   const first = await rp.evaluate(page, `(() => {
     const row=document.querySelector('.provider-option[data-provider="stepfun"]')?.getBoundingClientRect();
     return {open:document.querySelector('#provider-more').open, stepfunVisible:!!row && row.top>=0 && row.bottom<=innerHeight,
