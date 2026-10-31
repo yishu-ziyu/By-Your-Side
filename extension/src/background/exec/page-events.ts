@@ -80,6 +80,14 @@ export async function waitEvent(
 
     if (payload.danger !== undefined) download.danger = String(payload.danger);
 
+    if (payload.capturedFile && typeof payload.capturedFile === "object") {
+      const captured = payload.capturedFile as Record<string, unknown>;
+
+      if (typeof captured.dataBase64 === "string" && typeof captured.mimeType === "string") {
+        download.capturedFile = { dataBase64: captured.dataBase64, mimeType: captured.mimeType };
+      }
+    }
+
     return { ...base, download };
   }
 

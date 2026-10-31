@@ -108,6 +108,9 @@ export interface ImageAttachment {
   circle?: number;
 }
 
+/** 超过这个大小不读：pdf.js 和 zip 都要把整个文件放进内存。 */
+export const FILE_READ_MAX_BYTES = 50 * 1024 * 1024;
+
 /** 一份文件里抽出来的文字最多留这么多字；更长的截断并标 truncated。 */
 export const FILE_TEXT_MAX = 400_000;
 
@@ -823,6 +826,11 @@ export interface ToolContract {
         bytes?: number;
         /** Chrome 判为可能有害、等用户确认保留时的 danger 值。 */
         danger?: string;
+        /** 只存在于 background → offscreen 的内部回执；工具层解析后删除，不交给模型。 */
+        capturedFile?: { dataBase64: string; mimeType: string };
+        /** 已注册进当前会话的下载附件。 */
+        attachment?: { id: string; name: string; truncated?: true };
+        attachmentError?: string;
       };
       fileChooser?: { chooserId: string; multiple: boolean; backendNodeId: number };
     };

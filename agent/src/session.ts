@@ -51,7 +51,7 @@ import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
 import { DurableAgentLoop } from "./durable-loop.js";
 import type { Storage } from "@earendil-works/pi-durable";
-import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, ImageAttachment, ModelOption, PageContext, TabInfo } from "../../shared/protocol.js";
+import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, FileAttachment, ImageAttachment, ModelOption, PageContext, TabInfo } from "../../shared/protocol.js";
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliverySourceRef, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { attachedPageImages, createReadAttachmentTool, withAttachedFiles } from "./attached-files.js";
@@ -1096,6 +1096,40 @@ if(required.includes(key))candidates.set(key,attachment);
     if (attachments?.length) this.attachedFiles = [...this.attachedFiles.filter(a => !attachments.some(b => b.id === a.id)), ...attachments].slice(-16);
   }
 
+  private pendingDownloadAttachments: FileAttachment[] = [];
+
+  private downloadedOriginals = new Map<string, { dataBase64: string; size: number }>();
+
+  /** 下载正文进入当前会话；大文件的原件只留内存，不随检查点持久化。 */
+  async rememberDownloadedAttachment(attachment: FileAttachment, dataBase64: string): Promise<FileAttachment> {
+    this.rememberAttachments([attachment]);
+    this.pendingDownloadAttachments = [...this.pendingDownloadAttachments.filter(item => item.id !== attachment.id), attachment];
+    this.downloadedOriginals.delete(attachment.id);
+    this.downloadedOriginals.set(attachment.id, { dataBase64, size: attachment.size });
+    let total = [...this.downloadedOriginals.values()].reduce((sum, item) => sum + item.size, 0);
+
+    for (const [id, item] of this.downloadedOriginals) {
+      if (total <= 50 * 1024 * 1024) break;
+      this.downloadedOriginals.delete(id);
+      total -= item.size;
+    }
+
+    await Promise.resolve(this.persistRecoveryAttachments(this.deliveryRunId(), [attachment])).catch(() => {});
+
+    return attachment;
+  }
+
+  downloadedOriginal(attachment: Attachment): string | undefined {
+    return attachment.type === "file" ? this.downloadedOriginals.get(attachment.id)?.dataBase64 : undefined;
+  }
+
+  private takePendingDownloadAttachments(): FileAttachment[] {
+    const pending = this.pendingDownloadAttachments;
+    this.pendingDownloadAttachments = [];
+
+    return pending;
+  }
+
   /** 本会话文件区；没有 artifacts 工具（worker、非交付会话）或它未启用时没有，browser.saveFile 随之不可用。 */
   fileStore(): ArtifactStore | undefined {
     return this.artifactStore && this.isToolActive("artifacts") ? this.artifactStore : undefined;
@@ -1500,6 +1534,7 @@ return;}
       return;
     }
 
+    attachments = [...this.takePendingDownloadAttachments(), ...(attachments ?? [])];
     const finalText = withAttachments(withPageContext(withVoiceHistory(text, inputOptions?.voiceHistory), context), attachments, this.modelSeesImages());
     this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset(); this.runClock?.reset();
     // 新的一次用户提问是新一轮：上一轮交付过结果，不代表这一轮不会真正失败。

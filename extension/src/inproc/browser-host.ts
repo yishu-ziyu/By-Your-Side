@@ -19,6 +19,26 @@ import { IdbDocument } from "./document-idb.js";
 import { pushedMiniApps, pushedSelfUse, pushedTranslationStyle, pushedContinuation, receiveCoreSettings } from "../shared/core-settings.js";
 import { credentialContents, modelConfig } from "../settings/connections.js";
 
+type FileReadModule = typeof import("../sidepanel/file-read/index.js");
+
+let fileReadModule: Promise<FileReadModule> | null = null;
+
+function loadFileRead(): Promise<FileReadModule> {
+  fileReadModule ??= import(chrome.runtime.getURL("file-read.js")) as Promise<FileReadModule>;
+  fileReadModule.catch(() => { fileReadModule = null; });
+
+  return fileReadModule;
+}
+
+function originalBytes(dataBase64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(dataBase64);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+
+  return bytes;
+}
+
 type Inbound = ClientMessage
   | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; connections?: unknown; credentials: StoredCredentials; codexCatalog?: unknown }
   | { type: "inproc_catalog"; codexCatalog?: unknown }
@@ -130,6 +150,12 @@ export function startInprocHost(deps: InprocHostDeps): void {
         miniApps: async () => pushedMiniApps(),
         continuationEnabled: pushedContinuation,
         translationStyle: () => pushedTranslationStyle(),
+        readDownloadedFile: async input => {
+          const read = await loadFileRead();
+          const file = new File([originalBytes(input.dataBase64)], input.name, { type: input.mimeType });
+
+          return read.readAttachmentFile(file, input.id);
+        },
         });
       },
       voiceKey: async () => {
