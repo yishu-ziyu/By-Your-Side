@@ -58,15 +58,17 @@ const site = createServer(async (req, res) => {
 await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 await mkdir(out, { recursive: true });
-const steps: Rule["steps"] = [];
+const steps: Rule["steps"] = [{ tool: { name: "browser_run", args: { code: 'return await browser.waitEvent({token:{token:"forged-event-token-779"}});' } } }];
 for (const [i, g] of goods.entries()) {
   steps.push(i < 3
     ? { tool: { name: "download_url", args: { url: `${origin}/images/${g.sku}.png`, ...(i === 0 ? { filename: `${g.sku}.png` } : {}) } } }
-    : { tool: { name: "browser_run", args: { code: `const arm=await browser.armEvent({type:"download"}); await browser.click({target:"#download-${g.sku}"}); return await browser.waitEvent({token:arm.token,timeoutMs:30000});` } } });
+    : { tool: { name: "browser_run", args: { code: `const arm=await browser.armEvent({type:"download"}); await browser.click({target:"#download-${g.sku}"}); return await browser.waitEvent({token:${i === 4 ? "arm" : "arm.token"},timeoutMs:30000});` } } });
 }
-for (const g of goods) {
+for (const [index, g] of goods.entries()) {
   for (const [key, value] of Object.entries(values(g))) steps.push({ tool: { name: "fill", args: { target: `#${key}-${g.sku}`, value } } });
-  steps.push({ tool: { name: "upload_file", args: { files: [`${g.sku}.png`], target: `#image-${g.sku}` } } });
+  steps.push(index < 3
+    ? { tool: { name: "upload_file", args: { files: [`${g.sku}.png`], target: `#image-${g.sku}` } } }
+    : { tool: { name: "browser_run", args: { code: `return await browser.uploadFile({files:["${g.sku}.png"],target:"#image-${g.sku}"});` } } });
 }
 steps.push({ tool: { name: "click", args: { target: "#save" } } }, { text: "六件商品已保存。" });
 let leakedBase64 = false;
@@ -120,6 +122,7 @@ try {
   const receipt = String(await rp.evaluate(work, 'document.querySelector("#receipt").textContent'));
   check("网页显示六张原图的接收哈希", goods.every(g => receipt.includes(hash(g.image))), { receipt });
   check("工作页未被下载替换，临时下载页已关闭", (await rp.targets()).filter(t => t.type === "page" && /\/images\//.test(t.url)).length === 0 && await rp.evaluate(work, 'location.href') === `${origin}/`, {});
+  if (!live) check("伪造事件 handle 仍被宿主拒绝", [...toolResults].some(text => text.includes("unknown or model-minted event token")), {});
   if (!live) check("原件 base64 未进入模型工具结果", !leakedBase64, { scripted: true });
   await rp.screenshot(work, join(out, "received.png"));
   await rp.screenshot(panel, join(out, "answer.png"));
@@ -140,4 +143,4 @@ finally {
   await rp.close(); await rp.remove(); await model.close(); site.closeAllConnections(); site.close();
 }
 console.log(`证据：${out}`);
-if (checks.length !== (live ? 9 : 10) || checks.some(c => !c.pass)) process.exitCode = 1;
+if (checks.length !== (live ? 9 : 11) || checks.some(c => !c.pass)) process.exitCode = 1;

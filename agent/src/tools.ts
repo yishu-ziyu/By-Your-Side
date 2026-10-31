@@ -372,6 +372,18 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
     if (memory) params = { ...params, memory };
 
+    if (name === "upload_file") {
+      const names = params.files;
+      if (!Array.isArray(names) || names.length < 1 || names.length > 8 || !names.every((file): file is string => typeof file === "string" && file.trim().length > 0)) {
+        throw new Error("上传需要 1–8 个当前会话中的文件名，操作未执行。");
+      }
+      // Standalone tools and browser programs must resolve the same authorized originals before reaching the page.
+      params = { ...params, files: await Promise.all(names.map(file => uploadPayload(file.trim()))) };
+    }
+    if ((name === "wait_event" || name === "disarm_event") && params.token && typeof params.token === "object" && "token" in params.token && typeof params.token.token === "string") {
+      params = { ...params, token: params.token.token };
+    }
+
     const epoch = scope?.epoch;
     const signal = scope?.signal;
     // SDK 调用身份（含 browser_run 子步骤）随 RPC 登记，执行事实才能沿真实事件回到任务账本。
@@ -1084,8 +1096,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         target: Type.Optional(Type.String({ description: 'File input, its label, or an upload button containing it: "@N" ref, "loc=css:..." locator, or raw CSS selector. Omit when the page has one file input.' })),
       }),
       execute: async (_id, params) => {
-        const payload = await Promise.all(params.files.map(name => uploadPayload(name.trim())));
-        const data = (await call("upload_file", { files: payload, ...(params.target ? { target: params.target } : {}) })) as ToolContract["upload_file"]["data"];
+        const data = (await call("upload_file", params)) as ToolContract["upload_file"]["data"];
         const list = data.files.map(f => `${f.name} (${f.size} B)`).join(", ");
 
         return textResult(`Put ${data.files.length} file(s) into the file input; read back from the page: ${list}. Not submitted yet unless the page uploads on change: check the page, and submit if the task says to upload.`, data);

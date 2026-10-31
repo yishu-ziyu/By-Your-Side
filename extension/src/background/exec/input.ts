@@ -2638,6 +2638,11 @@ export async function uploadFile(
   sessionId: string = LEAD_SESSION_ID,
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<ToolContract["upload_file"]["data"]> {
+  if (!Array.isArray(params.files) || params.files.length < 1 || params.files.length > 8 || params.files.some(file =>
+    !file || typeof file !== "object" || typeof file.name !== "string" || !file.name.trim() || typeof file.type !== "string"
+    || (typeof file.text === "string") === (typeof file.base64 === "string"))) {
+    throw notExecuted(new Error("没有收到有效的文件原件，上传未执行。"));
+  }
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");

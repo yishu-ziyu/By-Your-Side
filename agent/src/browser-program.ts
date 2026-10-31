@@ -77,7 +77,7 @@ const BROWSER_PROGRAM_HELPERS = [
   { name: "waitForNetworkIdle", summary: "纳入范围的在途请求为 0 且持续静默；捕获不完整不冒充空闲（≠业务完成）", composed: "network 在途集合轮询" },
   { name: "scrollToBottomUntil", summary: "滚动直到条件成立或到底", composed: "scroll + read_element / js 条件" },
   { name: "armEvent", summary: "armEvent({type,timeoutMs?}) 触发前订阅 popup/download/filechooser；返回对象 {token,type,tabId,timeoutMs}，不是 token 字符串（串行队列不阻塞）", composed: "arm_event" },
-  { name: "waitEvent", summary: "waitEvent({token:arm.token,timeoutMs?}) 消费 armEvent 返回对象中的 token 字符串；先 arm，再动作，再 wait。download.attachment.name 可交给 upload_file 上传原件", composed: "wait_event" },
+  { name: "waitEvent", summary: "waitEvent({token:arm.token,timeoutMs?}) 消费宿主事件；token 也可传 armEvent 返回的整个对象，仍由宿主核验。先 arm，再动作，再 wait。download.attachment.name 可交给 upload_file 上传原件", composed: "wait_event" },
   { name: "disarmEvent", summary: "取消尚未消费的 arm", composed: "disarm_event" },
   { name: "consumeEvents", summary: "读清本页缓冲事件", composed: "consume_events" },
   { name: "saveFile", summary: "saveFile({filename,content,deliver?}) 把程序手上的文本存成本会话文件（与 artifacts 同一文件区；deliver 为真才有侧栏卡片），返回 {filename,chars,lines,overwritten,shown}，内容不回到上下文", composed: "宿主会话文件区" },
