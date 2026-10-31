@@ -6,6 +6,7 @@ import { attachAnswerSources } from "./answer-sources.js";
 import { renderFactCheck } from "./fact-check-note.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
+import { answerSkeleton } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { observeForCue } from "./cue.js";
@@ -84,7 +85,6 @@ import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDi
 import { isWriteTool } from "../../../shared/effect-policy.js";
 import { conversationDayGroup, conversationOutcome, conversationRelativeTime, otherTaskCopy, resultCardCopy } from "./selectors.js";
 import { liveStatus, runMetaLine, STEER_OTHER_WAY, STEER_SKIP } from "../../../shared/run-status.js";
-import { mountLiveSteps, type LiveStep, type LiveSteps } from "./live-steps.js";
 import { describeTimeout } from "../../../shared/timeouts.js";
 import { TaskBar, stateHeadline } from "./task-bar.js";
 import type { TaskView } from "../../../shared/task-view.js";
@@ -1894,10 +1894,10 @@ interface RunHost {
   graph: LiveGraph;
   beatEl: HTMLElement;
   /** 回答位置的骨架：回答或卡片一接上就由样式收起淡出。 */
+  skeleton: HTMLElement;
   lastToolName: string | null;
   /** 在途的每一步是不是只看页面、等页面：全是才换成扫视的形态，有一步在动手就按动手画。 */
   readingTools: Map<string, boolean>;
-  live: LiveSteps;
 }
 
 const ACTION_ICONS = {
@@ -2784,9 +2784,9 @@ function ensureRun(): NonNullable<typeof currentRun> {
   const trail = document.createElement("div");
   trail.className = "run-trail";
   trail.hidden = true;
-  const live = mountLiveSteps(() => sendInput(STEER_SKIP));
-  graph.el.after(live.el);
-  live.el.after(trail);
+  graph.el.after(trail);
+  const skeleton = answerSkeleton();
+  trail.after(skeleton);
   const start = runStartAt || eventTime();
   retirePlanCard();
   taskPlan.adopt(root, body);
@@ -2824,12 +2824,11 @@ function ensureRun(): NonNullable<typeof currentRun> {
     receipt: null,
     graph,
     beatEl: beat,
+    skeleton,
     lastToolName: null,
     readingTools: new Map(),
-    live,
   };
   startLiveSeconds(currentRun, start);
-  paintLive(currentRun);
 
   return currentRun;
 }
@@ -2897,7 +2896,7 @@ function startLiveSeconds(run: RunHost, from = Date.now()): void {
   run.timer = align;
 }
 
-/** 第一行的秒数：贴在动词后面。有动作就从 1 秒写。 */
+/** 第一行的秒数：贴在动词后面。有动作就从 1 秒写；超过 10 秒改成「仍在处理」。 */
 function liveSeconds(run: RunHost): string {
   return refreshLiveStatus(run);
 }
@@ -2906,50 +2905,48 @@ function runningTool(run: RunHost) {
   return [...toolChips.values()].find(entry => entry.chip.isConnected && run.body.contains(entry.chip));
 }
 
-/** 进行中的步骤表：从过程块里现有的步骤读出来画，过程块被记录同步重画后也不丢。回放时不画。 */
-function paintLive(run: RunHost): void {
-  if (applyingHistory || currentRun !== run) return;
-  run.root.classList.add("live-list");
-  // 步骤表已经写出在做哪一步，笼统的「正在：…」那行就不重复；接着做、核对、重试这类具体状态照常露出。
-  const title = run.titleEl.textContent ?? "";
-  run.root.classList.toggle("live-generic", title === "" || title.startsWith("正在："));
-  const steps: LiveStep[] = [];
-  for (const chip of run.body.querySelectorAll<HTMLElement>(".chip:not(.note)")) {
-    const from = Number(chip.dataset.start);
-    if (!Number.isFinite(from)) continue;
-    const to = Number(chip.dataset.end);
-    // 记录同步重画的步骤不带进行中的样式，以有没有结束时刻为准。
-    const state = !Number.isFinite(to) ? "running" : chip.classList.contains("error") ? "failed" : "done";
-    steps.push({ id: `tool:${chip.dataset.callId ?? from}`, label: chip.querySelector(".chip-label")?.textContent ?? "", state, from, to: Number.isFinite(to) ? to : undefined, tool: true });
-  }
-  for (const seg of run.thinkSegments) {
-    const thought = run.body.querySelector(`details.thinking[data-think-from="${seg.start}"]`);
-    if (seg.end - seg.start >= SHOW_SECS_MS) steps.push({ id: `model:${seg.start}`, label: thought ? "思考" : "等模型回应", state: "done", from: seg.start, to: seg.end, tool: false });
-  }
-  steps.sort((a, b) => a.from - b.from);
-  const running = steps.some(step => step.state === "running");
-  // 没有一步在跑就是轮到模型：从这段思考开始算，没记到就从上一步结束算。
-  const lastEnd = Math.max(run.start, ...steps.map(step => step.to ?? step.from));
-  const from = Number.isFinite(run.thinkFrom) ? run.thinkFrom : lastEnd;
-  const block = run.body.querySelector<HTMLElement>(`details.thinking[data-think-from="${from}"] > pre`);
-  const model = running || run.answer ? null : { from, thought: block?.textContent?.trim() || null };
-  run.live.render(steps, model, Date.now());
-}
-
 function refreshLiveStatus(run: RunHost): string {
-  paintLive(run);
-  if (run.root.hasAttribute("data-wait-user") || applyingHistory) return "";
+  if (run.root.hasAttribute("data-wait-user") || applyingHistory) {
+    paintEscalate(run, false);
+    return "";
+  }
   const tool = runningTool(run);
   const from = Number.isFinite(run.thinkFrom) ? run.thinkFrom : tool && Number.isFinite(tool.start) ? tool.start : Number.NaN;
   const step = Number.isFinite(run.thinkFrom) ? "思考" : (tool?.chip.dataset.past || run.lastToolShort || "这一步");
   const status = liveStatus({ step: plainStep(step), from, now: Date.now() });
-  if (!status) return "";
+  if (!status) {
+    paintEscalate(run, false);
+    return "";
+  }
   // 只换通用的那句：续做、核对、重试这类更具体的状态留着，下一个动作开始时自然换掉。
   const shown = run.titleEl.textContent ?? "";
-  if (shown !== status.title && (shown === "" || shown.startsWith("正在："))) setRunTitle(run, status.title, true, Number.isFinite(run.thinkFrom) ? "think" : undefined);
+  if (shown !== status.title && (shown === "" || shown.startsWith("正在：") || shown === "仍在处理")) setRunTitle(run, status.title, true, Number.isFinite(run.thinkFrom) ? "think" : undefined);
+  paintEscalate(run, status.escalated);
   return status.time;
 }
 
+function paintEscalate(run: RunHost, on: boolean): void {
+  const existing = run.root.querySelector<HTMLElement>(":scope > summary .run-escalate");
+  if (!on) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
+  const acts = document.createElement("span");
+  acts.className = "run-escalate";
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.textContent = "跳过";
+  skip.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_SKIP); };
+  const other = document.createElement("button");
+  other.type = "button";
+  other.textContent = "换个方法";
+  other.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_OTHER_WAY); };
+  acts.append(skip, other);
+  run.metaEl.after(acts);
+}
+
+/** 超过 10 秒由 refreshLiveStatus 升级成「仍在处理」；这里不再单独换标题。 */
 function maybeStaleWait(run: RunHost): void {
   refreshLiveStatus(run);
 }
@@ -3281,10 +3278,8 @@ function finishRun(): void {
   runStartAt = 0;
 
   if (!run) return;
-  // 超时那一步的重试、换个方法、中止只对还在跑的这一轮有意义，收尾就收掉。
+  // 跳过、换个方法、中止都只对还在跑的这一轮有意义，收尾就收掉。
   for (const acts of run.root.querySelectorAll(".run-escalate")) acts.remove();
-  run.live.finish();
-  run.root.classList.remove("live-list", "live-generic");
   // 计划那一行只陪这一轮任务；做完、停下、出错都收掉，不挂到下一件事上。
   taskPlan.endRun();
   lastRun = run;
@@ -3295,6 +3290,10 @@ function finishRun(): void {
   closeThink(run, endedAt);
   // 收尾后过程只留回执，进行中的说明行不再单列。
   run.trail.remove();
+  // 骨架先按样式淡出，淡完再拿掉；没接上回答就结束（出错、停下、只有卡片）时也不留。
+  const skeleton = run.skeleton;
+  skeleton.dataset.state = "gone";
+  window.setTimeout(() => skeleton.remove(), reducedMotion() ? 0 : D_STATE);
   // 空 run（纯文本回复，无思考/工具步骤）不留壳；只读回合（问答、读页）正常结束也不留过程行，
   // 用户看回答和页面本身即可。动过页面、失败或被停止时才保留「查看执行过程」。
   const hasSteps = Array.from(run.body.children).some(child => !(child as HTMLElement).hidden);
@@ -3825,6 +3824,8 @@ function appendLeadAnswer(delta: string): void {
   if (leadAnswer && leadAnswerTurnClosed) foldLeadAnswer();
 
   if (!leadAnswer) {
+    // 这一轮出过字，骨架就不再回来：这段正文之后被收进过程时，回答位置空着也不再放骨架。
+    run.skeleton.dataset.state = "gone";
     quietRunForProse();
     leadAnswer = addMsg("msg assistant markdown streaming", "");
     leadAnswerText = "";
@@ -3942,6 +3943,7 @@ function appendDelta(kind: "assistant" | "thinking", delta: string): void {
   if (kind === "assistant") {
     // 流式 Markdown：累积原文，每个 delta 重渲染（marked 为同步解析，量小无压力）
     if (!currentAssistant) {
+      if (currentRun) currentRun.skeleton.dataset.state = "gone";
       currentAssistant = addMsg("msg assistant markdown streaming", "");
     }
     currentAssistantText += delta;
@@ -4219,9 +4221,6 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
 
   chip.onclick = () => toggleChipDetail(entry);
   group.row.appendChild(chip);
-  chip.dataset.start = String(entry.start);
-  chip.dataset.callId = ev.toolCallId;
-  paintLive(run);
   toolChips.set(ev.toolCallId, entry);
   run.graph.start({
     id: ev.toolCallId,
@@ -4357,8 +4356,6 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     }
   }
 
-  entry.chip.dataset.end = String(end);
-  if (run) paintLive(run);
   run?.graph.end(ev.toolCallId, {
     failed,
     reason: ev.reason ?? (failed ? plainToolError(ev.resultText ?? "") : undefined),
@@ -4476,10 +4473,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
     }
     case "text_delta":
       // 回答开始出字：这段思考结束。
-      if (currentRun) {
-        closeThink(currentRun, eventTime());
-        paintLive(currentRun);
-      }
+      if (currentRun) closeThink(currentRun, eventTime());
 
       if (leadDeliveryMode === "explicit") {
         if (leadToolUsed) appendLeadDelta(ev.delta);
@@ -4491,7 +4485,6 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "thinking_delta":
       appendDelta("thinking", ev.delta);
-      if (currentRun) paintLive(currentRun);
       break;
     case "tool_start":
       // 正文之后又调了工具：那段正文是过渡话，先收进执行过程，再记这次工具调用。
