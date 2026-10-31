@@ -37,7 +37,7 @@ import type {VoiceTurnPreparation} from './voice-model.js';
 import {VoiceIntentError} from './voice-errors.js';
 import {pageRecoveryKey} from './task-recovery.js';
 import {redactTaskSecrets, type TaskHistoryStore} from './task-history.js';
-import type { LearnedOperationStore } from './learned-operations.js';
+import { runLearnedOperation, type LearnedOperationStore } from './learned-operations.js';
 import type { SiteNotesStore } from './site-notes.js';
 import {memoryHostOfUrl} from '../../shared/memory.js';
 import type {BrowseHabit} from '../../shared/browse-habits.js';
@@ -2147,10 +2147,30 @@ return;}
       try {
         if (!this.learnedOperations) throw new Error("可直接运行的技能不可用");
         if (message.type === "skill_operation_delete") await this.learnedOperations.delete(message.id);
-        const operations = (await this.learnedOperations.list()).map(({ id, name, purpose, site }) => ({ id, name, purpose, site }));
+        const operations = (await this.learnedOperations.list()).map(({ id, name, purpose, site, inputSchema }) => ({ id, name, purpose, site, inputSchema }));
         this.emit({ type: "skill_operations_result", conversationId: id, requestId: message.requestId, ok: true, operations });
       } catch (error) {
         this.emit({ type: "skill_operations_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
+      }
+
+      return;
+    }
+
+    if (message.type === "skill_operation_run") {
+      try {
+        if (!this.learnedOperations) throw new Error("可直接运行的技能不可用");
+        const operation = await this.learnedOperations.get(message.id);
+        if (!operation) {
+          this.emit({ type: "skill_operation_run_result", conversationId: id, requestId: message.requestId, ok: true, result: { status: "invalid_input", operationId: message.id, reason: "这个技能已经删除。请在技能管理里移除它的入口。", steps: 0 } });
+          return;
+        }
+        // 网页按钮带着它所在标签页来；侧栏则带当前页。先认领这页，避免复用到同站的另一个工作标签页。
+        if (message.tabId !== undefined) await entry.runtime.rpc.call("dialog_info", { tabId: message.tabId });
+        const result = await runLearnedOperation(operation, message.input, { call: (name, params) => entry.runtime.rpc.call(name, params) });
+        await this.learnedOperations.recordRun(operation.id, result).catch(() => {});
+        this.emit({ type: "skill_operation_run_result", conversationId: id, requestId: message.requestId, ok: true, result });
+      } catch (error) {
+        this.emit({ type: "skill_operation_run_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
       }
 
       return;

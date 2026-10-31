@@ -216,14 +216,16 @@ try {
   check("复用那一轮写明用了哪个技能", !!reusedTitle?.includes("用了技能「查询订单」"), reusedTitle);
   await rp.screenshot(panel, join(out, "reused.png"));
 
-  // 在这个网站上打 /：技能菜单里有这条可直接运行的技能，选中后输入框填好技能名等用户接着写。
+  // 在这个网站上打 /：选中后直接问运行参数，不再变成发给模型的提示词。
   await rp.click(panel, "#input");
   await rp.typeText(panel, "/");
   await until(() => rp.evaluate(panel, `!document.querySelector("#pskill-menu")?.hidden && [...document.querySelectorAll("#pskill-menu .pskill-op")].some(r => r.textContent.includes("查询订单") && r.textContent.includes("直接运行"))`), 15_000, "/ 菜单出现直接运行的技能");
   await rp.screenshot(panel, join(out, "slash-menu.png"));
   await rp.evaluate(panel, `document.querySelector("#pskill-menu .pskill-op").click();true`);
-  const picked = await rp.evaluate(panel, `document.querySelector("#input").value`);
-  check("选中技能后输入框填好技能名", picked === "用技能「查询订单」：", picked as Json);
+  await until(() => rp.evaluate(panel, `!!document.querySelector("[data-operation-form] input[name=query]")`), 10_000, "直接运行先填参数");
+  await rp.evaluate(panel, `(()=>{document.querySelector("[data-operation-form] input[name=query]").value="beta";document.querySelector("[data-operation-form]").requestSubmit();return true})()`);
+  await until(() => rp.evaluate(panel, `document.querySelector(".skill-operation-result")?.textContent.includes("beta-fresh-901")&&document.querySelector(".skill-operation-result")?.textContent.includes("未调用模型")`), 30_000, "斜杠入口直接运行");
+  check("选中技能后直接运行并显示新数据", true, await rp.evaluate(panel, `document.querySelector(".skill-operation-result")?.textContent`) as Json);
   await rp.evaluate(panel, `(()=>{const i=document.querySelector("#input");i.value="/";i.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   await until(() => rp.evaluate(panel, `!document.querySelector("#pskill-menu")?.hidden`), 10_000, "/ 菜单再次打开");
   await rp.evaluate(panel, `document.querySelector("#pskill-menu .pskill-manage-entry").click();true`);
