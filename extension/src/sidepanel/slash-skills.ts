@@ -11,6 +11,8 @@ import { Zap, createElement as icon } from "lucide";
 import type { SkillOperationSummary } from "../../../shared/protocol.js";
 import { deleteSkillOperation, knownSkillOperations, onSkillOperationsChange, refreshSkillOperations, skillOperationsFor } from "./skill-operations.js";
 import { targetWindowId } from "./target-window.js";
+import { onSkillPackagesChange, removeSkillPackageConfig, saveSkillPackageConfig, skillPackageConfig } from "./skill-packages.js";
+import type { JsonObject, JsonSchema } from "../../../shared/learned-operations.js";
 
 interface PromptSkill {
   id: string;
@@ -94,11 +96,60 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return node;
 }
 
+interface OperationField {
+  name: string;
+  read: () => unknown;
+}
+
+function appendOperationFields(form: HTMLElement, schema: JsonSchema, values: JsonObject): OperationField[] {
+  const properties = schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+    ? Object.entries(schema.properties as Record<string, JsonSchema>) : [];
+  return properties.map(([name, fieldSchema]) => {
+    const wrap = el("label", "pskill-field");
+    wrap.append(el("span", undefined, name));
+    const initial = values[name];
+    const type = Array.isArray(fieldSchema.type) ? "json" : fieldSchema.type;
+    let input: HTMLInputElement | HTMLTextAreaElement;
+    if (type === "boolean") {
+      input = el("input");
+      input.type = "checkbox";
+      input.checked = initial === true;
+    } else if (type === "string" || type === "number" || type === "integer") {
+      input = el("input");
+      input.type = type === "string" ? "text" : "number";
+      if (type === "integer") input.step = "1";
+      input.value = initial == null ? "" : String(initial);
+    } else {
+      input = el("textarea");
+      input.rows = 2;
+      input.value = initial === undefined ? "" : JSON.stringify(initial);
+      input.placeholder = "JSON";
+    }
+    input.name = name;
+    wrap.append(input);
+    form.append(wrap);
+    return { name, read: () => {
+      if (type === "boolean") return (input as HTMLInputElement).checked;
+      if (type === "number" || type === "integer") return input.value === "" ? undefined : Number(input.value);
+      if (type === "string") return input.value;
+      if (!input.value.trim()) return undefined;
+      return JSON.parse(input.value) as unknown;
+    } };
+  });
+}
+
+function operationInputComplete(schema: JsonSchema, input: JsonObject): boolean {
+  const required = Array.isArray(schema.required) ? schema.required.filter((key): key is string => typeof key === "string") : [];
+  return required.every(key => input[key] !== undefined);
+}
+
 interface SlashSkillsOptions {
   composerEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
   /** 用正常发送路径发出这段文字（会附带当前页面上下文）。 */
   run: (text: string) => void;
+  /** 两个直接入口共用：给定技能 ID 和参数，后台直接运行，不变成模型提示词。 */
+  runOperation: (operation: SkillOperationSummary, input: JsonObject) => void;
   /** 这条消息是不是最近一个核对做成的任务的请求：是的话「存成技能」可以存成直接运行。 */
   verifiedRequest: (bubble: HTMLElement) => boolean;
 }
@@ -112,7 +163,7 @@ interface SlashSkills {
   saveFromText: (text: string) => void;
 }
 
-export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: SlashSkillsOptions): SlashSkills {
+export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verifiedRequest }: SlashSkillsOptions): SlashSkills {
   let skills: PromptSkill[] = [];
   /** 用户眼前网页的地址：只列这个网站上能直接运行的技能。 */
   let pageUrl: string | null = null;
@@ -175,6 +226,11 @@ export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: 
   onSkillOperationsChange(() => {
     refresh();
 
+    if (!manage.hidden && !editing) renderManageList();
+  });
+
+  onSkillPackagesChange(() => {
+    refresh();
     if (!manage.hidden && !editing) renderManageList();
   });
 
@@ -262,11 +318,8 @@ export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: 
 
  return; }
 
-    // 直接运行的技能要一组新参数：把名字放进输入框，用户接着写这次要查的内容。
     if (row.kind === "operation") {
-      setInput(`用技能「${row.operation.name}」：`);
-      inputEl.focus({ preventScroll: true });
-
+      startOperation(row.operation);
       return;
     }
 
@@ -279,6 +332,54 @@ export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: 
   }
 
   // ── 运行与澄清 ───────────────────────────────────────
+
+  function startOperation(operation: SkillOperationSummary): void {
+    const configured = skillPackageConfig(operation.id)?.input ?? {};
+    if (operationInputComplete(operation.inputSchema, configured)) {
+      setInput("");
+      runOperation(operation, configured);
+      inputEl.focus({ preventScroll: true });
+      return;
+    }
+
+    setInput("");
+    const card = el("form", "pskill-clarify");
+    card.dataset.operationForm = "";
+    card.setAttribute("aria-label", `运行「${operation.name}」`);
+    const title = el("div", "pskill-clarify-title");
+    title.append(icon(Zap), document.createTextNode(` ${operation.name}`));
+    card.append(title);
+    const fields = appendOperationFields(card, operation.inputSchema, configured);
+    const error = el("p", "pskill-error");
+    error.hidden = true;
+    card.append(error);
+    const actions = el("div", "pskill-actions");
+    const cancel = el("button", "pskill-btn", "取消");
+    cancel.type = "button";
+    const go = el("button", "pskill-btn primary", "运行");
+    go.type = "submit";
+    actions.append(cancel, go);
+    card.append(actions);
+    const finish = (send: boolean): void => {
+      if (!send) { card.remove(); clarify = null; inputEl.focus({ preventScroll: true }); return; }
+      try {
+        const input = Object.fromEntries(fields.map(field => [field.name, field.read()]));
+        card.remove();
+        clarify = null;
+        runOperation(operation, input);
+        inputEl.focus({ preventScroll: true });
+      } catch {
+        error.textContent = "参数里的 JSON 格式不正确。";
+        error.hidden = false;
+      }
+    };
+    card.addEventListener("submit", event => { event.preventDefault(); finish(true); });
+    cancel.addEventListener("click", () => finish(false));
+    card.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finish(false); } });
+    clarify = card;
+    host.insertBefore(card, composerEl);
+    card.querySelector<HTMLElement>("input, textarea")?.focus({ preventScroll: true });
+  }
 
   function start(skill: PromptSkill): void {
     const questions = skill.questions ?? [];
@@ -406,10 +507,14 @@ export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: 
     }
 
     for (const operation of knownSkillOperations()) {
-      const row = el("div", "pskill-row");
+      const row = el("div", "pskill-row pskill-op-row");
       const glyph = el("span", "pskill-emoji");
       glyph.append(icon(Zap));
       row.append(glyph, el("span", "pskill-name", operation.name), el("span", "pskill-badge", siteLabel(operation.site)));
+      const config = el("button", "pskill-btn", "配置");
+      config.type = "button";
+      config.dataset.packageConfig = "";
+      config.addEventListener("click", () => renderOperationConfig(operation));
       const del = el("button", "pskill-btn danger", "删除");
       del.type = "button";
       del.addEventListener("click", () => {
@@ -419,12 +524,16 @@ export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: 
 
         del.disabled = true;
 
-        if (!deleteSkillOperation(operation.id, ok => { if (!ok) { del.disabled = false; del.textContent = "没删成，再试"; } })) {
+        if (!deleteSkillOperation(operation.id, ok => {
+          if (ok) { void removeSkillPackageConfig(operation.id); return; }
+          del.disabled = false;
+          del.textContent = "没删成，再试";
+        })) {
           del.disabled = false;
           del.textContent = "没连上，再试";
         }
       });
-      row.append(del);
+      row.append(config, del);
       list.append(row);
     }
 
@@ -435,6 +544,58 @@ export function mountSlashSkills({ composerEl, inputEl, run, verifiedRequest }: 
     add.addEventListener("click", () => renderEditor(null));
     manage.append(add);
     (manage.querySelector<HTMLButtonElement>(".pskill-row .pskill-btn") ?? add).focus({ preventScroll: true });
+  }
+
+  function renderOperationConfig(operation: SkillOperationSummary): void {
+    editing = true;
+    manage.replaceChildren(sheetHead(`配置「${operation.name}」`));
+    manage.append(el("p", "pskill-note", operation.purpose));
+    const form = el("form", "pskill-form");
+    form.dataset.packageForm = "";
+    const current = skillPackageConfig(operation.id);
+    const toggle = (label: string, checked: boolean, attribute: string): HTMLInputElement => {
+      const input = el("input");
+      input.type = "checkbox";
+      input.checked = checked;
+      input.dataset[attribute] = "";
+      const wrap = el("label", "pskill-check");
+      wrap.append(input, el("span", undefined, label));
+      form.append(wrap);
+      return input;
+    };
+    const slash = toggle(`在 / 菜单显示「${operation.name}」`, current?.slash ?? true, "packageSlash");
+    const page = toggle("在网页上显示按钮", current?.pageButton ?? false, "packagePage");
+    form.append(el("p", "pskill-note", "默认参数"));
+    const fields = appendOperationFields(form, operation.inputSchema, current?.input ?? {});
+    const error = el("p", "pskill-error");
+    error.hidden = true;
+    form.append(error);
+    const actions = el("div", "pskill-actions");
+    const back = el("button", "pskill-btn", "返回");
+    back.type = "button";
+    back.addEventListener("click", renderManageList);
+    const saveButton = el("button", "pskill-btn primary", "保存配置");
+    saveButton.type = "submit";
+    actions.append(back, saveButton);
+    form.append(actions);
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      saveButton.disabled = true;
+      try {
+        const input = Object.fromEntries(fields.map(field => [field.name, field.read()]));
+        void saveSkillPackageConfig(operation, { slash: slash.checked, pageButton: page.checked, input }).then(renderManageList).catch((cause: unknown) => {
+          saveButton.disabled = false;
+          error.textContent = cause instanceof Error ? cause.message : String(cause);
+          error.hidden = false;
+        });
+      } catch {
+        saveButton.disabled = false;
+        error.textContent = "参数里的 JSON 格式不正确。";
+        error.hidden = false;
+      }
+    });
+    manage.append(form);
+    slash.focus({ preventScroll: true });
   }
 
   function renderEditor(skill: PromptSkill | null, prefill?: string, runnable = false): void {

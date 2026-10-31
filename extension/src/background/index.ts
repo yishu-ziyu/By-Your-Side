@@ -8,6 +8,7 @@ import { installMarginalia } from "./marginalia.js";
 import { installNudge } from "./nudge.js";
 import { installBrowseHabits } from "./browse-habits.js";
 import { installMemoryBackup } from "./memory-backup.js";
+import { installSkillPackages } from "./skill-packages.js";
 import type { NudgeCard } from "../shared/nudge.js";
 import { installPageInteractions } from "./page-interactions.js";
 import { pageTranslation } from "./exec/page-translation.js";
@@ -270,8 +271,12 @@ const MAX_STORED_HISTORY_KEYS = 8;
 
 const HISTORY_PRUNE_DELAY_MS = 5_000;
 
+const skillPackages = installSkillPackages({ conversationForWindow, send: message => transport.sendClientMessage(message) });
+
 const transport = new Uplink({
  onServerMessage(msg) {
+   if (skillPackages.receive(msg)) return;
+
    if (msg.type === "reading_route_result") { reading.routed(msg);
 
  return; }

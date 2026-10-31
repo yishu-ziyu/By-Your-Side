@@ -188,3 +188,11 @@ export function isOperationSuccessValue(value: unknown): value is Omit<LearnedOp
     && typeof value.sourceUrl === "string" && value.sourceUrl.length > 0 && value.sourceUrl.length <= 8192
     && isJsonObject(value.appliedInput);
 }
+
+export function isLearnedOperationResult(value: unknown): value is LearnedOperationResult {
+  if (!isJsonObject(value) || typeof value.operationId !== "string" || !/^[a-f0-9-]{36}$/.test(value.operationId)
+    || !Number.isInteger(value.steps) || Number(value.steps) < 0) return false;
+  if (value.status === "observed" || value.status === "empty") return isOperationSuccessValue(value);
+  return ["unavailable", "invalid_input", "invalid_output", "site_mismatch"].includes(String(value.status))
+    && typeof value.reason === "string" && value.reason.length <= 600;
+}
