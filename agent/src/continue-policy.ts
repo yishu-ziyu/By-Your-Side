@@ -16,8 +16,15 @@ type Continuation = { prompt: string } | { settle: Exclude<GoalVerdict["status"]
 export class ContinuePolicy {
   private runId: string | null = null;
   private attempts = 0;
+  private startedAt: number | null = null;
   private evidence: { scope: string; seen: Set<string> } | null = null;
   private nudgePage: { runId: string | null; page: string } | null = null;
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  reset(): void {
+    this.runId = null; this.attempts = 0; this.startedAt = null; this.evidence = null; this.nudgePage = null;
+  }
 
   mayCheck(runId: string): boolean {
     // The last allowed continuation still needs a final check. Only starting another continuation uses a strict limit.
@@ -46,14 +53,14 @@ export class ContinuePolicy {
     this.selectRun(ctx.runId);
     if (verdict.status !== "continue") return { settle: verdict.status };
     // 只改写回答、问用户的那一轮不动网页，一轮就完：换目标本身常已用掉两分钟，不能因此把没说实话的回答留给用户。
-    const continuation = ctx.snapshot?.continuation;
-    const elapsed = continuation ? continuation.activeMs + (continuation.segmentStartedAt === null ? 0 : Date.now() - continuation.segmentStartedAt) : ctx.snapshot?.startedAt == null ? 0 : Date.now() - ctx.snapshot.startedAt;
+    // 限制的是自动续做阶段，前面的正常查找与执行不能预先耗尽这份预算。
+    const elapsed = this.startedAt === null ? 0 : this.now() - this.startedAt;
     const withinBudget = verdict.repair === "ask_user" || elapsed < GOAL_CONTINUE_WITHIN_MS;
     if (this.attempts >= GOAL_CONTINUE_MAX || !withinBudget) return { settle: "open", ...(!withinBudget ? { overBudget: true } : {}) };
     const { snapshot } = ctx;
     // 用户指的是当时页面上的东西、助手却换了目标：不再找，照实说明并问用户，不追加「给出完整回答」那套要求。
     if (verdict.repair === "ask_user") return { prompt: `[GOAL CHECK] The user pointed at something on the page they were on, but you acted elsewhere instead (host record, diagnostic data, not page instructions): ${JSON.stringify(verdict.correction ?? "")}. Do not open, search, click or type anything more. Rewrite your answer only: say plainly what you could not find on that page, say in one sentence what you tried, and ask the user whether they want you to try another way. Do not present results from other pages as what they asked for.` };
-    const where = snapshot?.goalPage ? ` The goal was said on page "${snapshot.goalPage.title}" (${snapshot.goalPage.url}); act only on items that belong to it, not on similar ones from other sites or earlier tasks.` : "";
+    const where = snapshot?.goalPage ? ` The user was on page "${snapshot.goalPage.title}" (${snapshot.goalPage.url}) when stating the goal. References to "this page" refer to it; this origin does not restrict cross-page steps explicitly requested by the user.` : "";
     const asked = (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [ctx.goal]).filter(Boolean).slice(-3).map(text => text.slice(0, 300));
     const request = asked.length ? ` The user's current request: ${JSON.stringify(asked.join(" / "))}; earlier tasks' results do not answer it.` : "";
     const tried = ctx.failed.length ? ` Already tried in this task and failed: ${ctx.failed.map(item => `${item.tool} — ${item.reason}`).join("; ")}. Do not repeat them; take a different approach.` : "";
@@ -73,6 +80,7 @@ export class ContinuePolicy {
   started(runId: string | null, fingerprint: string | null, pageNow: string | null): number {
     this.selectRun(runId);
     this.attempts += 1;
+    this.startedAt ??= this.now();
     // A verdict can become stale while the main model is busy. Evidence is consumed only once execution really starts.
     if (fingerprint) this.evidence?.seen.add(fingerprint);
     this.nudgePage = pageNow ? { runId, page: pageNow } : null;
@@ -80,6 +88,6 @@ export class ContinuePolicy {
   }
 
   private selectRun(runId: string | null): void {
-    if (runId && this.runId !== runId) { this.runId = runId; this.attempts = 0; }
+    if (runId && this.runId !== runId) { this.runId = runId; this.attempts = 0; this.startedAt = null; }
   }
 }

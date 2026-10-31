@@ -1,0 +1,34 @@
+TAP version 13
+# Subtest: 自动续做的时限不包含此前正常执行的时间，仍保留两分钟和三次上限
+not ok 1 - 自动续做的时限不包含此前正常执行的时间，仍保留两分钟和三次上限
+  ---
+  duration_ms: 8.383083
+  type: 'test'
+  location: '/Users/mahaoxuan/Desktop/AI-products/bys-fix-task-resume-page/agent/src/continue-policy.before-probe.sim.ts:1:175'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok('prompt' in policy.next(verdict, context))
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/Users/mahaoxuan/Desktop/AI-products/bys-fix-task-resume-page/agent/src/continue-policy.before-probe.sim.ts:11:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1107.226

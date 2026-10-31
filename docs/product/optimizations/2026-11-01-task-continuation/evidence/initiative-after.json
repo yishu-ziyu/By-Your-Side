@@ -1,0 +1,39 @@
+{
+  "status": "PASS",
+  "evidence": [
+    {
+      "approval": false,
+      "text": "阅读第一项和第二项，把两项名称完整列出来。\n存成技能\n来自页面：继续读取练习\n查看执行过程\n · 3 秒\n · 已核对页面\n\n第一项：青松。第二项：白鹭。\n\n复制\n已复制\n来源",
+      "checks": [
+        {
+          "status": "continue",
+          "decidedBy": "model"
+        },
+        {
+          "status": "continue",
+          "decidedBy": "host:retry_not_needed"
+        },
+        {
+          "status": "done",
+          "decidedBy": "model"
+        }
+      ],
+      "continued": 2,
+      "submitted": 0
+    },
+    {
+      "approval": true,
+      "text": "填写准备好了，提交前先让我确认。\n存成技能\n来自页面：继续读取练习\n已填 1 项 · 用时 3 秒 · 恢复这 1 处填写 · \n\n内容已填好，要我现在点 SIGN UP 提交吗？\n\n复制\n已复制",
+      "checks": [
+        {
+          "status": "needs_user",
+          "adjustedBy": "user_dependency",
+          "decidedBy": "model"
+        }
+      ],
+      "continued": 0,
+      "submitted": 0
+    }
+  ],
+  "error": null
+}

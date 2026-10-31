@@ -1,9 +1,8 @@
 /**
- * 任务跑了两分多钟还没做完，核对仍判「接着做」：不再自动接着做，过程行写「还没做成」，由用户决定要不要继续。
- * 用户自己的记录里，跑了两分钟以后才接着做的那些次一次都没做成，每次多让用户等好几分钟。
+ * 自动续做阶段超过两分钟：不再开启下一次续做，由用户决定是否继续。
  * 只装扩展、隔离构建、本机脚本模型（目标核对也由脚本回「接着做」）。约 2.5 分钟。
  *   npx tsx scripts/acceptance/real-path/goal-continue-budget.mts --headless
- *   a) 第一次回答之后没有自动接着做（不出现第二次回答）。
+ *   a) 允许第一次续做；续做超过两分钟后不再发第三次请求。
  *   b) 过程行写「还没做成」，用户能看到没做完。
  * 失败方式：只按次数上限判断，a 失败。
  */
@@ -19,24 +18,35 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 
 await mkdir(out, { recursive: true });
 
-const TASK = "久跑核对：拿到这期视频的字幕";
-const FIRST = "这期视频没有字幕轨。";
-const SECOND = "接着又找了一遍，还是没有。";
-const CONTINUE_JSON = JSON.stringify({ items: [{ text: "拿到字幕", done: false }], status: "continue", remaining: "字幕", correction: "还没交付字幕", finding: "没有字幕" });
+const TASK = "久跑核对：读取页面上两项资料并完整列出";
+const FIRST = "只整理了第一项青松，第二项还没有整理。";
+const SECOND = "第二项白鹭还没有整理。";
+const THIRD = "不应该自动开始第三次。";
+const CONTINUE_JSON = JSON.stringify({ items: [{ text: "列出两项资料", done: false }], status: "continue", verificationSubject: 'answer', evidence: FIRST, remaining: "第二项资料", correction: "读完并列出第二项资料", finding: "第二项尚未整理" });
 // 每段停 5 秒、不超过断流计时：两分多钟里一直在出字，像一次很长的作答。
 const slow = Array.from({ length: 26 }, () => ({ text: "…", delayMs: 5_000 }));
 
-const site = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><html lang="zh"><meta charset="utf-8"><title>视频页</title><body><main><h1>一期访谈</h1></main></body></html>`));
+const site = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><html lang="zh"><meta charset="utf-8"><title>两项资料</title><body><main><h1>资料</h1><p>第一项青松，第二项白鹭。</p><input id="progress" aria-label="整理进度"></main></body></html>`));
 
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 
+const continueStep = { text: "…".repeat(slow.length) + SECOND, pieces: [...slow, { text: SECOND }] };
+const checkStep = { text: CONTINUE_JSON };
 const model = await startScriptedModel([
   // 目标核对的输入带 lastReply；接着做的那一轮以 [GOAL CHECK] 开头，也带着原话，所以都排在原话前面。
-  { match: `"lastReply"`, steps: [{ text: CONTINUE_JSON }] },
-  { match: "[GOAL CHECK]", steps: [{ text: SECOND }] },
+  { match: `"lastReply"`, steps: [checkStep] },
+  { match: "[GOAL CHECK]", steps: [{ tool: { name: 'fill', args: { target: '#progress', value: '第一轮续做进展', label: '整理进度' } } }, continueStep] },
   // 用过浏览器工具的一轮才核对；打开一页才有过程行，核对结论写在过程行上。
-  { match: TASK, steps: [{ tool: { name: "navigate", args: { url: `http://127.0.0.1:${siteAddress(site).port}/` } } }, { text: "…".repeat(slow.length) + FIRST, pieces: [...slow, { text: FIRST }] }] },
-]);
+  { match: TASK, steps: [{ tool: { name: "navigate", args: { url: `http://127.0.0.1:${siteAddress(site).port}/` } } }, { text: FIRST }] },
+], undefined, payload => {
+  for (const message of payload.messages ?? []) {
+    if (message.role !== 'user' || typeof message.content !== 'string') continue;
+    try {
+      const input = JSON.parse(message.content);
+      if (typeof input.lastReply === 'string') checkStep.text = JSON.stringify({ ...JSON.parse(CONTINUE_JSON), evidence: input.lastReply.slice(-100) });
+    } catch { /* 普通用户指令不是核对输入。 */ }
+  }
+});
 
 const rp = await launchRealPath();
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
@@ -58,7 +68,8 @@ try {
   const text = await rp.evaluate(panel, answers) as string;
   const line = await rp.evaluate(panel, `[...document.querySelectorAll(".run-check")].map(e => e.textContent.replace("·", "").trim()).filter(Boolean).at(-1) ?? ""`) as string;
   await rp.screenshot(panel, join(out, "panel.png"));
-  check("a 跑了两分多钟后不再自动接着做", !text.includes(SECOND) && !model.requests.some(r => r.rule === "[GOAL CHECK]"), { secondAnswer: text.includes(SECOND), continued: model.requests.filter(r => r.rule === "[GOAL CHECK]").length });
+  const traces = await rp.evaluate(panel, `new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;const tx=db.transaction('trace-lines');const q=tx.objectStore('trace-lines').getAll();q.onsuccess=()=>resolve(q.result.map(x=>JSON.parse(x.line)));tx.oncomplete=()=>db.close()}})`) as Array<{type:string;data:{overBudget?:boolean}}>;
+  check("a 第一次续做已执行，超过预算后不再开始下一次", !text.includes(THIRD) && model.requests.filter(r => r.rule === "[GOAL CHECK]").length === 2 && traces.some(t=>t.type==='goal_check'&&t.data.overBudget), { thirdAnswer: text.includes(THIRD), continued: model.requests.filter(r => r.rule === "[GOAL CHECK]").length, overBudget:traces.some(t=>t.type==='goal_check'&&t.data.overBudget) });
   check("b 过程行写「还没做成」", line === "还没做成", { line });
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ status: checks.length > 0 && checks.every(c => c.pass) ? "PASS" : "FAIL", checks }, null, 2));

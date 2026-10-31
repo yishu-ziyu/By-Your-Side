@@ -15,6 +15,7 @@ import type { Step } from "./scripted-model.mts";
 requireHeadless();
 
 const wipe = process.argv.includes("--wipe");
+const fromOtherPage = process.argv.find(arg => arg.startsWith('--from-other-page='))?.split('=')[1];
 const ANSWER = "已经提交。";
 let hits = 0;
 
@@ -30,7 +31,7 @@ const site = createServer((req, res) => {
 });
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 
-const answer = { text: ANSWER, delayMs: 120_000 };
+const answer = { text: ANSWER, delayMs: 30_000 };
 let sawToolResult = false;
 // 用户点「继续原任务」后的那次请求：对话里还带着强杀前那次点击的结果吗（真模型靠它知道已经点过）。
 let continuationCarriesClick: boolean | null = null;
@@ -52,7 +53,7 @@ function startModel() {
   }));
 }
 
-const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-restart-resume${wipe ? "-wipe" : ""}`);
+const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-restart-resume${wipe ? "-wipe" : ""}${fromOtherPage ? '-' + fromOtherPage : ''}`);
 await mkdir(out, { recursive: true });
 
 const rp = await launchRealPath();
@@ -87,6 +88,7 @@ try {
   await sleep(400);
   evidence.hitsBefore = hits;
   assert.equal(hits, 1, "打断前提交应当已经发生一次");
+  assert.equal(await rp.evaluate(panel, `document.querySelector('#messages')?.innerText.includes(${JSON.stringify(ANSWER)})`), false, '必须在模型回答前强杀，不能把已完成任务当作恢复');
   await rp.restart({ abrupt: true });
   answer.delayMs = 0;
   evidence.restartKind = "SIGKILL + same profile";
@@ -106,12 +108,28 @@ try {
     // 重启后不自己接着做：等用户看过页面、点「继续原任务」才做完。
     assert.equal((await text()).includes(ANSWER), false, "用户点继续之前任务不该自己答完");
     await until(async () => await rp.evaluate(againId, `(() => { const r = document.querySelector("#resume-entry-root"); return !!r && !r.hidden && !!r.querySelector(".resume-action"); })()`) || undefined, 15_000, "侧栏出现「继续原任务」");
-    // 强杀后浏览器只剩空白页；只在原任务那一页上才让继续，像用户那样先把它打开。
-    const reopened = await rp.cdp.send("Target.createTarget", { url: `http://127.0.0.1:${port}/` });
-    await rp.cdp.send("Target.activateTarget", { targetId: reopened.targetId });
+    const reopened = fromOtherPage === 'missing' ? null : await rp.cdp.send("Target.createTarget", { url: `http://127.0.0.1:${port}/`, background: !!fromOtherPage });
+    const current = fromOtherPage ? await rp.cdp.send('Target.createTarget', { url: `chrome-extension://${rp.extensionId}/settings.html` }) : reopened!;
+    await rp.cdp.send("Target.activateTarget", { targetId: current.targetId });
     await sleep(400);
-    await rp.click(againId, "#resume-entry-root .resume-action");
-    await until(async () => (await text()).includes(ANSWER) || undefined, 60_000, "点继续后答完");
+    const resume = async () => {
+      if (fromOtherPage && fromOtherPage !== 'button') {
+        await rp.click(againId, '#input'); await rp.typeText(againId, '继续'); await rp.pressEnter(againId);
+      } else await rp.click(againId, '#resume-entry-root .resume-action');
+    };
+    await resume();
+    if (fromOtherPage === 'missing') {
+      await until(async () => (await text()).includes('没找到') || (await text()).includes('当前页面不是原任务') || undefined, 20_000, '原页面缺失时说明原因');
+      const missing = await text();
+      evidence.missing = missing;
+      assert.ok(missing.includes('没找到') && missing.includes('提交练习'), '说明缺失的是哪一个原页面');
+      assert.equal(hits, 1, '找不到原页面时不在设置页执行');
+      assert.equal(continuationCarriesClick, null, '原页面缺失时未调用模型继续');
+      await rp.cdp.send('Target.createTarget', { url: `http://127.0.0.1:${port}/`, background: true });
+      await resume();
+    }
+    await until(async () => (await text()).includes(ANSWER) || (await text()).includes('当前页面不是原任务') || undefined, 60_000, "点继续后答完");
+    assert.ok((await text()).includes(ANSWER), '说继续或点继续必须自动找到仍开着的原页面');
     await sleep(500);
     evidence.hits = hits;
     evidence.after = (await text()).slice(0, 500);
@@ -120,12 +138,14 @@ try {
     assert.equal(continuationCarriesClick, true, "继续时发给模型的对话里要有强杀前那次点击的结果");
     assert.equal(hits, 1, "重开后不能再点一次提交");
     assert.ok((await text()).includes(ANSWER), "侧栏应当显示做完的回答");
+    await rp.screenshot(againId, join(out, 'panel.png'));
   }
   console.log(`restart-resume ${wipe ? "wipe " : ""}ok via ${evidence.restartKind}, hits=${hits}`);
 } catch (error) {
   evidence.hits = hits;
   const live = again || panel;
   if (live) evidence.panel = await rp.evaluate(live, "document.body.innerText.slice(0, 1500)").catch(reason => String(reason));
+  if (live) await rp.screenshot(live, join(out, 'panel.png')).catch(() => {});
   await writeFile(join(out, "evidence.json"), JSON.stringify(evidence, null, 2));
   throw error;
 } finally {

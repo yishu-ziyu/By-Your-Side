@@ -572,12 +572,12 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
     throw new Error(detail);
   });
 
-  // Chrome is up but close() does not exist yet: a failure here (e.g. the version fetch timing out under load) must kill it,
-  // or the orphaned Chrome keeps the caller's process alive (10-14: one eval round hung 18 minutes after "done").
+  // The debugging port can be announced before its HTTP handler is scheduled under load.
+  // A startup failure must still stop this isolated browser before close() exists.
   let version: { Browser: unknown; webSocketDebuggerUrl: string };
   let cdp: ReturnType<typeof createCdp>;
   try {
-    version = await fetchJson(`http://127.0.0.1:${port}/json/version`);
+    version = await fetchJson(`http://127.0.0.1:${port}/json/version`, 20_000);
     cdp = createCdp(version.webSocketDebuggerUrl);
     await cdp.ready();
     await loadExtension(cdp);
@@ -594,7 +594,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
   } catch (error) {
     chrome.kill("SIGKILL");
     tempDir.release();
-    throw error;
+    throw new Error(`隔离 Chrome 调试连接或扩展加载失败：${error instanceof Error ? error.message : String(error)}\nChrome stderr (tail):\n${chromeStderr.slice(-4000)}`, { cause: error });
   }
 
   const controls = browserControls(cdp, id);

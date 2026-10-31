@@ -197,7 +197,8 @@ def render_case(folder):
     return record, primary
 
 def prose_pages():
-    sources = [PRODUCT / 'README.md', *(PRODUCT / 'perspectives').glob('*.md'), *(PRODUCT / 'directions').glob('*.md'), *(PRODUCT / 'templates').glob('*.md')]
+    manual = [p for p in (PRODUCT / 'optimizations').glob('*/README.md') if not (p.parent / 'record.json').exists()]
+    sources = [PRODUCT / 'README.md', *(PRODUCT / 'perspectives').glob('*.md'), *(PRODUCT / 'directions').glob('*.md'), *(PRODUCT / 'templates').glob('*.md'), *manual]
     payload = {str(path): path.read_text() for path in sources}
     javascript = "import {marked} from 'marked';let data='';for await(const c of process.stdin)data+=c;process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(data)).map(([p,s])=>[p,marked.parse(s)]))))"
     rendered = json.loads(subprocess.run(['node', '--input-type=module', '-e', javascript], input=json.dumps(payload), text=True, capture_output=True, check=True, cwd=ROOT).stdout)
@@ -218,13 +219,18 @@ def prose_pages():
             replacement = str(Path(parsed.path).with_name(name)) if target.name == 'README.md' else str(Path(parsed.path).with_suffix('.html'))
             return f'href="{esc(replacement)}"'
         body = re.sub(r'href="([^"]+)"', link, body)
-        dest = path.with_name('guide.html') if path.name == 'README.md' else path.with_suffix('.html')
-        back = 'index.html' if path.parent == PRODUCT else '../index.html'
+        dest = path.with_name('index.html' if path in manual else 'guide.html') if path.name == 'README.md' else path.with_suffix('.html')
+        back = '../../index.html' if path in manual else 'index.html' if path.parent == PRODUCT else '../index.html'
         dest.write_text(document(title, f'<article>{body}</article><div class="links"><a href="{path.name}">Markdown 原文</a></div>', back))
 
 def main():
     cases = [render_case(path.parent) for path in sorted((PRODUCT / 'optimizations').glob('*/record.json'), reverse=True)]
     entries = ''
+    for page in sorted((PRODUCT / 'optimizations').glob('*/README.md'), reverse=True):
+        if (page.parent / 'record.json').exists():
+            continue
+        title = page.read_text().splitlines()[0].removeprefix('# ')
+        entries += f'<section class="entry"><div class="eyebrow">{page.parent.name[:10]}<p>行为修复</p></div><div><h2><a href="optimizations/{page.parent.name}/index.html">{esc(title)} →</a></h2><p>原因、修复边界与真实扩展回归结果。</p></div></section>'
     for record, metric in cases:
         href = f'optimizations/{record["id"]}/'
         entries += f'''<section class="entry"><div><div class="eyebrow">{record['date']}</div><p class="meta">Optimization {record['number']}</p></div><div><div class="status">{esc(record['status'])}</div><h2><a href="{href}index.html">{esc(record['title'])} →</a></h2><p class="intro">{esc(record['problem'])}</p><img class="figure" src="{href}exports/summary.svg" alt="{esc(record['title'])}的实测前后对比"><div class="links"><a href="{href}index.html">完整案例与原始样本</a><a download href="{href}exports/summary.png">保存宣发图</a></div></div></section>'''
@@ -235,7 +241,8 @@ def main():
 <section id="directions" class="split"><div><div class="eyebrow">Next / 待验证</div><h2>真实日常数据上，能少等多久？</h2><p>隔离实验已看到改善，下一步需要日常负载、较长历史和较低性能设备上的证据。这里保存问题与跟进，不把待验证想法写成已上线功能。</p><a href="directions/guide.html">查看跟进 →</a></div><div><h2>继续把理解留在这里。</h2><p>以前如何判断，现在为什么改变，未来准备怎样验证。旧观点保留，新观点链接回来。</p><div class="links"><a href="templates/perspective.html">理解记录模板</a><a href="guide.html">如何添加下一条记录</a><a href="../STATUS.md">产品当前状态</a></div></div></section>'''
     (PRODUCT / 'index.html').write_text(document('产品记录', body, 'index.html'))
     prose_pages()
-    print(f'已生成 {len(cases)} 条优化记录：本地总览、SVG、PNG、全部样本与可引用文案。')
+    manual_count = sum(not (p.parent / 'record.json').exists() for p in (PRODUCT / 'optimizations').glob('*/README.md'))
+    print(f'已生成 {len(cases)} 条量化优化、{manual_count} 条行为记录：本地总览、图表、原始样本与产品理解。')
 
 if __name__ == '__main__':
     main()
