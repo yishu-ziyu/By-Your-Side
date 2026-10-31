@@ -1,16 +1,16 @@
 /**
- * 进行中的步骤表：每步一行写名字和用时，等得久也只是那一行的秒数在走（方向 C）。
+ * 行内计时：秒数贴在动词后面，没有扫光，长步骤只报已过多久（方向 A）。
  *   npx tsx scripts/acceptance/real-path/wait-inline-timer.mts --headless
  * 脚本模型：空会话 → 首字前挂 16 秒 → 回答；新会话里一步之后再想 5 秒；先送思考摘要、19 秒后才出正文；
  * 核对判「没做完」后接着做的那一轮挂 20 秒；再一问一直回 500。
  *   a) 空会话看得到起点建议，没有过程行。
- *   b) 首字前 3 秒：只有一行「等模型回应」加「N 秒」，笼统的「正在：思考」标题不露出，没有「已等」、没有百分号。
- *   c) 16 秒还没出字：仍是那一行，秒数继续数；没有「仍在处理」、没有「跳过 / 换个方法」，回答位置没有骨架条。
- *   d) 点完一步之后模型再想：点的那步打勾带用时，新一行只数这一段，不写百分号。
+ *   b) 首字前 3 秒：第一行是「正在：思考」加「N 秒」，没有「已等」、没有间隔点、标题不扫光、没有百分号。
+ *   c) 超过 10 秒还没出字：标题改成「仍在处理」，秒数写「已 N 秒」继续数，仍不扫光、不写百分号。
+ *   d) 一步之后的长思考：只报这段秒数，不写百分号，标题不是「还没有回音」。
  *   e) 模型出错时错误卡看得到。
- *   f) 思考摘要已经流进来、16 秒还没出正文：那一行写「思考」，不是「等模型回应」，也没有「仍在处理」。
- *   g) 核对后接着做、16 秒还没回音：顶上仍露出「还没做完，接着做」，不被步骤表藏掉。
- * 失败方式：仍写「已等」或「仍在处理」、冒出跳过 / 换个方法、骨架条还在、行内秒数不走、长步骤出现 %、空会话或错误卡没了、接着做的状态看不到。
+ *   f) 思考摘要已经流进来、16 秒还没出正文：标题是「正在：思考」或「仍在处理」，不是没有回应的说法。
+ *   g) 核对后接着做、16 秒还没回音：标题仍是「还没做完，接着做」，不被「还没有回音」盖掉。
+ * 失败方式：仍写「已等」、标题还在扫光、超时标题不变、长步骤出现 %、空会话或错误卡没了、思考或重试时标题被换掉。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -93,15 +93,7 @@ const READ = `(() => {
   const starter = document.querySelector("#starter");
   const error = document.querySelector(".error-card");
   const thinking = !!d?.querySelector("details.thinking");
-  const summary = d?.querySelector(":scope > summary");
-  const rows = [...document.querySelectorAll(".live-step")].map((r) => ({ label: r.querySelector(".live-step-label")?.textContent ?? "", time: r.querySelector(".live-step-time")?.textContent ?? "", state: r.dataset.state ?? "" }));
-  const buttons = [...document.querySelectorAll("#messages button")].filter((b) => b.getClientRects().length > 0).map((b) => b.textContent ?? "");
-  const skeleton = [...document.querySelectorAll("#messages .answer-skeleton")].some((e) => e.getClientRects().length > 0);
   return {
-    summaryShown: !!summary && getComputedStyle(summary).display !== "none",
-    rows,
-    buttons,
-    skeleton,
     starter: !!starter && starter.getClientRects().length > 0,
     error: !!error && error.getClientRects().length > 0,
     title: title?.textContent ?? "",
@@ -113,8 +105,7 @@ const READ = `(() => {
   };
 })()`;
 
-type Row = { label: string; time: string; state: string };
-type Read = { summaryShown: boolean; rows: Row[]; buttons: string[]; skeleton: boolean; starter: boolean; error: boolean; title: string; time: string; before: string; shine: string; thinking: boolean; all: string };
+type Read = { starter: boolean; error: boolean; title: string; time: string; before: string; shine: string; thinking: boolean; all: string };
 
 try {
   const work = await rp.attach((await rp.targets()).find((t) => t.url === "about:blank")!.targetId);
@@ -137,22 +128,27 @@ try {
     await rp.pressEnter(panel);
   };
 
-  const secsOf = (row: Row | undefined) => Number(/^(\d+) 秒$/.exec(row?.time ?? "")?.[1] ?? NaN);
-  const lastRow = (r: Read) => r.rows.at(-1);
-  const calm = (r: Read) => !r.all.includes("已等") && !r.all.includes("仍在处理") && !/%/.test(r.all) && !r.buttons.some((b) => b === "跳过" || b === "换个方法") && !r.skeleton;
+  const liveOk = (r: Read) => {
+    const secs = Number(/^(?:已 )?(\d+) 秒$/.exec(r.time)?.[1] ?? NaN);
+    const noDot = r.before === "none" || r.before === "normal" || r.before === '""' || r.before === "";
+    const noShine = r.shine === "none" || r.shine === "" || !r.shine.includes("runShine");
+    return { secs, noDot, noShine, noWaitWord: !r.time.includes("已等") && !r.all.includes("已等"), noPct: !r.title.includes("%") && !r.time.includes("%") && !/%/.test(r.all) };
+  };
 
   await send(ASK_WAIT);
   // 等的是时刻，不是措辞：改前的写法也要能截到同一时刻，由下面的判定决定过不过。
-  const shownSecs = (r: Read) => secsOf(lastRow(r)) || 0;
+  const shownSecs = (r: Read) => Number(/(\d+) 秒/.exec(r.time)?.[1] ?? 0);
   await until(async () => shownSecs(await read()) >= 3 ? true : undefined, 8_000, "首字前数到 3 秒", 100);
   const waiting = await read();
   await rp.screenshot(panel, join(out, "waiting.png"));
-  check("b 首字前只有一行「等模型回应」加 N 秒，笼统标题不露出", waiting.rows.length === 1 && lastRow(waiting)?.label === "等模型回应" && secsOf(lastRow(waiting)) >= 3 && !waiting.summaryShown && calm(waiting), { rows: waiting.rows, summaryShown: waiting.summaryShown });
+  const waitLive = liveOk(waiting);
+  check("b 首字前是「正在：思考」加「N 秒」，没有已等、间隔点和扫光", waiting.title === "正在：思考" && waitLive.secs >= 3 && waitLive.noWaitWord && waitLive.noDot && waitLive.noShine && waitLive.noPct, { title: waiting.title, time: waiting.time, before: waiting.before, shine: waiting.shine, secs: waitLive.secs });
 
   await until(async () => { const r = await read(); return shownSecs(r) >= 16 ? true : undefined; }, 18_000, "首字前等满 15 秒", 100);
   const stale = await read();
   await rp.screenshot(panel, join(out, "timeout.png"));
-  check("c 16 秒还没出字：仍是那一行在数秒，没有仍在处理、跳过 / 换个方法和骨架条", stale.rows.length === 1 && lastRow(stale)?.label === "等模型回应" && secsOf(lastRow(stale)) >= 15 && calm(stale), { rows: stale.rows, buttons: stale.buttons, skeleton: stale.skeleton });
+  const staleLive = liveOk(stale);
+  check("c 超过 10 秒标题改成「仍在处理」，秒数继续数", stale.title === "仍在处理" && staleLive.secs >= 15 && staleLive.noWaitWord && staleLive.noDot && staleLive.noShine && staleLive.noPct, { title: stale.title, time: stale.time, shine: stale.shine, secs: staleLive.secs });
 
   await rp.click(panel, "#conversation-new");
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#input")?.value === "" && document.querySelector("#send-btn")?.disabled===false'), 15_000, "新会话");
@@ -163,9 +159,9 @@ try {
   const step = await read();
   const elapsed = (Date.now() - thinkingSince) / 1000;
   await rp.screenshot(panel, join(out, "long-step.png"));
+  const stepLive = liveOk(step);
   // 秒数每秒刷新、对齐这段的整秒，所以只会比真实少不到 1 秒；按发送算的整轮读数会多出前一步的时间。
-  const clicked = step.rows.find((r) => r.label.includes("作品"));
-  check("d 点完一步再想：那步打勾带用时，新一行只数这一段", clicked?.state === "done" && /\d+ 秒/.test(clicked.time) && lastRow(step)?.label === "等模型回应" && Math.abs(secsOf(lastRow(step)) - elapsed) <= 1 && calm(step), { rows: step.rows, elapsed });
+  check("d 长步骤只报这段已过多久，不写百分号，不是超时文案", step.title.startsWith("正在") && step.title !== "还没有回音" && stepLive.secs >= 3 && Math.abs(stepLive.secs - elapsed) <= 1 && stepLive.noWaitWord && stepLive.noShine && stepLive.noPct, { title: step.title, time: step.time, elapsed, shine: step.shine });
 
   await until(async () => { const r = await read(); return r.all.includes(ANSWER_STEP) ? true : undefined; }, 20_000, "长步骤回答", 100);
   const fresh = async (label: string) => {
@@ -181,7 +177,7 @@ try {
   await rp.screenshot(panel, join(out, "thinking-long.png"));
   const spine = await rp.evaluate(panel, '(()=>{const t=[...document.querySelectorAll("#messages details.thinking")].at(-1);return t?getComputedStyle(t,"::before").content:null})()');
   check("f 思考块左侧没有竖线", spine === "none", spine);
-  check("f 思考摘要在流、16 秒没出正文：那一行写「思考」，不是没有回应", lastRow(thinkingLong)?.label === "思考" && thinkingLong.thinking && !thinkingLong.all.includes(ANSWER_THINK) && calm(thinkingLong), { rows: thinkingLong.rows, thinking: thinkingLong.thinking });
+  check("f 思考摘要在流、16 秒没出正文：标题是在做事的说法，不是没有回应", ["正在：思考", "仍在处理"].includes(thinkingLong.title) && thinkingLong.thinking && !thinkingLong.all.includes(ANSWER_THINK), { title: thinkingLong.title, time: thinkingLong.time, thinking: thinkingLong.thinking });
   await until(async () => (await read()).all.includes(ANSWER_THINK) ? true : undefined, 15_000, "思考之后的回答", 100);
 
   await fresh("接着做用的新会话");
@@ -190,7 +186,7 @@ try {
   await sleep(16_000);
   const continuing = await read();
   await rp.screenshot(panel, join(out, "continue-long.png"));
-  check("g 接着做的一轮过了 15 秒，顶上仍露出接着做那句", continued && /接着做|还在做第/.test(continuing.title) && continuing.summaryShown, { title: continuing.title, summaryShown: continuing.summaryShown, rows: continuing.rows, continued });
+  check("g 接着做的一轮过了 15 秒，标题仍是接着做那句", continued && /接着做|还在做第/.test(continuing.title), { title: continuing.title, time: continuing.time, continued });
 
   await fresh("再开新会话");
   await send(ASK_ERROR);
