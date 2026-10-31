@@ -1,0 +1,62 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>读图更快，长任务继续做 · By Your Side</title><style>
+:root{color-scheme:light;--ink:#202b3a;--muted:#647182;--blue:#245dcc;--line:#dce1e7;--paper:#fafbf9}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",sans-serif}
+main{max-width:1080px;margin:auto;padding:44px 40px 80px}a{color:var(--blue);text-underline-offset:4px}nav{display:flex;justify-content:space-between;gap:24px;align-items:center;padding-bottom:20px;border-bottom:1px solid var(--line);font-size:13px}
+.brand{font-weight:650;letter-spacing:.03em;color:var(--ink);text-decoration:none}nav div{display:flex;gap:20px}.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}header{padding:54px 0 32px}h1{font-size:42px;line-height:1.25;font-weight:620;letter-spacing:-.045em;margin:14px 0 20px}h2{font-size:23px;line-height:1.4;margin:0 0 20px}h3{font-size:17px;margin:24px 0 8px}p{margin:0 0 16px}.lead{font-size:18px;max-width:650px;color:var(--muted)}section{padding:32px 0;border-top:1px solid var(--line)}.figure{width:100%;height:auto;display:block;background:white;border:1px solid var(--line)}.split{display:grid;grid-template-columns:1fr 1fr;gap:48px}.links{display:flex;gap:20px;flex-wrap:wrap;font-size:14px;margin:16px 0}.status{font-size:13px;color:var(--blue)}.meta{font-size:13px;color:var(--muted)}blockquote{margin:18px 0;padding:6px 0 6px 20px;border-left:2px solid var(--blue);font-size:20px;line-height:1.65}.entry{display:grid;grid-template-columns:145px 1fr;gap:28px}.entry .figure{margin-top:20px}.entry h2{font-size:29px;letter-spacing:-.02em;margin:8px 0 12px}.entry h2 a{color:var(--ink);text-decoration:none}.intro{max-width:620px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}th{color:var(--muted);font-weight:500}ul{padding-left:20px}li{margin:8px 0}details{margin:20px 0}summary{cursor:pointer;color:var(--blue)}pre{overflow:auto;background:#f0f3f6;padding:20px;font-size:12px}footer{padding-top:30px;font-size:12px;color:var(--muted)}.caption{margin-top:10px;color:var(--muted);font-size:13px}.copy{font-size:20px;max-width:770px}.count{font-size:48px;font-variant-numeric:tabular-nums;color:var(--blue);line-height:1.1;margin-bottom:14px}@media(max-width:720px){main{padding:24px 20px 60px}h1{font-size:34px}header{padding:36px 0 24px}.entry,.split{grid-template-columns:1fr;gap:16px}nav{align-items:flex-start}nav div{gap:12px;flex-wrap:wrap}.entry h2{font-size:25px}table{font-size:12px}th,td{padding:10px 5px}}@media print{nav,.links{display:none}main{max-width:none;padding:0}section{break-inside:avoid}details>*{display:block}body{background:white}}
+</style><main><nav><a class="brand" href="../../index.html">BY YOUR SIDE / 产品记录</a><div><a href="../../index.html#optimizations">优化</a><a href="../../index.html#perspectives">理解</a><a href="../../index.html#directions">跟进</a></div></nav><article><h1>读图更快，长任务继续做</h1>
+<p>这轮来自同一项真实任务：从抖音图集识别专辑，核实 Spotify 链接，再整理到 Excalidraw。</p>
+<h2>从原始运行找到的问题</h2>
+<ul>
+<li>新出现的 ChatGPT 模型只等 15 秒；实际带图请求有 16–30 秒才开始返回的情况。</li>
+<li>每轮重新发送历史 PNG 截图。一次实际请求带四张图，图片共约 2 MB。</li>
+<li>固定三分钟后，程序要求助手停工询问；再执行第三个普通工具会被拦下。</li>
+<li>批量截图只保留最后一张，前面几张虽已执行却没交给模型。</li>
+<li>下载的图片已在材料里，但读取附件只返回空文字，模型不得不重新开图截图。</li>
+<li>图片文档没有可读的 body 文字时，整页快照成功也会撤销自动续做。</li>
+</ul>
+<h2>改动与证据</h2>
+<p>ChatGPT 连接统一采用 30 秒首响应预算。大 PNG 只在传输时转为同尺寸 WebP，保留透明度，会话原图和用户保存的图片不变；相同图片复用编码结果。长任务改为定期提醒进展，实际停滞仍由重复无进展判断。批量读图保留顺序和来源，读取附件能直接返回下载的原图。</p>
+<p><img src="exports/transport.svg" alt="同一份实际请求的传输与首响应对照"></p>
+<p>这是同一份实际请求的一组顺序对照：先紧凑编码，后原始编码，模型为 GPT-6.1 Terra。两次均返回 HTTP 200；从请求开始到第一段模型内容为 8.85 秒和 19.88 秒。它证明这一样本有效，不是任务成功率，也不能外推为所有请求都提速同样比例。</p>
+<table>
+<thead>
+<tr>
+<th>回归场景</th>
+<th>旧版</th>
+<th>修复后</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>图片请求第 18 秒返回</td>
+<td>两轮均被取消</td>
+<td>第一轮接住结果</td>
+</tr>
+<tr>
+<td>一个程序读两张不同图片</td>
+<td>只收到最后一张</td>
+<td>两张都收到且来源对应</td>
+</tr>
+<tr>
+<td>超过三分钟仍有剩余网页操作</td>
+<td>第三步被拦下</td>
+<td>后续页面实际打开</td>
+</tr>
+<tr>
+<td>图片页没有 body 文字，仍须继续</td>
+<td>停在未完成</td>
+<td>自动打开后续结果页</td>
+</tr>
+<tr>
+<td>下载图片后读取附件</td>
+<td>没有图片内容</td>
+<td>原始字节进入模型输入</td>
+</tr>
+<tr>
+<td>真模型读取重新编码后的画面</td>
+<td>未作同题对照</td>
+<td>正确读出画面核对码</td>
+</tr>
+</tbody></table>
+<p>上述程序回归使用隔离真实扩展、本机页面和脚本模型；最后一项使用真实 Terra。核对码只画在 canvas 里，页面正文不包含答案。原图集到完整画布的最终交付另行验证，不能由这些回归代替。</p>
+<p><a href="evidence/encoding.json">图片编码原始读数</a> · <a href="evidence/transport.json">实际请求计时原件</a> · <a href="../../perspectives/2026-11-01-outcome-first.html">相关产品理解</a> · <a href="../../guide.html">产品记录</a></p>
+</article><div class="links"><a href="README.md">Markdown 原文</a></div><footer>本地产品档案 · 数据图由归档样本生成 · 对外引用请保留测试条件</footer></main></html>

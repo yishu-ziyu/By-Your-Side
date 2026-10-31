@@ -1,0 +1,30 @@
+{
+  "before": 2862365,
+  "after": 525413,
+  "measurements": [
+    {
+      "before": 182575,
+      "after": 38920,
+      "width": 894,
+      "height": 749
+    },
+    {
+      "before": 609299,
+      "after": 82310,
+      "width": 894,
+      "height": 749
+    },
+    {
+      "before": 645348,
+      "after": 85814,
+      "width": 894,
+      "height": 805
+    },
+    {
+      "before": 599867,
+      "after": 77328,
+      "width": 894,
+      "height": 749
+    }
+  ]
+}

@@ -224,6 +224,29 @@ def prose_pages():
         dest.write_text(document(title, f'<article>{body}</article><div class="links"><a href="{path.name}">Markdown 原文</a></div>', back))
 
 def main():
+    image_case = PRODUCT / 'optimizations/2026-11-01-image-continuity'
+    if image_case.exists():
+        encoding = json.loads((image_case / 'evidence/encoding.json').read_text())
+        timing = {item['variant']: item for item in json.loads((image_case / 'evidence/transport.json').read_text())}
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+        fig.patch.set_facecolor(PAPER)
+        for axis, values, title, unit in zip(axes,
+                [[encoding['before'] / 1_000_000, encoding['after'] / 1_000_000],
+                 [timing['original']['firstContentMs'] / 1000, timing['compressed']['firstContentMs'] / 1000]],
+                ['请求正文大小', '到第一段模型内容'], ['百万字符', '秒']):
+            axis.barh(['原始 PNG', '同尺寸 WebP'], values, color=[GRAY, BLUE], height=.5)
+            axis.invert_yaxis()
+            axis.set_xlim(0, max(values) * 1.25)
+            axis.set_title(title, loc='left', fontsize=16, pad=20)
+            axis.set_xlabel(unit)
+            axis.spines[['top', 'right', 'left', 'bottom']].set_visible(False)
+            axis.tick_params(length=0)
+            for y, value in enumerate(values):
+                axis.text(value + max(values) * .03, y, f'{value:.2f}', va='center', color=INK)
+        fig.suptitle('同一份带四张图片的真实模型请求', fontsize=20, x=.08, ha='left')
+        fig.text(.08, .03, 'GPT-6.1 Terra · 一组顺序对照：先 WebP，后 PNG · 图片尺寸不变 · 不代表所有任务的提速比例', fontsize=10, color=GRAY)
+        fig.tight_layout(rect=[.02, .09, .98, .9])
+        save_figure(fig, image_case / 'exports', 'transport')
     cases = [render_case(path.parent) for path in sorted((PRODUCT / 'optimizations').glob('*/record.json'), reverse=True)]
     entries = ''
     for page in sorted((PRODUCT / 'optimizations').glob('*/README.md'), reverse=True):
