@@ -1665,16 +1665,19 @@ export async function hover(
 
 const SEND_MULTI_CLICK = "「发送」按钮不能连点：一次确认只能发一条，连点可能发出好几次。这次没有点；要发送请用 click 工具单击（不带 clickCount），扩展会先在网页上问用户。";
 
+type PointerDispatchGuard = DispatchGuard & { notePointerEffect?: () => void };
+
 export async function click(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+  beforeDispatch?: PointerDispatchGuard,
   sendGuard?: SendGuard,
+  showCursor = !beforeDispatch,
 ): Promise<ClickResult> {
-  return withUncoveredTarget(params, sessionId, beforeDispatch, () => clickTarget(params, sessionId, beforeDispatch, sendGuard));
+  return withUncoveredTarget(params, sessionId, beforeDispatch, () => clickTarget(params, sessionId, beforeDispatch, sendGuard, showCursor));
 }
 
-async function clickTarget(params: ClickParams, sessionId: string, beforeDispatch?: DispatchGuard, sendGuard?: SendGuard): Promise<ClickResult> {
+async function clickTarget(params: ClickParams, sessionId: string, beforeDispatch?: PointerDispatchGuard, sendGuard?: SendGuard, showCursor = !beforeDispatch): Promise<ClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -1682,6 +1685,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
   const tabId = tab.id;
   const cid = cursorId(sessionId);
   const target = params.target;
+  const pressGuard = beforeDispatch && Object.assign(async () => beforeDispatch(), { checkNow: beforeDispatch.checkNow, noteEffect: beforeDispatch.notePointerEffect ?? beforeDispatch.noteEffect });
 
   // 点开新页检测用：记下点击前的标签集合（拿不到就跳过跟随，不影响点击）。
   const tabsBefore = new Set<number>(await (async () => {
@@ -1721,12 +1725,12 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
   const force = params.force === true;
   const modifiers = modifierMaskFor(sessionId, tab.id);
 
-  const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "click", target, name);
+  const actionId = showCursor ? await beginCursorAction(tabId, cid, "click", target, name) : "";
   const opens = await watchOpenedTabs({ ...tab, id: tabId });
 
   try {
     // 目标边框与浅弧移动并行；不再为高亮和预播放波纹额外等待。
-    if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
+    if (showCursor) await cursorMove(tabId, x, y, cid);
 
     if (target && !force) {
       const confirmed = await confirmPointerTarget(tabId, target, beforeDispatch);
@@ -1739,7 +1743,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
       }
 
       if (x !== point[0] || y !== point[1]) {
-        if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
+        if (showCursor) await cursorMove(tabId, x, y, cid);
       }
     }
 
@@ -1808,7 +1812,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
             buttons: pressedButtonsMask(button) | buttonsMaskFor(sessionId),
             clickCount: n,
             modifiers,
-          },beforeDispatch);
+          },pressGuard);
           cdpMousePressed = true;
           await sendCommand(tabId, "Input.dispatchMouseEvent", {
             type: "mouseReleased",
@@ -1887,7 +1891,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
 
                 return dom.click(t);
               },
-              [target], undefined, beforeDispatch,
+              [target], undefined, pressGuard,
             );
 
             return await collectEffect(tabId, fallbackToken);
@@ -1967,12 +1971,13 @@ type DoubleClickResult =
 export async function doubleClick(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: DispatchGuard,
+  beforeDispatch?: PointerDispatchGuard,
+  showCursor = !beforeDispatch,
 ): Promise<DoubleClickResult> {
-  return withUncoveredTarget(params, sessionId, beforeDispatch, () => doubleClickTarget(params, sessionId, beforeDispatch));
+  return withUncoveredTarget(params, sessionId, beforeDispatch, () => doubleClickTarget(params, sessionId, beforeDispatch, showCursor));
 }
 
-async function doubleClickTarget(params: ClickParams, sessionId: string, beforeDispatch?: DispatchGuard): Promise<DoubleClickResult> {
+async function doubleClickTarget(params: ClickParams, sessionId: string, beforeDispatch?: PointerDispatchGuard, showCursor = !beforeDispatch): Promise<DoubleClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -2012,11 +2017,11 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
   const button: MouseButton = params.button ?? "left";
   const force = params.force === true;
   const modifiers = modifierMaskFor(sessionId, tab.id);
-  const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "click", params.target, name);
+  const actionId = showCursor ? await beginCursorAction(tabId, cid, "click", params.target, name) : "";
   const opens = await watchOpenedTabs({ ...tab, id: tabId });
 
   try {
-    if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
+    if (showCursor) await cursorMove(tabId, x, y, cid);
 
     if (params.target && !force) {
       const confirmed = await confirmPointerTarget(tabId, params.target, beforeDispatch);
@@ -2029,7 +2034,7 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
       }
 
       if (x !== point![0] || y !== point![1]) {
-        if (!beforeDispatch) await cursorMove(tabId, x, y, cid);
+        if (showCursor) await cursorMove(tabId, x, y, cid);
       }
     }
 
@@ -2093,7 +2098,7 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
 
         if (nativeInputs % 2) held.mouseButtons.add(button);
         else held.mouseButtons.delete(button);
-        beforeDispatch?.noteEffect?.();
+        (beforeDispatch?.notePointerEffect ?? beforeDispatch?.noteEffect)?.();
       }});
 
       const opened = dialogWatch.opened.then(dialog => {
@@ -2223,7 +2228,8 @@ async function writeField<T extends { range?: InputRangeReadout | null; select?:
 export async function fill(
   params: { target: string; value?: string; from?: FillSource; copyRange?: CopyTextRange; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; submit?: boolean },
   sessionId: string = LEAD_SESSION_ID,
-  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+  beforeDispatch?: DispatchGuard,
+  showCursor = !beforeDispatch,
 ): Promise<ToolContract["fill"]["data"]> {
   const hasValue = typeof params.value === "string";
 
@@ -2275,7 +2281,7 @@ export async function fill(
   }
 
   const value = copied ?? params.value!;
-  const { copiedTarget, ...written } = await withAppeared(params.tabId, sessionId, () => fillField({ ...params, value, ...(copied !== undefined ? { readbackMax: copied.length + 1 } : {}) }, sessionId, beforeDispatch));
+  const { copiedTarget, ...written } = await withAppeared(params.tabId, sessionId, () => fillField({ ...params, value, ...(copied !== undefined ? { readbackMax: copied.length + 1 } : {}) }, sessionId, beforeDispatch, showCursor));
   const copyProof = copied !== undefined && copiedTarget ? { ...copiedTarget, sha256: await textSha256(copied), chars: [...copied].length, ...(range ? { range } : {}), ...(requestedRange ? { requestedRange } : {}) } : undefined;
   // 搬运的文字不回给模型、不进诊断记录：读回只留核对结论，另附长度和首尾几个字让模型确认取对了元素。
   const data = copied === undefined ? written : { ...written, source: sourceSummary(copied), ...(copyProof ? { copyProof } : {}), ...(written.readback ? { readback: withoutText(written.readback) } : {}) };
@@ -2364,7 +2370,8 @@ async function withAppeared<T extends object>(tabIdParam: number | undefined, se
 async function fillField(
   params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; /** 读回比较的长度上限；搬运整段文字时要整段核对。 */ readbackMax?: number },
   sessionId: string,
-  beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
+  beforeDispatch?: DispatchGuard,
+  showCursor = !beforeDispatch,
 ): Promise<ToolContract["fill"]["data"] & { copiedTarget?: Awaited<ReturnType<typeof copyTargetIdentity>> }> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
@@ -2432,11 +2439,11 @@ async function fillField(
     }
   }
 
-  const actionId = beforeDispatch ? "" : await beginCursorAction(tabId, cid, "fill", params.target);
+  const actionId = showCursor ? await beginCursorAction(tabId, cid, "fill", params.target) : "";
 
   try {
     if (targetRect) {
-      if (!beforeDispatch) await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
+      if (showCursor) await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
     }
 
     // 2. 真实填充操作
@@ -2862,7 +2869,7 @@ async function readEnterSendDetails(tabId: number, rect: SendDetails["rect"] | n
 }
 
 /** 任务里的 press_key：回车（含 Ctrl/Cmd+回车，不含 Shift+回车换行）可能把消息发出去，先走和点「发送」同一个确认。 */
-export async function pressKeyGuarded(params: { key: string; tabId?: number }, sessionId: string, sendGuard: SendGuard) {
+export async function pressKeyGuarded(params: { key: string; tabId?: number }, sessionId: string, sendGuard: SendGuard, beforeDispatch?: DispatchGuard) {
   const info = resolveKey(params.key);
   const tab = await resolveWorkingTab(params.tabId, sessionId);
   let confirmed = false;
@@ -2899,7 +2906,7 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
       }
     }
   }
-  const result = await pressKey(params, sessionId);
+  const result = await pressKey(params, sessionId, beforeDispatch);
 
   return Object.assign(result, confirmed ? { sendConfirmed: true as const } : {}) as typeof result & { sendConfirmed?: true };
 }

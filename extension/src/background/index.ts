@@ -1684,11 +1684,13 @@ async function executeToolCall(
   params = structuredClone(params);
   // 页面输入一旦派发，后面的“未执行”失败也只能算结果未知。
   let pageEffectStarted = false;
-  const beforeDispatch = Object.assign(async () => { await checkContinuationPage(); }, { checkNow: () => checkIdentity(), noteEffect: () => { pageEffectStarted = true; } });
+  const beforeDispatch = Object.assign(async () => { checkIdentity(); await checkContinuationPage(); checkIdentity(); }, { checkNow: () => checkIdentity(), noteEffect: () => { pageEffectStarted = true; } });
+  const pointerGuard = Object.assign(async () => beforeDispatch(), { checkNow: beforeDispatch.checkNow, notePointerEffect: beforeDispatch.noteEffect });
   let result: Extract<ClientMessage, { type: "tool_result" }>;
   let executionFact: import("../../../shared/protocol.js").ToolExecutionFact = "not_executed";
   const sid = normalizeSessionId(sessionId);
   const programExpired = () => !!programId && programDeadlineExpired(programDeadline, Date.now());
+  let operationGeneration: number | undefined;
 
   const checkIdentity=()=>{
     // Removing our own translation placeholders changes no page content and is needed exactly when a run has stopped.
@@ -1699,6 +1701,7 @@ async function executeToolCall(
     if(runId&&(abortedRuns.has(runId)||current!==runId))throw new Error('原任务已停止或发生变化，操作未执行。');
 
     if(epoch!==undefined&&epoch<(executionEpochs.get(sid)??0))throw new Error('操作所属控制轮次已失效，操作未执行。');
+    if(operationGeneration!==undefined&&(gate.gen!==operationGeneration||!gate.canLand(name,sid,params)||workerTabControl.isStopped(key(sid))))throw new Error('操作所属控制轮次已失效，操作未执行。');
   };
   const checkContinuationPage = async () => {
     const guard = params.continuationPage;
@@ -1750,17 +1753,22 @@ async function executeToolCall(
       open_tab:(p,s)=>openTab(p,s,beforeDispatch,sendGuard.cancelled),
       close_tab:(p,s)=>closeTab(p,s,beforeDispatch),
       download_url:(p,s)=>downloadUrl(p,s,beforeDispatch),
+      fill:(p,s)=>fill(p,s,beforeDispatch,true),
+      select_option:(p,s)=>selectOption(p,s,beforeDispatch),
+      upload_file:(p,s)=>uploadFile(p,s,beforeDispatch),
+      type_text:(p,s)=>typeText(p,s,beforeDispatch),
+      double_click:(p,s)=>doubleClick(p,s,pointerGuard,true),
       accept_dialog:(p,s)=>acceptDialog(p,s,beforeDispatch),
       dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeDispatch),
       page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
       // 带登录态的 POST 可能就是在发出或下单：先走和点「发送」同一张确认卡；GET 不问。
       fetch:(p,s)=>reportSendClick(sendGuard, fetchUrl(p,{beforeDispatch, confirmPost: async request => confirmRequest(await requestConfirmTab(s), request, sendGuard)})),
-      // 不传 beforeDispatch：它会关掉光标动画。发送确认用自己的钩子。
-      click:(p,s)=>reportSendClick(sendGuard, click(p,s,undefined,sendGuard)),
-      // 同理不传 beforeDispatch：教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
+      // 发送确认用自己的钩子，派发检查不关闭光标动画。
+      click:(p,s)=>reportSendClick(sendGuard, click(p,s,pointerGuard,sendGuard,true)),
+      // 教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
       guide_step:(p,s)=>guideStep(p,s,sendGuard),
       // 回车、脚本也可能把东西发出去：和点「发送」走同一个确认。
-      press_key:(p,s)=>reportSendClick(sendGuard, pressKeyGuarded(p,s,sendGuard)),
+      press_key:(p,s)=>reportSendClick(sendGuard, pressKeyGuarded(p,s,sendGuard,beforeDispatch)),
       js:(p,s)=>evaluateJs(p,s),
     };
 
@@ -1772,7 +1780,7 @@ async function executeToolCall(
 
     if (programId && gate.isSessionBlocked(sid)) throw new Error("页面现在归你，操作未执行");
     setSessionClaimBlocked(sid, gate.isSessionBlocked(sid));
-    const operationGeneration = gate.gen;
+    operationGeneration = gate.gen;
 
     // 等用户确认「发送」时：停、接管、控制轮次变了都马上结束等待，按「不发」处理。
     const sendGuard: SendGuard = {
