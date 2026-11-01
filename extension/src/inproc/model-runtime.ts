@@ -269,7 +269,8 @@ const STEPFUN_STEP_PLAN_BASE_URL = "https://api.stepfun.com/step_plan/v1";
 
 export function createModelRuntime(persist: (providerId: string, credential: Credential | undefined) => Promise<void> | void): ModelRuntime {
   const credentials = new MirroredCredentialStore(persist);
-  const models = builtinModels({ credentials });
+  // 默认的认证上下文会动态 import node:fs 探本机凭据文件，扩展页的 CSP 拦下后在错误页留一条报错；扩展里本来就没有文件和环境变量。
+  const models = builtinModels({ credentials, authContext: { env: async () => undefined, fileExists: async () => false } });
   const codexProvider = models.getProvider("openai-codex");
   const codexBuiltins = models.getModels("openai-codex");
   let codexOnline = false;
