@@ -1,8 +1,8 @@
 /**
- * #290：用户选了「先不发」以后，同一轮里助手换路径再发都要直接拦下：不再弹确认框，服务器收到 0 条，回给助手的话是「这一轮已经拒绝发送」。
+ * #290：用户选了「先不发」以后，同一轮里助手换路径再发都要直接拦下：不再弹确认框，服务器收到 0 条；脚本由只读限制拒绝。
  *   npx tsx scripts/acceptance/real-path/program-send-decline-retry.mts --headless
- * 脚本模型一轮里依次：click 点「发送」（出确认框，用户点「先不发」）→ 再 click 点「发送」→ 点消息框 → press_key 回车 → 脚本 requestSubmit()。
- * 失败方式：send-confirm.ts 的「不发」记录按按钮名分开记时，回车和 requestSubmit 会再弹一次确认框。
+ * 脚本模型一轮里依次：click 点「发送」（出确认框，用户点「先不发」）→ 再 click 点「发送」→ 点消息框 → press_key 回车 → 脚本 requestSubmit() → POST。
+ * 失败方式：send-confirm.ts 的「不发」记录按路径分开记时，回车或 POST 会再弹一次确认框。
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -45,6 +45,7 @@ const RETRIES = [
   { id: "retry-click", step: { tool: { name: "click", args: { target: "#send", label: "发送" } } } },
   { id: "retry-enter", step: { tool: { name: "press_key", args: { key: "Enter" } } } },
   { id: "retry-script-requestSubmit", step: js("document.querySelector('#f').requestSubmit(document.querySelector('#send')); 'ok'") },
+  { id: "retry-fetch", step: { tool: { name: "fetch", args: { url: `http://send-fixture.test:${siteAddress(site).port}/api/send`, method: "POST", body: "hello" } } } },
 ];
 const toolTexts: Array<{ at: number; text: string }> = []; const toolIds = new Set<string>();
 const model = await startScriptedModel([
@@ -55,6 +56,7 @@ const model = await startScriptedModel([
     { tool: { name: "click", args: { target: "#draft", label: "消息" } } },
     RETRIES[1]!.step,
     RETRIES[2]!.step,
+    RETRIES[3]!.step,
     { text: "decline-retry 完成。" },
   ] as never },
 ], undefined, payload => {
@@ -65,7 +67,7 @@ const model = await startScriptedModel([
   }
 });
 
-const rp = await launchRealPath();
+const rp = await launchRealPath({ chromeArgs: ["--host-resolver-rules=MAP send-fixture.test 127.0.0.1", "--no-proxy-server"] });
 const result: Record<string, Json> = {};
 const dialogs: number[] = [];
 
@@ -110,10 +112,10 @@ try {
   result.panelConfirmCardsAtEnd = await panelConfirms();
   result.postsAfterDecline = sendPosts() - Number(result.postsBeforeDecline);
   const after = toolTexts.filter(t => t.at >= declinedAt - 500).map(t => t.text);
-  // 工具结果按顺序：第一次点「发送」（先不发）、重试点击、点消息框（让回车落在消息框里）、重试回车、重试 requestSubmit。
+  // 工具结果按顺序：第一次点「发送」（先不发）、重试点击、点消息框（让回车落在消息框里）、重试回车、重试 requestSubmit、重试 POST。
   const all = toolTexts.map(t => t.text);
   result.toolResults = all as Json;
-  result.retries = RETRIES.map((r, i) => ({ id: r.id, toolText: all[[1, 3, 4][i]!] ?? null })) as Json;
+  result.retries = RETRIES.map((r, i) => ({ id: r.id, toolText: all[[1, 3, 4, 5][i]!] ?? null })) as Json;
   result.toolTextsSinceDecline = after.length;
   await rp.screenshot(work, join(out, "page-end.png")); await rp.screenshot(panel, join(out, "panel-end.png"));
 } finally {
@@ -122,8 +124,9 @@ try {
 }
 const repeat = (t: unknown) => typeof t === "string" && t.includes("这一轮已经拒绝发送");
 const retries = result.retries as Array<{ id: string; toolText: string | null }>;
-const pass = result.firstConfirmShown === true && result.postsBeforeDecline === 0 && result.postsAfterDecline === 0 && result.dialogsAfterDecline === 0 && retries.every(r => repeat(r.toolText));
-for (const r of retries) console.log("RETRY", r.id, repeat(r.toolText) ? "REPEAT_TEXT" : "OTHER", JSON.stringify(r.toolText));
+const rejected = (r: { id: string; toolText: string | null }) => repeat(r.toolText) || (r.id === "retry-script-requestSubmit" && !!r.toolText?.includes("JS 只允许读取页面和计算数据"));
+const pass = result.firstConfirmShown === true && result.postsBeforeDecline === 0 && result.postsAfterDecline === 0 && result.dialogsAfterDecline === 0 && retries.every(rejected);
+for (const r of retries) console.log("RETRY", r.id, rejected(r) ? "BLOCKED" : "OTHER", JSON.stringify(r.toolText));
 console.log("SUMMARY", JSON.stringify({ firstConfirmShown: result.firstConfirmShown, postsBeforeDecline: result.postsBeforeDecline, postsAfterDecline: result.postsAfterDecline, dialogsAfterDecline: result.dialogsAfterDecline, panelConfirmCardsAtEnd: result.panelConfirmCardsAtEnd }));
 console.log(pass ? "ALL PASS" : "SOME FAIL", out);
 process.exit(pass ? 0 : 1);
