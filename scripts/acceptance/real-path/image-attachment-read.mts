@@ -4,9 +4,9 @@
  *   npx tsx scripts/acceptance/real-path/image-attachment-read.mts --headless
  *   a) 模型收到的用户消息里写明了图片的名字。
  *   b) read_attachment 按这个名字拿回原图，不报错。
- *   c) 带 region 时按原图像素放大那一块：返回的范围是原图右下四分之一，图片放大到长边至少 1024。
+ *   c) 带 cell 时按原图像素放大那一格：返回的范围是原图右下四分之一，图片放大到长边至少 1024。
  *   d) 侧栏显示模型的回答。
- * 失败方式：read_attachment 只找 type=file 的附件（b 失败）；提示里不写图片名（a 失败）；region 被忽略、返回整张（c 失败）。
+ * 失败方式：read_attachment 只找 type=file 的附件（b 失败）；提示里不写图片名（a 失败）；cell 被忽略、返回整张（c 失败）。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -34,7 +34,7 @@ const model = await startScriptedModel([
   { match: '"lastReply"', steps: [{ text: '{"status":"done","remaining":null}' }] },
   { match: TASK, steps: [
     { tool: { name: "read_attachment", args: { name: IMAGE } } },
-    { tool: { name: "read_attachment", args: { name: IMAGE, region: { x: 0.5, y: 0.5, width: 0.5, height: 0.5 } } } },
+    { tool: { name: "read_attachment", args: { name: IMAGE, cell: { rows: 2, cols: 2, row: 2, col: 2 } } } },
     { text: ANSWER },
   ] },
 ], undefined, payload => {
@@ -87,7 +87,7 @@ try {
   const { width, height } = await import("node:fs/promises").then(fs => fs.readFile(join(REPO, "scripts/acceptance/fixtures/files", IMAGE))).then(png => ({ width: png.readUInt32BE(16), height: png.readUInt32BE(20) }));
   const zoom = toolTexts[1] ?? "";
   const range = `x ${Math.round(width / 2)}–${Math.round(width / 2) + Math.round(width / 2)}, y ${Math.round(height / 2)}–${Math.round(height / 2) + Math.round(height / 2)} of ${width}×${height}`;
-  assert.ok(zoom.includes(`Zoomed region of ${IMAGE}: original pixels ${range}`), `c 放大范围不对：${zoom.slice(0, 300)}`);
+  assert.ok(zoom.includes(`Zoomed cell row 2, column 2 of a 2×2 split of ${IMAGE}: original pixels ${range}`), `c 放大范围不对：${zoom.slice(0, 300)}`);
   // 右下四分之一，长边放大到 1024。
   const half = { w: Math.round(width / 2), h: Math.round(height / 2) }, scale = 1024 / Math.max(half.w, half.h);
   const expected = `${Math.round(half.w * scale)}x${Math.round(half.h * scale)}`;
