@@ -1565,7 +1565,7 @@ export type PageInteractionMessage =
   /** 按记忆填的那一格画「记得的」（后台 → 页面）；token 是后台挂在那个元素上的一次性属性值。 */
   | { type: 'MEMORY_FIELD_MARK'; token: string; memory: { id: string; text: string; createdAt: number } }
   /** 「记得的」小卡点了「忘掉」（页面 → 侧栏）。 */
-  | { type: 'MEMORY_FIELD_FORGET'; id: string }
+  | { type: 'MEMORY_FIELD_FORGET'; id: string; requestId: string }
   /** 圈出来问：页面上圈好了第 n 处（页面 → 侧栏），rect 是要截的视口区域（CSS 像素）。 */
   | { type: 'CIRCLE_DRAWN'; n: number; rect: { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number }; /** 圈内的网页文字；圈的是空白处就省略。 */ text?: string }
   /** 圈出来问：页面上按了 Esc，退出圈画（页面 → 侧栏）。 */
@@ -1630,7 +1630,7 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
     return token(message.token) && !!memory && typeof memory === 'object' && token(memory.id) && typeof memory.text === 'string' && Number.isFinite(memory.createdAt);
   }
 
-  if (message.type === 'MEMORY_FIELD_FORGET') return token(message.id);
+  if (message.type === 'MEMORY_FIELD_FORGET') return token(message.id) && token(message.requestId);
 
   if (message.type === 'CIRCLE_EXIT') return true;
 

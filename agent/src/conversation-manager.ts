@@ -20,6 +20,7 @@ import { createUserDelivery, projectDeliveryFacts, factsForDelivery } from "./us
 import type { ConversationPersistence } from "./conversation-persistence.js";
 import type { createConversationRuntime } from "./conversation-runtime.js";
 import type { MemoryStore } from "./memory-store.js";
+import type { MemoryEntry } from "../../shared/memory.js";
 import { MEMORY_ASK_EXPIRED, MemoryAskClosed } from "./memory-runtime.js";
 import { TaskProgress } from "./task-progress.js";
 import { TaskContinuationObserver } from './task-continuation.js';
@@ -118,6 +119,7 @@ export class ConversationManager {
   /** 任务起名：按「这一轮 + 碰过的网站」记起过的那一版，网站变了才重起，一轮最多起 4 次。 */
   private readonly taskNames=new Map<string,{key:string;busy:boolean;count:number}>();
   private readonly reading = new ReadingRequests();
+  private readonly memoryForgetRequests = new Map<string, { id: string; version: number; result: Promise<MemoryEntry[]> }>();
   private readonly entries = new Map<string, ConversationEntry>();
   private readonly pending = new Map<string, Promise<ConversationEntry>>();
   private readonly requests = new Map<string, Promise<ConversationEntry>>();
@@ -2333,7 +2335,20 @@ return;
         return;
       }
 
-      const removed = await this.memoryStore.forget({ id: message.id, expectedVersion: message.expectedVersion });
+      let pending = this.memoryForgetRequests.get(message.requestId);
+
+      if (pending && (pending.id !== message.id || pending.version !== message.expectedVersion)) throw new Error("同一个操作编号不能用于不同的记忆。");
+      if (!pending) {
+        pending = { id: message.id, version: message.expectedVersion, result: this.memoryStore.forget({ id: message.id, expectedVersion: message.expectedVersion }) };
+        this.memoryForgetRequests.set(message.requestId, pending);
+        const captured = pending;
+        const expire = () => {
+          const timer = setTimeout(() => { if (this.memoryForgetRequests.get(message.requestId) === captured) this.memoryForgetRequests.delete(message.requestId); }, 30_000);
+          if (typeof timer === "object" && "unref" in timer) timer.unref();
+        };
+        void pending.result.then(expire, expire);
+      }
+      const removed = await pending.result;
       this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, deletedId: message.id, entries: removed, rev: await this.memoryStore.currentRev() });
     } catch (error) {
       // 失败（如版本冲突）也带上当前 rev，面板据此重读；记忆读不出来时不带。

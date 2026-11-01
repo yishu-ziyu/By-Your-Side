@@ -104,7 +104,7 @@ export function installMemoryMark(): void {
       button.disabled = true;
       // 忘掉交给侧栏：它用回答下面那一行同一套「忘掉」，侧栏里写明已忘掉、可撤销。
       // SAFETY: 侧栏按 MEMORY_FIELD_FORGET 回 { ok }；没人接时是 undefined，出错时上面换成 null。
-      const result = await chrome.runtime.sendMessage({ type: 'MEMORY_FIELD_FORGET', id: memory.id }).catch(() => null) as { ok?: boolean } | null;
+      const result = await chrome.runtime.sendMessage({ type: 'MEMORY_FIELD_FORGET', id: memory.id, requestId: crypto.randomUUID() }).catch(() => null) as { ok?: boolean } | null;
 
       if (result?.ok) { clearField(); remove();
 
