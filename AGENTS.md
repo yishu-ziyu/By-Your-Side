@@ -37,7 +37,7 @@
 ### 多机分片
 
 - 全量验收用 `npm run accept:shard` 分到本机、阿里云、grokbox、Devin 并行跑：本机构建一次扩展推到各节点，按权重切片，汇总写进 `out/acceptance/real-path/shard-*.json`。有失败或未跑就非 0 退出；节点已知不在线时用 `--skip=<名字>` 跳过，用例会重分给其余在线节点；未跳过但中途连不上或超时的节点，其用例记未跑，绝不算通过。判定全在 `run-all.mts` 和各用例里，远端和本机标准一致。
-- 每台机器怎么连、怎么唤醒、Devin 蓝图怎么改、踩过的坑，都在[云电脑节点](docs/testing/cloud-nodes.md)。动节点前先读它；发现新坑或状态变了，当场改那一页。
+- 每台机器（含 Cursor 云端代理的 Linux 环境）怎么连、怎么唤醒、Devin 蓝图怎么改、踩过的坑，都在[云电脑节点](docs/testing/cloud-nodes.md)。动节点前先读它；发现新坑或状态变了，当场改那一页。
 
 ## 完成与汇报
 
@@ -79,8 +79,3 @@
 - 改样子先找原件，没有原件不出方案：按[原件清单](docs/design/references.md)挑（含用户的设计笔记和设计技能），提案把原件截图放旁边（10-19：凭感觉画的示意被判为丑、普通）。
 - 视觉提案给真实扩展里能点的原型，不给静态示意；图标用开源图标库，不用 emoji。
 - 给用户看之前：`npm run gallery` 出前后总览，自己对着原件看；`npm run check:style` 不许新增写死的字号、圆角、颜色；用户的评价记进[口味记录](docs/design/taste.md)，出方案前先读。
-
-## Cursor Cloud specific instructions
-
-- 真实路径验收在 Linux 上要先设 `EGO_ACCEPTANCE_CHROME=/usr/local/bin/chrome-for-testing`。查找只认 macOS 的 Playwright 缓存，不设就会报找不到 Chrome for Testing。用例加 `--headless`。脚本模型不需要密钥。
-- 依赖和这块 Chrome 已由环境安装备好。默认检查仍是 `npm run check:code`。
