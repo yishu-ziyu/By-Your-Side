@@ -87,6 +87,7 @@ import { conversationDayGroup, conversationOutcome, conversationRelativeTime, ot
 import { liveStatus, runMetaLine, STEER_OTHER_WAY, STEER_SKIP } from "../../../shared/run-status.js";
 import { describeTimeout } from "../../../shared/timeouts.js";
 import { TaskBar, stateHeadline } from "./task-bar.js";
+import { mountComposerGlide } from "./composer-glide.js";
 import type { TaskView } from "../../../shared/task-view.js";
 import { plainStep } from "../../../shared/user-facing.js";
 import { ResumeEntry } from "./resume-entry.js";
@@ -964,6 +965,8 @@ function conversationEmpty(): boolean {
 new MutationObserver(() => app.classList.toggle("conversation-empty", conversationEmpty())).observe(messagesEl, { childList: true, subtree: true });
 
 app.classList.toggle("conversation-empty", conversationEmpty());
+
+mountComposerGlide(app, document.querySelector<HTMLElement>(".composer-dock-wrap")!, document.getElementById("starter")!, [app, messagesEl, document.getElementById("status-pill")!, sendBtn]);
 
 function upsertConversation(c: ConversationSummary): void {
   if (conversations.get(c.id)?.state === "running" && c.state === "idle" && !c.checkpoint && c.id !== selectedConversationId) completedConversations.add(c.id);

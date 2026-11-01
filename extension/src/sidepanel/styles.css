@@ -1294,7 +1294,11 @@ details.run-steps.done .chip.error { background: transparent; }
 /* 空会话由脚本判断（#messages 里常驻续做卡挂载点，:empty 永远不成立；:has 又不能嵌套）。 */
 /* 空会话：光球、问候和「继续上次的事」作为一组，在空白区里上下居中，不再挤在输入框上方。 */
 #app.starter-ready.conversation-empty #starter { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; }
-#app.starter-ready.conversation-empty:not(:has(#input:not(:placeholder-shown), #status-pill.running, #send-btn.stopping)) #messages-frame { flex: 0 1 auto; }
+#app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #messages-frame { flex: 0 1 auto; }
+/* 空会话：问候、按钮和输入框收成一组上下居中（ChatGPT、Claude 新会话的做法），打字时也不跳回底边。
+   引导缩成内容高度，所以改成 static，让光带画布以整个侧栏为框、不跟着变短。 */
+#app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #starter { position: static; flex: 0 0 auto; margin-top: auto; padding-bottom: var(--s-3); }
+#app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) .composer-dock-wrap { margin-bottom: auto; }
 #starter-orb { width: 56px; height: 56px; margin-bottom: var(--s-3); }
 /* 点阵光带铺满起点区，只在光球那一条里有点；文字和按钮压在它上面。 */
 #starter { position: relative; }
@@ -1325,7 +1329,10 @@ details.run-steps.done .chip.error { background: transparent; }
 @keyframes starterLetter { from { opacity: 0; transform: translateY(.45em); } }
 @media (prefers-reduced-motion: reduce) { #starter-brand span { animation: none !important; } }
 /* 收起条件比出现条件多一层 :has，保证这些情况下引导不占位 */
-#app.starter-ready.conversation-empty:has(#input:not(:placeholder-shown), #status-pill.running, #send-btn.stopping) #starter { display: none; }
+#app.starter-ready.conversation-empty:has(#status-pill.running, #send-btn.stopping) #starter { display: none; }
+/* 离开空会话时问候按上一帧的位置临时摆回、只淡出（composer-glide.ts），光带仍以整个侧栏为框。 */
+#app.starter-leaving #starter { display: flex !important; position: absolute; inset-inline: 0; top: var(--starter-leaving-top); height: var(--starter-leaving-height); flex: none; margin: 0; pointer-events: none; z-index: 1; }
+#app.starter-leaving #starter-glow { inset: auto 0; top: calc(-1 * var(--starter-leaving-top)); height: 100vh; }
 #starter-title { margin: 0 0 3px; font-size: var(--fs-read); font-weight: 600; color: var(--text-primary); }
 #starter-sub { margin: 0 0 8px; font-size: var(--fs-meta); line-height: 1.45; }
 /* 没连模型：问候下面只留「连接模型」 */
