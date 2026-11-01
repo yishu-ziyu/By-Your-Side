@@ -113,7 +113,7 @@ export function dropPendingMessage(card: HTMLElement, bubble: HTMLElement | null
   if (description) description.textContent = "连好后只自动发最后一句。这句要的话，再发一次。";
 }
 
-/** 把刚发出的用户气泡收进未连接卡，显示成「连好后自动发」的虚线胶囊。 */
+/** 把刚发出的用户气泡收进未连接卡，显示成虚线胶囊；「会自动发出」只由卡上那句说明讲一次。 */
 export function holdPendingMessage(card: HTMLElement, bubble: HTMLElement | null): void {
   if (!bubble || !card.isConnected || bubble.classList.contains("held-pending")) return;
   const slot = card.querySelector(".held-slot");
@@ -121,14 +121,6 @@ export function holdPendingMessage(card: HTMLElement, bubble: HTMLElement | null
   if (!slot) return;
   bubble.classList.add("held-pending");
   bubble.dataset.f01 = "held";
-
-  if (!bubble.querySelector(".held-hint")) {
-    const hint = document.createElement("span");
-    hint.className = "held-hint";
-    hint.textContent = "· 连好后自动发";
-    bubble.append(hint);
-  }
-
   slot.append(bubble);
 }
 
@@ -181,7 +173,6 @@ function paintConnected(card: HTMLElement, model: string | null): void {
 function releaseHeld(bubble: HTMLElement, card: HTMLElement): void {
   bubble.classList.remove("held-pending");
   delete bubble.dataset.f01;
-  bubble.querySelector(".held-hint")?.remove();
   bubble.style.transform = "";
   card.after(bubble);
 }
