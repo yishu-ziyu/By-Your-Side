@@ -58,9 +58,9 @@ import {
 } from "../shared/overlay.js";
 import { sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
 import { feedbackLifetimeMs, type FeedbackPillView } from "../shared/feedback-pill.js";
-import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, isEdgePill, type EdgePill } from "../shared/edge-pill.js";
+import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, EDGE_TASK_ABORT, EDGE_TASK_STEER, isEdgePill, isEdgeTask, type EdgePill } from "../shared/edge-pill.js";
 import { CURSOR_SPOT_SAVE, CURSOR_SPOT_TAKE, isCursorSpots, type CursorSpot } from "../shared/cursor-spot.js";
-import { EDGE_ENTRY_KEY, isEdgeEntryOff } from "../shared/edge-entry.js";
+import { EDGE_ENTRY_KEY, EDGE_Y_KEY, edgeY, isEdgeEntryOff } from "../shared/edge-entry.js";
 import { createEdgeTab, type EdgeTab, type EdgeTabOther, type EdgeTabView } from "./edge-tab.js";
 import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
@@ -2611,6 +2611,10 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
         if (member) jumpToMember(member);
       },
+      steer: text => send({ type: EDGE_TASK_STEER, text }),
+      abort: () => { void send({ type: EDGE_TASK_ABORT }); },
+      open: openPanel,
+      moved: dy => { try { void chrome.storage.local.set({ [EDGE_Y_KEY]: dy }); } catch { /* 自检页没有扩展运行时。 */ } },
     });
   }
 
@@ -2774,6 +2778,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       void chrome.runtime.sendMessage({ type: EDGE_PILL_GET }).then((reply: unknown) => {
         const pill = (reply as { pill?: unknown } | undefined)?.pill ?? null;
         taskPill = isEdgePill(pill) ? pill : null;
+        const task = (reply as { task?: unknown } | undefined)?.task ?? null;
+        tab().setTask(isEdgeTask(task) ? task : null);
         voiceHere = (reply as { voice?: unknown } | undefined)?.voice === true;
         renderAmbient();
       }, () => { /* 后台未就绪 */ });
@@ -2785,6 +2791,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       if (sender.id !== chrome.runtime.id || (message as { type?: unknown } | null)?.type !== EDGE_PILL_SHOW) return;
       const pill = (message as { pill?: unknown }).pill ?? null;
       taskPill = isEdgePill(pill) ? pill : null;
+      const task = (message as { task?: unknown }).task ?? null;
+      tab().setTask(isEdgeTask(task) ? task : null);
       voiceHere = (message as { voice?: unknown }).voice === true;
       renderAmbient();
     });
@@ -3397,8 +3405,10 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   try {
     void chrome.storage.local.get(EDGE_ENTRY_KEY).then(stored => applyEntrySetting(isEdgeEntryOff(stored[EDGE_ENTRY_KEY])), () => applyEntrySetting(false));
+    void chrome.storage.local.get(EDGE_Y_KEY).then(stored => tab().setOffset(edgeY(stored[EDGE_Y_KEY])), () => {});
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === "local" && EDGE_ENTRY_KEY in changes) applyEntrySetting(isEdgeEntryOff(changes[EDGE_ENTRY_KEY]!.newValue));
+      if (area === "local" && EDGE_Y_KEY in changes) tab().setOffset(edgeY(changes[EDGE_Y_KEY]!.newValue));
     });
   } catch { applyEntrySetting(false); /* 自检页没有扩展运行时。 */ }
 })();

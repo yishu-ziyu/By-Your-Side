@@ -3,6 +3,7 @@ import { installContinuationWakeup } from './continuation-wakeup.js';
 import { assertSameDocument } from './observation-document.js';
 import { activeTargetTabs, isPanelUrl, popoutSource } from "./target-window.js";
 import { installEdgePill } from "./edge-pill.js";
+import { EDGE_TASK_ABORT, EDGE_TASK_STEER } from "../shared/edge-pill.js";
 import { installFloatCard } from "./float-card.js";
 import { installMarginalia } from "./marginalia.js";
 import { installNudge } from "./nudge.js";
@@ -419,6 +420,24 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   }
 
   sendResponse({ok:false,error:"NOT_WORKING_HERE"});
+ })();
+
+ return true;
+});
+
+// 进度卡上补的一句和「停止」：交给正在操作这一页的会话；这一页没人在操作时交给侧栏选中的会话。
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+ const msg = raw as { type?: unknown; text?: unknown } | null;
+ if (sender.id !== chrome.runtime.id || (msg?.type !== EDGE_TASK_STEER && msg?.type !== EDGE_TASK_ABORT)) return;
+ const tabId = sender.tab?.id;
+ void (async () => {
+  let target: ReturnType<typeof controller> | null = null;
+  for (const c of controllers.values()) if (tabId != null && await c.worksOn(tabId)) { target = c; break; }
+  target ??= selectedConversationId ? controller(selectedConversationId) : null;
+  if (!target) { sendResponse({ ok: false }); return; }
+  if (msg.type === EDGE_TASK_ABORT) { target.stop(); sendResponse({ ok: true }); return; }
+  const text = typeof msg.text === "string" ? msg.text.trim().slice(0, 2000) : "";
+  sendResponse({ ok: Boolean(text) && await target.spoken(text, undefined, undefined, true) });
  })();
 
  return true;
