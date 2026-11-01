@@ -15,7 +15,7 @@
  *               必须能读到暗号，证明探针真能发现泄漏。
  *               只作证据、不判失败：读扩展安装包里的静态文件（manifest、打包代码）。Chrome 对 chrome-extension:// 资源
  *               不套页面 CSP，沙箱页总能读到自己扩展的安装包；那是公开代码，不含凭据、记忆或存储（10-02 首轮实测后修正）。
- *               另记 CDN 脚本是否被 CSP 拦下，用来确认 manifest 里放宽的沙箱 CSP 真的生效。
+ *               另记 CDN 脚本是否被 CSP 拦下；生成网页不许联网，外发与否由 artifact-network 判。
  *   markdown    Markdown 显示成带 # 和 ** 的源码，而不是标题与加粗。
  *   image/pdf   SVG 不是图片（img 没解码出尺寸）；PDF 没交给 Chrome 的 PDF 显示（不是 application/pdf 的 blob）。
  *   text        CSV/JSON 不是原样（逐字比对）或不是等宽字体。
