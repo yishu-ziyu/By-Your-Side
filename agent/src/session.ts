@@ -804,21 +804,19 @@ if(required.includes(key))candidates.set(key,attachment);
     tabId: number;
     url: string;
     at: number;
-    main?: Promise<{ text?: unknown; totalChars?: unknown; url?: unknown } | null>;
     tabs?: Promise<{ tabs?: TabInfo[] } | null>;
   } | null = null;
 
-  /** 点进输入框时后台预取当前页正文与标签页清单（不挂调试器、不写运行外日志），5 秒内点发送且地址未变时直接复用。 */
+  /** 点进输入框时后台预取标签页清单（不挂调试器、不写运行外日志），5 秒内点发送且地址未变时直接复用。 */
   warmPageObservation(context?: PageContext): void {
     const tabId = context?.tabId;
     if (!this.rpc || this.memberId || typeof tabId !== "number" || !context?.url || this.session?.isStreaming || this.hold.isHeld()) return;
     const now = Date.now();
-    if (this.warmedObservation && this.warmedObservation.tabId === tabId && this.warmedObservation.url === context.url && now - this.warmedObservation.at < 5_000 && this.warmedObservation.main && this.warmedObservation.tabs) return;
+    if (this.warmedObservation && this.warmedObservation.tabId === tabId && this.warmedObservation.url === context.url && now - this.warmedObservation.at < 5_000 && this.warmedObservation.tabs) return;
     this.warmedObservation = {
       tabId,
       url: context.url,
       at: now,
-      main: (this.rpc.call("page_text", { tabId, max: PRE_OBSERVATION_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null),
       tabs: (this.rpc.call("list_tabs", {}, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ tabs?: TabInfo[] }>).catch(() => null),
     };
   }
@@ -1750,21 +1748,18 @@ return;}
     const epoch=this.controlEpoch,run=this.deliveryRunId();
 
     try {
-      const warmMain = phase === "task" && role === "current" && this.warmedObservation && this.warmedObservation.tabId === tabId && this.warmedObservation.url === context.url && Date.now() - this.warmedObservation.at < 5_000
-        ? this.warmedObservation.main
-        : undefined;
-      if (warmMain && this.warmedObservation) this.warmedObservation.main = undefined;
       const freshMain = () => (this.rpc!.call("page_text", { tabId, max: PRE_OBSERVATION_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
       // 正文和 AX 树都给：只给 AX 树时正文被导航和编号挤掉，模型不信、重读 2–3 轮；
       // 只给正文时动作任务没有编号，中位从 3 轮变成 7 轮。哪一样读失败就只给另一样。
-      const [warmedOrFreshMain, tree] = await Promise.all([
-        (warmMain ?? freshMain()).then(res => res ?? freshMain()),
+      const [freshOrRetriedMain, tree] = await Promise.all([
+        freshMain().then(res => res ?? freshMain()),
         (this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; url?: unknown; textEvidence?: { fragments?: Array<{ text?: unknown }> } }>).catch(() => null),
       ]);
       const treeUrl = typeof tree?.url === "string" ? tree.url : undefined;
-      let main = warmMain && warmedOrFreshMain && ((typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== context.url) || (treeUrl && typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== treeUrl))
+      let main = freshOrRetriedMain && typeof freshOrRetriedMain.url === "string"
+        && (freshOrRetriedMain.url !== context.url || (treeUrl && freshOrRetriedMain.url !== treeUrl))
         ? await freshMain()
-        : warmedOrFreshMain;
+        : freshOrRetriedMain;
 
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
       const preview = pageReading(main);
