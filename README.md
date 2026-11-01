@@ -13,10 +13,6 @@
   <a href="https://github.com/yishu-ziyu/By-Your-Side/commits"><img src="https://img.shields.io/github/commit-activity/m/yishu-ziyu/By-Your-Side?style=flat-square" alt="提交活跃度"></a>
 </div>
 
-<p align="center">
-  <img src="docs/assets/readme-hero.jpg" alt="在维基百科页面上，By Your Side 的会话卡片浮在右侧，用三点讲清主动降噪的原理" width="900" />
-</p>
-
 ## 为什么做
 
 网页上的事，大多发生在你已经登录的网站里。By Your Side 是一个 Chrome 侧栏扩展：助手就在你正用的浏览器里，用你现有的登录状态读页面、点击、填写、整理结果。你交代一句，它去做；每一步你都看得见，随时可以拿回来。
