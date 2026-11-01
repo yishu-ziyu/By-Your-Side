@@ -34,9 +34,11 @@ export type MemoryPlacement =
 
 /** 密码、验证码、证件号、银行卡：这类内容不记，原话也不进诊断记录。 */
 const SECRET = /密码|口令|验证码|校验码|动态码|身份证|护照号|银行卡|卡号|信用卡|cvv|安全码|password|passcode|passwd|\botp\b|2fa|verification code|security code|api[\s_-]?key|\b\d{15,19}\b/i;
+const SECRET_NUMBER = /(?<![A-Za-z\d])(?:\d[ \t\u200b-\u200d-]*){14,18}[\dXx](?![A-Za-z\d])/;
 
 export function looksSecret(text: string): boolean {
-  return SECRET.test(text);
+  const normalized = text.normalize("NFKC");
+  return SECRET.test(normalized) || SECRET_NUMBER.test(normalized);
 }
 
 /**
