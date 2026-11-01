@@ -19,7 +19,6 @@ const fact={text:'{"problems":[]}'};
 let evidence:{images:number;text:string}[]=[];
 const model=await startScriptedModel([
  {match:'USER REQUEST:',steps:[fact]},
- {match:'Resolve these internal evidence',steps:[{text:'图像结论被错误撤回。'}]},
  {match:'"lastReply"',steps:[{text:'{"status":"done","remaining":null}'}]},
  {match:TASK,steps:[
   {tool:{name:'navigate',args:{url:origin+'/'}}},{tool:{name:'download_url',args:{url:origin+'/sample.png',filename:'sample.png'}}},
@@ -34,7 +33,7 @@ const model=await startScriptedModel([
   if(!text.includes('USER REQUEST:'))continue;
   const images=parts.filter(p=>p.type==='image_url').length;
   evidence.push({images,text});
-  fact.text=JSON.stringify({problems:images===1?[]:[{kind:'insufficient_evidence',claim:ANSWER,source:null,quote:null,text:'核对请求缺少下载的原图'}]});
+  fact.text=JSON.stringify({problems:images===1?[]:[{kind:'contradiction',claim:ANSWER,source:'fixture',quote:'fixture',text:'核对请求缺少下载的原图'}]});
  }
 });
 const rp=await launchRealPath();let error='';let panel='';

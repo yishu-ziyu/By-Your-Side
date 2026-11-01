@@ -17,7 +17,6 @@ const fact={text:'{"problems":[]}'};
 let evidence:{images:number;text:string}[]=[];
 const model=await startScriptedModel([
  {match:'USER REQUEST:',steps:[fact]},
- {match:'Resolve these internal evidence',steps:[{text:'图像结论被错误撤回。'}]},
  {match:'"lastReply"',steps:[{text:'{"status":"done","remaining":null}'}]},
  {match:TASK,steps:[
   {tool:{name:'navigate',args:{url:origin+'/one'}}},{tool:{name:'screenshot',args:{}}},
@@ -31,7 +30,7 @@ const model=await startScriptedModel([
   if(!text.includes('USER REQUEST:'))continue;
   const images=parts.filter(p=>p.type==='image_url').length;
   evidence.push({images,text});
-  fact.text=JSON.stringify({problems:images===2?[]:[{kind:'insufficient_evidence',claim:ANSWER,source:null,quote:null,text:'核对请求缺少两张实际图片'}]});
+  fact.text=JSON.stringify({problems:images===2?[]:[{kind:'contradiction',claim:ANSWER,source:'fixture',quote:'fixture',text:'核对请求缺少两张实际图片'}]});
  }
 });
 const rp=await launchRealPath();let error='';let panel='';

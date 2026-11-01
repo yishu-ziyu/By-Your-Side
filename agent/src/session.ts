@@ -71,7 +71,7 @@ import { MEMORY_ASK_EXPIRED, MemoryAskClosed, MemoryRuntime, type MemoryAskAnswe
 import { judgeNudge, type NudgeVerdict } from "./nudge.js";
 import type { BrowseDay, BrowseHabit } from "../../shared/browse-habits.js";
 import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
-import { checkFacts, factFixPrompt, resolveUnconfirmedFacts, seenThisRun, worthChecking, type FactCheckFlag, type FactCheckInput } from "./fact-check.js";
+import { appendCorrections, checkFacts, seenThisRun, worthChecking, type FactCheckFlag, type FactCheckInput } from "./fact-check.js";
 import { asksUser, checkGoal, goalReadEvidence, defersWork, recordHostGoalCheck, recordUnavailableGoalCheck, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CHECK_PROMPT, GOAL_CHECK_PROMPT_SHA, GOAL_GATE_WAIT_MS, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalCheckTrace, type GoalCheckTraceContext, type GoalVerification, type GoalVerdict } from "./goal-check.js";
 import { GoalLedger } from "./goal-ledger.js";
 import { ContinuePolicy } from "./continue-policy.js";
@@ -874,9 +874,6 @@ if(required.includes(key))candidates.set(key,attachment);
       const runClock = new RunClock();
 
       const extensionFactories = [
-        { name: "sideagent-fact-repair", hidden: true, factory: ((pi) => {
-          pi.on("tool_call", event => resultHost?.guardFactRepair(event.toolName));
-        }) as import("@earendil-works/pi-coding-agent").ExtensionFactory },
         { name: "sideagent-tool-failure-boundary", hidden: true, factory: failurePolicy.extension() },
         { name: "sideagent-no-progress-boundary", hidden: true, factory: noProgressPolicy.extension() },
         // 排在两条边界之后：它们比的是工具原本的结果，追加的下一步提示不能让重复的错误看起来像新内容。
@@ -3488,20 +3485,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
   }
 
-  /** 已经为事实核对改正过一次回答的任务：再有缺口就明确答案的不确定性，不再启动模型纠正。 */
-  private factFixRuns = new Set<string>();
-  private factRepairEpoch: number | null = null;
-  private factRepairReads = 0;
-
-  private guardFactRepair(tool: string): { block: true; reason: string } | undefined {
-    if (this.factRepairEpoch !== this.controlEpoch) return;
-    if (tool === "send_user_message") return;
-    if (["snapshot", "read_element", "read_elements"].includes(tool) && this.factRepairReads++ === 0) return;
-
-    return { block: true, reason: "事实核对只允许补读一次相关来源。请依据已有证据给出答案，无法确认的内容明确说明；不要执行网页操作。" };
-  }
-
-  /** 回答交给用户之后，逐条核对回答里的事实；对不上就让助手自己改正一次，改过仍有缺口就在答案中明确。失败只记诊断，不打扰用户。 */
+  /** 回答交给用户之后核对已读来源里的事实；和原文矛盾就在原回答末尾补更正，不收起、不重跑模型。失败只记诊断，不打扰用户。 */
   private async checkFactsAfterDelivery(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): Promise<void> {
     const epoch = this.controlEpoch;
     const runId = this.deliveryRunId();
@@ -3537,11 +3521,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "superseded", problems: problems.length });
         return;
       }
-      if (problems.length && this.fixFacts(problems, epoch)) {
-        this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "correction_started", problems: problems.length });
-        return;
-      }
-      const replacement = problems.length ? resolveUnconfirmedFacts(answer, problems) : undefined;
+      const replacement = problems.length ? appendCorrections(answer, problems) : undefined;
       if (replacement && this.session) {
         await this.session.sendCustomMessage({ customType: "fact-resolution", display: false,
           content: `本次运行的上下文，不是用户消息。上一份回答已按证据修订，后续引用以此为准：\n${replacement}` }, { triggerTurn: false });
@@ -3552,29 +3532,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     } catch (error) {
       this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, failed: error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160) });
     }
-  }
-
-  /**
-   * 用户看不到页面，「请核对」只能把查证推回给用户：由助手对照页面改正回答，侧栏照目标核对判继续那样收起旧回答。
-   * 每个任务只改一次，避免核对和改正互相拉锯。开不起来时返回 false，由调用方消除答案中未证实的肯定说法。
-   */
-  private fixFacts(problems: FactCheckFlag[], epoch: number): boolean {
-    const runId = this.deliveryRunId(), session = this.session;
-
-    if (!runId || !session || this.factFixRuns.has(runId) || session.isStreaming || epoch !== this.controlEpoch) return false;
-    this.factFixRuns.add(runId);
-    this.factRepairEpoch = epoch;
-    this.factRepairReads = 0;
-    this.runTrace.record("fact_fix", { problems });
-    this.callbacks.emit({ kind: "goal_check", status: "continue", reason: "facts", finding: "正在核实回答中的来源" });
-    this.callbacks.setStatus('running');
-    this.deliveredResultThisRun = false;
-    void session.prompt(factFixPrompt(problems)).catch(error => {
-      if (this.deliveryRunId() === runId && !session.isStreaming) this.callbacks.setStatus(this.hold.isHeld() ? 'user' : 'idle');
-      this.emitError(error);
-    }).finally(() => { if (this.factRepairEpoch === epoch) this.factRepairEpoch = null; });
-
-    return true;
   }
 
   private async reverifyGoal(original: GoalVerdict, checkInput: GoalCheckInput, model: Parameters<typeof checkGoal>[1], headers: Parameters<typeof checkGoal>[4], trace: GoalCheckTraceContext, context: { runId: string | null; tabId: number | null; pageText: string; endedOn: string; pageMissing: boolean; current: () => boolean }): Promise<{ verdict: GoalVerdict; retryFingerprint: string | null } | null> {
