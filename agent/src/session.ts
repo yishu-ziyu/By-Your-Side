@@ -161,6 +161,8 @@ const RESULT_TEXT_MAX = 500;
 const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
 
 const PRE_OBSERVATION_TEXT_MAX = 12_000;
+/** 无障碍树里的 StaticText 凑不出这么多字时，视它只有外壳与噪声：正文提取器为空仍按「来源未就绪」处理。 */
+const AX_TREE_SOURCE_MIN_CHARS = 400;
 /** 这句话可能是要翻译网页：只决定要不要预取首屏，猜错只多花几次快速模型请求，页面不受影响。 */
 const TRANSLATE_INTENT = /翻译|译成|译为|\btranslate\b/i;
 /** 说了译成别的语言：模型会传那个语言，预取的简体中文用不上。 */
@@ -503,8 +505,8 @@ if(required.includes(key))candidates.set(key,attachment);
   private async assertContinuationTool(name: string, params: Record<string, unknown>): Promise<void> {
     if (this.sourcePreparationOnly) {
       const page = this.conversationSnapshot()?.recoveryInput?.page;
-      if (!['snapshot','read_element','read_elements','wait_for_condition','task_goals'].includes(name)
-        || params.tabId !== undefined && params.tabId !== page?.tabId) throw new IncompletePageSource('完整来源尚未就绪，现在只可读取原页面或登记等待条件。');
+      if (!['snapshot','read_element','read_elements','wait_for_condition','task_goals','send_user_message'].includes(name)
+        || params.tabId !== undefined && params.tabId !== page?.tabId) throw new IncompletePageSource('完整来源尚未就绪，现在只可读取原页面、登记等待条件或向用户说明。');
     }
     const c = this.conversationSnapshot()?.continuation;
     if (!c || c.state === 'COMPLETED') return;
@@ -1760,7 +1762,7 @@ return;}
       // 只给正文时动作任务没有编号，中位从 3 轮变成 7 轮。哪一样读失败就只给另一样。
       const [warmedOrFreshMain, tree] = await Promise.all([
         (warmMain ?? freshMain()).then(res => res ?? freshMain()),
-        (this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; url?: unknown }>).catch(() => null),
+        (this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; url?: unknown; textEvidence?: { fragments?: Array<{ text?: unknown }> } }>).catch(() => null),
       ]);
       const treeUrl = typeof tree?.url === "string" ? tree.url : undefined;
       let main = warmMain && warmedOrFreshMain && ((typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== context.url) || (treeUrl && typeof warmedOrFreshMain.url === "string" && warmedOrFreshMain.url !== treeUrl))
@@ -1772,7 +1774,13 @@ return;}
       let wholeRead = false;
       // about:blank、新标签页这类没有正文可读，问题本就不针对它；网页和本地文件才要求先读全。
       const readablePage = /^(?:https?|file):/i.test(preview?.url ?? context.url ?? '');
-      if (readablePage && (!preview?.text.trim() || preview.totalChars > preview.text.length)) {
+      const treeText = typeof tree?.text === "string" ? tree.text.trim() : "";
+      // 正文在 DOM 走不到的宿主里（shadow root、会话类应用）时提取器恒空，而同一页的无障碍树仍有实质文字
+      // （textEvidence 只收 StaticText 行，不计控件名与外壳）：整篇闸会再用同一提取器，必然仍空，任务被推进
+      // 没有出口的「来源未就绪」。按「读失败给另一样」交结构树。
+      const treeEvidenceChars = (tree?.textEvidence?.fragments ?? []).reduce((total, fragment) => total + (typeof fragment.text === "string" ? fragment.text.length : 0), 0);
+      const extractorBlank = !preview?.text.trim() && treeEvidenceChars >= AX_TREE_SOURCE_MIN_CHARS;
+      if (readablePage && !extractorBlank && (!preview?.text.trim() || preview.totalChars > preview.text.length)) {
         const requests = this.copyRequirements();
         const key = JSON.stringify([run, requests]);
         if (this.sourceScope?.key !== key) {
@@ -1807,14 +1815,14 @@ return;}
         }
       }
       const text = typeof main?.text === "string" ? main.text.trim() : "";
-      const ax = !wholeRead && typeof tree?.text === "string" ? tree.text.trim() : "";
+      const ax = !wholeRead ? treeText : "";
 
       if (!text && !ax) throw new Error("读不到这个页面");
       this.emitReadObservation(id, 'snapshot', { tabId }, ax ? tree : main, false);
       const total = typeof main?.totalChars === "number" ? main.totalChars : text.length;
       const clip = (value: string, what: string) => value.length > PRE_OBSERVATION_TEXT_MAX ? `${value.slice(0, PRE_OBSERVATION_TEXT_MAX)}\n[${what} shortened to its first ${PRE_OBSERVATION_TEXT_MAX} characters.]` : value;
 
-      const completeSource = typeof main?.totalChars === "number" && total <= text.length;
+      const completeSource = text.length > 0 && typeof main?.totalChars === "number" && total <= text.length;
       if (completeSource) this.quoteSources.add(text, typeof main?.url === "string" ? main.url : treeUrl ?? context.url);
       const citedText = completeSource ? this.quoteSources.mark(text) : text;
       await this.persistQuoteSources();
@@ -2602,6 +2610,7 @@ return;}
 
     this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.exploreLadder?.reset(); this.runClock?.reset();
     this.continuePolicy.reset();
+    this.sourcePreparationOnly = false;
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };
     this.activeGoal = snapshot.goal;
@@ -3179,7 +3188,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           const ev = event.assistantMessageEvent;
 
           if (ev.type === "text_delta") {
-            if (this.sourcePreparationOnly) break;
             const text = ev.partial.content.filter(part => part.type === "text").map(part => part.text).join("");
             this.publishQuoteSources(text);
             if (ev.delta.trim() && !this.explicitDelivery) this.deliveredResultThisRun = true;
@@ -3331,7 +3339,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           // willRetry=true 时自动重试紧随其后，本轮并未结束：不下发 agent_end，
           // 避免进度状态与结果被误当作最终（状态保持 running）。
           if (event.willRetry) break;
-          if (this.sourcePreparationOnly && !this.expectedStoppedAgentEnd && !this.hold.isHeld() && this.conversationSnapshot()?.continuation?.state !== 'WAITING_CONDITION') {
+          if (this.sourcePreparationOnly && !this.expectedStoppedAgentEnd && !this.hold.isHeld() && this.conversationSnapshot()?.continuation?.state !== 'WAITING_CONDITION'
+            && !this.deliveredResultThisRun && !finalAssistantText(event.messages)) {
             this.answerHold = { events: [], settled: true };
             setStatus('idle');
             emit({ kind: 'error', message: '没有读到同一页面的完整正文，也未登记有效等待条件；分析尚未开始。' });
@@ -3947,7 +3956,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
 
     // 模型最后写下的普通正文就是给用户的回答：没走交付工具时由宿主原样交付，不再扣下等复核。
-    if (!this.sourcePreparationOnly && !toolFailure && !stoppedByUser && !this.hold.isHeld() && this.sendOptions && !this.deliveredResultThisRun && !lastAssistantError(event.messages)) {
+    if (!toolFailure && !stoppedByUser && !this.hold.isHeld() && this.sendOptions && !this.deliveredResultThisRun && !lastAssistantError(event.messages)) {
       const finalText = finalAssistantText(event.messages);
 
       if (finalText) this.deliverFinalText(finalText);
