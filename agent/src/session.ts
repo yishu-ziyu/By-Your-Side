@@ -4192,11 +4192,14 @@ const STEER_CONTRACT_NOTE = "[这条输入是对当前运行任务的补充或�
  */
 /** 用户这条话带的附件里，模型要读的文字部分：圈内网页文字、文件内容。图片另走 extractImages。 */
 function withAttachments(text: string, attachments: Attachment[] | undefined, seesImages: boolean): string {
-  const images = (attachments ?? []).filter(a => a.type === "image").length;
+  const imageNames = (attachments ?? []).flatMap(a => (a.type === "image" ? [a.name] : []));
+  const images = imageNames.length;
   // 只收文字的模型拿不到图：照实告诉它，免得它装作看过图。
   const unseen = images && !seesImages ? `\n[The user attached ${images} image(s), but the current model cannot see images, so they were not sent. Tell the user you cannot see them and suggest switching to a model that reads images.]` : "";
+  // 图片名不写出来，模型要重看原图时只能猜名字。
+  const named = images && seesImages ? `\n[Attached image(s), in the order sent: ${imageNames.map(name => JSON.stringify(name)).join(", ")}. They are already in this message; read_attachment with one of these names returns that original again.]` : "";
 
-  return withAttachedFiles(withCircleNotes(text, attachments), attachments, seesImages) + unseen;
+  return withAttachedFiles(withCircleNotes(text, attachments), attachments, seesImages) + unseen + named;
 }
 
 function withCircleNotes(text: string, attachments?: Attachment[]): string {
