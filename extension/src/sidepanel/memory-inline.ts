@@ -286,9 +286,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     if (!isPageInteractionMessage(message) || message.type !== "MEMORY_FIELD_FORGET") return;
     const found = findUsedEntry(message.id);
 
-    if (!found) { respond({ ok: false });
-
-   return; }
+    if (!found) return;
 
     const { line, item } = found;
     line.open = true;
@@ -296,13 +294,13 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
       if (line.el.isConnected || line === pendingUsedLine) renderUsedLine(line);
 
       if (!item.pending) respond({ ok: item.state === "forgotten" });
-    });
+    }, undefined, message.requestId);
 
     return true;
   });
 
   /** 忘掉 / 这里别用 / 撤销：记忆走记忆面板的同一套请求，过往任务走过往任务的请求。 */
-  function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", rerender: () => void, hostname?: string): void {
+  function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", rerender: () => void, hostname?: string, forgetRequestId?: string): void {
     const undoing = action === "undo" ? item.state : null;
     const next: UsedItem["state"] = action === "forget" ? "forgotten" : action === "not-here" ? "not-here" : "used";
 
@@ -331,7 +329,7 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     rerender();
 
     if (item.kind === "entry") {
-      const message = action === "forget" ? drawer().memoryState.beginForget(conversationId(), item.entry)
+      const message = action === "forget" ? drawer().memoryState.beginForget(conversationId(), item.entry, forgetRequestId)
         : undoing === "forgotten" ? drawer().memoryState.beginUnforget(conversationId(), item.removed ?? [item.entry])
           : drawer().memoryState.beginSite(conversationId(), item.entry, hostname!, action === "not-here");
 

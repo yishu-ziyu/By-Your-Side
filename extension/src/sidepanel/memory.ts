@@ -136,8 +136,7 @@ export class MemoryManagementState {
     };
   }
 
-  beginForget(conversationId: string, entry: Pick<MemoryEntry, "id" | "version">): MemoryClientMessage {
-    const requestId = this.requestId();
+  beginForget(conversationId: string, entry: Pick<MemoryEntry, "id" | "version">, requestId = this.requestId()): MemoryClientMessage {
     const order = ++this.order;
     this.pending.set(requestId, {
       requestId,
