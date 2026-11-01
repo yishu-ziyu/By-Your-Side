@@ -54,6 +54,7 @@ const ORDERS_HOST = "orders-fixture.test";
 const order = (method: "GET" | "POST") => ({ tool: { name: "fetch", args: { url: `http://${ORDERS_HOST}:${siteAddress(site).port}/api/orders`, method, ...(method === "POST" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ item: "季度报表打印", passengers: 2, token: "tok-SECRET-42" }) } : {}) } } });
 const ALL_CASES: Case[] = [
   { id: "click", step: { tool: { name: "click", args: { target: "#send", label: "发送" } } }, answer: "decline" },
+  { id: "program-click-send", step: { tool: { name: "browser_run", args: { label: "发送消息", code: 'return await browser.click({ target: "#send", label: "发送" });' } } }, answer: "send" },
   { id: "script-click", step: js("document.querySelector('#send').click(); 'ok'"), answer: "decline" },
   { id: "script-enter", step: js("const t=document.querySelector('#draft'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,bubbles:true,cancelable:true})); 'ok'"), answer: "esc" },
   { id: "key-enter", step: { tool: { name: "press_key", args: { key: "Enter" } } }, answer: "decline" },
@@ -75,7 +76,7 @@ const ALL_CASES: Case[] = [
 ];
 const isScript = (step: unknown): boolean => {
   const tool = step && typeof step === "object" ? (step as Record<string, unknown>).tool : null;
-  return !!tool && typeof tool === "object" && ["js", "browser_run"].includes(String((tool as Record<string, unknown>).name));
+  return !!tool && typeof tool === "object" && (String((tool as Record<string, unknown>).name) === "js" || (String((tool as Record<string, unknown>).name) === "browser_run" && (tool as { args?: { code?: unknown } }).args?.code?.toString().includes("browser.js(")));
 };
 const CASES = process.env.ONLY ? ALL_CASES.filter(c => process.env.ONLY!.split(",").includes(c.id)) : ALL_CASES;
 if (!CASES.length || (process.env.ONLY && process.env.ONLY.split(",").some(id => !ALL_CASES.some(c => c.id === id)))) throw new Error("ONLY 包含未知用例，未运行不能算通过。");
@@ -138,7 +139,7 @@ try {
     const cardAll = dlg ? String(await rp.evaluate(panel, `[...document.querySelectorAll(".send-confirm")].at(-1)?.textContent ?? ""`)) : "";
     if (dlg) { await rp.screenshot(work, join(out, `${c.id}-page.png`)); await rp.screenshot(panel, join(out, `${c.id}-panel.png`)); }
     if (dlg && c.answer === "decline" && dlg.no) await mouse(dlg.no);
-    if (dlg && c.answer === "send" && dlg.yes) await mouse(dlg.yes);
+    if (dlg && c.answer === "send" && dlg.yes) { await sleep(1300); await rp.click(panel, ".send-confirm .send-confirm-yes"); }
     if (dlg && c.answer === "esc") { await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work); await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, work); }
     const answerShown = await answered(answer(c.id)).then(() => true, () => false); await sleep(1000);
     const chips = await rp.evaluate(panel, `(() => { const run = [...document.querySelectorAll(".run-steps")].at(-1); return run ? [...run.querySelectorAll(".chip:not(.prep)")].map(c => ({ text: c.querySelector(".chip-label")?.textContent ?? "", error: c.classList.contains("error") || !!c.querySelector(".act-failed") })) : []; })()`).catch(() => []);

@@ -366,7 +366,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   // 每次工具执行的身份（轮次、调用 ID、停止信号）显式绑定到一个 call 上，不靠 AsyncLocalStorage：
   // 浏览器里没有它，而工具可能并行执行，全局变量会串号。
   const makeCall = (scope: ExecutionScope | undefined) => {
-  const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string, origin?: "readonly-poll", rpcTimeoutMs?: number): Promise<unknown> => {
+  const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string, origin?: "readonly-poll", rpcTimeoutMs?: number, programDeadline?: number): Promise<unknown> => {
     // 填的值来自本轮带上的记忆：交给扩展在那一格画「记得的」（fill 工具和 browser_run 里的 fill 都走这里）。
     const memory = name === "fill" && typeof params.value === "string" ? execution?.memoryForValue?.(params.value) : undefined;
 
@@ -451,12 +451,12 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
       // 未接线 SDK 身份时保持原有调用形状（兼容纯函数测试与外部调用）。
       if (sdkId === undefined) {
-        if (executionEpoch !== undefined) return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch);
+        if (executionEpoch !== undefined) return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, undefined, undefined, programDeadline);
 
-        return programId ? rpc.call(name, callParams, rpcTimeoutMs, sid, programId) : rpc.call(name, callParams, rpcTimeoutMs, sid);
+        return programId ? rpc.call(name, callParams, rpcTimeoutMs, sid, programId, undefined, undefined, undefined, programDeadline) : rpc.call(name, callParams, rpcTimeoutMs, sid);
       }
 
-      return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId);
+      return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId, undefined, programDeadline);
     };
 
     // 页被另一会话占着且那边已空闲：直接接手并重试这一次，不让模型绕 take_tab。
@@ -658,7 +658,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         try {
           result = await runBrowserProgram({ code: params.code,
-          call: (name, args, stepId, origin) => call(name, args, id, stepId, origin), signal, id,
+          call: (name, args, stepId, origin, deadline) => call(name, args, id, stepId, origin, undefined, deadline), signal, id,
           saveFile: files ? async (args) => {
             const store = files();
 

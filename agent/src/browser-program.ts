@@ -38,7 +38,7 @@ interface ProgramOptions {
   code: string;
   input?: unknown;
   allowedMethods?: readonly string[];
-  call(name: ToolName, params: Record<string, unknown>, stepId?: string, origin?: "readonly-poll"): Promise<unknown>;
+  call(name: ToolName, params: Record<string, unknown>, stepId?: string, origin?: "readonly-poll", deadline?: number): Promise<unknown>;
   signal?: AbortSignal;
   id?: string;
   timeoutMs?: number;
@@ -190,6 +190,8 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   vm.runtime.setMemoryLimit(16 * 1024 * 1024);
   vm.runtime.setMaxStackSize(256 * 1024);
   const deadline = Date.now() + Math.min(Math.max(options.timeoutMs ?? 60_000, 1), 120_000);
+  const call = options.call;
+  options = { ...options, call: (name, params, stepId, origin) => call(name, params, stepId, origin, deadline) };
   let cpuDeadline = Date.now() + 100;
   let stopped = "";
   let closed = false;
