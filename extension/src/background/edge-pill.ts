@@ -1,5 +1,5 @@
 import type { TaskView } from '../../../shared/task-view.js';
-import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, type EdgePill } from '../shared/edge-pill.js';
+import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, type EdgePill, type EdgeTask, type EdgeTaskStep } from '../shared/edge-pill.js';
 
 /**
  * 侧栏关着、任务还在跑（或暂停等你、出错）时，把整轮任务状态交给当前标签页右边缘的胶囊。
@@ -11,6 +11,9 @@ export function installEdgePill(capsuleTab: () => number | null = () => null) {
   const seenErrors = new Set<string>();
   let panelOpen = false;
   const errorKey = (view: TaskView) => `${view.conversationId}:${view.runId ?? view.observedAt}`;
+  /** 视图里没有开始时刻：第一次看到这一轮在跑时记下。 */
+  const startedAt = new Map<string, number>();
+  const runKey = (view: TaskView) => `${view.conversationId}:${view.runId ?? ''}`;
 
   const stateOf = (view: TaskView): NonNullable<EdgePill>['state'] | null =>
     view.state === 'running' ? 'running' : view.state === 'paused' ? 'paused' : view.state === 'error' && !seenErrors.has(errorKey(view)) ? 'error' : null;
@@ -29,7 +32,24 @@ export function installEdgePill(capsuleTab: () => number | null = () => null) {
 
   const pillFor = (tabId: number) => capsuleTab() === tabId ? null : current();
 
-  const send = (tabId: number) => { void chrome.tabs.sendMessage(tabId, { type: EDGE_PILL_SHOW, pill: pillFor(tabId), voice: capsuleTab() === tabId }).catch(() => { /* 无内容脚本的页面 */ }); };
+  const STEP_STATE = { satisfied: 'done', blocked: 'failed', unknown: 'unknown' } as const;
+
+  /**
+   * 正在跑的那一轮，绑定在这一页的优先。作用页面只记开始那一页，助手开新标签后对不上，所以没对上时取最近在跑的一轮：
+   * 页面只在胶囊写着「在做」时才展开它。
+   */
+  const taskFor = (tabId: number): EdgeTask => {
+    const running = [...views.values()].filter(v => v.state === 'running').sort((a, b) => b.observedAt - a.observedAt);
+    const view = running.find(v => v.page?.tabId === tabId) ?? running[0];
+
+    if (!view) return null;
+    const done = view.results.flatMap((r): EdgeTaskStep[] => r.status === 'pending' ? [] : [{ text: r.description, state: STEP_STATE[r.status] }]);
+    const now = view.active.map((a): EdgeTaskStep => ({ text: a.action, state: 'now' }));
+
+    return { goal: view.goal ?? '', startedAt: startedAt.get(runKey(view)) ?? view.observedAt, steps: [...done.slice(-(now.length ? 2 : 3)), ...now.slice(-1)] };
+  };
+
+  const send = (tabId: number) => { void chrome.tabs.sendMessage(tabId, { type: EDGE_PILL_SHOW, pill: pillFor(tabId), task: taskFor(tabId), voice: capsuleTab() === tabId }).catch(() => { /* 无内容脚本的页面 */ }); };
 
   const publish = () => { void chrome.tabs.query({ active: true }).then(tabs => { for (const tab of tabs) if (tab.id) send(tab.id); }); };
 
@@ -39,7 +59,7 @@ export function installEdgePill(capsuleTab: () => number | null = () => null) {
 
     if (sender.id !== chrome.runtime.id || !sender.tab?.id || sender.frameId !== 0) return;
 
-    if (type === EDGE_PILL_GET) respond({ pill: pillFor(sender.tab.id), voice: capsuleTab() === sender.tab.id });
+    if (type === EDGE_PILL_GET) respond({ pill: pillFor(sender.tab.id), task: taskFor(sender.tab.id), voice: capsuleTab() === sender.tab.id });
 
     // 必须在这次点击的消息里同步打开：等异步之后浏览器就不认是用户动作了。
     if (type === EDGE_PILL_OPEN) void chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => { /* 侧栏已开 */ });
@@ -48,6 +68,7 @@ export function installEdgePill(capsuleTab: () => number | null = () => null) {
   return {
     view(view: TaskView) {
       if (panelOpen && view.state === 'error') seenErrors.add(errorKey(view));
+      if (view.state === 'running' && !startedAt.has(runKey(view))) startedAt.set(runKey(view), view.observedAt);
       views.set(view.conversationId, view); publish();
     },
     /** 胶囊出现或收起：重新决定边缘胶囊在哪一页让位。 */

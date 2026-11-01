@@ -1,3 +1,4 @@
+import type { EdgeTask } from "../shared/edge-pill.js";
 import { OVERLAY_ATTR, OVERLAY_KIND_EDGE_TAB } from "../shared/overlay.js";
 
 /**
@@ -39,6 +40,12 @@ interface EdgeTabHandlers {
   stop(): Promise<boolean>;
   action(): void;
   other(other: EdgeTabOther): void;
+  /** 用户拖完松手：新的高度（相对默认位置的像素）。 */
+  moved?(dy: number): void;
+  /** 进度卡：补一句交给正在跑的这一轮；停下整轮；打开侧栏（必须在这次点击里同步调用）。 */
+  steer?(text: string): Promise<boolean>;
+  abort?(): void;
+  open?(): void;
 }
 
 /** 胶囊上边离视口顶部的距离。 */
@@ -74,6 +81,14 @@ const CONTENT_OUT_MS = 120;
 const CONTENT_IN_MS = 240;
 const CONTENT_IN_DELAY_MS = 60;
 const FADE_MS = 200;
+/** 进度卡的宽度；鼠标停多久才展开、离开多久才收起（划过去不展开，移到卡上不闪）。 */
+const CARD_W = 300;
+const CARD_IN_MS = 220;
+const CARD_OUT_MS = 380;
+/** 按下后移动超过这么多才算拖，不到就还是点。 */
+const DRAG_SLOP = 4;
+/** 拖到窗口上下边时留的空。 */
+const EDGE_MARGIN = 8;
 
 const FONT = `-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC","Helvetica Neue",sans-serif`;
 
@@ -86,10 +101,12 @@ const STYLE = `
 @media (prefers-color-scheme:dark){.root{--panel:#211f1b;--ink:rgb(250,242,230);--ink2:oklch(70% 0.014 285);--btn:rgba(255,255,255,.09);--btnh:rgba(255,255,255,.17);--accent:oklch(74% 0.14 285);--objw:500;--hi:color-mix(in oklch,var(--ink2) 55%,rgb(255,247,234))}}
 .root[hidden]{display:none}
 .canvas{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
-.clip{position:absolute;overflow:hidden;pointer-events:auto;cursor:pointer;outline:none;border-radius:20px 0 0 20px}
+.clip{position:absolute;overflow:hidden;pointer-events:auto;cursor:pointer;outline:none;border-radius:20px 0 0 20px;touch-action:none}
+.root[data-rest] .clip{cursor:grab}
+.root .clip.dragging{cursor:grabbing}
 .clip:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
 .grip{position:absolute;width:3px;height:14px;border-radius:2px;background:var(--ink2);opacity:0;pointer-events:none}
-.el{position:absolute;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;will-change:transform,opacity,filter}
+.el{position:absolute;top:0;height:100%;max-height:${H}px;display:flex;align-items:center;white-space:nowrap;will-change:transform,opacity,filter}
 .t{overflow:hidden;text-overflow:ellipsis;line-height:1.25}
 .a .t{max-width:150px}.b .t{max-width:210px}
 .dim{color:var(--ink2);font-weight:500}.strong{color:var(--ink);font-weight:var(--objw)}
@@ -127,6 +144,29 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .row .go{margin-left:auto;color:var(--ink2);flex:none}
 .detail{font-size:12px;line-height:1.5;color:var(--ink2);padding:2px 8px 8px 34px;overflow-wrap:anywhere}
 .detail[hidden]{display:none}
+.more{position:absolute;top:${H}px;right:0;width:${CARD_W}px;box-sizing:border-box;padding:0 12px 12px 16px;opacity:0;transition:opacity .16s ease;cursor:default}
+.more.on{opacity:1;transition-delay:.06s}
+.clip.up .el{top:auto;bottom:0}
+.clip.up .more{top:0;padding-top:12px;padding-bottom:4px}
+.goal{font-size:13.5px;font-weight:var(--objw);line-height:1.35;margin:2px 0 2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.meta{font-size:12px;color:var(--ink2);margin-bottom:8px}
+.steps{display:flex;flex-direction:column;gap:5px;margin:0 0 10px}
+.st{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2);line-height:1.3;min-width:0}
+.st span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st.now{color:var(--ink);font-weight:var(--objw)}
+.mk{width:14px;height:14px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:9px;font-weight:700;color:#fff}
+.mk.done{background:var(--ok)}.mk.failed{background:var(--err)}.mk.unknown{background:var(--warn)}
+.mk.now{box-sizing:border-box;border:2px solid var(--accent)}
+.say{display:flex;align-items:center;gap:6px;background:var(--btn);border-radius:12px;padding:3px 3px 3px 10px;margin-bottom:8px}
+.say input{all:unset;flex:1;min-width:0;font-size:12.5px;line-height:26px;color:var(--ink);cursor:text}
+.say input::placeholder{color:var(--ink2)}
+.send{width:26px;height:26px;border-radius:50%;background:var(--ink);color:var(--panel);display:grid;place-items:center;flex:none}
+.send:disabled{opacity:.35;cursor:default}
+.send svg{width:14px;height:14px}
+.links{display:flex;justify-content:flex-end;gap:4px}
+.lk{font-size:12px;color:var(--ink2);padding:4px 8px;border-radius:8px;transition:background-color .12s ease}
+.lk:hover{background:var(--btn);color:var(--ink)}
+.lk.danger:hover{color:var(--err)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 @media (prefers-reduced-motion:reduce){.shim{animation:none;background:none;color:var(--ink2)}.rg,.ck{animation-duration:.01s;animation-delay:0s}}
 `;
@@ -224,6 +264,12 @@ interface EdgeTabState {
   endEnabled: boolean;
   /** 弹簧停稳后的目标尺寸；rect 是这一帧实际画出来的位置。 */
   width: number;
+  /** 用户拖到的高度；没拖过是 null。 */
+  offset: number | null;
+  /** 后台给了这一轮的进度（能展开）。 */
+  task: boolean;
+  /** 展开着的进度卡。 */
+  card: { rect: { x: number; y: number; width: number; height: number }; input: { x: number; y: number; width: number; height: number }; goal: string; steps: number; placeholder: string } | null;
   rect: { x: number; y: number; width: number; height: number } | null;
   panel: string;
   /** rect 是小圆泡顶上可点的那一行；panel 是整块（点开后长成的面板）。 */
@@ -249,7 +295,9 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1"><stop class="h" offset="0"/><stop class="h" offset=".5"/><stop class="h" offset="1"/></linearGradient>
 </defs><path class="shape" filter="url(#sh)" style="fill:var(--panel)"/><path class="hl" fill="none" stroke="url(#hair)" stroke-width=".75"/>
 <path class="shape" filter="url(#sh)" style="fill:var(--panel)"/><path class="hl" fill="none" stroke="url(#hair)" stroke-width=".75"/></svg>
-<div class="clip" role="button" tabindex="0"></div><i class="grip" aria-hidden="true"></i><div class="bub"><div class="bhead" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"></div><div class="rows"></div></div><span class="sr" role="status" aria-live="polite"></span></div>`;
+<div class="clip" role="button" tabindex="0"></div><div class="more" inert><div class="goal"></div><div class="meta"></div><div class="steps"></div>
+<form class="say"><input type="text" enterkeyhint="send" aria-label="补一句，交给正在做的这一轮" placeholder="补一句，下一步前会看到…"><button class="send" type="submit" aria-label="发送" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button></form>
+<div class="links"><button type="button" class="lk open">打开侧栏</button><button type="button" class="lk danger abort">停止任务</button></div></div><i class="grip" aria-hidden="true"></i><div class="bub"><div class="bhead" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"></div><div class="rows"></div></div><span class="sr" role="status" aria-live="polite"></span></div>`;
   const root = shadow.querySelector<HTMLDivElement>(".root")!;
   const [mainShape, bubShape] = Array.from(shadow.querySelectorAll<SVGPathElement>("path.shape"));
   const [mainHair, bubHair] = Array.from(shadow.querySelectorAll<SVGPathElement>("path.hl"));
@@ -261,6 +309,12 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   const list = shadow.querySelector<HTMLDivElement>(".rows")!;
   const live = shadow.querySelector<HTMLSpanElement>(".sr")!;
   const grip = shadow.querySelector<HTMLElement>(".grip")!;
+  const more = shadow.querySelector<HTMLDivElement>(".more")!;
+  const say = more.querySelector<HTMLFormElement>("form.say")!;
+  const input = say.querySelector<HTMLInputElement>("input")!;
+  const sendBtn = say.querySelector<HTMLButtonElement>("button.send")!;
+  // 进度卡跟着胶囊一起被裁：放进 clip，宽高随形状长出来。
+  clip.append(more);
   /** 没有任务要显示时停靠在右边缘（只露窄条），而不是整个收起。 */
   let resting = false;
   const X = CANVAS_W;
@@ -283,17 +337,104 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   let bubbleKey = "";
   let listRows = "";
   const avoidedTargets = new Map<string, Element>();
+  /** 用户拖到的高度；拖过之后自动让位不再生效，免得它从用户放的地方跳走。 */
+  let userDy: number | null = null;
+  /** 此刻实际画出的上下偏移（用户拖的，或自动让位算出的）。 */
+  let shownDy = 0;
+  let task: EdgeTask = null;
+  let taskKey = "";
+  /** 进度卡展开着；rowW 是只有一行时胶囊该有的宽度。 */
+  let card = false;
+  let rowW = CLOSED.w;
+  let cardTimer: ReturnType<typeof setTimeout> | undefined;
+  let tick: ReturnType<typeof setInterval> | undefined;
+  let sending = false;
+
+  /** 这一轮还在跑就能展开，胶囊此刻写的是动作还是刚出的结果都行；交给你、别页助手、翻译入口不展开。 */
+  const canCard = () => open && Boolean(task) && view !== null && !["hand", "away", "idle"].includes(view.tone);
+
+  function ago(ms: number): string {
+    const s = Math.max(0, Math.round(ms / 1000));
+
+    return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+  }
+
+  function fillCard(): void {
+    if (!task) return;
+    const key = JSON.stringify(task);
+
+    if (key !== taskKey) {
+      taskKey = key;
+      more.querySelector(".goal")!.textContent = task.goal || "这一轮任务";
+      more.querySelector(".steps")!.replaceChildren(...task.steps.map(step => {
+        const row = document.createElement("div");
+        row.className = `st ${step.state === "now" ? "now" : ""}`;
+        const mk = document.createElement("i");
+        mk.className = `mk ${step.state}`;
+        mk.textContent = step.state === "done" ? "✓" : step.state === "failed" ? "!" : step.state === "unknown" ? "?" : "";
+        const t = document.createElement("span");
+        t.textContent = step.text;
+        if (step.state === "now") t.className = "shim";
+        row.append(mk, t);
+
+        return row;
+      }));
+    }
+
+    more.querySelector(".meta")!.textContent = `已用 ${ago(Date.now() - task.startedAt)}`;
+  }
+
+  /** 胶囊的目标尺寸：一行，或一行加进度卡。 */
+  function reshape(spring: readonly [number, number]): void {
+    const w = card ? Math.max(rowW, CARD_W) : rowW;
+    const h = card ? H + more.offsetHeight : H;
+
+    if (reduced.matches) { W.snap(w); Hs.snap(h); } else { W.aim(w, spring); Hs.aim(h, spring); }
+    kick();
+  }
+
+  function setCard(on: boolean): void {
+    clearTimeout(cardTimer);
+    const next = on && canCard();
+
+    if (next === card) return;
+    card = next;
+
+    // 下面放不下就往上长：那一行留在鼠标底下不动，不让卡上的按钮挪到鼠标下面被误点。
+    if (card) {
+      clip.classList.remove("up");
+      clip.classList.toggle("up", TOP + shownDy + H + more.offsetHeight + EDGE_MARGIN > innerHeight);
+    }
+    more.inert = !card;
+    more.classList.toggle("on", card);
+    clearInterval(tick);
+
+    if (card) { fillCard(); tick = setInterval(fillCard, 1000); }
+    else if (shadow.activeElement && more.contains(shadow.activeElement)) (shadow.activeElement as HTMLElement).blur();
+    reshape(MORPH);
+  }
+
+  /** 输入框里有字或正拿着焦点时不收：用户在打字。 */
+  const busy = () => sending || input.value.trim() !== "" || shadow.activeElement === input;
+
+  function clampDy(dy: number): number {
+    const min = EDGE_MARGIN - TOP;
+    const max = innerHeight - EDGE_MARGIN - TOP - H - (open && others.length ? BUBBLE_GAP + BUBBLE_H : 0);
+
+    return Math.round(Math.max(min, Math.min(max, dy)));
+  }
 
   function avoidTargets(): void {
-    root.style.transform = "";
-    if (!open || view?.tone === "hand" || !avoidedTargets.size) return;
+    shownDy = userDy ?? 0;
+    root.style.transform = shownDy ? `translateY(${shownDy}px)` : "";
+    if (userDy !== null || !open || view?.tone === "hand" || !avoidedTargets.size) return;
     const targets = [...avoidedTargets.values()].filter(el => el.isConnected).map(el => el.getBoundingClientRect());
     const surfaces = [clip, ...(others.length ? [bub] : [])].map(el => el.getBoundingClientRect());
     const overlaps = (a: DOMRect, b: DOMRect, dy: number) => a.left < b.right && a.right > b.left && a.top + dy < b.bottom && a.bottom + dy > b.top;
     const candidates = [0, ...targets.flatMap(target => surfaces.flatMap(surface => [target.bottom - surface.top + 8, target.top - surface.bottom - 8]))];
     const dy = candidates.sort((a, b) => Math.abs(a) - Math.abs(b)).find(offset => surfaces.every(surface => surface.top + offset >= 0 && surface.bottom + offset <= innerHeight
       && targets.every(target => !overlaps(surface, target, offset))));
-    if (dy !== undefined && dy !== 0) root.style.transform = `translateY(${dy}px)`;
+    if (dy !== undefined && dy !== 0) { shownDy = dy; root.style.transform = `translateY(${dy}px)`; }
   }
 
   function uncoverTarget(target: Element, x: number, y: number, token: string): boolean {
@@ -314,7 +455,85 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
   const clickedButton = (ev: Event) => ev.composedPath().some(n => n instanceof HTMLButtonElement);
 
-  clip.addEventListener("click", ev => { ev.stopPropagation(); if (!clickedButton(ev)) handlers.capsule(); });
+  let press: { id: number; y: number; from: number } | null = null;
+  /** 刚拖完：紧跟着的那次点击不算点。 */
+  let dragged = false;
+
+  clip.addEventListener("pointerdown", ev => {
+    if (ev.button !== 0 || ev.composedPath().includes(more)) return;
+    press = { id: ev.pointerId, y: ev.clientY, from: shownDy };
+    dragged = false;
+  });
+  // 按下后在整个窗口上跟踪（捕获阶段，网页拦不住）：手快时第一下就移出了胶囊，只听胶囊会漏掉。不在按下时就捕获，那样松手的点击到不了停止键。
+  addEventListener("pointermove", ev => {
+    if (!press || ev.pointerId !== press.id) return;
+    const d = ev.clientY - press.y;
+
+    if (!dragged) {
+      if (Math.abs(d) < DRAG_SLOP) return;
+      dragged = true;
+      // 捕获后松手的点击落在胶囊本身，不会再点到停止键上。
+      clip.setPointerCapture(ev.pointerId);
+      clip.classList.add("dragging");
+      if (!busy()) setCard(false);
+    }
+
+    ev.preventDefault();
+    userDy = clampDy(press.from + d);
+    avoidTargets();
+  }, true);
+  for (const end of ["pointerup", "pointercancel"] as const) addEventListener(end, ev => {
+    if (!press || ev.pointerId !== press.id) return;
+    press = null;
+
+    if (!dragged) return;
+    clip.classList.remove("dragging");
+    handlers.moved?.(userDy ?? 0);
+    // 按下时胶囊拿到了焦点，焦点在时移开不收起（照顾键盘）；拖完把焦点放掉。指针被捕获时松手已在外面也收不到离开事件，这里补一次。
+    clip.blur();
+    const r = clip.getBoundingClientRect();
+    if (view?.tone === "idle" && (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom)) handlers.peek?.(false);
+  }, true);
+  addEventListener("resize", () => { if (userDy !== null) { userDy = clampDy(userDy); avoidTargets(); } });
+
+  // 鼠标停在胶囊上一会儿才展开，移开稍等再收；拖动中不展开。
+  clip.addEventListener("pointerenter", () => { clearTimeout(cardTimer); if (!card && canCard()) cardTimer = setTimeout(() => { if (!press || !dragged) setCard(true); }, CARD_IN_MS); });
+  clip.addEventListener("pointerleave", () => { clearTimeout(cardTimer); if (card && !busy()) cardTimer = setTimeout(() => setCard(false), CARD_OUT_MS); });
+  clip.addEventListener("focus", () => { if (canCard()) setCard(true); });
+  more.addEventListener("click", ev => ev.stopPropagation());
+  // 网页自己的快捷键（按键在 document 上听）不能吃掉这里打的字。
+  for (const type of ["keydown", "keyup", "keypress"] as const) input.addEventListener(type, ev => {
+    ev.stopPropagation();
+    if (type === "keydown" && ev.key === "Escape") { input.value = ""; sendBtn.disabled = true; input.blur(); setCard(false); }
+  });
+  input.addEventListener("input", () => { sendBtn.disabled = sending || !input.value.trim(); });
+  input.addEventListener("blur", () => { if (!busy() && !clip.matches(":hover")) cardTimer = setTimeout(() => setCard(false), CARD_OUT_MS); });
+  say.addEventListener("submit", ev => {
+    ev.preventDefault();
+    const text = input.value.trim();
+
+    if (!text || sending || !handlers.steer) return;
+    sending = true;
+    sendBtn.disabled = input.disabled = true;
+    void handlers.steer(text).then(ok => {
+      sending = false;
+      input.disabled = false;
+
+      if (!ok) { input.placeholder = "没送出去，再发一次"; sendBtn.disabled = false; return; }
+      input.value = "";
+      input.placeholder = "已交给助手，下一步前会看到";
+      live.textContent = "已交给助手";
+      setTimeout(() => { input.placeholder = "补一句，下一步前会看到…"; }, 2400);
+    });
+  });
+  more.querySelector<HTMLButtonElement>(".open")!.addEventListener("click", () => handlers.open?.());
+  more.querySelector<HTMLButtonElement>(".abort")!.addEventListener("click", () => { handlers.abort?.(); setCard(false); });
+
+  clip.addEventListener("click", ev => {
+    ev.stopPropagation();
+    if (dragged) { dragged = false; return; }
+    if (!clickedButton(ev)) handlers.capsule();
+  });
   // 键盘也一样：Tab 到窄条上就展开，离开就收回。
   for (const enter of ["pointerenter", "focus"] as const) clip.addEventListener(enter, () => { if (resting && (!open || view?.tone === "idle")) handlers.peek?.(true); });
   for (const leave of ["pointerleave", "blur"] as const) clip.addEventListener(leave, () => { if (view?.tone === "idle" && !(leave === "pointerleave" && shadow.activeElement === clip)) handlers.peek?.(false); });
@@ -331,6 +550,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   });
   root.addEventListener("keydown", ev => {
     if (ev.key === "Escape" && listOpen) { setList(false); bhead.focus(); ev.stopPropagation(); }
+    else if (ev.key === "Escape" && card) { setCard(false); clip.focus(); ev.stopPropagation(); }
   });
 
   /** 列表不是另起一张卡：小圆泡原地向下、向左长成贴边面板，收起时按同一套弹簧缩回小圆泡。 */
@@ -520,6 +740,8 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       if (!open) return;
       open = false;
       host.dataset.shown = "false";
+      setCard(false);
+      root.toggleAttribute("data-rest", resting);
 
       for (const it of items) if (!it.leaving) fadeOut(it);
       closeAt = reduced.matches ? 0 : performance.now() + CONTENT_OUT_MS;
@@ -532,6 +754,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
     if (!attach()) return;
     root.hidden = false;
+    root.removeAttribute("data-rest");
     const opening = !open;
     open = true;
     host.dataset.shown = "true";
@@ -576,14 +799,11 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
     items = [...items.filter(i => i.leaving), ...kept];
 
-    if (reduced.matches) {
-      W.snap(width);
-      Hs.snap(H);
-    } else {
-      const spring = opening ? OPEN : MORPH;
-      W.aim(width, spring);
-      Hs.aim(H, spring);
-    }
+    rowW = width;
+    // 不能再展开（交给你、任务停了）时收起，用户正在打字的那句留着；鼠标一直停着、刚变得能展开时直接展开。
+    if (card && !canCard() && !busy()) setCard(false);
+    else if (!card && canCard() && !press && clip.matches(":hover")) setCard(true);
+    reshape(opening ? OPEN : MORPH);
 
     const text = next.lead ? `${next.a} ${next.b}` : `${next.a}${next.tight ? "" : " "}${next.b}`;
     clip.setAttribute("aria-label", next.hint ? `${text.trim()}，${next.hint}` : text.trim());
@@ -668,7 +888,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       W.snap(CLOSED.w);
       Hs.snap(CLOSED.h);
       root.hidden = true;
-      clip.replaceChildren();
+      clip.replaceChildren(more);
       items = [];
       bhead.replaceChildren();
       list.replaceChildren();
@@ -686,8 +906,11 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     const h = Hs.x;
     const isDark = dark.matches;
     const k = !open && resting ? 0.5 : clamp01((w - 20) / 120);
-    mainShape!.setAttribute("d", shapePath(X, w, h, MID, 9));
-    mainHair!.setAttribute("d", hairPath(X, w, h, MID));
+    // 比一行高时（进度卡）那一行钉住，往下或往上长；一行以内仍以中线为准。
+    const up = clip.classList.contains("up");
+    const mid = h <= H ? MID : up ? TOP + H - h / 2 : TOP + h / 2;
+    mainShape!.setAttribute("d", shapePath(X, w, h, mid, 9, H / 2));
+    mainHair!.setAttribute("d", hairPath(X, w, h, mid, H / 2));
     root.style.opacity = reduced.matches ? String(fade) : "";
     mainShape!.style.opacity = mainHair!.style.opacity = String(reduced.matches ? 1 : fade);
 
@@ -698,14 +921,14 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     const ho = isDark ? [0.18, 0.05, 0.08] : [0.09, 0.03, 0.05];
     hairStops.forEach((s, i) => { s.setAttribute("stop-color", hairColor); s.setAttribute("stop-opacity", String(ho[i]! * k)); });
 
-    Object.assign(clip.style, { left: `${X - w}px`, top: `${MID - h / 2}px`, width: `${Math.max(0, w - 1)}px`, height: `${h}px` });
+    Object.assign(clip.style, { left: `${X - w}px`, top: `${mid - h / 2}px`, width: `${Math.max(0, w - 1)}px`, height: `${h}px` });
     Object.assign(grip.style, { left: `${X - 8}px`, top: `${MID - 7}px`, opacity: String(!open && resting ? 0.45 * clamp01((28 - w) / 10) : 0) });
 
     for (const it of items) it.el.style.right = `${it.x.x}px`;
 
     const bw = BW.x;
     const bh = BH.x;
-    const btop = MID + H / 2 + BUBBLE_GAP;
+    const btop = TOP + (up ? H : Math.max(h, H)) + BUBBLE_GAP;
     const bmid = btop + bh / 2;
     bubShape!.setAttribute("d", bw > 0.5 ? shapePath(X, bw, bh, bmid, 7, BUBBLE_R) : "");
     bubHair!.setAttribute("d", bw > 0.5 ? hairPath(X, bw, bh, bmid, BUBBLE_R) : "");
@@ -727,6 +950,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   function rest(on: boolean): void {
     if (resting === on) return;
     resting = on;
+    root.toggleAttribute("data-rest", on && !open);
 
     if (open) return;
 
@@ -746,6 +970,22 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   return {
     render,
     rest,
+    /** 后台给的这一轮进度；展开着就原地换内容和高度。 */
+    setTask(next: EdgeTask): void {
+      task = next;
+
+      if (!task) { if (!busy()) setCard(false); return; }
+
+      if (!card && canCard() && !press && clip.matches(":hover")) setCard(true);
+
+      if (card) { fillCard(); reshape(MORPH); }
+    },
+    /** 别的网页拖过、或载入时读到存过的高度。 */
+    setOffset(dy: number | null): void {
+      if (press) return;
+      userDy = dy === null ? null : clampDy(dy);
+      avoidTargets();
+    },
     uncoverTarget,
     restoreTarget(token: string): void {
       avoidedTargets.delete(token);
@@ -770,11 +1010,14 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
         end: !open || !end ? null : typeof end === "string" ? end : end.label,
         endEnabled: Boolean(open && end && (typeof end === "string" || end.enabled)),
         width: W.to,
+        offset: userDy,
+        task: Boolean(task),
+        card: card ? { rect: rectOf(more), input: rectOf(input), goal: task?.goal ?? "", steps: task?.steps.length ?? 0, placeholder: input.placeholder } : null,
         rect: shownRect,
         panel: getComputedStyle(root).getPropertyValue("--panel").trim(),
         bubble: open && others.length ? { count: others.length, letter: bhead.querySelector(".av")?.textContent ?? "", rect: rectOf(bhead), panel: rectOf(bub) } : null,
         list: { open: listOpen, rows: listOpen ? Array.from(list.querySelectorAll<HTMLElement>("button.row"), (row, i) => ({ name: others[i]?.name ?? "", title: others[i]?.title ?? "", local: Boolean(others[i]?.local), rect: rectOf(row) })) : [] },
-        button: open ? (b => b ? rectOf(b) : null)(clip.querySelector("button")) : null,
+        button: open ? (b => b ? rectOf(b) : null)(clip.querySelector(":scope > .el:not([data-leaving]) button")) : null,
         icon: open && items.some(i => i.slot === "icon" && !i.leaving),
         shimmer: open && (t => Boolean(t) && getComputedStyle(t!).animationName === "shim" && t!.getAnimations().some(a => a.playState === "running"))(clip.querySelector<HTMLElement>(".el:not([data-leaving]) .shim")),
       };

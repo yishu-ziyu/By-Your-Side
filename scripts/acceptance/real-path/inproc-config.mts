@@ -138,6 +138,8 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".provider-option").length`)) > 3 || undefined, 15_000, "设置页渲染服务商");
 
   await rp.click(page, '[data-settings-page="models"]');
+  // 切到模型页后「更多服务商」稍后才渲染：先等它出现，直接读会偶尔读到 null。
+  await until(async () => (await rp.evaluate(page, `!!document.querySelector('#provider-more')`)) || undefined, 5_000, "模型页渲染");
   const add = await rp.evaluate(page, `document.querySelector('#provider-more').hidden`);
   if (add) await rp.click(page, '#connection-add');
 
