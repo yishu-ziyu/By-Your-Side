@@ -45,6 +45,10 @@
 
 一直开机、不休眠，是最稳的节点；但机器小，分片只让它一次跑 1 个用例。它偶尔在 SSH 握手阶段直接断开（sshd 日志里没有记录，10-19 连 5 次断 1 次），所以 SSH 都复用同一条连接（`scripts/acceptance/nodes.mts` 的 `SSH_OPTS`），失败会重试。这台机器开着密码登录，日志里一直有陌生 IP 在猜密码（10-19 三小时 39 次）。
 
+## Cursor 云端代理（Linux）
+
+不在分片节点里，是 Cursor 云端代理自己开的 Linux 环境。依赖和 Chrome for Testing 已由环境装好，但验收脚本找浏览器只认 macOS 的 Playwright 缓存，不设环境变量会报找不到 Chrome for Testing。跑真实路径用例前先设 `EGO_ACCEPTANCE_CHROME=/usr/local/bin/chrome-for-testing`，用例加 `--headless`；脚本模型不需要密钥。
+
 ## 推送和凭据
 
 - 真模型凭据 `~/.sideagent/providers.local.json` 由分片脚本自动同步（ssh 直推；Devin 沙箱经阿里云 scp 拉取），内容不经过命令行。只下发 api_key 类套餐（minimax-cn、opencode-go、zai-coding-cn）。openai-codex、kimi-coding 这类 OAuth 订阅的刷新令牌用一次就轮换，外发会让本机掉登录，所以它们的真模型用例只在本机跑。
