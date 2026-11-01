@@ -17,3 +17,21 @@ export const EDGE_PILL_GET = 'EDGE_PILL_GET';
 
 /** 页面 → 后台：用户点了胶囊，打开侧栏。 */
 export const EDGE_PILL_OPEN = 'EDGE_PILL_OPEN';
+
+/** 胶囊展开成进度卡时的内容：这一轮的目标、开始时刻、最近几步（now 是正在做的那一步）。侧栏开没开都给。 */
+export type EdgeTaskStep = { text: string; state: 'done' | 'failed' | 'unknown' | 'now' };
+export type EdgeTask = { goal: string; startedAt: number; steps: EdgeTaskStep[] } | null;
+
+export function isEdgeTask(value: unknown): value is EdgeTask {
+  if (value === null) return true;
+  const v = value as { goal?: unknown; startedAt?: unknown; steps?: unknown } | undefined;
+
+  return typeof v === 'object' && typeof v.goal === 'string' && typeof v.startedAt === 'number' && Array.isArray(v.steps)
+    && v.steps.every(s => typeof s?.text === 'string' && ['done', 'failed', 'unknown', 'now'].includes(s?.state));
+}
+
+/** 页面 → 后台：进度卡里补的一句，交给正在跑的这一轮（和侧栏里任务进行中打字同一条路）。 */
+export const EDGE_TASK_STEER = 'EDGE_TASK_STEER';
+
+/** 页面 → 后台：进度卡上的「停止」，整轮停下（胶囊上的方块键是接管，不是这个）。 */
+export const EDGE_TASK_ABORT = 'EDGE_TASK_ABORT';
