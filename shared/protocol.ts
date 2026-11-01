@@ -487,7 +487,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
       team?: TeamView;
     }
   | { type: "team_status"; team: TeamView }
-  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string; /** 直连 display 调用身份；宿主区分帧族用，扩展不消费 */ sdkId?: string }
+  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string; programDeadline?: number; /** 直连 display 调用身份；宿主区分帧族用，扩展不消费 */ sdkId?: string }
   | { type: "agent_event"; event: AgentUiEvent; sessionId?: string });
 
 /** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
@@ -1361,6 +1361,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if (msg.type === "conversation_list" && (!Array.isArray(msg.conversations) || !msg.conversations.every(isConversationSummary))) return null;
 
     if (msg.type === "tool_call" && msg.programId !== undefined && !validRequestId(msg.programId)) return null;
+    if (msg.type === "tool_call" && msg.programDeadline !== undefined && (!Number.isSafeInteger(msg.programDeadline) || msg.programDeadline < 0 || !msg.programId)) return null;
 
     if (msg.type === "status" && !isAgentRunState(msg.state)) return null;
 

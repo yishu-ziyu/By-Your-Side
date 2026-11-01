@@ -27,6 +27,7 @@ export interface SendGuard {
   task: string | undefined;
   /** 停、接管、控制轮次变了：等确认要马上结束。 */
   cancelled(): boolean;
+  programExpired?(): boolean;
   /** 告诉宿主这次调用正在等用户（放宽期限）或已经不等了（恢复普通期限）。guide：教学这一步在等用户点（guide_step 也用这个钩子）；send：侧栏确认卡的内容和结局。 */
   waiting(on: boolean, guide?: GuideWait, send?: SendConfirmView): void;
 }
@@ -118,7 +119,14 @@ const confirmedViews = new WeakMap<SendGuard, SendConfirmView>();
 const confirmedChecks = new WeakMap<SendGuard, () => Promise<void>>();
 
 export async function recheckConfirmedSend(guard: SendGuard): Promise<void> {
+  const check = () => { if (guard.cancelled()) throw notSent(stoppedText(guard), "stopped"); };
+  check();
   await confirmedChecks.get(guard)?.();
+  check();
+}
+
+function stoppedText(guard: SendGuard): string {
+  return guard.programExpired?.() ? `网页程序已超时：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}` : TEXT.stopped;
 }
 
 /**
@@ -374,7 +382,7 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
 
   if (final === "send") confirmedViews.set(guard, withoutDraft);
 
-  if (outcome === "send" && final === "stopped") throw notSent(TEXT.stopped, "stopped");
+  if (outcome === "send" && final === "stopped") throw notSent(stoppedText(guard), "stopped");
 
   if (outcome === "send") return true;
 
@@ -384,5 +392,5 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
     declined.add(key);
   }
 
-  throw notSent(TEXT[outcome], outcome === "decline" ? "declined" : outcome);
+  throw notSent(outcome === "stopped" ? stoppedText(guard) : TEXT[outcome], outcome === "decline" ? "declined" : outcome);
 }
