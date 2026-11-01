@@ -1,9 +1,11 @@
 /**
  * 回答里小程序的沙箱页：manifest 的 sandbox.pages，不透明来源，没有 chrome.* 接口。
- * 本页自己的 CSP（mini-app.html 的 meta）不许联网、不许加载外部资源、不许再嵌页面；整页写入后这条 CSP 仍管着写进来的内容
+ * manifest 的 content_security_policy.sandbox（和生成网页共用一份）不许联网、不许加载外部资源、不许再嵌页面；整页写入后这条 CSP 仍管着写进来的内容
  * （fetch、图片、脚本、样式、表单、弹窗都被拦）。自己跳到外面网址由侧栏的 frame-src 拦。
  * 写进去的程序前面先放一段桥：bys.state / bys.save / bys.say、报错、空白、高度都经 postMessage 交给侧栏，侧栏只当它们是不可信的话。
  */
+import { removeWebRtc } from "./sandbox-offline.js";
+
 type MiniAppMessage = { html: string; state: string | null };
 
 /** 侧栏给小程序框的最高高度（answer-cards.ts 的 APP_MAX_HEIGHT）。 */
@@ -64,6 +66,7 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
   const { html, state } = event.data as MiniAppMessage;
 
   written = true;
+  removeWebRtc();
   document.open();
   document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">${BASE}${bridge(typeof state === "string" ? state : null)}</head><body>${String(html)}</body></html>`);
   document.close();

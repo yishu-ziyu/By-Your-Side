@@ -60,7 +60,7 @@ function renderHtml(content: string): HTMLElement {
   const frame = document.createElement("iframe");
   frame.className = "frame";
   frame.title = filename;
-  frame.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-modals");
+  frame.setAttribute("sandbox", "allow-scripts allow-forms allow-modals");
 
   const onReady = (event: MessageEvent<unknown>) => {
     if (event.source !== frame.contentWindow) return;
