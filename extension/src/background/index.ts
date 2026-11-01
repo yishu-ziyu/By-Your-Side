@@ -2277,8 +2277,6 @@ async function deliverAsk(ask: PendingAsk): Promise<void> {
   broadcast({ kind: "ask_selection", ask } satisfies BgToPanel);
 }
 
-if (conversationId === "default" && chrome.runtime?.onInstalled) chrome.runtime.onInstalled.addListener(() => ensureAskMenu());
-
 if (conversationId === "default") ensureAskMenu();
 
 chrome.contextMenus?.onClicked.addListener((info, tab) => {

@@ -1,4 +1,7 @@
 import {requestMicrophonePermission} from './voice-permission.js';
+import {syncColorTone} from '../shared/color-tone.js';
+
+syncColorTone();
 
 const enable=document.querySelector<HTMLButtonElement>('#enable')!;
 

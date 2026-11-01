@@ -7,6 +7,9 @@
 import DOMPurify from "dompurify";
 import { bytesOf, download, extensionOf, lookup, mimeOf, VIEW_KEY_PREFIX, type ArtifactViewItem } from "./artifact-card.js";
 import { renderMarkdownHtml } from "./markdown.js";
+import { syncColorTone } from "../shared/color-tone.js";
+
+syncColorTone();
 
 const params = new URLSearchParams(location.search);
 
