@@ -1622,7 +1622,7 @@ return;}
       // 还原填写：换了任务（含语音直接操作网页）就是新的一轮；工具在执行时不还原。
       noteFillUndoRun(conversationId, msg.runId);
       toolsInFlight += 1;
-      void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId, msg.programId,msg.runId,msg.epochs?.[normalizeSessionId(msg.sessionId)]).finally(() => { toolsInFlight -= 1; });
+      void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId, msg.programId,msg.runId,msg.epochs?.[normalizeSessionId(msg.sessionId)],msg.programDeadline).finally(() => { toolsInFlight -= 1; });
 
       return; // tool_call 不转发面板
     }
@@ -1677,6 +1677,7 @@ async function executeToolCall(
   programId?: string,
   runId?:string|null,
   epoch?:number,
+  programDeadline?:number,
 ): Promise<void> {
   await controlReady;
   params = structuredClone(params);
@@ -1690,6 +1691,7 @@ async function executeToolCall(
   const checkIdentity=()=>{
     // Removing our own translation placeholders changes no page content and is needed exactly when a run has stopped.
     if(name==='page_translation'&&params.action==='settle')return;
+    if(programId && programDeadline !== undefined && Date.now() >= programDeadline)throw new Error('网页程序已超时，操作未执行。');
     const current=conversationSummaries.find(c=>c.id===conversationId)?.runId;
 
     if(runId&&(abortedRuns.has(runId)||current!==runId))throw new Error('原任务已停止或发生变化，操作未执行。');
@@ -1774,6 +1776,7 @@ async function executeToolCall(
     const sendGuard: SendGuard = {
       inProgram: !!programId,
       task: runId ? `${runId}\u0000${userTurn}` : undefined,
+      programExpired: () => !!programId && programDeadline !== undefined && Date.now() >= programDeadline,
       cancelled: () => {
         try { checkIdentity(); } catch { return true; }
 
