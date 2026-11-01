@@ -36,7 +36,10 @@ const check = (name: string, pass: boolean, detail?: unknown) => {
 };
 const snapshot = `(() => {
   const b = document.querySelector("#send-btn");
-  const box = b.getBoundingClientRect();
+  // 按输入框底边量：空会话发出第一句时整个输入框会滑到底边，判的是按钮在输入框里不跳。
+  const dock = document.querySelector(".composer-dock-wrap").getBoundingClientRect();
+  const raw = b.getBoundingClientRect();
+  const box = { x: raw.x - dock.left, y: raw.y - dock.bottom, width: raw.width, height: raw.height };
   const icon = (selector) => {
     const s = getComputedStyle(document.querySelector(selector));
     return { opacity: +s.opacity, transform: s.transform, filter: s.filter, duration: s.transitionDuration };
