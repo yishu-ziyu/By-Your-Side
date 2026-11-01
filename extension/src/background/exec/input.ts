@@ -14,7 +14,7 @@ import { readFieldInPage, type PageField } from "./field-read-in-page.js";
 import { snapshotSendScopeInPage } from "./send-context.js";
 import { documentPoint, pointsOnTab } from "../../shared/cursor-trail.js";
 import { recordTrailPoint, trailForReplay } from "./trail.js";
-import { sendCommand } from "../debugger.js";
+import { childFrameSession, holdAttach, releaseAttachHold, sendChildCommand, sendCommand } from "../debugger.js";
 import { bringForwardForUser, putBackUserTab } from "../foreground.js";
 import { getWorkingTabId, resolveWorkingTab } from "../state.js";
 import { resolveKey, type KeyInfo } from "../../shared/keymap.js";
@@ -951,17 +951,17 @@ export async function cancelMarkHold(sessionId: string = LEAD_SESSION_ID): Promi
  * 分开判断：任何一个以发送开头都算（表单里的按钮也取原文，不换成「提交表单」）。
  * 落点总是另读一次：点一个大容器、坐标落在里面的「发送」上，或者 force 点被盖住的目标，都绕不过发送确认。
  */
-async function namesOfClickTarget(tabId: number, params: ClickParams, point: [number, number] | undefined): Promise<{ plate: string; buttons: string[] }> {
+async function namesOfClickTarget(tabId: number, params: ClickParams, point: [number, number] | undefined): Promise<{ plate: string; buttons: string[]; frame?: boolean }> {
   const names = await pageNamesOfClickTarget(tabId, params, point);
 
-  return { plate: names.plate || (params.label?.trim() ?? ""), buttons: names.buttons };
+  return { plate: names.plate || (params.label?.trim() ?? ""), buttons: names.buttons, frame: names.frame };
 }
 
 async function pageNamesOfClickTarget(
   tabId: number,
   params: ClickParams,
   point: [number, number] | undefined,
-): Promise<{ plate: string; buttons: string[] }> {
+): Promise<{ plate: string; buttons: string[]; frame?: boolean }> {
   const target = params.target;
   const none = { plate: "", buttons: [] as string[] };
 
@@ -992,17 +992,18 @@ async function pageNamesOfClickTarget(
     }
   } catch { /* 读不到目标的名字：下面落点照样读 */ }
 
-  let atPoint = none;
+  let atPoint: { plate: string; buttons: string[]; frame?: boolean; unverified?: boolean } = none;
 
   try {
     if (point) atPoint = await sendNamesAt(tabId, point[0], point[1]);
   } catch { /* 读不到落点 */ }
 
-  return { plate: target ? fromTarget.plate : atPoint.plate, buttons: [...(fromTarget.buttons ?? []), ...(atPoint.buttons ?? [])] };
+  if (atPoint.unverified) throw notExecuted(new Error("无法核对内嵌页面中的操作目标，未点击；请由用户自己操作。"));
+  return { plate: target ? fromTarget.plate : atPoint.plate, buttons: [...(fromTarget.buttons ?? []), ...(atPoint.buttons ?? [])], frame: atPoint.frame };
 }
 
 /** 在页面 ISOLATED world 里读目标（t）或坐标落点上按钮的名字；序列化进页面，必须自包含。 */
-function readNamesInPage(t: string | null, px: number, py: number): { plate: string; buttons: string[] } {
+function readNamesInPage(t: string | null, px: number, py: number): { plate: string; buttons: string[]; frame?: boolean } {
   let el: Element | null | undefined;
 
   if (t !== null) el = window.__sideagent?.dom?.resolve(t);
@@ -1026,12 +1027,80 @@ function readNamesInPage(t: string | null, px: number, py: number): { plate: str
 
   if ("form" in el && el.form && "type" in el && (el.type === "submit" || el.type === "image")) return { plate: buttons[buttons.length - 1] || "提交表单", buttons };
 
-  return { plate: t === null ? "" : label(el), buttons };
+  return { plate: t === null ? "" : label(el), buttons, frame: t === null && /^(IFRAME|FRAME)$/.test(el.tagName) };
 }
 
-/** 真正派发的落点上按钮的名字（和命中核对一样只看顶层文档，iframe 里读不到）。 */
-async function sendNamesAt(tabId: number, x: number, y: number): Promise<{ plate: string; buttons: string[] }> {
-  return await callDom(tabId, readNamesInPage, [null, x, y]);
+/** 真正派发的落点上按钮的名字。 */
+async function sendNamesAt(tabId: number, x: number, y: number): Promise<{ plate: string; buttons: string[]; frame?: boolean; unverified?: boolean }> {
+  try {
+    const names = await callDom(tabId, readNamesInPage, [null, x, y]);
+    return names.frame ? { ...await framePointNames(tabId, x, y), frame: true } : names;
+  }
+  catch { return { plate: "", buttons: [], unverified: true }; }
+}
+
+function pointInFrame(q: number[] | undefined, width: number | undefined, height: number | undefined, x: number, y: number): [number, number] {
+  if (!q || q.length !== 8 || !q.every(Number.isFinite) || typeof width !== "number" || !Number.isFinite(width) || width <= 0 || typeof height !== "number" || !Number.isFinite(height) || height <= 0) throw new Error("无法核对内嵌页面");
+  const ax = q[2]! - q[0]!, ay = q[3]! - q[1]!, bx = q[6]! - q[0]!, by = q[7]! - q[1]!;
+  const determinant = ax * by - ay * bx;
+  if (!determinant || Math.abs(q[4]! - (q[2]! + q[6]! - q[0]!)) > 0.001 || Math.abs(q[5]! - (q[3]! + q[7]! - q[1]!)) > 0.001) throw new Error("无法核对内嵌页面");
+  const dx = x - q[0]!, dy = y - q[1]!;
+  const px = ((dx * by - dy * bx) / determinant) * width;
+  const py = ((dy * ax - dx * ay) / determinant) * height;
+  if (!Number.isFinite(px) || !Number.isFinite(py) || px < 0 || py < 0 || px >= width || py >= height) throw new Error("无法核对内嵌页面");
+  return [px, py];
+}
+
+async function framePointNames(tabId: number, x: number, y: number): Promise<{ plate: string; buttons: string[] }> {
+  holdAttach(tabId);
+  try {
+    const root = await sendCommand<{ frameTree?: { frame?: { id?: string } } }>(tabId, "Page.getFrameTree");
+    const rootId = root.frameTree?.frame?.id;
+    if (!rootId) throw new Error("无法核对内嵌页面");
+    let sessionId: string | undefined;
+    let sessionRootId = rootId;
+    const command = <T>(method: string, params: Record<string, unknown>) => sessionId
+      ? sendChildCommand<T>(tabId, sessionId, method, params)
+      : sendCommand<T>(tabId, method, params);
+    for (let depth = 0; depth < 8; depth++) {
+      const hit = await command<{ backendNodeId?: number; frameId?: string }>("DOM.getNodeForLocation", { x: Math.round(x), y: Math.round(y) });
+      if (typeof hit.backendNodeId !== "number") throw new Error("无法核对内嵌页面");
+      const desc = await command<{ node?: { nodeName?: string; frameId?: string } }>("DOM.describeNode", { backendNodeId: hit.backendNodeId });
+      const node = desc.node;
+      if (!node?.nodeName) throw new Error("无法核对内嵌页面");
+      if (/^(IFRAME|FRAME)$/.test(node.nodeName)) {
+        if (!node.frameId) throw new Error("无法核对内嵌页面");
+        const box = await command<{ model?: { content?: number[] } }>("DOM.getBoxModel", { backendNodeId: hit.backendNodeId });
+        const child = await childFrameSession(tabId, node.frameId);
+        const viewport = await sendChildCommand<{ result?: { value?: { width?: number; height?: number } } }>(tabId, child, "Runtime.evaluate", { expression: "({width:innerWidth,height:innerHeight})", returnByValue: true });
+        [x, y] = pointInFrame(box.model?.content, viewport.result?.value?.width, viewport.result?.value?.height, x, y);
+        sessionId = child;
+        sessionRootId = node.frameId;
+        continue;
+      }
+      if (!hit.frameId || (depth === 0 && hit.frameId === rootId)) throw new Error("无法核对内嵌页面");
+      const world = await command<{ executionContextId?: number }>("Page.createIsolatedWorld", { frameId: hit.frameId, worldName: "sideagent-frame-safety" });
+      if (typeof world.executionContextId !== "number") throw new Error("无法核对内嵌页面");
+      let localX = x, localY = y;
+      if (hit.frameId !== sessionRootId) {
+        const owner = await command<{ backendNodeId?: number }>("DOM.getFrameOwner", { frameId: hit.frameId });
+        if (typeof owner.backendNodeId !== "number") throw new Error("无法核对内嵌页面");
+        const box = await command<{ model?: { content?: number[] } }>("DOM.getBoxModel", { backendNodeId: owner.backendNodeId });
+        const viewport = await command<{ result?: { value?: { width?: number; height?: number } } }>("Runtime.evaluate", { contextId: world.executionContextId, expression: "({width:innerWidth,height:innerHeight})", returnByValue: true });
+        [localX, localY] = pointInFrame(box.model?.content, viewport.result?.value?.width, viewport.result?.value?.height, x, y);
+      }
+      const resolved = await command<{ object?: { objectId?: string } }>("DOM.resolveNode", { backendNodeId: hit.backendNodeId, executionContextId: world.executionContextId });
+      if (!resolved.object?.objectId) throw new Error("无法核对内嵌页面");
+      const value = await command<{ result?: { value?: { matched?: boolean; plate?: string; buttons?: string[] } } }>("Runtime.callFunctionOn", {
+        objectId: resolved.object.objectId, returnByValue: true, arguments: [{ value: localX }, { value: localY }],
+        functionDeclaration: `function(x,y) { const el = this.nodeType === 3 ? this.parentElement : this; let node = el; while (node) { const root = node.getRootNode(); const hit = root.elementFromPoint(x,y); if (!hit || (hit !== node && !node.contains(hit))) return {matched:false}; node = root.host || null; } const owner = el.closest('button,[role="button"],input[type="submit"],input[type="button"],a') || el; const clean = s => String(s || "").trim().replace(/\\s+/g, " ").slice(0, 40); const buttons = [owner.getAttribute("aria-label"), owner.getAttribute("title"), owner.innerText || owner.value || owner.textContent].map(clean).filter(Boolean); return {matched:true,plate:buttons.at(-1) || "",buttons}; }`,
+      });
+      const names = value.result?.value;
+      if (!names || names.matched !== true || typeof names.plate !== "string" || !Array.isArray(names.buttons) || !names.buttons.every(button => typeof button === "string")) throw new Error("无法核对内嵌页面");
+      return { plate: names.plate, buttons: names.buttons };
+    }
+    throw new Error("无法核对内嵌页面");
+  } finally { releaseAttachHold(tabId); }
 }
 
 /** 定位目标只读页面、不发任何输入：这里的任何失败都意味着操作没有执行。 */
@@ -1629,7 +1698,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
 
   if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
 
-  const { plate: name, buttons } = await namesOfClickTarget(tabId, params, point);
+  const { plate: name, buttons, frame } = await namesOfClickTarget(tabId, params, point);
   // 付款按钮永远不点，用户在聊天里同意也不点。
   const payName = buttons.find(isPayLabel);
 
@@ -1681,7 +1750,9 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
 
     try {
       // 重新定位后落点可能变了：派发前再读一次真正落点上的按钮，是付款就不点，是「发送」就照样先问。
-      const finalButtons = x !== point[0] || y !== point[1] ? (await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] }))).buttons : [];
+      const finalNames = x !== point[0] || y !== point[1] ? await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] })) : { buttons: [] as string[] };
+      if ("unverified" in finalNames && finalNames.unverified) throw notExecuted(new Error("无法核对内嵌页面中的操作目标，未点击；请由用户自己操作。"));
+      const finalButtons = finalNames.buttons;
       const finalPay = finalButtons.find(isPayLabel);
 
       if (finalPay) await stopBeforePay(tabId, finalPay, x, y);
@@ -1715,6 +1786,13 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
       const [effectToken, undoMark] = await Promise.all([effectPending, undoPending]);
       undo = undoMark;
       if (sendConfirmed && sendGuard) await recheckConfirmedSend(sendGuard);
+      if (frame) {
+        const current = await sendNamesAt(tabId, x, y);
+        if (current.unverified || !current.frame) throw notExecuted(new Error("内嵌页面的操作目标已变化，未点击；请重新查看页面。"));
+        const pay = current.buttons.find(isPayLabel);
+        if (pay) await stopBeforePay(tabId, pay, x, y);
+        if (!sendConfirmed && current.buttons.some(isSendLabel)) throw notExecuted(new Error("内嵌页面的操作目标已变为发送按钮，未点击；请重新查看页面。"));
+      }
       // 点击弹出原生 alert/confirm/prompt 时页面被对话框挡住，松开鼠标与效果采样要等对话框关掉才返回（等满 30 秒）。
       // 一弹出就按「已点击，页面弹出对话框」返回；还没返回的命令留在后台，对话框关掉后自然结束。
       const dialogWatch = watchDialog(tabId);
@@ -1915,7 +1993,7 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
   const { point } = await resolvePointerTarget(tabId, params, beforeDispatch);
 
   if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
-  const { plate: name, buttons } = await namesOfClickTarget(tabId, params, point);
+  const { plate: name, buttons, frame } = await namesOfClickTarget(tabId, params, point);
   const payName = buttons.find(isPayLabel);
 
   if (payName) await stopBeforePay(tabId, payName, point[0], point[1]);
@@ -1960,7 +2038,9 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
     let effect: EffectReport | undefined;
 
     try {
-      const finalButtons = x !== point![0] || y !== point![1] ? (await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] }))).buttons : [];
+      const finalNames = x !== point![0] || y !== point![1] ? await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] })) : { buttons: [] as string[] };
+      if ("unverified" in finalNames && finalNames.unverified) throw notExecuted(new Error("无法核对内嵌页面中的操作目标，未点击；请由用户自己操作。"));
+      const finalButtons = finalNames.buttons;
       const finalPay = finalButtons.find(isPayLabel);
 
       if (finalPay) await stopBeforePay(tabId, finalPay, x, y);
@@ -1984,6 +2064,13 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
       }
 
       const effectToken = await effectPending;
+      if (frame) {
+        const current = await sendNamesAt(tabId, x, y);
+        if (current.unverified || !current.frame) throw notExecuted(new Error("内嵌页面的操作目标已变化，未点击；请重新查看页面。"));
+        const pay = current.buttons.find(isPayLabel);
+        if (pay) await stopBeforePay(tabId, pay, x, y);
+        if (current.buttons.some(isSendLabel)) throw notExecuted(new Error("内嵌页面的操作目标已变为发送按钮，未点击；请重新查看页面。"));
+      }
       const btnMask = pressedButtonsMask(button);
       await beforeDispatch?.();
       const dialogWatch = watchDialog(tabId);
@@ -2702,18 +2789,20 @@ export async function typeText(
 
 /**
  * 回车或空格落在付款上：焦点本身是付款按钮，或回车时焦点所在的表单、附近区域里有付款按钮（单行框回车会提交表单）。
- * isPay 是 isPayLabel 本身，按源码传进来。序列化进页面，必须自包含。
+ * 付款候选取自当前焦点所在的文档。序列化进页面，必须自包含。
  */
-function keyWouldPayInPage(isPay: (text: string) => boolean, enter: boolean): string | null {
+function keyPayCandidatesInPage(enter: boolean): { focused: boolean; frame: boolean; names: string[] } {
   let el = document.activeElement as HTMLElement | null;
   while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
-  if (!el) return null;
+  const focused = document.hasFocus();
+  if (!el) return { focused, frame: false, names: [] };
+  if (/^(IFRAME|FRAME)$/.test(el.tagName)) return { focused, frame: true, names: [] };
   const nameOf = (node: Element) => (node.getAttribute("aria-label") || (node.tagName === "INPUT" ? (node as HTMLInputElement).value : (node as HTMLElement).innerText ?? node.textContent ?? "") || node.getAttribute("title") || "").trim().replace(/\s+/g, " ");
   // 焦点在按钮或链接上时，回车、空格只按下它自己：按它的名字判，不看旁边的按钮。
   const own = el.closest('button,[role="button"],input[type="submit"],input[type="button"],input[type="image"],a');
-  if (own) return isPay(nameOf(own)) ? nameOf(own).slice(0, 40) : null;
+  if (own) return { focused, frame: false, names: [nameOf(own)] };
   // 空格只按下焦点上的控件；多行框和编辑器里回车只是换行。
-  if (!enter || el.tagName === "TEXTAREA" || el.isContentEditable) return null;
+  if (!enter || el.tagName === "TEXTAREA" || el.isContentEditable) return { focused, frame: false, names: [] };
   // 输入框用 form 属性关联到别处的表单时，form 指向真正会被提交的那个；表单外用 form 属性关联的按钮在 elements 里。
   const form = (el as HTMLInputElement).form ?? el.closest("form");
   let region: Element | null = form ?? el.closest('[role="dialog"],[role="form"]');
@@ -2724,15 +2813,22 @@ function keyWouldPayInPage(isPay: (text: string) => boolean, enter: boolean): st
   // 只看能点的控件：标题、说明文字（「付款记录」）和输入框里的字都不是按钮。
   const BUTTONS = 'button,[role="button"],input[type="submit"],input[type="button"],input[type="image"]';
   const nodes = [...(form ? [...form.elements] : []), ...(region && region !== el.ownerDocument.body && region !== el.ownerDocument.documentElement ? region.querySelectorAll(`${BUTTONS},a,[onclick]`) : [])];
+  const names: string[] = [];
   for (const node of nodes) {
     if (node === el) continue;
     const button = node.matches(BUTTONS);
     if (!button && !node.matches("a,[onclick]")) continue;
     // 真按钮按完整名字判（长的「立即支付 …商品说明」也是付款）；链接和带点击的块可能包着整张商品卡，只看 40 字以内的名字。
     const name = nameOf(node);
-    if (name && (button || name.length <= 40) && isPay(name)) return name.slice(0, 40);
+    if (name && (button || name.length <= 40)) names.push(name);
   }
-  return null;
+  return { focused, frame: false, names };
+}
+
+function isKeyPayCandidates(value: unknown): value is ReturnType<typeof keyPayCandidatesInPage> {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.focused === "boolean" && typeof candidate.frame === "boolean" && Array.isArray(candidate.names) && candidate.names.every(name => typeof name === "string");
 }
 
 /** 回车会不会把东西发出去：焦点在有字的多行输入框、可编辑区，或焦点所在表单里有「发送」按钮。序列化进页面，必须自包含。 */
@@ -2774,8 +2870,16 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
 
   // 付款永远用户自己点：回车提交表单、空格按下焦点上的按钮都等于点了它，所以和点击一样不做。
   if (info && tab.id != null && ((info.key === "Enter" && !shift) || info.key === " ")) {
-    const read = await sendCommand<{ result?: { value?: string | null } }>(tab.id, "Runtime.evaluate", { expression: `(${keyWouldPayInPage.toString()})(${isPayLabel.toString()}, ${info.key === "Enter"})`, returnByValue: true }).catch(() => undefined);
-    const pay = read?.result?.value;
+    const read = await sendCommand<{ result?: { value?: unknown } }>(tab.id, "Runtime.evaluate", { expression: `(${keyPayCandidatesInPage.toString()})(${info.key === "Enter"})`, returnByValue: true }).catch(() => undefined);
+    if (!isKeyPayCandidates(read?.result?.value)) throw notExecuted(new Error("无法核对焦点所在页面中回车或空格的作用，没有按；请由用户自己操作。"));
+    let names = read.result.value.names;
+    if (read.result.value.frame) {
+      const frames = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, world: "ISOLATED", func: keyPayCandidatesInPage, args: [info.key === "Enter"] }).catch(() => []);
+      const focused = frames.flatMap(frame => isKeyPayCandidates(frame.result) && frame.result.focused && !frame.result.frame ? [frame.result] : []);
+      if (!focused.length) throw notExecuted(new Error("无法核对内嵌页面中回车或空格的作用，没有按；请由用户自己操作。"));
+      names = focused.flatMap(frame => frame.names);
+    }
+    const pay = names.find(isPayLabel)?.slice(0, 40);
 
     if (pay) throw notExecuted(new Error(`焦点所在的表单里有「${pay}」，按${info.key === "Enter" ? "回车" : "空格"}可能直接付款：没有按。要做别的事请点对应的按钮；付款按钮要用户自己点，点它会停下交给用户。`));
   }

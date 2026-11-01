@@ -29,6 +29,7 @@ interface ToolCallFrame {
   params: Record<string, unknown>;
   sessionId?: string;
   programId?: string;
+  programDeadline?: number;
   /** SDK 调用身份（display-* = 直连用户请求）；宿主用于区分帧族，扩展不消费。 */
   sdkId?: string;
   epochs?: Record<string, number>;
@@ -297,7 +298,7 @@ export class ToolRpc {
   }
 
   /** 发起一次工具调用；超时或断连时 reject。工人调用传入 sessionId，扩展按 session 绑 tab/光标。 */
-  async call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string, executionEpoch?: number, sdkId?: string, signal?: AbortSignal): Promise<unknown> {
+  async call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string, executionEpoch?: number, sdkId?: string, signal?: AbortSignal, programDeadline?: number): Promise<unknown> {
     try { if(this.beforeCall)await this.beforeCall(); } catch (error) {
       const failed: ToolExecutionError = error instanceof Error ? error : new Error(String(error));
       failed.executionFact = "not_executed";
@@ -389,6 +390,7 @@ export class ToolRpc {
         if (sdkId) frame.sdkId = sdkId;
 
         if (programId) frame.programId = programId;
+        if (programDeadline !== undefined) frame.programDeadline = programDeadline;
 
         if (executionEpoch !== undefined) frame.epochs = { [sessionId ?? "main"]: executionEpoch };
 

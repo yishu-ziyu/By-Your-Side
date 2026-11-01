@@ -32,6 +32,10 @@ export const TOOL_USER_CONFIRM_MS = 130_000;
 /** fetch 读响应体的上限。 */
 export const FETCH_READ_MS = 30_000;
 
+export function programDeadlineExpired(deadline: number | undefined, now: number): boolean {
+  return deadline !== undefined && now >= deadline;
+}
+
 export type TimeoutKind = "model" | "page" | "tool";
 
 export interface TimeoutCopy {
