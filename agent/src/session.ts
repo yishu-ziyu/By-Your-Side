@@ -4197,7 +4197,7 @@ function withAttachments(text: string, attachments: Attachment[] | undefined, se
   // 只收文字的模型拿不到图：照实告诉它，免得它装作看过图。
   const unseen = images && !seesImages ? `\n[The user attached ${images} image(s), but the current model cannot see images, so they were not sent. Tell the user you cannot see them and suggest switching to a model that reads images.]` : "";
   // 图片名不写出来，模型要重看原图时只能猜名字。
-  const named = images && seesImages ? `\n[Attached image(s), in the order sent: ${imageNames.map(name => JSON.stringify(name)).join(", ")}. They are already in this message; read_attachment with one of these names returns that original again.]` : "";
+  const named = images && seesImages ? `\n[Attached image(s), in the order sent: ${imageNames.map(name => JSON.stringify(name)).join(", ")}. They are already in this message; read_attachment with one of these names returns that original again; add region to zoom into part of it when small text is hard to read.]` : "";
 
   return withAttachedFiles(withCircleNotes(text, attachments), attachments, seesImages) + unseen + named;
 }

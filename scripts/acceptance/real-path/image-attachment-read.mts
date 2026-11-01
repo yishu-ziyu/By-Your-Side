@@ -4,8 +4,9 @@
  *   npx tsx scripts/acceptance/real-path/image-attachment-read.mts --headless
  *   a) 模型收到的用户消息里写明了图片的名字。
  *   b) read_attachment 按这个名字拿回原图，不报错。
- *   c) 侧栏显示模型的回答。
- * 失败方式：read_attachment 只找 type=file 的附件（b 失败）；提示里不写图片名（a 失败）。
+ *   c) 带 region 时按原图像素放大那一块：返回的范围是原图右下四分之一，图片放大到长边至少 1024。
+ *   d) 侧栏显示模型的回答。
+ * 失败方式：read_attachment 只找 type=file 的附件（b 失败）；提示里不写图片名（a 失败）；region 被忽略、返回整张（c 失败）。
  */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -25,18 +26,26 @@ type Message = { role: string; content?: string | Part[] | null };
 const textOf = (content: Message["content"]) => (Array.isArray(content) ? content.map(part => part.text ?? "").join("") : content ?? "");
 let userText = "";
 let toolText = "";
+const toolTexts: string[] = [];
+let pngSizes: string[] = [];
 
 const model = await startScriptedModel([
   { match: "USER REQUEST:", steps: [{ text: '{"problems":[]}' }] },
   { match: '"lastReply"', steps: [{ text: '{"status":"done","remaining":null}' }] },
-  { match: TASK, steps: [{ tool: { name: "read_attachment", args: { name: IMAGE } } }, { text: ANSWER }] },
+  { match: TASK, steps: [
+    { tool: { name: "read_attachment", args: { name: IMAGE } } },
+    { tool: { name: "read_attachment", args: { name: IMAGE, region: { x: 0.5, y: 0.5, width: 0.5, height: 0.5 } } } },
+    { text: ANSWER },
+  ] },
 ], undefined, payload => {
   if (!payload.tools?.length) return;
   const messages = (payload.messages ?? []) as Message[];
   const user = messages.find(m => m.role === "user" && textOf(m.content).includes(TASK) && !textOf(m.content).startsWith("本次运行的上下文"));
   if (user && !userText) userText = textOf(user.content);
-  const tool = messages.filter(m => m.role === "tool").at(-1);
-  if (tool) toolText = textOf(tool.content);
+  const tools = messages.filter(m => m.role === "tool").map(m => textOf(m.content));
+  if (tools.length) { toolText = tools[0]!; toolTexts.splice(0, toolTexts.length, ...tools); }
+  // 请求里每张 PNG 的宽高（读 PNG 头）：放大后的局部图必须以预期尺寸出现。
+  if (toolTexts.length >= 2) pngSizes = (JSON.stringify(messages).match(/iVBORw0KGgo[A-Za-z0-9+/=]{40}/g) ?? []).map(head => { const png = Buffer.from(head, "base64"); return `${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`; });
 });
 
 const rp = await launchRealPath();
@@ -66,18 +75,26 @@ try {
   await rp.typeText(panel, TASK);
   await rp.pressEnter(panel);
 
-  await until(async () => toolText || undefined, 90_000, "read_attachment 结果");
+  await until(async () => (toolTexts.length >= 2 ? true : undefined), 90_000, "两次 read_attachment 结果");
   const visible = await until(async () => {
     const text = await rp.evaluate(panel, `document.querySelector("#messages")?.innerText ?? ""`) as string;
     return text.includes(ANSWER) ? text : undefined;
   }, 90_000, "回答显示");
   await rp.screenshot(panel, join(out, "panel.png"));
-  await writeFile(join(out, "evidence.json"), JSON.stringify({ userText, toolText, error }, null, 2));
+  await writeFile(join(out, "evidence.json"), JSON.stringify({ userText, toolTexts, pngSizes, error }, null, 2));
   assert.ok(userText.includes(JSON.stringify(IMAGE)), `a 用户消息里没写图片名：${userText.slice(-400)}`);
   assert.ok(toolText.includes(`Original image: ${IMAGE}`) && !toolText.includes("没有附件") && !toolText.includes("没有附上文件"), `b read_attachment 没拿回原图：${toolText.slice(0, 300)}`);
-  assert.ok(visible.includes(ANSWER), "c 侧栏没显示回答");
+  const { width, height } = await import("node:fs/promises").then(fs => fs.readFile(join(REPO, "scripts/acceptance/fixtures/files", IMAGE))).then(png => ({ width: png.readUInt32BE(16), height: png.readUInt32BE(20) }));
+  const zoom = toolTexts[1] ?? "";
+  const range = `x ${Math.round(width / 2)}–${Math.round(width / 2) + Math.round(width / 2)}, y ${Math.round(height / 2)}–${Math.round(height / 2) + Math.round(height / 2)} of ${width}×${height}`;
+  assert.ok(zoom.includes(`Zoomed region of ${IMAGE}: original pixels ${range}`), `c 放大范围不对：${zoom.slice(0, 300)}`);
+  // 右下四分之一，长边放大到 1024。
+  const half = { w: Math.round(width / 2), h: Math.round(height / 2) }, scale = 1024 / Math.max(half.w, half.h);
+  const expected = `${Math.round(half.w * scale)}x${Math.round(half.h * scale)}`;
+  assert.ok(pngSizes.includes(expected), `c 没有收到 ${expected} 的放大图，收到 ${pngSizes.join(", ")}`);
+  assert.ok(visible.includes(ANSWER), "d 侧栏没显示回答");
   assert.equal(error, "", `模型转发失败：${error}`);
-  console.log("PASS 侧栏附上的图片能按名字重读原图");
+  console.log("PASS 侧栏附上的图片能按名字重读原图，并能放大局部");
 } finally {
   await rp.close(); await rp.remove(); await model.close();
 }
