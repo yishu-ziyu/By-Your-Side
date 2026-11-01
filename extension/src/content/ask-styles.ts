@@ -17,8 +17,8 @@ export const PAPER_TOKENS = `
   --warn: #b74536;
   --shadow: 0 0 0 1px var(--ring), 0 12px 32px -6px rgba(15, 23, 42, .12), 0 2px 6px rgba(15, 23, 42, .04);
   --shadow-bar: 0 0 0 1px var(--ring), 0 4px 16px rgb(12 13 25 / .08), 0 2px 8px -4px rgb(12 13 25 / .12), 0 8px 32px 8px rgb(12 13 25 / .04);
-  --r-outer: 14px;
-  --r-inner: 9px;
+  --r-outer: 12px;
+  --r-inner: 8px;
   --r-small: 6px;
   --t-body: 15px;
   --t-ui: 13px;
