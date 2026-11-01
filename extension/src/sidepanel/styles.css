@@ -2793,7 +2793,6 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
   overflow-wrap: anywhere;
   transform-origin: 0 0;
 }
-.msg.user.held-pending .held-hint { flex: none; font-size: var(--fs-micro); color: var(--text-tertiary); font-style: normal; }
 @media (prefers-reduced-motion: reduce) {
   .needs-model-card, .msg.user.held-pending { transition: none; }
 }
