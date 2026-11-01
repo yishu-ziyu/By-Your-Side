@@ -42,6 +42,8 @@ const childSessionsBySession = new Map<string, ChildFrameSession>();
 
 const autoAttachReady = new Set<number>();
 
+const autoAttachPending = new Map<number, Promise<void>>();
+
 function scheduleIdleDetach(): void {
   if (idleTimer !== null) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
@@ -86,6 +88,41 @@ function clearChildSessions(tabId: number): void {
   if (map) for (const session of map.values()) childSessionsBySession.delete(session.sessionId);
   childSessionsByTab.delete(tabId);
   autoAttachReady.delete(tabId);
+  autoAttachPending.delete(tabId);
+}
+
+export async function childFrameSession(tabId: number, frameId: string): Promise<string> {
+  await ensureAttached(tabId);
+  if (!autoAttachReady.has(tabId)) {
+    let pending = autoAttachPending.get(tabId);
+    if (!pending) {
+      pending = chrome.debugger.sendCommand({ tabId }, "Target.setAutoAttach", {
+        autoAttach: true, waitForDebuggerOnStart: false, flatten: true,
+      }).then(() => { autoAttachReady.add(tabId); }).finally(() => { autoAttachPending.delete(tabId); });
+      autoAttachPending.set(tabId, pending);
+    }
+    await pending;
+  }
+  const lookup = () => [...(childSessionsByTab.get(tabId)?.values() ?? [])].find(child => child.targetId === frameId)?.sessionId;
+  const existing = lookup();
+  if (existing) return existing;
+  return await withTimeout(new Promise<string>(resolve => {
+    const listener = (source: chrome.debugger.Debuggee, method: string) => {
+      if (source.tabId !== tabId || method !== "Target.attachedToTarget") return;
+      const sessionId = lookup();
+      if (sessionId) { chrome.debugger.onEvent.removeListener(listener); resolve(sessionId); }
+    };
+    chrome.debugger.onEvent.addListener(listener);
+    const sessionId = lookup();
+    if (sessionId) { chrome.debugger.onEvent.removeListener(listener); resolve(sessionId); }
+    setTimeout(() => chrome.debugger.onEvent.removeListener(listener), 2000);
+  }), 2000, "无法核对内嵌页面");
+}
+
+export async function sendChildCommand<T>(tabId: number, sessionId: string, method: string, params: Record<string, unknown> = {}): Promise<T> {
+  const child = childSessionsBySession.get(sessionId);
+  if (!child || child.parentTabId !== tabId) throw new Error("内嵌页面已变化");
+  return await chrome.debugger.sendCommand({ tabId, sessionId }, method, params) as T;
 }
 
 function noteAttachedToTarget(parentTabId: number, params: {
