@@ -109,7 +109,7 @@ try {
   await rp.cdp.send("Page.navigate", { url: urlA }, work);
   await until(async () => await rp.evaluate(work, `document.readyState === "complete" && !!document.getElementById("h")?.shadowRoot?.querySelector("article")`) || undefined, 15_000, "夹具 A 就绪");
   await ask(ASK_A);
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector(".msg.assistant.streaming")') || undefined, 60_000, "夹具 A 一轮结束");
+  await until(async () => { const text = await panelText(); return text.includes(ANSWER_A) || text.includes(ERROR_LINE) || undefined; }, 60_000, "夹具 A 出现回答或错误");
   await sleep(500);
   const afterA = await panelText();
   evidence.stageA = { answer: afterA.includes(ANSWER_A), error: afterA.includes(ERROR_LINE) };
@@ -120,7 +120,7 @@ try {
   await rp.cdp.send("Page.navigate", { url: urlB }, work);
   await until(async () => await rp.evaluate(work, `document.readyState === "complete"`) || undefined, 15_000, "夹具 B 就绪");
   await ask(ASK_B);
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector(".msg.assistant.streaming")') || undefined, 60_000, "夹具 B 一轮结束");
+  await until(async () => { const text = await panelText(); return text.includes(EXPLAIN_B) || text.includes(ERROR_LINE) || undefined; }, 60_000, "夹具 B 出现说明或错误");
   await sleep(500);
   const afterB = await panelText();
   evidence.stageB = { explain: afterB.includes(EXPLAIN_B), error: afterB.includes(ERROR_LINE) };
@@ -137,7 +137,7 @@ try {
   await rp.evaluate(work, `(() => { document.querySelector("[hidden]")?.removeAttribute("hidden"); const p = document.querySelector("article p"); if (p) p.textContent = "恢复后能看到这页正文：跨境服务电商化的解释。"; return true; })()`);
   await until(async () => await rp.evaluate(panel, `(() => { const r = document.querySelector("#resume-entry-root"); return !!r && !r.hidden && !!r.querySelector(".resume-action"); })()`) || undefined, 15_000, "侧栏出现「继续原任务」");
   await rp.click(panel, "#resume-entry-root .resume-action");
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector(".msg.assistant.streaming")') || undefined, 60_000, "恢复的一轮结束");
+  await until(async () => (await panelText()).includes(RESUMED) || undefined, 60_000, "恢复的一轮出回答");
   await sleep(500);
   const afterResume = await panelText();
   evidence.stageC2 = { resumed: afterResume.includes(RESUMED), errorAgain: (afterResume.match(new RegExp(ERROR_LINE, "g")) ?? []).length > 1 };
