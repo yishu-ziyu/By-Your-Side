@@ -5,7 +5,7 @@ import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
-const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-program-send-timeout`);
+const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-program-send-timeout${process.env.AFTER_CONFIRM === "1" ? "-after-confirm" : ""}`);
 await mkdir(out, { recursive: true });
 const page = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>团队聊天</title><body>
 <h2>和 @小王 的对话</h2><form id="f"><textarea id="draft" aria-label="消息">周五下午三点开会。</textarea><button id="send">发送</button></form>
@@ -38,12 +38,22 @@ try {
   if (!result.confirmShown) throw new Error("没有进入发送确认路径");
   await rp.screenshot(panel, join(out, "confirmation.png"));
   const started = Date.now();
-  await sleep(62_000);
-  result.waitedMs = Date.now() - started;
-  result.confirmAfterDeadline = await yes();
-  if (result.confirmAfterDeadline) {
-    await rp.click(panel, ".send-confirm .send-confirm-yes");
-    await sleep(3000);
+  if (process.env.AFTER_CONFIRM === "1") {
+    await rp.evaluate(work, `(() => { window.testFrozen = false; document.addEventListener("mousemove", () => { if (window.testFrozen) return; window.testFrozen = true; const end = Date.now() + 5000; while (Date.now() < end) {} }, {once:true}); return true; })()`);
+    await sleep(57_000);
+    result.confirmBeforeDeadline = await yes();
+    result.approvedAtMs = Date.now() - started;
+    if (result.confirmBeforeDeadline) await rp.click(panel, ".send-confirm .send-confirm-yes");
+    await sleep(8000);
+    result.pageFrozen = await rp.evaluate(work, "window.testFrozen");
+  } else {
+    await sleep(62_000);
+    result.waitedMs = Date.now() - started;
+    result.confirmAfterDeadline = await yes();
+    if (result.confirmAfterDeadline) {
+      await rp.click(panel, ".send-confirm .send-confirm-yes");
+      await sleep(3000);
+    }
   }
   result.postsAfterDeadline = posts.length;
   await rp.screenshot(panel, join(out, "after-deadline.png"));
@@ -52,6 +62,6 @@ finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ result, posts }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));
 }
-const pass = result.confirmShown === true && result.before === 0 && result.postsAfterDeadline === 0 && !result.error;
+const pass = result.confirmShown === true && result.before === 0 && result.postsAfterDeadline === 0 && !result.error && (process.env.AFTER_CONFIRM !== "1" || (result.confirmBeforeDeadline === true && result.pageFrozen === true));
 console.log(pass ? "PASS" : "FAIL", JSON.stringify(result), out);
 if (!pass) process.exitCode = 1;

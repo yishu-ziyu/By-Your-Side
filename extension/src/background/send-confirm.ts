@@ -119,7 +119,14 @@ const confirmedViews = new WeakMap<SendGuard, SendConfirmView>();
 const confirmedChecks = new WeakMap<SendGuard, () => Promise<void>>();
 
 export async function recheckConfirmedSend(guard: SendGuard): Promise<void> {
+  const check = () => { if (guard.cancelled()) throw notSent(stoppedText(guard), "stopped"); };
+  check();
   await confirmedChecks.get(guard)?.();
+  check();
+}
+
+function stoppedText(guard: SendGuard): string {
+  return guard.programExpired?.() ? `网页程序已超时：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}` : TEXT.stopped;
 }
 
 /**
@@ -375,8 +382,7 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
 
   if (final === "send") confirmedViews.set(guard, withoutDraft);
 
-  const stoppedText = guard.programExpired?.() ? `网页程序已超时：没有点「发送」，草稿还留在页面上。${NO_OTHER_WAY}` : TEXT.stopped;
-  if (outcome === "send" && final === "stopped") throw notSent(stoppedText, "stopped");
+  if (outcome === "send" && final === "stopped") throw notSent(stoppedText(guard), "stopped");
 
   if (outcome === "send") return true;
 
@@ -386,5 +392,5 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
     declined.add(key);
   }
 
-  throw notSent(outcome === "stopped" ? stoppedText : TEXT[outcome], outcome === "decline" ? "declined" : outcome);
+  throw notSent(outcome === "stopped" ? stoppedText(guard) : TEXT[outcome], outcome === "decline" ? "declined" : outcome);
 }

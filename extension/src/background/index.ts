@@ -72,6 +72,7 @@ import { confirmRequest, reportSendClick, type SendGuard } from "./send-confirm.
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
 import { PendingControlTimeout } from "./control-pending.js";
+import { programDeadlineExpired } from "../../../shared/timeouts.js";
 import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
 import { workerTabControl } from "./worker-tab-control.js";
@@ -1687,11 +1688,12 @@ async function executeToolCall(
   let result: Extract<ClientMessage, { type: "tool_result" }>;
   let executionFact: import("../../../shared/protocol.js").ToolExecutionFact = "not_executed";
   const sid = normalizeSessionId(sessionId);
+  const programExpired = () => !!programId && programDeadlineExpired(programDeadline, Date.now());
 
   const checkIdentity=()=>{
     // Removing our own translation placeholders changes no page content and is needed exactly when a run has stopped.
     if(name==='page_translation'&&params.action==='settle')return;
-    if(programId && programDeadline !== undefined && Date.now() >= programDeadline)throw new Error('网页程序已超时，操作未执行。');
+    if(programExpired())throw new Error('网页程序已超时，操作未执行。');
     const current=conversationSummaries.find(c=>c.id===conversationId)?.runId;
 
     if(runId&&(abortedRuns.has(runId)||current!==runId))throw new Error('原任务已停止或发生变化，操作未执行。');
@@ -1776,7 +1778,7 @@ async function executeToolCall(
     const sendGuard: SendGuard = {
       inProgram: !!programId,
       task: runId ? `${runId}\u0000${userTurn}` : undefined,
-      programExpired: () => !!programId && programDeadline !== undefined && Date.now() >= programDeadline,
+      programExpired,
       cancelled: () => {
         try { checkIdentity(); } catch { return true; }
 
