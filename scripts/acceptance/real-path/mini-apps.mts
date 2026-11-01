@@ -127,7 +127,10 @@ try {
   const settingsTab = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html`, background: true })).targetId;
   const settings = await rp.attach(settingsTab);
   await until(async () => await rp.evaluate(settings, 'document.querySelector("#mini-apps")?.checked === false').catch(() => false) || undefined, 15_000, "设置页的小程序开关默认关");
-  await rp.evaluate(settings, 'document.querySelector("#mini-apps").scrollIntoView({ block: "center" }); true');
+  // 开关在「实验功能」分栏里，默认隐藏；像用户一样先切过去，否则点的是看不见的元素。
+  await rp.click(settings, '[data-settings-page="labs"]');
+  await until(async () => await rp.evaluate(settings, 'document.querySelector("#mini-apps").checkVisibility()') || undefined, 5_000, "切到实验功能");
+  await rp.evaluate(settings,'document.querySelector("#mini-apps").scrollIntoView({ block: "center" }); true');
   await rp.click(settings, "#mini-apps");
   await until(async () => await rp.evaluate(settings, 'chrome.storage.local.get("sideagent_mini_apps").then(s => s.sideagent_mini_apps === true)') || undefined, 5_000, "打开已保存");
   await rp.screenshot(settings, join(artifacts, "2-settings.png"));
