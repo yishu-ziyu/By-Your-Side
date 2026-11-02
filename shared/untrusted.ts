@@ -112,7 +112,15 @@ export function redactCredentialText(text: string): string {
     while (end > 0 && ".,;:!?/".includes(head[end - 1]!)) end -= 1;
     const core = head.slice(0, end);
 
-    return word.replace(/[A-Za-z0-9+_-]{12,256}/g, (token) => (isCredentialToken(token, token === core) ? MASK : token));
+    const mask = (part: string) => part.replace(/[A-Za-z0-9+_-]{12,256}/g, (token) => (isCredentialToken(token, token === core) ? MASK : token));
+    // 网址路径里的长串是资源编号（Spotify 专辑、Google 文档），隐掉就拿不到链接；主机前的账号口令和 ?、# 之后的参数照旧隐去。
+    const url = /https?:\/\/[^/?#]*/.exec(word);
+
+    if (!url) return mask(word);
+    const pathStart = url.index + url[0].length;
+    const pathEnd = pathStart + word.slice(pathStart).search(/[?#]|$/);
+
+    return mask(word.slice(0, pathStart)) + word.slice(pathStart, pathEnd) + mask(word.slice(pathEnd));
   });
 
   if (maskedLines > 0) body = `[${MASK}: ${maskedLines} credential-looking line(s) removed]\n${body}`;
