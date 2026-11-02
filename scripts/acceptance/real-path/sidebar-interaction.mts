@@ -223,9 +223,7 @@ try {
   check("划词转入保留原文、站点和输入焦点且不发模型请求", cite.text === "米娅负责编辑。" && cite.host.startsWith('127.0.0.1') && cite.focus === 'input' && model.requests.length === afterSave, cite);
   await rp.typeText(panel, "引用草稿");
   await rp.screenshot(panel, join(artifacts, "selection-cite.png"));
-  if (await rp.evaluate(panel, `document.querySelector("#materials-tray-root .mt-toggle")?.getAttribute("aria-expanded") !== "true"`)) await rp.click(panel, "#materials-tray-root .mt-toggle");
-  await rp.click(panel, "#materials-tray-root .mt-row[data-kind='selection']");
-  await rp.click(panel, "#materials-tray-root .mt-remove");
+  await rp.click(panel, "#materials-tray-root .mt-item[data-kind='selection'] .mt-item-remove");
   const removed = await rp.evaluate(panel, `({hidden:document.querySelector('#ask-cite').hidden,input:document.querySelector('#input').value})`);
   check("去掉引用不清空正文", removed.hidden && removed.input === '引用草稿', removed);
   await rp.evaluate(panel, `document.querySelector('#input').value='';document.querySelector('#input').dispatchEvent(new Event('input',{bubbles:true}));`);

@@ -205,9 +205,7 @@ try {
 
 
     const removeFeed = async () => {
-      if (await rp.evaluate(panel, 'document.querySelector(".mt-toggle")?.getAttribute("aria-expanded")==="false"')) await rp.click(panel,'.mt-toggle');
-      await rp.click(panel,'.mt-row[data-kind="selection"][data-removable]');
-      await rp.click(panel,'.mt-remove');
+      await rp.click(panel,'.mt-item[data-kind="selection"] .mt-item-remove');
     };
     if(process.argv.includes('--feed=remove')) {
       await removeFeed();

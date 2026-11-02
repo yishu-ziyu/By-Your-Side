@@ -389,13 +389,13 @@ app.innerHTML = `
     <select id="marginalia-mode" aria-label="段落提示模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">解释段落 · 会发给模型</option></select>
     <div id="confirm-dock" hidden></div>
     <div id="task-bar-root"></div>
-    <div id="materials-tray-root"></div>
     <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
       <span id="tab-icon-sq" class="tab-icon-sq"></span>
       <span id="tab-title-text" class="tab-title-text">检测标签页…</span>
       <i class="tab-live-dot"></i>
     </div>
     <div id="composer" class="composer-glass-dock">
+      <div id="materials-tray-root"></div>
       <div id="ask-cite" hidden>
         <span id="ask-cite-host"></span>
         <span id="ask-cite-text"></span>
