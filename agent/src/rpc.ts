@@ -128,7 +128,7 @@ function numberField(source: unknown, field: string): number | null {
 export class ToolRpc {
   private pending = new Map<string, Pending>();
   private dispatched = new Map<string, DispatchedCall>();
-  private restrictedCalls = new Set<string>();
+  private restrictedCalls = new Map<string, { tabId: number | null; url: string }>();
   private lateListeners = new Set<LateResultHandler>();
   private sendFn: RpcSend | null;
   public onLateResult?: LateResultHandler;
@@ -162,7 +162,11 @@ export class ToolRpc {
     return this.dispatched.get(id)?.fact;
   }
 
-  takeRestrictedCall(id: string): boolean { return this.restrictedCalls.delete(id); }
+  takeRestrictedCall(id: string): { tabId: number | null; url: string } | undefined {
+    const page = this.restrictedCalls.get(id);
+    this.restrictedCalls.delete(id);
+    return page;
+  }
 
   /** Only the direct Realtime fill boundary opts in; ordinary tool calls are unchanged. */
   prepareFillReadback(id: string, sessionId?: string): void {
@@ -511,11 +515,14 @@ export class ToolRpc {
       disp.state = ok ? "resolved" : "rejected";
       disp.fact = fact;
 
-      if (!ok && fact === 'not_executed' && (data as { restrictedPage?: unknown } | undefined)?.restrictedPage === true) {
+      const restrictedPage = (data as { restrictedPage?: unknown } | undefined)?.restrictedPage;
+      if (!ok && fact === 'not_executed' && restrictedPage && typeof restrictedPage === 'object'
+        && 'tabId' in restrictedPage && (restrictedPage.tabId === null || typeof restrictedPage.tabId === 'number')
+        && 'url' in restrictedPage && typeof restrictedPage.url === 'string') {
         const id = disp.programId ?? disp.sdkId;
         if (id) {
-          this.restrictedCalls.add(id);
-          if (this.restrictedCalls.size > 256) this.restrictedCalls.delete(this.restrictedCalls.values().next().value!);
+          this.restrictedCalls.set(id, { tabId: restrictedPage.tabId, url: restrictedPage.url });
+          if (this.restrictedCalls.size > 256) this.restrictedCalls.delete(this.restrictedCalls.keys().next().value!);
         }
       }
 

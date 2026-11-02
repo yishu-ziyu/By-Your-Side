@@ -1808,7 +1808,7 @@ async function executeToolCall(
 
       if (['snapshot', 'page_text', 'read_element', 'read_elements', 'screenshot', 'js'].includes(name)) {
         const target = await resolveReadableTab(typeof params.tabId === 'number' ? params.tabId : undefined, key(sid));
-        if (isRestrictedPage(target.url)) throw new RestrictedPageError();
+        if (isRestrictedPage(target.url)) throw new RestrictedPageError(target.id ?? null, target.url ?? '');
       }
 
       if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
@@ -1850,7 +1850,7 @@ async function executeToolCall(
     rememberFact(e);
     result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
 
-    if (e instanceof RestrictedPageError) result.data = { restrictedPage: true };
+    if (e instanceof RestrictedPageError) result.data = { restrictedPage: { tabId: e.tabId, url: e.url } };
 
     // 因为用户没执行（不让发、付款留给用户）：宿主据此不把它当成连续出错，侧栏据此写那句话。
     if (e && typeof e === "object" && "heldReason" in e) result.data = { heldReason: e.heldReason };

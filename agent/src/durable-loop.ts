@@ -11,7 +11,7 @@ import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { toToolDeclaration } from "@earendil-works/pi-ai/utils/transcript";
 import { isTransientModelError } from "../../shared/provider-busy.js";
 import { isModelTimeoutError } from "../../shared/user-facing.js";
-import { createRegistry, defineExtension, defineTool, Harness, hook, MemoryStorage, ProviderDoc, watchEvents, GenerationTask, type AgentEvent as DurableEvent, type Conversation, type EntryRecord, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
+import { createRegistry, defineExtension, defineTool, Harness, hook, MemoryStorage, ProviderDoc, watchEvents, GenerationTask, type AgentEvent as DurableEvent, type Conversation, type EntryRecord, type Storage, type SubmissionId, type TaskId, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentSessionEvent, AgentSessionEventListener, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { RunNotStarted, type AgentLoop } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
@@ -19,6 +19,7 @@ import type { ModelRequestObservation } from "./model-request-trace.js";
 import { ELIDE_MIN_CHARS, PAGE_OBSERVATION_MARK, streamThrough, type PiAgentLoopOptions } from "./pi-agent-loop.js";
 import type { PiSessionPersistence } from "./pi-session-persistence.js";
 import { composeSystemPrompt } from "./system-prompt.js";
+import { isRestrictedPageTermination } from './restricted-page-policy.js';
 
 const ctx: Context = BACKGROUND_CONTEXT;
 
@@ -108,6 +109,8 @@ export class DurableAgentLoop implements AgentLoop {
   private skippedEndTimer: ReturnType<typeof setTimeout> | undefined;
   /** 正在执行的工具。停下时先当场取消它们，再等 pi-durable 把停下写进存储，免得填表之类的动作在这段时间里接着写页面。 */
   private readonly runningTools = new Set<AbortController>();
+  private restrictedStopPending = false;
+  private readonly restrictedStopOwners = new Map<string, TaskId>();
 
   readonly agent: AgentLoop["agent"];
 
@@ -370,7 +373,16 @@ export class DurableAgentLoop implements AgentLoop {
         const hooked = this.hooks.has("tool_result") ? await this.hooks.toolResult({ toolName: tool.name, toolCallId: api.callId, input: args as HookArgs, content: result.content, details: result.details as never, isError: result.isError === true }) : undefined;
         const content = [...(hooked?.content ?? result.content), ...(repeated ? [{ type: "text" as const, text: repeated }] : [])];
         // pi-agent-core 的 terminate 在 pi-durable 里叫 control.terminate；不转过去，交付结论后会多问模型一轮、侧栏出现两遍。
-        const terminate = "terminate" in result && result.terminate === true;
+        const restrictedStop = isRestrictedPageTermination(hooked?.details);
+        if (restrictedStop) {
+          this.restrictedStopPending = true;
+          try {
+            const owner = (await this.harness?.getTask(api.taskId, ctx))?.owner;
+            if (owner) this.restrictedStopOwners.set(api.callId, owner);
+            else console.error('[sideagent] 受限页面停止：没有找到所属任务，将在批次结束后停止。');
+          } catch (error) { console.error('[sideagent] 受限页面停止：读取所属任务失败，将在批次结束后停止。', error); }
+        }
+        const terminate = "terminate" in result && result.terminate === true || restrictedStop;
         return { content, details: (hooked?.details ?? result.details) as never, isError: hooked?.isError ?? result.isError === true, ...(terminate ? { control: { terminate: true as const } } : {}) };
       },
     });
@@ -385,7 +397,25 @@ export class DurableAgentLoop implements AgentLoop {
     registry.install(defineExtension({
       name: "sideagent",
       tools: this.durableTools,
-      hooks: [hook(GenerationTask, { beforeRequest: async (request) => this.beforeRequest(request.messages) })],
+      hooks: [hook(GenerationTask, {
+        beforeRequest: async (request) => this.beforeRequest(request.messages),
+        afterTools: async (_assistant, _results, api) => {
+          if (!this.restrictedStopPending) return;
+          this.restrictedStopPending = false;
+          const harness = this.harness;
+          if (!harness) throw new Error('无法停止受限页面的重复读取：任务调度器不可用。');
+          // abortTask joins the current invocation, so wait only for its persisted mark here.
+          void harness.abortTask(api.taskId, ctx).catch(error => console.error('[sideagent] 受限页面停止失败', error));
+          const deadline = Date.now() + 3_000;
+          while (Date.now() < deadline) {
+            const task = await harness.getTask(api.taskId, ctx);
+            if (!task) throw new Error('无法确认受限页面的停止标记：任务不存在。');
+            if (task.abortRequested || task.state.status === 'terminal') return;
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+          throw new Error('无法确认受限页面的停止标记。');
+        },
+      })],
     }));
     const loop = this;
     const storage = this.options.openStorage ? await this.options.openStorage(this.sessionId || "default") : new MemoryStorage();
@@ -625,9 +655,16 @@ export class DurableAgentLoop implements AgentLoop {
     const message = entry?.model?.[0];
     const result = message?.role === "toolResult" ? message : interruptedResult(toolCallId, toolName);
     this.emit({ type: "tool_execution_end", toolCallId, toolName, result, isError: result.isError });
+    const owner = this.restrictedStopOwners.get(toolCallId);
+    if (owner) {
+      this.restrictedStopOwners.delete(toolCallId);
+      void this.harness?.abortTask(owner, ctx).catch(error => console.error('[sideagent] 受限页面停止失败', error));
+    }
   }
 
   private async onRunEnd(): Promise<void> {
+    this.restrictedStopPending = false;
+    this.restrictedStopOwners.clear();
     await this.flushPersistence();
     if (this.cutForSteer) {
       // 插话已先写进存储，正常情况下下一轮马上开始；没开始就按普通结束收尾，免得界面一直显示在做。

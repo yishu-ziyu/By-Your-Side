@@ -1,6 +1,7 @@
 export const RESTRICTED_PAGE_MESSAGE = '这页浏览器不让我读，请截图贴进来或复制文字。';
+export const RESTRICTED_PAGE_FACT = '浏览器不允许读取这一页的内容；打开别的网址、切换标签页不受影响；要这页的内容只能请用户截图或复制文字。';
 export class RestrictedPageError extends Error {
-  constructor() { super(`${RESTRICTED_PAGE_MESSAGE} 不要再尝试读取此页。`); }
+  constructor(readonly tabId: number | null, readonly url: string) { super(RESTRICTED_PAGE_FACT); }
 }
 
 /** Chrome refuses extension page access for these addresses independently of host permissions. */
