@@ -6,7 +6,7 @@
  * - @ 标签页、选区和附件仍走原来的 tabMentions / pendingAsk / AttachmentsManager；
  * - 批量移出只调用这些现有入口，撤销时恢复移出前的草稿快照。
  */
-import { createElement as icon, ChevronDown, FileText, Globe2, Plus, TextQuote } from "lucide";
+import { createElement as icon, AtSign, Files, FileText, Globe2, TextQuote } from "lucide";
 import type { PendingAsk } from "../shared/ask-selection.js";
 import type { AttachmentSnapshot } from "./attachments.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
@@ -114,6 +114,16 @@ export class MaterialsTray {
       event.preventDefault();
       this.root.classList.remove("is-over");
       opts.onAddFiles(Array.from(event.dataTransfer.files));
+    });
+    document.addEventListener("pointerdown", (event) => {
+      if (!this.expanded || (event.target instanceof Node && this.root.contains(event.target))) return;
+      this.expanded = false;
+      this.sync();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !this.expanded) return;
+      this.expanded = false;
+      this.sync();
     });
   }
 
@@ -242,22 +252,36 @@ export class MaterialsTray {
 
     const head = document.createElement("div");
     head.className = "mt-head";
-    const folder = document.createElement("span");
-    folder.className = "mt-folder";
-    folder.setAttribute("aria-hidden", "true");
-    const title = document.createElement("span");
-    title.className = "mt-title";
-    title.textContent = "这次任务";
-    const countWrap = document.createElement("span");
-    countWrap.className = "mt-count";
+    const mention = document.createElement("button");
+    mention.type = "button";
+    mention.className = "mt-chip mt-mention";
+    mention.title = "加入标签页";
+    mention.setAttribute("aria-label", "加入标签页");
+    mention.append(icon(AtSign, { width: 14, height: 14, "stroke-width": 1.9, "aria-hidden": "true" }));
+    mention.addEventListener("click", () => this.opts.onMention());
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "mt-chip mt-toggle";
+    toggle.title = "这一句会带上的材料";
+    toggle.setAttribute("aria-expanded", String(this.expanded));
+    toggle.setAttribute("aria-label", `${this.expanded ? "收起" : "展开"}材料，共 ${count} 项`);
     const countNumber = document.createElement("span");
     countNumber.className = "mt-count-number";
     countNumber.textContent = String(count);
     if (this.previousCount >= 0 && count !== this.previousCount) countNumber.classList.add("is-rolling");
-    countWrap.append(countNumber, " 项");
     this.previousCount = count;
-    const spacer = document.createElement("span");
-    spacer.className = "mt-spacer";
+    toggle.append(icon(Files, { width: 14, height: 14, "stroke-width": 1.8, "aria-hidden": "true" }), countNumber);
+    toggle.addEventListener("click", () => { this.expanded = !this.expanded; this.sync(); });
+    head.append(mention, toggle);
+
+    const pop = document.createElement("div");
+    pop.className = "mt-pop";
+    pop.hidden = !this.expanded && !this.undo;
+    const popHead = document.createElement("div");
+    popHead.className = "mt-pop-head";
+    popHead.hidden = !this.expanded;
+    const popTitle = document.createElement("span");
+    popTitle.textContent = `这一句会带上 ${count} 项`;
     const all = document.createElement("button");
     all.type = "button";
     all.className = "mt-head-button";
@@ -268,30 +292,7 @@ export class MaterialsTray {
       else this.selected = new Set(removables.map((item) => item.key));
       this.sync();
     });
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "mt-head-button mt-add";
-    add.title = "添加文件或图片";
-    add.setAttribute("aria-label", "添加材料");
-    add.append(icon(Plus, { width: 14, height: 14, "stroke-width": 1.9, "aria-hidden": "true" }));
-    add.addEventListener("click", () => this.opts.onAdd());
-    const mention = document.createElement("button");
-    mention.type = "button";
-    mention.className = "mt-head-button mt-mention";
-    mention.textContent = "@";
-    mention.title = "加入标签页";
-    mention.setAttribute("aria-label", "加入标签页");
-    mention.addEventListener("click", () => this.opts.onMention());
-    head.append(spacer, all, mention, add);
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "mt-head-button mt-toggle";
-    toggle.setAttribute("aria-expanded", String(this.expanded));
-    toggle.setAttribute("aria-label", this.expanded ? "收起材料" : "展开材料");
-    toggle.append(folder, title, countWrap, icon(ChevronDown, { width: 14, height: 14, "aria-hidden": "true" }));
-    toggle.addEventListener("click", () => { this.expanded = !this.expanded; this.sync(); });
-    head.prepend(toggle);
-    all.hidden = !this.expanded || removables.length < 2;
+    popHead.append(popTitle, all);
 
     const list = document.createElement("div");
     list.className = "mt-list";
@@ -309,7 +310,8 @@ export class MaterialsTray {
       list.append(this.renderRow(item));
     }
 
-    shell.append(head, list);
+    pop.append(popHead, list);
+    shell.append(head, pop);
 
     if (this.expanded && this.selected.size) {
       const actions = document.createElement("div");
@@ -327,7 +329,7 @@ export class MaterialsTray {
       remove.textContent = `移出 ${this.selected.size} 项`;
       remove.addEventListener("click", () => this.removeSelected());
       actions.append(copy, summary, remove);
-      shell.append(actions);
+      pop.append(actions);
     }
 
     if (this.undo) {
@@ -348,7 +350,7 @@ export class MaterialsTray {
         this.sync();
       });
       undo.append(text, button);
-      shell.append(undo);
+      pop.append(undo);
     }
 
     this.root.replaceChildren(...(draft ? [shell] : []));
