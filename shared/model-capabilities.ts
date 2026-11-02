@@ -34,6 +34,7 @@ interface MeasuredCapability {
 
 /** */
 const MEASURED = new Map<string, MeasuredCapability>([
+  ["inception/mercury-3", { reasoning: true, input: ["text"], thinkingLevelMap: { off: null, minimal: "instant" }, systemRole: true, start: "low" }],
   // ChatGPT 账号的 gpt-6 系列；pi-ai 1.0.4 目录已收录，上下文与连接参数取目录。
   // 起始档用低档（默认低，难的事由升档信号或用户自己调高）。订会议室真实路径各 12 次：
   // 高 12/12 中位 25 秒，中 11/12（一次没订却说订好了）21 秒，低 11/12（一次如实说没提交）22 秒，关 8/12 21 秒。
