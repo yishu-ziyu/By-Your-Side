@@ -1459,7 +1459,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, input) => {
         // forUser 是宿主自己的交付开关，不传给扩展的截图 RPC。
-        const { forUser, ...params } = input as typeof input & { forUser?: boolean };
+        const { forUser, clip, scale, ...rest } = input as typeof input & { forUser?: boolean; clip?: typeof input.clip & { scale?: unknown } };
+        const nestedScale = clip?.scale === "css" || clip?.scale === "raw" ? clip.scale : undefined;
+        const params = {
+          ...rest,
+          ...(clip ? { clip: { x: clip.x, y: clip.y, width: clip.width, height: clip.height } } : {}),
+          ...((scale ?? nestedScale) ? { scale: scale ?? nestedScale } : {}),
+        };
         const data = (await call("screenshot", params)) as ToolContract["screenshot"]["data"];
 
         const geometry =

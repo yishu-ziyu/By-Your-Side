@@ -23,6 +23,8 @@ const model = await startScriptedModel([
     { tool: { name: 'tabs', args: { action: 'active', url } } },
     { tool: { name: 'screenshot', args: { clip: { x: 0, y: 0, width: 100, height: 100, scale: 'raw' } } } },
     { tool: { name: 'screenshot', args: { clip: { x: 0, y: 0, width: 100, height: 100 }, scale: 'raw' } } },
+    { tool: { name: 'screenshot', args: { clip: { x: 0, y: 0, width: 100, height: 100, scale: 'css' } } } },
+    { tool: { name: 'screenshot', args: { clip: { x: 0, y: 0, width: 100, height: 100, scale: 'raw' }, scale: 'css' } } },
     { text: '参数检查结束。' },
   ] },
 ], undefined, payload => payloads.push(payload as Payload));
@@ -47,12 +49,14 @@ try {
   const screenshot = last?.tools?.find(t => t.function?.name === 'screenshot')?.function?.parameters;
   evidence.receipts = receipts; evidence.screenshotParameters = screenshot;
   await rp.screenshot(panel, join(out, 'panel.png'));
-  assert.equal(receipts.length, 4, 'four model-visible tool results');
+  assert.equal(receipts.length, 6, 'six model-visible tool results');
   assert.ok(receipts[0]?.includes('/wanted') && !receipts[0]?.includes('/unrelated'), 'list+url filters the actual browser tabs');
   assert.ok(receipts[1]?.includes('不接受 url'), 'active still rejects url');
   assert.ok(!Object.hasOwn(screenshot?.properties?.clip?.properties ?? {}, 'scale'), 'model-visible clip has no scale');
-  assert.ok(receipts[2]?.includes('INVALID_ARGUMENT'), 'an invalid old nested scale is rejected');
+  assert.ok(receipts[2]?.includes('Image pixels') && receipts[2].includes('actual scale=raw'), 'legacy nested raw scale produces a real screenshot');
   assert.ok(receipts[3]?.includes('Image pixels'), 'outer raw scale produces a real screenshot');
+  assert.ok(receipts[4]?.includes('Image pixels') && receipts[4].includes('actual scale=css'), 'legacy nested css scale produces a real screenshot');
+  assert.ok(receipts[5]?.includes('Image pixels') && receipts[5].includes('actual scale=css'), 'explicit outer scale takes precedence');
 } catch (e) { error = e instanceof Error ? e.stack ?? e.message : String(e); }
 finally {
   await writeFile(join(out, 'result.json'), JSON.stringify({ status: error ? 'FAIL' : 'PASS', error, evidence }, null, 2));
