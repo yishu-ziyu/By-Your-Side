@@ -3828,6 +3828,19 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .mt-item-remove:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 .mt-mention, .mt-toggle { flex: none; }
 .mt-head.is-tight .mt-item-label { max-width: 5em; }
+.mt-item { cursor: pointer; }
+.mt-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.mt-item[aria-expanded="true"] { background: var(--content-bg); }
+/* 读取中的文件：标签底色按真实读取进度铺满。 */
+.mt-item[data-state="reading"] { background: linear-gradient(90deg, var(--accent-soft) var(--mt-progress, 0%), transparent var(--mt-progress, 0%)); }
+.mt-thumb { display: block; width: 16px; height: 16px; border-radius: var(--r-tail); object-fit: cover; }
+.mt-preview { gap: var(--s-1); max-height: min(60vh, 420px); overflow: auto; }
+.mt-preview-head { display: flex; align-items: center; gap: var(--s-1); min-width: 0; padding: 2px 2px 0 6px; }
+.mt-preview-head .mt-copy { flex: 1; }
+.mt-preview-image { display: block; max-width: 100%; max-height: min(52vh, 360px); margin: 0 auto; border-radius: var(--r-tail); object-fit: contain; }
+.mt-preview-text,
+.mt-preview-url { margin: 0; padding: 0 6px 4px; color: var(--text-secondary); font-size: var(--fs-meta); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mt-preview-url { color: var(--text-tertiary); }
 .mt-count-number { display: inline-block; }
 .mt-count-number.is-rolling { animation: materialTrayCount var(--d-state) var(--e-spring); }
 .mt-pop {
