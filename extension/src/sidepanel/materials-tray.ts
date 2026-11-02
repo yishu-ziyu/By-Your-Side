@@ -1,12 +1,12 @@
 /**
- * 输入框上方的材料夹：把真正会随这一句送出的页面、选区、标签页和附件放在同一个地方。
+ * 输入框里的材料标签：真正会随这一句送出的页面、选区、标签页和附件各露一个标签，放不下的折进「+N」清单。
  *
  * 只投影现有草稿，不另存一套材料，也不改变发送协议：
  * - 当前页或选区来源页由发送流程自动带入，所以标成不可移出；
  * - @ 标签页、选区和附件仍走原来的 tabMentions / pendingAsk / AttachmentsManager；
  * - 批量移出只调用这些现有入口，撤销时恢复移出前的草稿快照。
  */
-import { createElement as icon, AtSign, Files, FileText, Globe2, TextQuote } from "lucide";
+import { createElement as icon, AtSign, FileText, Globe2, TextQuote, X } from "lucide";
 import type { PendingAsk } from "../shared/ask-selection.js";
 import type { AttachmentSnapshot } from "./attachments.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
@@ -115,6 +115,15 @@ export class MaterialsTray {
       this.root.classList.remove("is-over");
       opts.onAddFiles(Array.from(event.dataTransfer.files));
     });
+    // 侧栏拖宽拖窄时重新决定露几个标签。
+    let width = 0;
+    new ResizeObserver(([entry]) => {
+      const next = Math.round(entry?.contentRect.width ?? 0);
+      if (next === width) return;
+      width = next;
+      this.lastSignature = "";
+      this.sync();
+    }).observe(this.root);
     document.addEventListener("pointerdown", (event) => {
       if (!this.expanded || (event.target instanceof Node && this.root.contains(event.target))) return;
       this.expanded = false;
@@ -259,20 +268,21 @@ export class MaterialsTray {
     mention.setAttribute("aria-label", "加入标签页");
     mention.append(icon(AtSign, { width: 14, height: 14, "stroke-width": 1.9, "aria-hidden": "true" }));
     mention.addEventListener("click", () => this.opts.onMention());
+    const chips = this.materials.map((item) => this.renderChip(item));
+    head.append(mention, ...chips);
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "mt-chip mt-toggle";
-    toggle.title = "这一句会带上的材料";
+    toggle.title = "这一句会带上的全部材料";
     toggle.setAttribute("aria-expanded", String(this.expanded));
     toggle.setAttribute("aria-label", `${this.expanded ? "收起" : "展开"}材料，共 ${count} 项`);
     const countNumber = document.createElement("span");
     countNumber.className = "mt-count-number";
-    countNumber.textContent = String(count);
     if (this.previousCount >= 0 && count !== this.previousCount) countNumber.classList.add("is-rolling");
     this.previousCount = count;
-    toggle.append(icon(Files, { width: 14, height: 14, "stroke-width": 1.8, "aria-hidden": "true" }), countNumber);
+    toggle.append(countNumber);
     toggle.addEventListener("click", () => { this.expanded = !this.expanded; this.sync(); });
-    head.append(mention, toggle);
+    head.append(toggle);
 
     const pop = document.createElement("div");
     pop.className = "mt-pop";
@@ -354,6 +364,7 @@ export class MaterialsTray {
     }
 
     this.root.replaceChildren(...(draft ? [shell] : []));
+    if (draft) this.fitChips(head, chips, toggle, countNumber);
     const delivery = this.delivery();
 
     // The "另开会话" and "还没有连接模型" cards in the conversation already state this rejection and offer the next step.
@@ -384,6 +395,76 @@ export class MaterialsTray {
       }
       this.root.append(line);
     }
+  }
+
+  /** 一行放不下时先把名字统一缩短一档，仍放不下再从末尾折进「+N」；不把名字压成一两个字。 */
+  private fitChips(head: HTMLElement, chips: HTMLElement[], toggle: HTMLButtonElement, countNumber: HTMLElement): void {
+    let shown = chips.length;
+    const label = () => {
+      const rest = chips.length - shown;
+      countNumber.textContent = rest > 0 ? `+${rest}` : "";
+      toggle.hidden = rest <= 0 && !this.expanded;
+      if (rest <= 0 && this.expanded) countNumber.textContent = "收起";
+    };
+
+    label();
+    head.classList.toggle("is-tight", head.scrollWidth > head.clientWidth);
+    while (shown > 0 && head.scrollWidth > head.clientWidth) {
+      shown -= 1;
+      chips[shown]!.hidden = true;
+      label();
+    }
+  }
+
+  private glyphFor(item: TrayMaterial, size: number): HTMLElement {
+    const glyph = document.createElement("span");
+    glyph.className = "mt-glyph";
+
+    if (item.kind === "page" && item.tabId !== undefined) {
+      const page = item.key.startsWith("mention:")
+        ? this.opts.mentions().find((mention) => mention.tabId === item.tabId)
+        : this.opts.selection() ?? this.opts.page();
+      const url = page && "url" in page ? page.url : "";
+      const mark = siteGlyph(url, hostOf(url) || item.label);
+      mark.classList.add("mt-site-glyph");
+      glyph.append(mark);
+    } else {
+      glyph.append(icon(item.kind === "selection" ? TextQuote : item.kind === "page" ? Globe2 : FileText, {
+        width: size,
+        height: size,
+        "stroke-width": 1.8,
+        "aria-hidden": "true",
+      }));
+    }
+
+    return glyph;
+  }
+
+  private renderChip(item: TrayMaterial): HTMLElement {
+    const chip = document.createElement("span");
+    chip.className = "mt-chip mt-item";
+    chip.dataset.kind = item.kind;
+    chip.dataset.state = item.state;
+    chip.title = `${item.label}\n${item.detail}`;
+    const label = document.createElement("span");
+    label.className = "mt-item-label";
+    label.textContent = item.label;
+    chip.append(this.glyphFor(item, 13), label);
+
+    if (item.removable) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "mt-item-remove";
+      remove.setAttribute("aria-label", `移出 ${item.label}`);
+      remove.append(icon(X, { width: 12, height: 12, "stroke-width": 2, "aria-hidden": "true" }));
+      remove.addEventListener("click", () => {
+        this.selected = new Set([item.key]);
+        this.removeSelected();
+      });
+      chip.append(remove);
+    }
+
+    return chip;
   }
 
   private renderRow(item: TrayMaterial): HTMLElement {
@@ -419,25 +500,7 @@ export class MaterialsTray {
     check.setAttribute("aria-hidden", "true");
     if (item.removable) check.textContent = "✓";
 
-    const glyph = document.createElement("span");
-    glyph.className = "mt-glyph";
-
-    if (item.kind === "page" && item.tabId !== undefined) {
-      const page = item.key.startsWith("mention:")
-        ? this.opts.mentions().find((mention) => mention.tabId === item.tabId)
-        : this.opts.selection() ?? this.opts.page();
-      const url = page && "url" in page ? page.url : "";
-      const mark = siteGlyph(url, hostOf(url) || item.label);
-      mark.classList.add("mt-site-glyph");
-      glyph.append(mark);
-    } else {
-      glyph.append(icon(item.kind === "selection" ? TextQuote : item.kind === "page" ? Globe2 : FileText, {
-        width: 15,
-        height: 15,
-        "stroke-width": 1.8,
-        "aria-hidden": "true",
-      }));
-    }
+    const glyph = this.glyphFor(item, 15);
 
     const copy = document.createElement("span");
     copy.className = "mt-copy";

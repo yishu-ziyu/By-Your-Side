@@ -52,7 +52,7 @@ try {
    const {root} = await rp.cdp.send('DOM.getDocument', {depth:0}, panel!) as { root:{nodeId:number} };
    const {nodeId} = await rp.cdp.send('DOM.querySelector', {nodeId:root.nodeId,selector:'#file-input'}, panel!) as {nodeId:number};
    await rp.cdp.send('DOM.setFileInputFiles', {nodeId,files:[file]}, panel!);
-   await until(async()=>await rp.evaluate(panel!,'!!document.querySelector(".mt-row[data-kind=attachment]")'),15000,'附件读取');
+   await until(async()=>await rp.evaluate(panel!,'!!document.querySelector(".mt-item[data-kind=attachment]:not([hidden])")'),15000,'附件读取');
  };
  const send = async (mode:string) => {
    await rp.evaluate(panel!, `window.__mode=${JSON.stringify(mode)}`);
@@ -63,10 +63,7 @@ try {
  const collapsed = await rp.evaluate(panel, 'document.querySelector(".mt-toggle")?.getAttribute("aria-expanded") === "false" && document.querySelector(".mt-list")?.getBoundingClientRect().height === 0');
  check('材料清单默认收起', collapsed === true, collapsed);
  await rp.screenshot(panel,join(out,'a-collapsed.png'));
- if (await rp.evaluate(panel,'!!document.querySelector(".mt-toggle")')) {
-   await rp.click(panel,'.mt-toggle');
-   check('展开后能看到真实附件', await rp.evaluate(panel,'document.querySelector(".mt-list").getBoundingClientRect().height > 0 && document.querySelector(".mt-list").textContent.includes("material.txt")') === true);
- }
+ check('输入框里直接看到真实附件', await rp.evaluate(panel,'document.querySelector(".mt-item[data-kind=attachment]:not([hidden])")?.textContent.includes("material.txt")') === true);
  await send('hold');
  await rp.screenshot(panel,join(out,'b-sending.png'));
  const sending = await rp.evaluate(panel,'({legacy:!!document.querySelector(".task-bar:not([hidden])"), line:document.querySelector(".mt-delivery")?.textContent, height:document.querySelector(".mt-delivery")?.getBoundingClientRect().height})') as {legacy:boolean;line:string;height:number};
@@ -102,7 +99,7 @@ try {
  check('切会话不串入旧发送状态',true);
  await attach();
  await rp.cdp.send('Page.reload',{},panel);
- await until(async()=>await rp.evaluate(panel!,'document.querySelector(".mt-count-number")?.textContent !== "0" && !!document.querySelector(".mt-row[data-kind=attachment]")'),15000,'草稿附件恢复');
+ await until(async()=>await rp.evaluate(panel!,'!!document.querySelector(".mt-item[data-kind=attachment]:not([hidden])")'),15000,'草稿附件恢复');
  check('重开侧栏保留草稿附件且默认收起',await rp.evaluate(panel,'document.querySelector(".mt-toggle")?.getAttribute("aria-expanded")==="false"')===true);
  await rp.cdp.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:'dark'},{name:'prefers-reduced-motion',value:'reduce'}]},panel);
  await rp.screenshot(panel,join(out,'f-draft-dark-reduced.png'));
