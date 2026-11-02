@@ -340,8 +340,8 @@ app.innerHTML = `
     <div id="messages">
       <div id="resume-entry-root"></div>
     </div>
-    <div class="scroll-fade" data-edge="top" aria-hidden="true"></div>
-    <div class="scroll-fade" data-edge="bottom" aria-hidden="true"></div>
+    <div class="scroll-fade" data-edge="top" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="scroll-fade" data-edge="bottom" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
   </div>
   <div id="team-card" hidden></div>
   <section id="starter" aria-label="开始方式">
