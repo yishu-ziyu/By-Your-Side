@@ -26,7 +26,7 @@ try {
   await rp.cdp.send("Page.navigate", { url: `chrome-extension://${rp.extensionId}/settings.html#models` }, work);
   await until(() => rp!.evaluate(work, 'document.readyState==="complete"'), 15_000, "设置页就绪");
   await rp.click(panel, "#input"); await rp.typeText(panel, "看看这页"); await rp.pressEnter(panel);
-  const answered = await until(() => rp!.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(e=>e.textContent.includes("已收尾"))`), 45_000, "助手回答").then(() => true, () => false);
+  const answered = await until(() => rp!.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(e=>e.textContent.includes("截图"))`), 45_000, "助手回答").then(() => true, () => false);
   await sleep(3000);
   const panelAlive = await alive(panel);
   const settingsAlive = await alive(work);

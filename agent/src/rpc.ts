@@ -67,6 +67,7 @@ interface DispatchedCall {
   id: string;
   /** SDK 工具调用身份（含 browser_run 子步骤 id），与传输 id 共享同一记录。 */
   sdkId?: string;
+  programId?: string;
   name: ToolName;
   sessionId?: string;
   startedAt: number;
@@ -127,6 +128,7 @@ function numberField(source: unknown, field: string): number | null {
 export class ToolRpc {
   private pending = new Map<string, Pending>();
   private dispatched = new Map<string, DispatchedCall>();
+  private restrictedCalls = new Map<string, { tabId: number | null; url: string }>();
   private lateListeners = new Set<LateResultHandler>();
   private sendFn: RpcSend | null;
   public onLateResult?: LateResultHandler;
@@ -158,6 +160,12 @@ export class ToolRpc {
   /** 获取已记录调用的执行事实；传输 id 与 SDK 调用 id 均可查询。 */
   getExecutionFact(id: string): ToolExecutionFact | undefined {
     return this.dispatched.get(id)?.fact;
+  }
+
+  takeRestrictedCall(id: string): { tabId: number | null; url: string } | undefined {
+    const page = this.restrictedCalls.get(id);
+    this.restrictedCalls.delete(id);
+    return page;
   }
 
   /** Only the direct Realtime fill boundary opts in; ordinary tool calls are unchanged. */
@@ -398,7 +406,7 @@ export class ToolRpc {
           frame.sessionId = sessionId;
         }
 
-        this.registerDispatch(id, sdkId, name, sessionId, targetSeq, outParams);
+        this.registerDispatch(id, sdkId, name, sessionId, targetSeq, outParams, programId);
         send(frame);
       } catch (err) {
         clearTimeout(timer);
@@ -425,12 +433,14 @@ export class ToolRpc {
     sessionId?: string,
     targetSeq?: number,
     targetParams?: Record<string, unknown>,
+    programId?: string,
   ): void {
     const existing = sdkId ? this.dispatched.get(sdkId) : undefined;
     const entry: DispatchedCall = existing ?? { id: transportId, sdkId, name, sessionId, startedAt: Date.now(), state: "sent" };
     entry.id = transportId;
     entry.name = name;
     entry.sessionId = sessionId;
+    entry.programId = programId;
     entry.startedAt = Date.now();
     entry.state = "sent";
     // Only existing target-changing receipts need full params. Observation binding
@@ -504,6 +514,17 @@ export class ToolRpc {
     if (disp) {
       disp.state = ok ? "resolved" : "rejected";
       disp.fact = fact;
+
+      const restrictedPage = (data as { restrictedPage?: unknown } | undefined)?.restrictedPage;
+      if (!ok && fact === 'not_executed' && restrictedPage && typeof restrictedPage === 'object'
+        && 'tabId' in restrictedPage && (restrictedPage.tabId === null || typeof restrictedPage.tabId === 'number')
+        && 'url' in restrictedPage && typeof restrictedPage.url === 'string') {
+        const id = disp.programId ?? disp.sdkId;
+        if (id) {
+          this.restrictedCalls.set(id, { tabId: restrictedPage.tabId, url: restrictedPage.url });
+          if (this.restrictedCalls.size > 256) this.restrictedCalls.delete(this.restrictedCalls.keys().next().value!);
+        }
+      }
 
       const heldReason = (data as { heldReason?: unknown } | undefined)?.heldReason;
 

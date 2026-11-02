@@ -8,7 +8,7 @@ import type { TaskProgressSnapshot } from './voice.js';
 // verify_unknown、unknown_with_baseline、unknown_without_baseline 不再产生，只为读入旧任务存档保留。
 export const TASK_NEXT_ACTIONS = ['continue', 'change_method', 'verify_unknown', 'ask_user', 'verify_result', 'deliver', 'wait', 'stop'] as const;
 
-export const TASK_NEXT_REASONS = ['cancelled', 'human_control', 'restart_checkpoint', 'failure_limit', 'unknown_with_baseline', 'unknown_without_baseline', 'in_flight', 'tool_failed', 'remaining', 'readback_required', 'receipts_reviewed', 'open_task', 'runtime_error', 'condition_wait', 'condition_invalid', 'deadline', 'budget', 'continuation_stopped'] as const;
+export const TASK_NEXT_REASONS = ['cancelled', 'human_control', 'restart_checkpoint', 'failure_limit', 'restricted_page', 'unknown_with_baseline', 'unknown_without_baseline', 'in_flight', 'tool_failed', 'remaining', 'readback_required', 'receipts_reviewed', 'open_task', 'runtime_error', 'condition_wait', 'condition_invalid', 'deadline', 'budget', 'continuation_stopped'] as const;
 
 /** A host decision about execution and delivery, never a claim of business success. */
 export interface TaskNextStep {
@@ -37,6 +37,7 @@ interface NextStepFacts {
   readbackRequired?: boolean;
   /** 原地打转被宿主停下（no-progress）。 */
   failureLimit?: boolean;
+  restrictedPage?: boolean;
   toolFailed?: boolean;
 }
 
@@ -84,6 +85,8 @@ export function decideTaskNextStep(snapshot: TaskProgressSnapshot, facts: NextSt
 
     if (continuation.state === 'VERIFYING') return decide('verify_result', 'readback_required', false, 'partial');
   }
+
+  if (facts.restrictedPage ?? snapshot.nextStep?.reason === 'restricted_page') return decide('ask_user', 'restricted_page', false, facts.inFlight ? 'none' : 'partial');
 
   if (facts.failureLimit) {
     return decide('ask_user', 'failure_limit', false, facts.inFlight ? 'none' : 'partial');
@@ -155,6 +158,7 @@ export function nextStepInstruction(decision: TaskNextStep): string {
     case 'budget': return '委托预算已用完，停止自动续做；如实说明已有成果和剩余事项，不能称目标已完成。';
     case 'continuation_stopped': return '持续委托已停止，旧条件和迟到结果不能重新启动；保留已有成果，不执行后续动作。';
     case 'failure_limit': return '原地打转，已停下；说明卡点并请用户决定。';
+    case 'restricted_page': return '浏览器不允许读取当前页面，请用户提供截图或文字。';
     case 'unknown_with_baseline':
     case 'unknown_without_baseline': return '有一步的结果未知（可能已经生效）。先重新读页面：没生效就重做或换方法，已经生效就继续。';
     case 'in_flight': return '仍有浏览器步骤在执行，等待真实结果后再交付，不能提前结束。';

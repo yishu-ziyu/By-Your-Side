@@ -1637,7 +1637,7 @@ return receipt;
     this.progress.set(id, progress);
 
     // 任何状态突变后投影并下发只读任务视图（微任务合并 + 去重，保证原始事件先到达）。包裹只加通知，不改原语义。
-    for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults", "invalidatePage", "registerResults", "stopAfterFailures"] as const) {
+    for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults", "invalidatePage", "registerResults", "stopAfterFailures", "stopForRestrictedPage"] as const) {
       const original = progress[method].bind(progress) as (...args: unknown[]) => unknown;
       // SAFETY: 同名方法按原签名包装，参数与返回值形状不变；动态按方法名赋值 TypeScript 无法表达。
       (progress as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
@@ -1795,6 +1795,7 @@ return receipt;
       runtime.session.bindTaskResults?.({
         getSnapshot: () => progress.snapshot(),
         stopAfterFailures: () => { progress.stopAfterFailures(); runtime.session.persistTaskResults?.(progress.snapshot()); },
+        stopForRestrictedPage: () => { progress.stopForRestrictedPage(); runtime.session.persistTaskResults?.(progress.snapshot()); },
         register: items => {
           if (!progress.snapshot().runId || progress.snapshot().state === "aborted") throw new Error("当前没有可登记结果的任务");
           progress.registerResults(items); runtime.session.persistTaskResults?.(progress.snapshot());
