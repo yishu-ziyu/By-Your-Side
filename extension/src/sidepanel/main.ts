@@ -340,8 +340,8 @@ app.innerHTML = `
     <div id="messages">
       <div id="resume-entry-root"></div>
     </div>
-    <div class="scroll-fade" data-edge="top" aria-hidden="true"></div>
-    <div class="scroll-fade" data-edge="bottom" aria-hidden="true"></div>
+    <div class="scroll-fade" data-edge="top" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="scroll-fade" data-edge="bottom" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
   </div>
   <div id="team-card" hidden></div>
   <section id="starter" aria-label="开始方式">
@@ -870,7 +870,7 @@ function paintStarterModelState(): void {
 document.getElementById("starter-connect")!.onclick = () => void chrome.runtime.openOptionsPage();
 
 /**
- * 没连模型时发出的话：卡片承诺「连好以后，这句话会自动发出」。只存在内存里，按会话分开；
+ * 没连模型时发出的话：卡片承诺「连接好之后，您的提问会自动发出」。只存在内存里，按会话分开；
  * 用户自己再发任何话就作废。resending 是已交出、还没在历史里见到的那一次重发：它的历史不再画第二个用户气泡。
  */
 /** 用户最近一次自己发话的时刻：连好后的自动重发在动画期间被它抢先时，旧那句不再补发。 */

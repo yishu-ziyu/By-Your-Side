@@ -71,7 +71,7 @@ function needsModelCard(resends: boolean): HTMLElement {
   const title = document.createElement("strong");
   title.textContent = "还没有连接模型";
   const description = document.createElement("p");
-  description.textContent = resends ? "连好以后，这句话会自动发出。" : "连好以后，把刚才的话再发一次。";
+  description.textContent = resends ? "连接好之后，您的提问会自动发出。" : "连接好之后，请把刚才的提问再发一次。";
   const held = document.createElement("aside");
   held.className = "held-slot";
   const actions = document.createElement("div");
@@ -95,7 +95,7 @@ function needsModelCard(resends: boolean): HTMLElement {
 export function noteNeedsModelManual(card: HTMLElement): void {
   const description = card.querySelector(".needs-model-old p") ?? card.querySelector("p");
 
-  if (description) description.textContent = "连好以后，把刚才的话再发一次。";
+  if (description) description.textContent = "连接好之后，请把刚才的提问再发一次。";
 }
 
 /** 同一会话又发了一句没连模型的话：旧卡不再自动发，暂存的那句放回原处，卡上改成请用户自己再发。 */
@@ -110,7 +110,7 @@ export function dropPendingMessage(card: HTMLElement, bubble: HTMLElement | null
   const description = card.querySelector(".needs-model-old p");
 
   if (title) title.textContent = "这句没有发出";
-  if (description) description.textContent = "连好后只自动发最后一句。这句要的话，再发一次。";
+  if (description) description.textContent = "连接好之后只会自动发出最后一次提问。这条需要的话，请再发一次。";
 }
 
 /** 把刚发出的用户气泡收进未连接卡，显示成虚线胶囊；「会自动发出」只由卡上那句说明讲一次。 */
