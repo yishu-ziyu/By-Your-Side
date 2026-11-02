@@ -1,5 +1,5 @@
 /**
- * 输入框里的材料标签：真正会随这一句送出的页面、选区、标签页和附件各露一个标签，放不下的折进「+N」清单。
+ * 输入框里的材料标签：真正会随这一句送出的页面、选区、标签页和附件各露一个标签，放不下的折进「+N」清单；点标签看这份材料的内容。
  *
  * 只投影现有草稿，不另存一套材料，也不改变发送协议：
  * - 当前页或选区来源页由发送流程自动带入，所以标成不可移出；
@@ -31,6 +31,7 @@ export interface TrayMaterial {
   removable: boolean;
   tabId?: number;
   attachmentId?: string;
+  progress?: number;
 }
 
 export interface TrayRemoval {
@@ -59,6 +60,8 @@ interface MaterialsTrayOptions {
 }
 
 const CLIP_LABEL = 34;
+/** 预览只露开头，整份文字仍随消息送出。 */
+const PREVIEW_TEXT_MAX = 2000;
 
 function clip(text: string, max = CLIP_LABEL): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -92,6 +95,10 @@ export class MaterialsTray {
   private lastSignature = "";
   private previousCount = -1;
   private expanded = false;
+  /** 正在预览的材料。 */
+  private previewKey: string | null = null;
+  /** 上一次画出来的材料；新出现的标签才播落下动效。 */
+  private shownKeys: Set<string> | null = null;
   private readonly deliveries = new Map<string, { request: TaskActionRequest; receipt: TaskReceipt | null }>();
   private undo: { label: string; restore: () => void; timer: ReturnType<typeof setTimeout> } | null = null;
 
@@ -125,14 +132,12 @@ export class MaterialsTray {
       this.sync();
     }).observe(this.root);
     document.addEventListener("pointerdown", (event) => {
-      if (!this.expanded || (event.target instanceof Node && this.root.contains(event.target))) return;
-      this.expanded = false;
-      this.sync();
+      if ((!this.expanded && !this.previewKey) || (event.target instanceof Node && this.root.contains(event.target))) return;
+      this.closePopups();
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key !== "Escape" || !this.expanded) return;
-      this.expanded = false;
-      this.sync();
+      if (event.key !== "Escape" || (!this.expanded && !this.previewKey)) return;
+      this.closePopups();
     });
   }
 
@@ -142,6 +147,8 @@ export class MaterialsTray {
     const show = draft || !!this.delivery();
     this.app.classList.toggle("materials-tray-active", draft);
     this.root.hidden = !show;
+
+    if (this.previewKey && !this.materials.some((item) => item.key === this.previewKey)) this.previewKey = null;
 
     for (const key of [...this.selected]) {
       if (!this.materials.some((item) => item.key === key && item.removable)) this.selected.delete(key);
@@ -154,7 +161,7 @@ export class MaterialsTray {
       return;
     }
 
-    const signature = JSON.stringify({ draft, expanded: this.expanded, delivery: this.delivery(), materials: this.materials, selected: [...this.selected], undo: this.undo?.label ?? null });
+    const signature = JSON.stringify({ draft, expanded: this.expanded, preview: this.previewKey, delivery: this.delivery(), materials: this.materials, selected: [...this.selected], undo: this.undo?.label ?? null });
 
     if (signature === this.lastSignature) return;
     this.lastSignature = signature;
@@ -245,6 +252,7 @@ export class MaterialsTray {
         status: attachment.state === "ready" ? "已读" : "在读取",
         removable: attachment.state === "ready",
         attachmentId: attachment.id,
+        progress: attachment.progress,
       });
     }
 
@@ -281,7 +289,11 @@ export class MaterialsTray {
     if (this.previousCount >= 0 && count !== this.previousCount) countNumber.classList.add("is-rolling");
     this.previousCount = count;
     toggle.append(countNumber);
-    toggle.addEventListener("click", () => { this.expanded = !this.expanded; this.sync(); });
+    toggle.addEventListener("click", () => {
+      this.expanded = !this.expanded;
+      this.previewKey = null;
+      this.sync();
+    });
     head.append(toggle);
 
     const pop = document.createElement("div");
@@ -322,6 +334,8 @@ export class MaterialsTray {
 
     pop.append(popHead, list);
     shell.append(head, pop);
+    const previewing = this.materials.find((item) => item.key === this.previewKey);
+    if (previewing) shell.append(this.renderPreview(previewing));
 
     if (this.expanded && this.selected.size) {
       const actions = document.createElement("div");
@@ -364,6 +378,7 @@ export class MaterialsTray {
     }
 
     this.root.replaceChildren(...(draft ? [shell] : []));
+    this.shownKeys = new Set(this.materials.map((item) => item.key));
     if (draft) this.fitChips(head, chips, toggle, countNumber);
     const delivery = this.delivery();
 
@@ -416,15 +431,35 @@ export class MaterialsTray {
     }
   }
 
+  private closePopups(): void {
+    this.expanded = false;
+    this.previewKey = null;
+    this.sync();
+  }
+
+  private attachmentOf(item: TrayMaterial) {
+    return item.attachmentId ? this.opts.attachments().find((attachment) => attachment.id === item.attachmentId) : undefined;
+  }
+
+  private pageOf(item: TrayMaterial): { title: string; url: string } | null {
+    if (item.key.startsWith("mention:")) return this.opts.mentions().find((mention) => mention.tabId === item.tabId) ?? null;
+
+    return this.opts.selection() ?? this.opts.page();
+  }
+
   private glyphFor(item: TrayMaterial, size: number): HTMLElement {
     const glyph = document.createElement("span");
     glyph.className = "mt-glyph";
+    const imageUrl = this.attachmentOf(item)?.imageUrl;
 
-    if (item.kind === "page" && item.tabId !== undefined) {
-      const page = item.key.startsWith("mention:")
-        ? this.opts.mentions().find((mention) => mention.tabId === item.tabId)
-        : this.opts.selection() ?? this.opts.page();
-      const url = page && "url" in page ? page.url : "";
+    if (imageUrl) {
+      const thumb = document.createElement("img");
+      thumb.className = "mt-thumb";
+      thumb.src = imageUrl;
+      thumb.alt = "";
+      glyph.append(thumb);
+    } else if (item.kind === "page" && item.tabId !== undefined) {
+      const url = this.pageOf(item)?.url ?? "";
       const mark = siteGlyph(url, hostOf(url) || item.label);
       mark.classList.add("mt-site-glyph");
       glyph.append(mark);
@@ -446,6 +481,22 @@ export class MaterialsTray {
     chip.dataset.kind = item.kind;
     chip.dataset.state = item.state;
     chip.title = `${item.label}\n${item.detail}`;
+    chip.tabIndex = 0;
+    chip.setAttribute("role", "button");
+    chip.setAttribute("aria-label", `预览 ${item.label}`);
+    chip.setAttribute("aria-expanded", String(this.previewKey === item.key));
+    if (item.progress !== undefined) chip.style.setProperty("--mt-progress", `${item.progress}%`);
+    if (this.shownKeys && !this.shownKeys.has(item.key)) chip.classList.add("tile-landing");
+    chip.addEventListener("click", () => {
+      this.previewKey = this.previewKey === item.key ? null : item.key;
+      this.expanded = false;
+      this.sync();
+    });
+    chip.addEventListener("keydown", (event) => {
+      if (event.target !== chip || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      chip.click();
+    });
     const label = document.createElement("span");
     label.className = "mt-item-label";
     label.textContent = item.label;
@@ -457,7 +508,8 @@ export class MaterialsTray {
       remove.className = "mt-item-remove";
       remove.setAttribute("aria-label", `移出 ${item.label}`);
       remove.append(icon(X, { width: 12, height: 12, "stroke-width": 2, "aria-hidden": "true" }));
-      remove.addEventListener("click", () => {
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation();
         this.selected = new Set([item.key]);
         this.removeSelected();
       });
@@ -465,6 +517,62 @@ export class MaterialsTray {
     }
 
     return chip;
+  }
+
+  private renderPreview(item: TrayMaterial): HTMLElement {
+    const preview = document.createElement("div");
+    preview.className = "mt-pop mt-preview";
+    preview.dataset.kind = item.kind;
+    preview.setAttribute("role", "dialog");
+    preview.setAttribute("aria-label", item.label);
+    const head = document.createElement("div");
+    head.className = "mt-preview-head";
+    const copy = document.createElement("span");
+    copy.className = "mt-copy";
+    const title = document.createElement("strong");
+    title.textContent = item.label;
+    title.title = item.label;
+    const detail = document.createElement("span");
+    detail.textContent = item.detail;
+    copy.append(title, detail);
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "mt-item-remove";
+    close.setAttribute("aria-label", "关闭预览");
+    close.append(icon(X, { width: 12, height: 12, "stroke-width": 2, "aria-hidden": "true" }));
+    close.addEventListener("click", () => this.closePopups());
+    head.append(this.glyphFor(item, 15), copy, close);
+    preview.append(head);
+
+    const attachment = this.attachmentOf(item);
+    const page = item.kind === "page" ? this.pageOf(item) : null;
+    const text = item.kind === "selection" ? this.opts.selection()?.text : attachment?.text;
+
+    if (attachment?.imageUrl) {
+      const image = document.createElement("img");
+      image.className = "mt-preview-image";
+      image.src = attachment.imageUrl;
+      image.alt = item.label;
+      preview.append(image);
+    } else if (text !== undefined) {
+      const body = document.createElement("p");
+      body.className = "mt-preview-text";
+      const trimmed = text.trim();
+      body.textContent = !trimmed ? "没有读出文字" : trimmed.length > PREVIEW_TEXT_MAX ? `${trimmed.slice(0, PREVIEW_TEXT_MAX)}…` : trimmed;
+      preview.append(body);
+    } else if (page?.url) {
+      const url = document.createElement("p");
+      url.className = "mt-preview-url";
+      url.textContent = page.url;
+      preview.append(url);
+    } else if (item.state === "reading") {
+      const body = document.createElement("p");
+      body.className = "mt-preview-text";
+      body.textContent = "正在读取…";
+      preview.append(body);
+    }
+
+    return preview;
   }
 
   private renderRow(item: TrayMaterial): HTMLElement {
