@@ -52,7 +52,7 @@ export async function createConversationRuntime(
   const handToUserTool = defineTool({
     name: "hand_to_user",
     label: "Hand the page to the user",
-    description: "Hand the page to the user for a step only they can do: login, captcha, 2FA, payment authorization, or card number / expiry / security code fields. Never type those values yourself. Pass targets for the fields and the button the user must use; they are circled on the page. This pauses the task and ends your turn; when the user hands the page back you get their current page and continue the original task from there.",
+    description: "Hand the page to the user for a step only they can do: login, captcha, 2FA, payment authorization, or card number / expiry / security code fields. Never type those values yourself — except a value the user explicitly told you to obtain yourself (for example a verification code from their open mailbox); fetch and fill that instead of handing over. Pass targets for the fields and the button the user must use; they are circled on the page. This pauses the task and ends your turn; when the user hands the page back you get their current page and continue the original task from there.",
     parameters: Type.Object({
       ask: Type.String({ description: "One plain sentence in the user's language: exactly what to do on the page and which button to press (at most 120 characters)." }),
       targets: Type.Optional(Type.Array(Type.String(), { description: "The fields the user must fill, in order, then the button to press (up to 6; extra ones are not circled). Same locators as click: @N ref from the latest snapshot, loc=..., or CSS." })),
