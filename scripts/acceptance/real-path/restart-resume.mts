@@ -16,7 +16,9 @@ requireHeadless();
 
 const wipe = process.argv.includes("--wipe");
 const fromOtherPage = process.argv.find(arg => arg.startsWith('--from-other-page='))?.split('=')[1];
-const ANSWER = "已经提交。";
+const PAGE_A = '页面甲校验码：枫叶';
+const PAGE_B = '页面乙校验码：海星';
+const ANSWER = fromOtherPage ? '已经提交。页面甲校验码：枫叶。' : '已经提交。';
 let hits = 0;
 
 const site = createServer((req, res) => {
@@ -25,8 +27,12 @@ const site = createServer((req, res) => {
     res.writeHead(200, { "content-type": "text/plain" }).end(String(hits));
     return;
   }
+  if (req.url === '/other') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><title>另一页面</title><p>${PAGE_B}</p>`);
+    return;
+  }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><meta charset="utf-8"><title>提交练习</title>
-<body><button id="submit" type="button">提交</button><p id="n">0</p>
+<body><button id="submit" type="button">提交</button><p>${PAGE_A}</p><p id="n">0</p>
 <script>document.querySelector("#submit").onclick=()=>fetch("/hit",{method:"POST"}).then(r=>r.text()).then(t=>{document.querySelector("#n").textContent=t})</script>`);
 });
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
@@ -35,6 +41,7 @@ const answer = { text: ANSWER, delayMs: 30_000 };
 let sawToolResult = false;
 // 用户点「继续原任务」后的那次请求：对话里还带着强杀前那次点击的结果吗（真模型靠它知道已经点过）。
 let continuationCarriesClick: boolean | null = null;
+let continuationCarriesOriginalPage: boolean | null = null;
 const submitRule = { match: "提交按钮", steps: [{ tool: { name: "click", args: { target: "#submit", label: "提交" } } }, answer] as Step[] };
 const model = await startModel();
 
@@ -47,6 +54,11 @@ function startModel() {
     if (messages.some(message => message.role === "tool")) sawToolResult = true;
     if (continuationCarriesClick === null && JSON.stringify(messages).includes("[RESTART CONTINUATION]")) {
       continuationCarriesClick = messages.some(message => message.role === "tool");
+      const continuation = messages.filter(m => m.role === 'user').map(m => typeof m.content === 'string' ? m.content : (m.content ?? []).map(p => p.text ?? '').join('')).findLast(text => text.includes('[RESTART CONTINUATION]')) ?? '';
+      if (fromOtherPage) {
+        continuationCarriesOriginalPage = continuation.includes(PAGE_A) && continuation.includes('校验码') && !continuation.includes(PAGE_B);
+        answer.text = continuationCarriesOriginalPage ? ANSWER : '续做拿到了错误的页面或目标。';
+      }
       // 像读过记录的模型那样：已经点过，只回答。
       submitRule.steps = [answer];
     }
@@ -82,7 +94,7 @@ try {
   await rp.cdp.send("Target.activateTarget", { targetId: work.targetId });
   await sleep(400);
   await rp.click(panel, "#input");
-  await rp.typeText(panel, "请点一下页面上的提交按钮，点完用一句话告诉我。");
+  await rp.typeText(panel, fromOtherPage ? "请点一下页面上的提交按钮，点完告诉我页面甲校验码。" : "请点一下页面上的提交按钮，点完用一句话告诉我。");
   await rp.pressEnter(panel);
   await until(async () => sawToolResult || undefined, 45_000, "工具结果已交给模型");
   await sleep(400);
@@ -109,9 +121,13 @@ try {
     assert.equal((await text()).includes(ANSWER), false, "用户点继续之前任务不该自己答完");
     await until(async () => await rp.evaluate(againId, `(() => { const r = document.querySelector("#resume-entry-root"); return !!r && !r.hidden && !!r.querySelector(".resume-action"); })()`) || undefined, 15_000, "侧栏出现「继续原任务」");
     const reopened = fromOtherPage === 'missing' ? null : await rp.cdp.send("Target.createTarget", { url: `http://127.0.0.1:${port}/`, background: !!fromOtherPage });
-    const current = fromOtherPage ? await rp.cdp.send('Target.createTarget', { url: `chrome-extension://${rp.extensionId}/settings.html` }) : reopened!;
+    const current = fromOtherPage ? await rp.cdp.send('Target.createTarget', { url: `http://127.0.0.1:${port}/other` }) : reopened!;
     await rp.cdp.send("Target.activateTarget", { targetId: current.targetId });
     await sleep(400);
+    if (fromOtherPage && reopened) {
+      await rp.screenshot(await rp.attach(reopened.targetId), join(out, 'page-a.png'));
+      await rp.screenshot(await rp.attach(current.targetId), join(out, 'page-b.png'));
+    }
     const resume = async () => {
       if (fromOtherPage && fromOtherPage !== 'button') {
         await rp.click(againId, '#input'); await rp.typeText(againId, '继续'); await rp.pressEnter(againId);
@@ -133,12 +149,16 @@ try {
     await sleep(500);
     evidence.hits = hits;
     evidence.after = (await text()).slice(0, 500);
-    await writeFile(join(out, "evidence.json"), JSON.stringify(evidence, null, 2));
     evidence.continuationCarriesClick = continuationCarriesClick;
     assert.equal(continuationCarriesClick, true, "继续时发给模型的对话里要有强杀前那次点击的结果");
+    if (fromOtherPage) {
+      evidence.continuationCarriesOriginalPage = continuationCarriesOriginalPage;
+      assert.equal(continuationCarriesOriginalPage, true, '续做的当前材料必须是甲页、包含原问题，不能带乙页材料');
+    }
     assert.equal(hits, 1, "重开后不能再点一次提交");
     assert.ok((await text()).includes(ANSWER), "侧栏应当显示做完的回答");
     await rp.screenshot(againId, join(out, 'panel.png'));
+    await writeFile(join(out, "evidence.json"), JSON.stringify(evidence, null, 2));
   }
   console.log(`restart-resume ${wipe ? "wipe " : ""}ok via ${evidence.restartKind}, hits=${hits}`);
 } catch (error) {

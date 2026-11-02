@@ -44,7 +44,7 @@ const model=await startScriptedModel([
  if(msgs.some(m=>m.role==='user'&&textOf(m).includes('[GOAL CHECK] Resolve')))correctionTurns++;
  for(const message of payload.messages??[]){const text=typeof message.content==='string'?message.content:(message.content??[]).map(part=>part.text??'').join('');if(text.includes('PAGE NOW (snapshot, form values included):'))factPrompts.push(text);}});
 const rp=await launchRealPath();let error='';let panel='';const evidence:Record<string,unknown>={};
-const answers=`[...document.querySelectorAll('#messages .msg.assistant')].filter(a=>a.checkVisibility()).map(a=>({text:a.innerText.slice(0,80),checked:a.dataset.factChecked??null,note:a.querySelector('.fact-check')?.innerText??null}))`;
+const answers=`[...document.querySelectorAll('#messages .msg.assistant')].filter(a=>a.checkVisibility()).map(a=>({text:a.innerText,checked:a.dataset.factChecked??null,note:a.querySelector('.fact-check')?.innerText??null}))`;
 // once 甲's answer is on screen it must stay there through every later DOM change (a scripted model answers in milliseconds, so watch every mutation)
 const watchAnswer=`(()=>{const m=document.querySelector('#messages');const shown=()=>[...m.querySelectorAll('.msg.assistant')].some(a=>a.checkVisibility()&&a.innerText.includes('这副耳机现在卖 ¥999。'));new MutationObserver(()=>{if(shown())window.sawWrong=true;else if(window.sawWrong)window.lostAnswer=true;if(m.textContent.includes('对照网页改正回答'))window.sawFix=true;}).observe(m,{subtree:true,childList:true,characterData:true,attributes:true});return true})()`;
 try{
@@ -108,7 +108,9 @@ try{
  await sleep(5000);
  const final=await rp.evaluate(panel,answers) as Answer[];evidence.final=final;
  assert.ok(final.at(-1)?.text.includes('这是新任务的回答'),'late old check cannot replace or correct the new answer');
+ assert.doesNotMatch(final.at(-1)?.text??'',/旧轮价格|¥999|更正/,'old check must not append its findings to the new answer');
  assert.ok(final.every(a=>a.note===null),'no diagnostic cards on any answer');
+ await rp.screenshot(panel,join(out,'late-old-check.png'));
 }catch(e){error=e instanceof Error?e.stack??e.message:String(e);if(panel){await rp.screenshot(panel,join(out,'failure.png')).catch(()=>{});}}
 finally{await writeFile(join(out,'result.json'),JSON.stringify({status:error?'fail':'pass',error,evidence,dependency:'real isolated extension, sidebar and page; local scripted model',requests:model.requests},null,2));await rp.close();await rp.remove();await model.close();await new Promise<void>(r=>site.close(()=>r()));}
 console.log(JSON.stringify({status:error?'fail':'pass',error:error.split('\n')[0],out}));if(error)process.exitCode=1;
