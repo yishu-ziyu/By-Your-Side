@@ -59,6 +59,12 @@ export interface AttachmentSnapshot {
   name: string;
   detail: string;
   state: "reading" | "ready";
+  /** 读取进度 0–100，只在读取中有。 */
+  progress?: number;
+  /** 图片附件的 data URL，标签缩略图和预览用。 */
+  imageUrl?: string;
+  /** 文件读出来的文字，预览用。 */
+  text?: string;
 }
 
 interface FileItem {
@@ -694,6 +700,7 @@ export class AttachmentsManager {
           name: item.name,
           detail: item.circle ? `圈选图片 · 圈 ${item.circle}` : "图片 · 已读",
           state: "ready",
+          imageUrl: item.dataUrl,
         };
       }
 
@@ -703,6 +710,7 @@ export class AttachmentsManager {
           name: item.name,
           detail: `${item.format.toUpperCase()} · ${item.dom.pText.textContent ?? "正在读取"}`,
           state: "reading",
+          progress: Number.parseInt(item.dom.pText.textContent ?? "", 10) || 0,
         };
       }
 
@@ -711,6 +719,7 @@ export class AttachmentsManager {
         name: item.name,
         detail: fileMeta(item.attachment),
         state: "ready",
+        text: item.attachment.text,
       };
     });
   }
