@@ -114,13 +114,16 @@ export function redactCredentialText(text: string): string {
 
     const mask = (part: string) => part.replace(/[A-Za-z0-9+_-]{12,256}/g, (token) => (isCredentialToken(token, token === core) ? MASK : token));
     // 网址路径里的长串是资源编号（Spotify 专辑、Google 文档），隐掉就拿不到链接；主机前的账号口令和 ?、# 之后的参数照旧隐去。
-    const url = /https?:\/\/[^/?#]*/.exec(word);
+    // 按反斜杠分段找网址：JSON 字符串里的换行是字面 `\n`，不切开的话下一段的凭据会被当成路径放过，后面的网址也认不出。
+    return word.split(/(?=\\)/).map((part) => {
+      const url = /https?:\/\/[^/?#]*/.exec(part);
 
-    if (!url) return mask(word);
-    const pathStart = url.index + url[0].length;
-    const pathEnd = pathStart + word.slice(pathStart).search(/[?#]|$/);
+      if (!url) return mask(part);
+      const pathStart = url.index + url[0].length;
+      const pathEnd = pathStart + part.slice(pathStart).search(/[?#]|$/);
 
-    return mask(word.slice(0, pathStart)) + word.slice(pathStart, pathEnd) + mask(word.slice(pathEnd));
+      return mask(part.slice(0, pathStart)) + part.slice(pathStart, pathEnd) + mask(part.slice(pathEnd));
+    }).join("");
   });
 
   if (maskedLines > 0) body = `[${MASK}: ${maskedLines} credential-looking line(s) removed]\n${body}`;
