@@ -17,7 +17,7 @@ await new Promise<void>(resolve => site.listen(0, '127.0.0.1', resolve));
 const checker = await startScriptedModel([{ match: '"requests"', steps: [{ text: JSON.stringify({ scope: 'local' }) }] }, { match: '', steps: [{ text: JSON.stringify({ problems: [], status: 'done', summary: answer }) }] }]);
 const rp = await launchRealPath();
 const timers = new Set<ReturnType<typeof setTimeout>>();
-const requests: Array<{ image: boolean; elapsed?: number; delivered?: boolean; mime?: string; chars?: number }> = [];
+const requests: Array<{ image: boolean; elapsed?: number; delivered?: boolean; mime?: string; chars?: number; detail?: string }> = [];
 let panel = '', failure = '';
 try {
   const helper = await rp.cdp.send('Target.createTarget', { url: `chrome-extension://${rp.extensionId}/voice-permission.html` });
@@ -45,7 +45,7 @@ try {
     const payload = JSON.parse(request.postData ?? '{}');
     const image = JSON.stringify(payload.input).includes('input_image');
     const imagePart = payload.input?.flatMap((item: any) => Array.isArray(item.output) ? item.output : item.content ?? []).find((part: any) => part?.type === 'input_image');
-    const record = { image, ...(imagePart ? { mime: imagePart.image_url.slice(5, imagePart.image_url.indexOf(';')), chars: imagePart.image_url.length } : {}) } as typeof requests[number]; requests.push(record);
+    const record = { image, ...(imagePart ? { mime: imagePart.image_url.slice(5, imagePart.image_url.indexOf(';')), chars: imagePart.image_url.length, detail: imagePart.detail } : {}) } as typeof requests[number]; requests.push(record);
     const started = Date.now();
     const item = image
       ? { type: 'message', id: 'msg-image', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: answer, annotations: [] }] }
@@ -69,7 +69,7 @@ try {
       const payload = JSON.parse(event.params.request.postData ?? '{}');
       const parts = payload.input?.flatMap((item: any) => Array.isArray(item.output) ? item.output : item.content ?? []) ?? [];
       const image = parts.find((part: any) => part?.type === 'input_image');
-      requests.push({ image: !!image, ...(image ? { mime: image.image_url.slice(5, image.image_url.indexOf(';')), chars: image.image_url.length } : {}) });
+      requests.push({ image: !!image, ...(image ? { mime: image.image_url.slice(5, image.image_url.indexOf(';')), chars: image.image_url.length, detail: image.detail } : {}) });
     });
     await rp.cdp.send('Network.enable', { maxPostDataSize: 32000000 }, hostSession);
   }
@@ -84,6 +84,8 @@ try {
   if (!live) assert.equal(requests.filter(r => !r.image).length, 1, '恢复不重拍截图');
   assert.ok(requests.some(r => r.image), '模型确实收到截图后读出画面中的码');
   assert.ok(requests.filter(r => r.image).every(r => r.mime === 'image/webp'), '大截图通过实际模型接口以紧凑图片发送');
+  // 「auto」下一条消息带多张大图时，ChatGPT 按低清读，九宫格里的小字读不出（#782）。
+  assert.ok(requests.filter(r => r.image).every(r => r.detail === 'high'), '图片按高清发送');
   if (!live) assert.ok(requests.some(r => r.image && r.delivered && r.elapsed! >= 18000), '截图输入后真正接住晚到的响应');
   await rp.screenshot(panel, join(out, 'answer.png'));
 } catch (error) {
