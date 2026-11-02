@@ -2,6 +2,7 @@ import type {NavigationDownload,PageReadinessValue} from "../../../../shared/pro
 import {overlayHostSelector} from "../../shared/overlay.js";
 import {sendCommand} from "../debugger.js";
 import {withTimeout} from "../timeout.js";
+import {isRestrictedPage} from '../../../../shared/restricted-page.js';
 
 export interface PageReadiness {
   readiness:PageReadinessValue;
@@ -28,17 +29,7 @@ export async function readCurrentDocument(tabId:number) {
 }
 
 /** 扩展按设计就不能注入脚本的地址：浏览器自己的页、别的扩展、Chrome 应用商店。只有这些地址读不到文档时才算加载完。 */
-function unscriptableByDesign(url:string|undefined):boolean {
-  if(!url)return false;
-
-  try{
-    const parsed=new URL(url);
-
-    if(['chrome:','chrome-extension:','chrome-untrusted:','chrome-search:','devtools:','view-source:','about:','edge:'].includes(parsed.protocol))return true;
-
-    return parsed.hostname==='chromewebstore.google.com'||(parsed.hostname==='chrome.google.com'&&parsed.pathname.startsWith('/webstore'));
-  }catch{return false;}
-}
+function unscriptableByDesign(url:string|undefined):boolean { return isRestrictedPage(url) || url === 'about:blank'; }
 
 /** 给模型看的一句话：Chrome 显示了它自己的错误页，页面没打开。navigate 和新开标签页共用。 */
 export const ERROR_PAGE_NOTE="Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";

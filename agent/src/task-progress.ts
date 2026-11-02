@@ -73,6 +73,7 @@ export class TaskProgress {
   private readonly readback=new TaskReadback();
   private readonly completedReads=new Map<string,{name:string;readVersion:number}>();
   private failureLimit=false;
+  private restrictedPage=false;
   private lastBrowserFailed=false;
   private readonly results: TaskResultBook;
   readonly goals = new TaskGoalBook();
@@ -94,8 +95,9 @@ export class TaskProgress {
   }
 
   registerResults(intents: readonly TaskResultRegistration[]): void { this.results.register(intents); }
-  reviseResults(): void { this.results.revise();this.failureLimit=false; }
+  reviseResults(): void { this.results.revise();this.failureLimit=false;this.restrictedPage=false; }
   stopAfterFailures():void { this.failureLimit=true; }
+  stopForRestrictedPage():void { this.restrictedPage=true; }
   releaseAfterHandback(): Array<{ id: string; description: string }> { this.failureLimit=false;
 
     return this.results.releaseAfterHandback(); }
@@ -178,7 +180,7 @@ export class TaskProgress {
     return true;
   }
   prepareResume():void {
-    this.lifecycleFrozen=false;this.failureLimit=false;
+    this.lifecycleFrozen=false;this.failureLimit=false;this.restrictedPage=false;
 
     // Upgrade only on explicit continuation, using complete task inputs, not a historical summary.
     if(!this.goals.snapshot()&&this.recoveryInput?.requirements.length)this.goals.require(this.recoveryInput.requirements);
@@ -186,6 +188,7 @@ export class TaskProgress {
   /** Conversational turns are not new task requirements. Call only for actual task input. */
   recordRequirement(text:string,context?:PageContext,attachments?:Attachment[]):()=>void {
     // 用户说了新的话：接下来的开始不再是宿主催的续做。
+    this.restrictedPage=false;
     this.hostContinuation=false;
     const prior=this.recoveryInput??{requirements:this.goal?[this.goal]:[],attachmentKeys:[]};
     const clean=String(sanitizeTrace(text)).trim();
@@ -262,6 +265,7 @@ export class TaskProgress {
     else this.readback.restore(snapshot);
     this.completedReads.clear();
     this.failureLimit=snapshot.nextStep?.reason==='failure_limit';
+    this.restrictedPage=snapshot.nextStep?.reason==='restricted_page';
     this.lastBrowserFailed=snapshot.nextStep?.reason==='tool_failed';
     this.turns.length = 0;
 
@@ -340,6 +344,7 @@ return;}
     this.readback.reset();
     this.completedReads.clear();
     this.failureLimit=false;
+    this.restrictedPage=false;
     this.lastBrowserFailed=false;
     this.runSources = [];
     this.turnSources = [];
@@ -641,7 +646,7 @@ if(page)this.recoveryInput.page=page;
 
     if([...this.tools].some(([key,tool])=>tool.durableEffect&&!snapshot.results!.some(item=>`${item.evidence?.member}:${item.evidence?.toolCallId}`===key)))snapshot.untrackedWritePending=true;
     snapshot.nextStep=decideTaskNextStep(snapshot,{inFlight:[...this.tools.values()].some(tool=>!isResultMetaTool(tool.name)),
-      readbackRequired:this.readback.needsReadback(),failureLimit:this.failureLimit,toolFailed:this.lastBrowserFailed});
+      readbackRequired:this.readback.needsReadback(),failureLimit:this.failureLimit,restrictedPage:this.restrictedPage,toolFailed:this.lastBrowserFailed});
 
     return snapshot;
   }
