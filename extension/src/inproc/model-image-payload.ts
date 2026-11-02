@@ -52,7 +52,8 @@ async function contentParts(parts: unknown[]): Promise<unknown[]> {
   for (const part of parts) {
     if (!record(part)) { result.push(part); continue; }
     if (part.type === 'input_image' && typeof part.image_url === 'string') {
-      result.push({ ...part, image_url: await compact(part.image_url) });
+      // ChatGPT reads several images in one message at low resolution under "auto", so small text in a 2160px collage becomes unreadable.
+      result.push({ ...part, ...(part.detail === 'auto' ? { detail: 'high' } : {}), image_url: await compact(part.image_url) });
     } else if (part.type === 'image_url' && record(part.image_url) && typeof part.image_url.url === 'string') {
       result.push({ ...part, image_url: { ...part.image_url, url: await compact(part.image_url.url) } });
     } else if (part.type === 'image' && record(part.source) && part.source.type === 'base64'
