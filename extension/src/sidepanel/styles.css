@@ -4570,3 +4570,24 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
 .mt-delivery[data-state="failed"],
 .mt-delivery[data-state="rejected"] { color: var(--warn); }
 .mt-delivery-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 未连接卡（发出一句后）：Toaster 两层外壳材质，色阶取自面板本身的蓝灰（--content-*），暖纸/暗色随主题走。连上后的绿色小胶囊保持原样。 */
+.needs-model-card:not(.needs-model-connected) {
+  --t1: color-mix(in oklab, var(--content-bg) 80%, var(--content-subtle));
+  --t3: color-mix(in oklab, var(--content-subtle-hover) 88%, var(--apple-blue));
+  --t4: color-mix(in oklab, var(--content-subtle) 93%, var(--apple-blue));
+  --sheen: color-mix(in oklab, var(--well-highlight) 40%, transparent); --rim: var(--well-highlight);
+  padding: 17px 17px 15px; border: 0; border-radius: var(--r-shape);
+  background: linear-gradient(180deg, var(--t4) 0%, var(--t4) 60%, var(--t3) 100%);
+  isolation: isolate;
+}
+.needs-model-card:not(.needs-model-connected)::after { content: ""; position: absolute; inset: 1px; z-index: -1; border-radius: var(--r-shape); background: linear-gradient(90deg, var(--sheen) 0%, var(--t1) 40%, var(--sheen) 100%); border: 1.5px solid var(--rim); pointer-events: none; }
+.needs-model-card .needs-model-old strong { display: block; font-size: var(--fs-ui); font-weight: 600; line-height: 1; color: var(--text-primary); }
+.needs-model-card .needs-model-old p { margin: 5px 0 12px; font-size: var(--fs-ui); font-weight: 500; line-height: 1.3; color: var(--text-primary); opacity: .8; }
+.needs-model-card .msg.user.held-pending { border: 1px solid var(--rim); background: color-mix(in oklab, var(--content-bg) 70%, transparent); border-radius: var(--r); padding: 7px 12px; }
+.needs-model-card .needs-model-connect { height: 32px; padding: 0 14px !important; border-radius: var(--r-pill) !important; background: var(--content-bg) !important; color: var(--text-primary) !important; font-size: var(--fs-ui); font-weight: 600; box-shadow: 0 1px 2px var(--content-border), 0 0 0 1px var(--glass-border-subtle); }
+@media (prefers-color-scheme: dark) {
+  .needs-model-card:not(.needs-model-connected) { --t1: var(--content-subtle-hover); --t3: var(--content-bg); --t4: var(--content-subtle); --sheen: transparent; }
+  /* 深色下这是卡上唯一要点的东西，保持亮按钮。 */
+  .needs-model-card .needs-model-connect { background: var(--text-primary) !important; color: var(--content-bg) !important; box-shadow: none; }
+}
