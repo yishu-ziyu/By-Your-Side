@@ -79,13 +79,9 @@ try {
   result = { attempts, answer, requests: model.requests, screenshot: join(out, 'panel.png'), failures };
   assert.equal(attempts, 2, `第一次说明、第二次受阻后停止，实际 ${attempts} 次`);
   assert.deepEqual(failures.map(row => row.data?.toolName), ['snapshot', 'screenshot'], '第二次调用没有变成第三次');
-  for (const row of failures) {
-    const content = row.data?.result?.content ?? [];
-    assert.ok(content.some(part => part.type === 'text' && part.text?.includes('浏览器不允许读取这一页的内容')), '两次均返回同一条限制说明');
-    assert.ok(!content.some(part => part.type === 'image'), '受限调用没有返回页面截图');
-  }
-  const notices = failures.map(row => row.data?.result?.content?.find(part => part.type === 'text')?.text);
-  assert.equal(notices[0], notices[1], '两次受限读取返回完全相同的说明');
+  // 第二次受限读取会停下本轮，模型不会再看到它的结果，所以只要求第一次带说明。
+  assert.ok(failures[0].data?.result?.content?.some(part => part.type === 'text' && part.text?.includes('浏览器不允许读取这一页的内容')), '第一次受限读取返回限制说明');
+  for (const row of failures) assert.ok(!(row.data?.result?.content ?? []).some(part => part.type === 'image'), '受限调用没有返回页面截图');
   assert.match(answer, /截图|复制文字|粘贴/, '回答告诉用户截图或粘贴文字');
   assert.doesNotMatch(answer, /连续几步没做成/, '一次受限读取不应描述成连续失败');
   assert.doesNotMatch(answer, /助手要换个做法/, '受限后不应说助手会自动换方法');
