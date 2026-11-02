@@ -421,7 +421,7 @@
       },
       "url": {
        "type": "string",
-       "description": "URL to open for \"open\"; omit for a blank tab"
+       "description": "URL to open for \"open\"; omit for a blank tab. For \"list\", filter tabs by website host."
       },
       "decisionGuard": {
        "type": "object",

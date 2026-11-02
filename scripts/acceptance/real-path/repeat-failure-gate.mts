@@ -15,7 +15,7 @@ const site=createServer((_q,r)=>r.writeHead(200,{'content-type':'text/html; char
 await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));
 const origin=`http://127.0.0.1:${siteAddress(site).port}`;
 let order=0;
-const bad=(url:string)=>({tool:{name:'tabs',args:{action:'list',url,decisionGuard:++order%2?{observationId:'fixture',operation:'switch_tab',sourceTabId:1}:{sourceTabId:1,operation:'switch_tab',observationId:'fixture'}}}} satisfies Step);
+const bad=(url:string)=>({tool:{name:'tabs',args:{action:'active',url,decisionGuard:++order%2?{observationId:'fixture',operation:'switch_tab',sourceTabId:1}:{sourceTabId:1,operation:'switch_tab',observationId:'fixture'}}}} satisfies Step);
 const a=`${origin}/a`,b=`${origin}/b`;
 const FIX='重复失败后换法验收',RESET='用户主动重试验收',BUDGET='持续无效操作预算验收',GENERIC='通用失败标签验收';
 type Payload={tools?:unknown[];messages?:Array<{role:string;content?:unknown}>};
