@@ -6,6 +6,8 @@
  *   npm run logs -- --reading --match "原文片段"   划词原文、请求、回答与显示记录
  *   npm run logs                              记录里的全部运行，一行一个
  *   npm run logs -- --since today             只看今天（也可以给 ISO 时间）
+ *   npm run logs -- --goals [--since …]      将续做关联到目标，汇总耗时、错误和核对
+ *   npm run logs -- --goals --file <traces.jsonl>  只读现成导出，不访问浏览器
  *   npm run logs -- --run 4f08c043            这次运行的步骤时间线
  *   npm run logs -- --voice [--since …]       语音分段计时：每轮一行（GPT-Live、阶跃星辰、按住说话），末尾各段中位数和 90 分位
  *   npm run logs -- --voice --file <voice.jsonl>   同上，读设置页导出（或验收用例导出）的语音记录，不碰浏览器
@@ -16,6 +18,7 @@ import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSyn
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { printGoals } from './log-goals.mjs';
 
 // 解码库和它的依赖全部钉死版本，按 --no-deps 装，换版本只改这里。
 const REQUIREMENTS = [
@@ -34,6 +37,7 @@ const option = (name) => { const at = args.indexOf(name); return at >= 0 ? args[
 const sinceArg = option("--since");
 const runPrefix = option("--run");
 const readingOnly = args.includes("--reading");
+const goalsOnly = args.includes("--goals");
 const matchText = option("--match");
 let since = null;
 if (sinceArg === "today") { since = new Date(); since.setHours(0, 0, 0, 0); }
@@ -43,8 +47,9 @@ function fail(message) { console.error(message); process.exit(1); }
 
 const voiceFile = option("--file");
 if (voiceFile) {
-  if (!args.includes("--voice") && !readingOnly) fail("--file 要和 --voice 或 --reading 一起用。");
-  const lines = readFileSync(voiceFile, "utf8").split("\n").filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
+  if (!args.includes("--voice") && !readingOnly && !goalsOnly) fail("--file 要和 --voice、--reading 或 --goals 一起用。");
+  const lines = readFileSync(voiceFile, "utf8").split("\n").filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return goalsOnly ? [{ unparsed: true }] : []; } });
+  if (goalsOnly) { printGoals(lines, since); process.exit(0); }
   if (readingOnly) { printReading(lines); process.exit(0); }
   voiceTimings(lines.filter((e) => !since || new Date(e.at) >= since));
   process.exit(0);
@@ -316,6 +321,8 @@ function printReading(events) {
 }
 
 if (readingOnly) { printReading(traces); process.exit(0); }
+
+if (goalsOnly) { printGoals(traces, since); process.exit(0); }
 
 if (!runPrefix) {
   const seen = new Set();
