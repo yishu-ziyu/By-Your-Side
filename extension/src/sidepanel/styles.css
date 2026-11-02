@@ -497,36 +497,59 @@ html, body {
   flex-direction: column;
 }
 
-/* 滚动渐隐：只遮边缘，不糊掉最上面一行字。 */
+/* Web 没有可变半径的 backdrop-filter；叠加不同半径与遮罩，模糊向正文减到零，避免单层材质加透明渐变的雾感。 */
 .scroll-fade {
   position: absolute;
   left: 0;
   right: 8px;
-  height: var(--s-3);
+  height: 44px;
+  overflow: hidden;
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--m-quick) var(--e-swift);
 }
 
-.scroll-fade[data-edge="top"] {
-  top: 0;
-  background: linear-gradient(to bottom, var(--wallpaper), transparent);
-  mask-image: linear-gradient(to bottom, #000, transparent);
-  -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+.scroll-fade[data-edge="top"] { top: 0; }
+.scroll-fade[data-edge="bottom"] { bottom: 0; }
+
+.scroll-fade::after {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
 
-.scroll-fade[data-edge="bottom"] {
-  bottom: 0;
-  background: linear-gradient(to top, var(--wallpaper), transparent);
-  mask-image: linear-gradient(to top, #000, transparent);
-  -webkit-mask-image: linear-gradient(to top, #000, transparent);
+.scroll-fade[data-edge="top"]::after { background: linear-gradient(to bottom, color-mix(in srgb, var(--wallpaper) 76%, transparent), transparent); }
+.scroll-fade[data-edge="bottom"]::after { background: linear-gradient(to top, color-mix(in srgb, var(--wallpaper) 76%, transparent), transparent); }
+
+.scroll-fade > i {
+  position: absolute;
+  inset: 0;
+  display: block;
+  backdrop-filter: blur(var(--edge-blur));
+  -webkit-backdrop-filter: blur(var(--edge-blur));
+}
+
+.scroll-fade > i:nth-child(1) { --edge-blur: .5px; --edge-stop: 100%; }
+.scroll-fade > i:nth-child(2) { --edge-blur: 1px; --edge-stop: 82%; }
+.scroll-fade > i:nth-child(3) { --edge-blur: 2px; --edge-stop: 62%; }
+.scroll-fade > i:nth-child(4) { --edge-blur: 4px; --edge-stop: 42%; }
+.scroll-fade > i:nth-child(5) { --edge-blur: 8px; --edge-stop: 24%; }
+
+.scroll-fade[data-edge="top"] > i {
+  mask-image: linear-gradient(to bottom, #000, transparent var(--edge-stop));
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent var(--edge-stop));
+}
+
+.scroll-fade[data-edge="bottom"] > i {
+  mask-image: linear-gradient(to top, #000, transparent var(--edge-stop));
+  -webkit-mask-image: linear-gradient(to top, #000, transparent var(--edge-stop));
 }
 
 #messages-frame[data-fade-top="true"] > .scroll-fade[data-edge="top"],
 #messages-frame[data-fade-bottom="true"] > .scroll-fade[data-edge="bottom"] { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
-  .scroll-fade { transition: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .scroll-fade { transition: none; }
 }
 
 #messages {
