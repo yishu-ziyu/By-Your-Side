@@ -102,9 +102,9 @@ export function redactCredentialText(text: string): string {
   const structured = /[\s\u4e00-\u9fff"'{}[\],:=]/.test(body);
 
   // 型号只在独立成词时放行：凭据被 / . : \\ = 或夹入的字符切开后，每一段单独看都像型号（ABCD12-EFGH3454/IJKL56-MNOP7890）。
-  // 词按空白、引号、括号、逗号和中文切；去掉开头的 `键名=`、`:` 和末尾标点后，整个词就是这一段才放行。
+  // 词按空白、HTML 标签边界、引号、括号、逗号和中文切；去掉开头的 `键名=`、`:` 和末尾标点后，整个词就是这一段才放行。
   // 全角只算标点（，：；！？（）等），全角字母数字不算边界，否则能拿它们把凭据拆开。
-  if (structured) body = body.replace(/[^\s"'`{}[\](),\u3000-\u303f\u4e00-\u9fff\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]+/g, (word) => {
+  if (structured) body = body.replace(/[^\s<>"'`{}[\](),\u3000-\u303f\u4e00-\u9fff\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]+/g, (word) => {
     // 键名带小写字母时可以有数字、. -（model1=、product-id=），这种键名不会是全大写凭据的一半。
     const head = word.replace(/^(?:[A-Za-z_]{1,24}|[a-z][A-Za-z0-9_.-]{0,24})[:=]|^[:=]+/, "");
     let end = head.length;
