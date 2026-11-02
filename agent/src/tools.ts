@@ -51,7 +51,7 @@ function tabsMisuse(params: { action: string; url?: string; tabId?: number }): s
   const hasTab = typeof params.tabId === "number";
   const action = `tabs action:"${params.action}"`;
 
-  if ((params.action === "list" || params.action === "active") && hasUrl) return `${action} 不接受 url；要打开这个网址用 action:"open"（新标签页）或 navigate（当前工作页）。`;
+  if (params.action === "active" && hasUrl) return `${action} 不接受 url；要打开这个网址用 action:"open"（新标签页）或 navigate（当前工作页）。`;
 
   if (params.action === "open" && hasTab && !hasUrl) return `${action} 不接受 tabId，open 只开新标签页；要让标签页 ${params.tabId} 成为工作页用 action:"switch"。`;
 
@@ -188,6 +188,14 @@ function formatTabs(tabs: TabInfo[]): string {
       return `[${t.id}] ${t.title || "(untitled)"} — ${t.url}${marks ? ` (${marks})` : ""}`;
     })
     .join("\n");
+}
+
+function tabSiteHost(url: string): string | null {
+  try {
+    return new URL(url.includes("://") ? url : `https://${url}`).hostname.replace(/^www\./i, "").toLowerCase() || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -772,7 +780,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           description: "list | active | open | switch | show | close",
         }),
         tabId: Type.Optional(Type.Number({ description: 'Tab id (required for "switch", and for "show" unless url is given; optional for "close", which defaults to the working tab)' })),
-        url: Type.Optional(Type.String({ description: 'URL to open for "open"; omit for a blank tab' })),
+        url: Type.Optional(Type.String({ description: 'URL to open for "open"; omit for a blank tab. For "list", filter tabs by website host.' })),
         decisionGuard: Type.Optional(Type.Object({
           observationId: Type.String(),
           operation: Type.Literal('switch_tab'),
@@ -780,7 +788,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         }, { description: 'Host-issued guard for a switch selected from a current browser observation.' })),
       }),
       execute: async (_id, params) => {
-        // 指向另一个动作的参数照常执行会悄悄丢掉模型的意图（例如 list 带 url 只回列表），模型看不出用错就原地重复同一个调用。
+        // 指向另一个动作的参数照常执行会悄悄丢掉模型的意图。
         const misuse = tabsMisuse(params);
 
         if (misuse) {
@@ -790,6 +798,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         if (params.action === "list") {
           const data = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
+
+          if (params.url) {
+            const host = tabSiteHost(params.url);
+            if (!host) {
+              rpc.markCallRejected?.(_id);
+              return { ...textResult('tabs action:"list" 的 url 不是有效网址，请给出网站地址。', { failure: { kind: "invalid_arguments", retry: "change_input" } }), isError: true };
+            }
+            const tabs = data.tabs.filter(tab => {
+              const candidate = tabSiteHost(tab.url);
+              return candidate === host || candidate?.endsWith(`.${host}`);
+            });
+            return textResult(tabs.length ? formatTabs(tabs) : "No open tabs match this website.", { ...data, tabs });
+          }
 
           return textResult(formatTabs(data.tabs), data);
         }
@@ -1421,7 +1442,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "screenshot",
       label: "Screenshot",
       description:
-        "Capture a real screenshot of the working tab. clip uses DOCUMENT CSS coordinates; click point uses VIEWPORT CSS coordinates. Convert image pixels using coordinates: point = imagePixel / pixelsPerCssPixel + origin - scroll. Reobserve if document, viewport or scrolling changed; never click from an image with unknown coordinates. fullPage captures the document; scale:css outputs CSS pixels and scale:raw device pixels. An explicit clip.scale overrides the scale mode. A visible-tab fallback is honestly labeled raw, never a fabricated image. Prefer snapshot when it provides the needed information." +
+        "Capture a real screenshot of the working tab. clip uses DOCUMENT CSS coordinates; click point uses VIEWPORT CSS coordinates. Convert image pixels using coordinates: point = imagePixel / pixelsPerCssPixel + origin - scroll. Reobserve if document, viewport or scrolling changed; never click from an image with unknown coordinates. fullPage captures the document; scale:css outputs CSS pixels and scale:raw device pixels. A visible-tab fallback is honestly labeled raw, never a fabricated image. Prefer snapshot when it provides the needed information." +
         (files ? " Screenshots are for your own eyes by default: the user does not see them. Set forUser:true only when the user wants the picture itself (e.g. asks you to take or send a screenshot of the page): the image is then shown in your answer in the side panel, where the user can enlarge and download it; just refer to it, do not paste or describe the image data." : ""),
       parameters: Type.Object({
         ...(files ? { forUser: Type.Optional(Type.Boolean({ description: "true = also show this screenshot to the user as an image in the side panel (only when the user asked for the screenshot/picture)" })) } : {}),
@@ -1432,7 +1453,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
             y: Type.Number(),
             width: Type.Number({ exclusiveMinimum: 0 }),
             height: Type.Number({ exclusiveMinimum: 0 }),
-            scale: Type.Optional(Type.Number()),
           }),
         ),
         scale: Type.Optional(Type.Union([Type.Literal("css"), Type.Literal("raw")])),
