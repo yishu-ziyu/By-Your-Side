@@ -1,6 +1,6 @@
 /**
  * 读网页时，网址路径里的资源编号原样交给模型，像凭据的内容仍隐去（#782：Spotify 专辑页地址读回成 /album/[redacted]，模型拿不到链接）。
- * 只装扩展、隔离构建、模型请求转给本机脚本模型；页面是本机练习页，模型用 js 工具读正文。
+ * 只装扩展、隔离构建、模型请求转给本机脚本模型；页面是本机练习页，模型用 js 工具同时读正文和 HTML。
  *   npx tsx scripts/acceptance/real-path/url-id-not-redacted.mts --headless
  *   a) Spotify 专辑和 Google 文档地址里的编号完整出现在工具结果里。
  *   b) 页面上的 API key、网址 ?token= 参数、网址里的口令仍是 [redacted]。
@@ -20,6 +20,7 @@ await mkdir(out, { recursive: true });
 const ALBUM = "4aawyAB9vmqN3uQ7FjRGTy";
 const DOC = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdEFG";
 const SECRETS = ["Zq8Wv3Nx7Lm2Kp9Rt4Yb6Hc", "Ab12Cd34Ef56Gh78Ij90Kl12", "Pq9Rs8Tu7Vw6Xy5Z"];
+const HTML_SECRETS = ["FakeKey12AbCd34EfGh56IjKl", "OtherKey98ZyXw76VuTs54Rq", "AttrKey34MnOp56QrSt78Uv"];
 const TASK = "网址编号核对：读一下这页上的链接";
 const ANSWER = "已读到专辑和文档链接。";
 
@@ -28,7 +29,11 @@ const site = createServer((_req, res) => res.writeHead(200, { "content-type": "t
 <p>文档 https://docs.google.com/document/d/${DOC}/edit</p>
 <p>API key: ${SECRETS[0]}</p>
 <p>回调 https://api.example.com/cb?token=${SECRETS[1]}&amp;x=1</p>
-<p>登录 https://admin:${SECRETS[2]}@db.example.com/x</p>`));
+<p>登录 https://admin:${SECRETS[2]}@db.example.com/x</p>
+<section><p>https://example.com/path</p><p>${HTML_SECRETS[0]}</p></section>
+<section><p>https://example.com</p><p>${HTML_SECRETS[1]}</p></section>
+<a href=https://example.com/path>${HTML_SECRETS[2]}</a>
+<p>片段 https://example.com/path#token=${SECRETS[1]}</p>`));
 await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 type Part = { type?: string; text?: string };
@@ -39,7 +44,7 @@ let toolText = "";
 const model = await startScriptedModel([
   { match: "USER REQUEST:", steps: [{ text: '{"problems":[]}' }] },
   { match: '"lastReply"', steps: [{ text: '{"status":"done","remaining":null}' }] },
-  { match: TASK, steps: [{ tool: { name: "js", args: { code: "document.body.innerText", purpose: "读链接" } } }, { text: ANSWER }] },
+  { match: TASK, steps: [{ tool: { name: "js", args: { code: "JSON.stringify({ text: document.body.innerText, html: document.body.innerHTML })", purpose: "读正文和 HTML 链接" } } }, { text: ANSWER }] },
 ], undefined, payload => {
   if (!payload.tools?.length) return;
   const tool = ((payload.messages ?? []) as Message[]).filter(m => m.role === "tool").at(-1);
@@ -75,7 +80,8 @@ try {
   await rp.screenshot(panel, join(out, "panel.png"));
   await writeFile(join(out, "evidence.json"), JSON.stringify({ toolText, error }, null, 2));
   assert.ok(toolText.includes(`/album/${ALBUM}`) && toolText.includes(`/document/d/${DOC}/`), `a 网址编号被隐去：${toolText.slice(0, 600)}`);
-  for (const secret of SECRETS) assert.ok(!toolText.includes(secret), `b 凭据没隐去：${secret}`);
+  assert.ok(toolText.includes("</p><p>"), "未读到相邻 HTML 标签，不能验证边界");
+  for (const secret of [...SECRETS, ...HTML_SECRETS]) assert.ok(!toolText.includes(secret), `b 凭据没隐去：${secret}`);
   assert.ok(visible.includes(ANSWER), "c 侧栏没显示回答");
   assert.equal(error, "", `模型转发失败：${error}`);
   console.log("PASS 网址路径里的资源编号交给模型，凭据仍隐去");
