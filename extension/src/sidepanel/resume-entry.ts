@@ -28,6 +28,7 @@ const WAITING_TEXT: Record<string, string> = {
   restart_checkpoint: "任务中断了，说「继续」就接着做",
   cancelled: "你中止了任务，助手不会自己重新开始",
   failure_limit: "连续几步没做成，助手在等你决定",
+  restricted_page: "浏览器不允许读取这一页，需要截图或文字",
   unknown_with_baseline: "有 1 步结果未知，助手先核验再继续",
   unknown_without_baseline: "有 1 步结果未知，助手没有改动前的记录，不会自己重做",
   readback_required: "做了，但助手还没核验",

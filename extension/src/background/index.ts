@@ -68,6 +68,7 @@ import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
 import { circledNames, locatedRef } from "./located-names.js";
 import { getWorkingTabMap as allWorkingTabs, getWorkingTabId as workingTabForKey, setSessionClaimBlocked as blockKey, executionKey, parseExecutionKey, findSessionsForTab, guardToolAccess, setVisibleConversationId, setConversationTitle, assertTargetTabOpen, resolveReadableTab } from "./state.js";
+import { isRestrictedPage, RestrictedPageError } from '../../../shared/restricted-page.js';
 import { confirmRequest, reportSendClick, type SendGuard } from "./send-confirm.js";
 import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
@@ -1805,6 +1806,11 @@ async function executeToolCall(
       await guardToolAccess(name, key(sid), typeof params.tabId === "number" ? params.tabId : undefined);
       checkIdentity();
 
+      if (['snapshot', 'page_text', 'read_element', 'read_elements', 'screenshot', 'js'].includes(name)) {
+        const target = await resolveReadableTab(typeof params.tabId === 'number' ? params.tabId : undefined, key(sid));
+        if (isRestrictedPage(target.url)) throw new RestrictedPageError();
+      }
+
       if(gate.gen!==operationGeneration)throw new Error('操作所属控制轮次已失效，操作未执行。');
 
       if (workerTabControl.isStopped(key(sid))) throw new Error("worker 已停止，操作未执行");
@@ -1843,6 +1849,8 @@ async function executeToolCall(
   } catch (e) {
     rememberFact(e);
     result = { type: "tool_result", id, ok: false, error: oneLine(e), executionFact };
+
+    if (e instanceof RestrictedPageError) result.data = { restrictedPage: true };
 
     // 因为用户没执行（不让发、付款留给用户）：宿主据此不把它当成连续出错，侧栏据此写那句话。
     if (e && typeof e === "object" && "heldReason" in e) result.data = { heldReason: e.heldReason };

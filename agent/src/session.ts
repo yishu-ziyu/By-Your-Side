@@ -26,6 +26,8 @@ import {createHash, randomUUID} from "node:crypto";
 import {FIELD_READBACK_MAX, LEAD_SESSION_ID, type FieldReadback} from "../../shared/protocol.js";
 import {RepeatedToolFailurePolicy} from "./tool-failure-policy.js";
 import {NoProgressPolicy, noProgressMessage} from "./no-progress-policy.js";
+import { restrictedPagePolicy } from './restricted-page-policy.js';
+import { isRestrictedPage, RESTRICTED_PAGE_MESSAGE } from '../../shared/restricted-page.js';
 import {ExploreLadderPolicy} from "./explore-ladder.js";
 import {RunClock} from "./run-clock.js";
 import { VoiceIntentError } from "./voice-errors.js";
@@ -386,6 +388,7 @@ export class BrowserAgentSession {
     getSnapshot: () => TaskProgressSnapshot;
     register: (items: TaskResultRegistration[]) => void;
     stopAfterFailures?: () => void;
+    stopForRestrictedPage?: () => void;
     /** 交付事实链（已满足/未完成/本 run 读到的页面）；未接线时不附 facts。 */
     deliveryFacts?: () => DeliveryFactInput;
     /** 这一轮读到或打开的页面（回答出处）。 */
@@ -866,12 +869,14 @@ if(required.includes(key))candidates.set(key,attachment);
       const failurePolicy = new RepeatedToolFailurePolicy(() => resultHost?.mainEffort.raise(resultHost.session?.model, "tool_failures"), id => rpc.heldReason?.(id) !== undefined);
 
       let onNoProgress: ConstructorParameters<typeof NoProgressPolicy>[0] = () => {};
+      let onRestrictedPage = () => {};
 
       const noProgressPolicy = new NoProgressPolicy(stop => onNoProgress(stop));
       const exploreLadder = new ExploreLadderPolicy();
       const runClock = new RunClock();
 
       const extensionFactories = [
+        { name: "sideagent-restricted-page-boundary", hidden: true, factory: restrictedPagePolicy(id => rpc.takeRestrictedCall(id), () => onRestrictedPage()) },
         { name: "sideagent-tool-failure-boundary", hidden: true, factory: failurePolicy.extension() },
         { name: "sideagent-no-progress-boundary", hidden: true, factory: noProgressPolicy.extension() },
         // 排在两条边界之后：它们比的是工具原本的结果，追加的下一步提示不能让重复的错误看起来像新内容。
@@ -1011,6 +1016,13 @@ if(required.includes(key))candidates.set(key,attachment);
       wrapper.exploreLadder = exploreLadder;
       wrapper.runClock = runClock;
       wrapper.continuationEnabled = options.continuationEnabled ?? (() => false);
+      onRestrictedPage = () => {
+        if (wrapper.pendingToolFailure) return;
+        wrapper.taskResultsHost?.stopForRestrictedPage?.();
+        if (leadConversationId) {
+          wrapper.pendingToolFailure = createUserDelivery({ conversationId: leadConversationId, runId: runIdSlot.current(), kind: 'finding', text: RESTRICTED_PAGE_MESSAGE, unfinished: [] });
+        } else callbacks.emit({ kind: 'error', message: RESTRICTED_PAGE_MESSAGE });
+      };
       // 原地转圈：停下本轮，说清卡在哪一步、已有什么、还差什么。
       onNoProgress = stop => {
         // 本轮已有一段停下说明，不再重复。
@@ -1744,6 +1756,7 @@ return;}
     const tabId = context?.tabId;
 
     if (!this.rpc || !context || typeof tabId !== "number") return null;
+    if (isRestrictedPage(context.url)) return freshPageObservationText(context, RESTRICTED_PAGE_MESSAGE, 'text', role);
     const startedAt = Date.now(), id=`initial-${randomUUID()}`;
     const epoch=this.controlEpoch,run=this.deliveryRunId();
 
