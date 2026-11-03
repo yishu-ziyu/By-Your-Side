@@ -33,6 +33,7 @@ import { mountVoiceOrb } from "../shared/orb-style.js";
 import { syncColorTone } from "../shared/color-tone.js";
 import { dropPendingMessage, holdPendingMessage, noteNeedsModelManual, playConnectArrival, renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
+import { handoffChoices } from "../../../shared/handoff-choice.js";
 import type { TaskReceipt, TaskActionRequest } from "../../../shared/task-actions.js";
 import DOMPurify from "dompurify";
 import { createElement as icon, ArrowUp, Square, Hand, Check, CircleAlert, Ellipsis, SquarePen, LoaderCircle, BookOpen, SlidersHorizontal, PictureInPicture2 } from "lucide";
@@ -2128,7 +2129,7 @@ function applyHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): v
   if (!banner) return;
   banner.hidden = phase === "leaving" || phase === "agent";
   banner.dataset.phase = phase;
-  banner.textContent = phase === "user" ? "你在操作 · 助手在旁边等" : phase === "rereading" ? "助手先重读页面" : "";
+  banner.textContent = phase === "user" ? (handoffCard?.dataset.choice === "true" ? "等你选择 · 助手在旁边等" : "你在操作 · 助手在旁边等") : phase === "rereading" ? "助手先重读页面" : "";
   document.getElementById("composer")?.classList.toggle("you-operating", phase === "user");
   // 这一行写「你在操作」时，任务条不再说一遍「已暂停 · 页面归你」。
   taskBar.setHandoffShown(phase === "user");
@@ -3244,7 +3245,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
       : teamView?.phase === "partial" || teamView?.phase === "restoring"
         ? PLACEHOLDER_PARTIAL
         : flags.composer === "user"
-          ? PLACEHOLDER_USER
+          ? (handoffCard?.dataset.choice === "true" ? "回复你的选择，我会接着做" : PLACEHOLDER_USER)
           : flags.composer === "running"
             ? PLACEHOLDER_RUNNING
             : PLACEHOLDER_IDLE;
@@ -4106,23 +4107,24 @@ const PAGE_VIEWING_TOOLS = new Set(["scroll", "hover", "arm_event", "wait_event"
 let handoffCard: HTMLElement | null = null;
 
 /** 「需要你来这一步」卡：交还前一直在；交还后收成一行灰字。 */
-function showHandoffCard(ask: string): void {
+function showHandoffCard(ask: string, choice = false): void {
   const card = document.createElement("div");
   card.className = "handoff-card";
+  if (choice) card.dataset.choice = "true";
   const title = document.createElement("strong");
-  title.textContent = "需要你来这一步";
+  title.textContent = choice ? "需要你选一下" : "需要你来这一步";
   const body = document.createElement("p");
   body.className = "handoff-ask";
   body.textContent = ask;
   const note = document.createElement("p");
   note.className = "handoff-note";
-  note.textContent = "交给你期间，我不读也不动这个页面。";
+  note.textContent = choice ? "回复选择后，我会接着操作。" : "交给你期间，我不读也不动这个页面。";
   const actions = document.createElement("div");
   actions.className = "handoff-actions";
   const done = document.createElement("button");
   done.type = "button";
   done.className = "btn-primary";
-  done.textContent = "做好了，交还";
+  done.textContent = choice ? "继续" : "做好了，交还";
   done.disabled = !panelLive(sessionRun.values(), teamView).userHasPage || teamView?.phase === "draining" || teamView?.phase === "restoring";
   done.onclick = () => port?.postMessage({ kind: "control", action: "handback", conversationId: selectedConversationId } satisfies PanelToBg);
   const hint = document.createElement("span");
@@ -4137,6 +4139,7 @@ function showHandoffCard(ask: string): void {
 
 function collapseHandoffCard(text = "你已交还 · 我从你所在的页面接着做"): void {
   if (!handoffCard) return;
+  if (handoffCard.dataset.choice === "true" && text.startsWith("你已交还")) text = "已继续 · 我从当前页面接着做";
   handoffCard.className = "handoff-done";
   handoffCard.textContent = text;
   handoffCard = null;
@@ -4163,7 +4166,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   if (ev.name === "hand_to_user") {
     run.orbActivity.observe({ kind: "tool_start", ...ev }, "main");
     syncRunOrb(run);
-    showHandoffCard(String(ev.params.ask ?? ""));
+    showHandoffCard(String(ev.params.ask ?? ""), !!handoffChoices(ev.params.ask, ev.params.kind, ev.params.options));
 
     return;
   }
