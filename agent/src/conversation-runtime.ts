@@ -11,6 +11,7 @@ import type { TaskHistoryStore } from "./task-history.js";
 import type { LearnedOperationStore } from "./learned-operations.js";
 import { isWaitCondition } from '../../shared/task-continuation.js';
 import type { ConditionRegistration } from './task-continuation.js';
+import { handoffChoices } from '../../shared/handoff-choice.js';
 
 const log = (message: string) => console.error(`[sideagent] ${message}`);
 
@@ -26,7 +27,7 @@ export async function createConversationRuntime(
   const control = new TabControl(rpc);
   let toolSession: BrowserAgentSession | undefined;
   // 交给用户：走与侧栏「接管」相同的暂停通道，宿主接线后才可用。
-  let handToUser: ((ask: string, targets?: string[]) => Promise<void>) | undefined;
+  let handToUser: ((ask: string, targets?: string[], choices?: string[]) => Promise<void>) | undefined;
   let waitForCondition: ((input: ConditionRegistration) => Promise<unknown>) | undefined;
   const conditionTool = defineTool({
     name: 'wait_for_condition', label: '等待页面条件',
@@ -52,10 +53,12 @@ export async function createConversationRuntime(
   const handToUserTool = defineTool({
     name: "hand_to_user",
     label: "Hand the page to the user",
-    description: "Hand the page to the user for a step only they can do: login, captcha, 2FA, payment authorization, or card number / expiry / security code fields. Never type those values yourself. Pass targets for the fields and the button the user must use; they are circled on the page. This pauses the task and ends your turn; when the user hands the page back you get their current page and continue the original task from there.",
+    description: "Hand the page to the user only for a step they must do personally, such as captcha, 2FA, payment authorization, or secret fields. Never type those values yourself unless the user explicitly instructed you to obtain them. A login or registration button is not itself a personal step: click the user's chosen method yourself, then hand over only if the next step requires them. If a choice between methods is missing, ask only that choice and set kind=choice with the option labels; the user's answer resumes the task. Never use kind=choice for a step requiring the user to act on the page. Pass targets for fields and buttons the user must use. The task pauses; after handback, read the page and continue.",
     parameters: Type.Object({
-      ask: Type.String({ description: "One plain sentence in the user's language: exactly what to do on the page and which button to press (at most 120 characters)." }),
+      ask: Type.String({ description: "One plain sentence in the user's language: what to choose, or the specific page action only they can perform (at most 120 characters)." }),
       targets: Type.Optional(Type.Array(Type.String(), { description: "The fields the user must fill, in order, then the button to press (up to 6; extra ones are not circled). Same locators as click: @N ref from the latest snapshot, loc=..., or CSS." })),
+      kind: Type.Optional(Type.Literal('choice', { description: 'Only when the user is being asked to choose an option in chat, without performing a page action.' })),
+      options: Type.Optional(Type.Array(Type.String(), { description: 'Short visible labels for the available choices, required for kind=choice.' })),
     }),
     execute: async (_id, params) => {
       const ask = String(params.ask ?? "").trim().slice(0, 120);
@@ -65,7 +68,8 @@ export async function createConversationRuntime(
       if (!ask) throw new Error("ask 不能为空：写清用户要在页面上做什么。");
 
       if (!handToUser) throw new Error("现在不能把页面交给用户。");
-      await handToUser(ask, targets);
+      const choices = handoffChoices(ask, params.kind, params.options) ?? undefined;
+      await handToUser(ask, choices ? undefined : targets, choices);
 
       return { content: [{ type: "text" as const, text: "The page is now the user's. Stop here; you will get the page back after the user hands it back." }], details: { ask }, terminate: true };
     },
@@ -290,7 +294,7 @@ export async function createConversationRuntime(
     }
   };
 
-  return { session, control, rpc, handleMessage, onWaitForCondition(fn: (input: ConditionRegistration) => Promise<unknown>) { waitForCondition = fn; }, onHandToUser(fn: (ask: string, targets?: string[]) => Promise<void>) { handToUser = fn; }, dispose() { session.dispose(); } };
+  return { session, control, rpc, handleMessage, onWaitForCondition(fn: (input: ConditionRegistration) => Promise<unknown>) { waitForCondition = fn; }, onHandToUser(fn: (ask: string, targets?: string[], choices?: string[]) => Promise<void>) { handToUser = fn; }, dispose() { session.dispose(); } };
 }
 
 function frozenMembersFromTakeover(msg: Extract<ClientMessage, { type: "takeover" }>): ActiveMemberInput[] {

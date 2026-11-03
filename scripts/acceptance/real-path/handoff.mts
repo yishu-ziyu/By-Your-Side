@@ -58,9 +58,16 @@ const GOAL2 = '帮我换一张卡';
 
 const ASK2 = '填好新卡号，点「保存」。';
 
+// 页面归用户期间的补充要求；「下次…」也是一条网站做法纠正，交还后要被记住。
+const STEER = '下次自行去邮箱里获取就行了，不需要问我。';
+
+const VERDICT = JSON.stringify({ correction: true, reusable: true, about: 'site', rule: '以后在这个网站要确认码时，我都自己去你打开的邮箱里取，不问你', evidence: '下次自行去邮箱里获取就行了', replaces: null, personalEvidence: '' });
+
 const payloads: string[] = [];
 
 const model = await startScriptedModel([
+  // 记忆侧的纠正判断：输入 JSON 里 userMessage 后紧跟空 recentTurns 的只有这一个判断。
+  { match: '"userMessage":"下次自行去邮箱里获取就行了，不需要问我。","recentTurns":[]', steps: [{ text: VERDICT }] },
   // 交还后的续跑：交还 prompt 带 [HANDOFF BOUNDARY]，步数从这里重新数。
   { match: '[HANDOFF BOUNDARY]', steps: [{ tool: { name: 'click', args: { target: '#claim' } } }, { text: '已领取 $30。' }] },
   { match: GOAL, steps: [{ tool: { name: 'tabs', args: { action: 'active' } } }, { tool: { name: 'snapshot', args: {} } },
@@ -204,6 +211,10 @@ try {
   await until(async () => (await rp.evaluate(work, 'st.textContent')) === '账单账号已保存', 10000, '用户保存了账单');
   const afterSave = await settle(rings, all => all?.length === 4 && all.every(r => r.faded));
   check('R2 三栏填好、用户点了保存：4 个圈都淡出', afterSave?.length === 4 && afterSave.every(r => r.faded), afterSave);
+  // 页面归用户时补一句要求：收下存成「交还后生效」，交还后随原任务一起续跑。
+  await rp.click(panel, '#input'); await rp.typeText(panel, STEER); await rp.pressEnter(panel);
+  const steerSaved = await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.user .user-msg-text")].some(n => n.textContent === ${JSON.stringify(STEER)})`) || undefined, 10000, '补充要求已发出').catch(() => null);
+  check('页面归用户期间的补充要求发成了自己的消息', !!steerSaved, steerSaved);
   const sentBefore = payloads.length;
   await rp.click(panel, '.handoff-card .btn-primary');
   await until(async () => !!(await done()), 10000, '卡片收起');
@@ -212,13 +223,27 @@ try {
   check('R3 交还后页面上不再有交给用户时画的圈', noRings(handedBack), handedBack);
   await until(async () => claims === 1, 30000, '助手领取了 $30');
   const first = payloads[sentBefore] ?? '';
-  check('交还后第一次模型请求带重读的账单页（已保存）和原目标', first.includes('账单账号已保存') && first.includes(GOAL), { saved: first.includes('账单账号已保存'), goal: first.includes(GOAL) });
+  check('交还后第一次模型请求带重读的账单页（已保存）、原目标和暂停中的补充', first.includes('账单账号已保存') && first.includes(GOAL) && first.includes(STEER), { saved: first.includes('账单账号已保存'), goal: first.includes(GOAL), steer: first.includes(STEER) });
+  check('交还后的边界：原页不许动，但按用户要求可读别的标签页', first.includes('Reading or using another tab or site is allowed'), first.match(/Stay on this tab[^\]]*/)?.[0] ?? '');
   // R4：用户在交给期间填的卡号，交还后的读页面也不给模型。
   check('交还后发给模型的内容里没有用户填的卡号', !payloads.some(p => p.includes('4242424242424242')), { leaked: payloads.filter(p => p.includes('4242424242424242')).length });
   check('网站收到一次领取', claims === 1, { claims, posts: posts.map(p => p.path) });
   await until(async () => String(await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].map(m=>m.textContent).join("|")')).includes('已领取 $30。'), 30000, '最终回答');
   check('最终回答出现', true, String(await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].map(m=>m.textContent).join("|")')));
   await rp.screenshot(panel, join(out, 'resumed-panel.png'));
+
+  // 暂停中补的「下次…」按网站做法纠正处理：这一轮结束后自动记成这个网站的做法（可撤销），不问也不丢。
+  const memories = async () => await rp.evaluate(panel, `new Promise((resolve) => {
+    const req = indexedDB.open("sideagent-memory", 1);
+    req.onsuccess = () => { const get = req.result.transaction("kv").objectStore("kv").get("memories"); get.onsuccess = () => resolve(get.result ?? null); get.onerror = () => resolve(null); };
+    req.onerror = () => resolve(null);
+  })`) as string | null;
+  const learnedText = await until(async () => { const text = await memories(); return text?.includes('邮箱里取') ? text : undefined; }, 45000, '暂停中的补充被记成网站做法').catch(() => null);
+  const learnedEntry = learnedText ? (JSON.parse(learnedText).entries as Array<{ kind: string; text: string; scope: { kind: string; hostname?: string }; status: string }>).find(e => e.kind === 'method' && e.status === 'active' && e.text.includes('邮箱里取')) : null;
+  check('暂停中补充「下次…」经纠正判断记成这个网站的做法', !!learnedEntry && learnedEntry.scope.kind === 'site', learnedEntry ?? null);
+  const askShown = await rp.evaluate(panel, `(() => { const c = document.querySelector(".memory-ask"); return c ? c.textContent?.replace(/\\s+/g, " ") : null })()`);
+  check('侧栏显示已记住的做法卡（含可撤销入口）', !!askShown && String(askShown).includes('邮箱里取'), askShown);
+  await rp.screenshot(panel, join(out, 'learned-method-panel.png'));
 
   // ── (c) 再交给用户一次，用户在侧栏点停止：圈和「现在归你」一起收掉（R3 停止）──
   await rp.cdp.send('Page.navigate', { url: siteUrl }, work);

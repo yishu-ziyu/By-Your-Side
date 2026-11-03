@@ -2731,6 +2731,9 @@ return;}
 
   queueSteerForResume(text:string,context?:PageContext,attachments?:Attachment[],pages?:PageContext[]):void{
     if(!this.hold.isHeld())throw new TaskActionRejected('任务没有暂停，补充要求未保存。');
+    // 暂停中的补充也是用户直接说的话：照插话开一轮记忆，纠正类才有机会被筛进做法。
+    this.memoryRuntime?.invalidateUserTurn("steer");
+    this.memoryRuntime?.beginUserTurn(text,context,this.conversationSnapshot()?.conversationContext?.recentTurns);
     this.deferredSteers.push({text,context,attachments,...(pages?.length?{pages}:{})});this.runTrace.record('steer_queued',{text,context,attachments});
   }
 
@@ -2943,7 +2946,8 @@ return {kind:'model'};
     this.controlEpoch += 1;
     this.starting = null;
     this.cancelPendingHandback();
-    this.memoryRuntime?.invalidateUserTurn();
+    // 接管是控制事件不是轮次作废：进行中的纠正学习跟着任务走。
+    this.memoryRuntime?.invalidateUserTurn("steer");
     const state = this.hold.holdForUser();
 
     if (opts?.abortStream ?? true) void this.stopCurrentRun().catch(() => {});
@@ -2956,7 +2960,6 @@ return {kind:'model'};
    */
   continueAfterHandback(context: PageContext, snapshot: string): Promise<boolean> {
     this.handbackFailureReason = null;
-    this.memoryRuntime?.invalidateUserTurn();
 
     if (!this.hold.isHeld()) {
       this.callbacks.emit({ kind: "notice", message: "现在不是你在操作页面，不用交还。" });
@@ -2965,6 +2968,8 @@ return {kind:'model'};
     }
 
     const queued=this.deferredSteers.slice();
+    // 交还是同一任务继续，不是轮次作废：暂停中补充的纠正学习照常跟着走。
+    this.memoryRuntime?.invalidateUserTurn("steer");
     // 接管前没确认的写入作废：不让模型去核对用户已经改过的字段，再因核对失败停下。
     const released = this.taskResultsHost?.releaseAfterHandback?.() ?? [];
 
