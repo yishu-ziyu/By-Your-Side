@@ -634,7 +634,7 @@ export async function launchRealPath({ microphoneWav, chromeArgs = [], headed = 
       (made) => console.log(
         made === "no-frames" ? "录屏：没录到画面，跳过合成"
         : made === "no-ffmpeg" ? `录屏：找不到 ffmpeg 和 ffprobe（PATH=${process.env.PATH ?? ""}），跳过合成；帧留在 ${relative(process.cwd(), recording.dir)}，装好后 npm run frames -- 这个目录`
-        : `慢放录屏：${relative(process.cwd(), made.slow)}　总览：${relative(process.cwd(), made.overview)}　逐帧看：npm run frames -- ${relative(process.cwd(), recording.dir)} <起秒> <止秒>`,
+        : `${made.slow ? `慢放录屏：${relative(process.cwd(), made.slow)}` : `录屏：${relative(process.cwd(), made.run)}`}　总览：${relative(process.cwd(), made.overview)}　逐帧看：npm run frames -- ${relative(process.cwd(), recording.dir)} <起秒> <止秒>`,
       ),
       (error: Error) => console.log(`录屏合成失败：${error.message.split("\n")[0]}`),
     ));

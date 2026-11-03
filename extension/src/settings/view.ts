@@ -79,7 +79,7 @@ export function renderSettings(): void {
   <section class="sx" aria-labelledby="voice-title">
     <div class="sx-head">
       <h2 id="voice-title">语音对话</h2>
-      <p class="sx-sub">用声音和助手交谈。语音会发给所选服务商，按账号或套餐规则使用。先选语音模型，下面的密钥和音色跟着它变。<span id="voice-key-note"></span></p>
+      <p class="sx-sub">用声音和助手交谈。语音会发给所选服务商，按账号或套餐规则使用。MOSS-Live 开启后还会持续发送当前网页画面，请留意画面中的敏感信息。<span id="voice-key-note"></span></p>
     </div>
     <div class="surface rows">
       <div class="row stack">
@@ -87,7 +87,7 @@ export function renderSettings(): void {
         <div id="voice-model-list" class="radio-rows" role="radiogroup" aria-labelledby="voice-model-title"></div>
       </div>
       <div id="voice-key-row" class="row">
-        <span class="row-main"><span class="row-title">阶跃星辰密钥（语音用）</span><span id="voice-state" class="row-desc"></span></span>
+        <span class="row-main"><span id="voice-key-title" class="row-title">阶跃星辰密钥（语音用）</span><span id="voice-state" class="row-desc"></span></span>
         <span class="row-ctl inline">
           <input id="voice-key" class="d-input" type="password" autocomplete="off" spellcheck="false" aria-label="阶跃星辰密钥（语音用）" />
           <button id="voice-save" type="button" class="btn">保存</button>
@@ -117,7 +117,7 @@ export function renderSettings(): void {
   <section class="sx" aria-labelledby="speech-title">
     <div class="sx-head">
       <h2 id="speech-title">朗读结果</h2>
-      <p class="sx-sub">按住说话交代的事做完后，念给你听。朗读文字发给 MiniMax，按订阅规则使用。和上面的语音对话无关。</p>
+      <p class="sx-sub">按住说话或用 MOSS 语音交代的事做完后，念给你听。朗读文字发给 MiniMax，按订阅规则使用。</p>
     </div>
     <div class="surface rows">
       <div class="row">

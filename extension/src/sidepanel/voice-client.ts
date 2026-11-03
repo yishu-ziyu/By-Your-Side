@@ -1,5 +1,7 @@
-import {GPT_LIVE_MODEL,isVoiceDiagRecord,VOICE_DIAG_TEXT_MAX,type VoiceTimingPoint,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord,type StepVoice,type VoicePersona,DEFAULT_VOICE_PERSONA} from '../../../shared/voice.js';
+import {GPT_LIVE_MODEL,MOSS_LIVE_MODEL,isVoiceDiagRecord,VOICE_DIAG_TEXT_MAX,type VoiceTimingPoint,type VoiceClientMessage,type VoiceCommand,type VoiceServerMessage,type VoiceEvent,type VoiceInputContext,type VoiceDiagRecord,type StepVoice,type VoicePersona,DEFAULT_VOICE_PERSONA} from '../../../shared/voice.js';
 import { VoicePlayer } from './voice-player.js';
+import { MossBargePause } from './moss-barge-pause.js';
+import { VoiceConnectionNotice } from './voice-connection-notice.js';
 import { pcmBase64 } from './voice-signal.js';
 import type { VoiceDiagnosticLog, VoiceDiagTrack } from './voice-diagnostic.js';
 import { Type, type Static } from 'typebox';
@@ -45,6 +47,8 @@ const PRE_READY_MAX_SAMPLES = 24000 * 15;
  * 服务端断句有时认不出开口或一直等不到说完，所以按接近实时的节奏补发。
  */
 const BACKLOG_FRAMES_PER_TICK = 4;
+const RECOVERY_FAILED = '语音连接未能恢复，请检查网络或在「更多 → 模型与语音」核对语音设置后重试。';
+const CONNECT_STALLED = '语音暂时连不上，请检查网络或在「更多 → 模型与语音」核对语音设置；正在继续连接。';
 
 /**
  * 本地插话判定：回答播放中，回声消除后的麦克风累计约 240 ms 有人声（约 -38 dBFS 以上）就算用户开口。
@@ -162,6 +166,9 @@ export class VoiceClient {
   private analyser: AnalyserNode | null = null;
   private inputLevel = 0;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectNotice = new VoiceConnectionNotice(() => {
+    if (this.userIntentActive && !this.ready && this.phase === 'connecting') this.setPhase('connecting');
+  });
   private meter = new Float32Array(256);
   /** 麦克风已开、会话还没就绪时说的话：普通会话就绪后按顺序补发，不丢开口那几秒；补完之前新来的帧排在后面。 */
   private backlog: Int16Array[] = [];
@@ -171,6 +178,7 @@ export class VoiceClient {
   private sayAgainAfterRecovery = false;
   /** 回答播放中连续有人声的帧数（20 ms 一帧，静音帧扣回）。 */
   private loudFrames = 0;
+  private readonly mossPause = new MossBargePause();
   /** 阶跃星辰：这一轮的第一段声音已经记过时间点。 */
   private audioMarkedTurn = -1;
 
@@ -198,8 +206,12 @@ export class VoiceClient {
     private readonly event: (event: VoiceEvent) => void,
     private readonly getInput:()=>VoiceInputContext=()=>({}),
     private readonly diagnostic?:(event:string,fields:Record<string,string|number|boolean|null|undefined>)=>void,
-    private readonly log?: VoiceDiagnosticLog) {}
+    private readonly log?: VoiceDiagnosticLog,
+    private readonly audioPlayed?: (voiceId: string, turn: number) => void) {}
   get active(): boolean { return this.id !== null || this.recovering; }
+  get turnIdentity(): { voiceId: string; turn: number; conversationId: string } | null {
+    return this.id && !this.diagSession ? { voiceId: this.id, turn: this.turn, conversationId: this.conversationId } : null;
+  }
   get diagnosticMode(): boolean { return this.diagSession; }
   get diagnosticConfirmed(): boolean { return this.diagConfirmed; }
   get diagnosticRecording(): boolean { return this.recording; }
@@ -231,7 +243,12 @@ export class VoiceClient {
     if (fields.ref && TIMING_ID.test(fields.ref)) command.ref = fields.ref;
     this.command(command);
   }
-  private setPhase(phase: VoicePhase, detail?: string): void { this.phase = phase; this.change(phase, detail); }
+  private setPhase(phase: VoicePhase, detail?: string): void {
+    this.phase = phase;
+    const stalled = phase === 'connecting' && this.connectNotice.notified;
+    const recovering = phase === 'connecting' && this.recovering && this.voiceModel === MOSS_LIVE_MODEL;
+    this.change(phase, recovering ? `${stalled ? CONNECT_STALLED : ''}正在恢复语音连接…` : stalled ? CONNECT_STALLED : detail);
+  }
   private command(command: VoiceCommand): boolean {
     if (!this.id) return false;
 
@@ -257,6 +274,7 @@ export class VoiceClient {
     if (this.id) return;
     this.needsMicrophonePermission = false;
     this.userIntentActive = true;
+    if (!this.recovering) this.connectNotice.reset();
     this.conversationId = conversationId;
     this.turn = 0;
     this.audioMarkedTurn = -1;
@@ -327,9 +345,15 @@ export class VoiceClient {
 
             if (!this.speaking) this.setPhase('listening');
           }
-        }, this.analyser);
+        }, this.analyser, (chunk, audible) => {
+          if (this.id === id) {
+            if (chunk.last) this.command({ kind: 'moss_chunk_played', runId: chunk.runId, turnId: chunk.turnId, chunkId: chunk.chunkId });
+            if (audible && chunk.inputTurn !== undefined) this.audioPlayed?.(id, chunk.inputTurn);
+          }
+        });
 
         // The old capture callback is session-bound and cannot submit into this turn.
+        if (this.voiceModel === MOSS_LIVE_MODEL && !diagnostic) this.connectNotice.start();
         this.command(this.startCommand());
         this.worklet.port.onmessage = ({ data }) => this.onCaptureFrame(id, data);
 
@@ -372,11 +396,12 @@ return;}
       this.analyser=context.createAnalyser();this.analyser.fftSize=256;this.analyser.connect(context.destination);
       this.player=new VoicePlayer(context,responseId=>{if(this.id===id){this.command({kind:'playback_done',responseId});
 
-if(!this.speaking)this.setPhase('listening');}},this.analyser);
+if(!this.speaking)this.setPhase('listening');}},this.analyser,(chunk,audible)=>{if(this.id===id){if(chunk.last)this.command({kind:'moss_chunk_played',runId:chunk.runId,turnId:chunk.turnId,chunkId:chunk.chunkId});if(audible&&chunk.inputTurn!==undefined)this.audioPlayed?.(id,chunk.inputTurn);}});
 
       const worklet=new AudioWorkletNode(context,'voice-capture');this.worklet=worklet;
       worklet.port.onmessage=({data})=>this.onCaptureFrame(id,data);
       context.createMediaStreamSource(stream).connect(worklet);worklet.connect(context.destination);
+      if (this.voiceModel === MOSS_LIVE_MODEL && !diagnostic) this.connectNotice.start();
       this.command(this.startCommand());
     } catch(error) {
       if(this.id===id)this.needsMicrophonePermission=error instanceof DOMException && error.name==='NotAllowedError';
@@ -798,7 +823,18 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     if(this.serverVad&&!this.diagSession)this.command({kind:'audio',turn:this.turn,data:pcmBase64(source)});
   }
   private watchBargeIn(rms: number): void {
-    if (!this.serverVad || this.diagSession || !this.player?.playing) {
+    if (this.voiceModel === MOSS_LIVE_MODEL && this.player && !this.diagSession) {
+      const action = this.mossPause.frame(Date.now(), rms, this.player.playing);
+      if (action === 'pause' && this.player.pause()) this.diagnostic?.('local_barge_pause', { turn: this.turn, rms });
+      else if (action === 'resume') {
+        this.player.resume();
+        this.diagnostic?.('local_barge_resume', { turn: this.turn });
+      }
+
+      return;
+    }
+
+    if (this.voiceModel === MOSS_LIVE_MODEL || !this.serverVad || this.diagSession || !this.player?.playing) {
       this.loudFrames = 0;
 
       return;
@@ -850,6 +886,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     if (this.diagSession) return { kind: 'start', diagnostic: true, ...model };
     const command: Extract<VoiceCommand, { kind: 'start' }> = { kind: 'start', ...model };
 
+    if (this.recovering && this.voiceModel === MOSS_LIVE_MODEL) command.resume = true;
     if (this.voice) command.voice = this.voice;
 
     if (this.persona.id !== 'default') command.persona = this.persona;
@@ -979,7 +1016,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     if (this.recoveryAttempts >= 3 || elapsed >= 30_000) {
       this.diagnostic?.('voice_recovery_exhausted', { turn: this.turn, attempt: this.recoveryAttempts, at: performance.now() });
-      this.fail('语音连接未能恢复，请重试。');
+      this.fail(RECOVERY_FAILED);
 
       return;
     }
@@ -1014,7 +1051,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     const elapsed = Date.now() - this.recoveryStartTime;
 
     if (this.recoveryAttempts >= 3 || elapsed >= 30_000) {
-      this.fail('语音连接未能恢复，请重试。');
+      this.fail(RECOVERY_FAILED);
 
       return;
     }
@@ -1148,7 +1185,7 @@ return;}
       if(!this.serverVad||this.diagSession||e.turn<=this.turn)return;
 
       // 服务端听到用户开口：旧回答立即停播（本地没听出来时的兜底）。
-      if(this.player?.playing){this.player.stop();this.setPhase('listening');}
+      if(this.voiceModel!==MOSS_LIVE_MODEL&&this.player?.playing){this.player.stop();this.setPhase('listening');}
 
       this.turn=e.turn;this.hasInputTurn=true;this.player?.follow(this.turn);
       const input=this.getInput();this.command({kind:'commit',turn:this.turn,input});
@@ -1183,6 +1220,7 @@ return;}
       }
 
       if(e.state==='ready'){
+        this.connectNotice.reset();
         this.serverVad=e.inputMode==='server_vad'||this.serverVad;
 
         if(this.serverVad){this.turn=Math.max(1,this.turn);this.player?.follow(this.turn);}
@@ -1222,6 +1260,17 @@ return;}
       return;
     }
 
+    if(e.kind==='text'&&e.role==='user'&&!e.partial)this.mossPause.transcript(Date.now());
+
+    if(e.kind==='moss_stop_audio'){
+      this.mossPause.stopped();
+      const playedMs=this.player?.stopMoss(e.runId,e.turnId)??0;
+      // 本机暂停时排在后面的其他音频（如结果朗读）不随这段回答一起丢，交还给正常播放。
+      if(this.player?.isPaused)this.player.resume();
+      this.command({kind:'moss_playback_stopped',runId:e.runId,turnId:e.turnId,playedMs});
+      return;
+    }
+
     if(e.turn!==this.turn)return;
 
     if(e.kind==='reset_output'){this.player?.stop();this.player?.begin(this.turn);}
@@ -1239,7 +1288,8 @@ return;}
     if(this.live){this.muteLive(this.live,{reason:'stop',turn:this.live.assistantTurn,userDone:false,at:Date.now(),userHeard:false});this.setPhase('listening','已停声，后台任务继续');
 
 return;}
-    this.player?.stop();this.command({kind:'interrupt',turn:this.turn});
+    if(this.voiceModel!==MOSS_LIVE_MODEL)this.player?.stop();
+    this.command({kind:'interrupt',turn:this.turn});
     this.setPhase('listening','已停声，后台任务继续');
   }
   fail(detail: string): void {
@@ -1253,6 +1303,7 @@ return;}
   }
   stop(notify=true): void {
     this.clearHold();
+    this.connectNotice.reset();
     this.userIntentActive = false;
     this.recovering = false;
     this.recoveryAttempts = 0;

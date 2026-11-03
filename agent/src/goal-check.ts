@@ -511,7 +511,7 @@ function goalCheckContent(input: GoalCheckInput): { content: string; notInReads:
     // 程序替助手读的页面先各留 4,000 字，余下的按新到旧分给工具结果：否则一轮里后面几次大读数会把开头读的页面挤成空文本。
     observations: (() => {
       const stale = input.page ? staleReads(input.observations ?? []) : new Set();
-      const items = (input.observations ?? []).slice(-8).reverse();
+      const items = (input.observations ?? []).slice(-20).reverse();
       const pageShare = new Map(items.filter(item => item.tool.startsWith("page_")).map(item => [item, Math.min(item.text.length, 4_000)]));
       observationBudget -= [...pageShare.values()].reduce((sum, n) => sum + n, 0);
 

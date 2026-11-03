@@ -23,7 +23,7 @@ import type { ReadingRecord } from "../shared/reading-state.js";
  * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
  */
 import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, PageContext, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
-import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, PTT_WARM, READING_VOICE, type ReadingVoiceMessage, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
+import { isPttPageMessage, isSubscriptionKey, PTT_LEVEL, PTT_SPEECH_KEY, PTT_TARGET, PTT_WARM, READING_VOICE, type ReadingVoiceMessage, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
 import { installPttCapsule } from "./ptt-capsule.js";
 import { readVoiceDictationKey } from "../shared/dictation-config.js";
 import { createVoiceCaptureSink } from "../shared/trace-store.js";
@@ -359,6 +359,24 @@ const voiceRelay = new VoiceRelay(msg => transport.sendClientMessage(msg), panel
   const enriched=await controller(id).voiceInput(input);
 
 return enriched;
+});
+
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || sender.tab || !raw || typeof raw !== "object" || (raw as { type?: unknown }).type !== "voice_screen_frame") return;
+  void voiceRelay.captureScreen((raw as { voiceId?: unknown }).voiceId).then(jpeg => sendResponse({ jpeg }), () => sendResponse({ jpeg: null }));
+
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL("inproc.html") || sender.tab || !raw || typeof raw !== "object" || (raw as { type?: unknown }).type !== "voice_notice_key") return;
+  const voiceId = (raw as { voiceId?: unknown }).voiceId;
+  if (!voiceRelay.allowsNoticeSpeech(voiceId)) return;
+  void chrome.storage.local.get(PTT_SPEECH_KEY).then(values => {
+    const key = values[PTT_SPEECH_KEY];
+    sendResponse({ key: voiceRelay.allowsNoticeSpeech(voiceId) && typeof key === "string" && isSubscriptionKey(key) ? key : "" });
+  }, () => sendResponse({ key: "" }));
+  return true;
 });
 
 function controller(id: string) {

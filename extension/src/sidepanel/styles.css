@@ -3341,6 +3341,17 @@ details.run-steps.done > summary > .run-meta { display: none; }
 .ai-task-card { margin: 4px 0 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; animation: none; }
 .ai-task-card .ai-task-trigger, .ai-task-card .ai-task-reveal { display: none; }
 .ai-task-card:not(:has(#resume-entry-root:not([hidden]) > *)) { display: none; }
+.ai-task-card.voice-task-visible,
+.ai-task-card.voice-task-visible:not(:has(#resume-entry-root:not([hidden]) > *)) {
+  display: block;
+  margin: var(--s-3) 0;
+  padding: var(--card-padding);
+  border: 1px solid var(--content-border);
+  border-radius: var(--radius-card);
+  background: var(--content-bg);
+}
+.ai-task-card.voice-task-visible .ai-task-trigger { display: flex; }
+.ai-task-card.voice-task-visible .ai-task-reveal { display: grid; }
 .ai-task-footer:has(#resume-entry-root:not([hidden])) { padding: 0; border-top: 0; }
 .ai-task-footer .resume-action { border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-primary); font-size: var(--fs-ui); padding: 5px 12px; }
 .ai-task-footer .resume-action:hover { background: var(--content-subtle); }

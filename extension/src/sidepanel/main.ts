@@ -126,6 +126,43 @@ let replayingHistory = false;
 
 let citationRequestPending = false;
 
+const voiceTaskTurns = new Map<string, { voiceId: string; turn: number }>();
+const audibleVoiceTurns = new Set<string>();
+const voiceTurnKey = (voiceId: string, turn: number): string => `${voiceId}:${turn}`;
+
+function revealVoiceTask(runId: string): void {
+  const identity = voiceTaskTurns.get(runId);
+  if (!identity || !audibleVoiceTurns.has(voiceTurnKey(identity.voiceId, identity.turn))) return;
+  const card = Array.from(messagesEl.querySelectorAll<HTMLElement>(".ai-task-card"))
+    .find(node => node.dataset.runId === runId);
+  if (!card || card.classList.contains("voice-task-visible")) return;
+  card.classList.remove("expanded");
+  card.querySelector<HTMLButtonElement>(".ai-task-trigger")?.setAttribute("aria-expanded", "false");
+  const reveal = card.querySelector<HTMLElement>(".ai-task-reveal");
+  if (reveal) reveal.inert = true;
+  card.classList.add("voice-task-visible");
+}
+
+function noteVoiceTask(receipt: TaskReceipt): void {
+  if (replayingHistory || receipt.source !== "voice" || receipt.action !== "start"
+    || receipt.status !== "accepted" || !receipt.runId || receipt.conversationId !== selectedConversationId) return;
+  const identity = voiceUI.turnIdentity();
+  if (!identity || identity.conversationId !== receipt.conversationId) return;
+  voiceTaskTurns.set(receipt.runId, { voiceId: identity.voiceId, turn: identity.turn });
+  if (voiceTaskTurns.size > 100) voiceTaskTurns.delete(voiceTaskTurns.keys().next().value!);
+  revealVoiceTask(receipt.runId);
+}
+
+function noteVoiceAudioPlayed(voiceId: string, turn: number): void {
+  const key = voiceTurnKey(voiceId, turn);
+  if (audibleVoiceTurns.has(key)) return;
+  audibleVoiceTurns.add(key);
+  if (audibleVoiceTurns.size > 100) audibleVoiceTurns.delete(audibleVoiceTurns.values().next().value!);
+  for (const [runId, identity] of voiceTaskTurns) {
+    if (voiceTurnKey(identity.voiceId, identity.turn) === key) revealVoiceTask(runId);
+  }
+}
+
 /** 最近一次带圈发出的问题：回答里的 ①② 指向这一组圈。换了对话就不认。 */
 let circleRefs: { conversationId: string; target: { tabId: number; set: number }; max: number } | null = null;
 
@@ -4735,6 +4772,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
 if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
       }else if (ev.receipt) {
+        noteVoiceTask(ev.receipt);
         materialsTray?.noteReceipt(ev.receipt);
 
         // 插话没被采纳：下一段回答不是按它写的，不挂「已改方向」。
@@ -5018,6 +5056,7 @@ function renderStreamTaskCard(view: TaskView): void {
     appendToMessages(card);
   }
 
+  revealVoiceTask(view.runId);
   card.dataset.observedAt = String(view.observedAt);
   card.querySelector(".task-goal-line")!.textContent = view.goal;
   // One ledger item may occur in both lists. Keep its last authoritative status, never infer success.
@@ -5137,7 +5176,7 @@ const inputContext = (): VoiceInputContext => {
   return context;
 };
 
-const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send, inputContext);
+const voiceUI = mountVoiceUI(composerEl, () => selectedConversationId, send, inputContext, undefined, noteVoiceAudioPlayed);
 // 话筒输入文字，声波按钮开启语音对话。
 dictationUI = mountDictation({
   composer: composerEl,

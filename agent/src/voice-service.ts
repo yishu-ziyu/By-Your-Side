@@ -1,6 +1,6 @@
 import { realtimeBrowserError } from './realtime-browser-tools.js';
 import { projectTaskView } from '../../shared/task-view.js';
-import { RealtimeVoiceSession, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
+import { RealtimeVoiceSession, type RealtimeVoiceDependencies, type RecoverableMossDelivery } from './realtime-voice-session.js';
 import { isLeadSession } from '../../shared/protocol.js';
 import { aboutTask, queuedEndSpeech, taskName } from './voice-receipt.js';
 import { readFile, stat } from "node:fs/promises";
@@ -9,7 +9,16 @@ import { join } from "node:path";
 import type { ServerMessage } from "../../shared/protocol.js";
 import { DEFAULT_STEP_VOICE, parseVoicePersona, STEP_VOICES, voicePersonaText, type TaskProgressSnapshot, type VoiceClientMessage, type VoiceRouteContext, type VoiceTarget } from "../../shared/voice.js";
 
-type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'> & { bindQueued?(owner: string, runId: string): boolean; endQueued?(owner: string, requestId: string, text: string | null): void };
+type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'> & {
+  bindQueued?(owner: string, runId: string): boolean;
+  endQueued?(owner: string, requestId: string, text: string | null): void;
+  syncTaskContext?(snapshot: TaskProgressSnapshot): void;
+  checkPendingDeliveries?(): void;
+  recordTaskObservation?(snapshot: TaskProgressSnapshot, read: { title: string; text: string; partial: boolean }): void;
+  mossSessionId?(): string | null;
+  recoverableMossDeliveries?(): RecoverableMossDelivery[];
+  restoreMossDeliveries?(deliveries: RecoverableMossDelivery[]): void;
+};
 
 async function readStepVoiceKey(): Promise<string> {
   const environment = process.env.STEPFUN_API_KEY?.trim();
@@ -59,6 +68,8 @@ export class VoiceService {
     streamedDeliveries: Set<string>;
     boundTasks: Set<string>;
     terminalTasks: Set<string>;
+    recoverable: boolean;
+    wasRecovery: boolean;
   } | null = null;
   constructor(private readonly snapshot: (id: string) => TaskProgressSnapshot | null, private readonly emit: (msg: ServerMessage) => void, private readonly getKey = readStepVoiceKey, private readonly createSession = (deps: RealtimeVoiceDependencies): VoiceSession => new RealtimeVoiceSession(deps), private readonly route?: (id: string, text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => ReturnType<NonNullable<RealtimeVoiceDependencies["route"]>>, private readonly diagnostic?: RealtimeVoiceDependencies["diagnostic"], private readonly targets?: () => VoiceTarget[], private readonly onPlayback?: (conversationId: string, deliveryId: string, status: "speaking" | "played") => void, private readonly relatedTask: (origin: string, target: string) => boolean = () => false, private readonly readPage?: (conversationId: string, input: import('../../shared/voice.js').VoiceInputContext) => Promise<unknown>, private readonly dispatchTask?: RealtimeVoiceDependencies['dispatchTask'], private readonly browserTool?: (id: string, ...args: Parameters<NonNullable<RealtimeVoiceDependencies['browserTool']>>) => Promise<unknown>) {
   }
@@ -72,7 +83,16 @@ export class VoiceService {
         return;
       }
 
+      const previous = this.active;
+      const mossResumeSessionId = message.command.resume && !diag && previous && (previous.recoverable || previous.wasRecovery) && previous.conversationId === conversationId
+        ? previous.session.mossSessionId?.() ?? null : null;
+      const recoverableDeliveries = mossResumeSessionId ? previous?.session.recoverableMossDeliveries?.() ?? [] : [];
+      const deliveryOwners = recoverableDeliveries.flatMap(item => {
+        const owner = this.deliveryOwners.get(item.delivery.id);
+        return owner ? [[item.delivery.id, owner] as const] : [];
+      });
       this.close();
+      for (const [id, owner] of deliveryOwners) this.deliveryOwners.set(id, owner);
 
       if (!this.snapshot(conversationId)) {
         this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event: { kind: "state", state: "error", detail: "当前会话不可用，请重新选择会话。" } });
@@ -93,8 +113,9 @@ export class VoiceService {
       const persona = voicePersonaText(parseVoicePersona(message.command.persona));
 
       const active = {
-        id: message.voiceId, conversationId, observed: `${initial.runId}:${initial.state}:${initialResultId}:${initialDelivery?.id ?? 'none'}`, startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), boundTasks: new Set<string>(), terminalTasks: new Set<string>(), session: this.createSession({
+        id: message.voiceId, conversationId, recoverable: !!mossResumeSessionId, wasRecovery: !!mossResumeSessionId, observed: `${initial.runId}:${initial.state}:${initialResultId}:${initialDelivery?.id ?? 'none'}`, startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), boundTasks: new Set<string>(), terminalTasks: new Set<string>(), session: this.createSession({
           voiceId: message.voiceId,
+          ...(mossResumeSessionId ? { mossResumeSessionId } : {}),
           voice,
           persona,
           ...(diag ? { diagnosticMode: true } : {}),
@@ -111,7 +132,11 @@ export class VoiceService {
           ...(this.dispatchTask && !diag ? { dispatchTask: (request: import('../../shared/task-actions.js').TaskActionRequest, stillCurrent: () => boolean) => this.dispatchTask!(request, () => this.active?.id === message.voiceId && stillCurrent()) } : {}),
           diagnostic: (event, fields) => this.diagnostic?.(event, { voiceId: message.voiceId, conversationId, ...fields }),
           ...(this.route && !diag ? { route: (text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => this.route!(conversationId, text, startedAt, () => this.active?.id === message.voiceId && stillCurrent(), context) } : {}),
-          emit: event => this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event }),
+          emit: event => {
+            if (event.kind === "state" && event.state === "error" && event.recoverable) active.recoverable = true;
+            else if (event.kind === "state" && event.state === "ready") active.recoverable = false;
+            this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event });
+          },
           onPlayback: (deliveryId, status) => {
             if (this.active !== active) {
               return;
@@ -129,6 +154,7 @@ export class VoiceService {
 
         if (this.active === active) {
           active.session.start(key);
+          if (recoverableDeliveries.length) active.session.restoreMossDeliveries?.(recoverableDeliveries);
         }
       }
       catch (error) {
@@ -165,6 +191,13 @@ export class VoiceService {
       this.active = null;
     }
   }
+  observeTaskPage(conversationId: string, runId: string, read: { title: string; text: string; partial: boolean }): void {
+    const active = this.active;
+    if (!active || active.conversationId !== conversationId) return;
+    const snapshot = this.snapshot(conversationId);
+    if (snapshot?.runId !== runId || snapshot.state !== 'running') return;
+    active.session.recordTaskObservation?.(snapshot, read);
+  }
   observe(message: ServerMessage): void {
     const active = this.active;
     if (!active) return;
@@ -189,6 +222,7 @@ export class VoiceService {
         return;
       }
 
+      active.session.checkPendingDeliveries?.();
       const task = `${owner}:${snapshot.runId}`;
       if (snapshot.runId && !active.boundTasks.has(task) && active.session.bindQueued?.(owner, snapshot.runId)) active.boundTasks.add(task);
 
@@ -240,6 +274,8 @@ export class VoiceService {
     if (!snapshot) {
       return;
     }
+    active.session.syncTaskContext?.(snapshot);
+    active.session.checkPendingDeliveries?.();
 
     if (message.type === 'agent_event' && isLeadSession(message.sessionId)) {
       const e = message.event;

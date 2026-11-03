@@ -168,11 +168,20 @@ export interface VoiceTarget {id:string;title:string;runId:string|null;controlVe
 /** GPT-Live：用 ChatGPT 登录、侧栏直连 OpenAI 的语音；闲聊它自己答，要动手的委派给任务宿主。 */
 export const GPT_LIVE_MODEL = "gpt-live-1-codex";
 
-export type RealtimeVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime" | typeof GPT_LIVE_MODEL;
+/** MOSS-Live：同一条 WebSocket 上行 16 kHz 语音与网页 JPEG 画面、下行 48 kHz 语音。 */
+export const MOSS_LIVE_MODEL = "moss-live-1.0";
+
+export type RealtimeVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime" | typeof GPT_LIVE_MODEL | typeof MOSS_LIVE_MODEL;
 
 export interface VoiceRouteContext {
   /** 套餐语音：明确闲聊仅返回分类，不生成宿主回答；其他分支照常执行。 */
   nativeChat?: boolean;
+  /** 已核对的任务结果正等待用户同意朗读。 */
+  awaitingResultConsent?: boolean;
+  /** MOSS 当前话轮的任务事实是否已在开口前完成同步。 */
+  nativeTaskStatus?: "ready" | "unavailable";
+  /** 语音模型已直接收到当前网页实时画面：纯页面查看（observe）由语音模型直接回答。 */
+  nativeObserve?: boolean;
   /** Keep pending delegation through conversational interjections, never through a new command. */
   awaitInputDecision?: () => Promise<void>;
   onInputDecision?: (readOnly: boolean, incomplete?:boolean) => void;
@@ -206,7 +215,7 @@ export type VoiceTurnProtocol = 'free_reply' | 'plan';
 
 export type VoiceRouteResult = {plan?:VoicePlanSummary;turn?:{branch:VoiceTurnBranch;phase:'COMMITTED'|'DISCARDED';protocol?:VoiceTurnProtocol}} & (
   | {kind:'none';nativeChat?:true;resumeTargetId?:string; resumeReadOnly?:'chat'|'observe'|'status'; snapshot?:TaskProgressSnapshot;spokenText?:string}
-  | {kind:'silent';quiet?:boolean}
+  | {kind:'silent';quiet?:boolean;statusMessage?:string}
   | {kind:'listening'}
   | {kind:'clarify';message:string}
   | {kind:'steer'|'action';awaitDelivery?:boolean;ok:boolean;status?:TaskReceipt['status'];message:string;receipts?:TaskReceipt[];snapshot?:TaskProgressSnapshot});
@@ -295,18 +304,22 @@ export function voicePersonaText(persona: VoicePersona): string {
   return persona.id === "custom" ? persona.text : VOICE_PERSONAS.find(p => p.id === persona.id)?.text ?? "";
 }
 
+export interface MossAudioChunk { runId: string; turnId: string; chunkId: string; last: boolean; inputTurn?: number }
+
 export type VoiceCommand =
   /**
    * Diagnostic capture is only ever opened by an explicit request; a backend that does not confirm must not receive audio.
    * `voice` is the user's chosen timbre; it applies to the session being started.
    */
-  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string; persona?: VoicePersona; /** 侧栏看到的语音模型设置原值；与宿主不一致时拒绝开启。 */ model?: string }
+  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string; persona?: VoicePersona; resume?: true; /** 侧栏看到的语音模型设置原值；与宿主不一致时拒绝开启。 */ model?: string }
   | { kind: "stop" }
   | { kind: "audio"; turn: number; data: string; frame?: number }
   | { kind: "commit"; turn: number;input?:VoiceInputContext;contextPending?:boolean }
   | { kind: "input_context"; turn:number;input?:VoiceInputContext;error?:string }
   | { kind: "interrupt"; turn: number; played?: { itemId: string; ms: number } }
   | { kind: "playback_done"; responseId: string }
+  | { kind: "moss_chunk_played"; runId: string; turnId: string; chunkId: string }
+  | { kind: "moss_playback_stopped"; runId: string; turnId: string; playedMs: number }
   /** 回答播放中侧栏本地听出用户开口：停掉旧回答，但不作废这句新话。 */
   | { kind: "barge_in"; turn: number }
   /**
@@ -371,10 +384,11 @@ export type VoiceDiagRecord =
 
 export type VoiceEvent =
   | {kind:'reset_output';turn:number}
+  | {kind:'moss_stop_audio';turn:number;runId:string;turnId:string}
   | { kind: "state"; state: "connecting" | "ready" | "answering" | "closed" | "error"; detail?: string; recoverable?: boolean; /** 语音服务挂住后重连：刚才那句没被听到，连上后请用户重说。 */ sayAgain?: boolean; inputMode?: 'server_vad' }
   | { kind: "input_turn"; turn: number }
-  | { kind: "audio"; turn: number; data: string; itemId: string; responseId: string }
-  | { kind: "text"; turn: number; role: "user" | "assistant"; text: string }
+  | { kind: "audio"; turn: number; data: string; itemId: string; responseId: string; sampleRate?: 48000; moss?: MossAudioChunk }
+  | { kind: "text"; turn: number; role: "user" | "assistant"; text: string; partial?: boolean }
   | { kind: "facts"; turn: number; snapshot: TaskProgressSnapshot }
   | { kind: "response_end"; turn: number; responseId: string }
   | { kind: "diag"; record: VoiceDiagRecord }
@@ -433,13 +447,15 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
   const c = m.command;
 
   switch (c.kind) {
-    case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true) && (c.voice === undefined || typeof c.voice === "string" && c.voice.length <= 64) && (c.model === undefined || typeof c.model === "string" && c.model.length <= 64);
+    case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true) && (c.resume === undefined || c.resume === true) && (c.voice === undefined || typeof c.voice === "string" && c.voice.length <= 64) && (c.model === undefined || typeof c.model === "string" && c.model.length <= 64);
     case "stop": return true;
     case "audio": return turn(c.turn) && validPCM(c.data) && (c.frame === undefined || Number.isSafeInteger(c.frame) && c.frame >= 0 && c.frame <= 1_000_000);
     case "commit": return turn(c.turn)&&(c.contextPending===undefined||typeof c.contextPending==='boolean');
     case "input_context": return turn(c.turn)&&(c.input!==undefined||c.error!==undefined)&&(c.error===undefined||typeof c.error==='string'&&c.error.length>0&&c.error.length<=500);
     case "interrupt": return turn(c.turn) && (c.played === undefined || !!c.played && id(c.played.itemId) && Number.isFinite(c.played.ms) && c.played.ms >= 0);
     case "playback_done": return id(c.responseId);
+    case "moss_chunk_played": return id(c.runId) && id(c.turnId) && id(c.chunkId);
+    case "moss_playback_stopped": return id(c.runId) && id(c.turnId) && Number.isFinite(c.playedMs) && c.playedMs >= 0 && c.playedMs <= 3_600_000;
     case "barge_in": return turn(c.turn);
     case "gpt_live_connected": return true;
     case "gpt_live_transcript": return id(c.turnId) && (c.role === 'user' || c.role === 'assistant') && shortText(c.text, 4000);
@@ -593,8 +609,9 @@ export function isVoiceServerMessage(v: unknown): v is VoiceServerMessage {
 
   switch (e.kind) {
     case "state": return ["connecting", "ready", "answering", "closed", "error"].includes(e.state) && (e.detail === undefined || typeof e.detail === "string" && e.detail.length <= 500) && (e.recoverable === undefined || typeof e.recoverable === "boolean");
-    case "audio": return serverTurn(e.turn) && validPCM(e.data) && id(e.itemId) && id(e.responseId);
-    case "text": return serverTurn(e.turn) && ["user", "assistant"].includes(e.role) && typeof e.text === "string" && e.text.length <= 12000;
+    case "audio": return serverTurn(e.turn) && validPCM(e.data) && id(e.itemId) && id(e.responseId) && (e.sampleRate === undefined || e.sampleRate === 48000) && (e.moss === undefined || !!e.moss && id(e.moss.runId) && id(e.moss.turnId) && id(e.moss.chunkId) && typeof e.moss.last === "boolean" && (e.moss.inputTurn === undefined || turn(e.moss.inputTurn)));
+    case "moss_stop_audio": return serverTurn(e.turn) && id(e.runId) && id(e.turnId);
+    case "text": return serverTurn(e.turn) && ["user", "assistant"].includes(e.role) && typeof e.text === "string" && e.text.length <= 12000 && (e.partial === undefined || typeof e.partial === "boolean");
     case "facts": return serverTurn(e.turn) && isTaskProgressSnapshot(e.snapshot);
     case "response_end": return serverTurn(e.turn) && id(e.responseId);
     case "input_turn": return turn(e.turn);

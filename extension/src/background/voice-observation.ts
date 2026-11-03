@@ -28,6 +28,37 @@ export class VoiceObservation {
 
     return { token, tabId: tab.id };
   }
+  async captureScreen(token: unknown, valid: () => boolean): Promise<string | null> {
+    const grant = typeof token === 'string' ? this.grants.get(token) : undefined;
+    const check = async () => {
+      if (!grant || grant.expires < Date.now() || !valid()) return null;
+      const [tab] = await activeTargetTabs();
+      return tab?.id === grant.tabId && /^https?:/.test(tab.url ?? '') ? tab : null;
+    };
+    const identity = async (tabId: number) => {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId }, world: 'ISOLATED',
+        func: () => ({ url: location.href, origin: performance.timeOrigin }),
+      });
+      return result?.documentId && result.result ? { documentId: result.documentId, ...result.result } : null;
+    };
+    try {
+      const tab = await check();
+      if (!tab || tab.id === undefined) return null;
+      const before = await identity(tab.id);
+      if (!before || !await check()) return null;
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 75 });
+      if (!await check()) return null;
+      const after = await identity(tab.id);
+      if (!after || JSON.stringify(before) !== JSON.stringify(after) || !await check()) return null;
+      const prefix = 'data:image/jpeg;base64,';
+      return dataUrl.startsWith(prefix) ? dataUrl.slice(prefix.length) : null;
+    } catch {
+      return null;
+    } finally {
+      if (typeof token === 'string') this.grants.delete(token);
+    }
+  }
   async capture(token: unknown, valid: () => boolean, mode: 'text' | 'image' = 'image'): Promise<unknown> {
     const grant = typeof token === 'string' ? this.grants.get(token) : undefined;
 

@@ -13,7 +13,7 @@ import {
 } from "../../../shared/protocol.js";
 import type { ConnState, TransportKind } from "../relay.js";
 import {
-  CODEX_CATALOG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, installVoiceHeaderRule, modelCredential, pickCredentials, resolveVoiceKey, type StoredCredential,
+  CODEX_CATALOG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_MOSS_VOICE_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, installVoiceHeaderRule, modelCredential, pickCredentials, resolveVoiceKey, type StoredCredential,
 } from "../inproc/shared.js";
 import { CORE_SETTING_KEYS } from "../shared/core-settings.js";
 import { CONNECTION_PREFIX, credentialFingerprint, modelConfig, readConnections, withModelSettings } from "../settings/connections.js";
@@ -50,7 +50,7 @@ export class Uplink {
       if (keys.some((key) => CORE_SETTING_KEYS.includes(key))) void this.pushCoreSettings();
 
       // 语音 key 可能沿用阶跃星辰模型的凭据，所以凭据变了也要重算。
-      if (keys.some((key) => key === INPROC_VOICE_KEY || key === INPROC_VOICE_MODEL_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushVoiceKey();
+      if (keys.some((key) => key === INPROC_VOICE_KEY || key === INPROC_MOSS_VOICE_KEY || key === INPROC_VOICE_MODEL_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushVoiceKey();
     });
     void this.connectInproc();
   }
@@ -243,7 +243,10 @@ export class Uplink {
 
   private async pushVoiceKey(): Promise<void> {
     const stored = await chrome.storage.local.get(null);
-    const configured = await installVoiceHeaderRule(resolveVoiceKey(Object.entries(stored))).catch(() => false);
+    const entries = Object.entries(stored);
+    const stepKey = resolveVoiceKey(entries.filter(([key]) => key !== INPROC_VOICE_MODEL_KEY));
+    const mossKey = typeof stored[INPROC_MOSS_VOICE_KEY] === "string" ? stored[INPROC_MOSS_VOICE_KEY] : "";
+    const configured = await installVoiceHeaderRule(stepKey, mossKey, stored[INPROC_VOICE_MODEL_KEY]).catch(() => false);
     // 不在这里修正无效选择：宿主须拒绝启动，不能偷偷回到按量接口。
     this.inprocPort?.postMessage({ type: "inproc_voice", configured, model: stored[INPROC_VOICE_MODEL_KEY] });
   }

@@ -6,7 +6,8 @@ import { HOST_VERSION, PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, type ClientMess
 import { describeModelError } from "../../../shared/user-facing.js";
 import type { TaskActionRequest, TaskReceipt } from "../../../shared/task-actions.js";
 import { PROBE_TIMEOUT_MS, probeModel, type createModelRuntime, type ModelRuntime } from "./model-runtime.js";
-import { GPT_LIVE_MODEL } from "../../../shared/voice.js";
+import { GPT_LIVE_MODEL, MOSS_LIVE_MODEL } from "../../../shared/voice.js";
+import { base64Bytes } from "../../../shared/bytes.js";
 import { CUSTOM_ENDPOINT_ENV, INPROC_KEEPALIVE_MS, INPROC_PORT_NAME, modelCredential, resolveVoiceModel, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 import { BrowserSocket } from "./voice/browser-socket.js";
 import { VoiceCaptureRecorder } from "../../../shared/voice-capture-core.js";
@@ -18,6 +19,8 @@ import { openDurableStorage } from "./durable-storage.js";
 import { IdbDocument } from "./document-idb.js";
 import { pushedMiniApps, pushedSelfUse, pushedTranslationStyle, pushedContinuation, receiveCoreSettings } from "../shared/core-settings.js";
 import { credentialContents, modelConfig } from "../settings/connections.js";
+import { isSubscriptionKey } from "../shared/ptt.js";
+import { streamPttSpeech } from "./ptt-speech.js";
 
 type FileReadModule = typeof import("../sidepanel/file-read/index.js");
 
@@ -161,9 +164,11 @@ export function startInprocHost(deps: InprocHostDeps): void {
       voiceKey: async () => {
         // GPT-Live 不用阶跃星辰的 key：每次开启都取一次 ChatGPT 登录令牌（快过期时 pi-ai 刷新并经 background 写回）。
         // 没登录就报原因，不退回别的语音。
-        if (resolveVoiceModel(voiceModel) === GPT_LIVE_MODEL) return chatgptAccess();
+        const model = resolveVoiceModel(voiceModel);
 
-        if (!voiceConfigured) throw new Error("还没有语音密钥。打开「更多 → 模型与语音」，在「语音对话」里填阶跃星辰密钥。");
+        if (model === GPT_LIVE_MODEL) return chatgptAccess();
+
+        if (!voiceConfigured) throw new Error(model === MOSS_LIVE_MODEL ? "还没有语音密钥。打开「更多 → 模型与语音」，在「语音对话」里填 MOSS 密钥。" : "还没有语音密钥。打开「更多 → 模型与语音」，在「语音对话」里填阶跃星辰密钥。");
 
         return "injected-by-extension";
       },
@@ -177,6 +182,23 @@ export function startInprocHost(deps: InprocHostDeps): void {
           model,
           // SAFETY: BrowserSocket 实现了 RealtimeVoiceSession 实际用到的 ws 子集（readyState/on/send/close）。
           connect: () => new BrowserSocket(model) as never,
+          ...(model === MOSS_LIVE_MODEL ? {
+            captureScreen: async () => {
+              const reply = await (chrome.runtime.sendMessage({ type: "voice_screen_frame", voiceId: voiceDeps.voiceId }) as Promise<{ jpeg?: unknown } | undefined>).catch(() => undefined);
+
+              return typeof reply?.jpeg === "string" && reply.jpeg ? base64Bytes(reply.jpeg) : null;
+            },
+            synthesizeNotice: async (text: string, signal: AbortSignal, audio: (pcm: Uint8Array) => void) => {
+              const reply = await (chrome.runtime.sendMessage({ type: "voice_notice_key", voiceId: voiceDeps.voiceId }) as Promise<{ key?: unknown } | undefined>).catch(() => undefined);
+              if (signal.aborted) return;
+              if (typeof reply?.key !== "string" || !isSubscriptionKey(reply.key)) throw new Error("还没有 MiniMax 订阅密钥");
+              await streamPttSpeech(text, reply.key, AbortSignal.any([signal, AbortSignal.timeout(45_000)]), hex => {
+                const pcm = new Uint8Array(hex.length / 2);
+                for (let i = 0; i < pcm.length; i++) pcm[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+                audio(pcm);
+              });
+            },
+          } : {}),
         });
       },
       observe: msg => { if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record); },

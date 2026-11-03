@@ -50,6 +50,8 @@ export type SideCallRecord = {
   attempts: number;
   outcome: "ok" | "failed";
   reason?: SideFailureReason;
+  /** 重试过时每次尝试的结果和耗时：慢的判断要能看出是首次超时、格式不对还是服务出错。 */
+  steps?: Array<{ outcome: AttemptOutcome; ms: number; detail?: string; winner?: "first" | "hedge" }>;
 };
 
 export type AttemptOutcome = "accepted" | "bad_format" | "rejected_params" | "provider_error" | "request_failed" | "timeout" | "cancelled";
@@ -78,6 +80,8 @@ interface SideCallSpec<T> {
   retry?: "format" | "any" | "none";
   /** 每次尝试各自的时限（第 i 次取第 i 个，超出取最后一个）。 */
   attemptTimeoutsMs?: readonly number[];
+  /** 这么久还没回复就并发再发一份相同请求，先回来的可用回复胜出（对冲长尾）；不设则不对冲。 */
+  hedgeMs?: number;
   /** 重试时追加到系统提示词后的要求；默认要求只回 JSON。参数是上一次的解析错误（请求失败时为 undefined）。 */
   retryPrompt?: (parseError: Error | undefined) => string;
   /** 每次尝试结束时回调（语音的逐次诊断用）。 */
@@ -160,6 +164,42 @@ function appendText(content: SideCallSpec<never>["content"], extra: string): Sid
   return Array.isArray(content) ? [...content, { type: "text", text: extra.trim() }] : content + extra;
 }
 
+/**
+ * 原请求到 hedgeMs 还没回就再发一份，不取消原请求；先拿到非出错回复的胜出，另一份随即取消。
+ * 没有可用回复时返回最后出错的那份，交给调用方按普通失败处理。
+ */
+async function hedged(request: (signal: AbortSignal) => Promise<AssistantMessage>, hedgeMs: number, outer: AbortSignal): Promise<{ reply: AssistantMessage; winner?: "first" | "hedge" }> {
+  const controllers: AbortController[] = [];
+
+  return await new Promise((resolve, reject) => {
+    let pending = 0;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const launch = () => {
+      const index = controllers.push(new AbortController()) - 1;
+      pending += 1;
+      request(AbortSignal.any([outer, controllers[index]!.signal])).then(reply => settle(index, { reply }), error => settle(index, { error }));
+    };
+    const settle = (index: number, outcome: { reply: AssistantMessage } | { error: unknown }) => {
+      pending -= 1;
+      if (settled) return;
+      const usable = "reply" in outcome && outcome.reply.stopReason !== "error" && outcome.reply.stopReason !== "aborted";
+      // 出错的那份不算数，等另一份；只有一份在途时直接交回，由外层按失败重试。
+      if (!usable && pending > 0) return;
+      settled = true;
+      clearTimeout(timer);
+      controllers.forEach((controller, other) => { if (other !== index) controller.abort(); });
+      const winner = controllers.length > 1 ? { winner: index === 0 ? "first" as const : "hedge" as const } : {};
+      if ("reply" in outcome) resolve({ reply: outcome.reply, ...winner });
+      else reject(outcome.error);
+    };
+    launch();
+    timer = setTimeout(() => {
+      if (!settled && !outer.aborted && controllers.length === 1) launch();
+    }, hedgeMs);
+  });
+}
+
 export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spec: SideCallSpec<T>): Promise<T> {
   const budget = AbortSignal.timeout(spec.timeoutMs);
   const total = spec.signal ? AbortSignal.any([spec.signal, budget]) : budget;
@@ -172,6 +212,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
   let suffix = "";
   let userSuffix = "";
   let lastError: string | undefined;
+  const steps: NonNullable<SideCallRecord["steps"]> = [];
 
   const finish = (outcome: "ok" | "failed", reason?: SideFailureReason) => {
     const line: SideCallRecord = { purpose: spec.purpose, model: modelKey(model), effort, attempts, outcome };
@@ -179,6 +220,8 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
     if (reason) line.reason = reason;
 
     if (outcome === "failed" && lastError) line.detail = lastError.slice(0, 160);
+
+    if (steps.length > 1 || steps.some(step => step.winner)) line.steps = steps;
     spec.onRecord?.(line);
     host.record?.("side_call", line);
   };
@@ -201,10 +244,13 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
     const startedAt = Date.now();
     attempts += 1;
 
+    let winner: "first" | "hedge" | undefined;
     const report = (outcome: AttemptOutcome, parseError?: Error) => {
       const attempt: AttemptReport = { attempt: attempts, elapsedMs: Date.now() - startedAt, outcome };
 
       if (parseError) attempt.parseError = parseError;
+      const detail = parseError?.message ?? (outcome === "provider_error" || outcome === "request_failed" ? lastError : undefined);
+      steps.push({ outcome, ms: attempt.elapsedMs, ...(detail ? { detail: detail.slice(0, 120) } : {}), ...(winner ? { winner } : {}) });
       spec.onAttempt?.(attempt);
     };
 
@@ -232,10 +278,12 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
     try {
       const content = userSuffix ? appendText(spec.content, userSuffix) : spec.content;
       spec.onRequest?.({ attempt: attempts, systemPrompt: spec.systemPrompt + suffix, content, maxTokens, effort });
-      reply = await host.models.completeSimple(model, {
+      const request = (signal: AbortSignal) => host.models.completeSimple(model, {
         systemPrompt: spec.systemPrompt + suffix,
         messages: [{ role: "user", content, timestamp: Date.now() }],
-      }, options);
+      }, { ...options, signal });
+      if (spec.hedgeMs === undefined) reply = await request(attemptSignal);
+      else ({ reply, winner } = await hedged(request, spec.hedgeMs, attemptSignal));
     } catch (caught) {
       lastError = caught instanceof Error ? caught.message : String(caught);
       const aborted = abortReason(attemptSignal);

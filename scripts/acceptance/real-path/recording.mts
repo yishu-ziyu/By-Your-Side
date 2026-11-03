@@ -49,35 +49,12 @@ function trackOf(target: { type: string; url: string }, extensionId: string): Tr
   return "page";
 }
 
-/** out/ 下所有录屏目录：SIDEAGENT_RECORD_DIR 会把录屏放进 out/recordings 以外的地方。 */
-function recordingsUnder(dir: string): string[] {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  return entries.filter((e) => e.isDirectory() && e.name !== "frames").flatMap((e) => {
-    const path = join(dir, e.name);
-
-    return existsSync(join(path, "recording.json")) ? [path] : recordingsUnder(path);
-  });
-}
-
 /**
  * 边录边写盘，用例中途崩掉也留得下。录屏用自己的 CDP 会话，不碰用例附着的会话。
  * 几个标签页合成「网页」一条，只留各窗口当前标签页的帧：后台标签页加载时也出帧。
  * fps 限制每条画面每秒最多存几帧；不给就全存（看动效要逐帧）。
  */
 export async function startRecording(dir: string, extensionId: string, { fps }: { fps?: number } = {}) {
-  // 原始帧占地方，只留三天；视频和总览一直留着。
-  for (const recording of recordingsUnder(join(REPO, "out"))) {
-    const old = join(recording, "frames");
-
-    if (existsSync(old) && Date.now() - statSync(old).mtimeMs > 3 * 86_400_000) await rm(old, { recursive: true, force: true });
-  }
-
   await mkdir(join(dir, "frames"), { recursive: true });
   const started = Date.now() / 1000;
   await writeFile(join(dir, "recording.json"), JSON.stringify({ started }));
@@ -355,7 +332,7 @@ const times = (prepared: Prepared[], all = false) => [...new Set(prepared.flatMa
 const spread = <T,>(items: T[], n: number) => items.length <= n ? items : Array.from({ length: n }, (_, i) => items[Math.round((i * (items.length - 1)) / (n - 1))]);
 
 /** 合成真实速度、慢放和总览。没有 ffmpeg 或没录到画面时不合成、说明是哪一种，不影响验收。 */
-export async function render(dir: string): Promise<{ run: string; slow: string; overview: string } | "no-ffmpeg" | "no-frames"> {
+export async function render(dir: string): Promise<{ run: string; slow: string | null; overview: string } | "no-ffmpeg" | "no-frames"> {
   if (ffmpegDir() === null) return "no-ffmpeg";
   const { frames, end } = await load(dir);
 
@@ -365,7 +342,8 @@ export async function render(dir: string): Promise<{ run: string; slow: string; 
   try {
     const overview = (await sheet(dir, prepared, spread(times(prepared), 12), "overview.jpg", 3, 4, 520))[0];
     const run = await video(dir, prepared, end, "run.mp4", (gap) => gap, 30);
-    const slow = await video(dir, prepared, end, "slow.mp4", (gap) => Math.min(gap * SLOW, SLOW_HOLD_MAX), 60, `${1 / SLOW}x`);
+    const slow = process.env.SIDEAGENT_RECORD_SKIP_SLOW === "1"
+      ? null : await video(dir, prepared, end, "slow.mp4", (gap) => Math.min(gap * SLOW, SLOW_HOLD_MAX), 60, `${1 / SLOW}x`);
 
     return { run, slow, overview };
   } finally {
@@ -412,6 +390,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(total ? `${total} 帧${total > 48 ? "（均匀抽 48 帧）" : ""}：\n${files.map((f) => relative(process.cwd(), f)).join("\n")}` : "这段时间里没有看得出的画面变化");
   } else {
     const made = await render(dir);
-    console.log(typeof made === "object" ? Object.values(made).map((f) => relative(process.cwd(), f)).join("\n") : "没有录到画面");
+    console.log(typeof made === "object" ? Object.values(made).filter((f): f is string => !!f).map((f) => relative(process.cwd(), f)).join("\n") : "没有录到画面");
   }
 }

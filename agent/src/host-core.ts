@@ -104,6 +104,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
     },
     (id, call, input, signal) => conversations.executeRealtimeBrowserTool(id, call, input, signal),
   );
+  conversations.voicePageObserved = (conversationId, runId, read) => voice?.observeTaskPage(conversationId, runId, read);
 
   const session = initial.runtime.session;
 

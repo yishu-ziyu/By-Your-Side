@@ -1,5 +1,5 @@
 /** 扩展内 agent 实验：background 与 offscreen 文档共用的常量，单独成文件，避免把 agent 打进 background。 */
-import { GPT_LIVE_MODEL } from "../../../shared/voice.js";
+import { GPT_LIVE_MODEL, MOSS_LIVE_MODEL } from "../../../shared/voice.js";
 
 export const INPROC_PORT_NAME = "inproc-host";
 
@@ -23,17 +23,18 @@ export const INPROC_KEEPALIVE_MS = 20_000;
 
 /** StepFun 实时语音的 API Key：只由 background 读取，写进请求头规则，不发给 offscreen 文档。 */
 export const INPROC_VOICE_KEY = "inproc_voice_key";
+export const INPROC_MOSS_VOICE_KEY = "inproc_moss_voice_key";
 
 /** 下一次开启实时语音使用的模型；缺项沿用原有按量 Realtime 3。 */
 export const INPROC_VOICE_MODEL_KEY = "inproc_voice_model";
 
-export type InprocVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime" | typeof GPT_LIVE_MODEL;
+export type InprocVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime" | typeof GPT_LIVE_MODEL | typeof MOSS_LIVE_MODEL;
 
 /** 只给缺项默认值；坏的持久值不能静默切到按量语音。 */
 export function resolveVoiceModel(value: unknown): InprocVoiceModel {
   if (value === undefined) return "stepaudio-3-realtime-preview";
 
-  if (value === "stepaudio-3-realtime-preview" || value === "stepaudio-2.5-realtime" || value === GPT_LIVE_MODEL) return value;
+  if (value === "stepaudio-3-realtime-preview" || value === "stepaudio-2.5-realtime" || value === GPT_LIVE_MODEL || value === MOSS_LIVE_MODEL) return value;
   throw new Error("语音模型设置无效，请在「模型与语音」重新选择后再开启。");
 }
 
@@ -42,32 +43,43 @@ const VOICE_HEADER_RULE_ID = 7101;
 
 const PLAN_VOICE_HEADER_RULE_ID = 7102;
 
+const MOSS_VOICE_HEADER_RULE_ID = 7103;
+const MOSS_SPEECH_HEADER_RULE_ID = 7104;
+
 /**
  * 浏览器的 WebSocket 不能自己设请求头，StepFun 又只认 Authorization 头：
  * 用会话级 declarativeNetRequest 规则在握手时补上。返回语音是否已配置。
  */
-export async function installVoiceHeaderRule(key: string): Promise<boolean> {
-  const configured = key.trim().length > 0;
+export async function installVoiceHeaderRule(stepKey: string, mossKey: string, model: unknown): Promise<boolean> {
 
   // 两条规则：按量 Realtime 3 走 /v1/realtime；套餐 Realtime 2.5 与按住说话听写走 /step_plan/v1/realtime。
-  const rule = (id: number, urlFilter: string): chrome.declarativeNetRequest.Rule => ({
+  const rule = (id: number, urlFilter: string, key: string, resourceTypes = [chrome.declarativeNetRequest.ResourceType.WEBSOCKET], removeOrigin = false): chrome.declarativeNetRequest.Rule => ({
     id, priority: 1,
-    action: { type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS, requestHeaders: [{ header: "Authorization", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `Bearer ${key.trim()}` }] },
+    action: { type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS, requestHeaders: [
+      { header: "Authorization", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `Bearer ${key.trim()}` },
+      ...(removeOrigin ? [{ header: "Origin", operation: chrome.declarativeNetRequest.HeaderOperation.REMOVE }] : []),
+    ] },
     // 只给本扩展自己发起、且不属于任何标签页的连接（offscreen / 侧栏）补头；网页自己连 StepFun 拿不到用户的 key。
     condition: {
       urlFilter,
-      resourceTypes: [chrome.declarativeNetRequest.ResourceType.WEBSOCKET],
+      resourceTypes,
       initiatorDomains: [chrome.runtime.id],
       tabIds: [chrome.tabs.TAB_ID_NONE],
     },
   });
 
   await chrome.declarativeNetRequest.updateSessionRules({
-    removeRuleIds: [VOICE_HEADER_RULE_ID, PLAN_VOICE_HEADER_RULE_ID],
-    addRules: configured ? [rule(VOICE_HEADER_RULE_ID, "||api.stepfun.com/v1/realtime"), rule(PLAN_VOICE_HEADER_RULE_ID, "||api.stepfun.com/step_plan/v1/realtime")] : [],
+    removeRuleIds: [VOICE_HEADER_RULE_ID, PLAN_VOICE_HEADER_RULE_ID, MOSS_VOICE_HEADER_RULE_ID, MOSS_SPEECH_HEADER_RULE_ID],
+    addRules: [
+      ...(stepKey.trim() ? [rule(VOICE_HEADER_RULE_ID, "||api.stepfun.com/v1/realtime", stepKey), rule(PLAN_VOICE_HEADER_RULE_ID, "||api.stepfun.com/step_plan/v1/realtime", stepKey)] : []),
+      ...(mossKey.trim() ? [
+        // MOSS 拒绝扩展 Origin；只对扩展发起的握手移除，与服务端直连一致。
+        rule(MOSS_VOICE_HEADER_RULE_ID, "||api.mosi.cn/v1/realtime", mossKey, [chrome.declarativeNetRequest.ResourceType.WEBSOCKET], true),
+      ] : []),
+    ],
   });
 
-  return configured;
+  return !!(model === MOSS_LIVE_MODEL ? mossKey.trim() : stepKey.trim());
 }
 
 /** 用户在设置里选的模型。密钥与登录令牌不在这里，见 INPROC_CREDENTIAL_PREFIX。 */
@@ -138,6 +150,11 @@ export function pickCredentials(entries: StorageEntries): StoredCredentials {
 
 /** 实时语音用的 key：单独填的优先，否则沿用阶跃星辰模型的 key（同一个账号）。 */
 export function resolveVoiceKey(entries: StorageEntries): string {
+  const model = entries.find(([key]) => key === INPROC_VOICE_MODEL_KEY)?.[1];
+  if (model === MOSS_LIVE_MODEL) {
+    const moss = entries.find(([key]) => key === INPROC_MOSS_VOICE_KEY)?.[1];
+    return isText(moss) ? moss.trim() : "";
+  }
   const own = entries.find(([key]) => key === INPROC_VOICE_KEY)?.[1];
 
   if (isText(own) && own.trim()) return own.trim();

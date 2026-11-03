@@ -12,7 +12,7 @@ import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, K
 import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, omitCookies, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
 import { CODEX_CATALOG_TTL_MS, codexIdentity, fetchCodexCatalog, readCodexCatalog } from "../inproc/codex-catalog.js";
 import {
-  CODEX_CATALOG_KEY, CUSTOM_PROVIDER_ID, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, modelCredential, resolveVoiceKey, resolveVoiceModel,
+  CODEX_CATALOG_KEY, CUSTOM_PROVIDER_ID, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_MOSS_VOICE_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, modelCredential, resolveVoiceKey, resolveVoiceModel,
   STEPFUN_PROVIDER_ID,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
@@ -29,7 +29,7 @@ import { CUSTOM_TRANSLATION_STYLE_MAX_CHARS, parseTranslationStyle, TRANSLATION_
 import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/ptt.js";
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { ATTENTION_CUES_KEY, isCuesOn } from "../shared/cues.js";
-import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, GPT_LIVE_MODEL, isStepVoice, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
+import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, GPT_LIVE_MODEL, isStepVoice, MOSS_LIVE_MODEL, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
 import { COLOR_TONE_KEY, COLOR_TONES, parseColorTone, syncColorTone, writeCachedTone, type ColorTone } from "../shared/color-tone.js";
 import { renderSettings } from "./view.js";
 import { mountSettingsNavigation } from "./navigation.js";
@@ -1057,8 +1057,8 @@ async function logout(): Promise<void> {
 async function saveVoiceKey(): Promise<void> {
   const key = voiceInput.value.trim();
 
-  if (!key) return setStatus(voiceStatus, "填阶跃星辰密钥。", "err");
-  try { await chrome.storage.local.set({ [INPROC_VOICE_KEY]: key }); }
+  if (!key) return setStatus(voiceStatus, voiceModel === MOSS_LIVE_MODEL ? "填 MOSS 密钥。" : "填阶跃星辰密钥。", "err");
+  try { await chrome.storage.local.set({ [voiceModel === MOSS_LIVE_MODEL ? INPROC_MOSS_VOICE_KEY : INPROC_VOICE_KEY]: key }); }
   catch { return setStatus(voiceStatus, "没有保存，输入已保留。请重试。", "err"); }
   voiceInput.value = "";
   await reload();
@@ -1066,7 +1066,7 @@ async function saveVoiceKey(): Promise<void> {
 }
 
 async function clearVoiceKey(): Promise<void> {
-  await chrome.storage.local.remove(INPROC_VOICE_KEY);
+  await chrome.storage.local.remove(voiceModel === MOSS_LIVE_MODEL ? INPROC_MOSS_VOICE_KEY : INPROC_VOICE_KEY);
   await reload();
   setStatus(voiceStatus, "已清除。", "");
 }
@@ -1384,7 +1384,8 @@ async function reloadSettings(): Promise<void> {
   await runtime.applyCodexCatalog(codexCatalog);
   codexDiscoveryModels = readCodexCatalog(codexCatalog, identity)?.models.filter(m => m.discoveryOnly).map(m => m.id) ?? [];
   syncModelChoices();
-  const storedVoiceKey = stored[INPROC_VOICE_KEY];
+  const mossSelected = stored[INPROC_VOICE_MODEL_KEY] === MOSS_LIVE_MODEL;
+  const storedVoiceKey = stored[mossSelected ? INPROC_MOSS_VOICE_KEY : INPROC_VOICE_KEY];
   const ownVoiceKey = isText(storedVoiceKey) ? storedVoiceKey : "";
   const voiceKey = resolveVoiceKey(Object.entries(stored));
   voiceKeySource = ownVoiceKey ? "own" : voiceKey ? "model" : "";
@@ -1393,6 +1394,8 @@ async function reloadSettings(): Promise<void> {
   $("voice-state").textContent = ownVoiceKey ? `已保存 · 末四位 ${ownVoiceKey.slice(-4)} · 尚未验证` : voiceKey ? "使用阶跃星辰模型的密钥，语音连接尚未验证。" : "还没有密钥。";
   $("voice-state").dataset.tone = "";
   voiceInput.placeholder = ownVoiceKey ? "粘贴新密钥" : "粘贴密钥";
+  $("voice-key-title").textContent = mossSelected ? "MOSS 密钥（语音用）" : "阶跃星辰密钥（语音用）";
+  voiceInput.setAttribute("aria-label", mossSelected ? "MOSS 密钥（语音用）" : "阶跃星辰密钥（语音用）");
   voiceClear.hidden = !ownVoiceKey;
   const speechKey = stored[PTT_SPEECH_KEY];
   const ownSpeechKey = isText(speechKey) && isSubscriptionKey(speechKey) ? speechKey : "";
@@ -1472,12 +1475,14 @@ function renderVoiceModels(raw: unknown): void {
   $("voice-key-note").hidden = current === GPT_LIVE_MODEL;
   $("voice-model-state").textContent = !current ? "没有读到语音模型。重新选一个，再开启语音。"
     : current === GPT_LIVE_MODEL ? credentials["openai-codex"]?.type === "oauth" ? "已登录 ChatGPT，实时语音尚未验证。下次开启语音时生效。" : "缺少 ChatGPT 登录。先在服务商列表里登录，下次开启语音时生效。"
+    : current === MOSS_LIVE_MODEL ? voiceKeySource === "own" ? "用语音那一行保存的密钥，实时语音尚未验证。下次开启语音时生效。" : "要先有 MOSS 密钥。填在下方语音密钥栏，下次开启语音时生效。"
     : voiceKeySource === "model" ? "用阶跃星辰模型的密钥，实时语音尚未验证。下次开启语音时生效。"
     : voiceKeySource === "own" ? "用语音那一行保存的阶跃星辰密钥，实时语音尚未验证。下次开启语音时生效。"
     : "要先有阶跃星辰密钥。填在「阶跃星辰密钥（语音用）」，或在服务商列表里连接阶跃星辰。下次开启语音时生效。";
   $("voice-model-list").replaceChildren(...[
     { model: "stepaudio-3-realtime-preview", label: "按量 Realtime 3", note: "按量使用；闲聊由语音模型回答，页面操作交给助手。" },
     { model: "stepaudio-2.5-realtime", label: "套餐 Realtime 2.5", note: "按套餐规则使用；闲聊由语音模型回答，页面操作交给助手。" },
+    { model: MOSS_LIVE_MODEL, label: "MOSS-Live 1.0（实时语音与画面）", note: "限时免费；直接看当前网页画面回答，页面操作交给助手。" },
     { model: GPT_LIVE_MODEL, label: "GPT-Live（ChatGPT 登录）", note: "闲聊由语音模型回答。页面操作交给助手。" },
   ].map(option => {
     const row = document.createElement("div");
@@ -1488,6 +1493,8 @@ function renderVoiceModels(raw: unknown): void {
     pick.addEventListener("click", () => {
       void chrome.storage.local.set({ [INPROC_VOICE_MODEL_KEY]: option.model }).then(() => {
         renderVoiceModels(option.model);
+        const storedVoice = STEP_VOICES.find(v => v.id === document.querySelector<HTMLElement>('.timbre-option[aria-checked="true"]')?.dataset.voice)?.id ?? DEFAULT_STEP_VOICE;
+        renderTimbres(storedVoice);
         setStatus(voiceStatus, "已保存，下次开启语音时生效。", "ok");
       }, () => setStatus(voiceStatus, "没有保存，当前语音模型没有改变。请重试。", "err"));
     });
@@ -1499,11 +1506,12 @@ function renderVoiceModels(raw: unknown): void {
 
 function renderTimbres(current: string): void {
   // GPT-Live 的声音在建连时写死为 cove（voice-client.ts），没有可选项。
-  if (voiceModel === GPT_LIVE_MODEL) {
-    $("timbre-desc").textContent = "GPT-Live 只有一种声音。换成阶跃星辰的模型才能选音色。";
+  if (voiceModel === GPT_LIVE_MODEL || voiceModel === MOSS_LIVE_MODEL) {
+    const isMoss = voiceModel === MOSS_LIVE_MODEL;
+    $("timbre-desc").textContent = isMoss ? "MOSS-Live 只有一种声音。换成阶跃星辰的模型才能选音色。" : "GPT-Live 只有一种声音。换成阶跃星辰的模型才能选音色。";
     const row = document.createElement("div");
     row.className = "radio-row";
-    const pick = radioRow("timbre-option", "Cove", true, "GPT-Live 自带");
+    const pick = radioRow("timbre-option", isMoss ? "Luna" : "Cove", true, isMoss ? "MOSS-Live 自带" : "GPT-Live 自带");
     pick.disabled = true;
     row.append(pick);
     timbreList.replaceChildren(row);
@@ -1800,7 +1808,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => {
 
 // agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === READING_ALOUD_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_MOSS_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === READING_ALOUD_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));

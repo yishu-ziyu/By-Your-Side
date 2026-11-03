@@ -20,6 +20,43 @@ const SPEECH_TIMEOUT_MS = 45_000;
 /** 流式返回的一行：status 1 是声音段，2 是收尾段（里面的声音是整段重复，不放）。 */
 interface SpeechChunk { data?: { audio?: string; status?: number } | null; base_resp?: { status_code?: number; status_msg?: string } }
 
+/** 与按住说话共用同一条订阅语音流；调用方负责播放和中断。 */
+export async function streamPttSpeech(text: string, key: string, signal: AbortSignal, play: (hex: string) => void): Promise<void> {
+  if (!isSubscriptionKey(key)) throw new Error("还没有 MiniMax 订阅密钥");
+  const response = await fetch(SPEECH_URL, {
+    method: "POST",
+    credentials: "omit",
+    signal,
+    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({ model: SPEECH_MODEL, text, stream: true, voice_setting: { voice_id: "female-shaonv", speed: 1, vol: 1, pitch: 0 }, audio_setting: { sample_rate: SAMPLE_RATE, format: "pcm", channel: 1 } }),
+  });
+
+  if (!response.ok || !response.body) {
+    const detail = (await response.text().catch(() => "")).replaceAll(key, "[redacted]").slice(0, 120);
+    throw new Error(`HTTP ${response.status} ${detail}`.trim());
+  }
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let pending = "";
+  const take = (line: string) => {
+    const json = line.startsWith("data:") ? line.slice(5) : line.trim().startsWith("{") ? line : null;
+    if (!json) return;
+    const chunk: SpeechChunk = JSON.parse(json);
+    if (chunk.base_resp?.status_code) throw new Error(chunk.base_resp.status_msg?.replaceAll(key, "[redacted]") || `MiniMax ${chunk.base_resp.status_code}`);
+    const audio = chunk.data?.audio;
+    if (chunk.data?.status === 1 && typeof audio === "string" && audio.length > 0 && audio.length % 4 === 0 && /^[\da-f]+$/i.test(audio)) play(audio);
+  };
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    pending += value;
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
+    for (const line of lines) take(line);
+  }
+  take(pending);
+}
+
 /** 十六进制的 16 位小端 PCM → [-1, 1] 的浮点样本。 */
 function pcmFromHex(hex: string): Float32Array<ArrayBuffer> {
   const samples = new Float32Array(hex.length >> 2);
@@ -101,44 +138,7 @@ export function installPttSpeech(): void {
     void (async () => {
       // 浏览器不许自动出声时 AudioContext 停在 suspended，时间不走：先试着恢复，最后按时间有没有走判断真放了没有。
       if (context.state === "suspended") await context.resume().catch(() => {});
-      const response = await fetch(SPEECH_URL, {
-        method: "POST",
-        // 与匿名预连接使用同一连接池；API key 仍由显式请求头发送。
-        credentials: "omit",
-        signal: abort.signal,
-        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-        body: JSON.stringify({ model: SPEECH_MODEL, text, stream: true, voice_setting: { voice_id: "female-shaonv", speed: 1, vol: 1, pitch: 0 }, audio_setting: { sample_rate: SAMPLE_RATE, format: "pcm", channel: 1 } }),
-      });
-
-      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status} ${(await response.text().catch(() => "")).slice(0, 120)}`.trim());
-      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-      let pending = "";
-
-      /** 一行：流式段是 data: 开头；Key 被拒等错误可能是一整段不带 data: 的 JSON，同样读出原因。 */
-      const take = (line: string) => {
-        const json = line.startsWith("data:") ? line.slice(5) : line.trim().startsWith("{") ? line : null;
-
-        if (!json) return;
-        // SAFETY: MiniMax 接口每段是一个 SpeechChunk JSON。
-        const chunk = JSON.parse(json) as SpeechChunk;
-
-        if (chunk.base_resp?.status_code) throw new Error(chunk.base_resp.status_msg || `MiniMax ${chunk.base_resp.status_code}`);
-
-        if (chunk.data?.status === 1 && chunk.data.audio) play(chunk.data.audio);
-      };
-
-      for (;;) {
-        const { value, done: ended } = await reader.read();
-
-        if (ended) break;
-        pending += value;
-        const lines = pending.split("\n");
-        pending = lines.pop() ?? "";
-
-        for (const line of lines) take(line);
-      }
-
-      take(pending);
+      await streamPttSpeech(text, key, abort.signal, play);
 
       if (!startedAt) throw new Error("没有收到声音");
       // 最后一段排进去了，等它放完。

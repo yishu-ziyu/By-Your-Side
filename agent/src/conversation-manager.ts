@@ -83,6 +83,7 @@ const WARM_UP_INTERVAL_MS = 30_000;
 
 export class ConversationManager {
   continuationEnabled: () => boolean = () => false;
+  voicePageObserved?: (conversationId: string, runId: string, read: { title: string; text: string; partial: boolean }) => void;
   private readonly observers = new Map<string, TaskContinuationObserver>();
   private async saveContinuation(id: string): Promise<void> {
     const entry = this.entries.get(id);
@@ -397,7 +398,7 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
       return {kind:'silent',quiet:true};
     }
 
-    if(!route?.resumeReadOnly&&isVoiceBackchannel(text)&&(route?.interruptedSpeech||route?.recentTurns?.some(t=>t.role==='assistant'))){
+    if(!route?.nativeChat&&!route?.resumeReadOnly&&isVoiceBackchannel(text)&&(route?.interruptedSpeech||route?.recentTurns?.some(t=>t.role==='assistant'))){
       route?.onInputDecision?.(true);
 
       return {kind:'silent'};
@@ -463,7 +464,14 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
     const requestId=route?.requestId??randomUUID();
     const only=plan.steps.length===1?plan.steps[0]:undefined;
 
-    if(route?.nativeChat && only?.action==='chat') return {kind:'none',nativeChat:true};
+    if(route?.nativeChat && (only?.action==='chat' || (route.nativeObserve && only?.action==='observe' && only.target===null))) return {kind:'none',nativeChat:true};
+
+    if (only?.action === 'status' && route?.nativeTaskStatus) {
+      const sameRun = !!route.runId && route.runId === (before.runId ?? null)
+        && (route.controlVersion ?? 0) === (before.controlVersion ?? 0);
+      if (route.nativeTaskStatus === 'ready' && sameRun && only.target === null) return {kind:'none',nativeChat:true};
+      return {kind:'silent',statusMessage:'任务进度尚未同步，请稍后再问。'};
+    }
 
     if(only?.action==='chat'&&route?.pendingDelegation)return {kind:'none',resumeReadOnly:'chat'};
 
@@ -718,7 +726,7 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
     let prepared:VoiceTurnPreparation;
 
     try{
-      prepared=await session.prepareVoiceTurn({text,state:before.state,conversationTitles:titles,task:{goal:before.goal,requestId:route?.requestId},conversation:before.conversationContext},{cancel:abort.signal,protocol});
+      prepared=await session.prepareVoiceTurn({text,state:before.state,conversationTitles:titles,task:{goal:before.goal,requestId:route?.requestId},conversation:before.conversationContext,...(route?.awaitingResultConsent?{awaitingResultConsent:true}:{})},{cancel:abort.signal,protocol});
     }catch(error){
       // 校验不通过或超时：候选进入 DISCARDED，前缀丢弃；被扣住的真实交付仍然送达。
       if(this.voiceTurnAborts.get(id)===abort)this.voiceTurnAborts.delete(id);
@@ -1685,6 +1693,11 @@ return receipt;
 
       // 页面读数只用于结果账本的前后对比，不下发侧栏。
       if (message.type === "agent_event" && message.event.kind === "tool_observation") {
+        const read = message.event;
+        if (isLeadSession(message.sessionId) && progressSnapshot.state === "running" && progressSnapshot.runId
+          && read.workingTab && ["snapshot", "read_element"].includes(read.name) && read.text.trim()) {
+          this.voicePageObserved?.(id, progressSnapshot.runId, { title: read.title ?? "", text: read.text, partial: read.truncated });
+        }
         this.entries.get(id)?.runtime.session.persistTaskResults?.(progressSnapshot);
 
         return;

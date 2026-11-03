@@ -1,6 +1,6 @@
 import { parseClientMessage, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import { VoiceObservation } from './voice-observation.js';
-import { GPT_LIVE_MODEL, type VoiceInputContext } from '../../../shared/voice.js';
+import { GPT_LIVE_MODEL, MOSS_LIVE_MODEL, type VoiceInputContext } from '../../../shared/voice.js';
 
 /** 侧栏换端口后要在这段时间内用同一个 voiceId 认领；比侧栏自己的等待（30 秒）长，由侧栏先决定重连。 */
 const REATTACH_GRACE_MS = 35_000;
@@ -9,6 +9,7 @@ const DETACHED_BUFFER_MAX = 500;
 /** Audio bypasses persisted task history and is delivered only to its owning panel. */
 export class VoiceRelay {
   private readonly observation = new VoiceObservation();
+  private readonly screenObservation = new VoiceObservation();
   private detachTimer: ReturnType<typeof setTimeout> | null = null;
   private lease: {
     /** null：侧栏端口断了，等它带同一个 voiceId 回来；期间的宿主消息存进 buffer。 */
@@ -20,6 +21,7 @@ export class VoiceRelay {
     conversationId: string;
     turn: number;
     diagnostic: boolean;
+    model?: string;
     serverVad?: boolean;
   } | null = null;
   constructor(private readonly send: (message: ClientMessage) => boolean, private readonly selected: (port: chrome.runtime.Port) => string, private readonly enrich?: (conversationId: string, input: VoiceInputContext) => Promise<VoiceInputContext>) {
@@ -80,9 +82,19 @@ export class VoiceRelay {
           return;
         }
 
-        this.stop("new_voice");
+        const retry = message.command.resume === true && !message.command.diagnostic
+          && this.lease?.port === port && this.lease.conversationId === message.conversationId
+          && this.lease.model === MOSS_LIVE_MODEL;
+        if (retry) {
+          // 宿主须先取出原会话编号再关闭旧连接；提前发 stop 会丢失对话记忆。
+          if (this.detachTimer) clearTimeout(this.detachTimer);
+          this.detachTimer = null;
+          this.lease = null;
+        } else {
+          this.stop("new_voice");
+        }
         this.observation.clear();
-        this.lease = { port, buffer: [], live: message.command.model === GPT_LIVE_MODEL && message.command.diagnostic !== true, voiceId: message.voiceId, conversationId: message.conversationId, turn: 0, diagnostic: message.command.diagnostic === true };
+        this.lease = { port, buffer: [], live: message.command.model === GPT_LIVE_MODEL && message.command.diagnostic !== true, voiceId: message.voiceId, conversationId: message.conversationId, turn: 0, diagnostic: message.command.diagnostic === true, model: message.command.model };
       }
 
       const lease = this.lease;
@@ -166,6 +178,18 @@ export class VoiceRelay {
     const lease = this.lease;
 
     return this.observation.capture(token, () => !!lease?.port && this.lease === lease && lease.conversationId === conversationId && this.selected(lease.port) === conversationId, mode);
+  }
+  async captureScreen(voiceId: unknown): Promise<string | null> {
+    const lease = this.lease;
+    const valid = () => !!lease?.port && !lease.diagnostic && this.lease === lease && lease.voiceId === voiceId && this.selected(lease.port) === lease.conversationId;
+    if (!valid()) return null;
+    const grant = await this.screenObservation.issue();
+    if (!grant || !valid()) return null;
+    return this.screenObservation.captureScreen(grant.token, valid);
+  }
+  allowsNoticeSpeech(voiceId: unknown): boolean {
+    const lease = this.lease;
+    return !!lease?.port && !lease.diagnostic && lease.model === MOSS_LIVE_MODEL && lease.voiceId === voiceId && this.selected(lease.port) === lease.conversationId;
   }
   server(message: Extract<ServerMessage, {
     type: "voice";

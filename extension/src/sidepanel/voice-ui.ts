@@ -7,7 +7,7 @@ import { VoiceDiagnosticLog, type VoiceDiagCapture } from './voice-diagnostic.js
 import { type StepVoice, type UserDelivery, type VoiceInputContext, type VoicePersona } from '../../../shared/voice.js';
 import { bindMotionIcon, setMotionActive } from './motion-icon.js';
 
-export function mountVoiceUI(composer: HTMLElement, getConversation: () => string, send: (m: ClientMessage) => boolean, getInput: () => VoiceInputContext = () => ({}), diagnostic?: (event: string, fields: Record<string, string | number | boolean | null | undefined>) => void) {
+export function mountVoiceUI(composer: HTMLElement, getConversation: () => string, send: (m: ClientMessage) => boolean, getInput: () => VoiceInputContext = () => ({}), diagnostic?: (event: string, fields: Record<string, string | number | boolean | null | undefined>) => void, audioPlayed?: (voiceId: string, turn: number) => void) {
   const region = document.createElement('section');
   region.className = 'voice-progress';
   region.hidden = true;
@@ -82,15 +82,32 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   };
 
   let shownTurn = 0;
+  let shownVoiceId: string | null = null;
   /**
    * 「你：」这一行的各段。StepAudio 3 会按语义把一句带停顿的话切成几轮，前半句的转写常在后半句开口后才到：
    * 同一轮里的几段按到达顺序拼起来；最后一段之后助手还没回答就又开口，也接着拼，答过了才换新问题。
    */
-  let questionParts: string[] = [];
+  let questionParts: Array<{ turn: number; text: string; partial: boolean }> = [];
   let answeredSinceQuestion = true;
 
   const showQuestion = () => {
-    question.textContent = questionParts.length ? questionParts.reduce((all, part) => (all && !/[。！？!?，,、；;…]$/.test(all) ? `${all}，${part}` : all + part), '') : '';
+    question.textContent = questionParts.length ? questionParts.reduce((all, part) => (all && !/[。！？!?，,、；;…]$/.test(all) ? `${all}，${part.text}` : all + part.text), '') : '';
+  };
+
+  const updateQuestion = (turn: number, text: string, partial: boolean, prepend = false) => {
+    let index = -1;
+    for (let i = questionParts.length - 1; i >= 0; i--) {
+      if (questionParts[i]?.turn === turn && questionParts[i]?.partial) { index = i; break; }
+    }
+    if (index >= 0) {
+      questionParts[index] = { turn, text, partial };
+    } else if (partial && questionParts.some(part => part.turn === turn && !part.partial)) {
+      return;
+    } else if (prepend) {
+      if (!questionParts.some(part => part.turn === turn && part.text === text)) questionParts = [{ turn, text, partial }, ...questionParts].slice(0, 3);
+    } else if (questionParts.at(-1)?.text !== text) {
+      questionParts = [...questionParts, { turn, text, partial }].slice(-3);
+    }
   };
 
   let currentDeliveryKind: UserDelivery['kind'] | null = null;
@@ -376,7 +393,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     button.setAttribute('aria-label', next === 'idle' ? '开始语音对话' : '结束语音对话');
     // 状态由光球自己的动法表达，球下只留一个灰字：在听 / 在想（有具体说明就写说明，如「在读这个页面」）/ 在说（字幕在说话，只给读屏）。
     const plainDetail = detail && detail !== '正在处理这句话' ? detail : '';
-    const stateText: Partial<Record<VoicePhase, string>> = { listening: plainDetail || '在听', thinking: plainDetail || '在想', speaking: '在说', connecting: '正在连接', error: '语音不可用' };
+    const stateText: Partial<Record<VoicePhase, string>> = { listening: plainDetail || '在听', thinking: plainDetail || '在想', speaking: '在说', connecting: plainDetail || '正在连接', error: '语音不可用' };
     status.textContent = stateText[next] ?? (next === 'idle' ? '' : detail ?? '');
     stateDetail.textContent = next === 'error' ? plainDetail : '';
 
@@ -395,9 +412,17 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
     renderAnswer();
   }, event => {
+    const voiceId = client.turnIdentity?.voiceId;
+    if (voiceId && voiceId !== shownVoiceId) {
+      shownVoiceId = voiceId;
+      shownTurn = 0;
+      questionParts = [];
+      answeredSinceQuestion = true;
+    }
+
     // 上一轮晚到的那段话是先说的：拼在当前各段前面，不切换轮次。
     if (event.kind === 'text' && event.role === 'user' && event.turn === shownTurn - 1) {
-      if (!questionParts.includes(event.text)) questionParts = [event.text, ...questionParts].slice(0, 3);
+      updateQuestion(event.turn, event.text, event.partial === true, true);
       answeredSinceQuestion = false;
       showQuestion();
       log.displayText(question.textContent ?? '', true);
@@ -416,14 +441,14 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     }
 
     if (event.kind === 'text') {
-      log.textEvent(event.role, event.turn, event.text);
+      if (!event.partial) log.textEvent(event.role, event.turn, event.text);
 
       if (event.role === 'user') {
-        if (questionParts.at(-1) !== event.text) questionParts = [...questionParts, event.text].slice(-3);
+        updateQuestion(event.turn, event.text, event.partial === true);
         answeredSinceQuestion = false;
         showQuestion();
         log.displayText(question.textContent ?? '', true);
-        client.captureDisplay(event.turn, question.textContent ?? '');
+        if (!event.partial) client.captureDisplay(event.turn, question.textContent ?? '');
       }
       else {
         setAnswer(event.text);
@@ -440,7 +465,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     }
 
     diagnostic?.(event, fields);
-  }, log);
+  }, log, audioPlayed);
 
 
   renderDiag();
@@ -499,6 +524,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
   return {
     stop: () => client.stop(),
+    turnIdentity: () => client.turnIdentity,
     /** 设置页选的音色：下次开启语音时带上，正在进行的会话不打断。 */
     setVoice: (value: StepVoice) => { client.voice = value; },
     /** 设置页选的人设：同样下次开启语音时生效。 */

@@ -72,7 +72,8 @@ export class GoalLedger {
     readWords(redactCredentialText(text), this.words);
     const pages = all.filter(item => item.tool.startsWith("page_")).slice(-2);
     const tools = all.filter(item => !item.tool.startsWith("page_")).slice(-6);
-    this.observations = all.filter(item => pages.includes(item) || tools.includes(item));
+    const reads = all.filter(item => ["navigate", "snapshot", "read_element", "browser_run"].includes(item.tool) && item.text.includes("<page-content")).slice(-12);
+    this.observations = all.filter(item => pages.includes(item) || tools.includes(item) || reads.includes(item));
   }
 
   observeProgramStep(step: ProgramStep): void {
