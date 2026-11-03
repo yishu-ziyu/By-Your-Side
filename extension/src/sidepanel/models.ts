@@ -44,6 +44,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   moonshot: "Kimi",
   google: "Google",
   gemini: "Google",
+  inception: "Inception",
   xai: "xAI",
   commandcode: "Command Code",
   "opencode-go": "OpenCode Go",
