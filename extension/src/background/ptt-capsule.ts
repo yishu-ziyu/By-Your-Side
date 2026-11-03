@@ -1,4 +1,5 @@
 import { answerSpeech, cardPreview, type CardPreview } from '../../../shared/answer-cards.js';
+import { speechText } from '../../../shared/speech-text.js';
 import type { ServerMessage } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
 import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '../shared/ptt.js';
@@ -249,7 +250,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
       if (msg.type === 'task_view') onView(msg.view);
 
       if (msg.type === 'agent_event' && tracked && msg.conversationId === tracked.conversationId && msg.event.kind === 'user_delivery') {
-        tracked.result = answerSpeech(msg.event.delivery.text);
+        tracked.result = speechText(answerSpeech(msg.event.delivery.text));
         const card = cardPreview(msg.event.delivery.text);
         // 回答只有卡片时，胶囊那一句就是卡片标题：卡片不再重复标题，只列行。
         tracked.card = card && tracked.result.split('；').includes(card.title) ? { ...card, title: '' } : card;

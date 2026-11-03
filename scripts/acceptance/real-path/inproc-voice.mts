@@ -70,7 +70,9 @@ const bddResearchStart = process.argv.includes("--bdd=2.1");
 const bddResearchProgress = process.argv.includes("--bdd=2.2");
 // 断线待播：调研任务在语音连接中断期间核对完成，恢复后应自动播一次；播完再断一次，不得补播。
 const m7Reconnect = process.argv.includes("--m7-reconnect");
-const bddResearch = bddResearchStart || bddResearchProgress || m7Reconnect;
+const speechFormat = process.argv.find(arg => arg.startsWith("--speech-format="))?.slice("--speech-format=".length);
+if (speechFormat && !["table", "long", "mixed"].includes(speechFormat)) throw new Error("未知朗读格式用例");
+const bddResearch = bddResearchStart || bddResearchProgress || m7Reconnect || !!speechFormat;
 const firstUtterance = process.argv.includes("--first-utterance");
 if (firstUtterance && caseName !== "question") throw new Error("首句验收只用于页面问答");
 const planVoice = process.argv.includes("--plan");
@@ -79,7 +81,7 @@ const mossVoice = process.argv.includes("--moss");
 if (scriptBrowserTask && (!mossVoice || !["mark", "research"].includes(caseName) || !process.argv.some(arg => arg.startsWith("--model=minimax-cn/")))) {
   throw new Error("脚本网页任务需要 MOSS、mark/research 场景及真实 MiniMax 分类模型");
 }
-if (bddResearch && (caseName !== "research" || !scriptBrowserTask || [bddResearchStart, bddResearchProgress, m7Reconnect].filter(Boolean).length > 1)) throw new Error("用例 2.1/2.2/断线待播需要分别使用 --case=research --script-browser-task");
+if (bddResearch && (caseName !== "research" || !scriptBrowserTask || [bddResearchStart, bddResearchProgress, m7Reconnect, !!speechFormat].filter(Boolean).length > 1)) throw new Error("用例 2.1/2.2/断线待播需要分别使用 --case=research --script-browser-task");
 if (caseName === "research" && !bddResearch) throw new Error("research 场景需要明确的验收用例");
 const m1Case = process.argv.includes("--m1");
 if (m1Case && (!mossVoice || caseName !== "question")) throw new Error("M1 需要 --moss --case=question");
@@ -199,7 +201,7 @@ const fixtureSpeechKey = realMinimax
   : "sk-cp-acceptance-fixture";
 if (realMinimax && !/^sk-cp-[\w-]{8,}$/.test(fixtureSpeechKey)) throw new Error("未找到 MiniMax Token Plan 订阅密钥");
 let fixtureSpeechHex = "";
-if (mossVoice && (caseName === "mark" || m7Reconnect) && !realMinimax && !bddMark && !m6Case) {
+if (mossVoice && (caseName === "mark" || m7Reconnect || speechFormat) && !realMinimax && !bddMark && !m6Case) {
   const fixtureWav = join(artifacts, "minimax-fixture.wav");
   const fixtureText = m7Reconnect ? "三家公司已经调研完了。" : bddMark ? "我来帮你圈出尺码表。" : noticeBarge ? "已收到你的要求，正在检查当前页面，找到保存按钮之后会把它标记出来，不会点击它。请稍等，我会再告诉你结果。" : "已圈出保存按钮，没有点击。";
   execFileSync("say", ["-v", "Tingting", "-o", fixtureWav, "--data-format=LEI16@24000", fixtureText]);
@@ -249,7 +251,11 @@ const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("
  */
 const ASK_STATUS_TASK = "帮我把这个页面上的备注整理一下";
 
-const holdingModel = bddResearch ? await startScriptedModel([researchTaskRule(siteOrigin, "调研")])
+const longSpeechNames = [...RESEARCH_COMPANIES.map(c => c.name), "丁项", "戊项", "己项", "庚项", "辛项"];
+const tableRows = RESEARCH_COMPANIES.map(c => `| ${c.name} | ${c.business} | ${c.funding} |`);
+const speechFinalText = speechFormat === "mixed" ? `# 调研结果\n${RESEARCH_COMPANIES.map(c => `${c.name}业务是${c.business}，融资是${c.funding}。`).join("\n")}\n**重点内容**：请看[官网](https://example.test/a)。\n- 第一项\n- 第二项\n- 第三项\n\`\`\`js\nsecretCodeExample()\n\`\`\`\n<b>标签文字</b>\n裸网址 https://example.test/b。网址后正文。`
+  : speechFormat ? ["| 公司 | 业务 | 融资 |", "| --- | --- | --- |", ...(speechFormat === "long" ? [...tableRows, ...longSpeechNames.slice(3).map(name => `| ${name} | 工厂视觉检测 | 天使轮 |`)] : tableRows)].join("\n") : undefined;
+const holdingModel = bddResearch ? await startScriptedModel([researchTaskRule(siteOrigin, "调研", speechFinalText)])
   : scriptBrowserTask ? await startScriptedModel([
   { match: bddMark ? "尺码表" : "保存", steps: [
     { tool: { name: "mark", args: { target: bddMark ? "#size-chart" : "#save", label: bddMark ? "尺码表" : "保存" } } },
@@ -935,7 +941,7 @@ try {
         wire.ttsModel = String(body.model ?? "");
         if (typeof body.text === "string") { ttsTexts.push(body.text); ttsTimeline.push({ at: Date.now(), text: body.text }); }
       } catch { wire.ttsModel = ""; }
-      if (bddMark || m6Case || bddResearch && !m7Reconnect) {
+      if (bddMark || m6Case || bddResearch && !m7Reconnect && !speechFormat) {
         void rp.cdp.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }, off);
         return;
       }
@@ -1660,6 +1666,32 @@ try {
       verdicts.bddMark = verdict(correctness && individualTime && capture.audioRecorded && !capture.error, evidence);
     };
   }
+  if (speechFormat) {
+    await installRealtimeTiming(rp, panel);
+    await installTaskTiming(rp, panel);
+    recordTaskVoice = async () => {
+      const audioPath = join(artifacts, "assistant.webm");
+      const capture = await finishRealtimeTiming(rp, panel, audioPath);
+      const task = await readTaskTiming(rp, panel);
+      const verified = task.checks[0];
+      const requests = ttsTimeline.filter(item => verified && item.at >= verified.at);
+      const request = requests[0];
+      const text = request?.text ?? "";
+      const sound = request ? capture.playback.find(item => item.at >= request.at)?.at ?? null : null;
+      const panelEvidence = await rp.evaluate(panel, `(() => ({answer: document.querySelector('.voice-answer')?.textContent?.trim() ?? '', rows: document.querySelectorAll('#messages table tbody tr').length, copy: (document.querySelector('#messages')?.innerText ?? '').includes('复制为表格')}))()`) as {answer:string;rows:number;copy:boolean};
+      const clean = !/(?:\||-{2,}|[*#`]|\]\(|<[a-z/])/i.test(text);
+      const expected = RESEARCH_COMPANIES.every(c => text.includes(c.name) && text.includes(c.business) && text.includes(c.funding));
+      const ordered = RESEARCH_COMPANIES.every((c, i) => { const start = text.indexOf(c.name), end = i < 2 ? text.indexOf(RESEARCH_COMPANIES[i + 1].name) : text.length; return start >= 0 && end > start && text.slice(start, end).includes(c.business) && text.slice(start, end).includes(c.funding); });
+      const longOk = longSpeechNames.slice(0, 5).every(x => text.includes(x)) && longSpeechNames.slice(5).every(x => !text.includes(x)) && /另外还有\s*3\s*项，完整内容在侧栏/.test(text);
+      const mixedOk = ['调研结果','重点内容','官网','第一项','第二项','第三项','代码在侧栏','标签文字','网址后正文'].every(x => text.includes(x)) && !text.includes('example.test') && !text.includes('secretCodeExample');
+      const correctness = clean && requests.length === 1 && panelEvidence.answer === text && (speechFormat === 'mixed' ? mixedOk : (speechFormat === 'long' ? longOk : expected && ordered) && panelEvidence.rows === (speechFormat === 'long' ? 8 : 3) && panelEvidence.copy);
+      const delayMs = sound !== null && verified ? sound - verified.at : null;
+      const individualTime = delayMs !== null && delayMs >= 0 && delayMs <= 3000;
+      const evidence = { text, requests, panelEvidence, clean, expected, ordered, longOk, mixedOk, delayMs, verified, sound, task, playback: capture.playback, audioRecorded: capture.audioRecorded, captureError: capture.error };
+      result.acceptance = { id: `speech-${speechFormat}`, layer: "L1", correctness, individualTime, ...evidence };
+      verdicts.speechFormat = verdict(correctness && individualTime && capture.audioRecorded && !capture.error, evidence);
+    };
+  }
   if (m7Reconnect) {
     await installRealtimeTiming(rp, panel);
     await installTaskTiming(rp, panel);
@@ -1689,7 +1721,7 @@ try {
       verdicts.reconnectDelivery = verdict(fixtureValid && playedOnce && notReplayed && capture.audioRecorded && !capture.error, evidence);
     };
   }
-  if (bddResearch && !m7Reconnect) {
+  if (bddResearch && !m7Reconnect && !speechFormat) {
     await installRealtimeTiming(rp, panel);
     await installTaskTiming(rp, panel);
     await rp.evaluate(panel, `(() => {
@@ -1966,6 +1998,11 @@ try {
       settled = checks > 0 && requested && wire.playbackCompleted > 0 && state.voiceState === "listening" ? settled + 1 : 0;
       return settled >= 4 ? true : undefined;
     }
+    if (speechFormat) {
+      const verified = (await readTaskTiming(rp, panel)).checks[0];
+      settled = !!verified && ttsTimeline.some(item => item.at >= verified.at) && wire.playbackCompleted > 0 && state.voiceState === "listening" ? settled + 1 : 0;
+      return settled >= 4 ? true : undefined;
+    }
     if (bddResearch) {
       const task = await readTaskTiming(rp, panel);
       if (bddResearchProgress && state.heard.includes("哪一步") && state.voiceStatus.includes("语音服务没有答上")) return true;
@@ -2076,6 +2113,21 @@ try {
     result.answer = final?.answer ?? "";
   }
   }
+  if (speechFormat && process.argv.includes("--speech-extra")) {
+    if (recordTaskVoice) { await recordTaskVoice(); recordTaskVoice = null; }
+    const beforeReplay = (await rp.evaluate(panel, PANEL_STATE) as PanelState).answer;
+    await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, panel);
+    const dark = await rp.evaluate(panel, 'matchMedia("(prefers-color-scheme: dark)").matches');
+    await rp.screenshot(panel, join(artifacts, "panel-dark.png"));
+    await rp.cdp.send("Page.reload", {}, panel);
+    const replay = await until(async () => {
+      const state = await rp.evaluate(panel, PANEL_STATE) as PanelState;
+      return state.answer === beforeReplay && state.answer ? state.answer : undefined;
+    }, 20_000, "侧栏记录重放口语结果");
+    const clean = !/(?:\||-{2,}|[*#`]|\]\(|<[a-z/])/i.test(replay);
+    result.speechExtra = { dark, beforeReplay, replay, clean, screenshot: join(artifacts, "panel-dark.png") };
+    verdicts.speechReplay = verdict(!!dark && clean && replay === beforeReplay, result.speechExtra as JsonRecord);
+  }
 } catch (error) {
   result.error = error instanceof Error ? error.stack ?? error.message : String(error);
   // SAFETY: last 只从 PANEL_STATE 读数赋值。
@@ -2134,7 +2186,7 @@ try {
   if (m1Case || m2aCase || m2bCase || m3Case || m4Case || m5Case || m6Case || m7Case || m8aCase || m8bCase || m8cCase || bddMark || bddObserve || bddResearch) {
     const videoPath = join(artifacts, "recording", "run.mp4");
     const videoRecorded = (await stat(videoPath).catch(() => null))?.size;
-    const prior = m1Case ? verdicts.M1 : m2aCase ? verdicts.M2a : m2bCase ? verdicts.M2b : m3Case ? verdicts.M3 : m4Case ? verdicts.M4 : m5Case ? verdicts.M5 : m6Case ? verdicts.M6 : m7Reconnect ? verdicts.reconnectDelivery : m7Case ? verdicts.M7 : m8aCase ? verdicts.M8a : m8bCase ? verdicts.M8b : m8cCase ? verdicts.M8c : bddObserve ? verdicts["1.1"] : bddResearch ? verdicts.bddResearch : verdicts.bddMark;
+    const prior = m1Case ? verdicts.M1 : m2aCase ? verdicts.M2a : m2bCase ? verdicts.M2b : m3Case ? verdicts.M3 : m4Case ? verdicts.M4 : m5Case ? verdicts.M5 : m6Case ? verdicts.M6 : m7Reconnect ? verdicts.reconnectDelivery : m7Case ? verdicts.M7 : m8aCase ? verdicts.M8a : m8bCase ? verdicts.M8b : m8cCase ? verdicts.M8c : bddObserve ? verdicts["1.1"] : speechFormat ? verdicts.speechFormat : bddResearch ? verdicts.bddResearch : verdicts.bddMark;
     if (prior) {
       prior.evidence.videoPath = videoRecorded ? videoPath : null;
       prior.evidence.videoRecorded = !!videoRecorded;
@@ -2163,7 +2215,7 @@ result.verdicts = verdicts;
 
 result.finishedAt = new Date().toISOString();
 
-result.ok = !result.error && (m1Case ? verdicts.M1?.status === "yes" : m2aCase ? verdicts.M2a?.status === "yes" : m2bCase ? verdicts.M2b?.status === "yes" : m3Case ? verdicts.M3?.status === "yes" : m4Case ? verdicts.M4?.status === "yes" : m5Case ? verdicts.M5?.status === "yes" : m6Case ? verdicts.M6?.status === "yes" : m7Reconnect ? verdicts.reconnectDelivery?.status === "yes" : m7Case ? verdicts.M7?.status === "yes" : m8aCase ? verdicts.M8a?.status === "yes" : m8bCase ? verdicts.M8b?.status === "yes" : m8cCase ? verdicts.M8c?.status === "yes" : bddObserve ? verdicts["1.1"]?.status === "yes" : bddResearch ? verdicts.bddResearch?.status === "yes" : bddMark ? verdicts.bddMark?.status === "yes" : Object.values(verdicts).every((v) => v.status === "yes"));
+result.ok = !result.error && (!process.argv.includes("--speech-extra") || verdicts.speechReplay?.status === "yes") && (m1Case ? verdicts.M1?.status === "yes" : m2aCase ? verdicts.M2a?.status === "yes" : m2bCase ? verdicts.M2b?.status === "yes" : m3Case ? verdicts.M3?.status === "yes" : m4Case ? verdicts.M4?.status === "yes" : m5Case ? verdicts.M5?.status === "yes" : m6Case ? verdicts.M6?.status === "yes" : m7Reconnect ? verdicts.reconnectDelivery?.status === "yes" : m7Case ? verdicts.M7?.status === "yes" : m8aCase ? verdicts.M8a?.status === "yes" : m8bCase ? verdicts.M8b?.status === "yes" : m8cCase ? verdicts.M8c?.status === "yes" : bddObserve ? verdicts["1.1"]?.status === "yes" : speechFormat ? verdicts.speechFormat?.status === "yes" : bddResearch ? verdicts.bddResearch?.status === "yes" : bddMark ? verdicts.bddMark?.status === "yes" : Object.values(verdicts).every((v) => v.status === "yes"));
 
 await writeFile(join(artifacts, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
 

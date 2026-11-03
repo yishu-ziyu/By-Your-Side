@@ -3,6 +3,7 @@ import {deliveryTextWithNote,type TaskProgressSnapshot} from '../../shared/voice
 import type { TaskReceipt } from '../../shared/task-actions.js';
 
 import { answerSpeech } from '../../shared/answer-cards.js';
+import { speechText } from '../../shared/speech-text.js';
 export const normalizeSpeech=(text:string)=>text.replace(/[\p{P}\p{Z}\s]/gu,'');
 
 /**
@@ -89,17 +90,17 @@ function idleSpeech(snapshot: TaskProgressSnapshot, view: ReturnType<typeof proj
   }
 
   const result = snapshot.conversationContext?.latestResult;
-  if (verifiedDone && snapshot.runId && result?.runId === snapshot.runId && result.text.trim()) return result.text.trim();
+  if (verifiedDone && snapshot.runId && result?.runId === snapshot.runId && result.text.trim()) return speechText(answerSpeech(result.text)).trim();
 
   const delivery = snapshot.conversationContext?.latestDelivery;
 
   if (snapshot.runId && delivery && (delivery.kind === 'finding' || delivery.kind === 'reply') && delivery.runId === snapshot.runId && delivery.text.trim()) {
     // 宿主补的一句：目标核对还没判做完时才念。
-    return answerSpeech(snapshot.goalCheck?.status === 'done' ? delivery.text : deliveryTextWithNote(delivery)).trim();
+    return speechText(answerSpeech(snapshot.goalCheck?.status === 'done' ? delivery.text : deliveryTextWithNote(delivery))).trim();
   }
 
   if (snapshot.runId && result && result.runId === snapshot.runId && result.source === 'assistant_output' && typeof result.text === 'string' && result.text.trim()) {
-    return result.text.trim();
+    return speechText(answerSpeech(result.text)).trim();
   }
 
   return verifiedDone ? '这一轮已核对完成。' : '这一轮执行已经结束，结果还没有确认。';

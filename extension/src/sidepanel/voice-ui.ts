@@ -1,4 +1,5 @@
 import { answerSpeech } from "../../../shared/answer-cards.js";
+import { speechText } from "../../../shared/speech-text.js";
 import { microphonePermissionState } from "./voice-permission.js";
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { VoiceClient, type VoicePhase } from './voice-client.js';
@@ -67,7 +68,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   };
 
   const setAnswer = (text: string): void => {
-    answerText = text;
+    answerText = speechText(answerSpeech(text));
     renderAnswer();
   };
 
@@ -558,7 +559,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
         currentDeliveryKind = delivery.kind;
       }
 
-      setAnswer(answerSpeech(delivery.text));
+      setAnswer(delivery.text);
       setSources(delivery.sources ?? delivery.facts?.sources ?? []);
     }
   };

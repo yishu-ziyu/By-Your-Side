@@ -3,6 +3,7 @@ import type { VoiceInputContext } from '../../shared/voice.js';
 import {isMerged, TaskQueue} from "./task-queue.js";
 import {TASK_CHECKPOINT_UNAVAILABLE} from '../../shared/task-recovery.js';
 import {answerSpeech} from '../../shared/answer-cards.js';
+import {speechText} from '../../shared/speech-text.js';
 import { ReadingRequests } from "./reading.js";
 import {join} from "node:path";
 import type {UserInputOptions} from "./session.js";
@@ -532,7 +533,7 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
         this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:`已查看当前页面：${page.title}\n${answer}`}});
         const published=this.getTaskProgress(id);
 
-        return {kind:'none',resumeReadOnly:'observe',snapshot:published??now,spokenText:delivery?.text??answer};
+        return {kind:'none',resumeReadOnly:'observe',snapshot:published??now,spokenText:speechText(answerSpeech(delivery?.text??answer))};
       }catch{return {kind:'none',resumeReadOnly:'observe',spokenText:'这次没有完成当前页面的读取，请稍后再试。'};}
     }
 
@@ -769,7 +770,7 @@ return {kind:'none',resumeReadOnly:'chat'};}
 
     const published=this.getTaskProgress(id);
 
-    return {kind:'none',resumeReadOnly:'chat',snapshot:published??undefined,spokenText:answerSpeech(delivery.text),turn:{branch:'reply',phase:'COMMITTED',protocol:'free_reply'}};
+    return {kind:'none',resumeReadOnly:'chat',snapshot:published??undefined,spokenText:speechText(answerSpeech(delivery.text)),turn:{branch:'reply',phase:'COMMITTED',protocol:'free_reply'}};
   }
   private beginDeliveryStream(conversationId:string,kind:UserDeliveryKind,before:TaskProgressSnapshot,stillCurrent:()=>boolean,voiceTurn?:number){
     const id=randomUUID(),runId=before.runId??null,control=this.controlVersions.get(conversationId)??0;
@@ -818,7 +819,7 @@ return { kind: "silent" };}
 
       const published = this.getTaskProgress(id);
 
-      return { kind: "none", resumeReadOnly: readOnly, snapshot: published ?? now, spokenText: delivery.text };
+      return { kind: "none", resumeReadOnly: readOnly, snapshot: published ?? now, spokenText: speechText(answerSpeech(delivery.text)) };
     } catch {
       streaming.cancel();
       const now = this.getTaskProgress(id);

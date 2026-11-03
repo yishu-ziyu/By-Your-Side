@@ -2,7 +2,7 @@ import type { Rule } from "./scripted-model.mts";
 import { RESEARCH_COMPANIES } from "./realtime-research-page.ts";
 
 /** Script only the page task; voice routing and replies use the configured real models. */
-export function researchTaskRule(origin: string, goal: string): Rule {
+export function researchTaskRule(origin: string, goal: string, finalText?: string): Rule {
   const result = [
     "| 公司 | 业务 | 融资 |",
     "| --- | --- | --- |",
@@ -25,6 +25,6 @@ export function researchTaskRule(origin: string, goal: string): Rule {
     { tool: { name: "snapshot", args: {} }, delayMs: 3000 },
     { tool: { name: "read_element", args: { target: "#business" } }, delayMs: 4000 },
     { tool: { name: "read_element", args: { target: "#funding" } }, delayMs: 1000 },
-    { text: result, delayMs: 5000 },
+    { text: finalText ?? result, delayMs: 5000 },
   ] };
 }

@@ -13,6 +13,7 @@ import { redactCredentialText } from '../../shared/untrusted.js';
 import { projectTaskView } from '../../shared/task-view.js';
 
 import { answerSpeech } from '../../shared/answer-cards.js';
+import { speechText } from '../../shared/speech-text.js';
 export type RealtimeVoiceDependencies = {
   model?: RealtimeVoiceModel;
   voiceId?: string;
@@ -83,7 +84,7 @@ export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' 
 
   // 宿主补的一句（hostNote）：目标核对还没判做完时才接在正文后面念。
   // 回答里的卡片不念标签：只念卡片外的结论句（shared/answer-cards.ts）。
-  return answerSpeech(owner?.goalCheck?.status === 'done' ? delivery.text : deliveryTextWithNote(delivery));
+  return speechText(answerSpeech(owner?.goalCheck?.status === 'done' ? delivery.text : deliveryTextWithNote(delivery)));
 }
 
 /** Adapts native sidepanel protocol to the same continuous Realtime 3 connection used in the trial. */
