@@ -144,6 +144,7 @@ function openAICompatible(id: string, name: string, baseUrl: string, modelIds: r
     id, name, baseUrl,
     // 自定义地址可能是不要 key 的本机服务（如 Ollama），所以没填也算已配置。
     auth: { apiKey: { name: "API key", resolve: async ({ credential }) => {
+      if (id !== CUSTOM_PROVIDER_ID && !credential?.key) return undefined;
       const endpoint = id === CUSTOM_PROVIDER_ID ? credential?.env?.[CUSTOM_ENDPOINT_ENV] : undefined;
       if (endpoint && !["http:", "https:"].includes(new URL(endpoint).protocol)) throw new Error("自定义服务地址无效，请在设置里重新连接。");
       return { auth: { apiKey: credential?.key ?? "", ...(endpoint ? { baseUrl: endpoint } : {}) }, source: "设置" };
@@ -277,6 +278,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   let codexCandidates = new Map<string, Model<Api>>();
   let codexCatalogGeneration = 0;
   models.setProvider(openAICompatible(STEPFUN_PROVIDER_ID, "阶跃星辰", STEPFUN_STEP_PLAN_BASE_URL, STEPFUN_MODELS).provider);
+  models.setProvider(openAICompatible("inception", "Inception", "https://api.inceptionlabs.ai/v1", ["mercury-3"]).provider);
   const anthropicCatalog = models.getModels("anthropic");
   models.setProvider(commandCodeProvider(COMMANDCODE_FALLBACK, anthropicCatalog));
   /** OpenCode 按会话路由，缺 x-opencode-session 会直接 400；Pi 的 coding-agent 层会补，直接用 pi-ai 时要自己补。 */
