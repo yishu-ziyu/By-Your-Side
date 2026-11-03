@@ -1930,6 +1930,8 @@ try {
       return wire.attachments >= 2 && state.voiceState === "listening" && !reconnectVisible || undefined;
     }, 25_000, "恢复网络后自动连接并清除提示");
   }
+  // 结果由 MiniMax 在侧栏播放，不经 MOSS，不会有 playback.completed；以侧栏里请求之后那段声音播完为准。
+  const resultPlayed = async (requestAt: number): Promise<boolean> => !!await rp.evaluate(panel, `(window.__realtimeTiming?.playback ?? []).some(item => item.at >= ${requestAt} && item.endedAt !== undefined)`);
   const outages: Array<{ cut: number; restored: number; attachmentsBefore: number; attachmentsDuringBlock: number; reattachedAt: number | null }> = [];
   const voiceOutage = async (afterCut?: () => Promise<void>) => {
     const attachmentsBefore = wire.attachments;
@@ -1995,12 +1997,14 @@ try {
     if (m7Reconnect) {
       const checks = (await readTaskTiming(rp, panel)).checks.length;
       const requested = ttsTimeline.some(item => RESEARCH_COMPANIES.filter(company => item.text.includes(company.name)).length >= 2);
-      settled = checks > 0 && requested && wire.playbackCompleted > 0 && state.voiceState === "listening" ? settled + 1 : 0;
+      const resultAt = ttsTimeline.find(item => RESEARCH_COMPANIES.filter(company => item.text.includes(company.name)).length >= 2)?.at;
+      settled = checks > 0 && resultAt !== undefined && await resultPlayed(resultAt) && state.voiceState === "listening" ? settled + 1 : 0;
       return settled >= 4 ? true : undefined;
     }
     if (speechFormat) {
       const verified = (await readTaskTiming(rp, panel)).checks[0];
-      settled = !!verified && ttsTimeline.some(item => item.at >= verified.at) && wire.playbackCompleted > 0 && state.voiceState === "listening" ? settled + 1 : 0;
+      const resultAt = verified ? ttsTimeline.find(item => item.at >= verified.at)?.at : undefined;
+      settled = resultAt !== undefined && await resultPlayed(resultAt) && state.voiceState === "listening" ? settled + 1 : 0;
       return settled >= 4 ? true : undefined;
     }
     if (bddResearch) {
