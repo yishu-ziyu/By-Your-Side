@@ -62,12 +62,15 @@ function parseVoiceLine(raw: string): VoiceLine | null {
 
 
 const isText = (value: Json | undefined): value is string => typeof value === "string";
+const GOAL_CHECK_MARK = "You check whether a browser assistant has finished the user's goal";
 
 const caseName = process.argv.find((arg) => arg.startsWith("--case="))?.slice("--case=".length) ?? "question";
 const scriptBrowserTask = process.argv.includes("--script-browser-task");
 const bddResearchStart = process.argv.includes("--bdd=2.1");
 const bddResearchProgress = process.argv.includes("--bdd=2.2");
-const bddResearch = bddResearchStart || bddResearchProgress;
+// 断线待播：调研任务在语音连接中断期间核对完成，恢复后应自动播一次；播完再断一次，不得补播。
+const m7Reconnect = process.argv.includes("--m7-reconnect");
+const bddResearch = bddResearchStart || bddResearchProgress || m7Reconnect;
 const firstUtterance = process.argv.includes("--first-utterance");
 if (firstUtterance && caseName !== "question") throw new Error("首句验收只用于页面问答");
 const planVoice = process.argv.includes("--plan");
@@ -76,7 +79,7 @@ const mossVoice = process.argv.includes("--moss");
 if (scriptBrowserTask && (!mossVoice || !["mark", "research"].includes(caseName) || !process.argv.some(arg => arg.startsWith("--model=minimax-cn/")))) {
   throw new Error("脚本网页任务需要 MOSS、mark/research 场景及真实 MiniMax 分类模型");
 }
-if (bddResearch && (caseName !== "research" || !scriptBrowserTask || bddResearchStart && bddResearchProgress)) throw new Error("用例 2.1/2.2 需要分别使用 --case=research --script-browser-task");
+if (bddResearch && (caseName !== "research" || !scriptBrowserTask || [bddResearchStart, bddResearchProgress, m7Reconnect].filter(Boolean).length > 1)) throw new Error("用例 2.1/2.2/断线待播需要分别使用 --case=research --script-browser-task");
 if (caseName === "research" && !bddResearch) throw new Error("research 场景需要明确的验收用例");
 const m1Case = process.argv.includes("--m1");
 if (m1Case && (!mossVoice || caseName !== "question")) throw new Error("M1 需要 --moss --case=question");
@@ -133,7 +136,7 @@ if (!QUESTION) throw new Error(`未知用例 ${caseName}，可选：${[...QUESTI
 const NOTE = "周五前发货";
 const M5_NOTE = "请用蓝色包装";
 
-const TURN_LIMIT_MS = m8cCase ? 7_430_000 : m2bCase ? 90_000 : 2 * 60_000;
+const TURN_LIMIT_MS = m8cCase ? 7_430_000 : m2bCase ? 90_000 : m7Reconnect ? 3 * 60_000 : 2 * 60_000;
 
 const startedAt = new Date();
 
@@ -196,9 +199,9 @@ const fixtureSpeechKey = realMinimax
   : "sk-cp-acceptance-fixture";
 if (realMinimax && !/^sk-cp-[\w-]{8,}$/.test(fixtureSpeechKey)) throw new Error("未找到 MiniMax Token Plan 订阅密钥");
 let fixtureSpeechHex = "";
-if (mossVoice && caseName === "mark" && !realMinimax && !bddMark && !m6Case) {
+if (mossVoice && (caseName === "mark" || m7Reconnect) && !realMinimax && !bddMark && !m6Case) {
   const fixtureWav = join(artifacts, "minimax-fixture.wav");
-  const fixtureText = bddMark ? "我来帮你圈出尺码表。" : noticeBarge ? "已收到你的要求，正在检查当前页面，找到保存按钮之后会把它标记出来，不会点击它。请稍等，我会再告诉你结果。" : "已圈出保存按钮，没有点击。";
+  const fixtureText = m7Reconnect ? "三家公司已经调研完了。" : bddMark ? "我来帮你圈出尺码表。" : noticeBarge ? "已收到你的要求，正在检查当前页面，找到保存按钮之后会把它标记出来，不会点击它。请稍等，我会再告诉你结果。" : "已圈出保存按钮，没有点击。";
   execFileSync("say", ["-v", "Tingting", "-o", fixtureWav, "--data-format=LEI16@24000", fixtureText]);
   const bytes = await readFile(fixtureWav);
   fixtureSpeechHex = bytes.subarray(bytes.indexOf("data") + 8).toString("hex");
@@ -219,9 +222,12 @@ const SHOE_PAGE = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"
 <script>window.receipts={save:[],cancel:[],all:[]};for(const type of ["click","input"])document.addEventListener(type,e=>receipts.all.push(type),true);for(const id of ["save","cancel"])for(const type of ["pointerdown","mousedown","click"])document.getElementById(id).addEventListener(type,()=>receipts[id].push(type));</script></body></html>`;
 const SOLE_IMAGE = `<svg xmlns="http://www.w3.org/2000/svg" width="840" height="300"><rect width="100%" height="100%" fill="#ece8dd"/><path d="M100 210 Q210 170 300 130 L540 115 Q620 122 700 195 L720 230 L100 230 Z" fill="#58554d"/><path d="M100 230 L720 230 Q730 250 700 255 L120 255 Q100 250 100 230" fill="#202423"/><text x="80" y="64" font-family="sans-serif" font-size="36">鞋底材质：耐磨橡胶</text></svg>`;
 const PAGE = bddMark || bddObserve ? SHOE_PAGE : NOTE_PAGE;
+const researchVisits: Array<{ at: number; pathname: string }> = [];
 const site = createServer((req, res) => {
   if (bddResearch) {
-    const html = researchPage(new URL(req.url ?? "/", "http://localhost").pathname);
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    researchVisits.push({ at: Date.now(), pathname });
+    const html = researchPage(pathname);
     return res.writeHead(html ? 200 : 404, { "content-type": "text/html; charset=utf-8" }).end(html ?? "not found");
   }
   return req.url === "/sole.svg"
@@ -797,11 +803,14 @@ try {
   const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "扩展内 agent 文档");
   const off = await rp.attach(offscreen.targetId);
   await rp.cdp.send("Network.enable", {}, off);
-  if (mossReconnect || m8aCase) await rp.evaluate(off, `(() => {
+  // 只断语音连接：本机脚本模型和朗读拦截照常可达，整页离线会让任务本身也失败。
+  if (mossReconnect || m8aCase || m7Reconnect) await rp.evaluate(off, `(() => {
     const Original = window.WebSocket;
     window.__mossSockets = [];
+    window.__mossBlocked = false;
     window.WebSocket = class extends Original {
       constructor(...args) {
+        if (window.__mossBlocked && String(args[0]).startsWith("wss://api.mosi.cn/v1/realtime")) args[0] = "wss://127.0.0.1:9/blocked";
         super(...args);
         if (String(args[0]).startsWith("wss://api.mosi.cn/v1/realtime")) window.__mossSockets.push(this);
       }
@@ -879,6 +888,27 @@ try {
   rp.cdp.onEvent("Network.responseReceived", (message: { sessionId?: string; params?: { requestId?: string; response?: { status?: number } } }) => {
     if (message.sessionId === off && message.params?.requestId && ttsRequests.has(message.params.requestId)) wire.ttsStatus = message.params.response?.status ?? 0;
   });
+  // 断线待播：夹具代发真实的核对请求，拿到完整回复后先断开语音，等侧栏察觉断线再交回，核对必然在断线期间完成。
+  let goalCheckReleased = false, goalCheckReplyAt: number | null = null;
+  let releaseGoalCheck = () => {};
+  const goalCheckRelease = new Promise<void>(resolve => { releaseGoalCheck = () => { goalCheckReleased = true; resolve(); }; });
+  let goalCheckArrived = () => {};
+  const goalCheckReady = new Promise<void>(resolve => { goalCheckArrived = resolve; });
+  const holdGoalCheck = async (requestId: string, url: string, headers: Record<string, string>, body: string) => {
+    try {
+      const forwarded = Object.fromEntries(Object.entries(headers).filter(([name]) => !["host", "content-length"].includes(name.toLowerCase())));
+      const response = await fetch(url, { method: "POST", headers: forwarded, body });
+      const text = await response.text();
+      goalCheckReplyAt ??= Date.now();
+      goalCheckArrived();
+      await goalCheckRelease;
+      await rp.cdp.send("Fetch.fulfillRequest", { requestId, responseCode: response.status,
+        responseHeaders: [{ name: "Content-Type", value: response.headers.get("content-type") ?? "text/event-stream" }],
+        body: Buffer.from(text).toString("base64") }, off);
+    } catch {
+      await rp.cdp.send("Fetch.failRequest", { requestId, errorReason: "Failed" }, off).catch(() => {});
+    }
+  };
   if (mossVoice && (caseName === "mark" || bddResearch)) {
     await rp.cdp.send("Fetch.enable", { patterns: [
       { urlPattern: "https://api.minimaxi.com/v1/t2a_v2*", requestStage: "Request" },
@@ -888,6 +918,10 @@ try {
       const request = message.params?.request;
       const requestId = message.params?.requestId;
       if (message.sessionId !== off || !requestId) return;
+      if (m7Reconnect && !goalCheckReleased && request?.url?.startsWith("https://api.minimaxi.com/anthropic/v1/messages") && request.postData?.includes(GOAL_CHECK_MARK)) {
+        void holdGoalCheck(requestId, request.url, request.headers ?? {}, request.postData);
+        return;
+      }
       if (scriptBrowserTask && request?.url?.startsWith("https://api.minimaxi.com/anthropic/v1/messages") && holdingModel) {
         void interceptBrowserTask(rp, off, requestId, request.postData, holdingModel.baseUrl, taskRouting);
         return;
@@ -901,7 +935,7 @@ try {
         wire.ttsModel = String(body.model ?? "");
         if (typeof body.text === "string") { ttsTexts.push(body.text); ttsTimeline.push({ at: Date.now(), text: body.text }); }
       } catch { wire.ttsModel = ""; }
-      if (bddMark || m6Case || bddResearch) {
+      if (bddMark || m6Case || bddResearch && !m7Reconnect) {
         void rp.cdp.send("Fetch.failRequest", { requestId, errorReason: "Aborted" }, off);
         return;
       }
@@ -1626,7 +1660,36 @@ try {
       verdicts.bddMark = verdict(correctness && individualTime && capture.audioRecorded && !capture.error, evidence);
     };
   }
-  if (bddResearch) {
+  if (m7Reconnect) {
+    await installRealtimeTiming(rp, panel);
+    await installTaskTiming(rp, panel);
+    recordTaskVoice = async () => {
+      const audioPath = join(artifacts, "assistant.webm");
+      const capture = await finishRealtimeTiming(rp, panel, audioPath);
+      const task = await readTaskTiming(rp, panel);
+      const [first, second] = outages;
+      const verified = task.checks[0];
+      const resultRequests = ttsTimeline.filter(item => RESEARCH_COMPANIES.filter(company => item.text.includes(company.name)).length >= 2);
+      const resultRequest = resultRequests[0];
+      const resultSound = resultRequest ? capture.playback.find(chunk => chunk.at >= resultRequest.at)?.at ?? null : null;
+      // 侧栏察觉断线（进入重连）之后、重新回到「在听」之前核对完成，才算走到「断线期间完成」的交接路径。
+      const noticedDrop = first ? capture.states.find(item => item.at >= first.cut && item.state === "connecting")?.at ?? null : null;
+      const resumed = noticedDrop !== null ? capture.states.find(item => item.at > noticedDrop && item.state === "listening")?.at ?? null : null;
+      const fixtureValid = !!first && !!verified && noticedDrop !== null && resumed !== null && verified.at > noticedDrop && verified.at < resumed && first.attachmentsDuringBlock === 0;
+      const playedOnce = resultRequests.length === 1 && resultSound !== null && !!verified && resultSound >= verified.at;
+      const notReplayed = !!second && second.reattachedAt !== null && resultRequests.every(item => item.at < second.cut);
+      const evidence = {
+        t_goal_check_reply: goalCheckReplyAt, t_noticed_drop: noticedDrop, t_resumed: resumed, t_verified: verified?.at ?? null, t_sound: resultSound, outages, researchVisits, resultRequests, ttsTimeline,
+        fixtureValid, playedOnce, notReplayed, runIds: [...new Set(task.cards.map(card => card.runId))], task,
+        provider: "mock-minimax", taskRouting, playback: capture.playback, states: capture.states,
+        audioRecorded: capture.audioRecorded, audioPath: capture.audioRecorded ? audioPath : null, captureError: capture.error,
+      };
+      result.acceptance = { id: "818-auto", layer: "L1", correctness: fixtureValid && playedOnce && notReplayed, ...evidence };
+      if (!fixtureValid) result.fixtureFailure = "任务核对完成不在第一次断线期间";
+      verdicts.reconnectDelivery = verdict(fixtureValid && playedOnce && notReplayed && capture.audioRecorded && !capture.error, evidence);
+    };
+  }
+  if (bddResearch && !m7Reconnect) {
     await installRealtimeTiming(rp, panel);
     await installTaskTiming(rp, panel);
     await rp.evaluate(panel, `(() => {
@@ -1835,6 +1898,31 @@ try {
       return wire.attachments >= 2 && state.voiceState === "listening" && !reconnectVisible || undefined;
     }, 25_000, "恢复网络后自动连接并清除提示");
   }
+  const outages: Array<{ cut: number; restored: number; attachmentsBefore: number; attachmentsDuringBlock: number; reattachedAt: number | null }> = [];
+  const voiceOutage = async (afterCut?: () => Promise<void>) => {
+    const attachmentsBefore = wire.attachments;
+    await rp.evaluate(off, `(() => { const socket = window.__mossSockets.at(-1); if (!socket) throw Error("缺少连接"); window.__mossBlocked = true; socket.close(4000, "test interruption"); return true; })()`);
+    const cut = Number(await rp.evaluate(panel, "Date.now()"));
+    if (afterCut) await afterCut();
+    let elapsed = Number(await rp.evaluate(panel, "Date.now()")) - cut;
+    while (elapsed < 5000) {
+      await new Promise<void>(resolve => setTimeout(resolve, 5000 - elapsed));
+      elapsed = Number(await rp.evaluate(panel, "Date.now()")) - cut;
+    }
+    const attachmentsDuringBlock = wire.attachments - attachmentsBefore;
+    await rp.evaluate(off, "window.__mossBlocked = false; true");
+    const outage = { cut, restored: Number(await rp.evaluate(panel, "Date.now()")), attachmentsBefore, attachmentsDuringBlock, reattachedAt: null as number | null };
+    outages.push(outage);
+    await until(async () => wire.attachments > attachmentsBefore && (await rp.evaluate(panel, PANEL_STATE) as PanelState).voiceState === "listening" || undefined, 30_000, "断线后重新连接");
+    outage.reattachedAt = Number(await rp.evaluate(panel, "Date.now()"));
+  };
+  if (m7Reconnect) {
+    await Promise.race([goalCheckReady, new Promise((_, reject) => setTimeout(() => reject(new Error("等待超时（150 秒）：任务核对请求")), 150_000))]);
+    await voiceOutage(async () => {
+      await until(async () => (await rp.evaluate(panel, PANEL_STATE) as PanelState).voiceState === "connecting" || undefined, 4000, "侧栏察觉断线");
+      releaseGoalCheck();
+    });
+  }
   if (mossReconnect) {
     await until(async () => wire.attachments >= 1 && (await rp.evaluate(panel, PANEL_STATE) as PanelState).voiceState === "listening" || undefined, 25_000, "首次连接");
     await rp.evaluate(off, `(() => { const socket = window.__mossSockets.at(-1); if (!socket) throw Error("缺少连接"); socket.close(4000, "test interruption"); return true; })()`);
@@ -1872,6 +1960,12 @@ try {
     }
     if (mossVoice && caseName === "mark" && wire.ttsStatus >= 400 && state.answer) return true;
     if (mossVoice && caseName === "mark" && state.voiceStatus.includes("MiniMax 朗读没有成功")) return true;
+    if (m7Reconnect) {
+      const checks = (await readTaskTiming(rp, panel)).checks.length;
+      const requested = ttsTimeline.some(item => RESEARCH_COMPANIES.filter(company => item.text.includes(company.name)).length >= 2);
+      settled = checks > 0 && requested && wire.playbackCompleted > 0 && state.voiceState === "listening" ? settled + 1 : 0;
+      return settled >= 4 ? true : undefined;
+    }
     if (bddResearch) {
       const task = await readTaskTiming(rp, panel);
       if (bddResearchProgress && state.heard.includes("哪一步") && state.voiceStatus.includes("语音服务没有答上")) return true;
@@ -1902,6 +1996,10 @@ try {
 
     return settled >= 4 ? true : undefined;
   }, m8bCase ? 50_000 : noticeBarge ? 45_000 : TURN_LIMIT_MS, m8bCase ? "无法连接提示和重试结束" : "语音回答", 500);
+  if (m7Reconnect) {
+    await voiceOutage();
+    await new Promise<void>(resolve => setTimeout(resolve, 8000));
+  }
   result.turnSeconds = Math.round((Date.now() - began) / 1000);
   await rp.screenshot(panel, join(artifacts, "panel.png"));
   await rp.screenshot(page, join(artifacts, "page.png"));
@@ -2036,7 +2134,7 @@ try {
   if (m1Case || m2aCase || m2bCase || m3Case || m4Case || m5Case || m6Case || m7Case || m8aCase || m8bCase || m8cCase || bddMark || bddObserve || bddResearch) {
     const videoPath = join(artifacts, "recording", "run.mp4");
     const videoRecorded = (await stat(videoPath).catch(() => null))?.size;
-    const prior = m1Case ? verdicts.M1 : m2aCase ? verdicts.M2a : m2bCase ? verdicts.M2b : m3Case ? verdicts.M3 : m4Case ? verdicts.M4 : m5Case ? verdicts.M5 : m6Case ? verdicts.M6 : m7Case ? verdicts.M7 : m8aCase ? verdicts.M8a : m8bCase ? verdicts.M8b : m8cCase ? verdicts.M8c : bddObserve ? verdicts["1.1"] : bddResearch ? verdicts.bddResearch : verdicts.bddMark;
+    const prior = m1Case ? verdicts.M1 : m2aCase ? verdicts.M2a : m2bCase ? verdicts.M2b : m3Case ? verdicts.M3 : m4Case ? verdicts.M4 : m5Case ? verdicts.M5 : m6Case ? verdicts.M6 : m7Reconnect ? verdicts.reconnectDelivery : m7Case ? verdicts.M7 : m8aCase ? verdicts.M8a : m8bCase ? verdicts.M8b : m8cCase ? verdicts.M8c : bddObserve ? verdicts["1.1"] : bddResearch ? verdicts.bddResearch : verdicts.bddMark;
     if (prior) {
       prior.evidence.videoPath = videoRecorded ? videoPath : null;
       prior.evidence.videoRecorded = !!videoRecorded;
@@ -2065,7 +2163,7 @@ result.verdicts = verdicts;
 
 result.finishedAt = new Date().toISOString();
 
-result.ok = !result.error && (m1Case ? verdicts.M1?.status === "yes" : m2aCase ? verdicts.M2a?.status === "yes" : m2bCase ? verdicts.M2b?.status === "yes" : m3Case ? verdicts.M3?.status === "yes" : m4Case ? verdicts.M4?.status === "yes" : m5Case ? verdicts.M5?.status === "yes" : m6Case ? verdicts.M6?.status === "yes" : m7Case ? verdicts.M7?.status === "yes" : m8aCase ? verdicts.M8a?.status === "yes" : m8bCase ? verdicts.M8b?.status === "yes" : m8cCase ? verdicts.M8c?.status === "yes" : bddObserve ? verdicts["1.1"]?.status === "yes" : bddResearch ? verdicts.bddResearch?.status === "yes" : bddMark ? verdicts.bddMark?.status === "yes" : Object.values(verdicts).every((v) => v.status === "yes"));
+result.ok = !result.error && (m1Case ? verdicts.M1?.status === "yes" : m2aCase ? verdicts.M2a?.status === "yes" : m2bCase ? verdicts.M2b?.status === "yes" : m3Case ? verdicts.M3?.status === "yes" : m4Case ? verdicts.M4?.status === "yes" : m5Case ? verdicts.M5?.status === "yes" : m6Case ? verdicts.M6?.status === "yes" : m7Reconnect ? verdicts.reconnectDelivery?.status === "yes" : m7Case ? verdicts.M7?.status === "yes" : m8aCase ? verdicts.M8a?.status === "yes" : m8bCase ? verdicts.M8b?.status === "yes" : m8cCase ? verdicts.M8c?.status === "yes" : bddObserve ? verdicts["1.1"]?.status === "yes" : bddResearch ? verdicts.bddResearch?.status === "yes" : bddMark ? verdicts.bddMark?.status === "yes" : Object.values(verdicts).every((v) => v.status === "yes"));
 
 await writeFile(join(artifacts, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
 
