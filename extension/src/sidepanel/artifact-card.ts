@@ -298,6 +298,13 @@ export class ArtifactCards {
     card.inlineToggle.textContent = "收起预览";
     card.inlineToggle.setAttribute("aria-expanded", "true");
     let ready = false;
+    let sectionTicket = 0;
+    const source = (async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || !tab.url || !/^https?:\/\//.test(tab.url)) return null;
+      const [doc] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => document.title });
+      return doc?.documentId ? { tabId: tab.id, url: tab.url, documentId: doc.documentId } : null;
+    })().catch(() => null);
     const onMessage = (event: MessageEvent<unknown>) => {
       if (event.source !== frame.contentWindow || event.origin !== "null") return;
       const data = event.data;
@@ -312,11 +319,52 @@ export class ArtifactCards {
         return;
       }
 
+      if ("sideagentSection" in data && data.sideagentSection === 1 && "id" in data && typeof data.id === "string") {
+        const id = data.id;
+        if (!id || id.length > 160 || /[\u0000-\u001f]/.test(id)) return;
+        selected = "";
+        const ticket = ++sectionTicket;
+        apply.onclick = null; apply.disabled = true; feedback.hidden = true;
+        void (async () => {
+          const bound = await source;
+          if (!bound) return;
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tab?.id !== bound.tabId || tab.url !== bound.url) { choice.textContent = '页面已变化，请重新打开预览。'; feedback.hidden = false; return; }
+          const tabId = bound.tabId, originalUrl = bound.url;
+          const [observed] = await chrome.scripting.executeScript({ target: { tabId, documentIds: [bound.documentId] }, func: (sectionId: string) => {
+            const node = document.getElementById(sectionId);
+            const heading = node?.matches('h1,h2,h3,h4,h5,h6') ? node : node?.closest('h1,h2,h3,h4,h5,h6');
+            return heading ? { title: (heading.textContent || '').trim().slice(0, 100), page: document.title.slice(0, 100) } : null;
+          }, args: [id] });
+          if (ticket !== sectionTicket || !frame.isConnected || !observed?.documentId || !observed.result?.title) return;
+          const documentId = observed.documentId;
+          choice.textContent = `跳到「${observed.result.title}」 · ${new URL(originalUrl).hostname}`;
+          feedback.hidden = false; apply.textContent = '跳转'; apply.disabled = false;
+          apply.onclick = (event) => { if (!event.isTrusted || ticket !== sectionTicket || !frame.isConnected) return; void (async () => {
+            apply.disabled = true;
+            const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (active?.id !== tabId || active.url !== originalUrl) { choice.textContent = '页面已变化，请重新打开预览。'; return; }
+            try {
+              const [done] = await chrome.scripting.executeScript({ target: { tabId, documentIds: [documentId] }, func: (sectionId: string) => {
+                const node = document.getElementById(sectionId);
+                const heading = node?.matches('h1,h2,h3,h4,h5,h6') ? node : node?.closest('h1,h2,h3,h4,h5,h6');
+                if (!heading) return false;
+                heading.scrollIntoView({ block: 'start' }); return true;
+              }, args: [id] });
+              choice.textContent = done?.result ? '已跳转到章节。' : '章节已不存在。';
+            } catch { choice.textContent = '页面已变化，无法跳转。'; }
+          })(); };
+        })().catch(() => {});
+        return;
+      }
+
       if (!("sideagentResultChoice" in data) || data.sideagentResultChoice !== 1 ||
         !("label" in data) || typeof data.label !== "string" || data.label.length > 120) return;
       selected = data.label.replace(/\s+/g, " ").trim();
 
       if (!selected) return;
+      sectionTicket += 1;
+      apply.onclick = null;
       choice.textContent = `已选：${selected}`;
       feedback.hidden = false;
       apply.textContent = "填入输入框";
