@@ -251,10 +251,15 @@ const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("
  */
 const ASK_STATUS_TASK = "帮我把这个页面上的备注整理一下";
 
-const longSpeechNames = [...RESEARCH_COMPANIES.map(c => c.name), "丁项", "戊项", "己项", "庚项", "辛项"];
+// 长表与混合格式只写练习页上真有的事实，否则目标核对判“没做完”，走不到朗读。
+// 长表 8 行：前 5 行要念，后 3 行的内容（未公开、2 家、3 家）只在被截掉的行里出现。
+const longRows = [...RESEARCH_COMPANIES.flatMap(c => [`| ${c.name} | 业务 | ${c.business} |`, `| ${c.name} | 融资 | ${c.funding} |`]), "| 已公开融资 | 公司数 | 2 家 |", "| 合计 | 调研公司数 | 3 家 |"];
+const longHeard = ["工厂视觉检测", "天使轮", "农田灌溉传感器", "A轮", "废旧电池回收"];
+const longCut = ["未公开", "2 家", "3 家", "已公开融资", "合计"];
 const tableRows = RESEARCH_COMPANIES.map(c => `| ${c.name} | ${c.business} | ${c.funding} |`);
-const speechFinalText = speechFormat === "mixed" ? `# 调研结果\n${RESEARCH_COMPANIES.map(c => `${c.name}业务是${c.business}，融资是${c.funding}。`).join("\n")}\n**重点内容**：请看[官网](https://example.test/a)。\n- 第一项\n- 第二项\n- 第三项\n\`\`\`js\nsecretCodeExample()\n\`\`\`\n<b>标签文字</b>\n裸网址 https://example.test/b。网址后正文。`
-  : speechFormat ? ["| 公司 | 业务 | 融资 |", "| --- | --- | --- |", ...(speechFormat === "long" ? [...tableRows, ...longSpeechNames.slice(3).map(name => `| ${name} | 工厂视觉检测 | 天使轮 |`)] : tableRows)].join("\n") : undefined;
+const speechFinalText = speechFormat === "mixed" ? `# 三家公司调研结果\n**结论**：三家的业务和融资都已查到，来源见[调研页](${siteOrigin}/research)。\n${RESEARCH_COMPANIES.map(c => `- ${c.name}：业务是${c.business}，融资是${c.funding}。`).join("\n")}\n\`\`\`json\n{"fundingKey": "天使轮"}\n\`\`\`\n<b>融资未公开的是丙林虚构公司</b>\n原始页面 ${siteOrigin}/research 。以上来自各公司详情页。`
+  : speechFormat === "long" ? ["| 公司 | 项目 | 内容 |", "| --- | --- | --- |", ...longRows].join("\n")
+  : speechFormat ? ["| 公司 | 业务 | 融资 |", "| --- | --- | --- |", ...tableRows].join("\n") : undefined;
 const holdingModel = bddResearch ? await startScriptedModel([researchTaskRule(siteOrigin, "调研", speechFinalText)])
   : scriptBrowserTask ? await startScriptedModel([
   { match: bddMark ? "尺码表" : "保存", steps: [
@@ -1682,8 +1687,8 @@ try {
       const clean = !/(?:\||-{2,}|[*#`]|\]\(|<[a-z/])/i.test(text);
       const expected = RESEARCH_COMPANIES.every(c => text.includes(c.name) && text.includes(c.business) && text.includes(c.funding));
       const ordered = RESEARCH_COMPANIES.every((c, i) => { const start = text.indexOf(c.name), end = i < 2 ? text.indexOf(RESEARCH_COMPANIES[i + 1].name) : text.length; return start >= 0 && end > start && text.slice(start, end).includes(c.business) && text.slice(start, end).includes(c.funding); });
-      const longOk = longSpeechNames.slice(0, 5).every(x => text.includes(x)) && longSpeechNames.slice(5).every(x => !text.includes(x)) && /另外还有\s*3\s*项，完整内容在侧栏/.test(text);
-      const mixedOk = ['调研结果','重点内容','官网','第一项','第二项','第三项','代码在侧栏','标签文字','网址后正文'].every(x => text.includes(x)) && !text.includes('example.test') && !text.includes('secretCodeExample');
+      const longOk = longHeard.every(x => text.includes(x)) && longCut.every(x => !text.includes(x)) && /另外还有\s*3\s*项，完整内容在侧栏/.test(text);
+      const mixedOk = ['三家公司调研结果', '结论', '调研页', ...RESEARCH_COMPANIES.map(c => c.name), '代码在侧栏', '融资未公开的是丙林虚构公司', '以上来自各公司详情页'].every(x => text.includes(x)) && !/127\.0\.0\.1|https?:|fundingKey/.test(text);
       const correctness = clean && requests.length === 1 && panelEvidence.answer === text && (speechFormat === 'mixed' ? mixedOk : (speechFormat === 'long' ? longOk : expected && ordered) && panelEvidence.rows === (speechFormat === 'long' ? 8 : 3) && panelEvidence.copy);
       const delayMs = sound !== null && verified ? sound - verified.at : null;
       const individualTime = delayMs !== null && delayMs >= 0 && delayMs <= 3000;
