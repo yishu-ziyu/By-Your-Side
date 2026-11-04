@@ -696,12 +696,10 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
     try{
       state=(await send({kind:'state'})).state;
-      decision=await session.decideVoiceFastOp(text,state,(route.recentTurns??[]).filter(turn=>turn.role==='user').slice(-3).map(turn=>turn.text));
+      decision=await session.decideVoiceFastOp(text,state,(route.recentTurns??[]).slice(-4));
     }catch{return null;}
 
     if(decision.op==='chat')return {result:{kind:'none',nativeChat:true}};
-
-    if(decision.op==='listen'){route.onInputDecision?.(true,true);return {result:{kind:'listening'}};}
 
     if(decision.op==='task')return {task:true};
 
