@@ -12,17 +12,28 @@ export function mountComposerGlide(app: HTMLElement, dock: HTMLElement, starter:
   let lastStarter: DOMRect | null = null;
   let glide: Animation | null = null;
   let armed = false;
+  const viewport = () => `${innerWidth}x${innerHeight}`;
+  let lastViewport = viewport();
   const arm = () => { if (!armed && app.classList.contains("starter-ready")) requestAnimationFrame(() => requestAnimationFrame(() => { armed = true; remember(); })); };
 
   const starterShown = () => getComputedStyle(starter).display !== "none";
 
   const remember = () => {
+    lastViewport = viewport();
     if (glide) return;
     lastBottom = dock.getBoundingClientRect().bottom;
     if (!app.classList.contains("starter-leaving")) lastStarter = starterShown() ? starter.getBoundingClientRect() : null;
   };
 
   const settle = () => {
+    if (viewport() !== lastViewport) {
+      glide?.cancel();
+      glide = null;
+      remember();
+
+      return;
+    }
+
     const shift = translateY(dock);
     const bottom = dock.getBoundingClientRect().bottom - shift;
     const from = lastBottom + shift - bottom;
