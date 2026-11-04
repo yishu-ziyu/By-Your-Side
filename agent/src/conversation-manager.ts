@@ -97,7 +97,7 @@ export class ConversationManager {
       const running: TaskContinuation = { ...live, state: 'RUNNING', processingVersion: live.pendingVersion, pendingVersion: null, segmentStartedAt: Date.now() };
       progress.setContinuation(running);
       await this.saveContinuation(id);
-      if (progress.snapshot().continuation?.controlVersion !== running.controlVersion || progress.snapshot().continuation?.state !== 'RUNNING') throw new TaskActionRejected('委托已停止，未自动继续。');
+      if (progress.snapshot().continuation?.controlVersion !== running.controlVersion || progress.snapshot().continuation?.state !== 'RUNNING') throw new TaskActionRejected('委托已中止，未自动继续。');
       this.pendingStarts.add(id);
       try { await entry.runtime.session.continueCondition(progress.snapshot()); }
       catch (error) { this.pendingStarts.delete(id); throw error; }
@@ -585,7 +585,7 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
     const snapshot = this.getTaskProgress(id);
 
     if (!entry || !snapshot || snapshot.state !== "running" || expectedStartedAt === null || snapshot.startedAt !== expectedStartedAt) {
-      throw new Error("原任务已停止或发生变化，修改未发送。");
+      throw new Error("原任务已中止或变了，修改没有发送。");
     }
 
     if (!text.trim() || text.length > 2000) throw new Error("这段修改没有听清或过长，请简短重说。");
@@ -1194,7 +1194,7 @@ return receipt;
 
       if (request.expectedRunId !== (snapshot.runId??null))throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
 
-      if(request.expectedControlVersion!==undefined&&request.expectedControlVersion!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('页面控制权已再次变化，旧计划的后续步骤未执行。');
+      if(request.expectedControlVersion!==undefined&&request.expectedControlVersion!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('页面归属又变了，旧计划的后续步骤没有执行。');
 
       const observer = this.observers.get(request.conversationId), delegation = snapshot.continuation;
       if (observer && delegation && !['COMPLETED','STOPPED','FAILED'].includes(delegation.state) && ['pause','abort','steer','start','resume'].includes(request.action)) {
@@ -1285,13 +1285,13 @@ return receipt;
       }
 
       if(request.action==='resume'&&snapshot.state==='interrupted'){
-        if(!request.expectedRunId||!snapshot.goal)throw new TaskActionRejected('没有可从检查点继续的原任务。');
+        if(!request.expectedRunId||!snapshot.goal)throw new TaskActionRejected('没有可以接着做的原任务。');
 
-        if(this.checkpointResumes.has(request.conversationId))throw new TaskActionRejected('正在从检查点恢复原任务，请不要重复继续。');
+        if(this.checkpointResumes.has(request.conversationId))throw new TaskActionRejected('正在恢复原任务，不用再点继续。');
 
-        if(this.runningTasks()>=2)throw new TaskActionRejected('当前执行名额已满，原任务仍保留在检查点；请稍后再继续。');
+        if(this.runningTasks()>=2)throw new TaskActionRejected('现在同时做的任务太多，原任务还在，稍后再继续。');
 
-        if(!entry.runtime.session.available)throw new TaskActionRejected('当前执行模型不可用，原任务仍保留在检查点。');
+        if(!entry.runtime.session.available)throw new TaskActionRejected('当前模型不可用，原任务还在。');
 
         this.pendingStarts.add(request.conversationId);
         this.checkpointResumes.add(request.conversationId);
@@ -1302,7 +1302,7 @@ return receipt;
           const context = await entry.runtime.session.recoveryContext(snapshot, request.context);
           const now=this.getTaskProgress(request.conversationId);
 
-          if(!this.connected||!stillCurrent()||!now||now.runId!==snapshot.runId||now.state!=='interrupted'||version!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('原检查点已取消或发生变化，恢复任务未启动。');
+          if(!this.connected||!stillCurrent()||!now||now.runId!==snapshot.runId||now.state!=='interrupted'||version!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('原任务已取消或变了，没有恢复。');
           this.taskPages.set(request.conversationId, context.tabId);
           this.progress.get(request.conversationId)!.prepareResume();
           await entry.runtime.session.resumeInterruptedTask(snapshot,context,request.attachments,request.pages);
@@ -1404,7 +1404,7 @@ return receipt;
       if(request.action==='pause'||request.action==='resume'||request.action==='abort'){
         if(!request.expectedRunId)throw new TaskActionRejected('当前没有可控制的任务。');
 
-        if(request.action==='resume'&&!entry.runtime.session.isHeld()&&!entry.runtime.control.isGroupHeld())throw new TaskActionRejected(snapshot.state==='aborted'?'任务已经终止，不能继续原任务。':'原任务没有暂停，未执行交还。');
+        if(request.action==='resume'&&!entry.runtime.session.isHeld()&&!entry.runtime.control.isGroupHeld())throw new TaskActionRejected(snapshot.state==='aborted'?'任务已经中止，不能继续原任务。':'原任务没有暂停，未执行交还。');
 
         if(request.action!=='resume'&&!['running','paused',...(request.action==='abort'?['aborted']:[])].includes(snapshot.state))throw new TaskActionRejected('当前没有正在执行的任务，操作未执行。');
         this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
@@ -1425,7 +1425,7 @@ return receipt;
       if (request.action !== 'steer') throw new TaskActionRejected('这项调度能力尚未开放。');
 
       if(snapshot.state==='interrupted'){
-        if(this.checkpointResumes.has(request.conversationId))throw new TaskActionRejected('正在恢复检查点，这条修改尚未发送。');
+        if(this.checkpointResumes.has(request.conversationId))throw new TaskActionRejected('正在恢复原任务，这条修改还没发送。');
         const progress=this.progress.get(request.conversationId)!;
         progress.recordRequirement(request.text??'',undefined,request.attachments);
         await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId??null,request.attachments);
@@ -1466,7 +1466,7 @@ return receipt;
       }
 
       if (!request.expectedRunId || snapshot.runId !== request.expectedRunId || !['running','idle'].includes(snapshot.state) || !entry.runtime.session.isStreaming()) {
-        throw new TaskActionRejected('原任务已停止或发生变化，修改未发送。');
+        throw new TaskActionRejected('原任务已中止或变了，修改没有发送。');
       }
 
       if (entry.runtime.session.isHeld()) throw new TaskActionRejected('页面现在归你，请先交还。');
@@ -2057,7 +2057,7 @@ return;}
     }
 
     if(message.type==='user_message'&&this.checkpointResumes.has(id)&&!entry.runtime.session.isStreaming()){
-      this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:'当前任务正在启动或恢复检查点，这条新要求尚未发送；请等它进入运行后再补充。'}});
+      this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:'任务正在启动或恢复，这条要求还没发送；等它开始后再补充。'}});
 
       return;
     }
@@ -2256,7 +2256,7 @@ return;
         summary.state='idle';summary.checkpoint='interrupted';
 
         try{runtime.session.persistTaskResults?.(progress.snapshot());this.publishRunIdentity(summary.id);}
-        catch{this.emit({type:'agent_event',conversationId:summary.id,event:{kind:'error',message:'中断检查点未能完整保存，执行已停止；请核对原记录，不要重放操作。'}});}
+        catch{this.emit({type:'agent_event',conversationId:summary.id,event:{kind:'error',message:'中断时没有保存完整，任务已中止。请核对原记录，不要重复操作。'}});}
       }
 
       this.pendingStarts.delete(summary.id);this.checkpointResumes.delete(summary.id);

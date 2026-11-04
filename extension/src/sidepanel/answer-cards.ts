@@ -879,7 +879,7 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
       failed = true;
       const message = data.message.slice(0, 300);
 
-      appBar(box, `小程序出错了：${message}`, { label: "让助手修好", run: () => { say(`小程序「${title}」出错了：${message}。请修好它。`); } });
+      appBar(box, "小程序出错了", { label: "让助手修好", run: () => { say(`小程序「${title}」出错了：${message}。请修好它。`); } });
     }
   };
 

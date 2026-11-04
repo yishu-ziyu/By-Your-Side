@@ -1,6 +1,7 @@
 import { isUnfinishedItem, USER_DELIVERY_KINDS, type TaskProgressSnapshot, type UserDelivery, type UserDeliveryKind } from "./voice.js";
 import { nextStepIgnoringPlaceholder, TASK_NEXT_REASONS, type TaskNextStep } from "./task-next-step.js";
 import { isSupersededUnknown, TASK_RESULT_ITEM_STATUSES, type TaskResultItemStatus } from "./task-results.js";
+import { waitingCopy } from './task-status-copy.js';
 import { isTaskMaterials, type TaskMaterialReference } from './task-recovery.js';
 import { isTaskContinuation, type TaskContinuation } from './task-continuation.js';
 
@@ -23,7 +24,7 @@ export interface TaskView {
   continuation?: TaskContinuation;
   active: { member: string; action: string; since: number }[];
   lastAction: { action: string; failed: boolean; at: number } | null;
-  waiting: { reason: TaskNextStep['reason']; detail: string | null } | null;
+  waiting: { reason: TaskNextStep['reason']; text: string; detail: string | null } | null;
   results: TaskViewResultItem[];
   outstanding: TaskViewResultItem[];
   goalsListed?: boolean;
@@ -37,40 +38,40 @@ export interface TaskView {
 const OPEN_STATUSES = new Set(["pending", "blocked", "unknown"]);
 
 function waitingFor(snapshot: TaskProgressSnapshot, nextStep: TaskNextStep | undefined): TaskView["waiting"] {
-  if (snapshot.state === "paused") return { reason: "human_control", detail: null };
+  if (snapshot.state === "paused") return waitingCopy("human_control", null);
 
-  if (snapshot.state === "interrupted") return { reason: "restart_checkpoint", detail: snapshot.interruptionReason ?? null };
+  if (snapshot.state === "interrupted") return waitingCopy("restart_checkpoint", snapshot.interruptionReason ?? null);
 
-  if (snapshot.state === "aborted") return { reason: "cancelled", detail: null };
+  if (snapshot.state === "aborted") return waitingCopy("cancelled", null);
 
   if (nextStep) {
     switch (nextStep.reason) {
       case "failure_limit":
-        return { reason: "failure_limit", detail: null };
+        return waitingCopy("failure_limit", null);
       case "unknown_with_baseline":
       case "unknown_without_baseline":
-        return { reason: nextStep.reason, detail: null };
+        return waitingCopy(nextStep.reason, null);
       case "readback_required":
-        return { reason: "readback_required", detail: null };
+        return waitingCopy("readback_required", null);
       case "tool_failed":
-        return { reason: "tool_failed", detail: null };
+        return waitingCopy("tool_failed", null);
       case "runtime_error":
-        return { reason: "runtime_error", detail: null };
+        return waitingCopy("runtime_error", null);
       case "condition_wait":
-        return { reason: "condition_wait", detail: snapshot.continuation?.condition.description ?? null };
+        return waitingCopy("condition_wait", snapshot.continuation?.condition.description ?? null);
       case "condition_invalid":
-        return { reason: "condition_invalid", detail: snapshot.continuation?.lastError ?? null };
+        return waitingCopy("condition_invalid", snapshot.continuation?.lastError ?? null);
       case "deadline":
       case "budget":
-        return { reason: nextStep.reason, detail: null };
+        return waitingCopy(nextStep.reason, null);
       case "continuation_stopped":
-        return { reason: nextStep.reason, detail: snapshot.continuation?.stopReason ?? null };
+        return waitingCopy(nextStep.reason, snapshot.continuation?.stopReason ?? null);
       default:
         break;
     }
   }
 
-  if (snapshot.state === "error") return { reason: "runtime_error", detail: null };
+  if (snapshot.state === "error") return waitingCopy("runtime_error", null);
 
   return null;
 }
@@ -171,7 +172,7 @@ export function isTaskView(value: unknown): value is TaskView {
 
   if (v.lastAction !== null && (!v.lastAction || typeof v.lastAction.action !== "string" || typeof v.lastAction.failed !== "boolean" || typeof v.lastAction.at !== "number")) return false;
 
-  if (v.waiting !== null && v.waiting !== undefined && (typeof v.waiting !== "object" || !TASK_NEXT_REASONS.includes(v.waiting.reason) || (v.waiting.detail !== null && typeof v.waiting.detail !== "string"))) return false;
+  if (v.waiting !== null && v.waiting !== undefined && (typeof v.waiting !== "object" || !TASK_NEXT_REASONS.includes(v.waiting.reason) || typeof v.waiting.text !== "string" || (v.waiting.detail !== null && typeof v.waiting.detail !== "string"))) return false;
 
   if (v.latestDelivery !== null && (!v.latestDelivery || !USER_DELIVERY_KINDS.includes(v.latestDelivery.kind))) return false;
 

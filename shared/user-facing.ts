@@ -134,7 +134,7 @@ const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [
   [/未找到目标|未找到元素|ref 已失效|ref \S+ 已失效|已过期|节点无法解析|节点没有可见元素|无法获取元素位置|无法获取操作坐标|无法确认目标位置|坐标处没有可命中|目标处没有可命中/, "没找到目标"],
   [/目标不可用/, "目标现在不可用"],
   [/不可见/, "目标不可见"],
-  [/控制轮次已失效|原任务已停止|worker 已停止/i, "任务已经变了"],
+  [/控制轮次已失效|原任务已停止|原任务已中止|worker 已停止/i, "任务已经变了"],
   [/页面现在归你/, "页面现在归你"],
   [/正在给另一个会话/, "页面正被另一个会话使用"],
   [/标签页 \S+ 已关闭|没有可用的活动标签页|没有可读取的页面/, "页面已经关了"],
@@ -183,4 +183,40 @@ const BLOCKED_REASONS: Record<BlockedCause, string> = {
 
 export function plainBlockedReason(cause: BlockedCause | null): string {
   return cause ? BLOCKED_REASONS[cause] : "网站那边出了问题，这次做不成";
+}
+
+function openedPageTitle(resultText: string): string | null {
+  const json = /"title":"((?:[^"\\]|\\.)*)"/.exec(resultText);
+  const line = json ? null : /^Navigation result: (\S+) — (.+?); document:/m.exec(resultText);
+  let title = "";
+
+  if (json) {
+    try {
+      title = String(JSON.parse(`"${json[1]}"`));
+    } catch {
+      return null;
+    }
+  } else if (line) {
+    title = line[2] ?? "";
+  }
+
+  title = title.trim();
+
+  if (!title || /^https?:\/\//.test(title)) return null;
+
+  return title.length > 30 ? `${title.slice(0, 29)}…` : title;
+}
+
+export function toolEndForUi<T extends { kind: "tool_end"; name: string; isError: boolean; resultText?: string; reason?: string }>(event: T): Omit<T, "resultText"> & { pageTitle?: string; timeout?: { copy: string; retry: boolean } } {
+  const { resultText, ...rest } = event;
+  const text = resultText ?? "";
+  const pageTitle = event.isError ? null : openedPageTitle(text);
+  const timeout = event.isError ? describeTimeout(text) : null;
+
+  return {
+    ...rest,
+    ...(event.isError && !event.reason ? { reason: plainToolError(text) } : {}),
+    ...(pageTitle ? { pageTitle } : {}),
+    ...(timeout ? { timeout: { copy: timeout.copy, retry: timeout.retry } } : {}),
+  };
 }
