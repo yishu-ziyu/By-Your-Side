@@ -606,8 +606,9 @@ export interface ToolContract {
       clickCount?: number;
       force?: boolean;
       label?: string;
+      awaitPage?: boolean;
     };
-    data: { clicked: true; effect?: import('./effect.js').EffectReport;  appeared?: import('./effect.js').PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string };  sendConfirmed?: true };
+    data: { clicked: true; effect?: import('./effect.js').EffectReport;  appeared?: import('./effect.js').PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string };  sendConfirmed?: true; timing?: Record<string, number>; page?: ToolContract["snapshot"]["data"] };
   };
   double_click: {
     params: {

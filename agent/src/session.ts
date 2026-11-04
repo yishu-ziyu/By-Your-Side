@@ -3550,7 +3550,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
   private collectQuoteSources(name: string, result: unknown): void {
     const details = result && typeof result === "object" && "details" in result ? result.details : result;
-    if (["navigate", "tabs", "browser_run"].includes(name)) {
+    if (["navigate", "tabs", "browser_run", "click"].includes(name)) {
       if (details && typeof details === "object" && "page" in details) this.collectQuoteSources("snapshot", details.page);
       return;
     }
@@ -3598,7 +3598,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       return;
     }
 
-    if (name === 'navigate' || name === 'tabs' && params?.action === 'open' || name === 'browser_run') {
+    if (name === 'navigate' || name === 'click' || name === 'tabs' && params?.action === 'open' || name === 'browser_run') {
       const page = (result as { details?: { page?: unknown } } | null)?.details?.page;
 
       if (page) this.emitReadObservation(toolCallId, 'snapshot', {}, page, false);
