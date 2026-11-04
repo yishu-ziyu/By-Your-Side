@@ -1,8 +1,3 @@
-/**
- * 模型选择器的纯逻辑（与 DOM 解耦）：
- * - groupModelsByProvider：把 agent 下发的扁平模型列表按 provider 分组（保留首现顺序）
- * - displayName / chipLabel / filterModels：输入区模型菜单
- */
 import type { ModelOption } from "../../../shared/protocol.js";
 
 interface ModelGroup {
@@ -10,7 +5,6 @@ interface ModelGroup {
   models: ModelOption[];
 }
 
-/** 按 provider 分组；组内与组间都保留输入的首现顺序（agent 侧已按目录序给出）。 */
 export function groupModelsByProvider(models: readonly ModelOption[]): ModelGroup[] {
   const groups: ModelGroup[] = [];
   const byProvider = new Map<string, ModelGroup>();
@@ -30,7 +24,6 @@ export function groupModelsByProvider(models: readonly ModelOption[]): ModelGrou
   return groups;
 }
 
-/** provider id → 面板分组显示名；未收录的原样显示 id。 */
 const PROVIDER_LABELS: Record<string, string> = {
   cliproxy: "本机代理",
   "cli-proxy": "本机代理",
@@ -59,7 +52,6 @@ export function providerLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider;
 }
 
-/** 芯片/列表用的短名：优先 SDK name，去掉 provider/ 前缀。 */
 export function displayName(m: ModelOption): string {
   const raw = (m.name || m.modelId).trim();
   const slash = raw.lastIndexOf("/");
@@ -67,7 +59,6 @@ export function displayName(m: ModelOption): string {
   return (slash >= 0 ? raw.slice(slash + 1) : raw) || m.modelId;
 }
 
-/** 输入区芯片文案：有列表则用展示名，否则剥掉 id 里的 provider 前缀。 */
 export function chipLabel(model: string | undefined, models: readonly ModelOption[]): string {
   if (!model) return "选择模型";
   const found = models.find((m) => m.id === model);
@@ -78,12 +69,6 @@ export function chipLabel(model: string | undefined, models: readonly ModelOptio
   return slash >= 0 ? model.slice(slash + 1) : model;
 }
 
-/**
- * 过滤 + 可选「只看常用」。
- * featuredOnly=true 时只留 agent 打了 featured 标的模型（默认精选集 + 当前会话模型）；
- * agent 下发的是全量，标记缺失（旧 agent）时视为非精选，此时若结果为空会让 UI 落到「暂无可用模型」，
- * 所以调用方应在结果为空且确实没传 featured 时退回全量——由模型菜单的第一层处理。
- */
 export function filterModels(
   models: readonly ModelOption[],
   query: string,

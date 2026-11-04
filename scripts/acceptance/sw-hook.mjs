@@ -1,11 +1,3 @@
-/**
- * 把活的 uplink.handleRaw 挂到 SW globalThis.__saCall。
- * 生产代码没有导出 executeToolCall；唯一外部可达路径是：
- * Debugger 在模块顶层 listener 里 paused → evaluateOnCallFrame 看见闭包里的 uplink
- * → handleRaw(tool_call) → onServerMessage → executeToolCall → gate.run → handlers。
- *
- * 触发用无副作用的 runtime.sendMessage（不是 mark_action / handback_click）。
- */
 export const HOOK_EXPRESSION = `(() => {
   const rawTransport = typeof transport !== "undefined" && transport ? transport : null;
   const scopedUplink = typeof uplink !== "undefined" && uplink ? uplink : null;
@@ -249,7 +241,7 @@ export const HOOK_EXPRESSION = `(() => {
 })()`;
 
 /**
- * 扩展热重载后 Chrome 偶尔会把旧 inspector domain 状态留在 SW target 上，
+ * WHY: 扩展热重载后 Chrome 偶尔会把旧 inspector domain 状态留在 SW target 上，
  * 直接 Runtime.enable / Debugger.enable 会一直等到超时。新 attach 先恢复并关闭
  * 这些 domain，后面的 hook 再按需要重新启用；不修改扩展或业务状态。
  */
@@ -258,7 +250,6 @@ export async function normalizeServiceWorkerInspector(cdp, sessionId) {
     try {
       await cdp.send(method, {}, sessionId, 5_000);
     } catch {
-      // resume 在未暂停时会正常报错；冷启动恢复应继续。
     }
   }
 }
@@ -332,7 +323,6 @@ async function hookOnPausedFrame(cdp, sessionId, paused) {
   throw new Error(`无法在暂停帧里拿到 uplink.handleRaw / executeToolCall：${lastErr}`);
 }
 
-// Runs before breakpoints are installed: no paused worker can block readiness.
 export function prepareProbeExpression(probeUrl) {
   return `(async () => {
     const tab = await chrome.tabs.create({ url: ${JSON.stringify(probeUrl)}, active: false });
@@ -374,10 +364,6 @@ function evaluateValue(result) {
   return result.result?.value;
 }
 
-/**
- * One trigger, with session-scoped pauses; never await its completion before resume.
- * @param {(kind: string, data: unknown) => void} [diagnose]
- */
 export async function installExecuteToolCallHook(cdp, sessionId, extensionId, probeUrl, diagnose = () => {}) {
   if (!probeUrl) throw new Error('installExecuteToolCallHook 需要本地 probeUrl');
   const evaluate = async expression => evaluateValue(await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId));
@@ -422,7 +408,6 @@ export async function installExecuteToolCallHook(cdp, sessionId, extensionId, pr
       return value;
     });
 
-    // A successful trigger is not readiness; a rejected trigger ends the wait.
     const nextPause = pending => new Promise((resolve, reject) => {
       pending.then(resolve, reject);
       trigger.catch(reject);
@@ -443,7 +428,6 @@ export async function installExecuteToolCallHook(cdp, sessionId, extensionId, pr
 
     if (!hooked) throw new Error(`No controller scope in triggered listeners: ${lastError}`);
 
-    // Remove before resuming so the same message cannot hit another breakpoint.
     for (const breakpointId of breakpointIds.splice(0)) await cdp.send('Debugger.removeBreakpoint', { breakpointId }, sessionId);
     await cdp.send('Debugger.resume', {}, sessionId);
     await trigger;
@@ -459,7 +443,6 @@ export async function installExecuteToolCallHook(cdp, sessionId, extensionId, pr
     waits.abort();
     offException(); offPause();
 
-    // Debugger.disable removes our breakpoints and resumes even on trigger failure.
     await (async () => {
       try {
         await cdp.send('Debugger.disable', {}, sessionId, 4000);

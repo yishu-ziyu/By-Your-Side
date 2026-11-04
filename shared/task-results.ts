@@ -10,7 +10,6 @@ export const TASK_RESULT_ITEM_STATUSES = ["pending", "satisfied", "blocked", "un
 
 export type TaskResultItemStatus = (typeof TASK_RESULT_ITEM_STATUSES)[number];
 
-/** Intent-only registration. Status/completion cannot be declared here. */
 export interface TaskResultRegistration {
   id: string;
   description: string;
@@ -24,37 +23,26 @@ export interface TaskResultEvidence {
   target: string | null;
   member: string;
   runId: string;
-  /** 这条回执开始或结束的时刻。旧快照可缺省。 */
   observedAt?: number;
-  /** Host-classified effects for aliases or parameter-dependent tools (tabs/fetch). */
   effectful?: true;
-  /** 旧版本存档字段（不再产生，也不再使用）：只为旧任务记录仍能读入。 */
   awaitingConfirmation?: true;
 }
 
 export interface TaskResultItem extends TaskResultRegistration {
   status: TaskResultItemStatus;
   evidence: TaskResultEvidence | null;
-  /** 这一步没做成的人话原因（≤16 字，tool_end.reason）；成功或未失败时缺省。 */
   reason?: string;
-  /** 该未知项已被后续更可信的状态项取代；旧证据保留，不再算作未完成。 */
   supersededBy?: string;
 }
 
-/** Focus, scrolling and hovering require control, but do not create durable write obligations. */
 export function resultToolHasWriteEffect(tool:string):boolean {
   return isWriteTool(tool)&&!['switch_tab','scroll','hover','ask_user_to_point'].includes(tool);
 }
 
-/** 这一步改过页面（或可能改过）：用于读回、目标失效等「页面变了」的判断，不决定结果不确定时拦什么。 */
 export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>):boolean {
   return resultToolHasWriteEffect(item.tool)||item.evidence?.effectful===true;
 }
 
-/**
- * 写类工具里，出错或超时也不会留下业务后果的：看页辅助（滚动、悬停、圈画、点选）、
- * 换页（导航、开/切/关标签页、页面归属）、等页面事件、处理原生弹窗、松开按住的输入。
- */
 const NO_REPEAT_HARM_WRITES: ReadonlySet<string> = new Set([
   'worker_tabs', 'navigate', 'open_tab', 'switch_tab', 'close_tab',
   'scroll', 'hover', 'mark', 'clear_marks', 'ask_user_to_point',
@@ -62,20 +50,12 @@ const NO_REPEAT_HARM_WRITES: ReadonlySet<string> = new Set([
   'release_held_inputs',
 ]);
 
-/**
- * 这一步出错或超时时，后果可能已经发生（提交、付款、发送、删除、确认原生弹窗……）。
- * 按现有副作用分类：控制闸门的写类工具去掉上面那组，再加上确认弹窗与 POST/带 body 的 fetch。
- */
 function commitsHarm(name:string, params?:Parameters<typeof classifyToolEffect>[1]):boolean {
   if (name === 'fetch') return classifyToolEffect(name, params).class === 'write';
 
   return name === 'accept_dialog' || isWriteTool(name) && !NO_REPEAT_HARM_WRITES.has(name);
 }
 
-/**
- * 账本项出错或超时时记成「结果未知」，而不是「失败」。这只是如实记账：不暂停写入，也不拦重做。
- * fetch 的副作用按参数判定：宿主把 POST/带 body 的 fetch 记在 evidence.effectful。
- */
 export function resultLocksWhenUnknown(item:{tool:string;evidence?:{effectful?:boolean}|null}):boolean {
   return commitsHarm(item.tool)||item.tool==='fetch'&&item.evidence?.effectful===true;
 }
@@ -84,7 +64,6 @@ const FILL_RESULT_TOOLS = new Set(["fill", "type_text", "page_operation", "selec
 
 const SUBMIT_HINT = /提交|发送|submit|send/i;
 
-/** 会话列表用的一句结局：有填写就说填了几栏、交没交；没有就按任务结局。 */
 export function endingFromResults(
   results: ReadonlyArray<Pick<TaskResultItem, "tool" | "status" | "target" | "description" | "evidence">>,
   outcome: "complete" | "partial" | "stopped" | "error",
@@ -106,15 +85,12 @@ export function endingFromResults(
 
 const TASK_RESULT_META_TOOLS = ["capture_page_material", "task_goals", "record_task_results", "send_user_message"] as const;
 
-/** 算作页面读回的真实只读工具。read_elements 是宿主按选择器的有界多元素读回，与 read_element 同级。 */
 export const RESULT_VERIFY_READ_TOOLS = ["read_element", "read_elements", "snapshot"] as const;
 
-/** 单条读数的完整文本上限；超过即标记截断。 */
 export const RESULT_OBSERVATION_TEXT_MAX = 50_000;
 
 const text = (v: unknown, max: number): v is string => typeof v === "string" && v.trim().length >= 1 && v.length <= max;
 
-/** Opaque correlation data, not a task/file key. Preserve program suffixes and provider ids exactly. */
 function isToolCallId(value: unknown): value is string {
   return text(value, 512) && !/[\s\u0000-\u001f\u007f-\u009f]/u.test(value);
 }
@@ -142,12 +118,10 @@ export function isTaskResultItem(v: unknown): v is TaskResultItem {
     && (r.supersededBy === undefined || typeof r.supersededBy === 'string' && taskId(r.supersededBy));
 }
 
-/** 失败原因只给侧栏：交给模型的账本副本不带它，模型看到的与加原因之前一样。 */
 export function withoutFailureReasons(items: readonly TaskResultItem[]): TaskResultItem[] {
   return items.map(({ reason: _reason, ...item }) => item);
 }
 
-/** 只有取代项本身已满足时，被取代的未知才不再阻塞；否则未知仍生效。 */
 export function isSupersededUnknown(item: Pick<TaskResultItem,'id'|'status'|'supersededBy'>, items: readonly TaskResultItem[]): boolean {
   return item.status === 'unknown' && typeof item.supersededBy === 'string'
     && items.some(candidate => candidate.id === item.supersededBy && candidate.status === 'satisfied');
@@ -204,30 +178,16 @@ export function resultCanUseExecution(item: Pick<TaskResultItem, "tool" | "targe
   return item.target === target;
 }
 
-// ── 执行事实到账本项的绑定（记账下沉） ────────────────────────────────
-
-/** 自动登记项的 id 前缀；模型之后用 record_task_results 声明同一目标时应吸收它，而不是新增一条待办。 */
 export const AUTO_RESULT_ID_PREFIX = "auto-";
 
-/** 账本项上限；自动登记达到上限后不再新增，但已登记项的绑定与回执照常。 */
 export const MAX_TASK_RESULTS = 64;
 
 type ResultBinding =
-  /** 已有同工具同目标、尚无证据（或上次失败、结果未知）的待办项：直接绑定。 */
   | { kind: "exact"; itemId: string }
-  /** 登记了意图但还没定位的同工具待办项（target=null，且尚无证据），或换了定位器重做的失败自动项：可把实际目标改绑到它。 */
   | { kind: "rebind"; itemId: string }
-  /** 没有可复用的待办：调用方决定是否按真实动作新建自动项。 */
   | { kind: "create" }
-  /** 同工具同目标已有在途的项：不新建、不改绑。 */
   | { kind: "none" };
 
-/**
- * 从真实工具调用派生账本绑定（纯函数）。
- * 只复用「尚无证据的 pending」、「上次失败的 blocked」与「结果未知的 unknown」项：重做同一步时，
- * 新回执落在原项上。satisfied 是历史回执，不参与改绑。已写明 target 的登记项不静默漂移：
- * 实际目标不同时新建自动项，原登记保持待办。歧义（多个未定位待办）不猜，交给调用方新建。
- */
 export function selectResultBinding(items: readonly TaskResultItem[], tool: string, target: string | null, description?: string): ResultBinding {
   if (isResultMetaTool(tool)) return { kind: "none" };
 
@@ -237,16 +197,10 @@ export function selectResultBinding(items: readonly TaskResultItem[], tool: stri
 
   if (exact) return { kind: "exact", itemId: exact.id };
 
-  // 第一次定位没找到、换个定位器再做同一步（同工具、同一句人话）：blocked 表示上次没造成任何后果，
-  // 这次的回执就是那一步的结果；另建一条会把已做成的事留成「受阻」，交付和语音都会说没做成。
-  // 只认自动项：用户/模型登记过 target 的项不静默漂移；unknown 写入不在此列，仍按原目标核对。
   const retried = description ? items.find(item => item.status === "blocked" && item.id.startsWith(AUTO_RESULT_ID_PREFIX) && item.tool === tool && item.description === description) : undefined;
 
   if (retried) return { kind: "rebind", itemId: retried.id };
 
-  // A completed receipt describes one invocation, not every later call at that
-  // target. The execution gate owns replay permission; an allowed new call must
-  // get its own receipt so audit coverage does not silently become incomplete.
   if (items.some(item => item.tool === tool && item.target === target && item.status !== 'satisfied')) return { kind: "none" };
   const unlocated = items.filter(item => item.status === "pending" && item.evidence === null && item.tool === tool && item.target === null);
 
@@ -273,10 +227,6 @@ function shortText(value: unknown, max: number): string | null {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-/**
- * 自动账本项的人话说明：模型没登记时用它填回执。只从调用参数与目标派生，
- * 不读页面、不加推测；信息不足时回退到动作名。
- */
 export function deriveResultDescription(name: string, params: Record<string, unknown> | undefined, target: string | null): string {
   const p = params ?? {};
   const tabTool = name === 'tabs' && ['open', 'switch', 'close'].includes(String(p.action)) ? `${p.action}_tab` : name;

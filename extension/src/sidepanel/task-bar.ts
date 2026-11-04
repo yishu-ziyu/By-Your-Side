@@ -1,20 +1,7 @@
-/**
- * 轻量任务条：不展开工具日志也能知道「目标是什么、正在做什么、现在该谁行动」。
- *
- * 事实来源与诚实边界：
- * - 状态/目标/作用页/等待原因全部消费只读的 task_view 投影，不另造状态机；
- * - 不显示百分比/剩余时间；接管与停止区分「请求中」与「已生效」，失败保留原状态可重试；
- * - 不新增任何动画：信息不依赖动效，prefers-reduced-motion 下完全等价。
- *
- * 纯逻辑（waitingCopy/buildTaskBarModel 等）与 DOM 装配同文件分层。
- */
 import type { TaskView } from "../../../shared/task-view.js";
 import { displayNameFor } from "../../../shared/cast.js";
 import { formatDuration } from "./steps.js";
 
-// ── 纯逻辑：文案与展示模型 ─────────────────────────────────────────
-
-/** 阻塞/等待原因 → 人话。直接取 task_view 的真实 reason，不合并成含糊「思考中」。 */
 function waitingCopy(reason: string, detail: string | null): { text: string; detail: string | null } {
   const map: Record<string, string> = {
     human_control: "页面现在归你，助手在等你交还",
@@ -45,7 +32,6 @@ function waitingCopy(reason: string, detail: string | null): { text: string; det
   };
 }
 
-/** 状态层：一句话说清现在该谁行动。interrupted 必须区分有无真实恢复依据（与接续入口同口径）。 */
 export function stateHeadline(state: TaskView["state"], resumable?: boolean): string {
   switch (state) {
     case "running": return "正在做";
@@ -72,7 +58,6 @@ function hostOf(url: string): string {
   }
 }
 
-/** 任务条摘要行上的网站名：只要主机名，标题留给展开后的「作用于」。 */
 function pageHostOf(info: { url?: string }): string | null {
   return info.url ? hostOf(info.url) || null : null;
 }
@@ -86,7 +71,6 @@ function pageLabelOf(info: { title?: string; url?: string }): string {
   return host || title || "页面";
 }
 
-/** 当前活动行：lead 不带名字，worker 带名字；无活动时为 null。 */
 function activityText(view: TaskView): string | null {
   if (!view.active.length) return null;
 
@@ -95,7 +79,6 @@ function activityText(view: TaskView): string | null {
     .join("；");
 }
 
-/** 与 background 的 CONTROL_TIMEOUT_MS 同值：超过这个时间仍未见到权威结果，就如实说「还没得到确认」。 */
 const CONTROL_PENDING_TIMEOUT_MS = 10_000;
 
 interface ControlState {
@@ -104,20 +87,17 @@ interface ControlState {
 }
 
 interface ControlNote {
-  /** requested=请求中；unconfirmed=还没得到确认（可再试） */
   phase: "requested" | "unconfirmed";
   text: string;
   tone: "pending" | "fail";
   retry: "takeover" | "stop";
 }
 
-/** 控制请求的文案：区分「请求中」与「已生效」（已生效由状态层表达），失败不宣布已停手。 */
 function controlCopy(control: ControlState, state: TaskView["state"] | null, now: number): ControlNote | null {
   if (control.takeover.failReason) {
     return { phase: "unconfirmed", tone: "fail", retry: "takeover", text: `接管未生效：${clip(control.takeover.failReason, 40)}` };
   }
 
-  // 已生效由状态层（state=paused + headline）表达，这里只讲请求还没落地。
   if (control.takeover.pending && state !== "paused" && state !== "idle" && state !== "aborted") {
     const waited = control.takeover.since != null ? now - control.takeover.since : 0;
 
@@ -151,13 +131,11 @@ function controlCopy(control: ControlState, state: TaskView["state"] | null, now
 interface TaskBarModel {
   visible: boolean;
   state: TaskView["state"] | "draft";
-  /** 已结束的任务：open = 还差一些、接着说就行；done = 做完了。进行中和纯聊天为 null。 */
   outcome?: "open" | "done" | null;
   goal: string | null;
   goalTitle: string | null;
   headline: string;
   activity: string | null;
-  /** 距上次真实动作的时长（长时间无进展时的诚实信号）；无依据为 null。 */
   idleAge: string | null;
   waiting: { text: string; detail: string | null } | null;
   page: { label: string; host: string | null } | null;
@@ -168,13 +146,11 @@ interface TaskBarInputs {
   view: TaskView | null;
   control: ControlState;
   pageLabel: string | null;
-  /** 任务页的主机名，摘要行只显示它；还没查到为 null。 */
   pageHost?: string | null;
   pageTabId: number | null;
   now: number;
 }
 
-/** 组装展示模型：纯函数，同一输入必得同一输出。 */
 function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   const { view, control, now } = input;
   const pageTabId = input.pageTabId ?? view?.page?.tabId ?? null;
@@ -187,19 +163,13 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     : null;
 
   const controlNote = controlCopy(control, view?.state ?? null, now);
-  // 已结束(idle/aborted/error)的任务不在顶部留痕：结论在回答里，要用户处理的事由接续入口负责。
   const isOngoing = !!view && (view.state === "running" || view.state === "paused" || view.state === "interrupted" || !!view.continuation && view.continuation.state !== 'COMPLETED');
 
-  // ── 任务不随一轮结束：没做完的任务留在输入框上方写「还差：…」，做完后让出输入区；
-  // 纯聊天、读页问答（没列目标）结束后照旧不留痕。
-  // 目标核对的结论优先：宿主判断「做完了 / 还差」，不靠模型自己列没列目标。
   const openTask = view?.state === "idle" && (view.goalStatus ? view.goalStatus.status !== "done" : view.resumable);
   const waitingOnUser = openTask && view?.goalStatus?.status === "waiting";
-  // 受阻（网站连不上等）：那一句就是原因，前面写「没做成」，与停下那行同口径。
   const blocked = openTask && view?.goalStatus?.status === "blocked";
   const stillOpen = view?.goalStatus?.remaining ?? view?.latestDelivery?.unfinished?.[0] ?? view?.outstanding[0]?.description ?? null;
 
-  // ── 可见性：没有任何可说的事就整条隐藏 ──
   const hasViewStory = isOngoing || openTask;
   const visible = hasViewStory || !!controlNote;
 
@@ -229,7 +199,6 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     }
   }
 
-  // 长时间没动作才提示：短任务不该被多余数字包住（依据是真实 lastAction.at）。
   let idleAge: string | null = null;
 
   if (view?.state === "running" && !view.active.length && view.lastAction && Number.isFinite(view.lastAction.at) && now - view.lastAction.at >= 15_000) {
@@ -253,26 +222,16 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
   };
 }
 
-// ── DOM 装配 ───────────────────────────────────────────────────────
-
 interface TaskBarOptions {
-  /** 挂载点；TaskBar 拥有其内容（replaceChildren）。 */
   root: HTMLElement;
   resolvePage(tabId: number): Promise<{ title?: string; url?: string } | null>;
-  /** 控制失败后的重试入口（复用真实控制按钮，不是新权限）。 */
   onRetryControl?(action: "takeover" | "stop"): void;
   onContinuationControl?(action: 'pause' | 'resume' | 'abort', view: TaskView): void;
-  /** 当前选中的会话：不属于它的视图不得改写任务条（切会话/旧 run 重放都不能串）。 */
   currentConversationId?(): string;
   now?(): number;
-  /** 文档工厂，单测注入假 DOM；缺省用全局 document。 */
   doc?: Document;
 }
 
-/**
- * 任务条组件。main.ts 只调用 updateView/noteControl*；
- * 渲染幂等：同一状态重复渲染不产生重复节点或重复控件。
- */
 export class TaskBar {
   private view: TaskView | null = null;
   private handoffShown = false;
@@ -289,7 +248,6 @@ export class TaskBar {
   private readonly headEl: HTMLElement;
   private readonly revisionsEl: HTMLElement;
   private readonly expandEl: HTMLButtonElement;
-  /** 目标与作用页全名默认收起，摘要行只留状态、耗时与网站名。 */
   private expanded = false;
   private readonly now: () => number;
   private readonly doc: Document;
@@ -351,16 +309,13 @@ export class TaskBar {
     this.render();
   }
 
-  /** task_view 下行。同一 run 内重复/重放同一视图幂等。 */
   updateView(view: TaskView): void {
     if (this.disposed) return;
-    // 视图自带任务身份：会话对不上（切会话、历史重放、旧 run）一律不显示。
     const current = this.opts.currentConversationId?.();
 
     if (current !== undefined && view.conversationId !== current) return;
     this.view = view;
 
-    // 控制请求的收束：状态权威变化后不再显示「请求中」
     if (view.state === "paused") this.control.takeover.pending = false;
 
     if (view.state !== "running") this.control.stop.pending = false;
@@ -373,7 +328,6 @@ export class TaskBar {
     this.render();
   }
 
-  /** 切会话 / 重置渲染：全部清空。 */
   reset(): void {
     this.view = null;
     this.pageCache.clear();
@@ -394,7 +348,6 @@ export class TaskBar {
     if (this.disposed) return;
 
     if (action === "takeover") {
-      // 生效与否最终由 task_view 状态层确认；这里只收掉「请求中」或如实保留失败原因。
       this.control.takeover = { pending: false, since: null, failReason: ok ? null : reason ?? null };
     } else {
       this.control.stop = { pending: false, since: null, accepted: ok, failReason: ok ? null : reason ?? null };
@@ -403,7 +356,6 @@ export class TaskBar {
     this.render();
   }
 
-  /** 停止请求已被受理但任务还没停下：状态层仍是 running，不要提前宣布停手。 */
   noteStopAccepted(): void {
     if (this.disposed) return;
 
@@ -412,7 +364,6 @@ export class TaskBar {
     this.render();
   }
 
-  /** 标签页切换/关闭后调用：重解析作用页身份。 */
   noteTabsChanged(): void {
     if (this.disposed) return;
     const tabId = this.view?.page?.tabId;
@@ -491,15 +442,11 @@ export class TaskBar {
     const changed = !this.model || !shallowEqualModel(this.model, model);
     this.model = model;
 
-    // 进行中、已结束由对话里那一行过程灰字讲；任务条只在有它独有的事时出现：
-    // 页面归你、停止/接管回执。任务页不是你在看的页时不提醒：过程行和回答已说明。
-    // 页面归你时，输入框上方的「你在操作」已经说了；侧栏重开、没有那一行时，任务条照旧说。
     const own = model.state === "paused" && !this.handoffShown || !!model.control || !!this.view?.continuation && this.view.continuation.state !== 'COMPLETED';
 
     this.el.hidden = !model.visible || !own;
 
     if (this.el.hidden) {
-      // 不可见就清空：不留旧任务文本给屏幕阅读器，也不让测试/检查读到过期事实。
       this.goalEl.textContent = "";
       this.revisionsEl.textContent = "";
       this.statusEl.textContent = "";
@@ -522,7 +469,6 @@ export class TaskBar {
 
     if (model.outcome) this.el.setAttribute("data-outcome", model.outcome);
     else this.el.removeAttribute("data-outcome");
-    // 没有目标时不放占位字。
     this.headEl.hidden = !model.goal && !this.view?.revisions.length;
     this.goalEl.textContent = model.goal ?? "";
     this.goalEl.title = model.goalTitle ?? model.goal ?? "";
@@ -601,7 +547,6 @@ export class TaskBar {
   }
 }
 
-/** 布尔属性开关：只用 set/removeAttribute，单测注入的简化 DOM 也能跑。 */
 function flag(el: Element, name: string, on: boolean): void {
   if (on) el.setAttribute(name, "");
   else el.removeAttribute(name);

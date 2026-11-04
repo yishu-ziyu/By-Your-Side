@@ -1,5 +1,5 @@
 /**
- * 助手在后台开的、或在后台出声的标签页先静音，用户切过去时恢复。
+ * WHY: 助手在后台开的、或在后台出声的标签页先静音，用户切过去时恢复。
  * 不然助手点开的视频会在用户看不见的标签页里一直放声音（模拟用户一晚上留下三个同时出声的页）。
  * 用户自己静音的页不动。
  * Chrome 重载扩展（更新、重新加载）时会撤销它做过的全部静音，后台的页会一下子全出声：
@@ -24,7 +24,6 @@ async function isAssistantTab(tabId: number): Promise<boolean> {
   return opened.has(tabId) || (await findSessionsForTab(tabId).catch(() => [])).length > 0;
 }
 
-/** 不在眼前、也没被用户静音的页：静音并记下是助手静的。 */
 export async function quietIfBackground(tabId: number): Promise<void> {
   const tab = await chrome.tabs.get(tabId).catch(() => null);
 
@@ -33,13 +32,11 @@ export async function quietIfBackground(tabId: number): Promise<void> {
   await setQuieted([...(await quieted()).filter(id => id !== tabId), tabId]);
 }
 
-/** 助手开在后台的新页：一开就静音（视频页常在加载完就自动播放）。 */
 export async function quietOpenedTab(tabId: number): Promise<void> {
   opened.add(tabId);
   await quietIfBackground(tabId).catch(() => {});
 }
 
-/** 启动时：记录里还开着、不在眼前的页重新静音；关掉的页从记录里去掉。 */
 async function requiet(): Promise<void> {
   const ids = await quieted();
 

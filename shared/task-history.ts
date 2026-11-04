@@ -1,47 +1,27 @@
 import { isMemoryValidity, validLocalDate, validNotOnHosts, type MemoryValidity } from "./memory.js";
 
-/**
- * 过往任务：每个做成了事（提交、填写、点按钮这类会留下后果）的任务结束时留一条，助手之后能想起「之前做过什么、在哪做的、做成没有」。
- * 只存在本机（扩展 IndexedDB / 本机宿主文件），侧栏「技能与记忆 → 过往任务」可删除。
- */
 export interface TaskHistoryEntry {
-  /** 任务的 runId；同一任务接着做时覆盖同一条 */
   id: string;
   conversationId: string;
-  /** 用户原话目标 */
   goal: string;
-  /** 说出目标时所在页面的标题：「订阅这个页面的邮件」里的「这个页面」。旧条目缺省。 */
   page?: string;
-  /** 目标之后的补充（原话） */
   revisions: string[];
-  /** 任务涉及的网站主机名 */
   hosts: string[];
   outcome: "complete" | "partial" | "stopped" | "error";
-  /** 最后给用户的回答，截短。里面混着当时页面上读到的东西（价格、重量…），只在用户问起过往时给助手看。 */
   summary: string;
-  /** 这件任务做成了什么（「订了金桂会议室，10 月 12 日 15:00」），任务结束时由快速模型从回答里摘出，不含页面上读到的东西；
-   *  平时带给助手、侧栏「按上次做过的…」都用它。什么也没做成、旧条目、摘不出来时缺省。 */
   done?: string;
-  /** 没做完的事（用户口吻） */
   unfinished: string[];
   startedAt: number | null;
   endedAt: number;
-  /** 结果关联的日子（本地日期 YYYY-MM-DD），如订的机票是哪天飞；任务结束时判断，旧条目与无日期的任务缺省。 */
   date?: string;
-  /** 有效期：到那天结束前每轮都带给助手；缺省时只在当前网站或被问起时带。 */
   validity?: MemoryValidity;
-  /** 被带给助手的次数与最近一次时间；旧条目缺省为没用过。 */
   useCount?: number;
   lastUsedAt?: number;
-  /** 用户点过「这里别用」的网站：在这些网站不带给助手。缺省 = 照常。 */
   notOnHosts?: string[];
-  /** 没做完的任务结束时由快速模型起的短主题（「周末行程登记」），给「继续上次的事」用；做完的任务与旧条目缺省。 */
   title?: string;
-  /** 同上，下一步的一句短话（「接着填第 3 页」）；只依据没做完的事，不编。 */
   next?: string;
 }
 
-/** 短主题与下一步的长度上限（字符）。 */
 const TASK_LABEL_MAX = 24;
 
 export const TASK_HISTORY_MAX = 200;

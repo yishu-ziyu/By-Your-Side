@@ -1,16 +1,3 @@
-/**
- * 主模型卡住或暂时出错时，换设置页「备用模型」里选的另一家接着做。
- * 只装扩展、隔离构建、本机脚本模型：主模型是自定义地址，指向本机服务（挂起 / 回 503 / 回 401）；
- * 备用模型是阶跃星辰，发往 api.stepfun.com 的请求在 offscreen 文档里被 CDP 拦下，转给本机脚本模型回答。
- *   npx tsx scripts/acceptance/real-path/model-failover.mts --headless [--case=hang|503|401|quota|off|stop|return|side503|side401]
- * stop（R2）：主模型回 503，换模型那次写盘被拖慢，期间点「停」；备用模型不能收到任务请求。
- * return（R1 末句）：换到备用后，不满 5 分钟的下一条仍走备用；把扩展内 agent 的时钟往后拨 5 分钟（只改 Date.now，不碰产品代码），
- *   下一条先问主模型（仍回 503，于是再换备用），侧栏写「已换回」。
- * side503 / side401（R3）：主模型照常回答任务，只对不带工具表的短调用（记忆判断等）回 503 / 401。用户说「记住我住在北京」：
- *   503 时记忆判断由备用模型回答，侧栏出现「已记住…北京」的回执；401 时备用模型一个请求都收不到。
- * 每个用例单独启动一次 Chrome，证据各写一个目录。
- * 失败方式：侧栏一直等主模型；或报错而不是换备用；或 401、额度用尽也换了；或「不用备用」时也换了；或侧栏看不到切换。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -30,14 +17,12 @@ const BACKUP = { provider: "stepfun", modelId: "step-3.7-flash" };
 
 type Primary = "hang" | { status: number; body: string };
 
-/** side：主模型照常回答任务，只对短调用回这个错误码（R3）。 */
 type Case = { name: string; primary: Primary; backup: boolean; stopAfterMs?: number; slowSwitchMs?: number; switchBack?: boolean; side?: boolean };
 
 const REMEMBER = "记住我住在北京";
 
 const TASK_REPLY = "好的，这句我记下了。";
 
-/** 记忆判断的回答（形状同 memory-foundation.mts 的决定点 A）：按用户原话记下住在北京。 */
 const SAVE_DECISION = { action: "save", text: "住在北京", evidence: REMEMBER, scope: { kind: "all" }, targets: [], taskRequested: false, about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: true } };
 
 const UNAVAILABLE = { status: 503, body: JSON.stringify({ error: { message: "Service Unavailable", type: "server_error" } }) };
@@ -46,12 +31,9 @@ const CASES: Case[] = [
   { name: "hang", primary: "hang", backup: true },
   { name: "503", primary: { status: 503, body: JSON.stringify({ error: { message: "Service Unavailable", type: "server_error" } }) }, backup: true },
   { name: "401", primary: { status: 401, body: JSON.stringify({ error: { message: "Incorrect API key provided", type: "invalid_request_error", code: "invalid_api_key" } }) }, backup: true },
-  // 额度用尽常带 429，但不是「忙」：只报原因，不换。
   { name: "quota", primary: { status: 429, body: JSON.stringify({ error: { message: "You exceeded your current quota, please check your plan and billing details.", type: "insufficient_quota", code: "insufficient_quota" } }) }, backup: true },
   { name: "return", primary: UNAVAILABLE, backup: true, switchBack: true },
   { name: "off", primary: { status: 503, body: JSON.stringify({ error: { message: "Service Unavailable", type: "server_error" } }) }, backup: false },
-    // 「停」从侧栏到 agent 要上百毫秒，比换模型那段时间长（只靠点击时机，8 次一次也没碰到）；
-  // 像磁盘慢一样把换模型记录的写盘拖 1.5 秒，让「停」稳定落在途中。
   ...[0, 1, 2].map(i => ({ name: `stop-${i}`, primary: UNAVAILABLE, backup: true, stopAfterMs: 300, slowSwitchMs: 1_500 })),
   { name: "side503", primary: UNAVAILABLE, backup: true, side: true },
   { name: "side401", primary: { status: 401, body: JSON.stringify({ error: { message: "Incorrect API key provided", type: "invalid_request_error", code: "invalid_api_key" } }) }, backup: true, side: true },
@@ -71,23 +53,18 @@ const stops = summary.filter(s => s.name.startsWith("stop-"));
 
 if (stops.length) console.log(`stop：${stops.length} 次里有 ${stops.filter(s => s.raceHit === true).length} 次「停」落在换模型途中`);
 
-// stop 用例一次都没碰到换模型途中，就没有验到 R2，不算通过。
 if (summary.some(s => s.status !== "PASS") || (stops.length && !stops.some(s => s.raceHit === true))) process.exitCode = 1;
 
 async function runCase(c: Case) {
   const artifacts = join(REPO, "out/acceptance/real-path", `${stamp}-model-failover-${c.name}`);
 
   await mkdir(artifacts, { recursive: true });
-  // side 用例：备用模型只会收到短调用，按记忆判断回答；任务请求由主模型那头的另一个脚本模型照常回答。
   const backup = await startScriptedModel(c.side ? [{ match: REMEMBER, steps: [{ text: JSON.stringify(SAVE_DECISION) }] }] : [{ match: MARK, steps: [{ text: ANSWER }] }]);
   const task = c.side ? await startScriptedModel([{ match: REMEMBER, steps: [{ text: TASK_REPLY }] }]) : backup;
   const forward = async (to: { baseUrl: string }, url: string | undefined, method: string | undefined, body: string) =>
     fetch(`${to.baseUrl.replace(/\/$/, "")}${(url ?? "").replace(/^\/v1/, "")}`, { method, headers: { "content-type": "application/json" }, body: method === "POST" ? body : undefined });
-  /** side 用例里主模型回了错误码的短调用。 */
   const sideFailed: number[] = [];
-  // 主模型：带工具表的任务请求按用例挂起或回错误码；其他请求（不带工具的内部判断）转给脚本模型。
   const primaryAsked: number[] = [];
-  /** stop 用例：主模型回 503 之后点「停」，记下时间。 */
   let pressStop: (() => void) | undefined;
 
   const main = createServer(async (req, res) => {
@@ -134,13 +111,11 @@ async function runCase(c: Case) {
 
   await new Promise<void>(resolve => main.listen(0, "127.0.0.1", resolve));
   const rp = await launchRealPath();
-  /** 发往阶跃星辰（备用模型）的请求：带不带工具表、各自的时间。 */
   const backupAsked: Array<{ at: number; tools: boolean }> = [];
   let error: string | null = null;
   const evidence: Record<string, unknown> = { case: c.name };
 
   try {
-    // 备用模型是另一家服务商：在 offscreen 文档里拦下发往阶跃星辰的请求，转给本机脚本模型。
     const offscreen = await until(async () => (await rp.targets()).find(t => t.url === `chrome-extension://${rp.extensionId}/inproc.html`), 30_000, "扩展内 agent 的 offscreen 文档");
     const offscreenSession = await rp.attach(offscreen.targetId);
 
@@ -158,8 +133,6 @@ async function runCase(c: Case) {
     await rp.cdp.send("Fetch.enable", { patterns: [{ urlPattern: "https://api.stepfun.com/*", requestStage: "Request" }] }, offscreenSession);
 
     if (c.stopAfterMs !== undefined) {
-      // 证人：在扩展内 agent 调切换提示那一行设一个不暂停的条件断点，记下那时有没有已经点了「停」。
-      // 切换提示之后同步接着让备用模型开始，所以这里看到「已停」，就是「停」落在换模型途中。产品代码里没有为测试加的东西。
       const scripts: Array<{ scriptId: string; url: string }> = [];
       rp.cdp.onEvent("Debugger.scriptParsed", (message: { sessionId?: string; params: { scriptId: string; url: string } }) => {
         if (message.sessionId === offscreenSession) scripts.push(message.params);
@@ -172,7 +145,6 @@ async function runCase(c: Case) {
       assert.ok(lineNumber >= 0, "找到切换提示那一行");
 
       if (c.slowSwitchMs) {
-        // 只拖慢这一次换模型记录的写盘（测试从外面经调试器做，产品代码不变）。
         const write = lines.findIndex(line => line.includes('appendCustomEntry("sideagent-model-fallback-v1"'));
         assert.ok(write >= 0, "找到换模型记录那一行");
         await rp.cdp.send("Debugger.setBreakpoint", { location: { scriptId: script.scriptId, lineNumber: write, columnNumber: lines[write]!.search(/\S/) }, condition: `(() => { const sm = this.inner.sessionManager; const write = sm.appendCustomEntry; sm.appendCustomEntry = (...a) => { sm.appendCustomEntry = write; return new Promise(r => setTimeout(r, ${c.slowSwitchMs})).then(() => write.apply(sm, a)); }; })(), false` }, offscreenSession);
@@ -184,7 +156,6 @@ async function runCase(c: Case) {
     const panel = await rp.attach(await rp.openSidePanel());
     await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
 
-    // 主模型与两家凭据直接写入（设置页填 key 另有验收 inproc-config）；备用模型像用户一样在设置页「备用模型」里选。
     const items = {
       inproc_model_config: { provider: "custom", modelId: "primary-model", baseUrl: `http://127.0.0.1:${siteAddress(main).port}/v1` },
       "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" },
@@ -230,11 +201,9 @@ async function runCase(c: Case) {
       await until(async () => (await messages()).includes(TASK_REPLY) || undefined, 60_000, "task answer visible");
 
       if (c.name === "side503") await until(async () => (await receipts()).find(r => /已记住.*北京/.test(r)), 30_000, "「已记住…北京」回执");
-      // 401：回答出来后再等 8 秒，让短调用都发完，看备用模型有没有收到请求。
       else await new Promise(resolve => setTimeout(resolve, 8_000));
     } else if (c.stopAfterMs !== undefined) {
       await until(async () => stopAt !== undefined && await rp.evaluate(panel, '!document.querySelector("#send-btn").classList.contains("stopping")') || undefined, 30_000, "sidebar idle after stop");
-      // 停下后再等 5 秒，看备用模型有没有迟到的请求。
       await new Promise(resolve => setTimeout(resolve, 5_000));
     } else if (c.name === "hang" || c.name === "503" || c.switchBack) {
       await until(async () => (await messages()).includes(ANSWER) || undefined, 90_000, "answer visible");
@@ -271,13 +240,11 @@ async function runCase(c: Case) {
         return at;
       };
       assert.equal(primaryAsked.length, 1, "第一条：主模型只被问一次");
-      // 不满 5 分钟：下一条仍走备用，主模型不被问。
       const secondAt = await sendAgain(2);
       evidence.second = { primaryAsked: primaryAsked.filter(at => at >= secondAt).length, backupTask: backupAsked.filter(r => r.tools && r.at >= secondAt).length };
       assert.equal(primaryAsked.length, 1, "不满 5 分钟，下一条不问主模型");
       assert.ok(backupAsked.some(r => r.tools && r.at >= secondAt), "不满 5 分钟，下一条由备用回答");
       assert.ok(!(await messages()).includes("已换回"), "不满 5 分钟，没有「已换回」");
-      // 侧栏空闲时把扩展内 agent 的时钟拨后 5 分钟（像真过了 5 分钟），产品照常读 Date.now。
       await rp.evaluate(offscreenSession, "(() => { const real = Date.now.bind(Date); Date.now = () => real() + 5 * 60_000 + 1_000; return true; })()");
       const thirdAt = await sendAgain(3);
       const primaryThird = primaryAsked.filter(at => at >= thirdAt);
@@ -307,15 +274,12 @@ async function runCase(c: Case) {
       evidence.idle = await rp.evaluate(panel, '!document.querySelector("#send-btn").classList.contains("stopping")');
       const witness = await rp.evaluate(offscreenSession, "globalThis.__r2 ?? null") as { at: number; stopped: boolean } | null;
       evidence.switchWitness = witness && { atMs: witness.at - sentAt, stopped: witness.stopped };
-      // 没走到切换（「停」落在换模型之前）或走到时还没停（「停」落在备用开始之后），这一次都没碰到 R2 的那段时间。
       evidence.raceHit = witness?.stopped === true;
       assert.equal(evidence.idle, true, "侧栏停下了");
       assert.ok(!text.includes(ANSWER), "没有备用模型的回答");
 
       if (evidence.raceHit) assert.equal(taskToBackup.length, 0, "换模型途中点了「停」，备用模型没有收到任务请求");
     } else if (c.name === "hang" || c.name === "503") {
-      // 挂起时到对冲时间点会再发一份相同的请求；那份不是超时后的重试，所以两份都在首个事件上限（15 秒）之前发出。
-      // 挂起的服务只回响应头、不发流事件，两份都不算受理，仍在 15 秒上限放弃、换备用。
       if (c.name === "hang") {
         assert.ok(primaryAsked.length === 2 && primaryAsked[1]! - primaryAsked[0]! < 15_000, "主模型只有原请求和一份对冲，不在原模型上重试");
         assert.ok(taskToBackup.length >= 1 && taskToBackup[0]!.at - primaryAsked[0]! < 17_000, `彻底挂住时在 15 秒上限换到备用模型（${taskToBackup[0] ? taskToBackup[0].at - primaryAsked[0]! : null} ms）`);

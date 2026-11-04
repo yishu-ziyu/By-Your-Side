@@ -1,11 +1,3 @@
-/**
- * 每轮复盘的离线评测：用本机诊断记录整理出的真实原话（out/turn-review/set.jsonl，由 build-set.py 生成，不进仓库），
- * 逐句调用模型判断，与 out/turn-review/labels.json 里的人工标注比对，报抓到率和误报。
- *
- *   npx tsx scripts/eval/turn-review.mts [--model claude-haiku-5-5]
- *
- * 用 Command Code 的 Anthropic 接口；密钥运行时从 ~/.commandcode/auth.json 读，不打印、不落盘。
- */
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -45,7 +37,6 @@ await Promise.all(Array.from({ length: 2 }, async () => {
   for (let item = queue.shift(); item; item = queue.shift()) {
     try {
       let attempt = 0, done: { raw: string; ms: number } | null = null;
-      // 并发时 Command Code 偶发 403 / 断连：同一句最多再试 3 次，仍失败才记错误。
       while (!done) {
         try { done = await judge(item.row); } catch (error) { if (++attempt > 3) throw error; await new Promise(r => setTimeout(r, 1500 * attempt)); }
       }

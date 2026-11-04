@@ -63,7 +63,6 @@ export function installNudgePreparation() {
       const item = result.opened.find(item => item.tabId === tabId);
       if (!item) return;
       if (tab.active || tab.pinned || (item.loaded && (change.url !== undefined || change.status === 'loading'))) item.canUndo = false;
-      // 首次加载的跳转仍属于刚打开的入口；后续导航结束自动关闭的权限。
       if (!item.loaded && change.url) {
         if (nudgeableUrl(change.url)) item.actualUrl = change.url;
         else item.canUndo = false;

@@ -1,8 +1,3 @@
-/**
- * 云电脑节点表与核心验收清单：分片验收（real-path/shard-run.mts）、本机整轮（real-path/run-all.mts）和节点状态（nodes-status.mts）共用。
- * 远端主机地址与沙箱 ID 从本机 ~/.sideagent/nodes.local.json 或环境变量读取，不在公开仓库源码中硬编码服务器 IP。
- * 每台机器怎么连、怎么唤醒、踩过的坑见 docs/testing/cloud-nodes.md。
- */
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -10,12 +5,12 @@ import { join } from "node:path";
 export type Node = {
   name: string;
   kind: "local" | "ssh" | "drs";
-  weight: number; // 分片权重：快机器多分几个用例
+  weight: number;
   jobs: number;
-  host?: string;      // ssh: user@host
-  dir?: string;       // 远端 repo 目录
-  devinId?: string;   // drs: sandbox session id
-  chrome?: string;    // 远端 Chrome 路径（可含 glob，远端展开）
+  host?: string;
+  dir?: string;
+  devinId?: string;
+  chrome?: string;
 };
 
 type NodeOverride = Partial<Pick<Node, "host" | "dir" | "devinId" | "chrome" | "weight" | "jobs">>;
@@ -66,14 +61,11 @@ export const NODES: Node[] = BASE_NODES.map((node) => ({
   ...overrides[node.name],
 }));
 
-// 远端 SSH 偶尔在握手阶段直接断开：复用同一条连接减少握手次数；失败时调用方再重试。
 export const SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ConnectionAttempts=3",
   "-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/bys-ssh-%C", "-o", "ControlPersist=120"];
 
-// background-tab-input 和 attention-cues 要有窗口的 Chrome（会开窗口）；learned-operations-live 需要真实模型凭据，都不进默认整轮。
 export const SKIP_FILES = new Set(["harness.mts", "run-all.mts", "shard-run.mts", "background-tab-input.mts", "attention-cues.mts", "learned-operations-live.mts"]);
 
-// 核心用户路径（npm test / accept:shard --core 共用唯一清单）：只装扩展、脚本模型、无需凭据。
 export const CORE_CASES = [
   "sidebar-interaction", "composer-expand", "script-friction", "target-gone", "pdf-download", "memory-used-line",
   "session-durability", "error-recovery", "model-failover", "claim-after-check", "refill-after-check", "readback-privacy", "snapshot-privacy",

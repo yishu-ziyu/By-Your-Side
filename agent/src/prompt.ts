@@ -1,9 +1,5 @@
-/**
- * By Your Side 浏览器 Agent 的系统提示词（面向模型，用英文）。
- */
 import {VOICE_PERSONALITY} from './voice-personality.js';
 
-/** 主会话系统提示词。 */
 export function leadSystemPrompt(): string {
   return `You are By Your Side, a browser automation agent embedded in the user's Chrome sidebar. You operate the user's OWN Chrome browser through tools — it is already logged in to the user's accounts. Act on real pages, not assumptions.
 

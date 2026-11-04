@@ -1,9 +1,3 @@
-// npx tsx scripts/probes/compare-real.mts <repo> <outDir> <ext|ego> [--repeat=2] [--only=S1,R1] [--split=train|test] [--model=provider/id] [--think=深入] [--learn] [--record]
-// --compose-ms=N: click into the input and wait N ms before typing, like a user composing (daily median ~5 s); the task timer starts after it.
-// --split: run only the training or the held-out test tasks . --model: ext arm only, default AGENTS.md's test model. --think: pick this effort in the panel; default leaves the product default.
-// --reply=可以 (ext only): when the assistant stops to ask (a partial delivery, or a reply ending in a question), send this reply in the same conversation once; rounds and calls add up.
-// --learn (ext only): in the same browser, do the task, then open a new conversation and do a sibling task; reports both runs' rounds . --record (ext only): records the side panel and the starting tab of each ask as mp4.   (ext needs extension/dist built; ego needs ego lite and the codex CLI)
-// Question: on real sites with the same model (gpt-6.1-sol, high), does our extension get the same tasks right as Codex + ego, how fast, and in how many rounds?
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -11,7 +5,7 @@ import { homedir } from "node:os";
 import { send, startExt, traceLines as readTrace, waitIdle } from "./ext-session.mts";
 
 const [rootArg, outDir, arm] = process.argv.slice(2);
-const root = resolve(rootArg); // an absolute path: "scripts/..." joined onto "." would be read as a package name
+const root = resolve(rootArg);
 const repeat = Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 2;
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 const learn = process.argv.includes("--learn");
@@ -26,13 +20,12 @@ const dec = (u: string) => { try { return decodeURIComponent(u); } catch { retur
 
 type Tab = { url: string; title: string };
 type Ctx = { answer: string; tabs: Tab[]; probe: unknown; truth: Record<string, string> };
-type Task = { id: string; split: "train" | "test"; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; login?: "memos"; /** Tabs open before the ask, left to right; the user is looking at the last one (default: one tab on START). */ tabs?: () => string[]; setup?: () => Promise<Record<string, string>>; after?: () => Promise<unknown>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
+type Task = { id: string; split: "train" | "test"; group: string; name: string; prompt: string; probeUrl?: RegExp; probe?: string; truth?: () => Promise<Record<string, string>>; login?: "memos";  tabs?: () => string[]; setup?: () => Promise<Record<string, string>>; after?: () => Promise<unknown>; check(c: Ctx): string | null; second?: { prompt: string; probe?: string; check(c: Ctx): string | null } };
 
 const ghTop = async () => { const h = await (await fetch("https://github.com/trending", { headers: { "user-agent": "Mozilla/5.0" } })).text(); return h.match(/<h2 class="h3 lh-condensed">[\s\S]*?href="\/([^"]+)"/)?.[1] ?? ""; };
 const hnTop = async () => { const h = await (await fetch("https://news.ycombinator.com/")).text(); return (h.match(/<span class="titleline"><a [^>]*>([^<]+)<\/a>/)?.[1] ?? "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&"); };
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 const unescape = (s: string) => s.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&#x2F;/g, "/");
-/** The n-th front-page item of HN (1-based): id, title, and where its title links (an absolute URL, or the item page for Ask HN). */
 const hnItem = async (n: number) => {
   const h = await (await fetch("https://news.ycombinator.com/")).text();
   const m = [...h.matchAll(/<tr class="athing[^"]*" id="(\d+)">[\s\S]*?<span class="titleline"><a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)][n - 1];
@@ -40,15 +33,12 @@ const hnItem = async (n: number) => {
   const link = unescape(m[2]!);
   return { id: m[1]!, link: /^https?:/.test(link) ? link : `https://news.ycombinator.com/${link}`, title: unescape(m[3]!) };
 };
-/** URL without scheme, www, trailing slash and hash: the same page whichever way it was reached. */
 const bare = (u: string) => dec(u).replace(/^https?:\/\/(www\.)?/, "").replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase();
-/** The page path only: bare() without the query, for checks that name one page. */
 const pathOf = (u: string) => bare(u.replace(/[?#].*$/, ""));
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 const todos = (c: Ctx) => JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[];
 const TODO_PROBE = `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`;
 
-// ── Local Memos (a signed-in note site, `npm run lab -- sites start`): the account file lives outside the repo and never reaches the page, the model or the logs. ──
 const MEMOS = "http://127.0.0.1:5230";
 type Memo = { name: string; content: string; tags: string[]; pinned: boolean };
 async function memosSignIn() {
@@ -65,7 +55,6 @@ async function memosApi(method: string, path: string, body?: unknown) {
   return r.json().catch(() => ({}));
 }
 const memosList = async (): Promise<Memo[]> => ((await memosApi("GET", "memos?pageSize=100")).memos ?? []).map((m: Memo) => ({ name: m.name, content: m.content, tags: m.tags ?? [], pinned: !!m.pinned }));
-/** Empty the test account (normal and archived notes), then write the seed notes; returns each seed's id by its first words, for the checks. */
 async function memosReset(seeds: string[]) {
   for (const state of ["NORMAL", "ARCHIVED"]) for (const m of (await memosApi("GET", `memos?pageSize=100&state=${state}`)).memos ?? []) await memosApi("DELETE", m.name);
   const ids: Record<string, string> = {};
@@ -74,12 +63,8 @@ async function memosReset(seeds: string[]) {
 }
 const memosOf = (c: Ctx) => (c.probe ?? []) as Memo[];
 const MEMO_SEEDS = ["买菜：牛奶、鸡蛋、西红柿", "读书笔记：《置身事内》第三章讲地方政府融资。", "会议纪要：下周三发布 2.0，周一前冻结代码。"];
-/** The seeds other than `except` are still there, unchanged and unpinned, and no note was added or removed. */
 const othersIntact = (c: Ctx, except: string) => { const ms = memosOf(c); if (ms.length !== MEMO_SEEDS.length) return `笔记数是 ${ms.length}（应为 ${MEMO_SEEDS.length}）`; const bad = MEMO_SEEDS.filter((s) => s.slice(0, 4) !== except).filter((s) => { const m = ms.find((x) => x.name === c.truth[s.slice(0, 4)]); return !m || m.content !== s || m.pinned; }); return bad.length ? `别的笔记被改了：${bad.map((s) => s.slice(0, 4)).join("、")}` : null; };
 
-// ── Two local pages for relaying text between tabs: an AI answer on the left, a chat box on the right whose 提交 reports what it received. ──
-// The button is not named 发送: clicking 发送 stops for the user's confirmation on the page , which is not what this task measures.
-// The answer is pre-wrap plain text, so textContent and innerText both read it exactly as written: curly quotes, blank lines, list markers.
 const RELAY_ANSWER = `好的，下面是一份“一周学习计划”的建议，你可以按自己的情况调整。
 
 一、先想清楚目标
@@ -143,7 +128,7 @@ async function relayStart() {
     res.statusCode = 404; res.end();
   });
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
-  server.unref(); // the run ends when the tasks do, not when this page server would
+  server.unref();
   relay.url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 }
 
@@ -167,7 +152,6 @@ const TASKS: Task[] = [
     probeUrl: /todomvc\.com\/examples\/react/, probe: `JSON.stringify([...document.querySelectorAll(".todo-list li")].map(li => ({ t: li.innerText.trim(), done: li.classList.contains("completed") })))`,
     check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; const s = JSON.stringify(items); return items.length === 2 && items.some((i) => i.t === "买牛奶" && i.done) && items.some((i) => i.t === "交电费" && !i.done) ? null : `待办是 ${s}`; },
     second: { prompt: "打开 https://todomvc.com/examples/react/dist/ ，添加两条待办：买面包、修自行车，然后把“修自行车”标记为已完成。", check: (c) => { const items = JSON.parse(String(c.probe ?? "[]")) as { t: string; done: boolean }[]; return items.some((i) => i.t === "修自行车" && i.done) && items.some((i) => i.t === "买面包" && !i.done) ? null : `待办是 ${JSON.stringify(items)}`; } } },
-  // ── 10-14 additions : user task types rewritten onto public sites; X* are cross-site. ──
   { id: "X2", split: "train", group: "跨站", name: "HN 第一条的原文", prompt: "打开 https://news.ycombinator.com ，打开排第一的帖子链接到的原文页面。",
     truth: async () => ({ before: (await hnItem(1)).link }),
     check: (c) => [c.truth.before, c.truth.after].some((l) => l && c.tabs.some((t) => bare(t.url) === bare(l))) ? null : `没有打开原文（应为 ${c.truth.before}）` },
@@ -196,7 +180,6 @@ const TASKS: Task[] = [
   { id: "R5", split: "test", group: "读取", name: "RFC 9110 标题和作者", prompt: "打开 https://www.rfc-editor.org/rfc/rfc9110.html ，告诉我这份文档的标题和第一作者。",
     check: (c) => /http semantics/i.test(c.answer) && /fielding/i.test(c.answer) ? null : "回答里没有标题 HTTP Semantics 或第一作者 Fielding" },
   { id: "R6", split: "test", group: "读取", name: "IANA 示例域名", prompt: "打开 https://www.iana.org/help/example-domains ，告诉我这页列出了哪几个示例域名。",
-    // The page's own list, read live: it dropped example.net in 2026, so a fixed list judged a right answer wrong.
     truth: async () => ({ before: [...new Set((await (await fetch("https://www.iana.org/help/example-domains")).text()).replace(/<[^>]*>/g, " ").match(/\bexample\.(?:com|net|org)\b/gi) ?? [])].map((d) => d.toLowerCase()).sort().join(",") }),
     check: (c) => [c.truth.before, c.truth.after].some((l) => l && l.split(",").every((d) => c.answer.toLowerCase().includes(d))) ? null : `回答里没有列全 ${c.truth.before}` },
   { id: "Q8", split: "test", group: "读取", name: "Python 最新版本", prompt: "打开 https://www.python.org/downloads/ ，告诉我现在最新的 Python 正式版本号。",
@@ -232,7 +215,6 @@ const TASKS: Task[] = [
     check: (c) => c.tabs.some((t) => /^github\.com\/serde-rs\/serde$/.test(pathOf(t.url))) ? null : "没有打开 github.com/serde-rs/serde" },
 ].filter((t) => (!only || only.includes(t.id)) && (!splitArg || t.split === splitArg));
 
-// ---------- progress page shared by both arms (each arm writes its own json, page merges) ----------
 const statusFile = join(outDir, `status-${arm}.json`);
 const status: Record<string, { state: string; detail?: string }> = {};
 const page = join(outDir, "progress.html");
@@ -243,10 +225,8 @@ async function writeStatus(id: string, state: string, detail?: string) {
   const all = { ext: await read("ext"), ego: await read("ego") };
   const ids = TASKS.flatMap((t) => Array.from({ length: repeat }, (_, i) => `${t.id}-${i + 1}`));
   const nameOf = (id: string) => { const t = TASKS.find((x) => id.startsWith(x.id + "-"))!; return `${t.split === "test" ? "测试" : "训练"} · ${t.group} · ${t.name} · 第 ${id.split("-")[1]} 次`; };
-  // Test-set rows show only pass/fail and time: the analyst never sees a test task's process or result content (R5).
   const isTest = (id: string) => TASKS.find((x) => id.startsWith(x.id + "-"))!.split === "test";
   const cell = (id: string, s?: { state: string; detail?: string }) => !s ? `<td class="wait">等待</td>` : `<td class="${s.state}">${{ run: "运行中", pass: "做对", fail: "没做对", err: "出错" }[s.state] ?? s.state}${s.detail ? `<br><small>${(isTest(id) ? s.detail.split(" · ")[0] : s.detail).replace(/</g, "&lt;")}</small>` : ""}</td>`;
-  // Only the arms that have run (or this one) get a column; an ext-only run must still reach 已结束.
   const arms = (["ext", "ego"] as const).filter((a) => a === arm || Object.keys(all[a]).length);
   const running = arms.some((a) => ids.some((id) => !all[a][id] || all[a][id].state === "run"));
   await writeFile(page, `<!doctype html><meta charset="utf-8">${running ? '<meta http-equiv="refresh" content="4">' : ""}<title>真实网站对比</title>
@@ -255,13 +235,12 @@ async function writeStatus(id: string, state: string, detail?: string) {
 <table><tr><th>任务</th>${arms.map((a) => `<th>${a === "ext" ? "我们的扩展" : "Codex + ego"}</th>`).join("")}</tr>${ids.map((id) => `<tr><td>${nameOf(id)}</td>${arms.map((a) => cell(id, all[a][id])).join("")}</tr>`).join("")}</table>`);
 }
 
-// Page.bringToFront 在 macOS 上会把测试 Chrome 推到最前、抢走用户的焦点；只在窗口内切到这个标签页。
+// WHY: Page.bringToFront 在 macOS 上会把测试 Chrome 推到最前、抢走用户的焦点；只在窗口内切到这个标签页。
 async function showUserTab(rp: any, user: string, sw: string) {
   const url = String(await rp.evaluate(user, "location.href"));
   await rp.evaluate(sw, `chrome.tabs.query({}).then(ts => { const t = ts.filter(t => (t.url || t.pendingUrl) === ${JSON.stringify(url)}).at(-1); return t ? chrome.tabs.update(t.id, { active: true }).then(() => true) : false; })`);
 }
 
-// ---------- ext arm ----------
 async function runExt(task: Task, id: string, dir: string) {
   const cookies = task.login === "memos" ? [{ ...(await memosSignIn()).cookie, domain: "127.0.0.1", path: "/", httpOnly: true, sameSite: "Lax" }] : [];
   const { rp, user, sw, panel, harness: { until, sleep, recordScreen } } = await startExt(root, { model: MODEL, tabs: task.tabs?.() ?? [START], cookies });
@@ -271,7 +250,6 @@ async function runExt(task: Task, id: string, dir: string) {
     await rp.click(panel, "#input");
     await until(async () => (await chip()) || undefined, 60_000, "think chip");
     await rp.click(panel, "#think-chip"); await sleep(350);
-    // 思考档是滑块：逐格试到显示的档名等于要的那一档，再发 change，和用户拖到那一格松手一样。
     await rp.evaluate(panel, `(() => { const input = document.querySelector("#think-menu .mm-power-slider input"); const label = () => document.querySelector("#think-menu .mm-power-level")?.textContent;
       for (let i = 0; i <= Number(input.max); i++) { input.value = String(i); input.dispatchEvent(new Event("input")); if (label() === ${JSON.stringify(think)}) { input.dispatchEvent(new Event("change")); return true; } }
       throw new Error("滑块上没有这一档：" + ${JSON.stringify(think)}); })()`);
@@ -282,7 +260,6 @@ async function runExt(task: Task, id: string, dir: string) {
 
     const traceLines = () => readTrace(rp, panel);
     let seenLines = 0;
-    // One task in the current conversation; trace lines are cumulative, so each ask takes only the lines after the previous one.
     const ask = async (prompt: string, probeCode: string | undefined, tag: string) => {
       if (composeMs) { await rp.click(panel, "#input"); await sleep(composeMs); }
       const t0 = Date.now();
@@ -292,9 +269,7 @@ async function runExt(task: Task, id: string, dir: string) {
       const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => m.innerText.trim()).join("\\n---\\n")`));
       const tabs = (await rp.evaluate(sw, "chrome.tabs.query({}).then(ts => ts.map(t => ({ url: t.url || t.pendingUrl || '', title: t.title || '' })))")) as Tab[];
       let probe: unknown = null;
-      // Read back right after this ask: with --learn the second ask adds to the same site.
       if (!probeCode && task.after) probe = await task.after();
-      // The newest matching tab: an earlier run's tab may still be open with a stale page.
       if (probeCode) { const tg = (await rp.targets()).filter((t: { url: string; type: string }) => t.type === "page" && task.probeUrl!.test(t.url)).at(-1); if (tg) probe = await rp.evaluate(await rp.attach(tg.targetId), probeCode); }
       const all = (await traceLines()).split("\n").filter(Boolean);
       const mine = all.slice(seenLines); seenLines = all.length;
@@ -307,7 +282,6 @@ async function runExt(task: Task, id: string, dir: string) {
       const usage = lines.filter((l) => l.type === "turn_end").map((l) => l.data?.usage ?? {});
       const cacheShare = +(usage.reduce((n, u) => n + (u.cacheRead ?? 0), 0) / Math.max(1, usage.reduce((n, u) => n + (u.input ?? 0) + (u.cacheRead ?? 0), 0))).toFixed(2);
       const siteNotes = lines.filter((l) => l.type === "site_notes" && l.data?.phase === "used").map((l) => l.data.host);
-      // A partial delivery the goal check then pushed on to finish is not a question left for the user.
       const asked = lines.filter((l) => l.type === "goal_check").at(-1)?.data?.status !== "done" && (lines.some((l) => l.type === "tool_execution_end" && l.data?.toolName === "send_user_message" && !l.data.isError && /"outcome":"partial"/.test(JSON.stringify(l.data.result ?? {}))) || /[?？]\s*$/.test(answer));
       return { ms, answer, tabs, probe, rounds, asked, browserCalls: tools.length, tools, wasted: wastedRounds(lines), button: await showTabButton(rp, sw, panel), cacheShare, cacheReadByRound: usage.map((u) => u.cacheRead ?? 0), siteNotes };
     };
@@ -317,8 +291,6 @@ async function runExt(task: Task, id: string, dir: string) {
       first = { ...more, ms: first.ms + more.ms, rounds: first.rounds + more.rounds, browserCalls: first.browserCalls + more.browserCalls, tools: [...first.tools, ...more.tools], replied: true };
     }
     if (!learn) return first;
-    // Same browser, new conversation, sibling task: site notes learned from the first run should make it shorter.
-    // Notes are written after the goal check, a few seconds after the reply; wait for them (at most 45 s) as a person would pause between tasks.
     const learnBy = Date.now() + 45_000;
     while (Date.now() < learnBy && !/"phase":"(learned|skipped)"/.test(await traceLines())) await sleep(1000);
     await rp.screenshot(panel, join(dir, "panel-learned.png")).catch(() => {});
@@ -332,13 +304,11 @@ async function runExt(task: Task, id: string, dir: string) {
   } finally { await rp.close(); await rp.remove(); }
 }
 
-// Rounds a better harness makes unnecessary, classified from the diagnostics trace (same rules before and after a change).
 function wastedRounds(lines: any[]) {
   const calls = lines.filter((l) => l.type === "message_end" && l.data?.message?.role === "assistant").flatMap((l) => l.data.message.content.filter((c: any) => c.type === "toolCall"));
   const results = lines.filter((l) => l.type === "message_end" && l.data?.message?.role === "toolResult").map((l) => l.data.message.content.map((c: any) => c.text ?? "").join(""));
   const opens = (c: any) => c?.name === "navigate" || (c?.name === "tabs" && c.arguments?.action === "open");
   const looksOnly = (c: any) => c?.name === "snapshot" || (c?.name === "browser_run" && /snapshot|pageInfo/.test(c.arguments?.code ?? "") && !/fill|click|press|type|select|check|hover|scroll|tabs/.test(c.arguments?.code ?? ""));
-  // An action on the page (click, fill, key press, or a program that does one): if the tool result already shows what changed, a look right after it is a wasted round.
   const acts = (c: any) => ["click", "double_click", "fill", "type_text", "press_key", "select_option"].includes(c?.name) || (c?.name === "browser_run" && /\b(click|double_click|fill|type_text|press_key|select_option)\(/.test(c.arguments?.code ?? ""));
   return {
     tabsList: calls.filter((c: any) => c.name === "tabs" && c.arguments?.action === "list").length,
@@ -350,7 +320,6 @@ function wastedRounds(lines: any[]) {
   };
 }
 
-// The 切过去看 button (user decision 10-13): present exactly when the result is in a background tab; clicking it brings that tab forward.
 async function showTabButton(rp: any, sw: string, panel: string) {
   const tabs = (await rp.evaluate(sw, "chrome.tabs.query({}).then(ts => ts.map(t => ({ id: t.id, url: t.url || '', active: t.active })))")) as { id: number; url: string; active: boolean }[];
   const expected = tabs.length > 1 && (tabs.find((t) => t.active)?.url ?? "") === START;
@@ -362,7 +331,6 @@ async function showTabButton(rp: any, sw: string, panel: string) {
   return { expected, shown: true, tabId, broughtForward: active.includes(tabId), ok: expected && active.includes(tabId) };
 }
 
-// ---------- ego arm ----------
 function ego(code: string): Promise<any> {
   return new Promise((done, fail) => {
     const child = spawn("ego-browser", ["nodejs", "-e", code], { stdio: ["ignore", "pipe", "pipe"] });
@@ -404,7 +372,6 @@ for (const t of tabs) await task.cdp("Target.closeTarget", { targetId: t.targetI
   return { ms: turn.ms, answer, tabs: back.tabs as Tab[], probe: back.probe, rounds: null, browserCalls: cmds.filter((c) => c.includes("ego-browser")).length, otherCalls: cmds.filter((c) => !c.includes("ego-browser")).length, exit: turn.code, readBackError: back.error };
 }
 
-// ---------- main ----------
 await mkdir(outDir, { recursive: true });
 const results: unknown[] = [];
 for (const task of TASKS) for (let rep = 1; rep <= repeat; rep++) {

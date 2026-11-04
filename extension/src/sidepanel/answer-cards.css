@@ -1,6 +1,3 @@
-/* 回答里的卡片（answer-cards.ts）。用侧栏现有的纸面、墨色、字号档，不另起一套。
-   流式时已画出的组件节点不动，所以组件可以有自己的入场：写完的组件原位淡入（.gc-in）；
-   开了头没写完的组件是空位（.gc-ph），等一小会儿还没写完才浮出很淡的占位条，写得快的不闪一下。 */
 .gen-card {
   margin: var(--s-1) 0 var(--gap-block);
   border: 1px solid var(--well-outline);
@@ -17,7 +14,6 @@
 .gc-sub { font-size: var(--fs-meta); color: var(--text-tertiary); }
 .gc-body { padding: 10px 14px var(--s-3); display: flex; flex-direction: column; gap: var(--s-2); }
 
-/* 可调的数：名字在左，减号、数值、加号在右；档位多时下面一条滑块。 */
 .gc-inputs { display: flex; flex-direction: column; gap: var(--s-2); }
 .gc-input { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px var(--s-2); }
 .gc-input .k { color: var(--text-secondary); }
@@ -30,7 +26,6 @@
 .gc-stepper .u { padding-left: 3px; font-size: var(--fs-meta); color: var(--text-tertiary); white-space: nowrap; }
 .gc-range { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--text-primary); }
 
-/* 问用户的表单：一栏一行，名字在上；选项是一排可点的小块，文字框和加减框同一种边。 */
 .gc-fields { display: flex; flex-direction: column; gap: 10px; }
 .gc-field-head { display: flex; align-items: baseline; gap: var(--s-1); margin-bottom: 4px; }
 .gc-field-head .k { color: var(--text-secondary); }
@@ -47,13 +42,11 @@
 .gc-chip:disabled, .gc-text:disabled { cursor: default; color: var(--text-secondary); }
 .gc-btn:disabled { opacity: .5; cursor: default; }
 
-/* 能回原页看的一行：一个小箭头，悬停时整行浅一层底；点了切到那一页圈出这个数。 */
 .gen-card .gc-linked { cursor: pointer; }
 .gen-card .gc-linked:hover { background: var(--content-subtle); }
 .gen-card .gc-linked:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .gc-stat.gc-linked .v::after, .gc-option.gc-linked .name::after, tr.gc-linked > td:first-child::after { content: " ↗"; font-size: var(--fs-micro); font-weight: 400; color: var(--text-tertiary); }
 
-/* 回答里的小程序（实验功能）：标题一行、沙箱框、下面一行提示；写完前一块淡淡的空位。 */
 .gen-app-card { padding: 0; }
 .gc-app-head { display: flex; align-items: baseline; gap: var(--s-2); padding: 10px 14px 6px; }
 .gc-app-title { font-weight: 600; color: var(--text-primary); }
@@ -66,7 +59,6 @@
 .gc-app-bar[hidden] { display: none; }
 .gc-app-bar > span { flex: 1; min-width: 0; }
 
-/* 数字格 */
 .gc-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; container-type: inline-size; }
 .gc-stats.wide { grid-template-columns: 1fr; }
 .gc-stat { display: flex; flex-direction: column; padding: var(--s-2) 10px 9px; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline); }
@@ -77,7 +69,6 @@
 .gc-stat .n { font-size: var(--fs-micro); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .gc-stat.best { background: var(--content-bg); box-shadow: inset 0 0 0 1.5px var(--apple-green); }
 
-/* 步骤与清单：用 .msg.assistant.markdown 前缀压过正文的 ol/ul/li 排版 */
 .msg.assistant.markdown .gc-steps, .msg.assistant.markdown .gc-checks { list-style: none; margin: 0; padding: 0; }
 .msg.assistant.markdown .gc-step { display: grid; grid-template-columns: 22px 1fr; column-gap: 10px; margin: 0; padding: 7px 0; border-top: 1px solid var(--content-border); line-height: var(--lh-ui); }
 .msg.assistant.markdown .gc-step:first-child { border-top: 0; padding-top: 2px; }
@@ -91,7 +82,6 @@
 .gc-check .t { font-weight: 400; }
 .gc-check:has(input:checked) .t { color: var(--text-tertiary); text-decoration: line-through; }
 
-/* 选项 */
 .gc-options { display: flex; flex-direction: column; gap: 6px; }
 .gc-option { padding: 9px 11px; border-radius: var(--r); border: 1px solid var(--well-outline); }
 .gc-option .gc-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--s-2); }
@@ -100,22 +90,18 @@
 .gc-option .price { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .gc-option .meta { flex-basis: 100%; font-size: var(--fs-meta); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .gc-option .gc-why { margin-top: 3px; font-size: var(--fs-meta); color: var(--text-tertiary); }
-/* 推荐项只靠明暗区分：凹槽底 + 深一点的描边，不换色相。 */
 .gc-option.pick { border-color: color-mix(in srgb, var(--text-primary) 22%, transparent); background: var(--well); box-shadow: inset 0 1px 0 var(--well-highlight); }
 .gc-option.pick .gc-why { color: var(--text-primary); }
 
-/* 表格 */
 .msg.assistant.markdown .gc-table { display: table; width: 100%; border-collapse: collapse; font-size: var(--fs-meta); line-height: 1.5; font-variant-numeric: tabular-nums; }
 .msg.assistant.markdown .gc-table th { padding: var(--s-1) 6px; text-align: left; font-weight: 500; color: var(--text-tertiary); border-bottom: 1px solid var(--content-border); }
 .msg.assistant.markdown .gc-table td { padding: 6px; line-height: 1.5; color: var(--text-primary); border-bottom: 1px solid var(--content-border); }
 .msg.assistant.markdown .gc-table tr:last-child td { border-bottom: 0; }
 .msg.assistant.markdown .gc-table tr.best td { background: var(--well); font-weight: 500; }
 
-/* 提示 */
 .gc-callout { padding: 7px 10px; border-radius: var(--r); font-size: var(--fs-meta); line-height: 1.5; background: var(--well); color: var(--text-secondary); box-shadow: inset 0 0 0 1px var(--well-outline); }
 .gc-callout.warn { background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--warn); }
 
-/* 按钮：主按钮沿用「连接模型」的墨色，次按钮描边 */
 .gc-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px var(--s-3); }
 .gc-btn {
   display: inline-flex; align-items: center; min-height: 30px; padding: 5px var(--s-3);
@@ -130,7 +116,6 @@
 .gc-btn.primary:hover { background: color-mix(in srgb, var(--text-primary) 88%, white); }
 .gc-foot { padding: var(--s-2) 14px 10px; border-top: 1px solid var(--content-border); font-size: var(--fs-micro); color: var(--text-tertiary); }
 
-/* 共享背景只移动，不替换按钮节点，因此连续切换可以从当前位置接着走。 */
 .gen-card { position: relative; }
 .gc-head.has-faces { padding-right: 70px; min-height: 26px; }
 .gc-faces { --gc-face-width: 24px; --gc-face-height: 22px; --gc-face-gap: 2px; position: absolute; top: 9px; right: 10px; display: flex; gap: var(--gc-face-gap); padding: 2px; border-radius: var(--s-2); background: var(--well); }
@@ -161,21 +146,17 @@
 .msg.assistant.markdown .gc-evidence td.s { padding-right: 0; border-bottom: 0; color: var(--text-tertiary); }
 .gc-btn.gc-point { display: flex; min-height: 0; margin-top: 2px; padding: 1px 6px; border-radius: var(--r-tail); font-size: var(--fs-micro); color: var(--accent); }
 
-/* 结构图：Pele 的颜色变量接到侧栏的纸面和墨色上，深色模式跟着 token 走，不用重画。
-   key 是主结论，warn 是要当心的事，bad 是作者说没用的做法（模型用 :::key 这类写法标）。 */
 .gc-diagram {
   --pele-bg: var(--content-bg); --pele-fg: var(--text-primary); --pele-muted: var(--text-tertiary); --pele-line: var(--text-tertiary);
   --pele-surface: var(--content-subtle); --pele-surface-alt: var(--content-bg); --pele-border: var(--content-border);
   --pele-accent: var(--accent); --pele-font: var(--font); --pele-radius: 8px;
 }
-/* 时间线每段一种颜色只为好看，不带意思：统一用强调色，和流程图一样克制。饼图这类靠颜色区分的图种保留 Pele 的配色。 */
 .gc-diagram[data-kind="timeline"] {
   --pele-series-1: var(--accent); --pele-series-2: var(--accent); --pele-series-3: var(--accent); --pele-series-4: var(--accent);
   --pele-series-5: var(--accent); --pele-series-6: var(--accent); --pele-series-7: var(--accent); --pele-series-8: var(--accent);
 }
 .gc-diagram-canvas svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .gc-diagram-canvas.gc-diagram-wide { overflow-x: auto; overscroll-behavior-x: contain; }
-/* Pele 把 max-width:100% 写在 SVG 的 style 上，只有 !important 盖得过。 */
 .gc-diagram-canvas.gc-diagram-wide svg { max-width: none !important; margin: 0; }
 .gc-diagram .key :is(rect, polygon) { fill: var(--accent-soft); stroke: var(--accent); }
 .gc-diagram .warn :is(rect, polygon) { fill: color-mix(in srgb, var(--warn) 9%, transparent); stroke: var(--warn); }
@@ -191,7 +172,6 @@
 .gc-diagram.gc-ph { display: flex; flex-direction: column; justify-content: center; gap: var(--s-3); min-height: 180px; padding: var(--s-3); border-radius: var(--radius-inner); background: var(--well); }
 .gc-diagram.gc-ph .gc-bar { justify-content: center; }
 
-/* 空位与淡入：空位先透明，过了 --d-micro 还没写完才浮出；占位条一行高，条本身比字矮 */
 .gc-ph { animation: gcPlaceholderIn var(--d-state) var(--e-enter) var(--d-micro) both; }
 .gc-stat.gc-ph { background: transparent; }
 .gc-option.gc-ph { border-style: dashed; }
@@ -211,15 +191,12 @@
   .gc-btn:active { transform: none; }
 }
 
-/* 选了「先不发」后的回答只有一个按钮：不画卡片底和边。 */
 .gen-card.send-declined-card { background: none; border: 0; padding: 0; box-shadow: none; margin-top: 4px; }
 .gen-card.send-declined-card .gc-actions { margin: 0; padding: 0; border: 0; }
-/* 回答按段落分块放出，每块都换成这个按钮：只留第一个。 */
 .send-declined-card ~ .send-declined-card { display: none; }
 .gc-diagram-code { margin-top: 6px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 .gc-diagram-code > summary { cursor: pointer; }
 
-/* 交付后核对出的几处：回答下面一小块，提醒色标题，正文次要色；没有问题时不出现。 */
 .msg.assistant .fact-check { margin: var(--s-3) 0 0; padding: var(--s-2) var(--s-3); border-radius: var(--r); background: var(--content-subtle); }
 .msg.assistant .fact-check-title { font-size: var(--fs-meta); line-height: var(--lh-ui); font-weight: 600; color: var(--warn); }
 .msg.assistant .fact-check ul { margin: var(--s-1) 0 0; padding-left: var(--s-3); }

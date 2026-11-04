@@ -5,17 +5,14 @@ import { deriveResultDescription, extractResultTarget, isSupersededUnknown, sele
 import { taskId } from './task-actions.js';
 import type { TaskProgressSnapshot } from './voice.js';
 
-// verify_unknown、unknown_with_baseline、unknown_without_baseline 不再产生，只为读入旧任务存档保留。
 export const TASK_NEXT_ACTIONS = ['continue', 'change_method', 'verify_unknown', 'ask_user', 'verify_result', 'deliver', 'wait', 'stop'] as const;
 
 export const TASK_NEXT_REASONS = ['cancelled', 'human_control', 'restart_checkpoint', 'failure_limit', 'restricted_page', 'unknown_with_baseline', 'unknown_without_baseline', 'in_flight', 'tool_failed', 'remaining', 'readback_required', 'receipts_reviewed', 'open_task', 'runtime_error', 'condition_wait', 'condition_invalid', 'deadline', 'budget', 'continuation_stopped'] as const;
 
-/** A host decision about execution and delivery, never a claim of business success. */
 export interface TaskNextStep {
   action: typeof TASK_NEXT_ACTIONS[number];
   reason: typeof TASK_NEXT_REASONS[number];
   allowWrites: boolean;
-  /** report permits a sourced final report, not verified_success. */
   delivery: 'none' | 'partial' | 'report';
   resultIds: string[];
 }
@@ -35,13 +32,11 @@ export function isTaskNextStep(value: unknown): value is TaskNextStep {
 interface NextStepFacts {
   inFlight?: boolean;
   readbackRequired?: boolean;
-  /** 原地打转被宿主停下（no-progress）。 */
   failureLimit?: boolean;
   restrictedPage?: boolean;
   toolFailed?: boolean;
 }
 
-/** Priority is shared by progress, model context, execution guards and final delivery. */
 export function decideTaskNextStep(snapshot: TaskProgressSnapshot, facts: NextStepFacts = {}): TaskNextStep {
   const results = snapshot.results ?? [];
   const decide = (action: TaskNextStep['action'], reason: TaskNextStep['reason'], allowWrites: boolean, delivery: TaskNextStep['delivery'], resultIds: string[] = []): TaskNextStep => ({ action, reason, allowWrites, delivery, resultIds });
@@ -101,8 +96,6 @@ export function decideTaskNextStep(snapshot: TaskProgressSnapshot, facts: NextSt
   }
 
   if (snapshot.goalPlan) {
-    // Goal verification supersedes obsolete known-failed attempts. Unknown effects and control
-    // boundaries were handled above; they can never be cleared by an outcome judgment.
     if (goalsReadyForDelivery(snapshot.goalPlan)&&snapshot.goalPlan.goals.some(goal=>goal.kind!=='answer')) {
       return decide('deliver','receipts_reviewed',true,'report');
     }
@@ -113,7 +106,6 @@ export function decideTaskNextStep(snapshot: TaskProgressSnapshot, facts: NextSt
       return decide('continue','remaining',true,'partial',snapshot.goalPlan.goals.filter(goal=>goal.status!=='satisfied').map(goal=>goal.id));
     }
   } else {
-    // 结果未知与失败同样处理：重读页面后重做或换方法，不暂停写入。
     const blocked=results.filter(item=>item.status==='blocked'||item.status==='unknown'&&!isSupersededUnknown(item,results));
 
     if(blocked.length)return decide('change_method','tool_failed',true,'partial',blocked.map(item=>item.id));
@@ -133,11 +125,6 @@ export function decideTaskNextStep(snapshot: TaskProgressSnapshot, facts: NextSt
   return results.length ? decide('deliver', 'receipts_reviewed', true, 'report') : decide('continue', 'open_task', true, 'report');
 }
 
-/**
- * The next step as the model and the delivery should see it. An unplanned goal plan is only a
- * placeholder, not a user goal list: when it is the sole reason for "remaining" and no real
- * execution is still open, judge from execution results alone instead of demanding a plan.
- */
 export function nextStepIgnoringPlaceholder(snapshot: TaskProgressSnapshot): TaskNextStep {
   const next = snapshot.nextStep ?? decideTaskNextStep(snapshot);
 
@@ -171,7 +158,6 @@ export function nextStepInstruction(decision: TaskNextStep): string {
   }
 }
 
-/** 模型说做完了、宿主知道没做完时补在回答后的一句：说用户能理解的事实，不用账本口吻。 */
 export function partialResultNote(decision: TaskNextStep): string {
   if (decision.reason.startsWith('unknown_')) return '（有一步已经做了，但还没确认结果，所以没算作完成。）';
 
@@ -182,11 +168,7 @@ export function partialResultNote(decision: TaskNextStep): string {
   return '（还有没做完或没核对的部分。）';
 }
 
-/** 写入前的控制与生命周期闸门：取消、接管、重启检查点、运行错误、原地打转停下时不写。
- * 结果未知和已有成功回执都不拦：重做同一步由模型读页后决定。
- * freshDirect：直连的新用户请求（display-* 调用）不为旧任务的“已取消”生命周期买单。 */
 export function assertTaskStepExecution(snapshot: TaskProgressSnapshot | null, name: string, params: Record<string, unknown> = {}, freshDirect = false): void {
-  // Host-authored read-only probes (exact code match) read like snapshot.
   if (!snapshot || isHostPageProbe(name, params)) {
     return;
   }

@@ -1,8 +1,3 @@
-/**
- * 真实扩展 + ChatGPT 登录模型：离散档位滑块、实际自动升档、按模型保存、重开与双窗口。
- * npx tsx scripts/acceptance/real-path/model-menu.mts --headless
- * 不用伪造模型事件判通过：实际请求中的 effort 与界面显示相互核对。
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';

@@ -1,8 +1,3 @@
-/**
- * 日常路径冒烟（真实模型，只装扩展，无头）：提问 → 操作网页 → 记住 → 新会话想起来 → 重启后旧会话还在。
- *   EGO_ACCEPTANCE_CHROME=<Chrome for Testing> npx tsx scripts/acceptance/real-path/smoke.mts --headless [--model=provider/id]
- * 失败方式：问了没回答；表单没填或没点；「记住」没落库；新会话想不起来；重启后旧会话丢了或打不开。
- */
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
@@ -29,7 +24,6 @@ const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOStri
 
 await mkdir(artifacts, { recursive: true });
 
-// 小页面：一个输入框、一个按钮；点按钮把输入框的值发回服务器，页面外也能核对。
 const received: string[] = [];
 
 const site = createServer((req, res) => {
@@ -72,7 +66,6 @@ const openPanel = async () => {
   await until(async () => (await state()).ready || undefined, 60_000, "侧栏就绪");
 };
 
-/** 发一句话，等助手停下来；返回这句之后新增的助手回答。 */
 const ask = async (text: string) => {
   const before = (await state()).answers.length;
   await rp.click(panel, "#input");
@@ -91,7 +84,6 @@ const ask = async (text: string) => {
   return s.answers.slice(before).join("\n");
 };
 
-/** 记忆库（扩展自己的 IndexedDB）里所有记忆原文。 */
 const storedMemories = async (): Promise<string[]> => {
   // SAFETY: CDP Target.createTarget 的返回值带字符串 targetId。
   const target = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/voice-permission.html` })).targetId as string;
@@ -121,29 +113,24 @@ const storedMemories = async (): Promise<string[]> => {
 const selectedConversation = () => rp.evaluate(panel, `chrome.storage.local.get("selectedConversationId").then((v) => v.selectedConversationId ?? "default")`) as Promise<string>;
 
 try {
-  // 1. 打开侧栏，配真实模型。
   await openPanel();
 
   if (plan.credential.type === "api_key") evidence.step1 = (await configureViaSettings(rp, panel, plan)).saveStatus;
   else {
-    // 订阅登录（如 openai-codex）设置页路径不支持：写入与设置页保存相同格式的存储。
     await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
     evidence.step1 = "storage (oauth plan)";
   }
 
   inproc = await watchInproc(rp, rp.extensionId);
   await until(async () => (await state()).ready || undefined, 60_000, "配好模型后侧栏可发送");
-  // 配好模型后默认会话才建出来：等「新会话」不再忙。
   const settled = `document.querySelector("#conversation-new")?.getAttribute("aria-busy") === "false" && document.querySelector("#send-btn")?.disabled === false`;
   await sleep(3000);
   await until(async () => (await rp.evaluate(panel, settled)) || undefined, 60_000, "默认会话建好");
 
-  // 2. 普通提问。
   const intro = await ask("用一句话介绍你自己");
   evidence.step2 = intro;
   assert.ok(intro.trim().length > 0, "step 2: 助手给出了非空回答");
 
-  // 3. 填表并点击；页面外的服务器收到值。
   const work = await rp.cdp.send("Target.createTarget", { url: `http://127.0.0.1:${siteAddress(site).port}/` });
   await rp.cdp.send("Target.activateTarget", { targetId: work.targetId });
   await sleep(800);
@@ -153,7 +140,6 @@ try {
   assert.ok(received.includes(fillValue), `step 3: 服务器收到提交的值 ${fillValue}，实际 ${JSON.stringify(received)}`);
   await rp.cdp.send("Target.closeTarget", { targetId: work.targetId }).catch(() => undefined);
 
-  // 4. 记住邮箱；记忆落库，抽屉里也看得到。
   const firstConversation = await selectedConversation();
   evidence.firstConversation = firstConversation;
   evidence.step4Answer = await ask(`记住我的邮箱是 ${email}`);
@@ -164,14 +150,12 @@ try {
   await rp.click(panel, "#memory-close");
   evidence.step4Memories = await storedMemories();
 
-  // 5. 新会话里问邮箱。
   await rp.click(panel, "#conversation-new");
   await until(async () => ((await selectedConversation()) !== firstConversation && (await rp.evaluate(panel, `document.querySelector("#conversation-new")?.getAttribute("aria-busy") === "false"`))) || undefined, 30_000, "新会话建好");
   const recalled = await ask("我的邮箱是什么？");
   evidence.step5Answer = recalled;
   assert.ok(recalled.includes(email), `step 5: 新会话的回答含 ${email}`);
 
-  // 6. 重启后旧会话还在，点开有原来的消息。
   await rp.restart();
   await openPanel();
   await rp.click(panel, "#conversation-switcher");

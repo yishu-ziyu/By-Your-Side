@@ -1,10 +1,3 @@
-/**
- * 按住说话的按键判定：只认设置里选的那一个键。
- * 单独按住超过 PTT_HOLD_MS 才开始；中间按了别的键说明它在当修饰键用，不开始或取消；Esc、失焦取消。
- * 只管判定，不碰 DOM，录音与发送由调用方接。
- */
-
-/** 按住多久才算开始说话：短于它的是轻点或组合键的开头。 */
 const PTT_HOLD_MS = 150;
 
 interface PttKeyEvent { type: "keydown" | "keyup"; code: string; repeat: boolean }
@@ -12,9 +5,7 @@ interface PttKeyEvent { type: "keydown" | "keyup"; code: string; repeat: boolean
 interface PttKeyHandlers { onStart: () => void; onStop: () => void; onCancel: () => void }
 
 interface PttKeys {
-  /** 交给它每个按键事件；返回 true 表示这一下属于按住说话（调用方可阻止默认行为）。 */
   handle: (event: PttKeyEvent) => boolean;
-  /** 窗口失焦、页面隐藏：录音中则取消。 */
   reset: () => void;
 }
 
@@ -31,7 +22,6 @@ export function createPttKeys(handlers: PttKeyHandlers, key: () => string): PttK
     disarm();
 
     if (state === "recording") handlers.onCancel();
-    // 取消后到松开按键之前，这一次按住都不再算。
     state = state === "idle" ? "idle" : "spent";
   };
 

@@ -1,18 +1,3 @@
-/**
- * 日常请求底线：10 条取自真实使用记录的请求，逐条在新会话里发出，只看用户看得到的结果。
- *
- *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless [--model=provider/id] [--only=hello,math] [--wait-shots]   # 只装扩展，设置页配模型
- *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --headless --model=stepfun/step-3.7-flash --suite=sitegeist   # Sitegeist 宣传的 5 类任务
- *   npx tsx scripts/acceptance/real-path/everyday-baseline.mts --daily [--only=...]   # 用户已开的日常 Chrome（9222），需用户同意
- *   加 --direct-config：不走设置页界面，直接写模型配置（API key 服务商目前只能这样配）
- *
- * 隔离运行只装扩展（不注册伴随进程）：像用户一样从设置页填 key、测试连接、保存 --model 指定的模型
- * （默认 DEFAULT_TEST_MODEL，凭据取自 ~/.sideagent/providers.local.json）。旧参数 --inproc=provider/id 等同 --model。
- * 每条另记扩展内 agent 发出的模型请求（地址、首字节、结束），并判定请求都发往所选服务商；结束后从设置页导出诊断记录核对。
- *
- * 每条记录：是否出现回答、首字出现耗时、整轮结束耗时、侧栏里回答之外的杂项数（提示、错误、回执、任务卡、续做入口），
- * 以及该条的结果判据（答案内容、页面圈画、新标签页、草稿框原文且未保存）。练习页全在本机，不碰真实账号。
- */
 import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -27,8 +12,6 @@ const daily = process.argv.includes("--daily");
 
 const directConfig = process.argv.includes("--direct-config");
 
-/** --model=provider/id（旧名 --inproc=）：隔离运行只装扩展，从设置页配置这个模型；--daily 时只有显式 --inproc= 才去改日常设置。 */
-/** --scripted-throttle：本机脚本服务商代替真实模型，翻译同一时间只接 1 个请求，超出回 403（复刻 Kimi 编程套餐的并发上限）。 */
 const scriptedThrottle = process.argv.includes("--scripted-throttle");
 
 const inprocArg = process.argv.find((a) => a.startsWith("--inproc="))?.slice(9);
@@ -37,34 +20,22 @@ const modelArg = process.argv.find((a) => a.startsWith("--model="))?.slice(8);
 
 const inprocModel = scriptedThrottle ? "custom/demo-model" : daily ? inprocArg : inprocArg ?? modelArg ?? DEFAULT_TEST_MODEL;
 
-/** --suite=sitegeist：换成 Sitegeist 官网与新手教程里宣传的任务（多页汇总、导出表格、改错字、提取会议、做小工具）。 */
-/** --suite=voice-ideas：边说边做的两个例子（圈高频词、查维基），量底子的快慢与准不准。 */
-/** --suite=goal-check：目标核对该催与不该催的场景（换说法再找、按钮没反应、网站连不上、真的不存在）；每次只跑一条，结果带上这一轮全部核对结论。 */
 const suiteArg = process.argv.find((a) => a.startsWith("--suite="))?.slice(8);
 
-/** --suite=compare：与 Codex CLI + ego-browser 同模型对照的用例（另一边用 --serve-only 起同一套练习页）。 */
 const suite = suiteArg === "sitegeist" || suiteArg === "voice-ideas" || suiteArg === "goal-check" || suiteArg === "compare" ? suiteArg : "everyday";
 
-/** --deep：配好模型后在输入框旁的开关选「深入」，每条记下实际发出的思考强度。 */
 const deep = process.argv.includes("--deep");
 
-/** --serve-only：只起练习站（全部练习页、保存接口与计数，另加 /__stats），不开 Chrome，直到收到 SIGINT/SIGTERM。 */
 const serveOnly = process.argv.includes("--serve-only");
 
-/**
- * 回答之后还有目标核对，可能接着做：这几组要等更久才算结束；别的组加 --settle 也这样等，量用户最后看到的结果。
- * compare 组也要等：核对约 3 秒后才接着做，侧栏这期间显示空闲；不等就开下一条，上一条在后台续做占住执行名额（10-11 对照组 6 次被拒）。
- */
 const settleLong = suite === "voice-ideas" || suite === "goal-check" || suite === "compare" || process.argv.includes("--settle");
 
-/** --repeat=N：每条用例连跑 N 次，各开新会话。 */
 const repeat = Math.max(1, Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9)) || 1);
 
 const waitShots = process.argv.includes("--wait-shots");
 
 if (!daily && !serveOnly) requireHeadless();
 
-/** 长文翻译要跑几分钟：CASE_LIMIT_MS 可临时放宽单条时限。 */
 const CASE_LIMIT_MS = Number(process.env.CASE_LIMIT_MS) || 240_000;
 
 const startedAt = new Date();
@@ -77,10 +48,6 @@ const NOTE_FIRST = "Jev currently accepts text input only.";
 
 const page = (title: string, body: string) => `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title}</title></head><body>${body}</body></html>`;
 
-/**
- * 长文翻译练习页：1 个标题 + 96 段 + 12 个列表项 = 109 个段落块，全部是脚本拼出来的原创英文，
- * 每段约 370–410 字符，块数与 2026-09-26 慢翻译调查（R1/R2）的页面一致。
- */
 const LONG_TOPICS = ["river maintenance", "library budgets", "bus schedules", "school gardens", "bridge inspections", "street lighting", "recycling rules", "park benches",
   "water meters", "bike lanes", "museum hours", "fire drills"];
 
@@ -104,10 +71,8 @@ const LONG_BODY = `<article><h1>Notes from a year of small civic fixes</h1>
 ${Array.from({ length: 96 }, (_, i) => `<p>${longParagraph(i)}</p>`).join("\n")}
 <ul>${LONG_TOPICS.map((t, i) => `<li>Follow-up ${i + 1}: publish the ${t} timeline and name one contact person for questions.</li>`).join("")}</ul></article>`;
 
-/** 长文用例的判据：109 个段落块都要出现中文（双语或仅译文都算）。 */
 const LONG_BLOCKS = 109;
 
-/** voice-ideas 圈高频词的文章：四个词明显最多（全双工、打断、延迟、回声），其他词不超过 2 次；正文是纯段落，词不单独包标签。 */
 const FD_ARTICLE = `<article><h1>全双工语音，为什么这么难做</h1><p>林小舟 · 10 月 6 日</p>
 <p>打电话的时候，两个人可以同时说话，也可以随时打断对方。这就是全双工。可大多数语音助手做不到：它们要等你说完，才轮到自己开口。</p>
 <p>难点有三个。第一是延迟：从你停下到它回应，超过一秒，对话就像对讲机。第二是回声：它自己的声音被麦克风收回去，被误当成你在说话。第三是打断：你一开口，它要立刻闭嘴，而不是把一整段念完。</p>
@@ -117,7 +82,6 @@ const FD_ARTICLE = `<article><h1>全双工语音，为什么这么难做</h1><p>
 <p>我的判断是：全双工负责「聊」，后台助手负责「做」。你随口一句话，它分得清哪句是闲聊、哪句要动手；被打断时，只停嘴，不停手。回声，交给工程去磨。</p></article>`;
 
 const PAGES = {
-  // 10-11 对照 ax.ts 之后的三类页面：结果晚到、回车搜索、填完才能点。
   "/slow-shop": page("杂货铺", `<main><h1>杂货铺</h1><ol id="goods"><li>竹编篮</li><li>粗陶杯</li><li>麻布袋</li><li>木汤勺</li><li>铜书签</li></ol><button id="more">加载更多</button></main>
 <script>more.onclick = async () => { const r = await fetch("/api/slow-goods"); for (const g of await r.json()) { const li = document.createElement("li"); li.textContent = g; goods.append(li); } };</script>`),
   "/enter-search": page("站内搜索", `<main><h1>站内搜索</h1><form id="f"><input id="q" aria-label="搜索" type="search"></form><ol id="hits"></ol></main>
@@ -125,7 +89,6 @@ const PAGES = {
   "/signup": page("活动报名", `<main><h1>周末徒步报名</h1><label>名字 <input id="who" aria-label="名字"></label><p><button id="go" disabled>提交报名</button></p><p id="done"></p></main>
 <script>who.oninput = () => { go.disabled = !who.value.trim(); }; go.onclick = () => { done.textContent = "报名成功：" + who.value.trim(); };</script>`),
   "/fd-article": page("全双工语音，为什么这么难做", FD_ARTICLE),
-  // goal-check：两个按钮都没有任何处理，页面永远不变；任何查询参数都返回同一页（10-09 死按钮实验）。
   "/dead-save": page("通知设置", `<h1>通知设置</h1><label><input type="checkbox" checked> 邮件提醒</label><label><input type="checkbox"> 短信提醒</label>
 <button type="button">保存设置</button><p>状态：有未保存的更改</p>`),
   "/dead-next": page("水果清单", `<h1>水果清单</h1><ol><li>苹果</li><li>香蕉</li><li>橙子</li></ol><p>第 1 页 / 共 3 页</p><button type="button">下一页</button>`),
@@ -177,7 +140,6 @@ let saveRequests = 0;
 const site = createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
 
-  // 外部跑法读同一个「点了几次保存」事实；只在 --serve-only 时存在。
   if (serveOnly && req.method === "GET" && path === "/__stats") {
     const saves = saveRequests;
 
@@ -187,7 +149,6 @@ const site = createServer((req, res) => {
     return;
   }
 
-  // 结果晚到：900 毫秒才回；回车搜索：300 毫秒才回。
   if (path === "/api/slow-goods") { setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(["青花瓷碗", "藤编扇"])), 900); return; }
   if (path === "/api/search") { setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(["猫咪护理入门", "猫砂怎么选"])), 300); return; }
 
@@ -214,22 +175,19 @@ if (serveOnly) {
   process.exit(0);
 }
 
-/** goal-check「网站连不上」：先占一个端口再放掉，这个地址之后拒绝连接。 */
 const closedPort = await new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const port = siteAddress(probe).port; probe.close(() => done(port)); }); });
 
 type Box = { x: number; y: number; w: number; h: number };
 
-/** 页面上一个标注的外框和名牌（视口坐标）；文字框取页面每个文字节点的行框。 */
 type DrawnMark = { frame: Box; label: Box | null };
 
 type TextBox = Box & { text: string };
 
-type Ctx = { words: TextBox[]; answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number; /** 网页上弹出过几次发送确认（助手点了「发送」）。 */ sendConfirms: number; files: Array<{ name: string; text: string }>; pageInputs: number; /** 窗口里的活动标签页（用户正看着的）网址。 */ activeUrl: string | null };
+type Ctx = { words: TextBox[]; answer: string; pageText: string; translatedBlocks: number; pendingMarks: number; stopClearMs: number | null; untranslated: number; readable: number; pendingRose: boolean; marks: DrawnMark[]; texts: TextBox[]; draft: string | null; tabs: string[]; saves: number;  sendConfirms: number; files: Array<{ name: string; text: string }>; pageInputs: number;  activeUrl: string | null };
 
-/** stopAfterMs：发出后这么久像用户一样点停止（只在仍在运行时）。 */
 type GoalCheckLine = { status: string; remaining: string | null; correction?: string };
 
-type Case = { id: string; path: string; prompt: string; stopAfterMs?: number; /** 读这一轮导出记录里的全部目标核对结论再判一次（每次只跑这一条时才用）。 */ goal?: (verdicts: GoalCheckLine[], answer: string) => string | null; /** 判据之外另记的量（如圈中率），写进结果。 */ measure?: (c: Ctx) => Record<string, unknown>; /** --scripted-throttle 时：接下来这么多个翻译请求回 500。 */ failTranslations?: number; /** 发出前在后台另开这一页，再把工作页放回前台。 */ openTab?: string; check: (c: Ctx) => string | null };
+type Case = { id: string; path: string; prompt: string; stopAfterMs?: number;  goal?: (verdicts: GoalCheckLine[], answer: string) => string | null;  measure?: (c: Ctx) => Record<string, unknown>;  failTranslations?: number;  openTab?: string; check: (c: Ctx) => string | null };
 
 const has = (text: string, ...needles: string[]) => needles.every((n) => text.includes(n));
 
@@ -237,7 +195,6 @@ const contains = (outer: Box, inner: Box) => inner.x >= outer.x - 1 && inner.y >
 
 const overlaps = (a: Box, b: Box) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 1 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 1;
 
-/** 圈「名称 + 数值」：一个框同时盖住两者，任何名牌都不压页面文字。 */
 function checkPairMark(c: Ctx, name: string, value: string): string | null {
   if (c.marks.length === 0) return "页面上没有圈画";
   const nameBox = c.texts.find((t) => t.text === name);
@@ -256,23 +213,18 @@ const CASES: Case[] = [
   { id: "math", path: "/article", prompt: "1+1等于几啊？", check: (c) => (/2|二/.test(c.answer) ? null : "回答里没有 2") },
   { id: "upset", path: "/article", prompt: "好烦", check: (c) => (c.answer ? null : "没有回答") },
   { id: "page-gist", path: "/article", prompt: "这篇文章的核心观点是什么？", check: (c) => (has(c.answer, "新人") ? null : "没提到新人成长这一核心观点") },
-  // #18：真实少数派长文、原问法，看首字多久出现（9-30 本机模式下约 115 秒）。
   { id: "summary-real-sspai", path: "https://sspai.com/post/115308", prompt: "这页讲了什么？给我三句话总结", check: (c) => (has(c.answer, "iPhone") ? null : "总结里没提到 iPhone") },
   { id: "page-fields", path: "/job", prompt: "这个岗位叫什么？在哪个城市？只回答这两项，不要操作网页。", check: (c) => (has(c.answer, "前端", "杭州") ? null : "缺岗位名或城市") },
   { id: "three-repos", path: "/projects", prompt: "找到这三个项目的 GitHub 仓库地址。", check: (c) => (has(c.answer, "alpha-kit", "beta-flow", "gamma-db") ? null : "三个仓库没有全部给出") },
   { id: "translate", path: "/en", prompt: "把这个页面翻译成中文。", check: (c) => ((c.pageText.match(/[一-鿿]/g) ?? []).length >= 20 ? null : "页面上没有出现中文译文") },
   { id: "translate-long", path: "/long", prompt: "把这个页面翻译成中文。",
     check: (c) => (c.translatedBlocks < LONG_BLOCKS ? `只有 ${c.translatedBlocks}/${LONG_BLOCKS} 段出现了译文` : c.pendingMarks ? `译完后还留着 ${c.pendingMarks} 个待翻占位` : null) },
-  // 用户 2026-09-27 日常试用失败的那一页（约 720 段）：几乎全部译完，占位只减不增，结束不留占位。
-  // 服务商并发上限为 1（--scripted-throttle）：一次调用内译完，占位只减不增，结束不留。
   { id: "translate-throttle", path: "/long", prompt: "把这个页面翻译成中文。",
     check: (c) => (c.untranslated > c.readable * 0.05 ? `还有 ${c.untranslated}/${c.readable} 段英文没有译文` : c.pendingRose ? "占位消失后又成片出现" : c.pendingMarks ? `结束后还留着 ${c.pendingMarks} 个占位` : null) },
-  // 第一次调用中途出错（可继续），模型再调用一次：两次调用之间占位不能成片消失又出现。
   { id: "translate-resume", path: "/long", prompt: "把这个页面翻译成中文，没译完就接着译。", failTranslations: 2,
     check: (c) => (c.untranslated > c.readable * 0.05 ? `还有 ${c.untranslated}/${c.readable} 段英文没有译文` : c.pendingRose ? "占位消失后又成片出现" : c.pendingMarks ? `结束后还留着 ${c.pendingMarks} 个占位` : null) },
   { id: "translate-real-hamel", path: "https://hamel.dev/blog/posts/evals-faq/", prompt: "把这个页面翻译成中文。",
     check: (c) => (c.untranslated > c.readable * 0.05 ? `还有 ${c.untranslated}/${c.readable} 段英文没有译文` : c.pendingRose ? "占位消失后又成片出现" : c.pendingMarks ? `结束后还留着 ${c.pendingMarks} 个占位` : null) },
-  // 翻到一半按停止：没翻的段落要在 3 秒内收掉占位、恢复原样。
   { id: "translate-long-stop", path: "/long", prompt: "把这个页面翻译成中文。", stopAfterMs: scriptedThrottle ? 5_000 : 8_000,
     check: (c) => (c.translatedBlocks >= LONG_BLOCKS ? "停止前已全部译完，没测到停止" : c.stopClearMs === null ? `停止后仍留着 ${c.pendingMarks} 个待翻占位` : c.stopClearMs > 3000 ? `停止后 ${c.stopClearMs} ms 才收掉占位` : null) },
   { id: "mark", path: "/quota", prompt: "在页面上圈出五小时用量。", check: (c) => checkPairMark(c, "五小时用量", "32%") },
@@ -283,7 +235,6 @@ const CASES: Case[] = [
 
 const flat = (text: string) => text.replace(/\s+/g, "");
 
-/** Sitegeist 宣传的任务，全部换成本机练习页；判据只看用户拿到的结果。 */
 const SITEGEIST_CASES: Case[] = [
   { id: "research", path: "/companies", prompt: "打开这页列出的三家公司，把每家的成立年份、城市和员工人数整理成一张表，每行注明来源网址。",
     check: (c) => {
@@ -310,7 +261,6 @@ const SITEGEIST_CASES: Case[] = [
       return missing.length ? `回答缺少：${missing.join("、")}` : null;
     } },
   { id: "calculator", path: "/recipe", prompt: "根据这页的配方做一个小工具：我输入想做几块饼干，它自动换算每样用料。",
-    // 只认用户拿来就能用的：页面上出现了输入框，或下载到带输入框的 HTML。回答里贴代码让用户自己存文件不算（09-25 两次这样被旧判据误判通过）。
     check: (c) => (c.pageInputs > 0 || c.files.some((f) => /\.html?$/i.test(f.name) && /<input/i.test(f.text))
       ? null : "没有生成可用的小工具（页面上没有输入框，也没有下载到 HTML 文件）") },
 ];
@@ -319,10 +269,8 @@ const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split("
 
 const FREQ_WORDS = ["全双工", "打断", "延迟", "回声"];
 
-/** 一个圈「圈中」某处词：词框中心在圈内，且圈不大于两行字（圈整段不算）。 */
 const tightOn = (m: DrawnMark, w: TextBox) => m.frame.h <= 60 && m.frame.w <= 220 && contains(m.frame, { x: w.x + w.w / 2, y: w.y + w.h / 2, w: 0, h: 0 });
 
-/** 回答里「词 … N 次」或「N 处」报的次数，与页面上实际出现次数对照。 */
 const CN_NUM: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
 
 function reportedCounts(c: Ctx) {
@@ -341,7 +289,6 @@ function freqMeasure(c: Ctx) {
   return { occurrences: total, covered: hit, recall: total ? +(hit / total).toFixed(2) : 0, marks: c.marks.length, marksOnTarget: onTarget, precision: c.marks.length ? +(onTarget / c.marks.length).toFixed(2) : 0, counts: reportedCounts(c) };
 }
 
-/** 回音消除词条导言里的事实（2026-10-09 读取），用来核对回答是否来自查到的页面。 */
 const WIKI_FACTS = ["贝尔实验室", "50年代", "五十年代", "回音抑制器", "峡谷", "声学路径"];
 
 const VOICE_CASES: Case[] = [
@@ -359,17 +306,14 @@ const VOICE_CASES: Case[] = [
     measure: (c) => ({ wikiTabs: c.tabs.filter((u) => u.includes("wikipedia.org")).map((u) => decodeURIComponent(u)), facts: WIKI_FACTS.filter((f) => c.answer.includes(f)) }),
     check: (c) => {
       if (!c.tabs.some((u) => u.includes("wikipedia.org"))) return "没有打开维基百科";
-      // 10-09 用户定：只算中文维基。打开了中文「回音消除」词条，并且回答指向它、讲了内容，就算做对；不要求照抄导言原词。
       const zhEntry = c.tabs.some((u) => decodeURIComponent(u).includes("zh.wikipedia.org/wiki/回音消除"));
       if (!zhEntry) return "没有打开中文维基的「回音消除」词条";
       return c.answer.includes("回音消除") && (WIKI_FACTS.some((f) => c.answer.includes(f)) || c.answer.length >= 40) ? null : "回答没有讲中文词条的内容";
     } },
 ];
 
-/** 助手如实说按钮不起作用：点了没反应、没存上、翻不过去。 */
 const SAYS_DEAD = /没(有)?反应|不起作用|没(能)?存上|没有保存|未保存|保存失败|翻不过去|无法翻页|没能翻|没有翻到|(仍|还)(然)?(显示|停在|是|在)[^，。]{0,4}第 ?1 ?页|无法确认|不能确认|没法确认|没(有)?生效|不能用|无效/;
 
-/** 核对催「继续」超过 allowed 次就是白催：网站连不上不该催；按钮没反应时只点过一次，可以催一次换做法，换过之后不该再催（10-09 用户定）。 */
 const nudgesAtMost = (allowed: number) => (verdicts: GoalCheckLine[]) => {
   const nudges = verdicts.filter((v) => v.status === "continue");
   return nudges.length > allowed ? `核对催了 ${nudges.length} 次（最多 ${allowed} 次）：${nudges.map((v) => v.remaining ?? "").join("；")}` : null;
@@ -394,7 +338,6 @@ const byId = (cases: Case[], id: string) => cases.find((c) => c.id === id)!;
 
 const COMPARE_CASES: Case[] = [
   byId(CASES, "three-repos"), byId(CASES, "copy-no-save"), byId(SITEGEIST_CASES, "fix-typos"), byId(SITEGEIST_CASES, "research"), byId(GOAL_CASES, "dead-next"), byId(CASES, "open-tab"),
-  // 用户在看 /dy，/yt 在后台标签：说「切到youtube」后，用户看到的应是 /yt。
   { id: "switch-tab", path: "/dy", openTab: "/yt", prompt: "切到youtube",
     check: (c) => (c.activeUrl?.startsWith(`${origin}/yt`) ? null : `活动标签页是 ${c.activeUrl ?? "无"}，不是 /yt`) },
   { id: "slow-more", path: "/slow-shop", prompt: "点加载更多，告诉我第 6 件商品是什么。",
@@ -409,7 +352,6 @@ const pool = suite === "compare" ? COMPARE_CASES : suite === "sitegeist" ? SITEG
 
 const selected = (only ? pool.filter((c) => only.includes(c.id)) : pool).flatMap((c) => Array.from({ length: repeat }, (_, i) => (repeat > 1 ? { ...c, id: `${c.id}-${i + 1}` } : c)));
 
-/** 导出文件的一行必须带本机记录的公共字段（time、sessionId、type、整数 turn）；data.text 可缺省。 */
 const TraceLineSchema = Type.Object({
   time: Type.String(), sessionId: Type.String(), type: Type.String(), turn: Type.Integer(),
   data: Type.Optional(Type.Object({ text: Type.Optional(Type.String()) })),
@@ -417,7 +359,6 @@ const TraceLineSchema = Type.Object({
 
 type TraceLine = Static<typeof TraceLineSchema>;
 
-/** 解析失败或缺字段返回 null，由调用方计为缺字段。 */
 function parseTraceLine(raw: string): TraceLine | null {
   try {
     const value = JSON.parse(raw);
@@ -428,10 +369,6 @@ function parseTraceLine(raw: string): TraceLine | null {
   }
 }
 
-/**
- * 用户路径：设置页点「导出」拿到 jsonl，再点「清空」。判据独立于产品实现：直接读下载下来的文件。
- * 可能的失败：扩展没写记录；漏会话；行缺字段；密钥进了记录；清空不彻底。
- */
 async function checkTraceExport(modelPlan: ModelPlan) {
   const { exportStatus, traces: text, clearedStatus } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"), { clearAfter: true });
   const lines = text.split("\n").filter(Boolean).map(parseTraceLine);
@@ -448,7 +385,6 @@ async function checkTraceExport(modelPlan: ModelPlan) {
   return { outcome: reason ? "fail" as const : "pass" as const, reason, sessions, lines: lines.length, missing, exportStatus, clearedStatus: cleared, translation: translationFacts(text), goalChecks: goalChecksOf(text), efforts: effortsOf(text) };
 }
 
-/** 每条提示词实际发出的思考强度：run_start 文字含提示词的那些轮里，model_request 行的 effort（读法同 model-menu.mts）。 */
 function effortsOf(text: string) {
   const rows = text.split("\n").filter(Boolean).flatMap((raw) => {
     try {
@@ -466,7 +402,6 @@ function effortsOf(text: string) {
   };
 }
 
-/** 导出文件里的目标核对结论（type goal_check），按时间顺序。 */
 function goalChecksOf(text: string): GoalCheckLine[] {
   return text.split("\n").filter(Boolean).flatMap((raw) => {
     try {
@@ -479,9 +414,7 @@ function goalChecksOf(text: string): GoalCheckLine[] {
   });
 }
 
-/** 从导出文件读出翻译过程：每次翻译请求（批次、拆分层数、停止原因、耗时、用量）和每次 page_translation 工具调用的结果。 */
 function translationFacts(text: string) {
-  /** 这里读到的诊断记录字段：翻译请求行（shared/run-trace-core 与 session.translatePageBatch）与工具结束行。 */
   type TraceData = {
     toolName?: string; elapsedMs?: number; isError?: boolean; result?: object;
     batch?: number; depth?: number; retry?: boolean; attempt?: number; phase?: string; reason?: string;
@@ -506,7 +439,6 @@ function translationFacts(text: string) {
   return { requests, tools };
 }
 
-/** 所选服务商的 API 主机；--inproc 时用来判定请求发往哪里。 */
 const PROVIDER_HOSTS = { stepfun: "api.stepfun.com", "zai-coding-cn": "open.bigmodel.cn", "opencode-go": "opencode.ai", "openai-codex": "chatgpt.com", "kimi-coding": "api.kimi.com", "minimax-cn": "api.minimaxi.com" } satisfies Record<string, string>;
 
 const hostOf = (provider: string): string | undefined => Object.entries(PROVIDER_HOSTS).find(([id]) => id === provider)?.[1];
@@ -515,20 +447,12 @@ const expectedHost = inprocModel && !scriptedThrottle ? hostOf(inprocModel.split
 
 if (inprocModel && !scriptedThrottle && !expectedHost) throw new Error(`不知道 ${inprocModel} 的 API 主机，先补进 PROVIDER_HOSTS`);
 
-/** 模型调用：发往已知服务商主机的 POST（排除练习站、扩展自身资源和语音握手）。 */
 const isModelCall = (r: InprocRequest) => r.method === "POST" && Object.values(PROVIDER_HOSTS).includes(new URL(r.url).host);
 
-/** 已经显示中文的段落块数：双语模式下译文附在段落里，仅译文模式下段落文字被替换，两种都算。 */
-/** 页面上还在等译文的段落占位（产品的待翻标记）。 */
 const PENDING_MARKS = "document.querySelectorAll('[data-bys-translation=\"pending\"]').length";
 
-/**
- * 页面里装一个监听：占位数量每变一次都记下（定时采样会漏掉几十毫秒的「消失又出现」）。
- * 闪烁 = 占位回升而「占位 + 译文」总数没超过此前最高值；翻译途中网页新出现的段落会让总数变多，不算闪烁。
- */
 const WATCH_PENDING = "(() => { const log = [], flickers = []; window.__bysPendingLog = log; window.__bysPendingFlickers = flickers; let maxTotal = 0; const q = (v) => document.querySelectorAll('[data-bys-translation=\\\"' + v + '\\\"]').length; new MutationObserver(() => { const n = q('pending'), total = n + q('true'); if (log.length && n > log.at(-1) && total <= maxTotal) flickers.push({ from: log.at(-1), to: n, total, maxTotal }); maxTotal = Math.max(maxTotal, total); if (n !== log.at(-1)) log.push(n); }).observe(document.documentElement, { subtree: true, childList: true }); return true; })()";
 
-/** 有成段英文的段落总数，以及其中还没有中文译文的数量。 */
 const READABLE_BLOCKS = "(() => { const all = [...document.querySelectorAll('h1,h2,h3,p,li')].filter((el) => !el.closest('pre,code,nav,footer') && (el.textContent.match(/[A-Za-z]/g) ?? []).length >= 20); return { readable: all.length, untranslated: all.filter((el) => (el.textContent.match(/[\\u4e00-\\u9fff]/g) ?? []).length < 2).length }; })()";
 
 const TRANSLATED_BLOCKS = "[...document.querySelectorAll('h1,h2,h3,p,li')].filter((el) => (el.textContent.match(/[\\u4e00-\\u9fff]/g) ?? []).length >= 2).length";
@@ -571,16 +495,11 @@ type DomNode = { nodeId: number; attributes?: string[]; children?: DomNode[]; sh
 type CaseResult = {
   id: string; prompt: string; replied: boolean; firstVisibleMs: number | null; doneMs: number | null; noiseCount: number;
   noise: PanelState["noise"] | null; outcome: "pass" | "fail"; reason: string | null; answer: string;
-  /** 翻译用例：页面上第一段译文出现的时刻，以及译文段数随时间的变化（毫秒相对发送时刻）。 */
   firstTranslatedMs?: number | null; firstMarkMs?: number | null; stopClearMs?: number | null; pendingMarks?: number; translatedTimeline?: Array<{ ms: number; blocks: number; pending: number }>;
-  /** 只在 --inproc：本条发出的模型请求（毫秒相对发送时刻）。 */
   measure?: Record<string, unknown>;
   modelCalls?: Array<{ host: string; startMs: number; firstByteMs: number | null; endMs: number | null; status: number | null; failed: string | null }>;
-  /** 这一轮导出记录里的目标核对结论，按时间顺序。 */
   goalChecks?: GoalCheckLine[];
-  /** 只在 --suite=compare：完整回答。 */
   answerFull?: string;
-  /** 只在 --deep：这一条每次模型请求的思考强度（取自导出的诊断记录）。 */
   efforts?: string[];
 };
 
@@ -594,10 +513,8 @@ let plan: ModelPlan | null = null;
 
 let scripted: Awaited<ReturnType<typeof startScriptedModel>> | null = null;
 
-/** 只在 --inproc：设置页导出的诊断记录是否覆盖每条用例、不含密钥、清空后为空。 */
 let traceCheck: Awaited<ReturnType<typeof checkTraceExport>> | null = null;
 
-/** 只在 --deep：选「深入」后输入框旁开关上的文字。 */
 let deepChip: string | null = null;
 
 try {
@@ -607,7 +524,6 @@ try {
   await rp.cdp.send("Page.navigate", { url: `${origin}/article` }, work);
   const panel = await rp.attach(await rp.openSidePanel());
 
-  /** 侧栏截图 + 当时的页面结构（结构可在真实样式上复原，用于前后对照）。 */
   const capturePanel = async (name: string) => {
     await rp.screenshot(panel, join(artifacts, `${name}.png`)).catch(() => {});
     await writeFile(join(artifacts, `${name}.html`), String(await rp.evaluate(panel, "document.documentElement.outerHTML").catch(() => ""))).catch(() => {});
@@ -618,7 +534,6 @@ try {
   // SAFETY: PANEL_STATE 返回的对象字段与 PanelState 一一对应。
   const readPanel = async () => (await rp.evaluate(panel, PANEL_STATE)) as PanelState;
 
-  // 日常 Chrome 若在跑扩展内 agent（无本机伴随进程），同样从外部记录它的请求。
   if (daily && (await rp.targets()).some((t) => t.url === `chrome-extension://${rp.extensionId}/inproc.html`)) inproc = await watchInproc(rp, rp.extensionId);
 
   if (inprocModel) {
@@ -627,7 +542,6 @@ try {
     plan = scripted ? { providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "local-demo-no-secret" } } : await loadModelPlan(inprocModel);
     let run = { testStatus: "连接正常（订阅登录直接写入存储）", settingsTargetId: "" };
 
-    // --direct-config：跳过设置页界面，像订阅登录一样直接写存储（10-06 设置页重做后旧选择器失效，API key 走界面会卡住）。
     if (plan.credential.type === "oauth" || directConfig) await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(() => true)`);
     else run = await configureViaSettings(rp, panel, plan, scripted ? { baseUrl: scripted.baseUrl } : {});
 
@@ -640,7 +554,6 @@ try {
 
   await until(async () => (await readPanel()).connected || undefined, 90_000, "侧栏连上 agent", 500);
 
-  // 选「深入」的做法与 model-menu.mts 的 pick("深入") 相同。
   if (deep) {
     const chipText = async () => String(await rp.evaluate(panel, `(() => { const c = document.querySelector("#think-chip"); return c && !c.hidden ? c.innerText.replace(/\\s+/g, " ").trim() : ""; })()`));
     await rp.click(panel, "#input");
@@ -665,7 +578,6 @@ try {
     return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
   };
 
-  /** 标注画在扩展的封闭 shadow root 里，页面脚本看不到；用 CDP 穿透读外框和名牌。 */
   const readMarks = async (): Promise<DrawnMark[]> => {
     // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
     const { root } = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)) as { root: DomNode };
@@ -700,10 +612,6 @@ try {
 
   const SEND_CONFIRM = `[${OVERLAY_ATTR}="${OVERLAY_KIND_SEND_CONFIRM}"]`;
 
-  /**
-   * 助手点了「发送」，网页上会先弹发送确认，点击不会到服务器。看到确认框就记一次，再像用户一样点「不发」，
-   * 免得这一轮干等确认框超时。确认框在封闭 shadow root 里：用 CDP 穿透找「不发」，按真实鼠标点下去。
-   */
   const declineSendConfirm = async (shot: string): Promise<boolean> => {
     if (!(await rp.evaluate(work, `!!document.querySelector(${JSON.stringify(SEND_CONFIRM)})`).catch(() => false))) return false;
     await rp.screenshot(work, shot).catch(() => {});
@@ -755,17 +663,14 @@ try {
   for (const item of selected) {
     saveRequests = 0;
     let sendConfirms = 0;
-    // 每条用例单独一个下载目录：判据只看这一条下载了什么。
     const caseDownloads = join(artifacts, `downloads-${item.id}`);
 
     await mkdir(caseDownloads, { recursive: true });
     await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: caseDownloads });
-    // 上一条新开的网页标签页关掉：判据里的标签页只算这一条开的。
     for (const t of await rp.targets()) if (t.type === "page" && t.targetId !== blank.targetId && /^https?:/.test(t.url)) await rp.cdp.send("Target.closeTarget", { targetId: t.targetId }).catch(() => {});
     await rp.cdp.send("Page.navigate", { url: item.path.startsWith("https://") ? item.path : `${origin}${item.path}` }, work);
 
     if (item.openTab) await rp.cdp.send("Target.createTarget", { url: `${origin}${item.openTab}`, background: true });
-    // 上一条可能新开了标签页并让它成为当前页（open-tab）；每条都从自己的练习页开始。
     if (!daily) await rp.cdp.send("Page.bringToFront", {}, work);
     await sleep(1500);
     await rp.click(panel, "#conversation-new");
@@ -825,7 +730,6 @@ try {
 
         if (await declineSendConfirm(join(artifacts, `${item.id}-page-send-confirm-${sendConfirms + 1}.png`)).catch(() => true)) sendConfirms += 1;
 
-        // 用户在页面上看到译文的时刻：数页面里的译文节点，变化时记一笔。
         if (translating) {
           const blocks = Number(await rp.evaluate(work, TRANSLATED_BLOCKS).catch(() => 0));
           const pending = Number(await rp.evaluate(work, PENDING_MARKS).catch(() => 0));
@@ -838,7 +742,6 @@ try {
           if (firstMarkMs === null && pending > 0) firstMarkMs = Date.now() - sentAt;
 
           if (stoppedAt !== null && stopClearMs === null && pending === 0) stopClearMs = Date.now() - stoppedAt;
-          // 用户看到的三个时刻：只有占位、占位与译文并存、停止之后。
           const moment = stoppedAt !== null ? (stopClearMs !== null ? "after-stop" : null) : pending > 0 && blocks === 0 ? "marks-only" : pending > 0 && blocks > 0 ? "marks-and-text" : null;
 
           if (moment && !markShots.has(moment)) {
@@ -852,14 +755,12 @@ try {
           }
         }
 
-        // 助手运行期间每 2.5 秒给网页本身拍一张（最多 4 张）：验收页面边缘光、光标与标注。
         if (pageShots < 4 && state.running && (state.noise.toolSteps ?? 0) > 0 && Date.now() >= nextPageShotAt) {
           pageShots += 1;
           nextPageShotAt = Date.now() + 1500;
           await rp.screenshot(work, join(artifacts, `${item.id}-page-running-${pageShots}.png`)).catch(() => {});
         }
 
-        // 加 --wait-shots 时，等待期间每 2 秒给侧栏拍照并存下结构（最多 30 秒）：看用户等的时候看到什么（#102）。默认不拍，因为它让 out/ 涨得最快。
         if (waitShots && (state.running || state.stopping || state.streaming) && panelShots < 15 && Date.now() - sentAt >= (panelShots + 1) * 2000) {
           panelShots += 1;
           await capturePanel(`${item.id}-panel-wait-${panelShots * 2}s`);
@@ -870,7 +771,6 @@ try {
 
         if (busy) lastBusyAt = Date.now();
 
-        // voice-ideas、goal-check：回答后还有目标核对，没做完会自己接着做；空闲 8 秒才算结束，结束时刻取最后一次忙。
         if (idle >= (settleLong ? 32 : 6)) {
           doneMs = settleLong ? lastBusyAt - sentAt : Date.now() - sentAt - 1500;
           break;
@@ -883,7 +783,6 @@ try {
     await sleep(1000);
     const final = (await readPanel().catch(() => null)) ?? last;
 
-    // 超时的任务先停掉，免得它在后台继续跑、干扰下一条。
     if (doneMs === null) {
       await rp.click(panel, "#send-btn").catch(() => {});
       await until(async () => {
@@ -896,10 +795,8 @@ try {
     const pageText = String(await rp.evaluate(work, "document.body?.innerText ?? ''").catch(() => ""));
     const draftValue = await rp.evaluate(work, "document.querySelector('#draft')?.value ?? null").catch(() => null);
     const tabs = (await rp.targets()).filter((t) => t.type === "page").map((t) => t.url);
-    // 读法同 keep-foreground.mts：浏览器自己记的活动标签（侧栏是扩展页，能直接查 chrome.tabs）。
     const activeUrl = await rp.evaluate(panel, "chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t?.url ?? null)").catch(() => null);
     const answer = final?.answers.join("\n\n") ?? "";
-    // 像用户一样点侧栏文件卡片上的「下载」，文件才会落到下载目录。
     // SAFETY: 这段页面脚本只返回卡片 data-filename 组成的字符串数组。
     const cardNames = (await rp.evaluate(panel, "[...document.querySelectorAll('.artifact-card')].filter((c) => !c.querySelector('.artifact-download')?.disabled).map((c) => c.dataset.filename)").catch(() => [])) as string[];
 
@@ -914,7 +811,6 @@ try {
     const downloaded = (await readdir(caseDownloads)).filter((name) => !name.endsWith(".crdownload"));
     const files = await Promise.all(downloaded.map(async (name) => ({ name, text: await readFile(join(caseDownloads, name), "utf8").catch(() => "") })));
     const pageInputs = Number(await rp.evaluate(work, "document.querySelectorAll('input').length").catch(() => 0));
-    // 用户最后看到的页面：运行中截图可能拍不到最终结果（如注入的小工具）。
     await rp.screenshot(work, join(artifacts, `${item.id}-page-final.png`)).catch(() => {});
     const translatedBlocks = Number(await rp.evaluate(work, TRANSLATED_BLOCKS).catch(() => 0));
     const pendingMarks = Number(await rp.evaluate(work, PENDING_MARKS).catch(() => 0));
@@ -935,7 +831,6 @@ try {
       endMs: r.endMs === null ? null : r.endMs - sentAtInproc, status: r.status, failed: r.failed,
     }));
 
-    // 设置页选的是哪家，请求就只能发往哪家：防「换了模型却仍用旧模型」。
     const wrongHost = inprocModel && modelCalls?.find((c) => c.host !== expectedHost);
     const finalReason = reason ?? (wrongHost ? `模型请求发往 ${wrongHost.host}，不是所选的 ${expectedHost}` : null);
     const result: CaseResult = { id: item.id, prompt: item.prompt, replied: answer.length > 0, firstVisibleMs, doneMs, noiseCount, noise, outcome: finalReason ? "fail" : "pass", reason: finalReason, answer: answer.slice(0, 600), modelCalls, ...(item.measure ? { measure: item.measure(ctx) } : {}), ...(suite === "compare" ? { answerFull: answer } : {}) };
@@ -952,7 +847,6 @@ try {
 
   if (deep && traceCheck) for (const r of results) { r.efforts = traceCheck.efforts(r.prompt); console.log(`efforts\t${r.id}\t${r.efforts.join(",") || "-"}`); }
 
-  // 每次只跑一条时，导出记录里的核对结论都属于这一条；先记下来，再按用例的 goal 判据补判。
   if (traceCheck && results.length === 1) {
     const only = results[0]!, item = selected[0]!;
     only.goalChecks = traceCheck.goalChecks;
@@ -965,7 +859,6 @@ try {
   await writeFile(join(artifacts, "hostlog.txt"), inproc ? inproc.logs() : await rp.hostLog()).catch(() => {});
 
   if (inproc) await writeFile(join(artifacts, "inproc-requests.json"), JSON.stringify(inproc.requestsBetween(0), null, 2)).catch(() => {});
-  // 伴随进程的 traces 目录只在旧本机模式存在；只装扩展时诊断记录由 checkTraceExport 从设置页导出到 downloads/。
   await cp(join(rp.dirs.data, "traces"), join(artifacts, "traces"), { recursive: true }).catch(() => {});
   await rp.close();
   site.close();
@@ -984,5 +877,4 @@ if (traceCheck) console.log(`traces\t${traceCheck.outcome}\tsessions=${traceChec
 console.log(`\n${summary.passed}/${summary.total} pass · ${artifacts}`);
 
 await rp.remove();
-// 调用方只看退出码：有一条没过就不能报 0。
 if (summary.passed < summary.total) process.exitCode = 1;

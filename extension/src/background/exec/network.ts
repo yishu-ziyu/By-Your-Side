@@ -1,8 +1,3 @@
-/**
- * `network` 工具：读当前工作标签页的被动请求记录（CDP Network 域环形缓冲）。
- * 只读，不改页面；attach 失败（如用户开着 DevTools）不伪造数据。
- * 回执含在途/捕获完整性，供 waitForNetworkIdle 判定。
- */
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { formatNetworkReport, pageTimingEntries, selectNetworkEntries, type NetworkEntry, type NetworkQuery } from "../../../../shared/network.js";
 import { ensureAttached, sendCommand } from "../debugger.js";
@@ -32,7 +27,6 @@ interface NetworkResult {
   attached: boolean;
 }
 
-/** 模型清空过记录的标签页：清空之前的页面请求不再补回来。 */
 const clearedAt = new Map<number, number>();
 
 export async function network(params: NetworkParams, sessionId: string = LEAD_SESSION_ID): Promise<NetworkResult> {
@@ -40,12 +34,10 @@ export async function network(params: NetworkParams, sessionId: string = LEAD_SE
 
   if (tab.id == null) throw new Error("工作标签页无效");
 
-  // 尽量从现在起有记录；attach 失败不影响读已有缓冲。中途接入标 late，不冒充完整。
   try {
     await ensureAttached(tab.id);
     await enableNetworkCapture(tab.id, { mode: "late" });
   } catch {
-    /* DevTools 占用或页面受限：已有记录照常返回 */
   }
 
   if (params.clear === true) {
@@ -106,7 +98,6 @@ export async function network(params: NetworkParams, sessionId: string = LEAD_SE
   };
 }
 
-/** 记录开始前页面已发出的请求：读页面自己的资源计时（只读）；读不到就只给已记录的。 */
 async function requestsBeforeRecording(tabId: number, recorded: readonly NetworkEntry[]): Promise<NetworkEntry[]> {
   const expression = `({ origin: performance.timeOrigin, rows: performance.getEntriesByType("resource").map(e => [e.name, e.initiatorType, e.responseStatus || 0, e.encodedBodySize || 0, e.duration, performance.timeOrigin + e.startTime]) })`;
   const reply = await sendCommand<{ result?: { value?: unknown } }>(tabId, "Runtime.evaluate", { expression, returnByValue: true }, undefined, 1500).catch(() => undefined);

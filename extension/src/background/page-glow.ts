@@ -1,11 +1,6 @@
-/**
- * 页面边缘光（background 侧）：某个成员这一轮动过哪一页，那一页四周就亮一圈它的颜色，
- * 这一轮结束、被停止或被接管时淡出。只是呈现，不是执行证据，画不上不影响任务。
- */
 import { callDom, ensureCursor } from "./exec/page-call.js";
 import { parseExecutionKey } from "./tab-bindings.js";
 
-/** 执行键 → 这个成员正在操作的标签页。 */
 const lit = new Map<string, number>();
 
 const paints = new Map<number, Promise<void>>();
@@ -13,12 +8,11 @@ const paints = new Map<number, Promise<void>>();
 function paint(tabId: number, key: string): Promise<void> {
   const next = (paints.get(tabId) ?? Promise.resolve()).then(async () => {
     try {
-      // 注入之后再读意图：晚到的点亮不能盖掉已经发生的熄灭。
       if (lit.get(key) === tabId) await ensureCursor(tabId);
       await callDom(tabId, (id: string, on: boolean) => {
         window.__sideagent?.cursor?.for(id)?.setGlow?.(on);
       }, [parseExecutionKey(key).sessionId, lit.get(key) === tabId]);
-    } catch { /* 关闭或受限的页面画不上，不影响任务。 */ }
+    } catch {  }
   });
 
   paints.set(tabId, next);
@@ -35,12 +29,11 @@ export function glowPage(key: string, tabId: number | null): Promise<void> {
 
     try {
       chrome.tabs.onRemoved.addListener(forgetGlowTab);
-      // 同一标签页跳到新网页后，新文档没有彩边；加载完补画。
       chrome.tabs.onUpdated.addListener((id, info) => {
         if (info.status !== "complete") return;
         for (const [k, litTab] of lit) if (litTab === id) void paint(id, k);
       });
-    } catch { /* 测试环境没有标签页事件 */ }
+    } catch {  }
   }
 
   const previous = lit.get(key);
@@ -48,7 +41,6 @@ export function glowPage(key: string, tabId: number | null): Promise<void> {
   if (tabId == null) return Promise.resolve();
   lit.set(key, tabId);
 
-  // 同一标签页也重画：上次画的可能是已经离开的旧文档。画是幂等的。
   return Promise.all([previous != null && previous !== tabId ? paint(previous, key) : null, paint(tabId, key)]).then(() => {});
 }
 
@@ -65,7 +57,6 @@ function forgetGlowTab(tabId: number): void {
   for (const [key, litTab] of lit) if (litTab === tabId) lit.delete(key);
 }
 
-/** 这一轮正在操作这个标签页的成员（光标实例名）。 */
 export function litInstances(tabId: number): Set<string> {
   return new Set([...lit].filter(([, litTab]) => litTab === tabId).map(([key]) => parseExecutionKey(key).sessionId));
 }

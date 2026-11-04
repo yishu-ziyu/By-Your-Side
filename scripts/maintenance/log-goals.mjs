@@ -1,4 +1,3 @@
-/** Reconstruct goals from existing trace evidence; no trace format or user data is changed. */
 const timeOf = e => Date.parse(e.time ?? '');
 const short = (text, max = 80) => String(text ?? '').replace(/\s+/gu, ' ').trim().slice(0, max);
 const isRun = e => typeof e.runId === 'string' && !!e.runId;
@@ -33,7 +32,6 @@ function deepLinks(value) {
   return matches.flatMap(raw => {
     try {
       const url = new URL(raw.replace(/[),.;\]}]+$/, ''));
-      // A specific resource, not a homepage or a broad search/landing page.
       if (!url.pathname.split('/').some(part => part.length >= 12 && /\d/.test(part) && /^[a-z0-9_-]+$/i.test(part))) return [];
       return [`${url.hostname.toLowerCase()}${url.pathname}`];
     } catch { return []; }
@@ -104,8 +102,6 @@ export function summarizeGoals(input, since = null) {
       if (event.type === 'restart_resume' && runs.has(event.data?.originalRunId)) join(event.data.originalRunId, run.id);
     }
   }
-  // The printed continuation tag comes from restart_resume; a literal legacy tag is only
-  // linked to the preceding run within its own recorder session, never to all UI events.
   const previous = new Map();
   for (const run of runs.values()) {
     const session = run.start.sessionId;
@@ -118,8 +114,6 @@ export function summarizeGoals(input, since = null) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(run);
   }
-  // A specific page link plus two matching user-intent words is suggestive, not an
-  // explicit continuation identifier. Keep its provenance visible in the output.
   const certainGroups = [...groups.values()];
   const signals = certainGroups.map(group => {
     const all = group.flatMap(run => run.events);

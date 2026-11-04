@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-/**
- * 一键清空本机语音记录（默认遵循保留策略的目录 `~/.sideagent/voice-capture/`）。
- * 先打印将要删除的路径与总量，再删除目录内容；目录本身保留。
- * 用法：node scripts/clear-voice-capture.mjs [--root <dir>] [--dry-run]
- */
 import {existsSync, readdirSync, rmSync, statSync} from "node:fs";
 import {homedir} from "node:os";
 import {join, resolve} from "node:path";

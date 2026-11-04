@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-/**
- * 真实浏览器验收：只连接 local.yishu.chrome-main 的 ChromeMain CDP，
- * 在已加载 SideAgent service worker 内用 chrome.debugger / content script
- * 完成 snapshot → click → fill → 再 snapshot。
- * 不启动 Chrome，不 attach 普通页面，不用 Playwright 点选。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -377,7 +371,6 @@ async function main() {
       try {
         await fixture.close();
       } catch {
-        /* 忽略 */
       }
     }
 

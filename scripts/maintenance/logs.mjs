@@ -1,17 +1,3 @@
-/**
- * 直接读日常 Chrome 里 By Your Side 的诊断记录，不用在设置页导出。
- * 找加载了本仓库 extension/dist 的浏览器配置，复制它的 IndexedDB 到临时目录再解码（不打开正在用的文件），
- * 只读 sideagent-diagnostics 库。本机记录保留原文（凭据除外），所以这里的输出不脱敏，只留在本机 out/。
- *
- *   npm run logs -- --reading --match "原文片段"   划词原文、请求、回答与显示记录
- *   npm run logs                              记录里的全部运行，一行一个
- *   npm run logs -- --since today             只看今天（也可以给 ISO 时间）
- *   npm run logs -- --goals [--since …]      将续做关联到目标，汇总耗时、错误和核对
- *   npm run logs -- --goals --file <traces.jsonl>  只读现成导出，不访问浏览器
- *   npm run logs -- --run 4f08c043            这次运行的步骤时间线
- *   npm run logs -- --voice [--since …]       语音分段计时：每轮一行（GPT-Live、阶跃星辰、按住说话），末尾各段中位数和 90 分位
- *   npm run logs -- --voice --file <voice.jsonl>   同上，读设置页导出（或验收用例导出）的语音记录，不碰浏览器
- */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -20,7 +6,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { printGoals } from './log-goals.mjs';
 
-// 解码库和它的依赖全部钉死版本，按 --no-deps 装，换版本只改这里。
 const REQUIREMENTS = [
   "ccl_chromium_reader @ git+https://github.com/cclgroupltd/ccl_chromium_reader.git@ef840de30221c4d65bc96d2f4d9057e9ef2f526d",
   "ccl_simplesnappy @ git+https://github.com/cclgroupltd/ccl_simplesnappy.git@3d085230baa8c46cf2090ebba29bf6e8eab31087",
@@ -29,7 +14,6 @@ const REQUIREMENTS = [
 ];
 const VENV = join(homedir(), ".cache/bys-logs-venv");
 const SUPPORT = join(homedir(), "Library/Application Support");
-/** 只在这些浏览器的数据目录里找配置；Google 下只看 Chrome 开头的目录（Chrome、ChromeMain、Chrome Beta…）。 */
 const BROWSER_DIRS = ["Citro Labs", "Dia", "BraveSoftware", "Microsoft Edge", "Arc"];
 
 const args = process.argv.slice(2);
@@ -60,7 +44,6 @@ const git = (...a) => {
     fail(error.code === "ENOENT" ? "没找到 git，先装 git 再运行。" : "要在本仓库（或它的工作树）里运行。");
   }
 };
-// 日常扩展从主目录的 extension/dist 加载；输出写进当前工作树的 out/。
 const mainCheckout = dirname(resolve(git("rev-parse", "--git-common-dir")));
 const repo = git("rev-parse", "--show-toplevel");
 const real = (p) => { try { return realpathSync(p).replace(/\/+$/, ""); } catch { return resolve(p).replace(/\/+$/, ""); } };
@@ -68,7 +51,6 @@ const dist = real(join(mainCheckout, "extension/dist"));
 
 const list = (dir) => { try { return readdirSync(dir, { withFileTypes: true }); } catch { return []; } };
 
-/** 浏览器数据目录下几层以内的 Secure Preferences（每个配置一份）。 */
 function preferenceFiles(dir, depth = 0, found = []) {
   for (const entry of list(dir)) {
     if (entry.isFile() && entry.name === "Secure Preferences") found.push(join(dir, entry.name));
@@ -99,14 +81,12 @@ const pick = candidates.sort((a, b) => b.mtime - a.mtime)[0];
 
 const runs = (bin, code) => { try { execFileSync(bin, ["-I", "-c", code], { stdio: "ignore" }); return true; } catch { return false; } };
 
-/** 找一个 3.10 以上的 Python 来建环境：先找带版本号的，再找 Homebrew 的，最后才是 python3。 */
 function systemPython() {
   const names = ["python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "/opt/homebrew/bin/python3", "/usr/local/bin/python3", "python3"];
   const found = names.find((bin) => runs(bin, "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)"));
   return found ?? fail("要 Python 3.10 或更新的版本（例如 brew install python），没找到。");
 }
 
-/** 解码环境：第一次运行时建好；钉的版本变了就在原环境里重装，不删环境。 */
 function python() {
   const bin = join(VENV, "bin/python");
   const stamp = join(VENV, "bys-requirements.txt");
@@ -128,7 +108,6 @@ const temp = mkdtempSync(join(tmpdir(), "bys-logs-"));
 const records = [];
 let decodeFailed = false;
 try {
-  // 只复制这个扩展的 IndexedDB；去掉 LOCK，解码库才不会以为别人正在用。
   const leveldb = join(temp, "db.leveldb");
   cpSync(pick.leveldb, leveldb, { recursive: true });
   rmSync(join(leveldb, "LOCK"), { force: true });
@@ -166,10 +145,6 @@ writeFileSync(join(out, "voice.jsonl"), voice.map((e) => JSON.stringify(e) + "\n
 for (const prompt of prompts) writeFileSync(join(out, "prompts", `${prompt.hash}.txt`), prompt.text, { mode: 0o600 });
 keepRecentExports(join(repo, "out/daily-logs"));
 
-/**
- * 每份导出都是诊断库的整份副本（几十 MB），自用回放约每 15 分钟导一次，攒下来会写满磁盘。
- * 诊断库自己会轮换掉旧记录，记忆成绩单要看以前几周：所以先把各份导出里的行按整行去重并进 archive/，再只留最近几份。
- */
 function keepRecentExports(root, keep = 3) {
   const archive = join(root, "archive");
   const stamps = readdirSync(root).filter((name) => /^\d{4}-\d{2}-\d{2}-\d{6}$/.test(name)).sort();
@@ -220,10 +195,6 @@ if (args.includes("--voice")) {
   process.exit(0);
 }
 
-/**
- * 语音分段计时：各段都是相对这一轮起点的毫秒数（本机时钟），量不到的留「-」，不估算。
- * GPT-Live 起点是侧栏收到用户这句 turn.done；阶跃星辰是服务端判到静音（vad_speech_stopped）；按住说话是后台收到松开。
- */
 function voiceTimings(lines) {
   const timing = lines.filter((e) => e.type === "timing" || e.type === "host" || e.type === "asr");
   const byVoice = new Map();
@@ -254,7 +225,6 @@ function voiceTimings(lines) {
     for (const [i, done] of userDone.entries()) {
       const t0 = done.at;
       const next = userDone[i + 1]?.at ?? Infinity;
-      // 应答声常比侧栏收到这句的 turn.done 早几十毫秒（那时侧栏还把它记在上一句名下）：从 turn.done 前 1 秒找起，提前的记负数。
       const answerAudio = (e) => e.at >= Math.max(t0 - 1000, userDone[i - 1]?.at ?? -Infinity) && e.at < next && (e.at >= t0 || !e.ref);
       const delegations = panel("delegation").filter((e) => e.key === done.key);
       const ids = new Set([...delegations.map((e) => e.ref), `host-${done.key}`]);
@@ -326,7 +296,6 @@ if (goalsOnly) { printGoals(traces, since); process.exit(0); }
 
 if (!runPrefix) {
   const seen = new Set();
-  // 用户在上一件事没做完时接着说的话，会接回原任务（restart_resume）：开始记录里写的是原任务的话，不是这次说的话，所以单独标出来。
   const continued = new Set(traces.filter((e) => e.type === "restart_resume").map((e) => e.runId));
   const steers = new Map();
   for (const e of traces) if (e.type === "steer") steers.set(e.runId, (steers.get(e.runId) ?? 0) + 1);
@@ -345,7 +314,6 @@ if (!runPrefix) {
   process.exit(0);
 }
 
-/** 工具结束后所在页面的标题：结果里有标题字段就用它，否则从页面读数（RootWebArea "…"）或标签页说明（tab N: 标题 — 网址）里取。 */
 function pageTitle(result) {
   if (typeof result?.details?.title === "string") return result.details.title;
   const text = (result?.content ?? []).filter((part) => part?.type === "text").map((part) => part.text).join("\n");
@@ -355,7 +323,6 @@ function pageTitle(result) {
 const run = traces.filter((e) => typeof e.runId === "string" && e.runId.startsWith(runPrefix));
 if (!run.length) fail(`没有以 ${runPrefix} 开头的运行。`);
 for (const runId of new Set(run.map((e) => e.runId))) {
-  // 侧栏操作（ui_*）记在侧栏自己的会话里，和任务记录按时间合在一起看。
   const events = run.filter((e) => e.runId === runId).sort((a, b) => a.time.localeCompare(b.time));
   const t0 = new Date(events[0].time).getTime();
   const at = (time) => `+${((new Date(time).getTime() - t0) / 1000).toFixed(1).padStart(6)}s`;

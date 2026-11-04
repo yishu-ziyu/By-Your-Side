@@ -9,7 +9,6 @@ interface MethodRuntime {
   check(): void;
 }
 
-/** This code is bundled with the extension. Websites and model arguments cannot supply its implementation. */
 const READ_X_POST = String.raw`(() => {
   const id = location.pathname.match(/^\/[^/]+\/status\/(\d+)(?:\/|$)/)?.[1];
   if (!id) return { status: 'unavailable', reason: 'Open a specific post first.', url: location.href };
@@ -35,9 +34,8 @@ function transcript(text: string): { text: string; format: string } | null {
       const lines = value.events.map(fields).flatMap(item => Array.isArray(item?.segs) ? item.segs.map(fields).flatMap(segment => typeof segment?.utf8 === "string" ? [segment.utf8] : []).join("") : []).filter(Boolean);
       if (lines.length) return { text: lines.join("\n"), format: "youtube-json3" };
     }
-  } catch { /* Non-JSON tracks may use WebVTT or timed-text XML. */ }
+  } catch {  }
 
-  // YouTube timed text double-encodes apostrophes as &amp;#39;: undo &amp; first so the numeric entity is decoded too.
   const decode = (value: string) => value.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&#(x[\da-f]+|\d+);/gi, (_, code: string) => {
     const point = code[0]!.toLowerCase() === "x" ? parseInt(code.slice(1), 16) : Number(code);
     return point >= 0 && point <= 0x10ffff ? String.fromCodePoint(point) : "�";
@@ -58,7 +56,6 @@ function transcript(text: string): { text: string; format: string } | null {
   return null;
 }
 
-/** flomo 页面上的编辑器、笔记列表（编号在时间链接上）和当前可见的发送按钮。只读。 */
 const READ_FLOMO = String.raw`(() => {
   const editor = document.querySelector('#fl_editor .tiptap');
   const memos = [...document.querySelectorAll('.memos-list .memo')].map(memo => {
@@ -74,18 +71,12 @@ const READ_FLOMO = String.raw`(() => {
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const squash = (text: string) => text.replace(/\s+/g, "");
 
-/**
- * 记一条 flomo：在 flomo 标签页（没有就新开一个，不动用户正在看的页）填编辑器、点发送，再从笔记列表读回新多出来的那条。
- * 发送走普通的点击通道（权限、停止、外部写入确认都照旧）。读不回时报「未确认」，不再发第二次，免得记重。
- */
 async function addFlomoMemo(params: Fields, method: (typeof SITE_METHODS)[number], tab: Fields, call: (name: ToolName, args: Fields) => Promise<Fields | null>): Promise<Fields> {
   if (params.source !== undefined && typeof params.source !== "boolean") throw new Error("INVALID_ARGUMENT: source must be true or false");
   const memo = typeof params.text === "string" ? params.text.trim() : "";
   if (!memo || memo.length > 5000) throw new Error("INVALID_ARGUMENT: flomo.add-memo needs text of 1–5000 characters: the memo exactly as the user wants it saved");
   let tabId = Number(tab.id);
   let sourceUrl = String(tab.url);
-  // 来源取自用户正在读的标签页本身，不让模型抄写：标题和链接一字不差，以后从 flomo 点得回去。
-  // 接在同一段末尾：编辑器里换段要走段落修正，读回核对更容易失败。
   const from = params.source === true && siteOfUrl(sourceUrl) !== "flomo" && /^https?:/.test(sourceUrl) && !memo.includes(sourceUrl) ? `（来源：${String(tab.title ?? "").trim().slice(0, 200) || sourceUrl} ${sourceUrl}）` : "";
   const text = memo + from;
   if (siteOfUrl(sourceUrl) !== "flomo") {
@@ -97,7 +88,6 @@ async function addFlomoMemo(params: Fields, method: (typeof SITE_METHODS)[number
   const base = { method: method.id, version: method.version, tabId, sourceUrl };
   const read = async () => fields((await call("js", { tabId, code: READ_FLOMO }))?.value);
   let page = await read();
-  // flomo 靠脚本渲染：刚打开时编辑器还没出来，等它出现或等满 8 秒再判断是没登录还是读不到。
   for (let i = 0; i < 16 && !page?.editor; i++) { await pause(500); page = await read(); }
   if (!page?.editor) return { ...base, status: page?.signedOut ? "login_required" : "unavailable", reason: page?.signedOut ? "flomo is not signed in in this browser; nothing was saved." : page?.refused ? "flomo refused this browser (the page is an access error); nothing was saved." : "flomo's editor did not appear; nothing was saved." };
   const before = new Set((Array.isArray(page.memos) ? page.memos : []).map(memo => fields(memo)?.id));
@@ -107,7 +97,6 @@ async function addFlomoMemo(params: Fields, method: (typeof SITE_METHODS)[number
   await call("click", { tabId, target: `loc=css:${page.save}` });
   const wanted = squash(text).slice(0, 200);
   let shown: Fields | undefined;
-  // flomo 先放一条 local_ 开头的本地占位，同步到服务器后才换成正式编号：换了才算记上。
   for (let i = 0; i < 20; i++) {
     await pause(500);
     page = await read();
@@ -174,7 +163,6 @@ export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Pro
   const readable = tracks.filter(item => typeof item.url === "string");
   const lang = (item: Fields) => String(item.lang ?? "").toLowerCase();
   const wanted = typeof language === "string" ? language.toLowerCase() : "";
-  // Players label one language several ways (en / en-US, zh-CN / zh-Hans); without a request, human tracks come before automatic ones.
   const ranked = [...readable].sort((a, b) => Number(a.auto === true) - Number(b.auto === true));
   const track = !wanted ? ranked[0] : ranked.find(item => lang(item) === wanted) ?? ranked.find(item => lang(item).split("-")[0] === wanted.split("-")[0]);
   const available = tracks.map(item => ({ language: item.lang, label: item.label, automatic: item.auto === true }));
@@ -183,8 +171,6 @@ export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Pro
   let body = await call("fetch", { url: track.url, method: "GET" });
   await unchanged();
   if (body?.ok !== true || typeof body.text !== "string") return { ...base, status: "unavailable", reason: "The player's caption URL could not be read.", httpStatus: body?.status, evidence: result.text };
-  // YouTube may answer the listed track address with an empty body unless the request carries the player's own token;
-  // the player's own timed-text request for the same video and language carries it.
   if (method.site === "youtube" && !String(body.text).trim()) {
     const own = await call("js", { tabId, code: `(() => [...performance.getEntriesByType("resource")].map(e => e.name).filter(u => { try { const q = new URL(u).searchParams; return new URL(u).pathname === "/api/timedtext" && q.get("v") === ${JSON.stringify(String(result.videoId))} && q.get("lang") === ${JSON.stringify(String(track.lang))} && q.has("pot"); } catch { return false; } }).pop() ?? null)()` });
     const ownUrl = typeof own?.value === "string" && /^https:\/\/www\.youtube\.com\/api\/timedtext\?/.test(own.value) ? own.value : null;

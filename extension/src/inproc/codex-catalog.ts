@@ -1,10 +1,7 @@
 import type { StoredCredential } from "./shared.js";
 
 export const CODEX_CATALOG_TTL_MS = 5 * 60_000;
-// The Codex backend varies its response by client version; this version was
-// checked against the current account's model catalog.
 const CODEX_CLIENT_VERSION = "0.164.0";
-// Discovery only: models returned solely to a later client still require a connection test.
 const CODEX_DISCOVERY_VERSION = "999.0.0";
 
 export interface CodexCatalogModel {

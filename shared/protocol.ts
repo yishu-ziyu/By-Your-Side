@@ -2,12 +2,6 @@ import { isReadingClientMessage, isReadingEvent, isReadingRouteResult, isReading
 import { isNudgeClientMessage, isNudgeResult, type NudgeClientMessage, type NudgeResult } from "./nudge.js";
 import { isBrowseHabitClientMessage, isBrowseHabitResult, type BrowseHabitClientMessage, type BrowseHabitResult } from "./browse-habits.js";
 import { isExecutionFeedback } from "./execution-feedback.js";
-/**
- * SideAgent 桥接协议（扩展 side panel ⇆ 扩展内 agent）。
- * 传输：chrome.runtime 端口，经 background 转发，一条消息一个对象。
- * 服务端 = 扩展 offscreen 文档里的 agent（agent 包），客户端 = side panel 页面。
- * 本文件是两侧共用的唯一权威定义；修改需两侧同步。
- */
 
 import { isMemoryEntry, isMemoryScope, MEMORY_TEXT_MAX, isStoredMemoryEntry, normalizeMemoryHostname, upgradeMemoryEntry, validMemoryId, validMemoryText, validMemoryVersion, type MemoryEntry, type MemoryScope } from "./memory.js";
 import { isTaskHistoryEntry, type TaskHistoryEntry } from "./task-history.js";
@@ -25,15 +19,12 @@ export const STORAGE_SCHEMA_VERSION = 1;
 
 export const HOST_VERSION = "0.2.0";
 
-/** Lead / 单会话路径的 sessionId；省略该字段即视为 Lead。 */
 export const LEAD_SESSION_ID = "main";
 
 export const DEFAULT_CONVERSATION_ID = "default";
 
-/** 后台把每个执行成员的工作标签页存在 chrome.storage.session 这个键下（执行身份 → 标签页 id）；侧栏只读，用来给回答挂「切过去看」。 */
 export const WORKING_TABS_STORAGE_KEY = "workingTabs";
 
-/** 默认会话保留既有 main/worker key；其他会话使用可逆复合 key。 */
 export function executionKey(conversationId: string, sessionId: string = LEAD_SESSION_ID): string {
   const cid = conversationId || DEFAULT_CONVERSATION_ID;
   const sid = sessionId || LEAD_SESSION_ID;
@@ -45,29 +36,19 @@ export function executionKey(conversationId: string, sessionId: string = LEAD_SE
 
 export function normalizeConversationId(id?: string | null): string { return id ?? DEFAULT_CONVERSATION_ID; }
 
-/**
- * 填写或输入之后从网页读回的一栏：name 是这一栏的可读名字（aria-label、关联标签、占位文字），读不到为空。
- * match 比较要写的内容（requested）与网页里的实际内容（observed）：same 一样；reformatted 只差空白或大小写（网页改了格式）；
- * not_held 网页里是空的；different 不一样；unreadable 读不回（不算失败）。
- * 密码、验证码、卡号这类栏不带 requested 和 observed，match 为 unreadable。observed 最多 FIELD_READBACK_MAX 字，超出时 truncated。
- */
 export type FieldReadbackMatch = "same" | "reformatted" | "not_held" | "different" | "unreadable";
 
-export interface FieldReadback { name: string; match: FieldReadbackMatch; requested?: string; observed?: string; sensitive?: true; truncated?: true; /** 这一栏是下拉框。 */ select?: true }
+export interface FieldReadback { name: string; match: FieldReadbackMatch; requested?: string; observed?: string; sensitive?: true; truncated?: true;  select?: true }
 
 export const FIELD_READBACK_MAX = 1000;
 
-/** fill 的 from：文字所在的元素；tabId 缺省为要填的那一页。 */
 export interface FillSource { tabId?: number; target: string; range?: CopyTextRange }
 
 export interface ConversationSummary {
   id: string; title: string; createdAt: number; updatedAt: number;
   state: AgentRunState; model?: string; mode: AgentMode; runId?: string | null;
-  /** A durable task checkpoint exists after the local host stopped mid-run. */
   checkpoint?: "interrupted" | "unavailable";
-  /** 这一轮怎么结束的一句（「填好 4 栏，没提交」）；会话列表用，不写「空闲」。 */
   ending?: string;
-  /** 这一轮做过的网站主机名，给会话列表站点图标。 */
   site?: string;
 }
 
@@ -79,76 +60,52 @@ export function normalizeSessionId(sessionId?: string | null): string {
   return isLeadSession(sessionId) ? LEAD_SESSION_ID : sessionId!;
 }
 
-/** Agent 运行模式：只有 act（直接操作页面）；旧记录里的 teach 读入时按 act 处理。 */
 export type AgentMode = "act";
 
-// ── 客户端（侧栏）→ 服务端（agent） ──────────────────────────────
-
-/** 用户消息附带的页面上下文：发送那一刻用户正在看的标签页（"这页面"类指代的锚点）。 */
 export interface PageContext {
   tabId: number;
   title: string;
   url: string;
-  /** 选中即问：用户划出来交给 Agent 的那段正文。缺省则行为与现在一样。 */
   selection?: { text: string };
 }
 
-/** 圈内网页文字最多带这么多字。 */
 const CIRCLE_NOTE_MAX = 600;
 
-/** 用户消息附带的附件材料（截图、粘贴图或上传图片）。 */
 export interface ImageAttachment {
   id: string;
   type: "image";
   name: string;
   dataBase64: string;
   mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
-  /** 圈出来问：圈内的网页文字（不含输入框里的值），随这张图交给助手。 */
   note?: string;
-  /** 圈出来问：这张图是页面上的第几圈。 */
   circle?: number;
 }
 
-/** 超过这个大小不读：pdf.js 和 zip 都要把整个文件放进内存。 */
 export const FILE_READ_MAX_BYTES = 50 * 1024 * 1024;
 
-/** 一份文件里抽出来的文字最多留这么多字；更长的截断并标 truncated。 */
 export const FILE_TEXT_MAX = 400_000;
 
-/** 原文件不超过这么大才随附件带着字节，供 upload_file 把它原样传到网页上。 */
 export const FILE_BYTES_KEEP_MAX = 5 * 1024 * 1024;
 
-/** 没有文字层的 PDF（扫描件）最多把前几页画成图交给助手看。 */
 export const FILE_PAGE_IMAGES_MAX = 4;
 
 export const FILE_FORMATS = ["pdf", "docx", "xlsx", "pptx", "csv", "text", "html", "image"] as const;
 
 export type FileFormat = (typeof FILE_FORMATS)[number];
 
-/**
- * 用户在侧栏附上的文件：侧栏在本机解析出文字，助手读的是这些文字，原文件不出本机。
- * text 里用 [Page N]、[Sheet: 名字]、[Slide N] 标出页、表、幻灯片的边界，助手引用时说得出在哪一页。
- */
 export interface FileAttachment {
   id: string;
   type: "file";
   name: string;
   mimeType: string;
-  /** 原文件字节数。 */
   size: number;
-  /** 原文件内容的 sha256：同一份文件的身份，恢复任务时据它找回附件。 */
   sha256: string;
   format: FileFormat;
   text: string;
-  /** 页、工作表或幻灯片的数量。 */
   parts?: { kind: "page" | "sheet" | "slide"; count: number };
-  /** 抽出的文字超过 FILE_TEXT_MAX，后面没留。 */
   truncated?: true;
-  /** 扫描件（PDF 没有文字层）的前几页图像。 */
   pageImages?: Array<{ page: number; mimeType: "image/jpeg"; dataBase64: string }>;
-  /** 原文件（base64），不超过 FILE_BYTES_KEEP_MAX 才有。 */
   dataBase64?: string;
-  /** 解析时要让助手知道的情况，例如「第 3–5 页是扫描件，没有文字」。 */
   note?: string;
 }
 
@@ -218,7 +175,6 @@ export function isAttachment(v: unknown): v is Attachment {
   return true;
 }
 
-/** idle = 无任务；running = Agent 在操作页面；user = 现在归你（任务还在，不是中止）。 */
 export type AgentRunState = "idle" | "running" | "user";
 
 function isAgentRunState(v: unknown): v is AgentRunState {
@@ -294,12 +250,6 @@ export type TeamMemberHandback =
 
 export type ToolExecutionFact = "not_executed" | "unknown" | "executed";
 
-/**
- * 这一步因为用户没执行，也不算失败：pay 付款按钮留给用户点；declined 用户在网页上选了「不发」；repeat 这一轮已选过「不发」；
- * busy 同一页已有一个「发送」在等用户确认；stopped 用户停下或接管；left 用户离开或关掉网页；timeout 用户 2 分钟没确认。
- * guide_*：教学一步没完成（用户停下、离开、点了两次页面都没变化、2 分钟没点），也不是助手出错。
- * 由做出这个决定的地方给出，侧栏按它选给用户看的那句话，不读给助手的文字。
- */
 const HELD_REASONS = ["pay", "declined", "repeat", "busy", "stopped", "left", "timeout", "send_changed", "send_unverified", "guide_stopped", "guide_left", "guide_no_change", "guide_timeout"] as const;
 export type HeldReason = typeof HELD_REASONS[number];
 
@@ -318,21 +268,14 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "memory_list"; requestId: string }
   | { type: "memory_update"; requestId: string; id: string; expectedVersion: number; text: string; scope: MemoryScope }
   | { type: "memory_forget"; requestId: string; id: string; expectedVersion: number }
-  /** 撤销替换：id 是被替换的旧条目；它恢复生效，替换它的新条目改为失效。 */
   | { type: "memory_restore"; requestId: string; id: string; expectedVersion: number }
-  /** 回答纠正后的询问（memory_ask）：remember 保存那条做法；once 不保存，同一对话里不再问同一条。text 是用户在卡片上「改一下」后的文字，不带就存后台记下的那份。 */
   | { type: "memory_ask_answer"; requestId: string; askId: string; answer: "remember" | "once"; text?: string }
-  /** 「这里别用」：off=true 在这个网站不再带这条，off=false 恢复。不删除记忆、不改版本号。 */
   | { type: "memory_site"; requestId: string; id: string; expectedVersion: number; hostname: string; off: boolean }
-  /** 撤销「忘掉」：把忘掉时删掉的那件事的全部条目（memory_result.forget 的 entries）原样放回。 */
   | { type: "memory_unforget"; requestId: string; entries: MemoryEntry[] }
-  /** 过往任务：列出，或删一条（id 为 null 时全部清空）。 */
   | { type: "task_history_list"; requestId: string }
   | { type: "task_history_forget"; requestId: string; id: string | null }
-  /** 过往任务的「这里别用」与撤销「忘掉」（放回删掉的那条）。结果都是 task_history_result。 */
   | { type: "task_history_site"; requestId: string; id: string; hostname: string; off: boolean }
   | { type: "task_history_restore"; requestId: string; task: TaskHistoryEntry }
-  /** 可直接运行的技能：列表和删除返回 skill_operations_result；直接运行返回 skill_operation_run_result。 */
   | { type: "skill_operations_list"; requestId: string }
   | { type: "skill_operation_delete"; requestId: string; id: string }
   | { type: "skill_operation_run"; requestId: string; id: string; input: JsonObject; tabId?: number }
@@ -341,11 +284,9 @@ export type ClientMessage = ConversationEnvelope & (
   | { type: "conversation_create"; requestId: string; title?: string; reading?: ReadingTranscript }
   | { type: "conversation_list"; requestId?: string }
   | { type: "hello"; token: string; client: "sidepanel"; protocol?: number; extensionVersion?: string; storageSchema?: number }
-  /** spoken：按住说话听写来的一句，回答会被念出来。 */
   | { type: "user_message"; text: string; context?: PageContext; attachments?: Attachment[]; spoken?: true }
   | { type: "task_action"; request: TaskActionRequest }
   | { type: "task_receipt_query"; requestId: string }
-  /** 重开侧栏/重连/切回会话时补取当前只读任务视图；不产生任务或权限。 */
   | { type: "task_view_query"; requestId: string }
   | { type: "steer"; text: string; context?: PageContext; attachments?: Attachment[]; spoken?: true }
   | { type: "abort"; taskRequestId?:string }
@@ -369,46 +310,28 @@ export type ClientMessage = ConversationEnvelope & (
       generation?: number;
     }
   | { type: "set_model"; model: string }
-  /** 指定模型的手动起始档；restore 只恢复存储偏好，不重置当前自动升档。 */
   | { type: "set_thinking"; model: string; level: ThinkingLevel | null; restore?: true }
-  /** 用户点进输入框或开始打字：先把到当前模型服务的连接建好，并预取当前页正文与标签页列表，发出去的第一句不再等建连接和慢读页。 */
-  /** connection：只建连接，不预取页面、不预热提示缓存（选中文字时可能要按住说话，不值得为它发模型请求）。 */
   | { type: "warm_up"; context?: PageContext; connection?: true }
-  /** 一键翻译（快捷键、侧栏按钮、边缘胶囊）：这页没有译文就整页翻译，有就还原；不经主模型。 */
-  /** 侧栏按钮发出时没有 context，由扩展后台补上活动标签页；交给任务宿主时一定带着。 */
   | { type: "page_translate"; context?: PageContext }
-  /** 模型出错、用户修好原因后，从出错的那一轮接着做。 */
   | { type: "retry_after_error"; keySaveRequestId?: string; target?: ModelConnectionTarget; expectedRunId?: string; auto?: true }
-  /** 换 key 面板测试出错的连接，不修改正在使用的凭据。 */
   | { type: "model_key_test"; requestId: string; key: string; target: ModelConnectionTarget; expectedRunId: string }
   | { type: "model_key_save"; requestId: string; key: string; target: ModelConnectionTarget; expectedRunId: string; roles: string; connection: string; credentialHash: string }
   | { type: "model_key_cancel"; requestId: string }
   | { type: "tool_result"; id: string; ok: boolean; data?: unknown; error?: string; executionFact?: ToolExecutionFact }
-  /** 点「发送」前在网页上等用户确认：waiting 时宿主放宽这次调用的期限，结束时恢复普通期限。 */
-  | { type: "tool_waiting_user"; id: string; waiting: boolean; /** 教学这一步在等用户点；没有它就是在等用户确认「发送」。 */ guide?: GuideWait; /** 等确认「发送」时网页上问的是什么；不等了时带结局。 */ send?: SendConfirmView });
+  | { type: "tool_waiting_user"; id: string; waiting: boolean;  guide?: GuideWait;  send?: SendConfirmView });
 
-/** 确认「发送」的结局：只有 send 点了按钮。 */
 export type SendConfirmOutcome = "send" | "decline" | "stopped" | "left" | "timeout";
 
-/**
- * 侧栏确认卡要显示的内容：网站、按钮名、按钮附近的草稿，都由扩展从网页读出。
- * id 是后台这次等待的身份，侧栏回答时带回；outcome 只在不等了时有，clicked 只在确认后点完时有。草稿只在开始等的那条里带。
- */
 export interface SendConfirmView {
   id: string;
   host: string;
   label: string;
   content?: string;
-  /** 发给谁：从网页读（收件人栏、聊天标题），读不到不写。 */
   recipient?: string;
-  /** 怎么发出去的：脚本、回车、网络请求都走同一个确认。 */
   route?: "click" | "script" | "enter" | "request";
   outcome?: SendConfirmOutcome;
-  /** 用户确认以后，按钮真的点下去没有（unknown：出错了，不知道点下去没有）。 */
   clicked?: "yes" | "no" | "unknown" | "changed" | "unverified";
-  /** 请求类确认的人话分类：搜索放行或写进标题；缺省按 route 猜。 */
   kind?: "search" | "send" | "request";
-  /** 从请求体读出的搜索词或正文；读不到不写。 */
   query?: string;
   path?: string;
   method?: string;
@@ -419,8 +342,6 @@ export interface SendConfirmView {
 
 export interface ConversationEnvelope { conversationId?: string }
 
-// ── 服务端 → 客户端 ────────────────────────────────────────────────
-
 export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ThinkingLevel = typeof THINKING_LEVELS[number];
 export function isThinkingLevel(value: unknown): value is ThinkingLevel {
@@ -428,24 +349,15 @@ export function isThinkingLevel(value: unknown): value is ThinkingLevel {
 }
 export interface ThinkingInfo { model: string; base: ThinkingLevel; actual: ThinkingLevel }
 
-/** 可供选择的模型（已配置凭据的 provider 下），面板按 provider 分组展示。 */
 export interface ModelOption {
-  /** "provider/modelId" 形式，set_model 的取值 */
   id: string;
   provider: string;
   modelId: string;
-  /** 展示名（SDK 目录里的 name） */
   name: string;
-  /**
-   * 是否在默认精选集内。agent 下发的是**全量**可达模型并逐个打标，
-   * UI 默认只显示 featured，用户可展开查看全部；缺失视为 false。
-   */
   featured?: boolean;
-  /** 可请求的实际档位与产品默认档；只有一档时不给调节入口。 */
   thinking?: { levels: ThinkingLevel[]; default: ThinkingLevel };
 }
 
-/** 宿主能提供的可选功能：没有存储的功能，侧栏不给入口。 */
 export interface HostFeatures { memory: boolean }
 
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
@@ -453,29 +365,24 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
   | ReadingRouteResult
   | NudgeResult
   | BrowseHabitResult
-  | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number;ask?:string;/** hand_to_user 要用户填的栏和点的按钮：交给用户时在页面上圈出来。 */targets?:string[]}
+  | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number;ask?:string;targets?:string[]}
   | {type:'task_control_ack';requestId:string;action:'abort';ok:boolean}
   | VoiceServerMessage
-  /** action=forget 成功时 entries 是删掉的那件事的全部条目（供撤销）。action=ask 是 memory_ask_answer 的结果：remember 成功时带 entry（新存的那条；alreadySaved 时是早已存在的同一条，这次没写入，不给撤销），once 成功时不带。 */
-  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask" | "site" | "unforget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string; /** 整份记忆的版本号：每次写入加 1；面板据此判断手里的列表是否过期。 */ rev?: number; alreadySaved?: true; /** action=ask 失败且这条询问已作废（不在了、替换目标被改过）：侧栏不再给按钮。 */ askClosed?: true }
-  /** 过往任务列表（删除后返回剩下的），从新到旧。 */
+  | { type: "memory_result"; requestId: string; action: "list" | "update" | "forget" | "restore" | "ask" | "site" | "unforget"; ok: boolean; entries?: MemoryEntry[]; entry?: MemoryEntry; deletedId?: string; error?: string;  rev?: number; alreadySaved?: true;  askClosed?: true }
   | { type: "task_history_result"; requestId: string; ok: boolean; tasks?: TaskHistoryEntry[]; error?: string }
-  /** 技能列表只带显示和配置所需字段，不带程序；运行结果带真实数据，不经模型改写。 */
   | { type: "skill_operations_result"; requestId: string; ok: boolean; operations?: SkillOperationSummary[]; error?: string }
   | { type: "skill_operation_run_result"; requestId: string; ok: boolean; result?: LearnedOperationResult; error?: string }
   | { type: "site_note_delete_result"; requestId: string; ok: boolean; error?: string }
   | { type: "site_note_list_result"; requestId: string; ok: boolean; notes?: Array<{ host: string; text: string; runId: string }>; error?: string }
-  /** reason 是人话；detail 是服务商原文，只进「技术详情」。 */
   | { type: "model_key_test_result"; requestId: string; ok: boolean; ms?: number; reason?: string; detail?: string }
   | { type: "model_key_save_result"; requestId: string; ok: boolean }
   | { type: "conversation_created"; requestId: string; conversation: ConversationSummary }
   | { type: "conversation_list"; requestId?: string; conversations: ConversationSummary[] }
   | { type: "conversation_updated"; conversation: ConversationSummary }
-  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number; /** 这个宿主有没有记忆存储；缺省按有处理 */ features?: HostFeatures }
+  | { type: "hello_ok"; version: number; model?: string; models?: ModelOption[]; hostVersion?: string; extensionVersion?: string; storageSchema?: number;  features?: HostFeatures }
   | { type: "hello_error"; error: string }
   | { type: "model_info"; model?: string; models: ModelOption[] }
   | { type: "status"; state: AgentRunState; sessionId?: string }
-  /** 只读任务视图投影：由真实状态生成，不是可执行命令，不证明业务成功。 */
   | { type: "task_view"; view: import('./task-view.js').TaskView }
   | {
       type: "control_result";
@@ -487,82 +394,43 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
       team?: TeamView;
     }
   | { type: "team_status"; team: TeamView }
-  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string; programDeadline?: number; /** 直连 display 调用身份；宿主区分帧族用，扩展不消费 */ sdkId?: string }
+  | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string; programDeadline?: number;  sdkId?: string }
   | { type: "agent_event"; event: AgentUiEvent; sessionId?: string });
 
-/** 渲染到聊天 UI 的 Agent 事件流（由 Pi SDK 事件映射而来）。 */
 export type AgentUiEvent =
   | ({ kind: "thinking_level" } & ThinkingInfo)
   | { kind: "worker_task"; task: string; output: string; spawnToolCallId?: string }
-  | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string; /** 写入后整份记忆的版本号，见 memory_result.rev。 */ rev?: number;
-      /** action=used：这一轮一起带给助手的过往任务。 */ tasks?: TaskHistoryEntry[];
-      /** action=used：这一轮所在的网站（「这里别用」按它记）；没有网页时省略。 */ hostname?: string;
-      /** action=updated：被这次更新换下的旧值（已标为 replaced），回执写「原来是…」，撤销即恢复它。 */ replaced?: MemoryEntry[] }
-  /**
-   * 纠正后开口问：用户这一轮纠正了助手，后台总结出一条做事的方法，问「要我记住吗」。
-   * rule 是第一人称的那句做法（「以后在这个网站导出，我都先选全部再核对条数」）；scope 是默认范围；
-   * replaces 是同范围里会被它替换的那条；hostname 是纠正发生时所在的网站（没有就省略），供面板把范围切回「这个网站」。
-   * learned 表示明确的网站做法已保存；其他归纳仍需用户回 memory_ask_answer 才保存。
-   * outcome：询问有了结局时后台再发一条同 askId 的事件（进对话历史），侧栏按最后一条画——
-   * remembered 已记下 / already 早已记着 / once 这次就行 / closed 已作废（同一句纠正又问了一次、替换目标被改过等）。没有 outcome 的是仍在等回答的询问。
-   */
-  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; learned?: MemoryEntry; /** 习惯询问（3 个对话做过同一件事）：卡片说「你好像总是<rule>」。 */ habit?: true; /** 从用户自己的浏览里发现的习惯：哪几天、在哪些网站做过，卡片上折叠显示。 */ evidence?: string[]; /** 对沟通方式的反馈攒够了才问：用户说过的原话，卡片上折叠显示。 */ quotes?: string[] }
-  /** 站点笔记：做成的任务结束后记下的这个网站的用法（只关于网站、不关于用户），侧栏在这一轮下面写一行「记下了…用法」。title 是那次打开这个网站时的页面标题。 */
+  | { kind: "memory"; action: "saved" | "used" | "updated" | "forgotten"; entries: MemoryEntry[]; message?: string;  rev?: number;
+      tasks?: TaskHistoryEntry[];
+      hostname?: string;
+      replaced?: MemoryEntry[] }
+  | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; learned?: MemoryEntry;  habit?: true;  evidence?: string[];  quotes?: string[] }
   | { kind: "site_notes"; host: string; title?: string; notes: string[] }
   | { kind: "answer_sources"; sources: import("./answer-source.js").AnswerSource[] }
-  /** 交付后的事实核对（agent/src/fact-check.ts）：problems 是给用户看的几句，空就是都对得上；answer 是被核对的回答开头，侧栏据此挂到那条回答下。 */
   | { kind: "fact_check"; status: "done"; answer: string; problems: string[]; replacement?: string }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
-  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact; /** 失败的人话原因（≤16 字，「连不上这个地址」「要登录才能下」）：侧栏直接显示，没有就写「没做成」。 */ reason?: string; /** 重复一步已有成功回执的写入被拦下：没执行，原步骤已成功，不是失败。 */ repeatRefused?: true; /** 这一步因为用户没执行（付款留给用户、没让发送）：也不是失败。 */ heldReason?: HeldReason; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true; /** 填写或输入之后从网页读回的这一栏。 */ readback?: FieldReadback; /** 点/填/看过的页面元素：侧栏步骤对照用，模型看不见。 */ pageTarget?: { target: string; label: string; tabId: number; url: string }; /** 这一步存成、用上或没用上可直接运行的技能：侧栏过程行写技能名。 */ skill?: { id: string; name: string; outcome: "saved" | "used" | "unused" } }
-  /** 成功的只读页面读数，供结果账本建立写入前基线；只在 agent 内使用，不下发侧栏。 */
+  | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText: string; executionFact?: ToolExecutionFact;  reason?: string;  repeatRefused?: true;  heldReason?: HeldReason;  sendConfirmed?: true;  readback?: FieldReadback;  pageTarget?: { target: string; label: string; tabId: number; url: string };  skill?: { id: string; name: string; outcome: "saved" | "used" | "unused" } }
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
-  /** 晚到/重复回执只按原调用身份关联；不携带页面内容。 */
-  /** 扩展在网页上等用户确认「发送」（true），或不等了（false）。同一页同时只等一个。 */
   | { kind: "send_confirm_wait"; waiting: boolean; confirm?: SendConfirmView }
-  /** 教学：第 step 步在网页上等用户自己点（waiting true），或不等了（false）。state 为 no_change：用户点了，页面没变化。 */
   | { kind: "guide_wait"; waiting: boolean; guide?: GuideWait }
   | { kind: "tool_late_result"; toolCallId: string; name: string; ok: boolean; executionFact: ToolExecutionFact }
-  /**
-   * 宿主执行反馈出口（V2）：简单成功进胶囊、失败／未知／等待确认保留可找到的文字入口。
-   * 事实与文案由宿主生成，不由模型叙述；身份复用 inputId/toolCallId，便于去重与过期判断；
-   * 频道（胶囊／语音／无）由 shared/execution-feedback 的事实规则决定。
-   */
   | { kind: "execution_feedback"; feedback: import('./execution-feedback.js').ExecutionFeedback }
   | { kind: "turn_start" }
   | { kind: "turn_end" }
-  /**
-   * 这段对话最近一次模型请求送进去多少（used：提示词 token，含缓存命中和缓存写入）、这个模型的上下文窗口多大（window）。
-   * model 是发请求时选着的模型（provider/id）：用户换了模型，这条读数就不再显示。
-   * 进对话历史：重开侧栏、切回这段对话时按最后一条画模型按钮上的占用。
-   */
   | { kind: "context_usage"; used: number; window: number; model: string }
   | { kind: "agent_start"; deliveryMode?: "explicit" }
   | { kind: "agent_end" }
   | { kind: "run_stopped" }
-  /**
-   * 目标核对（宿主用快速模型判断用户要的结果达成没有）：done 做完；needs_user 等用户（回答、确认、登录）；continue 宿主让助手接着做；open 催满仍没做完；
-   * blocked 原因在助手和用户之外（站点连不上、页面不存在、服务端拒绝），不催续做，remaining 是给用户看的原因。
-   * checking：这一轮交付前先说一声「要核对」（在交付与 agent_end 之前到达）；unavailable：核对没拿到结论。这两个不是结论，任务记录不存。
-   * correction：continue 时核对者说的具体出入，是诊断文字，只按纯文本显示。
-   */
-  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable"; /** 和 checking 一起：核对已读完页面，剩下只等模型，不再用调试器。 */ pageRead?: boolean; remaining?: string; correction?: string; /** 判继续时给用户看的一句诊断，不带指令。 */ finding?: string; /** 和 checking 一起：用户说了不止一件事，回答扣到核对之后再出。 */ gate?: boolean; /** 判继续时：这一轮的回答扣下了、没出过。 */ held?: boolean; /** 和 held 一起：接着做的是第 at 件（共 of 件）。 */ step?: { at: number; of: number }; }
+  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable";  pageRead?: boolean; remaining?: string; correction?: string;  finding?: string;  gate?: boolean;  held?: boolean;  step?: { at: number; of: number }; }
   | { kind: "user_delivery"; delivery: UserDelivery }
-  /**
-   * 交给用户的文件：模型写的文本文件（artifacts 工具），或模型交给用户的截图（screenshot forUser，encoding 为 base64 的 PNG）。
-   * saved 带全文，侧栏画成可打开、可下载的卡片（图片卡片直接显示图）；deleted 只带文件名。
-   */
   | { kind: "artifact"; action: "saved" | "deleted"; filename: string; content?: string; encoding?: "base64" }
   | { kind: "user_delivery_stream"; stream: import('./voice.js').UserDeliveryStream }
   | { kind: "notice"; message: string; receipt?: TaskReceipt;plan?:import("./voice.js").VoicePlanSummary;
-      /** 运行中的进度说明：只替换过程行标题，不进消息流，回合结束即被结果标题取代。 */
       progress?: true;
-      /** 只对这一轮有用的说明（如调试提示条）：放在过程行下方，回合结束即收起，不留在回答上方。 */
       aside?: true }
   | { kind: "error"; message: string; modelConnection?: ModelConnectionIdentity };
-
-// ── 工具契约 ───────────────────────────────────────────────────────
 
 export const TOOL_NAMES = [
   "fetch",
@@ -591,10 +459,8 @@ export const TOOL_NAMES = [
   "observe_page",
   "mark",
   "clear_marks",
-  /** 教一步：圈出目标、光标停在旁边，等用户自己点。 */
   "guide_step",
   "double_click",
-  /** CAP-02A：宿主签发 token 的事件订阅（popup/download/filechooser）。 */
   "arm_event",
   "wait_event",
   "disarm_event",
@@ -602,20 +468,16 @@ export const TOOL_NAMES = [
   "accept_dialog",
   "dismiss_dialog",
   "dialog_info",
-  /** 提交前核对：给一个控件（@N 或选择器）写出角色 + 名字 + 所在区域（只读，没有模型可见工具）。 */
   "describe_target",
   "download_url",
-  /** CAP-02C：原生 select 的 value/label/index、多选、清空（≠ 单值 fill）。 */
   "select_option",
   "upload_file",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
 
-/** upload_file 送进页面的一份文件：文字文件给 text，图片等二进制给 base64。 */
 export interface UploadFilePayload { name: string; type: string; text?: string; base64?: string }
 
-/** read_element 读到的表单控件属性：语音填写读回据 type/autocomplete 判断是不是密码、验证码类保护字段。 */
 export interface AnchorSource {
   tag?: string | null;
   role?: string | null;
@@ -632,7 +494,6 @@ export interface AnchorSource {
   autocomplete?: string | null;
 }
 
-/** Chrome 下载回执：完成与否只看 chrome.downloads。 */
 export interface DownloadReceipt {
   capturedFile?: { dataBase64: string; mimeType: string };
   attachment?: { id: string; name: string; truncated?: true };
@@ -649,12 +510,10 @@ export interface DownloadReceipt {
   danger?: string;
 }
 
-/** 就地确认按钮（长在拿住目标的光标名牌上）。id 决定点下去发给 Agent 的文本（confirm→确认，cancel→取消）。 */
 export type MarkActionId = "confirm" | "cancel";
 
 export interface MarkAction {
   id: MarkActionId;
-  /** 按钮上的短文案，如「删除」「取消」 */
   label: string;
 }
 
@@ -664,60 +523,36 @@ export interface TabInfo {
   url: string;
   active: boolean;
   windowId: number;
-  /** 是否为 Agent 当前认领的工作标签页 */
   working: boolean;
 }
 
-/** navigate / open_tab 等到的结果。download：打开的地址变成了一次下载，没有打开页面。error_page：Chrome 显示了自己的错误页（如连不上网站）。 */
 export type PageReadinessValue = "interactive" | "complete" | "timeout" | "download" | "error_page";
 
-/** 打开的地址变成的那次下载。filename 只留文件名；state 只认 chrome.downloads 的报告。 */
 export interface NavigationDownload {
   filename: string;
   path: string;
   state: "in_progress" | "interrupted" | "complete";
   bytes?: number;
   error?: string;
-  /** Chrome 判为危险、等用户在下载栏里选「保留」。 */
   danger?: string;
 }
 
-/**
- * switch_tab 执行后读回的浏览器事实：只证明核验这一刻的状态——目标标签是其所属
- * 已聚焦窗口的活动标签、工作目标仍指向它；不宣称页面已加载、内容已读取或之后不会被切走。
- * 读取失败（目标消失/查询异常）时只有 verified:false，不伪造事实字段。
- * 旧回执没有该字段，仍按原 tabId 提供工作目标，但不能授权成功胶囊。
- */
 export interface SwitchTabVerification {
-  /** true 仅当：目标标签是其所属窗口的活动标签、该窗口处于聚焦状态、工作目标仍指向它 */
   verified: boolean;
-  /** 核验时刻目标窗口内实际活动的标签页；读不到时缺省 */
   activeTabId?: number;
   windowId?: number;
   windowFocused?: boolean;
-  /** 核验时刻的工作目标；null = 已无工作目标 */
   workingTabId?: number | null;
 }
 
-/**
- * 各工具的 params 与成功时 tool_result.data 形状。
- * 失败时 ok=false，error 为人类可读的一行描述。
- *
- * click/fill/select_option 的 target 支持：
- *   "@N" / "loc=css:..." / "loc=role:…[name=…]" / "loc=href:..." / "xpath=" / "text=" / 原生 CSS
- * click 也可用 point: [x, y] 视口坐标代替 target。
- */
 export interface ToolContract {
   page_translation: { params: import('./page-translation.js').TranslationCommand; data: import('./page-translation.js').TranslationReceipt };
-  /** 带着浏览器登录态取接口；只读，不改页面。响应体经 RPC 回 agent，不回侧栏。 */
   fetch: {
     params: { url: string; method?: "GET" | "POST"; headers?: Record<string, string>; body?: string; savePath?: string; pages?: { from: number; to: number; step?: number } };
     data: { url: string; status: number; ok: boolean; contentType: string; bytes: number; truncated: boolean; text: string; readBytes?: number; totalBytes?: number | null; stoppedReason?: "complete" | "limit" | "deadline" | "abort"; timingsMs?: { confirmation: number; dispatch: number; response: number; body: number } };
   };
-  /** 被动看当前工作页真实发出过哪些请求（CDP Network 域环形缓冲）；只读，不改页面。 */
   network: {
     params: { tabId?: number; urlContains?: string; types?: string[] | "all"; limit?: number; clear?: boolean };
-    /** inFlight/integrity：waitForNetworkIdle 的证据面；clear 只清展示 ring，不抹在途。 */
     data: {
       text: string;
       tabId: number;
@@ -733,14 +568,12 @@ export interface ToolContract {
       attached: boolean;
     };
   };
-  /** 这一页的视频播放器自己有哪些字幕（轨道、字幕清单、页面自己的播放器接口）；只读。 */
   video_captions: { params: { tabId?: number }; data: { text: string; tabId: number; tracks: number; lists: number; loginRequired?: boolean; sourceUrl?: string; videoId?: string | null; title?: string; part?: { index: number; title: string; count: number } | null; identityVerified?: boolean; captionTracks?: Array<{ source: string; lang: string; label: string; auto: boolean; url?: string; cues?: number | null }> } };
   worker_tabs: { params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null; orActive?: boolean }; data: { tabId?: number; tabIds?: number[]; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] } };
   read_element: {
-    params: { tabId?: number; target: string; /** Host-only adjunct read; never exposed in provider schemas. */ readback?: {documentId:string;deadline:number;nodeIdentity?: {kind:'ax';backendNodeId:number}}; /** Passive host copy verification also runs before handback resumes execution. */ copyRead?: {documentId:string;deadline:number;nodeIdentity:{kind:'ax';backendNodeId:number}} } & import('./element-state.js').ElementReadOptions;
-    data: { tabId: number; target: string; tagName: string; persistentTarget?: string; url?: string; text?: string; value?: string; scopeLabels?:string[]; documentId?: string; nodeIdentity?: {kind:'ax';backendNodeId:number}; anchorSource?: AnchorSource; /** Shown text ends in an ellipsis and the element's title/aria value completes it (shared/page-readout.ts). */ fullText?: string; /** Native time/date/number/range input: the page's own range and the browser's verdict on the value. */ inputRange?: import('./page-readout.js').InputRange & { problem?: import('./page-readout.js').RangeProblem }; /** null: this element has no valid value for that property (note says which). */ properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue | null>>; /** Unsupported property names dropped, or properties read as null. */ note?: string; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
+    params: { tabId?: number; target: string;  readback?: {documentId:string;deadline:number;nodeIdentity?: {kind:'ax';backendNodeId:number}};  copyRead?: {documentId:string;deadline:number;nodeIdentity:{kind:'ax';backendNodeId:number}} } & import('./element-state.js').ElementReadOptions;
+    data: { tabId: number; target: string; tagName: string; persistentTarget?: string; url?: string; text?: string; value?: string; scopeLabels?:string[]; documentId?: string; nodeIdentity?: {kind:'ax';backendNodeId:number}; anchorSource?: AnchorSource;  fullText?: string;  inputRange?: import('./page-readout.js').InputRange & { problem?: import('./page-readout.js').RangeProblem };  properties?: Partial<Record<import('./element-state.js').ElementProperty, import('./element-state.js').ElementValue | null>>;  note?: string; check?: { matched: true; property: import('./element-state.js').ElementProperty; elapsedMs: number } };
   };
-  /** 宿主自己读取一个选择器命中的全部元素（有界），供目标核验取证；不改页面，不能由模型替代提供。 */
   read_elements: {
     params: { tabId?: number; selector: string; limit?: number };
     data: {
@@ -748,7 +581,6 @@ export interface ToolContract {
       total: number; truncated: boolean;
       elements: Array<{
         index: number; tagName: string; text: string; visible: boolean;
-        /** 只指向这一个元素的定位串（loc=css:），可直接交给 click/mark/read_element；页面上生成不出唯一路径时缺省。 */
         target?: string;
         rect: { x: number; y: number; width: number; height: number };
         style: { backgroundColor: string; color: string; outline: string; border: string; textDecoration: string; fontWeight: string };
@@ -757,32 +589,26 @@ export interface ToolContract {
     };
   };
   list_tabs: { params: Record<string, never>; data: { tabs: TabInfo[] } };
-  /** 用户此刻正盯着的标签页（纯查询，不认领）；无活动标签时 tab 为 null */
   get_active_tab: { params: Record<string, never>; data: { tab: TabInfo | null } };
-  open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; quietMs?:number; retryMs?:number; documentId?:string; download?: NavigationDownload; note?: string; /** 撞上一次性网络错误后自动重试过一次：错误名和重试结果。 */ retry?: string; /** 地址变成下载，Chrome 关掉了这个新标签页；它不再是工作标签页。 */ tabClosed?: true } };
-  switch_tab: { params: { tabId: number; /** 同时切到用户眼前（tabs show，用户要看这一页时）。 */ show?: boolean }; data: { tabId: number; verification?: SwitchTabVerification } };
+  open_tab: { params: { url?: string }; data: { tabId: number; url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; quietMs?:number; retryMs?:number; documentId?:string; download?: NavigationDownload; note?: string;  retry?: string;  tabClosed?: true } };
+  switch_tab: { params: { tabId: number;  show?: boolean }; data: { tabId: number; verification?: SwitchTabVerification } };
   close_tab: { params: { tabId?: number }; data: { closed: true } };
-  navigate: { params: { tabId?: number; url: string; timeout?: number; inPlace?: boolean }; data: { url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; quietMs?:number; retryMs?:number; documentId?:string; download?: NavigationDownload; note?: string; /** 同 open_tab。 */ retry?: string; /** 没在原标签页里导航，工作标签页换成了这一个（新开在用户页旁边，或同窗口里已开着这个地址的页）。 */ workingTabId?: number } };
-  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean; /** Host continue-read cursor from a prior observation. */ cursor?: string; /** Host partition id from observation.scopes. */ viewScopeId?: string; /** With viewScopeId: collect the page again, then show that partition if it still exists. */ fresh?: boolean }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;marks?:import("./host-marks.js").HostDrawnMark[];observation?:import('./browser-decision.js').BrowserObservation } };
-  /** 发送前读页用的页面正文（宿主调用，不挂调试器）；模型自己读页用 snapshot。 */
+  navigate: { params: { tabId?: number; url: string; timeout?: number; inPlace?: boolean }; data: { url: string; title: string; readiness?: PageReadinessValue; waitMs?:number; quietMs?:number; retryMs?:number; documentId?:string; download?: NavigationDownload; note?: string;  retry?: string;  workingTabId?: number } };
+  snapshot: { params: { tabId?: number; scope?: "full_page" | "viewport";decision?:boolean;  cursor?: string;  viewScopeId?: string;  fresh?: boolean }; data: { text: string; tabId: number; documentId?:string; textEvidence?:import("./page-text-evidence.js").PageTextEvidence; url?:string; translation?:import("./page-translation.js").TranslationDisplayState|null;marks?:import("./host-marks.js").HostDrawnMark[];observation?:import('./browser-decision.js').BrowserObservation } };
   page_text: { params: { tabId?: number; max?: number }; data: { text: string; totalChars: number; tabId: number; url?: string; title?: string } };
   click: {
     params: {
       tabId?: number;
       target?: string;
       point?: [number, number];
-      /** 相对 target 左上角的 CSS 像素；有绝对 point 时忽略。 */
       position?: import('./pointer-input.js').ElementPosition;
       button?: import('./pointer-input.js').MouseButton;
       clickCount?: number;
       force?: boolean;
       label?: string;
     };
-    /** effect = 页面侧的效果证据（强证据才改变 changed）；拿不到读数时缺省。newTab = 点击开出的新标签页（已跟随）。
-     *  dialog = 点击后页面弹出了原生对话框（点击已送达，页面等对话框处理）；此时不等效果采样。 */
-    data: { clicked: true; effect?: import('./effect.js').EffectReport; /** 页面上新出现的行（和上次读页比）；换页、开新标签页时没有。 */ appeared?: import('./effect.js').PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string }; /** 用户在网页上点了「发送」以后才点下去。 */ sendConfirmed?: true };
+    data: { clicked: true; effect?: import('./effect.js').EffectReport;  appeared?: import('./effect.js').PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string };  sendConfirmed?: true };
   };
-  /** 真实双击：与 click 同一解析/命中核对/effect 管线，CDP clickCount 1→2。 */
   double_click: {
     params: {
       tabId?: number;
@@ -796,10 +622,6 @@ export interface ToolContract {
     };
     data: { doubleClicked: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { doubleClicked: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };
   };
-  /**
-   * CAP-02A：在触发动作前 arm 事件。返回宿主签发的 token（模型不可伪造）。
-   * download 由 Chrome 存进用户的下载文件夹；完成与否只看 chrome.downloads。
-   */
   arm_event: {
     params: {
       tabId?: number;
@@ -808,10 +630,6 @@ export interface ToolContract {
     };
     data: { token: string; type: "popup" | "download" | "filechooser"; tabId: number; timeoutMs: number };
   };
-  /**
-   * 等待已 arm 的 token 匹配并一次消费；未匹配前阻塞到超时。
-   * download 匹配后再等 chrome.downloads 报完成或中断（默认最多 60 秒）；completed 只在 Chrome 报 complete 时为 true。
-   */
   wait_event: {
     params: { token: string; timeoutMs?: number };
     data: {
@@ -824,34 +642,26 @@ export interface ToolContract {
         url: string;
         suggestedFilename: string;
         tabId: number;
-        /** chrome.downloads 的错误码（如 NETWORK_FAILED、USER_CANCELED）；null 表示没有中断。 */
         failure: string | null;
         completed: boolean;
-        /** 完成后 Chrome 写入的绝对路径与字节数。 */
         path?: string;
         bytes?: number;
-        /** Chrome 判为可能有害、等用户确认保留时的 danger 值。 */
         danger?: string;
-        /** 只存在于 background → offscreen 的内部回执；工具层解析后删除，不交给模型。 */
         capturedFile?: { dataBase64: string; mimeType: string };
-        /** 已注册进当前会话的下载附件。 */
         attachment?: { id: string; name: string; truncated?: true };
         attachmentError?: string;
       };
       fileChooser?: { chooserId: string; multiple: boolean; backendNodeId: number };
     };
   };
-  /** 取消尚未消费的 arm；停止任务后迟到事件不得再匹配。 */
   disarm_event: {
     params: { token: string };
     data: { disarmed: true; token: string; status: string };
   };
-  /** 读清本页缓冲的协议事件（popup/download/dialog/filechooser），非常规 EventEmitter。 */
   consume_events: {
     params: { tabId?: number; clear?: boolean };
     data: { tabId: number; events: Array<{ kind: string; at: number; payload: Record<string, unknown> }> };
   };
-  /** 接受当前网页 JS dialog（alert/confirm/prompt）；无 dialog 返回 accepted:false。不等于危险业务授权。 */
   accept_dialog: {
     params: { tabId?: number; promptText?: string };
     data: { accepted: boolean; dialog?: { type: string; message: string; tabId: number; url?: string } };
@@ -860,7 +670,6 @@ export interface ToolContract {
     params: { tabId?: number };
     data: { dismissed: boolean; dialog?: { type: string; message: string; tabId: number; url?: string } };
   };
-  /** 观察当前未处理的网页 JS dialog（类型/消息/页面归属）；不含浏览器权限/设备提示。 */
   dialog_info: {
     params: { tabId?: number };
     data: { dialog: null | { type: string; message: string; tabId: number; url?: string; defaultPrompt?: string } };
@@ -869,18 +678,15 @@ export interface ToolContract {
     params: { tabId?: number; target: string };
     data: { target: RouteTarget | null };
   };
-  /** 直接保存 HTTP(S) 链接，绕过 PDF 阅读器；完成只认 Chrome 下载状态。 */
   download_url: {
     params: { url: string; filename?: string; timeoutMs?: number; tabId?: number };
     data: DownloadReceipt;
   };
-  /** 真实鼠标移动；hovered 仅表示事件已派发，页面变化需另行观察。 */
   hover: {
     params: { tabId?: number; target?: string; point?: [number, number]; label?: string };
     data: { hovered: true };
   };
-  fill: { params: { tabId?: number; target: string; /** Exactly one of value and from. */ value?: string; /** 从页面上一个元素取文字原样写入，文字不经过模型。 */ from?: FillSource; /** Host-bound copy scope from the user request. */ copyRange?: CopyTextRange; /** 填完按一次回车；只给搜索框和普通单行框。 */ submit?: boolean; /** Bound by the host from a pre-write observation. */ expectedDocumentId?: string; expectedBackendNodeId?: number; /** 值来自本轮带上的这条记忆：填好后那一格标「记得的」。 */ memory?: { id: string; text: string; createdAt: number } }; data: { filled: true; /** Host evidence for later comparison; contains no source text. */ copyProof?: import('./copied-field.js').CopiedFieldProof; appeared?: import('./effect.js').PageAppeared; /** 真实键盘输入和旧写法都没写进去。 */ typing?: "failed"; /** submit 时：按了回车（结果同 press_key），或为什么没按。 */ submit?: { refused: string } | { uncertain: string } | { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } }; /** The value was written but the browser rejects it for the field's min/max/step. */ rangeIssue?: import('./page-readout.js').RangeIssue; /** Read from the page after the write. With from, requested/observed are left out: the copied text stays out of model context and traces. */ readback?: FieldReadback; /** With from: how much was copied, and its ends for the model to confirm the right element. */ source?: { chars: number; head: string; tail: string }; /** 快照里这个 ref 的输入框被页面重渲染换掉，已按原输入框的名字找回唯一的新输入框并在它上面填写。 */ refound?: true } };
-  /** CAP-02C：原生 <select>；values 为 string/{value,label,index}/数组；null 或 [] 清空。 */
+  fill: { params: { tabId?: number; target: string;  value?: string;  from?: FillSource;  copyRange?: CopyTextRange;  submit?: boolean;  expectedDocumentId?: string; expectedBackendNodeId?: number;  memory?: { id: string; text: string; createdAt: number } }; data: { filled: true;  copyProof?: import('./copied-field.js').CopiedFieldProof; appeared?: import('./effect.js').PageAppeared;  typing?: "failed";  submit?: { refused: string } | { uncertain: string } | { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } };  rangeIssue?: import('./page-readout.js').RangeIssue;  readback?: FieldReadback;  source?: { chars: number; head: string; tail: string };  refound?: true } };
   select_option: {
     params: {
       tabId?: number;
@@ -889,52 +695,43 @@ export interface ToolContract {
       expectedDocumentId?: string;
       expectedBackendNodeId?: number;
     };
-    data: { selected: string[]; labels: string[]; /** 同 fill.refound。 */ refound?: true; appeared?: import('./effect.js').PageAppeared };
+    data: { selected: string[]; labels: string[];  refound?: true; appeared?: import('./effect.js').PageAppeared };
   };
-  /** 把本会话的文件放进页面上的一个 <input type=file>：文件在页面里构造，不经本机磁盘；回执是从文件框读回的文件。 */
   upload_file: {
     params: { tabId?: number; target?: string; files: UploadFilePayload[] };
     data: { files: Array<{ name: string; size: number; type: string }> };
   };
-  type_text: { params: { tabId?: number; text: string; }; data: { typed: true; /** The focused field, read from the page after typing. */ readback?: FieldReadback } };
-  press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared; /** 回车时焦点在单行 <input> 上：这时没变化才算回车没反应。 */ singleLineInput?: true; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
+  type_text: { params: { tabId?: number; text: string; }; data: { typed: true;  readback?: FieldReadback } };
+  press_key: { params: { tabId?: number; key: string; }; data: { pressed: true; effect?: import('./effect.js').EffectReport; appeared?: import('./effect.js').PageAppeared;  singleLineInput?: true; dialog?: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } | { pressed: false; dialog: { type: "alert" | "confirm" | "prompt" | "beforeunload"; message: string; defaultPrompt?: string } } };
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
   screenshot: {
     params: {
       tabId?: number;
-      /** 可滚动全页；与 clip 互斥时 clip 优先。 */
       fullPage?: boolean;
-      /** 文档 CSS 坐标矩形。click 的 point 使用视口坐标，须扣除当前滚动。 */
       clip?: { x: number; y: number; width: number; height: number; scale?: number };
-      /** css=按 CSS 像素尺寸输出（默认）；raw=设备像素。 */
       scale?: "css" | "raw";
     };
     data: {
       imageBase64: string;
       mediaType: "image/png";
-      /** PNG 解码实测的正数像素宽高；解码失败则整个调用失败。 */
       width: number;
       height: number;
       pixelWidth: number;
       pixelHeight: number;
-      /** 捕获区域的 CSS 宽高；并非该区域在视口中的原点。查不到为 0。 */
       cssWidth: number;
       cssHeight: number;
-      /** 查不到为 0。 */
       devicePixelRatio: number;
       tabId: number;
       url: string;
       title: string;
       capturedAt: number;
-      /** cdp = 后台页直接捕获；visible-tab = 已核对工作页在前台后的可见捕获。 */
       source: "cdp" | "visible-tab";
       fullPage?: boolean;
       clip?: { x: number; y: number; width: number; height: number; scale?: number };
       scale?: "css" | "raw";
       documentId?: string;
-      /** viewportPoint = imagePixel / density + origin - scroll。新文档/滚动后须重新观察。 */
       coordinates?: {
         origin: { x: number; y: number };
         scroll: { x: number; y: number };
@@ -944,37 +741,21 @@ export interface ToolContract {
       } | null;
     };
   };
-  /** 在元素处画持久标注（描边框+名牌），锚定文档坐标，滚动不漂移；through 为同一行的结束 ref，一个框从 target 圈到它 */
-  /** text：按文字圈，圈中每个词在页面文字里的每一处；counts 是页面上真实圈中的处数。 */
   mark: { params: { tabId?: number; target?: string; through?: string; label?: string; actions?: MarkAction[]; text?: string[] }; data: { marked: true; counts?: Array<{ text: string; count: number }> } };
-  /** 清除全部 mark 标注 */
   clear_marks: { params: {tabId?: number}; data: { cleared: true } };
-  /**
-   * 教一步：圈出 target、在名牌上写 say，光标停在目标旁，等用户自己点。点在目标外：页面提示，不返回。
-   * 点中后 3 秒内页面有变化（DOM、地址或换了文档）→ done。点中两次都没变化、2 分钟没点中、用户停止/接管/关页，
-   * 都按「没执行」结束并带 guide_* 原因：这一步没完成，但不是出错。工具自己从不点击。
-   */
   guide_step: { params: { tabId?: number; target: string; say: string; step: number }; data: GuideStepResult };
 }
 
-/** 教学一步在等用户：侧栏据此写「第 N 步 · 等你操作」，no_change 时写「点了「target」，页面没有变化」。 */
-export interface GuideWait { step: number; say: string; state: "waiting" | "no_change"; /** 目标在网页上的可见名字（截短），没有就省略。 */ target?: string }
+export interface GuideWait { step: number; say: string; state: "waiting" | "no_change";  target?: string }
 
 export interface GuideStepResult {
   outcome: "done";
-  /** 点在目标外的次数。 */
   misses: number;
-  /** 点中了但 3 秒内页面没变化的次数。 */
   noChangeClicks: number;
-  /** done 时，是什么变了。 */
   changed?: "dom" | "url" | "document";
-  /** 点完以后目标的样子（角色、名字、aria-checked 之类的状态，网址变了再加网址），从网页读出：模型据此知道这一步已生效，不再让用户点一遍。 */
   after?: string;
 }
 
-// ── 编解码守卫 ─────────────────────────────────────────────────────
-
-/** 侧栏据输入契约生成配置表单；技能程序仍只留在后台。 */
 export interface SkillOperationSummary { id: string; name: string; purpose: string; site: string; inputSchema: JsonSchema }
 
 function isSkillOperationSummary(value: unknown): value is SkillOperationSummary {
@@ -1054,7 +835,6 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
       if (msg.type === "memory_site" && !(typeof msg.hostname === "string" && normalizeMemoryHostname(msg.hostname) === msg.hostname && typeof msg.off === "boolean")) return null;
 
-      // 改后的文字空白也照收：由后台拒绝并把原因带回卡片。
       if (msg.type === "memory_ask_answer" && !(validMemoryId(msg.askId) && (msg.answer === "remember" || msg.answer === "once") && (msg.text === undefined || (typeof msg.text === "string" && msg.text.length <= MEMORY_TEXT_MAX)))) return null;
 
       if (msg.type !== "memory_list" && msg.type !== "memory_ask_answer" && (!validMemoryId(msg.id) || !validMemoryVersion(msg.expectedVersion))) return null;
@@ -1167,7 +947,6 @@ function isPageContext(v: unknown): v is PageContext {
   return typeof text === "string" && text.length >= 1 && text.length <= 2000;
 }
 
-/** 逐条核对记忆条目；旧格式条目就地补上默认值。有一条不合格就整体不收。 */
 function upgradeMemoryEntries(value: unknown): value is MemoryEntry[] {
   if (!Array.isArray(value) || !value.every(isStoredMemoryEntry)) return false;
   value.forEach((entry, i) => { value[i] = upgradeMemoryEntry(entry); });
@@ -1338,7 +1117,6 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     if (msg.type === "agent_event" && msg.event?.kind === "memory") {
       const event = msg.event;
 
-      // 升级前保存的回执里是旧格式条目：补默认值后照常显示。
       if (!["saved", "used", "updated", "forgotten"].includes(event.action) || !upgradeMemoryEntries(event.entries)) return null;
 
       if (event.message !== undefined && typeof event.message !== "string") return null;
@@ -1530,13 +1308,11 @@ export function isConversationSummary(value: unknown): value is ConversationSumm
 
   return validConversationId(item.id) && typeof item.title === "string" && item.title.length <= 120 &&
     Number.isFinite(item.createdAt) && Number.isFinite(item.updatedAt) && isAgentRunState(item.state) &&
-    // 旧记录可能是已删除的 teach 模式：照样认，读入方按 act 处理。
     (item.mode === "act" || (item.mode as string) === "teach") && (item.model === undefined || typeof item.model === "string")
     && (item.runId === undefined || item.runId === null || taskId(item.runId))
     && (item.checkpoint === undefined || item.checkpoint === "interrupted" || item.checkpoint === "unavailable");
 }
 
-/** UI-only page evidence. Never an agent command or authority to mutate a website. */
 export interface PageElementSource {
   document: string;
   id: string;
@@ -1562,21 +1338,15 @@ export type PageInteractionMessage =
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'consume'; token: string }
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'validate'; source: PageElementSource }
   | { type: 'GHOST_QUICK_ACTION'; action: GhostQuickAction | 'probe' }
-  /** 按记忆填的那一格画「记得的」（后台 → 页面）；token 是后台挂在那个元素上的一次性属性值。 */
   | { type: 'MEMORY_FIELD_MARK'; token: string; memory: { id: string; text: string; createdAt: number } }
-  /** 「记得的」小卡点了「忘掉」（页面 → 侧栏）。 */
   | { type: 'MEMORY_FIELD_FORGET'; id: string; requestId: string }
-  /** 圈出来问：页面上圈好了第 n 处（页面 → 侧栏），rect 是要截的视口区域（CSS 像素）。 */
-  | { type: 'CIRCLE_DRAWN'; n: number; rect: { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number }; /** 圈内的网页文字；圈的是空白处就省略。 */ text?: string }
-  /** 圈出来问：页面上按了 Esc，退出圈画（页面 → 侧栏）。 */
+  | { type: 'CIRCLE_DRAWN'; n: number; rect: { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number };  text?: string }
   | { type: 'CIRCLE_EXIT' };
 
-/** 侧栏直连按钮：页面脚本直接操作，不经模型。probe 只回报这一页能做哪些。 */
 export const GHOST_QUICK_ACTIONS = ['toggle_play', 'next', 'toggle_code'] as const;
 
 export type GhostQuickAction = (typeof GHOST_QUICK_ACTIONS)[number];
 
-/** 页面脚本的回复。probe：available 是这一页能做的动作，playing/codeFolded 给按钮选文字；动作：ok、给用户看的结果和页面内耗时。 */
 export type GhostQuickReply =
   | { ok: true; available: GhostQuickAction[]; playing: boolean; codeFolded: boolean }
   | { ok: boolean; message: string; elapsedMs: number; playing: boolean; codeFolded: boolean };
@@ -1605,7 +1375,6 @@ export function isPageDocumentIdentity(value: unknown): value is PageDocumentIde
     && typeof identity.url === 'string' && identity.url.length > 0 && identity.url.length <= 4000;
 }
 
-/** Full schema admission at the runtime message boundary, separate from agent commands. */
 export function isPageInteractionMessage(value: unknown): value is PageInteractionMessage {
   if (!value || typeof value !== 'object') return false;
   // SAFETY: non-null object only; each union branch validates its complete payload.

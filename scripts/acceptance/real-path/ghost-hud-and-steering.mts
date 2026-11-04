@@ -1,11 +1,3 @@
-/**
- * 直连按钮与改方向：只装扩展的隔离无头 Chrome、真侧栏、
- * 本机网页与本机脚本模型。按钮必须不经模型；改方向必须截断正在写的长文、同一轮换成新回答。
- *
- *   npx tsx scripts/acceptance/real-path/ghost-hud-and-steering.mts --headless --run=final
- *
- * --run= 只决定证据目录 out/acceptance/ghost-hud-and-steering/<run>/：不写时是 candidate（候选轮），最终验收用 final。
- */
 import { useSavedSettingsModel } from './inproc-config.mts';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -23,7 +15,6 @@ const out = join(REPO, 'out/acceptance/ghost-hud-and-steering', run);
 
 await mkdir(out, { recursive: true });
 
-// 10 秒静音 WAV：真媒体元素，能播能停。
 const wav = (() => { const rate = 8000, n = rate * 10, b = Buffer.alloc(44 + n * 2); b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(rate, 24); b.writeUInt32LE(rate * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
 
  return b; })();
@@ -69,7 +60,6 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false'), 60000, 'panel ready');
 
-  // ── R1/R2 直连按钮 ──
   await rp.evaluate(work, 'document.querySelector("#m").play().then(()=>true)', { userGesture: true });
   check('媒体开始播放', await rp.evaluate(work, '!document.querySelector("#m").paused'), null);
   const bar = await until(async () => await rp.evaluate(panel, '(()=>{const b=document.querySelector("#ghost-bar");return b&&!b.hidden?[...b.querySelectorAll(".ghost-action")].map(x=>x.dataset.action):null})()'), 10000, 'ghost bar');
@@ -111,7 +101,6 @@ try {
   await sleep(2200);
   check('没有可做动作的页面不出按钮', await rp.evaluate(panel, 'document.querySelector("#ghost-bar").hidden'), null);
 
-  // ── R3/R4 改方向 ──
   await rp.click(panel, '#header-more'); await rp.click(panel, '#model-settings-open');
   const settings = await rp.attach((await until(async () => (await rp.targets()).find(t => t.url.split("#")[0]!.endsWith('/settings.html')), 10000, 'settings')).targetId);
   await until(async () => await rp.evaluate(settings, 'document.querySelectorAll(".provider-option").length>3'), 10000, 'providers');
@@ -127,7 +116,6 @@ try {
   await until(async () => String(await rp.evaluate(settings, 'document.querySelector("#model-status").textContent')).startsWith('已保存'), 10000, 'saved');
   await useSavedSettingsModel(rp, settings, 'custom', 'fixture');
   await rp.cdp.send('Target.closeTarget', { targetId: (await rp.targets()).find(t => t.url.split("#")[0]!.endsWith('/settings.html'))!.targetId });
-  // 输入框改版去掉了运行中的「改方向」建议按钮：改方向就是在输入框里直接说。
   check('空闲时不显示改方向提示区', await rp.evaluate(panel, '!document.querySelector("#steer-ribbon")?.getClientRects().length'), null);
   await rp.click(panel, '#input'); await rp.typeText(panel, '对比 Ingress 和 Gateway API'); await rp.pressEnter(panel);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn").classList.contains("stopping") && (document.querySelector(".msg.assistant.streaming")?.textContent.length ?? 0) > 20'), 20000, '长文写到一半');
@@ -139,7 +127,6 @@ try {
   await sleep(600);
   await rp.screenshot(panel, join(out, 'steer-after.png'));
   const second = model.requests.find(r => r.rule === '改成对比表格');
-    // 长文还剩约 3 秒没写；新回答在点完 1.5 秒内出字，说明没等长文写完。
   check('改方向后立刻按新要求写（不等长文写完）', !!second?.firstTextAt && second.firstTextAt - clickedAt < 1500, { afterClickMs: second?.firstTextAt ? second.firstTextAt - clickedAt : null });
   // SAFETY: payloads 是本脚本的假模型收到的 OpenAI 风格请求体，messages 的 content 要么是字符串，要么是带 text 的分段数组。
   const steered = JSON.parse(payloads.find(p => p.includes('把正在写的回答改成对比表格')) ?? '[]') as Array<{ role: string; content?: string | Array<{ text?: string }> }>;

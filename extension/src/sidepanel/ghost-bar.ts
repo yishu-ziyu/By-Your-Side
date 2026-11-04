@@ -1,10 +1,5 @@
 import type { GhostQuickAction, GhostQuickReply } from '../../../shared/protocol.js';
 
-/**
- * 侧栏顶部的直连按钮：问当前页的页面脚本这一页能做什么（有媒体、有播放器的「下一个」、有长代码块），
- * 只给能做的出按钮；点了直接发给页面脚本执行，不经后台、不经模型，并显示从点到做完的耗时。
- */
-
 type Probe = Extract<GhostQuickReply, { available: GhostQuickAction[] }>;
 
 const RETRY_EMPTY_MS = 1500;
@@ -63,7 +58,6 @@ export function createGhostBar(root: HTMLElement): GhostBar {
     timing.textContent = text;
     timing.classList.toggle('failed', !ok);
     timing.hidden = false;
-    // 失败的原因留到下一次操作替换它；成功的耗时看一眼就够，自己收起。
     if (ok) timingTimer = setTimeout(() => { timing.hidden = true; }, TIMING_VISIBLE_MS);
   };
 
@@ -77,7 +71,6 @@ export function createGhostBar(root: HTMLElement): GhostBar {
     const found = reply && 'available' in reply ? reply : null;
     render(found);
 
-    // 播放器常在页面载完后才挂上：第一次什么都没有时再问一次。
     if (retryEmpty && (!found || found.available.length === 0)) retry = setTimeout(() => void probe(current, false), RETRY_EMPTY_MS);
   };
 
@@ -93,7 +86,6 @@ export function createGhostBar(root: HTMLElement): GhostBar {
     if (current !== generation) return;
 
     if (!reply || !('message' in reply)) {
-      // 先让用户看清原因再重新问页面：页面脚本没了时重问会把整行收起。
       showTiming('页面没有回应，刷新页面后再试', false);
       retry = setTimeout(() => void probe(current, false), TIMING_VISIBLE_MS);
 

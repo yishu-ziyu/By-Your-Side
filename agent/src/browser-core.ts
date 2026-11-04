@@ -1,4 +1,3 @@
-/** 扩展宿主使用的公开入口；浏览器构建会替换 Node 专属模块。 */
 export { startHostCore } from "./host-core.js";
 
 export type { HostCore, HostCoreOptions, ClientConn } from "./host-core.js";

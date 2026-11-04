@@ -1,7 +1,3 @@
-/** Real extension settings and dictation. Step Plan uses real ASR and a known synthetic Chinese WAV.
- * npx tsx scripts/acceptance/real-path/dictation-providers.mts --headless
- * --headed opens an isolated background browser. SiliconFlow success requires SILICONFLOW_API_KEY.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";

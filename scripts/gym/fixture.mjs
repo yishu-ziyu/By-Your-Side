@@ -46,7 +46,6 @@ if(fault==='stale')document.addEventListener('input',function replace(e){if(!e.i
 })()</script></html>`;
 }
 
-/** No evaluator endpoint exists. Expected answers stay in the Node evaluator. */
 export async function startFixture(task, seed, fault = 'none') {
   if (!tasks.includes(task) || !seeds.includes(seed) || !['none', 'drop', 'stale', 'late-drop', 'unknown', 'waiting'].includes(fault)) throw new Error('invalid fixture');
   const effects = [], events = [];

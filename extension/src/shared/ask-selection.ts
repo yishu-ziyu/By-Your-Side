@@ -1,5 +1,4 @@
 import { READING_SELECTION_LIMIT } from "../../../shared/reading.js";
-/** 选中即问：划词文本裁剪与 session 交接。 */
 
 export const ASK_STORE = "pendingAsk";
 
@@ -9,13 +8,10 @@ const MAX_ASK_CHARS = READING_SELECTION_LIMIT;
 
 export const ASK_MENU_ID = "ask-sideagent";
 
-/** chrome.storage.local 键：选中文字后是否自动弹出「问问这段 / 解释」工具条。 */
 export const SELECTION_BAR_KEY = "sideagent_selection_bar";
 
-/** chrome.storage.local 键：划词工具条和阅读卡是否显示朗读。默认关闭，只有明确存了 true 才开启。 */
 export const READING_ALOUD_KEY = "reading_aloud";
 
-/** chrome.storage.local 键：用户拖过右下角后记住的阅读卡大小。 */
 export const READING_CARD_SIZE_KEY = "reading_card_size";
 
 export interface ReadingCardSize {
@@ -23,7 +19,6 @@ export interface ReadingCardSize {
   height: number;
 }
 
-/** 存进来的尺寸只做形状检查；按当前窗口能放多大由卡片自己再收一次。 */
 export function readReadingCardSize(stored: unknown): ReadingCardSize | null {
   if (!stored || typeof stored !== "object") return null;
 
@@ -34,7 +29,6 @@ export function readReadingCardSize(stored: unknown): ReadingCardSize | null {
   return { width: Math.round(width), height: Math.round(height) };
 }
 
-/** 只有明确存了 false 才算关闭；没存过或存了别的值都算开启。 */
 export function isSelectionBarOff(stored: unknown): stored is false {
   return stored === false;
 }

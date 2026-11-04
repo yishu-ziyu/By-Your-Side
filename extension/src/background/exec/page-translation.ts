@@ -5,7 +5,6 @@ import { resolveWorkingTab } from '../state.js';
 export async function pageTranslation(params: TranslationCommand, sessionId: string, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}): Promise<TranslationReceipt> {
   let tab: chrome.tabs.Tab;
 
-  // Before injection starts, a failure cannot have changed the page.
   try {
     validateTranslationCommand(params);
     tab = await resolveWorkingTab(params.tabId, sessionId);

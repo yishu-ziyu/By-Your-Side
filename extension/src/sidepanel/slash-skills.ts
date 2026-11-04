@@ -1,12 +1,3 @@
-/**
- * 「/ 技能」：用户存下来的常用提示词，在输入框开头敲 `/` 唤起，选中后对当前标签页运行。
- *
- * - 提示词技能只存在本机 chrome.storage.local，与记忆无关。
- * - 可直接运行的技能（核对做成后存下的只读程序）存在后台，只在存下它的网站上列出，见 skill-operations.ts。
- * - 技能可带 1–2 个澄清问题：先在侧栏里问，答完把回答填进正文（`{1}`、`{2}`）再发；取消就什么都不发。
- * - 发送走侧栏正常发送路径（由调用方传入），当前页面上下文照常附带。
- */
-
 import { Zap, createElement as icon } from "lucide";
 import type { SkillOperationSummary } from "../../../shared/protocol.js";
 import { deleteSkillOperation, knownSkillOperations, onSkillOperationsChange, refreshSkillOperations, skillOperationsFor } from "./skill-operations.js";
@@ -19,7 +10,6 @@ interface PromptSkill {
   name: string;
   emoji?: string;
   body: string;
-  /** 0–2 个澄清问题；正文里 `{1}`、`{2}` 换成对应回答，没写占位就附在末尾。 */
   questions?: string[];
 }
 
@@ -41,7 +31,6 @@ const DEFAULT_PROMPT_SKILLS: PromptSkill[] = [
   },
 ];
 
-/** 把澄清回答填进正文；空回答记作「不限」，正文里没有占位的回答附在末尾。 */
 function fillSkillBody(skill: PromptSkill, answers: string[]): string {
   let body = skill.body;
   const extra: string[] = [];
@@ -57,10 +46,8 @@ function fillSkillBody(skill: PromptSkill, answers: string[]): string {
   return extra.length ? `${body.trim()}\n${extra.join("\n")}` : body.trim();
 }
 
-/** 存储里的一条技能：字段类型还没核对。 */
 interface StoredSkill { id?: unknown; name?: unknown; emoji?: unknown; body?: unknown; questions?: unknown }
 
-/** 存储里的列表项：JSON 能出现的任何值，坏数据在 sanitize 里逐条丢弃。 */
 type StoredItem = StoredSkill | string | number | boolean | null | undefined;
 
 const isString = (v: unknown): v is string => typeof v === "string";
@@ -81,7 +68,6 @@ function sanitize(raw: StoredItem[]): PromptSkill[] {
   });
 }
 
-/** 网站显示名：去掉协议和 www。 */
 function siteLabel(site: string): string {
   try { return new URL(site).host.replace(/^www\./, ""); } catch { return site; }
 }
@@ -146,30 +132,22 @@ function operationInputComplete(schema: JsonSchema, input: JsonObject): boolean 
 interface SlashSkillsOptions {
   composerEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
-  /** 用正常发送路径发出这段文字（会附带当前页面上下文）。 */
   run: (text: string) => void;
-  /** 两个直接入口共用：给定技能 ID 和参数，后台直接运行，不变成模型提示词。 */
   runOperation: (operation: SkillOperationSummary, input: JsonObject) => void;
-  /** 这条消息是不是最近一个核对做成的任务的请求：是的话「存成技能」可以存成直接运行。 */
   verifiedRequest: (bubble: HTMLElement) => boolean;
 }
 
 interface SlashSkills {
-  /** 输入框 keydown 先交给技能列表/澄清；返回 true 表示已处理，调用方不要再发送。 */
   handleKeydown: (event: KeyboardEvent) => boolean;
-  /** 给已发出的用户消息加「存成技能」。 */
   decorateUserMessage: (bubble: HTMLElement, text: string) => void;
-  /** 把一段文字打开技能编辑（结果动作列表用）。 */
   saveFromText: (text: string) => void;
 }
 
 export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verifiedRequest }: SlashSkillsOptions): SlashSkills {
   let skills: PromptSkill[] = [];
-  /** 用户眼前网页的地址：只列这个网站上能直接运行的技能。 */
   let pageUrl: string | null = null;
   let loaded = false;
   let active = 0;
-  /** 用户按 Esc 关掉列表后，同一段输入不再自动弹出。 */
   let dismissedFor: string | null = null;
   let clarify: HTMLElement | null = null;
 
@@ -207,8 +185,6 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
     if (!manage.hidden && !editing) renderManageList();
   });
 
-  // ── 列表 ─────────────────────────────────────────────
-
   type Row = { kind: "skill"; skill: PromptSkill } | { kind: "operation"; operation: SkillOperationSummary } | { kind: "manage" };
 
   async function syncPage(): Promise<void> {
@@ -219,7 +195,6 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
     if (next !== pageUrl) { pageUrl = next; refresh(); }
   }
 
-  // 菜单开着时用户切了标签页、或网页跳到别的网站：按眼前的网站重新筛。
   chrome.tabs?.onActivated?.addListener(() => { if (isOpen()) void syncPage(); });
   chrome.tabs?.onUpdated?.addListener((_id, change) => { if (change.url && isOpen()) void syncPage(); });
 
@@ -331,8 +306,6 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
     inputEl.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  // ── 运行与澄清 ───────────────────────────────────────
-
   function startOperation(operation: SkillOperationSummary): void {
     const configured = skillPackageConfig(operation.id)?.input ?? {};
     if (operationInputComplete(operation.inputSchema, configured)) {
@@ -384,7 +357,6 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
   function start(skill: PromptSkill): void {
     const questions = skill.questions ?? [];
 
-    // 不用回答问题的技能：正文放进输入框，用户看过、改过再发。
     if (!questions.length) {
       setInput(fillSkillBody(skill, []));
       inputEl.focus({ preventScroll: true });
@@ -435,8 +407,6 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
     host.insertBefore(card, composerEl);
     fields[0]?.focus({ preventScroll: true });
   }
-
-  // ── 管理：新建 / 改名 / 编辑 / 删除 ──────────────────
 
   const shade = el("button", "pskill-shade");
   shade.type = "button";
@@ -633,7 +603,6 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
     const q1 = field("运行前先问（可选）", text(skill?.questions?.[0] ?? "", "例如：预算多少？"));
     const q2 = field("再问一个（可选）", text(skill?.questions?.[1] ?? ""));
     form.append(el("p", "pskill-note", "提示词里写 {1}、{2} 会换成对应回答；没写就把回答附在末尾。"));
-    // 刚核对做成的网页任务：可以存成在这个网站上直接运行的技能。助手先用原来的和另一组内容各跑一次，都对才存。
     const direct = el("input");
     direct.type = "checkbox";
     direct.checked = runnable;
@@ -697,12 +666,9 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
     renderEditor(null, text, !!bubble && verifiedRequest(bubble));
   }
 
-  // ── 与输入框对接 ─────────────────────────────────────
-
   inputEl.addEventListener("input", () => {
     if (!inputEl.value.startsWith("/")) { dismissedFor = null; active = 0; }
     else {
-      // 用户可能刚切了标签页或网页跳转了：每次输入都按眼前的网站重新筛。
       void syncPage();
 
       if (inputEl.value === "/") refreshSkillOperations();

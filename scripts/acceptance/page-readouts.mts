@@ -1,11 +1,3 @@
-/** Page readouts: truncated names and input ranges .
- * Real isolated headless Chrome + the real extension executor built from the current tree into a temp dir;
- * the model-facing fill text comes from the real agent tool definition. No model requests, no daily Chrome,
- * no extension/dist writes. Oracles are independent: the fixture's own title/min/max attributes and the
- * browser's own ValidityState, read straight from the page.
- *
- *   npx tsx scripts/acceptance/page-readouts.mts --headless [--live] [--only=trunc,range,live]
- */
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -45,8 +37,6 @@ process.chdir(previousCwd);
 
 const { createBrowserTools } = await import("../../agent/src/tools.ts");
 
-// Same shapes as the eval sites: webscraper's product card (visible "…" text, full name in title)
-// and httpbin's delivery time field. Plus controls for no-false-positive checks.
 const products = `<!doctype html><meta charset=utf-8><title>products</title><body>
 <div class=card><h4><a id=p1 href="/product/147" class="title" title="Asus ROG Strix GL702VM-GC146T">
   Asus ROG Strix...
@@ -67,13 +57,10 @@ const form = `<!doctype html><meta charset=utf-8><title>form</title><body><form>
 <p><label>Name <input type=text name=custname></label></p>
 </form></body>`;
 
-/** JSON evidence written to result.json. */
 type JsonValue = string | number | boolean | null | undefined | readonly JsonValue[] | { readonly [name: string]: JsonValue };
 
-/** Parameters forwarded to the extension's executeToolCall, which validates them against ToolContract. */
 type ToolParams = { url?: string; target?: string; value?: string; scope?: "viewport" };
 
-/** The browser's own verdict on the delivery field: the independent oracle for the fill cases. */
 type Validity = { value: string; rangeOverflow: boolean; rangeUnderflow: boolean; stepMismatch: boolean };
 
 type Case = { id: string; status: "PASS" | "FAIL" | "NOT_RUN"; evidence?: JsonValue; error?: string };
@@ -96,8 +83,6 @@ const check = (condition: boolean | string | null | undefined, message: string, 
   if (!condition) throw new Error(`${message}${evidence === undefined ? "" : ` :: ${JSON.stringify(evidence).slice(0, 1500)}`}`);
 };
 
-// This is auxiliary executor acceptance, not offscreen-agent product acceptance.
-// The scripted host supplies task identity; actions run without approval cards.
 const callTool = async (name: string, params: ToolParams) => {
   if (live) return iso!.tool(name, params, "main");
 
@@ -131,7 +116,6 @@ const tool = async (name: string, params: ToolParams) => {
   return result.data;
 };
 
-/** The real agent `fill` tool definition, wired straight to the isolated executor. */
 const agentFill = async (target: string, value: string): Promise<string> => {
   const rpc = { call: async (name: string, params: ToolParams) => tool(name, params) };
   // SAFETY: createBrowserTools only calls rpc.call on this path (no execution scope);
@@ -154,10 +138,8 @@ const go = async (url: string) => {
 
 const lineWith = (text: string, needle: string) => text.split("\n").find(line => line.includes(needle));
 
-/** The link line (not the heading above it) that shows this text. */
 const linkWith = (text: string, needle: string) => text.split("\n").find(line => /\blink\b/.test(line) && line.includes(needle));
 
-/** The native time field's own line (its label text has a separate line). */
 const timeLine = (text: string) => text.split("\n").find(line => /InputTime|type=time/.test(line));
 
 const refOf = (line: string | undefined) => /\[ref=(\d+)\]/.exec(line ?? "")?.[1];
@@ -196,7 +178,6 @@ try {
   if (live) {
     tabId = (await tool("open_tab", { url: `${iso.fixtureOrigin}/products` })).tabId;
   } else {
-    // Fixture setup, not a model tool: never fake an approved open_tab result.
     fixtureTarget = await iso.newTarget(`${iso.fixtureOrigin}/products`);
     // SAFETY: chrome.tabs.query returns Chrome's numeric id for the exact page
     // created immediately above; a missing tab throws inside the expression.
@@ -321,7 +302,7 @@ try {
     const currentField = async (index: number) => {
       const text: string = (await tool("snapshot", {})).text;
       await writeFile(join(out, snapshotSequence++ === 0 ? "time-native-subfields.txt" : `time-native-subfields-${snapshotSequence}.txt`), text);
-      // Filling recreates native UA children. Re-observe the exact first input's
+      // WHY: Filling recreates native UA children. Re-observe the exact first input's
       // Hours/Minutes field before each action; never reuse a disconnected ref.
       const lines = text.split("\n");
       const firstTime = lines.findIndex(line => /InputTime|type=time/.test(line));
@@ -438,7 +419,6 @@ try {
     const line = timeLine(text);
     check(line?.includes('min="11:00"') && line.includes('max="21:00"') && line.includes('step="900"'), "live httpbin delivery field lacks its range", line);
     const ref = refOf(line);
-    // Fill only; never submit the public form.
     const agentText = await agentFill(`@${ref}`, "21:30");
     check(/out of range|outside/i.test(agentText) && agentText.includes("21:00"), "live fill of 21:30 reported silent success", agentText);
 

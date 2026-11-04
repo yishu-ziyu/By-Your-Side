@@ -26,7 +26,6 @@ export async function listTabs(sessionId: string = LEAD_SESSION_ID): Promise<{ t
   };
 }
 
-/** 用户此刻正盯着的标签页（纯查询，不认领为工作标签页）；无活动标签时返回 null。 */
 export async function getActiveTab(sessionId: string = LEAD_SESSION_ID): Promise<{ tab: TabInfo | null }> {
   const workingId = await getWorkingTabId(sessionId);
   const [active] = await activeTargetTabs();
@@ -56,7 +55,7 @@ export async function openTab(
   const previous = await getWorkingTabId(sessionId);
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
-  // 助手开的页留在后台，不换走用户正在看的标签页。
+  // WHY: 助手开的页留在后台，不换走用户正在看的标签页。
   // 替用户页开的新页放在它旁边、同一个窗口：不写窗口时 Chrome 放进最后获得焦点的窗口，可能是另一个开着侧栏的窗口。
   const placement = beside?.id != null ? { windowId: beside.windowId, index: beside.index + 1, openerTabId: beside.id } : {};
   const tab = await chrome.tabs.create({ url: params.url, active: false, ...placement });
@@ -65,21 +64,19 @@ export async function openTab(
   void quietOpenedTab(tab.id);
   await setWorkingTab(tab.id, sessionId);
 
-  // 尽量在页面自己的请求发出前开始记录；attach 失败不影响打开。
-  try{await ensureAttached(tab.id);}catch{/* DevTools 占用或页面受限：本次加载无网络记录 */}
+  try{await ensureAttached(tab.id);}catch{}
 
   const opened=params.url?await retryTransientErrorPage(tab.id,params.url,await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}),10_000,cancelled):undefined;
   const ready=opened?.ready;
   const retry=opened?.retry?{retry:opened.retry}:{};
 
-  // 同 navigate：等页面画完再返回，多等的时间算进 waitMs。
   if (ready && settlesContent(ready.readiness)) { ready.quietMs = await waitForQuietDom(tab.id); ready.waitMs += ready.quietMs; }
   let after: chrome.tabs.Tab;
 
   try {
     after = await chrome.tabs.get(tab.id);
   } catch (error) {
-    // 地址变成下载时，Chrome 会关掉为它新开的标签页。如实说下载结果，工作标签页回到打开之前那一页，不留在已关的页上。
+    // WHY: 地址变成下载时，Chrome 会关掉为它新开的标签页。如实说下载结果，工作标签页回到打开之前那一页，不留在已关的页上。
     if (!ready?.download) throw error;
     const working = await getWorkingTabId(sessionId);
 
@@ -97,22 +94,14 @@ export async function switchTab(
   beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void},
 ): Promise<{ tabId: number; verification?: SwitchTabVerification }> {
   await resolveWorkingTab(params.tabId, sessionId);
-  // 平时只换工作目标，不切前台：助手在后台标签里做事。
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
 
-  // 用户要看这一页（tabs show）：切到它所在窗口的前台。
   if (params.show === true) await bringForwardForUser(params.tabId, "user_asked");
 
   return { tabId: params.tabId, verification: await readSwitchVerification(params.tabId, sessionId) };
 }
 
-/**
- * 执行后读一次浏览器当前事实：工作目标、目标窗口内实际活动的标签、窗口焦点。
- * 只证明核验这一刻的状态：不等待页面加载、不轮询重试、不抢焦点（switch 本身不切前台，
- * 核验只读不改）。目标消失或读取
- * 失败时如实返回 verified:false（不带事实字段），不伪造成功结论。
- */
 async function readSwitchVerification(tabId: number, sessionId: string): Promise<SwitchTabVerification> {
   try {
     const tab = await chrome.tabs.get(tabId);

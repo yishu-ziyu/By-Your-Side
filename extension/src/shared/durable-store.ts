@@ -1,4 +1,3 @@
-/** 本扩展的会话日志与文件。事务完成后才报告保存成功；不访问用户文件系统。 */
 const DURABLE_DB = 'sideagent-session-data';
 
 const STORE = 'items';
@@ -29,7 +28,6 @@ export async function durableTransaction<T>(write: boolean, fn: (store: IDBObjec
     tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('会话保存失败'));
   });
 
-  // Attach immediately, including callback failures that abort before awaiting commit.
   void committed.catch(() => {});
 
   try {
@@ -38,7 +36,7 @@ export async function durableTransaction<T>(write: boolean, fn: (store: IDBObjec
 
     return value;
   } catch (error) {
-    try { tx.abort(); } catch { /* Already finished. */ }
+    try { tx.abort(); } catch {  }
 
     throw error;
   }

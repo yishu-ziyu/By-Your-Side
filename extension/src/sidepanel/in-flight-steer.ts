@@ -1,9 +1,3 @@
-/**
- * 回答写到一半改方向：任务运行时输入区上方出现快捷按钮，点了就作为插话发出（与打字回车同一条插话）。
- * 运行中发出的插话之后，新写出的回答前挂一枚「已改方向」标记。标记只看会话记录里的先后，
- * 所以重开侧栏回放历史时同样出现。
- */
-
 const STEER_CHIPS = [
   { label: '改成对比表格', text: '把正在写的回答改成对比表格。' },
   { label: '浓缩成 3 句话', text: '把正在写的回答浓缩成 3 句话。' },
@@ -49,11 +43,9 @@ export function createSteerRibbon(composer: HTMLElement, before: HTMLElement, se
       ribbon.hidden = !running;
       composer.classList.toggle('steering-active', running);
     },
-    /** 运行中用户又说了一句（打字或快捷按钮）：下一段新回答按它写。 */
     noteSteer(text: string) {
       pending = steerLabel(text);
     },
-    /** 新回答的气泡刚出现：有待挂的改方向就挂标记，并让气泡淡入替换原来那段。 */
     decorate(bubble: HTMLElement, animate: boolean) {
       if (!pending) return;
       const tag = document.createElement('div');
@@ -64,7 +56,6 @@ export function createSteerRibbon(composer: HTMLElement, before: HTMLElement, se
       if (animate) bubble.classList.add('steer-morph');
       pending = null;
     },
-    /** 挂了标记的气泡被收进执行过程（这段只是过渡话）：标记一起拿掉，留给下一段新回答。 */
     undecorate(bubble: HTMLElement) {
       const tag = bubble.previousElementSibling;
 

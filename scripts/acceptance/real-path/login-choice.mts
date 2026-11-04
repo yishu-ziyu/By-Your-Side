@@ -1,10 +1,3 @@
-/**
- * Given 注册页有 Google 与 GitHub，助手只等用户选择；
- * When 用户回复「默认用goole」；Then 无需交还，助手点击 Google，停在验证码前。
- * Given 用户说「不要 Google，等一下」；Then 仍等待，不动页面。
- * Given 交接实际要求用户完成验证码；When 用户补充文字；Then 页面仍归用户。
- * --live 使用真实模型；默认脚本模型只验证扩展与控制链路。
- */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

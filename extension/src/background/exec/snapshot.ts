@@ -26,10 +26,8 @@ import { pdfText, tabShowsPdf } from "./pdf-text.js";
 
 const URL_MOVED_DURING_READ = '读取期间页面地址已变化，请重新读取当前页面。';
 
-/** 读页时撞上跳转：最多等这么久让新页面能交互。 */
 const PAGE_MOVE_WAIT_MS = 4_000;
 
-/** 交给调用方的 snapshot 正文：页面内容与身份，不含采集预算字段。 */
 interface SnapshotBody {
   text: string;
   tabId: number;
@@ -37,11 +35,9 @@ interface SnapshotBody {
   textEvidence?: PageTextEvidence;
   url?: string;
   translation?: TranslationDisplayState | null;
-  /** 本扩展画在页面上的标注；没有标注时不带。 */
   marks?: HostDrawnMark[];
 }
 
-/** 一次读取拿到的值：snapshot 正文 + 采集预算字段；url/translation 只在读到时才带上。 */
 interface SnapshotRead extends SnapshotBody {
   controls?: BrowserControl[];
   truncated?: boolean;
@@ -52,7 +48,7 @@ interface SnapshotRead extends SnapshotBody {
 }
 
 /**
- * snapshot 工具：scope=full_page（默认）走 CDP Accessibility 全量无障碍树；
+ * WHY: snapshot 工具：scope=full_page（默认）走 CDP Accessibility 全量无障碍树；
  * scope=viewport 走已有 DOM 视口快照（真做视口过滤，明确声明降级）。
  * 任何一次返回 DOM 快照后都清掉该页 AX 登记：DOM ref 与 backendDOMNodeId
  * 同处数字空间，不清会导致后续 @N 经 isAxRef 误走 CDP。
@@ -70,7 +66,7 @@ export async function snapshot(
   if(params.decision&&params.scope==='viewport')throw new Error('DECISION_UNSUPPORTED: 决策观察需要完整控件树，不能退回 viewport DOM 身份。');
 
   const read = (seen: chrome.tabs.Tab) => withObservedDocumentIdentity(tabId, sessionId, async () => {
-    // 不等页面空闲：页面还在加载时默认注入会卡到加载完，与无障碍树读取并行执行。
+    // WHY: 不等页面空闲：页面还在加载时默认注入会卡到加载完，与无障碍树读取并行执行。
     const [result, translation, marks] = await Promise.all([
       snapshotTab(tabId, params.scope, params.decision),
       Promise.resolve().then(() => chrome.scripting.executeScript({ target: { tabId }, injectImmediately: true, world: 'ISOLATED', func: readTranslationDisplay })).then(r => r[0]?.result ?? null).catch(() => null),
@@ -78,8 +74,6 @@ export async function snapshot(
     ]);
     const current=await chrome.tabs.get(tabId);
 
-    // SPA URL changes do not necessarily replace the document. Do not label the
-    // new content with the address observed before the read began.
     if(current.id!==seen.id||current.url!==seen.url)throw new Error(URL_MOVED_DURING_READ);
 
     const snapshotValue: SnapshotRead = {...result,tabId};
@@ -99,7 +93,6 @@ export async function snapshot(
     captured = await read(tab);
   } catch (error) {
     if (!(error instanceof Error) || (error.message !== URL_MOVED_DURING_READ && (error as {code?: unknown}).code !== 'STALE_DOCUMENT')) throw error;
-    // 读的时候页面在跳转（常见是刚点的链接还在打开）：等新页面能交互了再读一次，到时限还在变才报错。
     if ((await waitForInteractive(tabId, PAGE_MOVE_WAIT_MS)).readiness === 'timeout') throw error;
     tab = await chrome.tabs.get(tabId);
     assertNoPendingDialog(tabId);
@@ -120,7 +113,6 @@ export async function snapshot(
   const tabs=(await listTabs(sessionId)).tabs.filter(t=>!t.url.startsWith(chrome.runtime.getURL('')));
 
   if (params.fresh && params.cursor) throw new Error('DECISION_CURSOR: 新采集不能带续读游标。');
-  // fresh + viewScopeId: collect again, then show that partition if it still exists.
   const continuing = !params.fresh && !!(params.cursor || params.viewScopeId);
   const active = continuing ? browserObservations.readActive(sessionId, tabId) : undefined;
 
@@ -154,13 +146,10 @@ export async function snapshot(
   try {
     view = selectObservationView(viewInput);
   } catch (e) {
-    // The acted-on partition can disappear (navigation, closed menu); the fresh page's default view is still true.
     if (!params.fresh || !params.viewScopeId) throw e;
     view = selectObservationView({ ...viewInput, viewScopeId: undefined });
   }
 
-  // Register every collected AX identity for execution — not only text-rendered refs.
-  // Merge: the text refs of this capture were registered by axSnapshot and stay executable (e.g. mark on a text node).
   addAxRefs(tabId, collectedControls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n)));
 
   const page: Omit<BrowserObservation, "id" | "observedAt"> = {
@@ -209,13 +198,11 @@ export async function snapshot(
   const observation=browserObservations.issue(sessionId,page,{collectedControls,collectedTabs,generation:view.generation});
   const result: Awaited<ReturnType<typeof snapshot>> = {...identified,observation};
 
-  // 回答出处要写页面标题，不只写域名。
   if(tab.title) result.title=tab.title;
 
   return result;
 }
 
-/** 对指定标签做 snapshot，不改工作标签认领。交还时读用户当前页用。 */
 export async function snapshotTab(
   tabId: number,
   scope: "full_page" | "viewport" = "full_page",
@@ -257,9 +244,7 @@ export async function snapshotTab(
   }
 }
 
-/** 读整棵无障碍树并转成行：快照和“动作后新出现了什么”共用同一套去浮层、敏感栏、零尺寸规则。同名控件行尾写明在哪一项。 */
 async function readAxPage(tabId: number, decision = false, budget?: number) {
-  // 布局盒子、浮层宿主与无障碍树同时去取，不多等串行往返。
   const zeroSizeRead = readZeroSizeNodes(tabId);
   const overlayRead = ownOverlayHosts(tabId);
   const result = decision?{nodes:await readDecisionTree(tabId)}:await withTimeout(
@@ -280,14 +265,8 @@ async function readAxPage(tabId: number, decision = false, budget?: number) {
   return { nodes, secret, zeroSize, found, ...axTreeToText(nodes, budget, ranges, secret, zeroSize, itemTexts(nodes, found, zeroSize)) };
 }
 
-/** 一次最多读几处变化：每处是几次 CDP 往返。 */
 const MAX_CHANGED_ROOTS = 12;
 
-/**
- * 动作之后：只读变过的那几处（定位串来自页面里的变化记录），和模型上次读到的这一页比，交回新出现的行（规则见 page-changes.ts）。
- * 不读整页：大页面整页读一次要 1 秒多。按定位串找元素在隔离环境里做，网页改不了 querySelector。新行里的 ref 登记成可用。
- * 没有基准（还没读过这一页、上次是 DOM 快照）返回 null。零尺寸过滤要读全页布局，这里不做。
- */
 export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel: string; field?: true }>, opts: { scrub: (body: string) => string; current: () => boolean }): Promise<{ text: string; refs: number[] } | null> {
   if (!hasPageBaseline(tabId)) return null;
 
@@ -295,11 +274,9 @@ export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel:
   const objectGroup = `bys-page-changes-${crypto.randomUUID()}`;
   const contextId = await isolatedReadContext(tabId);
   const nodes = new Map<string, AxNodeLite>();
-  // 输入框、编辑器那几处里的节点：里面的字是值，不算新出现的。
   const inFields = new Set<number>();
 
   try {
-    // 几处一起读；某一处找不到、读不了只少这一处。
     await Promise.all(roots.slice(0, MAX_CHANGED_ROOTS).map(async root => {
       const found = await sendCommand<{ result?: { objectId?: string } }>(tabId, "Runtime.evaluate", { expression: `document.querySelector(${JSON.stringify(root.sel)})`, contextId, objectGroup }).catch(() => undefined);
 
@@ -319,17 +296,15 @@ export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel:
     void sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
   }
 
-  // 变的是 html 这类大容器时，助手自己的光标、停止条也在里面：和整页快照一样去掉。
   const list = withoutSubtrees([...nodes.values()], await ownOverlayHosts(tabId));
   const secret = await readSecretFields(tabId, list);
-  // 不传“在哪一项”：pageChangesSince 认定每行 text 以 body 结尾，行尾的项由它自己加。
   const { entries } = axTreeToText(list, undefined, await readInputRanges(tabId, list), secret);
   const lines = entries.map(line => line.ref !== undefined && inFields.has(line.ref) ? { ...line, inField: true } : line);
   const found = repeatedItems(list);
   const fresh = (freshLines(tabId, lines) ?? []).flatMap(line => line.ref === undefined ? [] : [line.ref]);
   const items = await withTimeout(readItems(tabId, fresh, list, found), ITEM_TIMEOUT_MS, "读所在那一项超时").catch(() => new Map<number, string>());
 
-  // 调用方已经超时返回：模型没看到这次读到的，不能拿它挪基准、登记 ref。
+  // WHY: 调用方已经超时返回：模型没看到这次读到的，不能拿它挪基准、登记 ref。
   if (!opts.current()) return null;
   const changes = pageChangesSince(tabId, lines, opts.scrub, items, found);
 
@@ -338,20 +313,13 @@ export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel:
   return changes;
 }
 
-/** 新出现的行里最多给几个控件找“在哪一项”，最多花多久：每个最多两次 CDP 往返，一起做；超时只是这次不带。 */
 const MAX_ITEM_LOOKUPS = 8;
 const ITEM_TIMEOUT_MS = 300;
 
-/**
- * 新出现的控件 → 它所在那一项现在的字（项怎么认见 axtree.ts repeatedItems）。
- * 先在读到的几处里认；只读了控件自己时，问浏览器它的祖先里有没有记下的项。
- * 字按现在的页面读，不用记下的：笔记可能原地改过，列表也可能复用了同一个节点。
- */
 async function readItems(tabId: number, refs: readonly number[], nodes: readonly AxNodeLite[], found: RepeatedItems): Promise<Map<number, string>> {
   const known = knownItems(tabId);
   const isItem = (id: number) => found.items.has(id) || known.items.has(id);
   const out = new Map<number, string>();
-  // 同一项只读一次（菜单里的几项都在同一张卡片里）。
   const reads = new Map<number, Promise<AxNodeLite[] | undefined>>();
   const readItem = (item: number) => {
     let read = reads.get(item);
@@ -388,7 +356,6 @@ async function readItems(tabId: number, refs: readonly number[], nodes: readonly
 async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;textEvidence:PageTextEvidence;controls:BrowserControl[];truncated:boolean;controlsTruncated:boolean;dialogs:string[];collectionComplete:boolean;collectionLimitReached:boolean }> {
   const { nodes, secret, zeroSize, found, text, backendIds, truncated, shown } = await readAxPage(tabId, decision);
   const textEvidence=axTextEvidence(withoutSecretText(nodes, secret));
-  // 只把真的交给模型的行记成“读过”：长页被截掉的那些，之后出现在眼前时还要当新的报。
   rememberPage(tabId, shown, found);
   recordLocatedNames(tabId, text);
 
@@ -398,10 +365,9 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
     return {text,textEvidence,controls:[],truncated,controlsTruncated:false,dialogs:[],collectionComplete:true,collectionLimitReached:false};
   }
 
-  // Decision controls come from the AX tree itself — never from text-budget keptRefs.
+  // WHY: Decision controls come from the AX tree itself — never from text-budget keptRefs.
   // Text refs shown to the model are executable too (mark/read a text node), so register both.
   const collected = collectDecisionControls(nodes);
-  // 与正文同一规则：零尺寸控件不给可执行的 ref。
   collected.controls = collected.controls.filter(c => zeroSize.get(Number(c.ref.slice(1))) !== false);
   recordAxSnapshot(tabId, [...backendIds, ...collected.controls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n))]);
 
@@ -417,10 +383,6 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
   };
 }
 
-/**
- * 助手自己挂在页面上的浮层（光标和名牌、中止按钮、圈注）不是网页内容：模型不该读到、点到它们。
- * 它们每次运行重新挂上、编号会变，留在树里同一页每次读出来都不一样，历史里就去不了重。
- */
 async function ownOverlayHosts(tabId: number): Promise<Set<number>> {
   const objectGroup = `bys-own-overlay-${crypto.randomUUID()}`;
 
@@ -457,14 +419,13 @@ function withoutSubtrees(nodes: AxNodeLite[], hosts: Set<number>): AxNodeLite[] 
 }
 
 /**
- * 宽或高为 0 的节点（Bing 藏起来的提交按钮）：给了 ref 也点不到、填不进，动作只会报「元素不可见（零尺寸）」。
+ * WHY: 宽或高为 0 的节点（Bing 藏起来的提交按钮）：给了 ref 也点不到、填不进，动作只会报「元素不可见（零尺寸）」。
  * 一次 DOMSnapshot 拿全部布局盒子；盒子是文档坐标、不按视口裁，滚出视口的元素尺寸照旧，不受影响。
  * 没有布局盒子的节点（display:contents、跨进程 iframe）不算零尺寸。读不到时返回空表，快照照常输出。
  * 值为 true 的是原生下拉框和文件框：select_option、upload_file、read_element 直接对节点操作、不用坐标，留着 ref。
  */
 async function readZeroSizeNodes(tabId: number): Promise<Map<number, boolean>> {
   const zero = new Map<number, boolean>();
-  // 一个节点可能有几段布局（被块级元素拆开的行内元素）：任何一段有面积就不算零尺寸。
   const sized = new Set<number>();
 
   try {
@@ -505,24 +466,17 @@ async function readZeroSizeNodes(tabId: number): Promise<Map<number, boolean>> {
 
     for (const id of sized) zero.delete(id);
   } catch {
-    // 只是少了零尺寸过滤，不让整次快照失败。
     zero.clear();
   }
 
   return zero;
 }
 
-/** 一次快照最多补读的范围输入框；页面再多也只多花有限几次 CDP 往返。 */
 const MAX_RANGE_INPUTS = 40;
 
-/**
- * AX 树不带原生时间/日期框的 min/max/step（数字框也不带 step）：对这几类角色按 backendDOMNodeId
- * 补读 DOM 属性、当前值与浏览器的有效性判定。读不到时返回空表，快照照常输出，只是没有范围。
- */
 async function readInputRanges(tabId: number, nodes: readonly AxNodeLite[]): Promise<Map<number, InputRangeReadout>> {
   const ranges = new Map<number, InputRangeReadout>();
   const byId = new Map(nodes.map(n => [n.nodeId, n]));
-  // 时间/日期框内部的「时/分」「年/月/日」子框也是 spinbutton，它们不是 input，不占名额。
   const insideDateTime = (n: AxNodeLite) => ["InputTime", "Date", "DateTime"].includes(byId.get(n.parentId ?? "")?.role?.value ?? "");
 
   const ids = nodes
@@ -551,7 +505,6 @@ async function readInputRanges(tabId: number, nodes: readonly AxNodeLite[]): Pro
       response.result?.value?.forEach((readout, i) => { if (readout) ranges.set(resolved[i]!.id, readout); });
     })(), 3_000, "范围输入框读取 3 秒内没有返回");
   } catch {
-    // 只是少了范围信息，不让整次快照失败。
   } finally {
     await sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
   }
@@ -559,11 +512,10 @@ async function readInputRanges(tabId: number, nodes: readonly AxNodeLite[]): Pro
   return ranges;
 }
 
-/** 可能装着用户输入的角色：只有它们去页面里查是不是密码、卡号、验证码这类栏。 */
 const FIELD_ROLES = new Set(["textbox", "searchbox", "spinbutton", "combobox"]);
 
 /**
- * AX 树照抄输入框里的值（卡号、安全码、PIN 等），快照又会原样交给模型。这里按 backendDOMNodeId
+ * WHY: AX 树照抄输入框里的值（卡号、安全码、PIN 等），快照又会原样交给模型。这里按 backendDOMNodeId
  * 到页面里查哪些栏是敏感栏，规则同 exec/input.ts 的 readFieldInPage。查不到的栏按敏感处理：宁可少给模型一个值。
  */
 async function readSecretFields(tabId: number, nodes: readonly AxNodeLite[]): Promise<Set<number>> {
@@ -592,7 +544,6 @@ async function readSecretFields(tabId: number, nodes: readonly AxNodeLite[]): Pr
       response.result?.value?.forEach((isSecret, i) => { if (isSecret === false) secret.delete(resolved[i]!.id); });
     })(), 3_000, "敏感栏判定 3 秒内没有返回");
   } catch {
-    // 判定失败时所有输入栏都按敏感处理，快照照常输出，只是不带这些值。
   } finally {
     await sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
   }
@@ -600,7 +551,6 @@ async function readSecretFields(tabId: number, nodes: readonly AxNodeLite[]): Pr
   return secret;
 }
 
-/** 在页面里执行，保持自包含。规则与 exec/input.ts 的 readFieldInPage 相同，包括给密码栏打「曾经是 password」的标记。 */
 function isSecretFieldInPage(el: Element, sensitiveName: string): boolean {
   // SAFETY: 只读 input/textarea 的通用属性；tagName 与 isContentEditable 决定是否可编辑。
   const field = el as HTMLElement & HTMLInputElement;
@@ -620,7 +570,6 @@ function isSecretFieldInPage(el: Element, sensitiveName: string): boolean {
     || new RegExp(sensitiveName, "i").test([field.getAttribute("name"), field.id, name, field.getAttribute("placeholder"), field.getAttribute("aria-label"), field.getAttribute("title")].map((part) => normalize(String(part ?? ""))).join(" "));
 }
 
-/** 去掉敏感栏下面的节点（输入框里的文字就是值），给页面原文证据用。 */
 function withoutSecretText(nodes: readonly AxNodeLite[], secret: ReadonlySet<number>): AxNodeLite[] {
   if (!secret.size) return [...nodes];
   const byId = new Map(nodes.map(n => [n.nodeId, n]));
@@ -638,7 +587,6 @@ function withoutSecretText(nodes: readonly AxNodeLite[], secret: ReadonlySet<num
   return nodes.filter(n => !drop.has(n.nodeId));
 }
 
-/** 旧实现：注入 content-snapshot.js（幂等）后调用 window.__sideagent.snapshot(scope)。 */
 async function domSnapshot(tabId: number, scope: "full_page" | "viewport"): Promise<{ text: string }> {
   await chrome.scripting.executeScript({
     target: { tabId },
@@ -666,7 +614,6 @@ async function domSnapshot(tabId: number, scope: "full_page" | "viewport"): Prom
   return { text };
 }
 
-/** Compact visible prose accompanies, but never replaces, native AX control identities. */
 function readDecisionViewport():{x:number;y:number;width:number;height:number;text:string}{
  const pieces:string[]=[];let size=0,count=0;
  const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
@@ -689,12 +636,12 @@ if(style.visibility==='hidden'||style.display==='none'||style.opacity==='0')cont
  return {x:scrollX,y:scrollY,width:innerWidth,height:innerHeight,text:pieces.join('\n').slice(0,6000)};
 }
 
-/** 标注层在内容脚本的隔离环境里；页面写的文字不能冒充这里的读数。 */
+/** WHY: 标注层在内容脚本的隔离环境里；页面写的文字不能冒充这里的读数。 */
 function readMarksDisplay():HostDrawnMark[] {
   return window.__sideagent?.marksState?.() ?? [];
 }
 
-/** Serialized read-only observation; never trust page-written text as a completion flag. */
+/** WHY: Serialized read-only observation; never trust page-written text as a completion flag. */
 function readTranslationDisplay():TranslationDisplayState|null {
   type Block={element:HTMLElement;output?:HTMLElement;segments:Array<{node:Text;original:string;translation?:string}>};
 

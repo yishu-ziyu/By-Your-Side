@@ -1,17 +1,9 @@
-/**
- * 从用户自己的浏览里发现习惯：扩展后台把按天整理的操作记录交给宿主，宿主用快速模型归纳出反复做的事。
- * 同一件事出现在 BROWSE_HABIT_DAYS 个不同日子里，就用「要我记住吗」问一次。
- */
-
-/** 一天的记录：day 是本地日期 YYYY-MM-DD，lines 是这一天按时间排好的操作，一行一步；hosts 是这一天真正打开过的网站，核对模型说的网站只认它。 */
 export interface BrowseDay { day: string; lines: string[]; hosts: string[] }
 
-/** 归纳出的一件事。days 只留记录里确实有、而且这件事涉及的网站在那天出现过的日子。ready：天数够了、还没问过，扩展核对没被删掉后再让宿主问。 */
 export interface BrowseHabit { key: string; habit: string; hosts: string[]; days: string[]; times: number; ready?: boolean }
 
 export type BrowseHabitClientMessage =
   | { type: 'browse_habit_request'; requestId: string; days: BrowseDay[]; dismissed: string[] }
-  /** 扩展核对这条没被用户删掉后，请宿主问一次要不要记住。 */
   | { type: 'browse_habit_ask'; requestId: string; key: string };
 
 export type BrowseHabitResult = { type: 'browse_habit_result'; requestId: string; habits: BrowseHabit[] };

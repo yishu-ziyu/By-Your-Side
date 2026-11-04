@@ -1,7 +1,3 @@
-/**
- * 确定性 32 位伪随机数生成器（PRNG），用于手绘笔触生成。
- * 保证相同种子（seed）必定生成完全相同的手绘路径，避免滚动/重绘时产生闪烁变形。
- */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
 

@@ -1,16 +1,9 @@
-/**
- * 每轮复盘：用户刚回的这句话，是不是在评价助手的沟通方式（样式、长短、深浅、语气、主动性）。
- * 只判「怎么沟通」，不判任务内容；网站做法与个人资料仍由纠正询问和自动记忆处理。
- * 一句抱怨不足以成为规则：由 memory-signals.ts 攒够证据后才问用户。
- */
-
 export const REVIEW_ASPECTS = ["visual", "shorter", "longer", "simpler", "guided", "examples", "tone", "language", "proactive", "other"] as const;
 
 export type ReviewAspect = (typeof REVIEW_ASPECTS)[number];
 
 export interface TurnReviewInput {
   userMessage: string;
-  /** 用户这句之前助手的最后一条回答；第一句话没有。 */
   previousReply: { excerpt: string; usedCard: boolean; chars: number } | null;
   signals: { duringRun: boolean; secondsAfterReply: number | null; previousStopped: boolean };
 }
@@ -18,11 +11,8 @@ export interface TurnReviewInput {
 export interface TurnReview {
   feedback: "complaint" | "request" | "praise" | "none";
   aspect: ReviewAspect | null;
-  /** 用户明说以后都要这样（「以后解释都用图」）：不必等第二次。 */
   lasting: boolean;
-  /** 以助手口吻、对以后的承诺；只描述沟通方式，不含这次的话题。 */
   rule: string;
-  /** 用户原话里连续的一段。 */
   evidence: string;
 }
 
@@ -50,7 +40,6 @@ const isAspect = (value: unknown): value is ReviewAspect => (REVIEW_ASPECTS as r
 
 const NONE: TurnReview = { feedback: "none", aspect: null, lasting: false, rule: "", evidence: "" };
 
-/** 模型回的 JSON：形状不对、证据不是原话的一段，都当作没有反馈。 */
 export function parseTurnReview(raw: string, userMessage: string): TurnReview {
   let value: unknown;
 
@@ -68,7 +57,7 @@ export function parseTurnReview(raw: string, userMessage: string): TurnReview {
   const rule = typeof value.rule === "string" ? value.rule.trim().slice(0, 120) : "";
   const evidence = typeof value.evidence === "string" ? value.evidence.trim() : "";
 
-  // 证据必须是用户原话：防止模型把上一条回答或网页里的话当成用户的评价。
+  // WHY: 证据必须是用户原话：防止模型把上一条回答或网页里的话当成用户的评价。
   if (!evidence || !userMessage.includes(evidence) || !rule) return NONE;
 
   return { feedback, aspect, lasting: value.lasting === true, rule, evidence };

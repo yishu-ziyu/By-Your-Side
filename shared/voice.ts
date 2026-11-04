@@ -16,7 +16,6 @@ export type UserDeliveryStatus = (typeof USER_DELIVERY_STATUSES)[number];
 
 export const USER_DELIVERY_TEXT_MAX = 12000;
 
-/** 交付事实链数组上限：足够覆盖真实任务，又不让一条交付记录拖垮历史存储。 */
 export const USER_DELIVERY_FACT_ITEM_MAX = 12;
 
 export const USER_DELIVERY_SOURCE_MAX = 12;
@@ -27,42 +26,30 @@ export const USER_DELIVERY_SOURCE_TITLE_MAX = 160;
 
 export const USER_DELIVERY_FACT_DESCRIPTION_MAX = 160;
 
-/** 宿主交付范围：complete 仅指已登记项有回执和所需读回；unverified 不推断空账本任务完成。 */
 export const USER_DELIVERY_OUTCOMES = ["complete", "partial", "unverified"] as const;
 
 export type UserDeliveryOutcome = (typeof USER_DELIVERY_OUTCOMES)[number];
 
-/** 本 run 真实读过的页面；url 来自页面读取事实，不是模型自报的引用。 */
 export interface UserDeliverySourceRef {
   url: string;
   title?: string | null;
 }
 
-/** 交付时仍未完成的义务（结果账本原文，状态原样，不升级）。 */
 export interface UserDeliveryRemainingItem {
   id: string;
   description: string;
   status: "pending" | "blocked" | "unknown";
 }
 
-/**
- * 与正文分离的宿主事实链投影：是否存在实际执行／核验、任务身份和部分完成约束都在这里，
- * 不由模型叙述写入。旧记录可缺省；缺字段时界面如实少说，不从叙述猜已核验结果。
- */
 export interface UserDeliveryFacts {
   outcome: UserDeliveryOutcome;
-  /** 结果账本中已满足项的人话说明；不表示业务目标已独立核验。 */
   delivered: string[];
-  /** 交付时仍未完成的义务；outcome=complete 时必须为空。 */
   remaining: UserDeliveryRemainingItem[];
-  /** 可定位来源：本 run 真实读到的页面；恢复后丢失时为空，不猜测补齐。 */
   sources: UserDeliverySourceRef[];
-  /** delivered/remaining 各自因封顶被省略的条数；不缺省为 0。界面计数必须用它，不得拿截断后的数组长度冒充总数。 */
   omittedDelivered?: number;
   omittedRemaining?: number;
 }
 
-/** Official user-facing message. Internal text_delta / tool output is not this record. */
 export interface UserDelivery {
   conversationId: string;
   id: string;
@@ -72,22 +59,14 @@ export interface UserDelivery {
   replyTo?: string;
   composedAt: number;
   status: UserDeliveryStatus;
-  /** 宿主事实链；旧记录缺省。 */
   facts?: UserDeliveryFacts;
-  /** 模型自己说没做完的部分（按用户原话描述）；只出现在 outcome=partial 的 finding 上，不是宿主核验结果。 */
   unfinished?: string[];
-  /** 本轮真实读到或打开的页面（回答出处）。和完成情况无关：没列目标计划时也有；旧记录缺省。 */
   sources?: UserDeliverySourceRef[];
-  /**
-   * 模型说做完、宿主账本认为没做完时宿主补的一句（partialResultNote）。不进正文：侧栏只在过程行说一次完成情况；
-   * 念出来、给旁路模型看和记进过往任务时仍接在正文后面（deliveryTextWithNote）。
-   */
   hostNote?: string;
 }
 
 export const USER_DELIVERY_HOST_NOTE_MAX = 200;
 
-/** 正文加宿主补的一句，超长时截掉正文尾部并标明。 */
 export function deliveryTextWithNote(delivery: Pick<UserDelivery, "text" | "hostNote">): string {
   if (!delivery.hostNote) return delivery.text;
   const text = `${delivery.text}\n\n${delivery.hostNote}`;
@@ -95,91 +74,65 @@ export function deliveryTextWithNote(delivery: Pick<UserDelivery, "text" | "host
   return text.length <= USER_DELIVERY_TEXT_MAX ? text : `${text.slice(0, USER_DELIVERY_TEXT_MAX - 12)}…（后文已截断）`;
 }
 
-/** Cumulative text of an explicitly user-facing answer; not ordinary model text_delta. */
 export interface UserDeliveryStream {
   id: string;
   runId: string | null;
   kind: UserDeliveryKind;
   text: string;
   phase: 'streaming' | 'cancelled';
-  /** Present only for the reply to this live voice turn; background task findings omit it. */
   voiceTurn?: number;
 }
 
-/** Recent same-conversation dialogue and the latest final assistant report, for voice follow-ups. */
 export interface VoiceConversationContext {
   recentTurns: Array<{role:'user'|'assistant'; text:string}>;
   latestResult: {runId:string; text:string; observedAt:number; source:'assistant_output'} | null;
-  /** Official user-facing delivery; optional so older snapshots stay valid. */
   latestDelivery?: UserDelivery | null;
 }
 
-/** Facts are observed separately from task action receipts. */
 export interface TaskProgressSnapshot {
   conversationId: string;
   observedAt: number;
-  /** interrupted = the prior host stopped while this run was active; nothing resumes automatically. */
   state: "none" | "running" | "paused" | "interrupted" | "idle" | "aborted" | "error";
   goal: string | null;
   startedAt: number | null;
   runId?: string | null;
-  /** True for the original run restored after a host restart; old satisfied writes stay replay-locked. */
   restartRecovery?: boolean;
   interruptionReason?: 'host_restart' | 'connection_lost' | 'manual_continuation';
   recoveryInput?:TaskRecoveryInput;
   continuation?: TaskContinuation;
-  /** Auxiliary effect without a durable result binding must stay uncertain after interruption. */
   untrackedWritePending?:boolean;
   unresolvedEffect?:boolean;
-  /** All dispatched durable effects in this run have entries in the execution ledger. */
   executionAuditComplete?:boolean;
-  /** 本 run 执行过效果看不出的工具（页面 JS、原始 CDP）：账本记了这一笔，但说不清它改了什么。 */
   opaqueEffectRan?:boolean;
   controlVersion?:number;
   active: Array<{ member: string; action: string; since: number }>;
   lastAction: { action: string; failed: boolean; at: number } | null;
-  /** 本 run 最近一次成功 snapshot/read_element 的时刻；用于允许翻页按钮在读页后再点一次。旧快照可缺省。 */
   lastReadAt?: number;
-  /** Idle means this run stopped. Task success is never inferred from agent_end. */
   successVerified: false;
-  /** Sourced assistant output, never an independent verification; absent on error/abort/no-result. */
   conversationContext?: VoiceConversationContext;
-  /** Remaining registered results. Default [] / unregistered; optional so older snapshots stay valid. */
   results?: TaskResultItem[];
-  /** Execution ledger summary; does not imply user goals are met. */
   executionState?: TaskResultState;
   resultState?: TaskResultState;
-  /** User outcomes; execution results remain independent replay evidence. */
   goalPlan?: TaskGoalPlan;
-  /** Recomputed by the host; persisted projections are never resumed as commands. */
   nextStep?: import('./task-next-step.js').TaskNextStep;
-  /** 这一任务最近一次目标核对（宿主快速模型判断，不是业务成功证明）；没核对过时缺省。 */
   goalCheck?: { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining: string | null; at: number };
-  /** 用户说出目标时所在的页面：「订阅这个页面的邮件」的「这个页面」。接着做和目标核对都要知道是哪一页。 */
   goalPage?: { title: string; url: string };
-  /** 这一任务在跑（或暂停）时用户插话加进来的要求条数；空闲后「接着原任务」不算。交付前对清单据此判断用户说了不止一件事。 */
   interjections?: number;
-  /** 用户插话时收起的已完成结果（宿主不再逐项记账，腾出账本给接下来的动作）：总数和最近几项的说明。 */
   foldedResults?: { count: number; recent: string[] };
 }
 
 export interface VoiceTarget {id:string;title:string;runId:string|null;controlVersion?:number}
 
-/** GPT-Live：用 ChatGPT 登录、侧栏直连 OpenAI 的语音；闲聊它自己答，要动手的委派给任务宿主。 */
 export const GPT_LIVE_MODEL = "gpt-live-1-codex";
 
 export type RealtimeVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime" | typeof GPT_LIVE_MODEL;
 
 export interface VoiceRouteContext {
-  /** 套餐语音：明确闲聊仅返回分类，不生成宿主回答；其他分支照常执行。 */
   nativeChat?: boolean;
-  /** Keep pending delegation through conversational interjections, never through a new command. */
   awaitInputDecision?: () => Promise<void>;
   onInputDecision?: (readOnly: boolean, incomplete?:boolean) => void;
   pendingDelegation?: boolean;
-  /** In-session spoken dialogue, including replies that were not task findings. */
   recentTurns?: VoiceConversationContext['recentTurns'];
-  /** This input interrupted audio the client had actually begun playing. */
   interruptedSpeech?:boolean;
   reportStage?:(stage:'classifying'|'observing'|'controlling')=>void;
   controlVersion?:number;
@@ -197,11 +150,8 @@ export interface VoiceInputContext {observation?:{token:string;tabId:number};con
 
 export interface VoicePlanSummary {id:string;conversationId:string;updatedAt:number;steps:Array<{action:string;text:string;targetId:string;targetTitle?:string;status:'unexecuted'|'pending'|'complete';receipt?:TaskReceipt}>}
 
-/** 这一轮提交后的分支身份：reply=白名单句子的最小请求已产出正文；control=交给既有控制链；
- *  read_only=程序按真实事实处理/派发的轮次（状态查询、澄清、停播报、看页面、需要事实的追问）。 */
 export type VoiceTurnBranch = 'reply' | 'control' | 'read_only';
 
-/** 这一轮的请求协议：free_reply = 白名单句子的最小直答请求；plan = 只判定计划的精简协议。 */
 export type VoiceTurnProtocol = 'free_reply' | 'plan';
 
 export type VoiceRouteResult = {plan?:VoicePlanSummary;turn?:{branch:VoiceTurnBranch;phase:'COMMITTED'|'DISCARDED';protocol?:VoiceTurnProtocol}} & (
@@ -211,7 +161,6 @@ export type VoiceRouteResult = {plan?:VoicePlanSummary;turn?:{branch:VoiceTurnBr
   | {kind:'clarify';message:string}
   | {kind:'steer'|'action';awaitDelivery?:boolean;ok:boolean;status?:TaskReceipt['status'];message:string;receipts?:TaskReceipt[];snapshot?:TaskProgressSnapshot});
 
-/** 阶跃官方音色里挑出的三个，用户在设置页切换；第一个是默认。 */
 export const STEP_VOICES = [
   { id: "wenroushunv", label: "温柔淑女" },
   { id: "qingchunshaonv", label: "青春少女" },
@@ -222,18 +171,12 @@ export type StepVoice = typeof STEP_VOICES[number]["id"];
 
 export const DEFAULT_STEP_VOICE: StepVoice = "wenroushunv";
 
-/** 扩展 chrome.storage.local 里存用户所选音色的键。 */
 export const STEP_VOICE_STORAGE_KEY = "step_voice";
 
-/** 存储读出的值先过这里；不认识的值由调用方换成默认，不把任意字符串发给供应商。 */
 export function isStepVoice(value: unknown): value is StepVoice {
   return STEP_VOICES.some(v => v.id === value);
 }
 
-/**
- * 语音光球的样子：暮色、晨光是自己用流体模拟渲染的循环视频（scripts/orb/render_fluid.py），粒子是原来的粒子球。
- * 用户要求三种都保留，默认暮色。
- */
 export const ORB_STYLES = [
   { id: "dusk", label: "暮色" },
   { id: "dawn", label: "晨光" },
@@ -244,18 +187,12 @@ export type OrbStyle = typeof ORB_STYLES[number]["id"];
 
 export const DEFAULT_ORB_STYLE: OrbStyle = "dusk";
 
-/** 扩展 chrome.storage.local 里存用户所选光球样子的键。 */
 export const ORB_STYLE_STORAGE_KEY = "voice_orb_style";
 
-/** 存储读出的值先过这里；不认识的值按默认显示。 */
 export function parseOrbStyle(value: {} | null | undefined): OrbStyle {
   return ORB_STYLES.find(style => style.id === value)?.id ?? DEFAULT_ORB_STYLE;
 }
 
-/**
- * 语音人设：只改变语气和措辞，不改变行为规则（如实报结果、不反问、不客套仍然优先）。
- * 自定义内容由用户在设置页填写，长度有上限。
- */
 export const VOICE_PERSONAS = [
   { id: "default", label: "默认", summary: "简洁利落的搭子", text: "" },
   {
@@ -270,10 +207,8 @@ export type VoicePersona = { id: typeof VOICE_PERSONAS[number]["id"] } | { id: "
 
 export const DEFAULT_VOICE_PERSONA: VoicePersona = { id: "default" };
 
-/** 扩展 chrome.storage.local 里存用户所选人设的键。 */
 export const VOICE_PERSONA_STORAGE_KEY = "voice_persona";
 
-/** 存储或消息里读出的人设先过这里；不认识、空白或超长的自定义内容都退回默认。 */
 const isPersonaRecord = (value: unknown): value is { id?: unknown; text?: unknown } => !!value && typeof value === "object";
 
 const isCustomPersona = (value: { id?: unknown; text?: unknown }): value is { id: "custom"; text: string } => value.id === "custom" && typeof value.text === "string";
@@ -290,48 +225,25 @@ export function parseVoicePersona(value: {} | null | undefined): VoicePersona {
   return text && text.length <= CUSTOM_PERSONA_MAX_CHARS ? { id: "custom", text } : DEFAULT_VOICE_PERSONA;
 }
 
-/** 人设描述正文；默认人设为空，表示不附加任何人设。 */
 export function voicePersonaText(persona: VoicePersona): string {
   return persona.id === "custom" ? persona.text : VOICE_PERSONAS.find(p => p.id === persona.id)?.text ?? "";
 }
 
 export type VoiceCommand =
-  /**
-   * Diagnostic capture is only ever opened by an explicit request; a backend that does not confirm must not receive audio.
-   * `voice` is the user's chosen timbre; it applies to the session being started.
-   */
-  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string; persona?: VoicePersona; /** 侧栏看到的语音模型设置原值；与宿主不一致时拒绝开启。 */ model?: string }
+  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string; persona?: VoicePersona;  model?: string }
   | { kind: "stop" }
   | { kind: "audio"; turn: number; data: string; frame?: number }
   | { kind: "commit"; turn: number;input?:VoiceInputContext;contextPending?:boolean }
   | { kind: "input_context"; turn:number;input?:VoiceInputContext;error?:string }
   | { kind: "interrupt"; turn: number; played?: { itemId: string; ms: number } }
   | { kind: "playback_done"; responseId: string }
-  /** 回答播放中侧栏本地听出用户开口：停掉旧回答，但不作废这句新话。 */
   | { kind: "barge_in"; turn: number }
-  /**
-   * Facts only the extension can observe for one turn: the continuous PCM it captured, the text the
-   * panel rendered, or a user mark. One turn may arrive as several commands; the agent merges them by
-   * voiceId+turn, and nothing here changes what the voice session does.
-   */
   | { kind: "capture"; turn: number; data?: string; sampleRate?: number; serverText?: string; displayText?: string; mark?: true; note?: string }
-  /** GPT-Live：侧栏与 OpenAI 的通话已建好，宿主据此宣布就绪。 */
   | { kind: "gpt_live_connected" }
-  /** 已完成的真实语音话轮，仅作同一通话的上下文，不触发任务。 */
   | { kind: "gpt_live_transcript"; turnId: string; role: 'user' | 'assistant'; text: string }
-  /** GPT-Live 委派的一句：模型抄写的用户话，长句会被拆成多项、每项可能只有半截；同一 user_bidi_turn_id 的项归成一次请求，整句原话由 gpt_live_transcript 随后校正。 */
   | { kind: "delegation"; delegationId: string; text: string; userTurnId?: string }
-  /**
-   * 侧栏才看得到的一个时间点（本机时钟毫秒），只进语音日常记录，不送往上游会话。
-   * key 是 GPT-Live 的用户话轮编号（user_bidi_turn_id），ref 是委派编号；阶跃星辰按 turn 对齐。
-   */
   | { kind: "timing"; point: VoiceTimingPoint; at: number; turn?: number; key?: string; ref?: string };
 
-/**
- * user_done：GPT-Live 收到用户这句的 turn.done；remote_audio：GPT-Live 远端声音从静到响；delegation：收到 delegation.created；
- * result_sent：把宿主结果写进数据通道；result_audio：结果写进去之后第一次出声；panel_audio：阶跃星辰这一轮第一段声音排进播放器；
- * result_resent：结果写进去后助手没开口，原样重送；result_unvoiced：重送后还是没开口，不再等。
- */
 export const VOICE_TIMING_POINTS = ["user_done", "remote_audio", "delegation", "result_sent", "result_audio", "panel_audio", "result_resent", "result_unvoiced"] as const;
 
 export type VoiceTimingPoint = typeof VOICE_TIMING_POINTS[number];
@@ -340,26 +252,18 @@ export interface VoiceClientMessage { type: "voice"; voiceId: string; command: V
 
 export const VOICE_DIAG_SAMPLE_RATE = 24000;
 
-/** One diagnostic take is bounded; longer speech is truncated, never silently claimed complete. */
 export const VOICE_DIAG_MAX_SECONDS = 60;
 
 export const VOICE_DIAG_TEXT_MAX = 12000;
 
-/** A normal-use capture carries a whole turn (60s at 24k ≈ 3.8M base64 chars); frames stay under `validPCM`. */
 export const VOICE_CAPTURE_MAX_BASE64 = 8_000_000;
 
 export const VOICE_CAPTURE_NOTE_MAX = 200;
 
-/** Raw ASR seen before the old-turn filter; `current` is this turn, `filtered` was dropped as an old turn. */
 export type VoiceDiagAsrOutcome = 'current' | 'filtered' | 'empty' | 'unknown';
 
 export type VoiceDiagGapCode = 'reconnect' | 'send_failed' | 'truncated' | 'closed';
 
-/**
- * Upstream capture evidence, produced by the session on the real send path only.
- * C1 is the concatenation of the `audio` payloads of the `append` records, i.e. exactly what the
- * socket accepted; `frame` only aligns those bytes with the client's continuous 24k capture (C0).
- */
 export type VoiceDiagRecord =
   | { type: 'ready'; sampleRate: number; maxSeconds: number }
   | { type: 'append'; seq: number; eventId: string; turn: number; frame: number | null; samples: number; audio: string }
@@ -371,18 +275,15 @@ export type VoiceDiagRecord =
 
 export type VoiceEvent =
   | {kind:'reset_output';turn:number}
-  | { kind: "state"; state: "connecting" | "ready" | "answering" | "closed" | "error"; detail?: string; recoverable?: boolean; /** 语音服务挂住后重连：刚才那句没被听到，连上后请用户重说。 */ sayAgain?: boolean; inputMode?: 'server_vad' }
+  | { kind: "state"; state: "connecting" | "ready" | "answering" | "closed" | "error"; detail?: string; recoverable?: boolean;  sayAgain?: boolean; inputMode?: 'server_vad' }
   | { kind: "input_turn"; turn: number }
   | { kind: "audio"; turn: number; data: string; itemId: string; responseId: string }
   | { kind: "text"; turn: number; role: "user" | "assistant"; text: string }
   | { kind: "facts"; turn: number; snapshot: TaskProgressSnapshot }
   | { kind: "response_end"; turn: number; responseId: string }
   | { kind: "diag"; record: VoiceDiagRecord }
-  /** GPT-Live：宿主刚取到（必要时刷新过）的 ChatGPT 登录令牌和会话说明，只在内存里用，不落盘。 */
   | { kind: "gpt_live_auth"; access: string; accountId: string; instructions: string }
-  /** GPT-Live：送回这次委派的结果。speakable 由 GPT-Live 播报，commentary 只作背景。 */
   | { kind: "delegation_context"; delegationId: string; channel: "speakable" | "commentary"; text: string }
-  /** GPT-Live：不属于任何委派的话（宿主自己接下的一句），写进会话层；speakable 会被照念。 */
   | { kind: "live_context"; channel: "speakable" | "commentary"; text: string };
 
 export interface VoiceServerMessage { type: "voice"; voiceId: string; event: VoiceEvent }
@@ -420,7 +321,6 @@ export function validPCM(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && v.length <= 65536 && v.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
 }
 
-/** Same rules as `validPCM`, but a capture command may carry a whole turn instead of one frame. */
 export function validCapturePCM(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && v.length <= VOICE_CAPTURE_MAX_BASE64 && v.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
 }
@@ -443,9 +343,7 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
     case "barge_in": return turn(c.turn);
     case "gpt_live_connected": return true;
     case "gpt_live_transcript": return id(c.turnId) && (c.role === 'user' || c.role === 'assistant') && shortText(c.text, 4000);
-    /** 委派编号要拼进任务请求编号，只收任务编号认的字符。 */
     case "delegation": return id(c.delegationId) && c.delegationId.length <= 48 && shortText(c.text, 2000) && (c.userTurnId === undefined || id(c.userTurnId));
-    /** A capture must carry at least one real fact; `note` alone is not evidence and is always optional. */
     case "capture": return turn(c.turn)
       && (c.data !== undefined || c.mark === true || c.serverText !== undefined || c.displayText !== undefined)
       && (c.data === undefined || validCapturePCM(c.data))
@@ -465,7 +363,6 @@ const shortText = (v: unknown, max: number): v is string => typeof v === "string
 const deliveryUrl = (v: unknown): v is string => typeof v === "string" && v.length >= 1 && v.length <= USER_DELIVERY_SOURCE_URL_MAX
   && /^https?:\/\/[^\s]+$/.test(v);
 
-/** 事实链字段严格校验：非法即整条记录失败，不回退到「无字段」假装兼容。 */
 export function isUserDeliveryFacts(v: unknown): v is UserDeliveryFacts {
   if (!v || typeof v !== "object") return false;
   const f = v as UserDeliveryFacts;
@@ -487,22 +384,16 @@ export function isUserDeliveryFacts(v: unknown): v is UserDeliveryFacts {
 
   if (!isDeliverySourceList(f.sources)) return false;
 
-  // 漏项却报全部完成必须在记录边界就失败，界面与验收都不用再猜叙述。
   if (f.outcome === "complete" && (f.remaining.length > 0 || (f.omittedRemaining ?? 0) > 0)) return false;
 
   return true;
 }
 
-/**
- * 出处整理成合规的列表：地址超长或不合规的去掉，标题截短，最多 USER_DELIVERY_SOURCE_MAX 条。
- * 出处只是附带的链接，一条不合规不能让整份回答校验失败（读过带长签名参数的接口地址时就会这样）。
- */
 export function fitDeliverySources(list: readonly UserDeliverySourceRef[]): UserDeliverySourceRef[] {
   return list.filter(source => deliveryUrl(source.url)).slice(0, USER_DELIVERY_SOURCE_MAX)
     .map(source => (typeof source.title === "string" && source.title.length > USER_DELIVERY_SOURCE_TITLE_MAX ? { ...source, title: `${source.title.slice(0, USER_DELIVERY_SOURCE_TITLE_MAX - 1)}…` } : { ...source }));
 }
 
-/** 回答出处列表：有界、每条是 http(s) 地址加可选标题。 */
 function isDeliverySourceList(v: unknown): v is UserDeliverySourceRef[] {
   return Array.isArray(v) && v.length <= USER_DELIVERY_SOURCE_MAX
     && v.every((item) => !!item && typeof item === "object" && deliveryUrl((item as UserDeliverySourceRef).url)
@@ -510,7 +401,6 @@ function isDeliverySourceList(v: unknown): v is UserDeliverySourceRef[] {
         || shortText((item as UserDeliverySourceRef).title, USER_DELIVERY_SOURCE_TITLE_MAX)));
 }
 
-/** 模型列出的一条未完成项：非空、不超过事实条目长度。 */
 export const isUnfinishedItem = (v: unknown): v is string => shortText(v, USER_DELIVERY_FACT_DESCRIPTION_MAX);
 
 export function isUserDelivery(v: unknown): v is UserDelivery {
@@ -546,11 +436,6 @@ export function isVoiceConversationContext(v: unknown): v is VoiceConversationCo
     && (c.latestDelivery === undefined || c.latestDelivery === null || isUserDelivery(c.latestDelivery));
 }
 
-/**
- * 核对「没保存 / 没提交」这类约束时，能否只凭执行账本：每次改动都记了账，而且每一笔都看得出改了什么。
- * 执行过页面 JS 或原始 CDP 后为否，核对须重读页面（用户定，
- * 写入闸门仍只看 executionAuditComplete（每次改动是否都记了账），不受此影响。
- */
 export function executionEffectsFullyKnown(s: Pick<TaskProgressSnapshot, 'executionAuditComplete' | 'untrackedWritePending' | 'opaqueEffectRan'>): boolean {
   return s.executionAuditComplete === true && s.untrackedWritePending !== true && s.opaqueEffectRan !== true;
 }

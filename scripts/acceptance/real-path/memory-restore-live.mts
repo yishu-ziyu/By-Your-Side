@@ -1,4 +1,3 @@
-/** 两个已打开的真侧栏在恢复后显示新记忆，不用重开。 */
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";

@@ -1,8 +1,3 @@
-/**
- * 真扩展 + 隔离 Chrome + 本机脚本模型：读整页不画扫视横带，点按钮后看小气泡，圈出段落后看细线轻标签。
- * 判定页面收到的点击、气泡几何、圈画相对目标的位置；不证明真实模型会选对目标。
- * npm run lab -- case page-assistance-visual
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -50,7 +45,6 @@ try {
     return result.result.value;
   };
   await rp.click(panel, "#input"); await rp.typeText(panel, goal); await rp.pressEnter(panel);
-  // 读整页（snapshot）不知道在看哪一块，页面上不该出现扫过视口的注视横带；从发出到点击一直采样。
   let gaze = 0;
   await until(async () => {
     gaze = Math.max(gaze, await readOverlay<number>("cursor", "function(){return this.querySelectorAll('.gaze.on').length}") ?? 0);

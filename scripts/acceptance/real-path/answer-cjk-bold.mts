@@ -1,10 +1,3 @@
-/**
- * Real extension: bold and italic whose text starts or ends with Chinese punctuation render as bold/italic in the
- * answer, with no stray asterisks — e.g. "**简单选法：**想理解", "是**「这个」**吧", "**价格（含税）**是".
- * Plain cases ("**注意**：", "**Note:** ok") and a literal "a * b" stay as before.
- *   npx tsx scripts/acceptance/real-path/answer-cjk-bold.mts --headless
- * The model is scripted (it returns the Markdown), so this proves the panel layer.
- */
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';

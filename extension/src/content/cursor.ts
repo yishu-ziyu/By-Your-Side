@@ -1,27 +1,3 @@
-/**
- * Agent 虚拟鼠标 overlay content script（ISOLATED world，重复注入幂等）。
- * 暴露 window.__sideagent.cursor = { move, click, hold, releaseHold, hide, highlight, mark, clearMarks, for(id) }。
- * mark 标注挂在独立的 absolute host（文档坐标）。window 滚动靠文档坐标天然跟随；
- * 内部滚动容器不会改 window.scroll，必须在 scroll 捕获期按锚定元素的最新
- * getBoundingClientRect 重算。resize / visualViewport 同路径重算 mark 与拿住态光标；
- * 高亮只在 viewport 尺寸变化时收起（滚动不拆瞬时层）。
- * 就地确认（C 案）：mark 带 actions 时，光标飞到目标拿住（hold），
- * 持久按住不 park，名牌保持成员色并内嵌「确认红 / 取消灰」双键；松开走 releaseHold。
- * 默认实例（名牌 "SideAgent"）供单任务使用；for(id) 返回实例专属光标（名册上的人），
- * 为多任务并行准备的渲染层——每个并行 Agent 一个名字和颜色。
- *
- * shadow DOM（closed）隔离页面样式；host pointer-events:none + 最高 z-index，不干扰页面交互。
- * 坐标均为视口坐标系（与 Input.dispatchMouseEvent / getBoundingClientRect 一致）。
- *
- * 视觉参考：tldraw 协作光标（彩色填充 + 白描边 + 深色外晕 + 名牌 pill）、ChatGPT Agent（点击波纹）。
- * 轨迹：浅弧（ghost-cursor 一侧弧去掉随机）+ Fitts 时长 + 欠阻尼弹簧进度（轻过冲再稳住）。
- * 像人手放在鼠标上：一轮里做完一步就停在原处，下一步从那里出发；同一标签页换了网页，
- * 新页面的光标接着上一页的位置出现。一轮结束、或去了别的标签页，才回角落待命；不 3 秒隐掉。
- * 箭头形状取自 lucide MousePointer2（ISC）。
- *
- * 生命周期：MV3 扩展 reload 会销毁 isolated world 但留下 DOM host。启动时若本 world
- * 还没有 cursor API，按 data-sideagent-overlay 清掉旧 host 再创建。
- */
 import { D_LAYOUT, D_MICRO, D_STATE, E_EXIT, E_MOVE, MOTION_CSS_VARS } from "../shared/motion-tokens.js";
 import { isMarkActionId, resolveImplicitMarkActions } from "../shared/mark-actions.js";
 import { markLabelPlacement } from "../shared/mark-label.js";
@@ -68,7 +44,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 (function () {
   const ns = (window.__sideagent ??= {});
 
-  // 同一 world 重复注入：保留现有实例。新 world（扩展 reload）先清旧 DOM 再挂。
   if (!ns.cursor) sweepStaleOverlayHosts(document);
 
   if (ns.cursor) return;
@@ -77,7 +52,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   const DEFAULT_ID = LEAD_CURSOR_ID;
   const DEFAULT_LABEL = "By Your Side";
 
-  /** 状态文案与颜色是页面侧的唯一来源，background 只给状态名与目标标签页。 */
   const STATUS_COPY: Record<CursorStatusState, { text: string; sub?: string; color: string; autoHideMs?: number }> = {
     waiting: { text: "正在思考", color: "#f59e0b" },
     reading: { text: "正在读这个页面", color: "#2d4a86" },
@@ -92,7 +66,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     visible: boolean;
     restIndex: number;
     pos: { x: number; y: number };
-    /** 最近一次飞向的点：助手的真实鼠标事件落在这里，用来和用户自己动鼠标区分。 */
     aim?: { x: number; y: number };
     resting: boolean;
     raf?: number;
@@ -103,29 +76,22 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     replayTimer?: ReturnType<typeof setTimeout>;
     replayGen?: number;
     highlightEl?: HTMLDivElement;
-    action?: { id: string; kind: "click" | "fill" | "hover"; phase: "active" | "done" | "failed" | "unknown"; anchor?: Element; rect?: SideAgentRect; name: string; arrived?: boolean; /** 开始或出结果的时刻，胶囊按它判断哪个更新。 */ at: number };
+    action?: { id: string; kind: "click" | "fill" | "hover"; phase: "active" | "done" | "failed" | "unknown"; anchor?: Element; rect?: SideAgentRect; name: string; arrived?: boolean;  at: number };
     labelSize?: { width: number; height: number };
     name: string;
-    /** 状态层：一轮任务里"在等 / 在读 / 完成 / 失败"。动作名牌优先于它显示。 */
     status?: CursorStatus;
-    /** 拿住态：就地确认期间光标按住目标不放，名牌变双键；scroll/resize 按 anchor 重定位 */
-    hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string; mark?: HTMLDivElement; /** 教学：停在目标右下角，不压住目标中间。 */ corner?: boolean };
-    /** 注视区：它读页面时看着哪。和箭头分开，箭头只在要动手时出现。 */
+    hold?: { point: { x: number; y: number }; target?: string; anchor: Element | null; name: string; mark?: HTMLDivElement;  corner?: boolean };
     gazeEl?: HTMLDivElement;
     gazeTimers?: ReturnType<typeof setTimeout>[];
-    /** 注视区正收拢到要点的目标上，箭头等它收完再起飞。 */
     gazeConvergeUntil?: number;
     flyDelay?: ReturnType<typeof setTimeout>;
-    /** 陪读：阅读卡给的指向点和声音状态；point 为 null 时光标隐去，不停在不对的地方。 */
     companion?: { point: { x: number; y: number } | null; voice: CompanionVoice | null; level: number; avoid?: SideAgentRect };
   }
 
   type CompanionVoice = "listening" | "transcribing" | "thinking" | "speaking";
 
-  /** 和按住说话胶囊同一套说法。 */
   const COMPANION_WORD: Record<CompanionVoice, string> = { listening: "在听", transcribing: "听写中", thinking: "在想", speaking: "在念" };
 
-  /** 声波五根条的高低比例：中间高两边低。 */
   const COMPANION_BARS = [0.4, 0.7, 1, 0.7, 0.4];
 
   type CursorStatusState = "waiting" | "reading" | "translating" | "done" | "failed";
@@ -133,7 +99,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   interface CursorStatus {
     state: CursorStatusState;
     text: string;
-    /** 状态详情只采用已知信息，不在页面重复累计等待秒数。 */
     detail: string;
     sub: string;
     autoHideMs?: number;
@@ -150,10 +115,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   interface CompanionView {
     point: { x: number; y: number } | null;
     voice: CompanionVoice | null;
-    /** 换了指着的那段：沿弧飞过去；否则跟着那段字原地挪。 */
     fly?: boolean;
     quiet?: boolean;
-    /** 名牌不压在这块上（开着的阅读卡）。 */
     avoid?: SideAgentRect;
   }
 
@@ -166,7 +129,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   interface LiveMark {
     el: HTMLDivElement;
     anchor: Element | null;
-    /** 画框时的目标：单个节点，或 mark 带 through 时从起点到终点的 Range。 */
     observedNode?: Node | Range;
     textRange?: Range;
     target?: string;
@@ -174,7 +136,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     label?: string;
     options?: MarkOptions;
     seed?: number;
-    /** 手绘框线按这个目标尺寸画的；目标变宽变高后重画框线、重摆名牌。 */
     drawn?: { w: number; h: number };
   }
 
@@ -193,7 +154,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   let actionFrame: number | undefined;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-  /** 静态 SVG 构造：避免拼 innerHTML；属性与原模板一致。 */
   const SVG_NS = "http://www.w3.org/2000/svg";
 
   function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
@@ -206,11 +166,9 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   function ensureDom(): void {
     if (host) return;
-    // @property 声明放在 ShadowRoot 内不会在所有 Chromium 版本注册到文档。
-    // 使用专属名称显式注册，旧版浏览器仍保留静态彩边作为降级。
     try {
       CSS.registerProperty({ name: "--sideagent-border-angle", syntax: "<angle>", inherits: false, initialValue: "0deg" });
-    } catch { /* 已注册或不支持时继续使用静态边框。 */ }
+    } catch {  }
     host = document.createElement("div");
     host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_CURSOR);
     host.setAttribute("aria-label", "助手操作与状态");
@@ -533,12 +491,10 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     viewportHooked = true;
     window.addEventListener("resize", onViewportResize);
     window.visualViewport?.addEventListener("resize", onViewportResize);
-    // scroll 不冒泡；捕获才能听到内部 overflow 容器。滚动重锚 mark 与拿住态光标，不收光标。
     window.addEventListener("scroll", onScroll, { capture: true, passive: true });
     window.visualViewport?.addEventListener("scroll", onScroll, { passive: true });
   }
 
-  /** 主光标在右下角长期停靠；其他成员继续使用原有交错停靠点。 */
   function homeFor(index: number, primary: boolean): { x: number; y: number } {
     if (!primary) return restPoint(index, window.innerWidth);
 
@@ -559,7 +515,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
       if (!inst.visible || inst.hold) continue;
 
-      // 待命的光标跟着新的角落走；停在原处的光标留在原处，只收进视口。
       if (inst.resting) {
         cancelFly(inst);
         setPos(inst, homeFor(inst.restIndex, inst.el.dataset.primary === "true"));
@@ -642,7 +597,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     else if (labelEl) placeSketchLabel(mark.el, labelEl, frame);
   }
 
-  /** 拿住期间手跟目标走：若锚点有效则跟随目标最新位置；若锚点暂不可解（如 AX ref 或外部滚动），保持当前拿住点不误隐藏。 */
   function relayoutHolds(): void {
     for (const inst of instances.values()) {
       const hold = inst.hold;
@@ -655,7 +609,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
       if (inst.visible) inst.el.classList.remove("hidden");
 
-      // 教学的光标还在飞：画圈时常跟着一次尺寸没变的 resize，直接跳到终点就看不到它飞过去了。
       if (hold.corner && inst.raf !== undefined) {
         if (Math.hypot(hold.point.x - before.x, hold.point.y - before.y) > 1) flyTo(inst, hold.point);
         continue;
@@ -738,7 +691,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     renderAmbient();
   }
 
-  /** 名牌正文渲染：动作与状态共用同一块牌子。 */
   function paintLabel(inst: Instance, main: string, sub: string): void {
     const label = inst.el.querySelector<HTMLDivElement>(".label")!;
     const line = document.createElement("span");
@@ -754,7 +706,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     inst.labelPlacement = undefined;
     positionActionLabel(inst);
 
-    // A「纸面」：整句一次淡入；只描绘操作回执，不展示未经核验的页面事实。
     if (inst.action && !reducedMotion.matches) {
       inst.labelAnimation = label.animate(
         [{ opacity: 0, transform: "translateY(3px)" }, { opacity: 1, transform: "translateY(0)" }],
@@ -763,7 +714,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     }
   }
 
-  /** 优先级：拿住双键 > 陪读 > 动作 > 状态 > 成员名。 */
   function refreshLabel(inst: Instance): void {
     if (inst.hold) return;
 
@@ -793,13 +743,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     inst.labelSize = undefined;
   }
 
-  /** 光标旁一句人话，最多 12 个字：「我在填「出发日期」」「点好了」。 */
   function renderActionLabel(inst: Instance): void {
     const action = inst.action!;
     const verb = { click: "点", fill: "填", hover: "看" }[action.kind];
     const name = action.name.length > 6 ? `${action.name.slice(0, 5)}…` : action.name;
 
-    // 按钮名加引号免得和动词连读（「我在点「查询车票」」）；栏名本身就是名词，不加。
     const target = action.kind === "click" ? `「${name}」` : name;
 
     const text = action.phase === "active" ? (name ? `我在${verb}${target}` : { click: "我在点这里", fill: "我在填这一栏", hover: "我在看这里" }[action.kind])
@@ -835,7 +783,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
         if (b) Object.assign(inst.highlightEl.style, { left: `${b.left}px`, top: `${b.top}px`, width: `${b.width}px`, height: `${b.height}px` });
 
-        // 飞行结束后随实际元素移动，不重新解析同名节点。
         if (visible && inst.action?.arrived && inst.raf === undefined) setPos(inst, { x: r.x + r.width / 2, y: r.y + r.height / 2 });
       }
 
@@ -857,7 +804,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   }
 
   function actionName(anchor?: Element, fallback?: string): string {
-    // 不读取字段值或 contenteditable 正文；只使用控件名称。
     const root = anchor?.getRootNode() as Document | ShadowRoot | undefined;
     const labelledBy = anchor?.getAttribute("aria-labelledby")?.split(/\s+/).map(id => root?.getElementById?.(id)?.textContent ?? "").join(" ");
     const labels = anchor && "labels" in anchor ? Array.from((anchor as HTMLInputElement).labels ?? []).map(el => el.textContent).join(" ") : "";
@@ -879,8 +825,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return { x: Math.min(Math.max(p.x, 8), Math.max(8, window.innerWidth - 8)), y: Math.min(Math.max(p.y, 8), Math.max(8, window.innerHeight - 8)) };
   }
 
-  // ── 状态层：在等 / 在读 / 完成 / 失败 ────────────────────────────────
-
   function statusSub(inst: Instance): string {
     const status = inst.status!;
 
@@ -901,14 +845,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (!thinking) return;
     label.prepend(thinkOrb());
-    // 光标常停在刚点过的底边按钮上：按实际尺寸把牌子收进视口，不让它落到屏幕外。
     const p = cursorLabelPosition(inst.pos, { width: label.offsetWidth, height: label.offsetHeight }, { width: window.innerWidth, height: window.innerHeight });
     label.style.left = `${p.x - inst.pos.x}px`;
     label.style.top = `${p.y - inst.pos.y}px`;
   }
 
-  // 和侧栏过程行同一颗 rubik 球：两步之间光标不动，球在转，说明助手还在想。
-  // 名牌永远是浅底，所以墨色固定取正文黑，不跟系统深色反相。
   const THINK_PRESET = resolvePreset("solving", 20);
   const THINK_INK = "20,20,19";
   const THINK_BOX = 16;
@@ -964,8 +905,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return canvas;
   }
 
-  // ── 陪读：阅读卡指着一段字，光标停在这段的末尾边缘 ────────────────────
-
   function voiceBars(): HTMLSpanElement {
     const bars = document.createElement("span");
     bars.className = "voice-bars";
@@ -998,7 +937,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     placeCompanionLabel(inst);
   }
 
-  /** 选句末尾常贴着正文右缘：按实际尺寸把牌子收进视口。 */
   function placeCompanionLabel(inst: Instance): void {
     if (!inst.companion?.voice) return;
     const label = inst.el.querySelector<HTMLDivElement>(".label")!;
@@ -1017,7 +955,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     bars.forEach((bar, i) => { bar.style.height = `${(3 + 9 * Math.min(1, level * 1.6) * COMPANION_BARS[i]!).toFixed(1)}px`; });
   }
 
-  /** 飞向会动的目标：每一帧都取阅读卡给的最新指向点，飞行途中用户滚动，落点也跟着那段字。 */
   function companionFly(inst: Instance): void {
     cancelFly(inst);
     const from = inst.pos;
@@ -1031,7 +968,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       return;
     }
 
-    // 比动手时慢一截：从角落飞到选句，要让人看清它是从哪来、落在哪段。
     const ms = Math.round(flightMs(from, first) * 1.5);
     const spring = springFor(ms);
     let s = 0;
@@ -1072,7 +1008,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       return;
     }
 
-    // 就地确认、教学、助手正在点或填：光标归它们，不抢。
     if (inst.hold || inst.action?.phase === "active") return;
     const was = inst.companion;
     inst.companion = { point: view.point, voice: view.voice, level: was?.level ?? 0, avoid: view.avoid };
@@ -1128,7 +1063,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (!inst.visible) showAtRest(inst);
 
-    // 失败停在原地等处理：取消自动回角落，别把出错位置挪走
     if (view.state === "failed") {
       clearTimeout(inst.parkTimer);
       setResting(inst, false);
@@ -1136,7 +1070,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     startStatusTimers(inst);
 
-    // 拿住态与正在说的动作旁白优先：状态先记下，等它们结束再画
     refreshLabel(inst);
     renderAmbient();
   }
@@ -1214,7 +1147,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     inst.parkTimer = setTimeout(() => parkNow(inst), delay);
   }
 
-  /** 做完一步：名牌淡出，光标停在原处，下一步从这里出发，不先回角落。 */
   function scheduleSettle(inst: Instance, delay = PARK_AFTER_MS): void {
     clearTimeout(inst.parkTimer);
     inst.parkTimer = setTimeout(() => afterLabelFades(inst, () => clearDoneAction(inst)), delay);
@@ -1224,7 +1156,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (inst.action?.phase === "done") clearAction(inst);
   }
 
-  /** 回本分支的右下角常驻位置：一轮结束、或在教学里给用户让开时才回去。 */
   function finishPark(inst: Instance): void {
     clearDoneAction(inst);
     const home = homeFor(inst.restIndex, inst.el.dataset.primary === "true");
@@ -1233,12 +1164,10 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   }
 
   function parkNow(inst: Instance): void {
-    // 回角落盖过还没到点的「做完一步」：它晚到会取消这段淡出，回角落就没了。
     clearTimeout(inst.parkTimer);
     afterLabelFades(inst, () => finishPark(inst));
   }
 
-  /** 动作结果的名牌淡出 200ms 后再 then；新动作取消旧回调。 */
   function afterLabelFades(inst: Instance, then: () => void): void {
     if (inst.action?.phase === "active" || inst.hold) return;
     if (!inst.action || reducedMotion.matches) { then(); return; }
@@ -1333,12 +1262,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     }
   }
 
-  /** 拿住态名牌：成员色 pill 内嵌确认红 / 取消灰双键；点下去发 mark_action（与侧栏打字同一条路）。 */
   function armHoldLabel(inst: Instance, actions: MarkAction[]): void {
     const labelEl = inst.el.querySelector<HTMLDivElement>(".label");
 
     if (!labelEl) return;
-    inst.el.classList.remove("stating"); // 拿住态压过状态层，别把状态底色带到双键上
+    inst.el.classList.remove("stating");
     labelEl.replaceChildren();
     const prompt = document.createElement("span");
     prompt.className = "hold-prompt";
@@ -1366,14 +1294,12 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
             void chrome.runtime.lastError;
           });
         } catch {
-          /* 无扩展运行时（自检页）忽略 */
         }
       });
       labelEl.appendChild(btn);
     }
   }
 
-  /** 松开：摘掉按住姿态、名牌恢复成员名、清锚点。不动可见性。 */
   function releaseHoldInst(inst: Instance): void {
     const hold = inst.hold;
 
@@ -1383,21 +1309,15 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     inst.el.classList.remove("pressing", "holding", "guiding");
     delete inst.el.dataset.armed;
 
-    // 确认锚框跟着拿住态一起走：用户确认/取消或动作换手后，"待确认"不该留在页面上
     if (hold.mark) removeMark(hold.mark);
     refreshLabel(inst);
     renderAmbient();
   }
 
-  /** 拿住时手放在哪：确认放目标中间；教学放右下角，箭头尖落在目标边上，不挡住要点的字。 */
   function holdPoint(r: SideAgentRect, corner?: boolean): { x: number; y: number } {
     return corner ? { x: Math.round(r.x + r.width - 6), y: Math.round(r.y + r.height - 6) } : { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
   }
 
-  /**
-   * 拿住：飞到目标点进入持久按住态（不弹回、不 park、rest/flip 不藏名牌）。
-   * 带 actions 时名牌变双键；教学（actions 为 null）只停在目标右下角，不显示名牌、没有按钮。
-   */
   function holdInst(
     inst: Instance,
     x: number,
@@ -1427,7 +1347,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       corner: guideAnchor ? true : undefined,
     };
 
-    // 教学不挂名牌（guiding 不显示 .label）：说明写在圈旁，光标旁再多一块牌子只会挡住页面。
     if (actions) {
       armHoldLabel(inst, actions);
       inst.el.classList.add("pressing", "holding");
@@ -1436,36 +1355,23 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     flyTo(inst, { x, y });
   }
 
-  // ── 教学一步────────────
-  // 圈出目标、光标停在右下角，等用户自己点。点击只听不拦：捕获期先看到，不阻止网页自己处理。
-  // 后台通过 port 等结果；port 断开（后台结束、停下、离开）就收场，所以每条结束路径都走 endGuide。
-
   interface GuideSession {
     inst: Instance;
     node: Node;
     target: string;
-    /** 网页重画目标后，在页面里重新找到它的定位串。@ref 只对快照有效，页面里找不回，所以开始时换成能找回同一个元素的定位串。 */
     relocate: string | null;
     name: string;
     options?: MarkOptions;
     mark: HTMLDivElement | null;
     label: string;
-    /** 目标最后一次量到的位置：目标被换掉、新节点又找不到时，按这里判断点中没有。 */
     rect: DOMRect | null;
     port: chrome.runtime.Port;
     observer: MutationObserver;
     misses: number;
-    /** 点错以后，用户下一次移动鼠标时光标让开。 */
     missed: boolean;
-    /** 网页上次变化（不算助手自己的浮层）的时刻。 */
     lastChange: number;
     down: { at: number; url: string } | null;
-    /** 松开后等 click：网页在按下时把目标整块重画，浏览器就不发 click，这时按松开算这一下。 */
     upTimer?: ReturnType<typeof setTimeout>;
-    /**
-     * 点中以后在看页面有没有变化。settled：3 秒没变化、提示已经出了，仍接着看到用户下一次按下：
-     * 慢的网页晚一点才变，也算这次点中生效。
-     */
     watch: { since: number; url: string; timer: ReturnType<typeof setTimeout>; poll: ReturnType<typeof setInterval>; settled: boolean } | null;
   }
 
@@ -1473,10 +1379,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   const GUIDE_NO_CHANGE_TEXT = "点了之后，页面没有变化。再点一次。如果还是没变化，就在侧栏告诉我。";
 
-  /** 按下到松开超过这么久就不算同一次点：只把这段时间里网页的变化算给这次点击（有的网页在按下时就切换）。 */
   const GUIDE_PRESS_MS = 1500;
 
-  /** 点完以后告诉模型的目标状态：开关、标签、展开这些状态，模型据此知道这一步已经生效，不再让用户点一遍。 */
   const GUIDE_STATES = ["aria-checked", "aria-selected", "aria-expanded", "aria-pressed"];
 
   function guideMissText(name: string): string {
@@ -1515,7 +1419,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return "";
   }
 
-  /** CSS 路径：从最近的带 id 祖先（或 body）往下按 nth-of-type 走。网页按原样重画时，新节点还在同一个位置。 */
   function guideCssPath(el: Element): string {
     const parts: string[] = [];
 
@@ -1529,7 +1432,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return parts.join(" > ");
   }
 
-  /** @ref 换成页面里能找回同一个元素的定位串：按角色和名字、id、CSS 路径依次试，只留此刻确实找回它本身的那个。 */
   function guideLocator(node: Node, target: string): string | null {
     if (!target.startsWith("@")) return target;
     const el = guideElement(node);
@@ -1545,13 +1447,12 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
       try {
         if (dom.resolve(candidate) === el) return candidate;
-      } catch { /* 这个定位串找不到或不唯一：试下一个 */ }
+      } catch {  }
     }
 
     return null;
   }
 
-  /** 网页重画了目标：用定位串重新找一次，找不回就留着旧节点。 */
   function liveGuideNode(g: GuideSession): Node {
     if (g.node.isConnected || !g.relocate) return g.node;
 
@@ -1559,7 +1460,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       const fresh = window.__sideagent?.dom?.resolve?.(g.relocate);
 
       if (fresh) g.node = fresh;
-    } catch { /* 找不到：保留旧节点 */ }
+    } catch {  }
 
     return g.node;
   }
@@ -1585,7 +1486,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     holdInst(g.inst, p.x, p.y, null, g.relocate ?? undefined, null, el);
   }
 
-  /** 等用户点的时候目标被换成新节点：圈和光标跟到新节点上。 */
   function followGuideNode(g: GuideSession): void {
     const before = g.node;
 
@@ -1596,10 +1496,9 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   }
 
   function postGuide(g: GuideSession, message: Record<string, unknown>): void {
-    try { g.port.postMessage(message); } catch { /* 后台已断开：onDisconnect 收场 */ }
+    try { g.port.postMessage(message); } catch {  }
   }
 
-  /** 页面变化里去掉助手自己的浮层（光标、圈、确认框都挂在带 OVERLAY_ATTR 的 host 上）。 */
   function pageMutated(records: MutationRecord[]): boolean {
     const own = (n: Node) => n instanceof Element && n.hasAttribute(OVERLAY_ATTR);
 
@@ -1610,7 +1509,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     });
   }
 
-  /** 点完以后目标的样子：角色、名字、状态（不读输入框里的文字），最多 120 字。 */
   function guideAfter(g: GuideSession): string | undefined {
     const el = guideElement(liveGuideNode(g));
 
@@ -1658,7 +1556,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (!g || !ev.isTrusted) return;
     g.down = { at: performance.now(), url: location.href };
 
-    // 用户又按下了：上一次点击晚到的变化不再算给它，这一下重新判断。
     if (g.watch?.settled) stopWatch(g);
   }
 
@@ -1668,7 +1565,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (!g || !ev.isTrusted || !g.missed) return;
     g.missed = false;
 
-    // 让开：松开、回停靠位，圈留在原处。
     if (g.inst.hold?.corner) {
       releaseHoldInst(g.inst);
       finishPark(g.inst);
@@ -1680,7 +1576,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (!g || !ev.isTrusted || ev.button !== 0) return;
     clearTimeout(g.upTimer);
-    // 事件路径只在派发期间可读：先记下。click 紧跟在松开后同步派发；到这个定时器时还没来，就是浏览器不会发了。
     const path = ev.composedPath();
     g.upTimer = setTimeout(() => onGuidePress(ev, path), 50);
   }
@@ -1696,14 +1591,13 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (!g || (g.watch && !g.watch.settled)) return;
 
-    // 点在助手自己的浮层上（停止条、确认框）不算这一步的点击。
     if (path.some((n) => n instanceof Element && n.hasAttribute(OVERLAY_ATTR))) return;
     stopWatch(g);
     const node = liveGuideNode(g);
     const el = guideElement(node);
     const labels = el && "labels" in el ? [...((el as HTMLInputElement).labels ?? [])] : [];
     const onPath = (!!el && path.includes(el)) || labels.some((label) => path.includes(label));
-    // 坐标只在没有事件路径、或目标被换掉又找不回时兜底：否则盖在目标上的东西（比如 cookie 横幅）也会被当成点中。
+    // WHY: 坐标只在没有事件路径、或目标被换掉又找不回时兜底：否则盖在目标上的东西（比如 cookie 横幅）也会被当成点中。
     const r = !node.isConnected || path.length === 0 ? nodeRect(node) ?? g.rect : null;
     const inside = !!r && ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 && ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4;
 
@@ -1717,7 +1611,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       return;
     }
 
-    // 先报「点中了」：点下去就换页时，后台据此把换文档算作完成。
     postGuide(g, { kind: "hit" });
     const now = performance.now();
     const pressed = g.down && now - g.down.at < GUIDE_PRESS_MS ? g.down : null;
@@ -1731,7 +1624,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     checkGuide(g);
   }
 
-  /** 收场：撤圈、松开光标、摘掉监听。重复调用无害。 */
   function endGuide(g: GuideSession): void {
     if (guide !== g) return;
     guide = null;
@@ -1757,7 +1649,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       const old = guide;
       endGuide(old);
 
-      try { old.port.disconnect(); } catch { /* 已断开 */ }
+      try { old.port.disconnect(); } catch {  }
     }
 
     const el = guideElement(node);
@@ -1827,7 +1719,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     const seed = opts.seed ?? (Math.floor(Math.random() * 1000000) + 1);
 
-    // 目标在外框里的位置：box 四周各留了 pad。
     const targetBox = { x: pad, y: pad, w: rect.width, h: rect.height };
     let frame = targetBox;
 
@@ -1890,7 +1781,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return range.toString().trim() ? range : null;
   }
 
-  /** Range 会为嵌套的行内节点重复给出矩形，同一行先合并，避免高亮叠色。 */
   function drawTextMark(el: HTMLElement, range: Range): void {
     const origin = el.getBoundingClientRect();
     const lines: Array<{ left: number; right: number; top: number; bottom: number }> = [];
@@ -1916,7 +1806,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     }
   }
 
-  /** 按目标框（标注内坐标）画手绘框线：grow 一笔，boil 三帧；返回框线实际占的范围。 */
   function drawSketchPaths(el: HTMLElement, targetBox: { x: number; y: number; w: number; h: number }, seed: number) {
     const paths = [...el.querySelectorAll<SVGPathElement>(".sketch-frame-path")];
     const boil = paths.length > 1;
@@ -1931,9 +1820,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return frame;
   }
 
-  /** 名牌中心底下是页面内容区（不是 html/body 的空白边）。 */
   function onPageContent(v: { x: number; y: number; w: number; h: number }): boolean {
-    // 第一层画了底色/底图的元素；只有 html/body（或什么都没有）就是版面外的空白边。居中版面外面套的 <center> 之类没有底色，不算内容。
     const painted = document.elementsFromPoint(v.x + v.w / 2, v.y + v.h / 2).find((e) => {
       if (e === marksHost || marksHost?.contains(e) || e === host) return false;
       const cs = getComputedStyle(e);
@@ -1945,7 +1832,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return !!painted && painted !== document.documentElement && painted !== document.body;
   }
 
-  /** 先夹回视口再检查遮挡，避免边角的长提示挪回页面时盖住目标。 */
   function placeSketchLabel(el: HTMLElement, labelEl: HTMLElement, frame: { x: number; y: number; w: number; h: number }): void {
     labelEl.style.display = "";
     const size = labelEl.getBoundingClientRect();
@@ -1972,7 +1858,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     labelEl.style.top = `${at.top}px`;
   }
 
-  /** 只撤指定的一条标注（拿住态的确认锚框），不碰模型画的其他标注。 */
   function removeMark(el: HTMLDivElement): void {
     const at = liveMarks.findIndex((mark) => mark.el === el);
 
@@ -2044,20 +1929,15 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   }
 
   function hideUserControl(): void {
-    // 页面不再归用户：交给用户时画的圈一起清掉。
     clearHandoff();
     pageControl = null;
     renderAmbient();
   }
 
-  // ── 交给用户时的圈──────────────
-  // 橙色表示「轮到你」；用户自己填好的栏、点过的按钮，圈就淡出。名牌只挂在还空着的第一栏和按钮上。
-
   const HANDOFF_COLOR = "#d2602a";
 
   const HANDOFF_INNER_FIELD = "input:not([type=button],[type=submit],[type=reset],[type=image],[type=hidden]),textarea,select,[contenteditable]:not([contenteditable=false])";
 
-  /** node：模型给的目标；control：判断填没填的控件（包着输入框的 label、div 取里面第一个）。touched：交给用户以后用户自己动过它。 */
   interface HandoffMark { el: HTMLDivElement; node: Element; control: Element; kind: "field" | "button"; name: string; touched: boolean; done: boolean }
 
   let handoffMarks: HandoffMark[] = [];
@@ -2069,7 +1949,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || (el instanceof HTMLElement && el.isContentEditable);
   }
 
-  /** iframe 里面看不到，按要填的栏算、但不淡出；包着输入框的元素按里面第一个输入框算。 */
   function handoffKind(node: Element): { kind: "field" | "button"; control: Element } {
     if (isHandoffField(node) || node instanceof HTMLIFrameElement) return { kind: "field", control: node };
 
@@ -2079,7 +1958,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return inner ? { kind: "field", control: inner } : { kind: "button", control: node };
   }
 
-  /** 只判断有没有值，不读出值。 */
   function isHandoffFilled(el: Element): boolean {
     if (el instanceof HTMLIFrameElement) return false;
 
@@ -2091,13 +1969,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   }
 
   function addHandoffMark(inst: Instance, rect: SideAgentRect, target: string, options?: MarkOptions, observedNode?: Node): void {
-    // 「现在归你」没显示，说明页面已经不归用户（交还或停止抢在了前面）：不画。
     if (!pageControl) return;
     const node = observedNode instanceof Element ? observedNode : resolveAnchor(rect, target);
 
     if (!node || handoffMarks.some((m) => m.node === node)) return;
     const { kind, control } = handoffKind(node);
-    // 已经有值的栏也圈（下拉框的默认值、浏览器自动填的）：用户自己改过才算填好。
     const el = spawnMark(inst, rect, undefined, target, { ...options, style: "sketch" }, observedNode);
 
     if (!el) return;
@@ -2113,7 +1989,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     }
   }
 
-  /** 名牌下面有没有可操作的控件（文字不算）。 */
   function coversControl(r: { x: number; y: number; w: number; h: number }): boolean {
     for (let i = 0; i <= 4; i++) {
       for (let j = 0; j <= 2; j++) {
@@ -2126,10 +2001,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return false;
   }
 
-  /**
-   * 名牌只贴着自己的圈：上下的位置要和圈横向重叠，左右的要和圈纵向重叠，否则会被读成在指旁边别的控件。
-   * 先找不压文字、不压控件、不压别的圈的位置；没有就只要求不压控件；还没有就用默认位置。名牌之间始终不互相压。
-   */
   function placeHandoffLabel(m: HandoffMark, labelEl: HTMLElement, frame: { x: number; y: number; w: number; h: number }): void {
     const size = labelEl.getBoundingClientRect();
     const label = { w: size.width, h: size.height };
@@ -2147,19 +2018,16 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     const hits = (rects: DOMRect[], v: Box) => rects.some((r) => Math.min(r.right, v.x + v.w) > Math.max(r.left, v.x) && Math.min(r.bottom, v.y + v.h) > Math.max(r.top, v.y));
     const rings = others.map((o) => o.el.getBoundingClientRect());
     const labels = others.flatMap((o) => o.el.querySelector(".mark-label")?.getBoundingClientRect() ?? []);
-    // 名牌是实心底，可以压在页面字上；但必须落在页面内容区，不落到版面外的空白边。
     const best = (b: Box) => adjacent(b) && !hits(labels, toView(b)) && onPageContent(toView(b)) && !coversControl(toView(b)) && !hits(rings, toView(b));
     let at = sketchLabelPosition(frame, label, { inView, clear: best });
 
     if (!best({ x: at.left, y: at.top, ...label })) at = sketchLabelPosition(frame, label, { inView, clear: (b) => adjacent(b) && !hits(labels, toView(b)) && onPageContent(toView(b)) });
-    // 兜底：无论如何夹在视口里。
     labelEl.style.left = `${Math.max(4 - originX, Math.min(at.left, window.innerWidth - 4 - size.width - originX))}px`;
     labelEl.style.top = `${Math.max(4 - originY, Math.min(at.top, window.innerHeight - 4 - size.height - originY))}px`;
     const placed = labelEl.getBoundingClientRect();
     if (coversControl({ x: placed.x, y: placed.y, w: placed.width, h: placed.height })) placeSketchLabel(m.el, labelEl, frame);
   }
 
-  /** 改名牌：撤掉旧的，按同一框线摆新的。 */
   function setHandoffLabel(m: HandoffMark, text: string | undefined): void {
     const live = liveMarks.find((l) => l.el === m.el);
     const current = m.el.querySelector<HTMLElement>(".mark-label");
@@ -2186,13 +2054,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     const names = left.map((m) => m.name).filter(Boolean);
     const anyField = handoffMarks.some((m) => m.kind === "field");
 
-    // 按钮的名牌先摆：按钮小、能放的位置少；栏的名牌再躲开它。
     for (const m of handoffMarks) if (m.kind === "button") setHandoffLabel(m, anyField ? "填完点这里" : "点这里");
 
     for (const m of handoffMarks) if (m.kind === "field") setHandoffLabel(m, m === left[0] ? (names.length ? `你来填 · ${names.join("、")}` : "你来填") : undefined);
   }
 
-  /** 只认用户自己的输入（isTrusted）：页面脚本改值、交给用户之前就有的值都不算填好。 */
   function onHandoffInput(event: Event): void {
     if (!event.isTrusted) return;
     const path = event.composedPath();
@@ -2201,7 +2067,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     syncHandoff();
   }
 
-  /** 只认用户真点（isTrusted）：页面脚本模拟的点击不算。 */
   function onHandoffClick(event: MouseEvent): void {
     if (!event.isTrusted) return;
     const path = event.composedPath();
@@ -2214,7 +2079,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (hit) syncHandoff();
   }
 
-  /** 圈都画好后再摆名牌，名牌才能躲开所有圈。 */
   function placeHandoffLabels(): void {
     if (!pageControl) { clearHandoff(); return; }
     const first = handoffMarks.find((m) => m.kind === "field") ?? handoffMarks[0];
@@ -2223,7 +2087,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     syncHandoff();
   }
 
-  /** 只撤交给用户时画的圈，不碰模型画的其他标注。 */
   function clearHandoff(): void {
     if (handoffListening) {
       handoffListening = false;
@@ -2287,13 +2150,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (point) inspectEl.classList.add("point");
     highlightLayer.append(inspectEl);
 
-    // 名牌贴着圈：右边放得下放右边，否则左边，再不行放下方/上方；始终夹在视口里，不落到页面外的空白处。
     if (point && caption) {
       const tag = document.createElement("span");
       tag.className = "point-cap";
       tag.textContent = caption;
       highlightLayer.append(tag);
-      // 不压到旁边别的控件（比如紧挨着的「Send」）：四边轮流试；都压就缩成「在这里」小字再试；还不行只留圈。
       const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight, gap = 8;
       const r = { left: bounds.left, top: bounds.top, right: bounds.left + bounds.width, bottom: bounds.top + bounds.height };
       const markLabels = liveMarks.flatMap((m) => { const l = m.el.querySelector<HTMLElement>(".mark-label"); return l && l.style.display !== "none" ? [l.getBoundingClientRect()] : []; });
@@ -2339,8 +2200,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     });
   }
 
-  // ── 注视区 ──────────────────────────────────────────────
-  // 只画真实发生的读：读具体元素时落到那个元素上；整页读（快照、截图、全文）不知道在看哪一块，不画。
   const GAZE_DWELL_MS = 300;
   const GAZE_MAX_STOPS = 12;
   const GAZE_REST_MS = 10_000;
@@ -2382,7 +2241,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   function gazeAt(inst: Instance, rects: SideAgentRect[]): void {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    // 只停在看得见的元素上；屏幕外的读不画，不把注视区停到空白处。
     const stops = rects
       .filter((r) => r.width > 0 && r.height > 0 && r.x < vw && r.y < vh && r.x + r.width > 0 && r.y + r.height > 0)
       .slice(0, GAZE_MAX_STOPS)
@@ -2407,7 +2265,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     const el = inst.gazeEl;
 
     if (!el?.classList.contains("on")) return;
-    // 读具体元素的逐个停留走完，读完只是变淡。
     el.classList.add("rest");
     inst.gazeTimers = [...(inst.gazeTimers ?? []), setTimeout(() => gazeOff(inst), GAZE_REST_MS)];
   }
@@ -2423,7 +2280,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     setTimeout(() => el.remove(), D_STATE + 40);
   }
 
-  /** 要动手了：注视区从它最后看的位置收拢到目标上，再交给箭头和目标框。只在它刚读过页面时发生。 */
   function gazeConverge(inst: Instance, rect: SideAgentRect): void {
     const el = inst.gazeEl;
     const b = highlightBounds(rect, HIGHLIGHT_PAD);
@@ -2463,10 +2319,9 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     ], D_LAYOUT, E_MOVE);
   }
 
-  /** 正在操作这一页的成员，驱动页边状态和用户接管时的光标避让。 */
   const activeMembers = new Set<string>();
 
-  // 用户移动鼠标时，助手光标让位；停下后继续显示目标。
+  // WHY: 用户移动鼠标时，助手光标让位；停下后继续显示目标。
   // 助手经调试协议发出的鼠标事件也是可信事件，但总落在光标刚飞到的点上，据此排除。
   // 不移动光标就派发的鼠标事件（受保护的悬停）先经 expect() 登记落点。
   // 手搭在触控板或鼠标上的抖动通常 1–3px；离上次算数的位置超过 6px 才算用户在用，
@@ -2494,7 +2349,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     clearTimeout(userSettle);
     userSettle = setTimeout(() => { userAnchor = at; }, USER_IDLE_MS);
 
-    // 锚点只在算数或停下时更新：连续慢慢挪也会累计到门槛。第一次移动只记位置。
     const anchor = userAnchor;
     const moved = !!anchor && Math.hypot(e.clientX - anchor.x, e.clientY - anchor.y) > USER_MOVE_PX;
 
@@ -2532,9 +2386,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     watchUser(activeMembers.size > 0);
   }
 
-  // ── 右边缘胶囊：本页动作、结果、交给你、别页助手、侧栏关着时的整轮任务，汇成一个 ──────────────
-  // 优先级：交给你 > 本页正在做 > 刚出的结果 > 本页在等或在读 > 别页助手 > 侧栏关着时的任务。
-
   type ControlView = { status?: string; sub?: string; ask?: string; action?: string; actionEnabled?: boolean; members?: Array<{ id: string; initial: string; color: string }> };
 
   const VERB = { click: "点", fill: "填", hover: "看" } as const;
@@ -2542,21 +2393,15 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   let remoteMembers: CrossPageMember[] = [];
   let edgeTab: EdgeTab | null = null;
-  /** 页面归用户时后台给的交接视图；为空表示页面不归用户。 */
   let pageControl: ControlView | null = null;
-  /** 侧栏关着时后台给的整轮任务状态。 */
   let taskPill: EdgePill = null;
-  /** 按住说话的胶囊正在这一页：它就是这一页的状态面，右边缘胶囊让位（交给你除外）。 */
   let voiceHere = false;
   let feedback: (FeedbackPillView & { at: number }) | null = null;
   let feedbackTimer: number | undefined;
-  /** 最近一次本页动作，结果回执里用它说清是哪一步。 */
   let lastAction: { kind: "click" | "fill" | "hover"; name: string; at: number } | null = null;
   let lastDoneAt = 0;
-  /** 主胶囊此刻指向的别页助手：点胶囊就切过去。 */
   let mainRemote: CrossPageMember | null = null;
 
-  /** 本页动作刚做成时，紧跟着的成功回执说的是同一件事，不再换一遍字。 */
   const SAME_RESULT_MS = 3000;
 
   function send(message: Record<string, unknown>): Promise<boolean> {
@@ -2572,18 +2417,15 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   }
 
   function openPanel(): void {
-    // 必须在这次点击里发出：后台同步调用打开侧栏，浏览器才认是用户动作。
-    try { void chrome.runtime.sendMessage({ type: EDGE_PILL_OPEN }).catch(() => { /* 侧栏已开 */ }); } catch { /* 自检页没有扩展运行时。 */ }
+    // WHY: 必须在这次点击里发出：后台同步调用打开侧栏，浏览器才认是用户动作。
+    try { void chrome.runtime.sendMessage({ type: EDGE_PILL_OPEN }).catch(() => {  }); } catch {  }
   }
 
-  /** 停靠的胶囊被鼠标碰到、正展开成翻译入口。 */
   let entryPeek = false;
-  /** 设置里关掉了右边缘的翻译入口：没有任务时整个收起，不停靠。 */
   let entryOff = false;
   let entryShown = false;
   let entryLeave: ReturnType<typeof setTimeout> | undefined;
 
-  /** 这页已有我们的译文时，入口改成还原。 */
   function entryView(): EdgeTabView {
     return document.querySelector('[data-bys-translation="true"]') ? { tone: "idle", a: "还原", b: "原文", hint: "⌥T" } : { tone: "idle", a: "翻译", b: "这一页", hint: "⌥T" };
   }
@@ -2594,7 +2436,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         clearTimeout(entryLeave);
 
         if (on) { entryPeek = true; renderAmbient(); return; }
-        // 移开后稍等再收：鼠标从窄条滑到展开的胶囊上时不来回闪。
         entryLeave = setTimeout(() => { entryPeek = false; renderAmbient(); }, 400);
       },
       capsule: () => {
@@ -2614,11 +2455,10 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       steer: text => send({ type: EDGE_TASK_STEER, text }),
       abort: () => { void send({ type: EDGE_TASK_ABORT }); },
       open: openPanel,
-      moved: dy => { try { void chrome.storage.local.set({ [EDGE_Y_KEY]: dy }); } catch { /* 自检页没有扩展运行时。 */ } },
+      moved: dy => { try { void chrome.storage.local.set({ [EDGE_Y_KEY]: dy }); } catch {  } },
     });
   }
 
-  /** 用户点了胶囊：结果不确定、没做成这类不自动收起的结果，算看过了。 */
   function dismissResults(): void {
     for (const inst of instances.values()) {
       if (inst.action && inst.action.phase !== "active") clearAction(inst);
@@ -2635,7 +2475,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (a.phase === "active") return { tone: "work", a: `在${verb}`, b: a.name || (a.kind === "fill" ? "这一栏" : "这里"), end: "stop" };
 
-    // 按钮名本身是动作（加入购物车、提交）时「已」直接接上；是名词（购物车、下一页）时说「已点」。
     if (a.phase === "done") return a.name ? (a.kind === "click" && ACTION_NAME.test(a.name) ? { tone: "ok", a: "已", b: a.name, tight: true } : { tone: "ok", a: `已${verb}`, b: a.name }) : { tone: "ok", a: "", b: `${verb}好了` };
 
     if (a.phase === "unknown") return { tone: "unk", a: `${verb}了${a.name || "这里"}`, b: "结果还不确定" };
@@ -2645,7 +2484,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   function feedbackView(f: FeedbackPillView & { at: number }): EdgeTabView {
     const hint = f.detail;
-    // 回执只在紧跟着一步本页动作时才借它的名字；切标签这类不经过本页动作的回执不借。
     const last = lastAction && f.at - lastAction.at < SAME_RESULT_MS ? lastAction : null;
 
     if (f.kind === "pending") return { tone: "wait", a: "在等", b: "页面响应", end: "stop" };
@@ -2710,20 +2548,17 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     entryShown = view?.tone === "idle";
 
-    // 结果不确定、没做成会一直留着；这期间助手还在读页面或想下一步，停止键也要在。
     if (view && !view.end && (view.tone === "unk" || view.tone === "err") && (activeMembers.size || local.some(([, inst]) => inst.status?.state === "waiting" || inst.status?.state === "reading" || inst.status?.state === "translating"))) view = { ...view, end: "stop" };
 
     const others: EdgeTabOther[] = remote.map(m => ({ id: m.sessionId, name: displayNameFor(m.sessionId), title: m.title, local: false }));
 
     for (const [id, inst] of local) {
-      // 主助手自己的状态只进主胶囊（交给你时也是它让位），小圆泡只放这一页上别的助手。
       if (id === owner || id === DEFAULT_ID || remoteMembers.some(m => m.sessionId === id)) continue;
       const v = inst.action ? actionView(inst.action) : inst.status && inst.status.state !== "done" ? statusView(inst.status) : null;
 
       if (v) others.push({ id, name: inst.name, title: `${v.a}${v.tight ? "" : " "}${v.b}`.trim(), local: true, detail: inst.status?.detail || undefined });
     }
 
-    // 没有任务要显示时停靠在右边缘；语音胶囊在这一页时让位。
     tab().rest(!voiceHere && !pageControl && !entryOff);
     tab().render(view, others);
   }
@@ -2763,7 +2598,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (view.detail) feedback.detail = view.detail;
 
-    // 结果不确定、没做成不自动收起：等下一步或用户点一下。
     if (feedback.kind === "success" || feedback.kind === "pending") feedbackTimer = window.setTimeout(hideFeedbackPill, feedbackLifetimeMs(feedback.kind));
     renderAmbient();
   }
@@ -2782,8 +2616,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         tab().setTask(isEdgeTask(task) ? task : null);
         voiceHere = (reply as { voice?: unknown } | undefined)?.voice === true;
         renderAmbient();
-      }, () => { /* 后台未就绪 */ });
-    } catch { /* 自检页没有扩展运行时。 */ }
+      }, () => {  });
+    } catch {  }
   }
 
   try {
@@ -2797,7 +2631,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       renderAmbient();
     });
     askTaskPill();
-  } catch { /* 自检页没有扩展运行时。 */ }
+  } catch {  }
 
   function teardown(event: PageTransitionEvent): void {
     saveSpots();
@@ -2815,7 +2649,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       clearTimeout(inst.parkTimer);
       clearTimeout(inst.pressTimer);
       clearStatusTimers(inst);
-      // pagehide may freeze the page in BFCache; an old fade callback must
+      // WHY: pagehide may freeze the page in BFCache; an old fade callback must
       // never reach a newly restored cursor or a different action.
       inst.labelAnimation?.cancel();
       inst.labelAnimation = undefined;
@@ -2833,8 +2667,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     mainRemote = null;
     edgeTab?.destroy();
     edgeTab = null;
-    // Pagehide may freeze this Document in BFCache. Do not revive finished
-    // task lighting when pageshow later reuses the same content-script world.
     activeMembers.clear();
     watchUser(false);
     host?.remove();
@@ -2845,8 +2677,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     highlightLayer = null;
     rippleLayer = null;
     marksLayer = null;
-    // BFCache restoration does not rerun the content script. Keep only its
-    // API bindings, without preserving any old DOM, status, timer or glow.
     if (!event.persisted) {
       ns.cursor = undefined;
       ns.cursorHidden = undefined;
@@ -2874,16 +2704,12 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   window.addEventListener("pagehide", teardown);
   window.addEventListener("pageshow", (event) => {
     if (!event.persisted || !ns.cursor) return;
-    // A saved Document may be shown more than once. Rebuild the primary
-    // idle cursor once, without starting an action or re-enabling page glow.
     if (!host?.isConnected || !instances.has(DEFAULT_ID)) appear();
     askTaskPill();
   });
 
-  /** 每次离开网页加一：离开前发出的取位置请求，回来得晚也不能在已离开的网页上画光标。 */
   let lifetime = 0;
 
-  /** 离开这个网页时，把还停在页面上的光标位置交给后台；同一标签页的下一个网页从这里出现。 */
   function saveSpots(): void {
     const spots: CursorSpot[] = [...instances].filter(([, inst]) => inst.visible && !inst.resting)
       .map(([id, inst]) => ({ id, x: Math.round(inst.pos.x), y: Math.round(inst.pos.y) }));
@@ -2891,8 +2717,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (spots.length === 0) return;
 
     try {
-      void chrome.runtime.sendMessage({ type: CURSOR_SPOT_SAVE, spots }).catch(() => { /* 后台未就绪 */ });
-    } catch { /* 自检页没有扩展运行时。 */ }
+      void chrome.runtime.sendMessage({ type: CURSOR_SPOT_SAVE, spots }).catch(() => {  });
+    } catch {  }
   }
 
   async function takeSpots(): Promise<CursorSpot[]> {
@@ -2906,7 +2732,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     }
   }
 
-  /** 网页打开时光标出现在哪：上一页交来的位置，没有就在角落待命。 */
   function appear(): void {
     const life = lifetime;
 
@@ -2916,7 +2741,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       for (const spot of spots) {
         const inst = getInstance(spot.id);
 
-        // 新动作已经先一步让它出现了，就从它现在的位置继续。
         if (inst.visible) continue;
         setPos(inst, insideViewport(spot));
         setResting(inst, false);
@@ -2942,7 +2766,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         inst.action = { id: actionId, kind, phase: "active", anchor, rect, name: actionName(anchor, label), at: Date.now() };
         lastAction = { kind, name: inst.action.name, at: inst.action.at };
 
-        // 下一步开始了：上一步「结果不确定 / 没做成」不再挂着。
         if (feedback && feedback.kind !== "success") clearFeedback();
         setResting(inst, false);
         inst.el.classList.add("acting");
@@ -2983,7 +2806,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
           inst.highlightEl?.remove();
           inst.highlightEl = undefined;
         } else if (inst.highlightEl) {
-          // 操作完成：标记先留一下让人看清点了哪，再消退（06 trace），不是原地长留
           const el = inst.highlightEl;
           inst.highlightEl = undefined;
           el.classList.add("fading");
@@ -3017,7 +2839,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         inst.el.classList.remove("hidden");
         inst.visible = true;
 
-        // 注视区还在收拢：箭头等它收完再起飞，先"看准"再"伸手"。多等的时间算进返回值，调用方照常等。
         const wait = Math.max(0, (inst.gazeConvergeUntil ?? 0) - performance.now());
 
         if (wait > 0) {
@@ -3150,8 +2971,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
           return;
         }
 
-        // 这位成员不在这一页干活了（去了别的标签页，或这一轮结束）：停在原处的光标回角落待命。
-        // 失败时照旧停在出错的位置。
         const inst = instances.get(id);
 
         if (activeMembers.has(id) && inst?.visible && !inst.resting && !inst.hold && inst.status?.state !== "failed") schedulePark(inst);
@@ -3192,7 +3011,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         const inst = getInstance(id);
         const parsed = resolveImplicitMarkActions(label, actions);
         const mark = spawnMark(inst, rect, label, target, options, observedNode, !parsed);
-        // 就地确认保留控件外框和原有确认动作，不使用文字高亮。
 
         if (parsed) {
           holdInst(inst, Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2), parsed, target, mark);
@@ -3228,8 +3046,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   }
 
   ns.cursor = api(DEFAULT_ID);
-  // 每个普通网页自动显示主光标，不启动动画帧。
-  // 工作开始时复用这个实例，扩展重复注入不会再创建第二个光标。
   appear();
   ns.cursorState = (id = DEFAULT_ID) => {
     const inst = instances.get(id);
@@ -3335,9 +3151,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         label: viewRect(m.el.querySelector(".mark-label")),
       };
     });
-  /** overlay 自检：标注层真实子节点数（不等于 liveMarks 记账） */
   ns.markLayerCount = () => marksLayer?.childElementCount ?? 0;
-  /** 核验读数：每个标注此刻圈住哪个元素、是否显示；只读，不改标注。 */
   ns.marksState = () =>
     liveMarks.map((m) => {
       const node = m.observedNode instanceof Range ? m.observedNode.commonAncestorContainer : m.observedNode;
@@ -3349,7 +3163,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
         shown: m.el.isConnected && m.el.style.visibility !== "hidden",
       };
     });
-  /** 交给用户时画的圈的读数：页面脚本读不到；只读，不改圈。 */
   ns.inspectState = () => {
     if (!inspectEl?.isConnected || inspectEl.classList.contains("out")) return null;
     const r = inspectEl.getBoundingClientRect();
@@ -3400,7 +3213,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       };
     });
 
-  // 停靠的翻译入口：网页载入后就贴在右边缘，不用等任务事件；设置里关掉就不停靠。
   const applyEntrySetting = (off: boolean) => { entryOff = off; renderAmbient(); };
 
   try {
@@ -3410,5 +3222,5 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       if (area === "local" && EDGE_ENTRY_KEY in changes) applyEntrySetting(isEdgeEntryOff(changes[EDGE_ENTRY_KEY]!.newValue));
       if (area === "local" && EDGE_Y_KEY in changes) tab().setOffset(edgeY(changes[EDGE_Y_KEY]!.newValue));
     });
-  } catch { applyEntrySetting(false); /* 自检页没有扩展运行时。 */ }
+  } catch { applyEntrySetting(false);  }
 })();

@@ -1,4 +1,3 @@
-/** Real model + real public Wikipedia. Requires an existing ChatGPT login; never included in the credential-free suite. */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, sleep, until, type Json } from "./harness.mts";
@@ -48,7 +47,6 @@ if ("error" in plan) {
     const title = (ask: string) => rp.evaluate(panel, `(() => { const user = [...document.querySelectorAll(".msg.user")].reverse().find(m => m.textContent.includes(${JSON.stringify(ask)})); let node = user?.nextElementSibling; while (node && !node.matches("details.run-steps")) node = node.nextElementSibling; return node?.querySelector("summary")?.textContent?.replace(/\\s+/g, " ").trim() ?? null; })()`) as Promise<string | null>;
     const savedTitle = await title("把刚才搜索维基百科结果的做法记住");
     check("保存那一轮写明存成了技能", !!savedTitle?.includes("存成技能「"), savedTitle);
-    // 记忆的「要我记住吗」是这一轮结束后在后台判的：多等一会儿再看有没有冒出来。
     await sleep(8_000);
     const asks = await rp.evaluate(panel, `[...document.querySelectorAll(".memory-ask")].map(a => a.textContent.trim().slice(0, 80))`) as string[];
     check("存成技能后不再问要不要记住", asks.length === 0, asks);

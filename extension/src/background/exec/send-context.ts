@@ -1,6 +1,5 @@
 import type { readFieldInPage } from "./field-read-in-page.js";
 
-/** 序列化到页面中执行：统一快照发送区域中可见的非敏感输入，不把原文写进记录。 */
 export function snapshotSendScopeInPage(target: Element | null, read: typeof readFieldInPage, sensitiveName: string): string | null {
   if (!target?.isConnected) return null;
   const owner = target.closest('button,[role="button"],input[type="submit"],input[type="button"],a') ?? target;

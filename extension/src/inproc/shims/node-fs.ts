@@ -1,7 +1,3 @@
-/**
- * 扩展内构建替换 `node:fs`、`node:fs/promises`：扩展里没有本机文件，调用即报错。
- * 任务核心只在配置了存储目录时才读写文件（回执、队列、下载等），扩展里不配置。
- */
 const unavailable = (): never => {
   throw new Error("扩展里没有本机文件");
 };

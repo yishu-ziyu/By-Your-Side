@@ -4,7 +4,6 @@ const editableRoles = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton',
 
 const keys = ['ref', 'role', 'name', 'value', 'disabled', 'checked', 'selected', 'expanded', 'focused', 'url', 'readOnly', 'protected', 'invalid', 'scopeId', 'scopeLabel'] as const;
 
-/** Compare action evidence, not a whole-page byte snapshot. A new observation ID is expected. */
 export function browserContextChange(before: BrowserObservation, after: Pick<BrowserObservation, 'documentId' | 'url' | 'controls' | 'dialogs' | 'viewport'>, targetRef?: string): string | null {
   if (before.documentId !== after.documentId || before.url !== after.url) {
     return '页面文档或地址已变化';
@@ -16,8 +15,6 @@ export function browserContextChange(before: BrowserObservation, after: Pick<Bro
     return '原目标不在观察中';
   }
 
-  // Keep all editable values as conservative dependencies (e.g. copy one field into
-  // another). Scope narrows incidental buttons, not the source facts used by an action.
   const relevant = (c: BrowserControl) => c.ref === targetRef || (!!target?.scopeId && c.scopeId === target.scopeId) || editableRoles.has(c.role);
   const expected = before.controls.filter(relevant);
   const actual = after.controls.filter(relevant);

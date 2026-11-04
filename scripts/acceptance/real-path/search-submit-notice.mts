@@ -1,9 +1,3 @@
-/**
- * Real extension and pages: submitting a search box (a GET form the page lets the browser follow) does not tell the
- * user "网站已收到，无法恢复"; a POST address form, and a form the page intercepts and sends itself, still do.
- *   npx tsx scripts/acceptance/real-path/search-submit-notice.mts --headless [--only=search,order,spa]
- * The model is scripted (its fill and click are fixed per case), so this proves the browser and panel layer.
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -49,7 +43,6 @@ for(const item of CASES.filter(c=>!only||only.includes(c.id))){
   await until(()=>rp.evaluate(panel,`document.body.innerText.includes(${JSON.stringify(`提交提示验收${item.id}完成`)})`),60000,'scripted run finished');
   const landed=await until(async()=>{for(const t of await rp.targets()){if(!t.url.startsWith(origin))continue;const s=await rp.attach(t.targetId);if(String(await rp.evaluate(s,'document.body.innerText')).includes(item.landed))return true;}return undefined;},15000,'page shows the submit result');
   assert.ok(landed);
-  // 还原状态由后台推给侧栏：等它到齐再看。
   await sleep(2500);
   text=String(await rp.evaluate(panel,'document.body.innerText'));
   assert.equal(NOTICE.test(text),item.notice,`${item.id}: ${item.notice?'still says the site got it':'no "site got it" notice'}`);

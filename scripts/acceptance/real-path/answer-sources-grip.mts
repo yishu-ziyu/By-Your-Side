@@ -1,11 +1,3 @@
-/**
- * 拖短过的回答展开「来源」面板：面板顶部的「读过的网页」节标题不能被文末一排盖住。
- * 出把手的回答（≥3 行）那一排带贴底底色带；来源面板就开在它的正下方，底色带压住面板顶部时标题上半截被裁掉。
- * 只装扩展、隔离构建、本机脚本模型。
- *   npx tsx scripts/acceptance/real-path/answer-sources-grip.mts --headless
- * 判定：回答带拖把手；点「来源」后面板展开、节标题完整露出；
- *   几何不变量：文末一排的下沿不压面板（overlap ≤ 0），节标题没有被盖住的部分（h3Covered = 0）。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -38,7 +30,6 @@ await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const PAGE = `http://127.0.0.1:${siteAddress(site).port}/`;
 
 const model = await startScriptedModel([
-  // 目标核对的输入带 lastReply 字段，排在前面先匹配。
   { match: `"lastReply"`, steps: [{ text: DONE_JSON }] },
   { match: TASK, steps: [
     { tool: { name: "navigate", args: { url: PAGE } } },
@@ -69,7 +60,7 @@ try {
   check("回答够长、挂了拖把手（本用例的前置条件）", grip === true, { grip });
 
   await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].pop()?.querySelector(":scope > .answer-actions .answer-sources-btn")?.click() ?? true`);
-  await sleep(1_500); // 面板展开 + 平滑滚动落定
+  await sleep(1_500);
 
   const geo = await rp.evaluate(panel, `(() => {
     const answer = [...document.querySelectorAll(".msg.assistant")].pop();

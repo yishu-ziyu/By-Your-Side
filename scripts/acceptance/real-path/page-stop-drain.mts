@@ -1,14 +1,3 @@
-/**
- * 网页上点「停」：只装扩展的隔离无头 Chrome、真侧栏、本机备注页与本机脚本模型。
- *
- *   npx tsx scripts/acceptance/real-path/page-stop-drain.mts --headless
- *
- * 助手跑一段约 4 秒的脚本：分 8 次往备注框里写字，最后向本机测试站点发一次保存。写到一半时用真鼠标点页面右边缘胶囊上的停止键。
- * 判据只看用户看得到的：「现在归你」出现以后，备注框不再被改、站点不再收到保存；点「继续」后助手接着做完。
- * 第二段跑一段约 25 秒的脚本再点停：那一步取消不了，停止只等 10 秒左右就交给用户，不卡在「正在停住」，侧栏如实说页面可能还会变。
- * 页面和测试脚本在同一台机器上，所以页面里的 Date.now() 和这里的可以直接比先后。
- * 证据在 out/acceptance/page-stop-drain/result.json。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -64,7 +53,6 @@ const timeline: Array<{ at: number; tone: string | null; a: string; end: string 
 
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
-  // 胶囊的读数在扩展的隔离环境里，网页自己的环境读不到：按会话记下隔离环境，逐个试。
   const isolated = new Set<number>();
 
   rp.cdp.onEvent("Runtime.executionContextCreated", (m: { sessionId?: string; params: { context: { id: number; origin: string; auxData?: { type?: string } } } }) => {
@@ -105,7 +93,6 @@ try {
   await rp.cdp.send("Page.bringToFront", {}, work);
   const ask = async (text: string) => { await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel); };
 
-  /** 脚本写到第二段时点胶囊上的停止键，等到「现在归你」，返回点击和出现的时刻。 */
   const stopMidway = async (label: string, waitMs: number) => {
     const before = Number(await rp.evaluate(work, "window.writeLog.length"));
     await until(async () => Number(await rp.evaluate(work, "window.writeLog.length")) >= before + 2 || null, 30000, `${label}：脚本开始往备注里写`);
@@ -135,7 +122,6 @@ try {
   const { handAt } = await stopMidway("4 秒的脚本", 15000);
 
   if (handAt === null) throw new Error("没等到现在归你");
-  // 留足时间：没修时脚本还要再写约 3 秒、再发保存。
   await sleep(4500);
   const writes = await rp.evaluate(work, "window.writeLog") as number[];
   const lateWrites = writes.filter(at => at > handAt!).map(at => at - handAt!);
@@ -153,12 +139,10 @@ try {
     check("点「继续」交还后，助手接着做完", !!done, asJson({ done: !!done }));
   }
 
-  // ── 那一步一直不结束：等到上限就交给用户，并如实说页面可能还会变 ──
   timeline.push({ at: -1, tone: null, a: "第二段", end: null });
   await ask(LONG_GOAL);
   const long = await stopMidway("25 秒的脚本", 30000);
   const waited = long.handAt === null ? null : long.handAt - long.clickedAt;
-  // 上限 10 秒；负载高时页面上的显示会晚一些，但远早于脚本写完的约 24 秒。
   check("那一步一直不结束时，停止等到上限就交给用户，不卡在「正在停住」", waited !== null && waited >= 8000 && waited <= 18000, asJson({ waitedMs: waited }));
   const said = await until(async () => (await rp.evaluate(panel, '!!document.body.innerText.includes("这一页可能还会被它改动")')) || null, 8000, "侧栏提示").catch(() => null);
   check("侧栏如实说「这一页可能还会被它改动」", !!said, asJson({ said: !!said }));

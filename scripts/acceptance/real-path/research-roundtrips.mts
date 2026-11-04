@@ -1,7 +1,3 @@
-/** Real extension, real model, a multi-site research task starting from a blank page.
- * SIDEAGENT_ACCEPTANCE_DIST=... npx tsx scripts/acceptance/real-path/research-roundtrips.mts --headless --label=before
- * Saves independent page evidence separately from model traces. No expected answers enter the conversation.
- */
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
@@ -53,7 +49,6 @@ function judge(rows: Row[], _answer: string): { pass: boolean; checks: Row[] } {
   });
   return { pass: checks.every(c=>c.date&&c.targets&&c.link&&c.quotes), checks };
 }
-// Re-score a finished run with the current judge, from its saved table and independently read sources; no browser or model.
 const rejudge = arg('rejudge');
 if (rejudge) {
   const saved = JSON.parse(await readFile(join(rejudge, 'result.json'), 'utf8')) as Row;
@@ -80,8 +75,6 @@ let panel = '', trace: Row[] = [], finishNetwork: Awaited<ReturnType<typeof netw
 let workerSession = '';
 const result: Row = { label, model: DEFAULT_TEST_MODEL, prompt, pages, status: 'unknown', out, loadAtStart: loadavg(), storageErrors: [] };
 const tableExpression = `[...([...document.querySelectorAll('#messages .msg.assistant table')].at(-1)?.querySelectorAll('tr')??[])].map(row=>({cells:[...row.querySelectorAll(':scope > th,:scope > td')].map(cell=>cell.innerText),links:[...row.querySelectorAll('a[href]')].map(a=>a.href)}))`;
-// Table labels can be separated by a colon, an em dash or a line break; excerpt-ending punctuation is editorial.
-// Keep punctuation inside numbers, and require every quoted word in the source in the same order.
 const traceExpression = `new Promise((resolve,reject)=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-lines')){db.close();resolve([]);return}const tx=db.transaction('trace-lines');const q=tx.objectStore('trace-lines').getAll();q.onsuccess=()=>resolve(q.result.map(x=>JSON.parse(x.line)));tx.oncomplete=()=>db.close()}})`;
 try {
   result.buildHash = createHash('sha256').update(await readFile(join(rp.dirs.extension, 'inproc.js'))).digest('hex');

@@ -1,8 +1,3 @@
-/**
- * `fetch` 的边界判定（纯函数）：只允许 http(s) 公网地址、GET/POST。
- * 浏览器 Agent 带着登录态取接口，最怕模型被页面内容骗去读本地服务或改数据：
- * 这里不做"问模型"，直接在扩展侧拒绝。
- */
 import { FETCH_READ_MS } from "./timeouts.js";
 
 export const FETCH_MAX_BYTES = 512 * 1024;
@@ -15,7 +10,6 @@ const FETCH_ALLOWED_METHODS = ["GET", "POST"] as const;
 
 type FetchMethod = (typeof FETCH_ALLOWED_METHODS)[number];
 
-/** Refused before any request is sent: the extension reports it as not executed. */
 export class FetchRefused extends Error {
   readonly executionFact = "not_executed";
 }
@@ -38,7 +32,6 @@ interface FetchRequest {
   body?: string;
 }
 
-/** 校验并规范化请求；非法即抛 FetchRefused（回执里原样给模型看）。 */
 export function normalizeFetchRequest(raw: {
   url?: unknown;
   method?: unknown;
@@ -77,7 +70,7 @@ export function normalizeFetchRequest(raw: {
     for (const [key, value] of Object.entries(raw.headers as Record<string, unknown>)) {
       if (typeof value !== "string") throw new FetchRefused(`fetch 的 header ${key} 必须是字符串。`);
 
-      if (/^(host|cookie|content-length)$/i.test(key)) continue; // 由浏览器按目标站点决定
+      if (/^(host|cookie|content-length)$/i.test(key)) continue;
       headers[key] = value;
     }
   }
@@ -93,15 +86,11 @@ type CappedStopReason = "complete" | "limit" | "deadline" | "abort";
 
 interface CappedRead {
   text: string;
-  /** Bytes kept for the caller. */
   retainedBytes: number;
-  /** Bytes actually pulled from the stream (may be one chunk past the cap). */
   readBytes: number;
-  /** Content-Length when the server sent it; never invented after an early stop. */
   totalBytes: number | null;
   truncated: boolean;
   stoppedReason: CappedStopReason;
-  /** Back-compat: retained bytes. */
   bytes: number;
 }
 
@@ -138,7 +127,6 @@ export function assertRedirectAllowed(fromUrl: string, toUrl: string): void {
   normalizeFetchRequest({ url: toUrl });
 }
 
-/** Stream the body; stop at the byte cap, deadline, or abort. Never arrayBuffer() the whole response. */
 export async function readCappedText(
   response: Response,
   maxBytes: number = FETCH_MAX_BYTES,
@@ -244,7 +232,6 @@ export async function readCappedText(
     try {
       reader.releaseLock();
     } catch {
-      /* already cancelled */
     }
   }
 

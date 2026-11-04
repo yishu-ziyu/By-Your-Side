@@ -1,8 +1,3 @@
-/**
- * 侧栏和设置页的样子只许走 token：数出 token 定义以外写死的字号、圆角、颜色，和界面文字里的 emoji。
- * 现有的数是上限，只许变少；收拢后用 --update 把上限降下来。
- *   node scripts/maintenance/check-style-tokens.mjs [--update]
- */
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +9,6 @@ const update = process.argv.includes("--update");
 const CSS_DIRS = ["extension/src/sidepanel", "extension/src/settings"];
 const TS_DIRS = ["extension/src/sidepanel", "extension/src/content", "extension/src/settings"];
 
-// 圆角里 0、正圆和胶囊不算写死的值：它们不随设计档位变。
 const RADIUS_FREE = /^(0|50%|999px|9999px|inherit)$/;
 const COLOR = /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch)\(/gi;
 const EMOJI = /\p{Extended_Pictographic}/u;
@@ -33,7 +27,6 @@ async function filesUnder(dir, match) {
   return out;
 }
 
-/** 一份 CSS 里 token 定义（--name: …）以外的声明。 */
 function declarations(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, "").split(/[;{}]/).map(part => part.trim()).filter(part => /^[a-z-]+\s*:/i.test(part) && !part.startsWith("--"));
 }
@@ -48,7 +41,6 @@ function countCss(css) {
 
     const bare = value.replace(/var\([^)]*\)/g, "");
 
-    // font 简写里的字号也算：font: 600 24px/1.5 …
     if ((name === "font-size" && /[\d.]+(px|rem|em)\b/.test(bare)) || (name === "font" && /(^|\s)[\d.]+(px|rem|em)(\/|\s|!|$)/.test(bare))) fontSize++;
     if (name === "border-radius" && bare.split(/[\s/]+/).some(part => /\d/.test(part) && !RADIUS_FREE.test(part))) radius++;
     color += (bare.match(COLOR) ?? []).length;
@@ -57,7 +49,6 @@ function countCss(css) {
   return { fontSize, radius, color };
 }
 
-/** 逐字扫一遍，取出字符串和模板字符串的内容；注释跳过。正则字面量里的引号会让它看错，界面代码里少见。 */
 function stringLiterals(ts) {
   const out = [];
 
@@ -78,7 +69,6 @@ function stringLiterals(ts) {
   return out;
 }
 
-/** 界面文字（字符串、模板字符串）里的 emoji；注释不算。 */
 function countEmoji(ts) {
   return stringLiterals(ts).filter(literal => EMOJI.test(literal)).length;
 }
@@ -98,7 +88,6 @@ for (const file of (await Promise.all(TS_DIRS.map(dir => filesUnder(dir, /\.ts$/
 const total = Object.values(counts).reduce((sum, c) => ({ fontSize: sum.fontSize + c.fontSize, radius: sum.radius + c.radius, color: sum.color + c.color, emoji: sum.emoji + c.emoji }), { fontSize: 0, radius: 0, color: 0, emoji: 0 });
 const LABEL = { fontSize: "写死的字号", radius: "写死的圆角", color: "写死的颜色", emoji: "界面里的 emoji" };
 
-/** sRGB 0–1 → 相对亮度。正文灰字在底色上至少 4.5:1。 */
 function luminance(hex) {
   const n = hex.replace("#", "");
   const full = n.length === 3 ? [...n].map((c) => c + c).join("") : n;

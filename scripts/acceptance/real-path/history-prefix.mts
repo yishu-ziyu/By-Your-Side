@@ -1,12 +1,3 @@
-/**
- * 同一会话接着问，每条新消息的请求都是上一条的前缀延伸，同一页没变不再带第二份正文（#271）。
- *   npx tsx scripts/acceptance/real-path/history-prefix.mts --headless
- * 本机文章页 A 上连问两句，再换到页 B 问一句；脚本模型直接回答，记下每次主任务请求（带工具表）的 messages。
- *   a) 第 2、3 条消息的第一次请求，以上一条消息最后一次请求的全部消息开头，逐字相同；末尾的应用状态快照也要留在原位（10-13：每次删掉再追加，后端缓存退回到系统提示词）。
- *   b) 第 2 条消息（同一页没变）的请求里，页 A 的正文只出现一次，并有一行「unchanged since your earlier observation」。
- *   c) 第 3 条消息（换了页）的请求里有页 B 的正文。
- * 失败方式：把本次运行的上下文改回只在本次运行里插入，或把状态快照改回每次删掉再追加到末尾，a 失败；去掉同页去重，b 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -39,7 +30,6 @@ type Message = { role: string; content?: string | Array<{ text?: string }> | nul
 
 const textOf = (m: Message) => Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : m.content ?? "";
 
-/** 每条消息的主任务请求，按发出顺序；每个请求存成逐条消息的 JSON 字符串，方便逐字比较。 */
 const requests: string[][][] = ASKS.map(() => []);
 
 const model = await startScriptedModel([
@@ -60,7 +50,6 @@ const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
 
-/** 上一条消息最后一次请求的全部消息是不是下一条消息第一次请求的开头；不是时给出第一处不同的位置。 */
 function extends_(before: string[], after: string[]) {
   const prefix = before;
   const differs = prefix.findIndex((m, i) => after[i] !== m);
@@ -91,7 +80,6 @@ try {
     await rp.pressEnter(panel);
     const done = `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].some(m => m.textContent.includes(${JSON.stringify(ANSWERS[i])})) && document.querySelector("#send-btn")?.disabled === false && !document.querySelector("#status-pill")?.classList.contains("running")`;
     await until(async () => await rp.evaluate(panel, done) || undefined, 60_000, `回答「${ANSWERS[i]}」`, 250);
-    // 等回答后的后台判断收完，免得下一句被当成插话。
     await sleep(2_000);
   }
 
@@ -101,7 +89,6 @@ try {
   }
 
   const second = requests[1]![0] ?? [], third = requests[2]![0] ?? [];
-  // 一份读页 = 一个 <page-content> 块（正文和 AX 树都在里面）。
   const blocks = (messages: string[], path: string) => count(messages, `/${path}" title=`);
   check("b 同一页没变：第 2 条的请求里页 A 只读进来一份，并有一行指回去", blocks(second, "a") === 1 && count(second, "unchanged since your earlier observation") === 1, { aBlocks: blocks(second, "a"), unchangedLines: count(second, "unchanged since your earlier observation") });
   check("c 换了页：第 3 条的请求里有页 B 的正文", blocks(third, "b") === 1 && count(third, B_TEXT) > 0, { bBlocks: blocks(third, "b"), bText: count(third, B_TEXT) });

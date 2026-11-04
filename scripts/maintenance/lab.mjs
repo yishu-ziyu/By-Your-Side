@@ -1,16 +1,3 @@
-/**
- * 开发统一入口：查环境、跑用例、跑评测、读使用记录、管本机测试网站、清理残留。
- * 踩过的坑写在这里，不写进文档：负载高时不测量、读日志只走 logs.mjs、测试浏览器和任务空间用完就关。
- *
- *   npm run lab -- env
- *   npm run lab -- case <用例…> [--force] [--load-limit=20]
- *   npm run lab -- eval guardrail|duplex [--dist 路径] [--force] [--load-limit=20] [其余参数原样转给评测]
- *   npm run lab -- logs [参数原样转给 logs.mjs]
- *   npm run lab -- methods [--since 日期] [--traces 文件]   （网站方法待修、笔记升级候选的周报）
- *   npm run lab -- sites start|stop|status
- *   npm run lab -- clean          （Ego 只关名字以 bys 开头的任务空间）
- *   npm run lab -- gallery [用例…] [--compare=上次总览目录] [--dist=扩展]   （界面总览；也可 npm run gallery）
- */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -24,16 +11,12 @@ const [action, ...rest] = process.argv.slice(2);
 const flag = name => rest.includes(`--${name}`);
 const option = name => rest.find(arg => arg.startsWith(`--${name}=`))?.split("=").slice(1).join("=");
 
-// ── 负载 ────────────────────────────────────────────────
-
-/** 一分钟负载超过它就不测量：10-14 负载升到 90 以上时没人先查就开始测，数字全不能用。 */
 const LOAD_LIMIT = Number(option("load-limit") ?? 20);
 
 function load() {
   return loadavg()[0];
 }
 
-/** case、eval 开跑前的闸门：超限就拒绝，加 --force 才跑。 */
 function loadGate() {
   const now = load();
 
@@ -49,9 +32,6 @@ function loadGate() {
   process.exit(2);
 }
 
-// ── 模型登录 ─────────────────────────────────────────────
-
-/** 只看过期时间，不读也不打印密钥。 */
 function logins() {
   const file = join(homedir(), ".pi/agent/auth.json");
 
@@ -69,7 +49,6 @@ function logins() {
 
     if (expires === null) return { name, note: "固定密钥，没有过期时间" };
     const hours = (expires - Date.now()) / 3_600_000;
-    // Kimi 的访问令牌只活约 15 分钟，由 npm run kimi:keep 的后台任务续期：过期本身不算坏。
     const renew = name === "kimi-coding" ? "（kimi:keep 自动续期；系统通知说失效时 npm run kimi:login）" : "";
 
     if (hours > 24 * 365) return { name, note: "长期有效" };
@@ -78,11 +57,8 @@ function logins() {
   });
 }
 
-// ── 本机测试网站 ─────────────────────────────────────────
-
 const SITES_HOME = join(homedir(), ".local/share/bys-test-sites");
 
-/** 本机测试网站：程序和数据在 SITES_HOME 下，账号文件不进仓库，也不打印。以后加 Gitea 就在这里加一项。 */
 const SITES = [
   {
     name: "memos",
@@ -156,9 +132,6 @@ async function sites(sub) {
   }
 }
 
-// ── 残留的测试浏览器和临时配置目录 ───────────────────────
-
-/** 测试用的临时配置目录前缀（验收脚本、日常 Chrome 只读连接、评测裁判）。用户的日常 Chrome 配置不在 tmpdir 里，不会被碰到。 */
 const TEMP_PREFIXES = ["sideagent-real-path-", "sideagent-acceptance-", "sideagent-daily-", "sideagent-video-", "sideagent-suite-dist-", "sideagent-isolated-", "bys-judge-"];
 
 function tempDirs() {
@@ -172,7 +145,6 @@ function resolveReal(path) {
   try { return execFileSync("realpath", [path], { encoding: "utf8" }).trim(); } catch { return path; }
 }
 
-/** 正在用某个临时配置目录的 Chrome 进程：命令行里 --user-data-dir 指向上面的前缀。 */
 function testBrowsers() {
   const out = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).stdout ?? "";
 
@@ -186,7 +158,6 @@ function testBrowsers() {
   });
 }
 
-/** ps 的 etime（[[天-]时:]分:秒）换成小时。 */
 function elapsedHours(etime) {
   const [days, clock] = etime.includes("-") ? etime.split("-") : ["0", etime];
   const parts = clock.split(":").map(Number).reverse();
@@ -194,20 +165,13 @@ function elapsedHours(etime) {
   return Number(days) * 24 + (parts[2] ?? 0) + (parts[1] ?? 0) / 60 + (parts[0] ?? 0) / 3600;
 }
 
-/** 有进程的命令行里带着这个目录：别的会话的测试还在用它，不能删。 */
+/** WHY: 有进程的命令行里带着这个目录：别的会话的测试还在用它，不能删。 */
 function inUse(dir, commands) {
   const real = resolveReal(dir);
 
   return commands.some(line => line.includes(dir) || line.includes(real));
 }
 
-// ── 冻结扩展 ─────────────────────────────────────────────
-
-/**
- * 按当前代码（HEAD + 未提交改动）构建一份扩展，放在 out/lab/ 下；代码没变就复用。
- * 测量期间改代码不影响这份（10-13：4 次评测因现场构建混进改到一半的代码而白跑）。
- * 一定要设 SIDEAGENT_BUILD_DIST：不设的话 build.mjs 会清空日常 Chrome 正在加载的 extension/dist。
- */
 function frozenDist() {
   const git = args => execFileSync("git", args, { cwd: repo, encoding: "utf8" });
   const head = git(["rev-parse", "--short", "HEAD"]).trim();
@@ -234,7 +198,6 @@ function frozenDist() {
   return dist;
 }
 
-/** 不属于本入口的参数原样转给下层脚本。 */
 const passThrough = args => args.filter(arg => arg !== "--force" && !arg.startsWith("--load-limit=") && !arg.startsWith("--dist"));
 
 function distOption() {
@@ -244,9 +207,6 @@ function distOption() {
   return value ? resolve(value) : null;
 }
 
-// ── 动作 ────────────────────────────────────────────────
-
-/** case：构建一次冻结扩展，在无头浏览器里依次跑这些用例，最后列出通过和失败。 */
 function cases() {
   const names = rest.filter(arg => !arg.startsWith("--"));
 
@@ -282,9 +242,6 @@ function cases() {
   process.exit(outcomes.every(item => item.ok) ? 0 : 1);
 }
 
-// ── 界面总览 ─────────────────────────────────────────────
-
-/** 会截侧栏或网页样子的用例，按用户看到的地方分组。新加截图用例时补进来。 */
 const GALLERY = [
   ["空会话", ["memory-management"]],
   ["输入与菜单", ["composer-expand", "model-menu", "conversation-menu", "mention-plan-actions"]],
@@ -295,7 +252,6 @@ const GALLERY = [
   ["设置页", ["first-run-settings", "settings-panel"]],
 ];
 
-/** 证据写在固定目录、也不打印路径的用例。 */
 const GALLERY_DIRS = { "edge-tab": "out/edge-tab", "visual-ui-presence": "out/acceptance/visual-ui-production/real-extension" };
 
 function runCase(name, dist) {
@@ -307,7 +263,6 @@ function runCase(name, dist) {
     child.stdout.on("data", chunk => { output += chunk; });
     child.stderr.on("data", chunk => { output += chunk; });
     child.on("close", status => {
-      // 各用例把证据目录写在输出里，格式不统一：取最后一个指向 out/ 的路径；没打印的，找这次新建的「时间-用例名」目录。
       const printed = [...output.matchAll(/(\/[^\s"']*\/out\/[^\s"']+)/g)].map(m => m[1].replace(/[),.;]+$/, "")).at(-1);
       const runs = join(repo, "out/acceptance/real-path");
       const fresh = existsSync(runs) ? readdirSync(runs).filter(entry => entry.endsWith(`-${name}`) && statSync(join(runs, entry)).mtimeMs >= started).sort().at(-1) : undefined;
@@ -319,7 +274,6 @@ function runCase(name, dist) {
   });
 }
 
-/** 这次运行拍的图：固定目录里留着旧图，按修改时间只取这次的。 */
 function pngsUnder(dir, since) {
   return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
     const full = join(dir, entry.name);
@@ -330,7 +284,6 @@ function pngsUnder(dir, since) {
   });
 }
 
-/** gallery：冻结扩展跑截图用例（4 路并行），把截图和深色版拷进 out/gallery/<时间>/，拼成一页总览。 */
 async function gallery() {
   const picked = rest.filter(arg => !arg.startsWith("--"));
   const groups = picked.length ? [["选中的用例", picked]] : GALLERY;
@@ -378,7 +331,6 @@ async function gallery() {
     const pairs = shots.filter(shot => keys.has(shot.key)).flatMap(shot => [[join(compare, shot.key), join(out, shot.key)], ...(shot.dark && existsSync(join(compare, darkOf(shot.key))) ? [[join(compare, darkOf(shot.key)), join(out, darkOf(shot.key))]] : [])]);
     const diff = pixelDiff(pairs);
 
-    // 浅色、深色取变得多的那张：只改深色样式时也要标出来。
     for (const shot of shots) {
       const values = [diff.get(join(out, shot.key)), diff.get(join(out, darkOf(shot.key)))].filter(value => value !== undefined);
       if (values.length) shot.changed = Math.max(...values);
@@ -392,7 +344,6 @@ async function gallery() {
   if (missing.length) console.log(`没找到证据目录：${missing.map(result => result.name).join("、")}`);
 }
 
-/** 每对图里变了的像素占多少（0–1）；尺寸不同记 1。用 Python 的 PIL，本机没有就不标。 */
 function pixelDiff(pairs) {
   const script = `
 import json, sys
@@ -429,7 +380,6 @@ function galleryPage(manifest, before) {
       if (shot.dark && before?.keys.has(shot.key) && existsSync(join(before.dir, dark))) cells.push(img(`file://${join(before.dir, dark)}`, "改前 · 深色"));
       if (shot.dark) cells.push(img(dark, before ? "改后 · 深色" : "深色"));
 
-      // 像素差异：小于 0.5% 多半只是时间、端口号这类会变的字。
       const change = shot.changed === undefined ? "" : shot.changed < 0.005 ? ' <span class="same">没变</span>' : ` <span class="diff">变了 ${(shot.changed * 100).toFixed(1)}%</span>`;
 
       return `<div class="row" data-changed="${shot.changed ?? ""}"><h3>${esc(shot.key)}${change}${shot.ok ? "" : ' <span class="fail">用例没过</span>'}</h3><div class="cells">${cells.join("")}</div></div>`;
@@ -438,7 +388,6 @@ function galleryPage(manifest, before) {
     return `<section><h2>${esc(group)}</h2>${rows.join("")}</section>`;
   });
 
-  // 没过或没截到图的用例放在最前面：它们那块界面这次看不到，不能当成没变。
   const shotCount = name => manifest.shots.filter(shot => shot.name === name).length;
   const gaps = manifest.cases.filter(item => !item.ok || !shotCount(item.name)).map(item => `<li>${esc(item.name)}：${[item.ok ? "" : "用例没过", shotCount(item.name) ? `截到 ${shotCount(item.name)} 张` : "没有截图"].filter(Boolean).join("，")}</li>`);
   const gapList = gaps.length ? `<section class="gaps"><h2>这次看不全的地方</h2><ul>${gaps.join("")}</ul></section>` : "";
@@ -452,7 +401,6 @@ figcaption{font-size:12px;color:#6b6b70;margin-top:2px}.fail{color:#b44}.same{co
 <div class="zoom" id="z"><img alt=""></div><script>const z=document.getElementById("z");document.querySelectorAll("figure img").forEach(i=>i.onclick=()=>{z.firstChild.src=i.src;z.style.display="flex"});z.onclick=()=>z.style.display="none";</script></body></html>`;
 }
 
-/** eval guardrail|duplex：包装爬坡护栏（compare-real 的 24 个任务）和插话评测。默认用冻结扩展。 */
 function evaluate() {
   const kind = rest[0];
   const extra = passThrough(rest.slice(1)).filter((arg, i, all) => !(all[i - 1] === "--dist"));
@@ -476,7 +424,6 @@ function evaluate() {
   if (kind === "guardrail") {
     const out = join(repo, "out/lab/eval", `guardrail-${stamp}`);
     console.log(`进度页（每 4 秒刷新）：${join(out, "progress.html")}`);
-    // 有窗口的测试浏览器在后台启动，不抢焦点；全量 24×2 条约 26 分钟，先用 --only=<任务> --repeat=1 试跑一条。
     const result = spawnSync("npx", ["tsx", "scripts/probes/compare-real.mts", ".", out, "ext", ...extra], { cwd: repo, stdio: "inherit", env });
     console.log(`\n进度页：${join(out, "progress.html")}\n结果：${join(out, "result-ext.json")}`);
     process.exit(result.status ?? 1);
@@ -494,15 +441,12 @@ function evaluate() {
   process.exit(run.status ?? 1);
 }
 
-/** 正在用 Ego 的评测进程：有就不关任何任务空间，免得关掉别的会话正在跑的评测。 */
 function egoBusy(commands) {
-  // compare-real 只有 ego 那一组用 Ego；扩展组（ext）不碰任务空间。
   return commands.filter(line => (/compare-real\.mts\s+\S+\s+\S+\s+ego\b/.test(line) || /^\S*ego-browser nodejs/.test(line.trim())) && !line.includes("lab.mjs"));
 }
 
 function ego(code) {
   const result = spawnSync("ego-browser", ["nodejs", "-e", code], { encoding: "utf8", timeout: 60_000 });
-  // ego-browser 把 console.log 写到 stderr，两边都读。
   const line = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.split("\n").reverse().find(text => text.trim().startsWith("{") || text.trim().startsWith("["));
 
   if (result.error || !line) throw new Error(result.error?.message ?? (result.stderr || result.stdout || "ego-browser 没有输出").slice(-300));
@@ -510,7 +454,6 @@ function ego(code) {
   return JSON.parse(line);
 }
 
-/** clean：关掉名字以 bys 开头的 Ego 任务空间、关掉残留的测试浏览器、删没在用的临时配置目录；工作树只列出能删的。 */
 async function clean() {
   const commands = (spawnSync("ps", ["-axo", "command="], { encoding: "utf8" }).stdout ?? "").split("\n");
 
@@ -523,15 +466,12 @@ async function clean() {
   } else {
     try {
       const spaces = ego("const s = await listTaskSpaces(); console.log(JSON.stringify(s.map(x => ({ id: x.spaceId ?? x.id, name: x.name ?? '', ownership: x.ownership ?? '' }))));");
-      // 只关我们的脚本建的空间：名字以 bys 开头（compare-real 建的是「bys-real …」）。其余一律不碰，不按 ownership 判断：
-      // 用户的空间在某一刻可能不是 "user"（例如没人认领），按 ownership 判断会把它当成我们的关掉（10-14 定）。
       const mine = spaces.filter(space => /^bys/i.test(String(space.name ?? "")));
       console.log(`  共 ${spaces.length} 个；名字以 bys 开头的 ${mine.length} 个要关，其余 ${spaces.length - mine.length} 个不碰。`);
 
       for (const space of spaces) console.log(`    ${mine.includes(space) ? "关" : "留"}  #${space.id}「${space.name}」 ownership=${space.ownership || "?"}`);
 
       for (const space of mine) {
-        // finish() 只把空间交回去，ego 会给空窗口补一个空白页：在协议层关掉每个标签页，空间才真的关掉。
         const closed = ego(`let task; try { task = await takeOverTaskSpace(${JSON.stringify(space.id)}); } catch { task = await taskSpace(${JSON.stringify(space.id)}); }
 const tabs = await task.tabs(); let n = 0;
 for (const t of tabs) { await task.cdp("Target.closeTarget", { targetId: t.targetId }).then(() => n++).catch(() => {}); }
@@ -549,7 +489,7 @@ console.log(JSON.stringify({ n }));`);
   if (!browsers.length) console.log("  没有");
 
   for (const item of browsers) {
-    // 只关确定没人在用的：无头的、启动它的脚本已经没了；或者开了超过 3 小时（最长的评测约半小时）。
+    // WHY: 只关确定没人在用的：无头的、启动它的脚本已经没了；或者开了超过 3 小时（最长的评测约半小时）。
     // 有窗口的测试浏览器经 open -g 启动，上级进程本来就是 launchd，不能按“上级没了”判断。
     const line = spawnSync("ps", ["-o", "ppid=,etime=,command=", "-p", String(item.pid)], { encoding: "utf8" }).stdout.trim();
     const [ppid, etime] = line.split(/\s+/);
@@ -567,7 +507,6 @@ console.log(JSON.stringify({ n }));`);
   let kept = 0;
 
   for (const dir of dirs) {
-    // 构建好的扩展（sideagent-suite-dist-）只靠环境变量传，命令行里看不到：3 小时内动过的一律留着。
     const fresh = Date.now() - statSync(dir).mtimeMs < 3 * 3_600_000;
 
     if (fresh || inUse(dir, after)) { kept += 1; continue; }

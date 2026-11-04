@@ -1,10 +1,3 @@
-/**
- * 圈出来问（样子见 docs/previews/circle-and-memory）：在当前网页上按住拖动画手绘圈，可以连圈几处。
- * 每圈一处：页面在圈旁标上编号 → 画圈层先藏起淡色底和提示 → 后台截当前视口 → 侧栏按圈的外框裁切，变成带编号的附件。
- * 圈内的网页文字（不含输入框里的值）随附件一起交给助手；圈的是空白处就只有图。
- * 回答里的 ①②… 点一下，页面滚回那一圈，再用蓝色手绘圈指一下；那一圈不在了就不圈。
- * 圈留在页面上（随页面滚动）；去掉某张附件，页面上那一圈也去掉。Esc、换标签页、页面跳转退出圈画，已圈的保留。永不自动发送。
- */
 import { activeTargetTab } from "./target-window.js";
 import { isPageInteractionMessage, type PageInteractionMessage } from "../../../shared/protocol.js";
 import { MOTION_CSS_VARS } from "../shared/motion-tokens.js";
@@ -18,7 +11,7 @@ const GLOBAL_KEY = "__byYourSideCircle";
 type PageCircles = { enter: (start: number, set: number) => void; exit: () => void; remove: (n: number) => void; reveal: (n: number, set: number) => boolean };
 
 /**
- * 注入页面执行（会被序列化，不能引用本模块的任何东西）。第一次调用建好画圈层，之后再调用只重新进入圈画。
+ * WHY: 注入页面执行（会被序列化，不能引用本模块的任何东西）。第一次调用建好画圈层，之后再调用只重新进入圈画。
  * start 是下一圈的编号；为 1 时清掉页面上之前的圈，开始新的一组（set 是侧栏给这组的编号，回指时核对）。
  */
 function circleInPage(globalKey: string, start: number, set: number, motionVars: string): void {
@@ -66,7 +59,6 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
   let live: { id: number; pts: Array<[number, number]>; path: SVGPathElement } | null = null;
   let busy = false;
 
-  // 圈用文档坐标，随页面滚动；顺滑成二次曲线，像手画。
   const smooth = (pts: Array<[number, number]>) => {
     let d = `M${pts[0]![0]} ${pts[0]![1]}`;
 
@@ -80,7 +72,6 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
 
   const swallow = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
 
-  // 圈内的文字：文字块的中心落在圈的外框里就算。看不见的、本层自己的、输入框里的值都不算。
   const textInside = (box: { left: number; top: number; right: number; bottom: number }) => {
     const parts: string[] = [];
     let length = 0;
@@ -93,7 +84,6 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
           const r = node.getBoundingClientRect();
           const inView = r.right + scrollX >= box.left && r.left + scrollX <= box.right && r.bottom + scrollY >= box.top && r.top + scrollY <= box.bottom;
 
-          // 元素和圈不相交就跳过整棵子树（固定定位、溢出的子元素可能漏掉，宁少不错）。
           return inView || getComputedStyle(node).display === "contents" ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_REJECT;
         }
 
@@ -130,7 +120,6 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
     const ys = pts.map(p => p[1]);
     const box = { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
 
-    // 太小的一笔当作误点。
     if (box.right - box.left < 14 && box.bottom - box.top < 14) { path.remove();
 
       return; }
@@ -144,7 +133,6 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
     wrap.appendChild(badge);
     path.dataset.n = String(n);
     circles.set(n, [path, badge]);
-    // 截图前藏起淡色底和提示（圈和编号留着，助手看得出圈的是哪），等两帧让画面真的变了。
     busy = true;
     wrap.classList.add("shooting");
     await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
@@ -201,7 +189,6 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
     addEventListener("keydown", onKey, true);
   };
 
-  // 回指：滚到那一圈，沿它外面画一圈蓝色手绘圈（画入约 0.4 秒，停一会儿淡出）。
   const reveal = (n: number, group: number) => {
     const path = circles.get(n)?.[0];
 
@@ -261,18 +248,14 @@ function removeInPage(globalKey: string, n: number): void {
 
 let active: { tabId: number; stop: () => void } | null = null;
 
-/** 最近一次画圈的标签页：去掉附件时到这里去掉那一圈。 */
 let circleTabId: number | null = null;
 
-/** 第几组圈（从 1 号重新圈算新的一组）；回答里的编号认这一组。 */
 let circleSet = 0;
 
-/** 当前这组圈在哪个标签页、第几组；还没圈过返回 null。 */
 export function currentCircleSet(): { tabId: number; set: number } | null {
   return circleTabId == null ? null : { tabId: circleTabId, set: circleSet };
 }
 
-/** 回答里的编号：切到那个标签页，滚到那一圈再指一下。那一圈已经不在了（页面变了、又圈了新的一组）返回 false。 */
 export async function revealCircle(target: { tabId: number; set: number }, n: number): Promise<boolean> {
   try {
     await chrome.tabs.update(target.tabId, { active: true });
@@ -284,16 +267,11 @@ export async function revealCircle(target: { tabId: number; set: number }, n: nu
 
 export function isCircling(): boolean { return active !== null; }
 
-/** 去掉第 n 圈（附件被去掉时）。页面已经换了就什么都不做。 */
 export function removeCircle(n: number): void {
   if (circleTabId == null) return;
   void chrome.scripting.executeScript({ target: { tabId: circleTabId }, func: removeInPage, args: [GLOBAL_KEY, n] }).catch(() => undefined);
 }
 
-/**
- * 进入圈画。每圈好一处调用 onCircle（截好的 PNG dataURL、编号、圈内的网页文字）；退出时结束，不返回附件。
- * 页面不允许注入时抛出带中文原因的错误。
- */
 export async function startCircling(start: number, onCircle: (dataUrl: string, n: number, text: string | undefined) => Promise<void>): Promise<void> {
   active?.stop();
   const tab = await activeTargetTab();
@@ -319,7 +297,6 @@ export async function startCircling(start: number, onCircle: (dataUrl: string, n
 
   const onUpdated = (id: number, change: { status?: string; url?: string }) => { if (id === tabId && (change.status === "loading" || change.url)) stop(false); };
 
-  // 用户点完菜单焦点还在侧栏，这里的 Esc 也要能退出。
   const onPanelKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stop(true); } };
 
   function stop(inPage: boolean): void {
@@ -363,7 +340,6 @@ async function captureCircle(rect: CircleRect): Promise<string> {
   return cropToRegion(shot.dataUrl, rect);
 }
 
-/** 截图是设备像素；按截图宽高与视口 CSS 宽高之比换算，同时覆盖 devicePixelRatio 和页面缩放。 */
 async function cropToRegion(dataUrl: string, region: CircleRect): Promise<string> {
   const img = new Image();
   await new Promise<void>((resolve, reject) => {

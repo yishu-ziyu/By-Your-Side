@@ -1,8 +1,3 @@
-/**
- * 列出所有工作线：每个工作树的分支、未提交改动、比 origin/main 领先和落后几个提交、PR 状态，以及能不能删。
- *
- *   npm run lines
- */
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

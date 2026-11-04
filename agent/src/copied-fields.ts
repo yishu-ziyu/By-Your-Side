@@ -12,7 +12,6 @@ export interface CopyCheck {
   requestedRange?: CopyTextRange;
 }
 
-/** Kept only for the current user request; neither source text nor replacement selectors are retained. */
 export class CopiedFields {
   private scope = '';
   private fields = new Map<string, { id: string; proof: CopiedFieldProof | null }>();

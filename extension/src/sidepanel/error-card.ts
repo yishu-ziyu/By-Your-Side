@@ -1,25 +1,10 @@
-/**
- * 模型出错后的错误卡：按错误种类给能修掉原因的动作，修好后从出错处接着做。
- * - auth：「去换 key」打开底部面板，测试连接通过才能「保存并继续」；「仍然重试」原样再试。
- * - busy：卡上直接倒计时，到点自动接着做，最多 3 次、间隔逐次拉长；随时可以「立即重试」或换模型。3 次都没成，回到手动的
- *   「换一个模型」「稍后重试」。quota 等多久都不会好，只有手动的这两个。missing 只有换模型。
- *   只有刚发生的出错才倒计时：重开侧栏回放出来的旧卡只给手动按钮；几个窗口都开着侧栏时只由一个侧栏替用户重试。
- * - network：「重试」；网络恢复时自动重试一次。
- * 接着做之后卡片收成一行状态；答案送达时卡片在原地收成一行回执「出过错 · …，已从出错处继续」，
- * 行留在出错的位置，续写的答案跟在它下面。再出错不换新卡：同一张卡原地换内容、淡一下，不抖也不重新进场。
- */
 import { createElement as icon, Check } from "lucide";
 import type { ModelConnectionIdentity, ModelConnectionTarget, ModelOption } from "../../../shared/protocol.js";
 import { isModelTimeoutError, type ModelErrorCopy } from "../../../shared/user-facing.js";
 import { displayName } from "./models.js";
 
-/** 手动「稍后重试」等多久：循环自己已在 0.5、1 秒各重试过一次，再等太短多半还是 429。 */
 const LATER_SECONDS = 8;
 
-/**
- * 服务忙时卡上自动重试的基准等待（秒），每次再上下浮动 20%：多个面板同时被限流时不在同一秒一起撞回去。
- * 每次自动重试本身还会经过循环那两次快速重试。
- */
 const AUTO_WAITS = [8, 16, 32];
 
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -28,17 +13,12 @@ export interface KeyTestResult { ok: boolean; ms?: number; reason?: string; deta
 export interface KeyTarget { saveRequestId?: string; config: ModelConnectionTarget; credential: unknown; conversationId: string | null; runId: string; roles: string; connection: string }
 
 interface ErrorCardHost {
-  /** 把卡插进消息流的当前位置（接续锚点之前），让之后到达的答案自然跟在它下面。 */
   mount(el: HTMLElement): void;
-  /** 底部换 key 面板挂在这里（侧栏根容器）。 */
   app: HTMLElement;
   models(): ModelOption[];
   currentModel(): string | undefined;
-  /** 发 set_model；返回的 Promise 在宿主确认换好（model_info）后完成。 */
   switchModel(id: string): Promise<void>;
-  /** 发 retry_after_error；key 是刚换的 key，auto 表示倒计时到点自己发的。 */
   retry(key?: string, auto?: boolean, target?: KeyTarget): void;
-  /** 几个窗口的侧栏同时收到同一次出错时，只有返回 true 的那一个倒计时并替用户重试。 */
   ownsAutoRetry(): Promise<boolean>;
   resolveKeyTarget(identity: ModelConnectionIdentity): Promise<KeyTarget | null>;
   testKey(key: string, target: KeyTarget): Promise<KeyTestResult>;
@@ -48,12 +28,9 @@ interface ErrorCardHost {
 
 export function mountErrorCards(host: ErrorCardHost) {
   let card: HTMLElement | null = null;
-  /** 接着做之后、答案送达之前：回执要写明用户做了什么。 */
   let recovering: string | null = null;
   let stopOnline: (() => void) | null = null;
-  /** 这张卡已经用掉的自动重试次数；「立即重试」算作提前用掉当前这一次。 */
   let autoUsed = 0;
-  /** 这张卡可以自动重试：出错是刚发生的（不是回放），并且由这个侧栏负责。 */
   let auto = false;
   let shown: ModelErrorCopy | null = null;
   let stopCountdown: (() => void) | null = null;
@@ -71,7 +48,6 @@ export function mountErrorCards(host: ErrorCardHost) {
   const clearOnline = () => { stopOnline?.(); stopOnline = null; };
   const clearTimers = () => { clearOnline(); stopCountdown?.(); stopCountdown = null; };
 
-  /** 卡之后已经有用户的新消息：它不再是最新一轮，不能替用户重试。 */
   const superseded = (el: HTMLElement) => [...document.querySelectorAll(".msg.user")].some(u => (el.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
 
   function recover(source: string, key?: string, autoSent = false, target?: KeyTarget): void {
@@ -142,7 +118,6 @@ export function mountErrorCards(host: ErrorCardHost) {
     tick();
   }
 
-  /** 卡上有倒计时就开始走；到点前卡被换掉、收起、作废或不再是最新一轮，就停下不重试。 */
   function armCountdown(el: HTMLElement): void {
     const line = el.querySelector<HTMLElement>(".error-card-countdown");
     const bar = el.querySelector<HTMLElement>(".error-card-wait");
@@ -152,7 +127,6 @@ export function mountErrorCards(host: ErrorCardHost) {
     const seconds = Math.round(AUTO_WAITS[autoUsed]! * (0.8 + Math.random() * 0.4));
     const due = Date.now() + seconds * 1000;
     bar.style.setProperty("--wait", `${seconds}s`);
-    // 卡是 role="alert"：每秒变的数字不进读屏，只念一次不变的那句。
     const visibleText = document.createElement("span");
     visibleText.setAttribute("aria-hidden", "true");
     const spoken = document.createElement("span");
@@ -170,7 +144,6 @@ export function mountErrorCards(host: ErrorCardHost) {
       if (superseded(el)) { api.retire(); return; }
       const left = Math.ceil((due - Date.now()) / 1000);
 
-      // 还不知道是不是由这个侧栏负责时先不发，等结果回来再判一次。
       if (left <= 0) {
         if (owner) { autoUsed = attempt; recover("已自动重试", undefined, true); }
 
@@ -193,7 +166,6 @@ export function mountErrorCards(host: ErrorCardHost) {
     });
   }
 
-  /** 这张卡不由这个侧栏自动重试：原地换成手动按钮。 */
   function manual(el: HTMLElement): void {
     stopCountdown?.();
     stopCountdown = null;
@@ -369,13 +341,10 @@ export function mountErrorCards(host: ErrorCardHost) {
       card.append(note);
       return true;
     },
-    /** 模型出错：没有卡就在消息流末尾出一张（rise 进场）。上一张还在就原地换内容、淡一下：位置不动，不抖也不重新进场。 */
-    /** live：刚发生的出错；重开侧栏、切回会话时回放出来的是旧出错，只给手动按钮，不替用户重试。 */
     show(copy: ModelErrorCopy, live: boolean): void {
       clearTimers();
       recovering = null;
       shown = copy;
-      // 宿主已经耗尽超时重试预算，侧栏不能再开启一轮相同等待。
       auto = live && !isModelTimeoutError(copy.detail);
 
       if (card?.isConnected) {
@@ -396,7 +365,6 @@ export function mountErrorCards(host: ErrorCardHost) {
       host.scrollToEnd();
       armCountdown(card);
     },
-    /** 答案送达：接着做成功了，卡在原地收成一行回执，行留在出错的位置，续写的答案跟在它下面。 */
     delivered(): void {
       if (!card) return;
       const source = recovering;
@@ -421,7 +389,6 @@ export function mountErrorCards(host: ErrorCardHost) {
 
       host.scrollToEnd();
     },
-    /** 用户另发了新任务：旧卡只留作记录，按钮不再可点。 */
     retire(): void {
       if (!card || recovering !== null) return;
       clearTimers();

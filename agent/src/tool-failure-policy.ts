@@ -2,7 +2,6 @@ import type {ExtensionFactory, ToolResultEvent} from '@earendil-works/pi-coding-
 
 interface RepeatedToolFailure {toolName:string;error:string;attempts:number}
 
-/** Same tool + same input: a different target (e.g. three pages fetched in parallel) is not a retry. */
 function operationKey(event:Pick<ToolResultEvent,'toolName'|'input'>):string {
   return `${event.toolName}\u0000${stableJson(event.input)}`;
 }
@@ -13,28 +12,21 @@ function stableJson(value:unknown):string {
   return JSON.stringify(value)??'null';
 }
 
-/** Only the tool that validates an operation can establish that changing its input is required. */
 function requiresChangedInput(details:unknown):boolean {
   if(!details||typeof details!=='object'||!('failure' in details))return false;
   const failure=details.failure;
   return !!failure&&typeof failure==='object'&&'kind' in failure&&failure.kind==='invalid_arguments'&&'retry' in failure&&failure.retry==='change_input';
 }
 
-/** browser_run 的错误文字后面接着「程序停在哪一页」和那一页的快照，每次都可能不同；只比前面的错误本身。 */
 function comparableError(error:string):string {
   const ends=['\n[After this program','\n\nFresh snapshot of'].map(mark=>error.indexOf(mark)).filter(at=>at>=0);
 
   return ends.length>0?error.slice(0,Math.min(...ends)):error;
 }
 
-/**
- * 同一操作第二次出同样的错：宿主调高主模型的思考档位。
- * 不停下本轮：用户不要「连续出错三次就停」。
- */
 export class RepeatedToolFailurePolicy {
   private failures=new Map<string,{toolName:string;error:string;attempts:number;parameterAttempts:number}>();
   private blocked=new Set<string>();
-  /** skip：这次出错不是失败（用户在网页上没让发送），既不计数也不清零。 */
   constructor(private readonly onRepeat:(failure:RepeatedToolFailure)=>void,private readonly skip?:(toolCallId:string)=>boolean) {}
   reset():void {this.failures.clear();this.blocked.clear();}
   extension():ExtensionFactory {

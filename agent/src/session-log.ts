@@ -1,10 +1,8 @@
 import { uuidv7 } from '@earendil-works/pi-ai';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 
-/** One conversation log entry. Field names follow Pi 0.84.4 JSONL v4, so logs written before the switch still open. */
 export type SessionLogEntry = { type: string; id: string; parentId: string | null; seq: number; timestamp: number; customType?: string; data?: unknown; message?: unknown };
 
-/** What the agent needs from a conversation log. Pi 0.84.4's Session also fits; some tests still pass it. */
 export interface SessionLogPort {
   findEntriesOnBranch(query: { order: 'oldestFirst' }): Promise<SessionLogEntry[]>;
   getEntry(id: string): Promise<SessionLogEntry | undefined>;
@@ -14,32 +12,25 @@ export interface SessionLogPort {
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
-/** One stored line as Pi 0.84.4 wrote it. Entry lines also carry the SessionLogEntry fields. */
 type StoredLine = Partial<SessionLogEntry> & { kind: 'header' | 'entry' | 'lane' | 'record' | 'fact'; version?: number; lane?: string; leafId?: string | null };
 
 type NewEntry = { type: 'message'; id: string; message: AgentMessage } | { type: 'custom'; id: string; customType: string; data?: JsonValue };
 
 const parse = (text: string): StoredLine => JSON.parse(text);
 
-/**
- * Append-only conversation log: one header line, then one line per change.
- * Every new entry goes on the "main" lane and points at the previous main leaf.
- * Old Pi logs may also hold lane, record and fact lines; replay keeps their sequence numbers and the main leaf.
- */
 export class SessionLog implements SessionLogPort {
   private readonly entries = new Map<string, SessionLogEntry>();
   private seq = 0;
   private leaf: string | null = null;
   private tail: Promise<unknown> = Promise.resolve();
 
-  /** `write` must durably append one line before it resolves. */
+  /** WHY: `write` must durably append one line before it resolves. */
   private constructor(private readonly write: (line: string) => Promise<void>) {}
 
   static header(id: string, createdAt: number): string {
     return `${JSON.stringify({ kind: 'header', version: 4, id, createdAt, cwd: '/' })}\n`;
   }
 
-  /** Replays stored text. `repaired` is the text to store back when the last line was torn or had no final newline. */
   static load(text: string, write: (line: string) => Promise<void>) {
     const log = new SessionLog(write);
     const lines = text.split('\n');
@@ -53,7 +44,6 @@ export class SessionLog implements SessionLogPort {
       let line: StoredLine;
 
       try { line = parse(lines[index]!); } catch (error) {
-        // A torn last line is an append that never finished; drop it like Pi did.
         if (index === lines.length - 1) return { log, repaired: `${lines.slice(0, index).join('\n')}\n` };
 
         throw error;
@@ -95,7 +85,6 @@ export class SessionLog implements SessionLogPort {
 
   private append(fields: NewEntry): Promise<string> {
     const run = this.tail.then(async () => {
-      // Key order matches Pi's encoder: kind, lane, entry fields, parentId, seq, timestamp.
       const line = { kind: 'entry' as const, lane: 'main', ...structuredClone(fields), parentId: this.leaf, seq: this.seq + 1, timestamp: Date.now() };
 
       await this.write(`${JSON.stringify(line)}\n`);
@@ -104,7 +93,6 @@ export class SessionLog implements SessionLogPort {
       return fields.id;
     });
 
-    // A failed write does not block later writes; the caller sees the error.
     this.tail = run.catch(() => {});
 
     return run;

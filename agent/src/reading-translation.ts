@@ -1,4 +1,3 @@
-/** Detect copied ordinary-looking words, not code, addresses or capitalized names. The model adjudicates ambiguous names in one repair pass. */
 export function untranslatedReadingWords(source: string, translation: string): string[] {
   const prose = (value: string) => value.replace(/```[\s\S]*?(?:```|$)|`[^`]*`|https?:\/\/\S+|\[[^\]]*\]\([^)]*\)/g, ' ');
   const original = prose(source);

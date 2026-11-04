@@ -1,8 +1,3 @@
-/**
- * Real extension and page: icon-font glyphs (CSS ::before, Unicode private use) reach the model as [图标], never as text.
- * The page draws five identical star glyphs for a one-star book, so reading the glyphs as text would say "5 stars".
- * Failure: the snapshot passes the glyphs through; the scripted program sees a private-use character and never clicks Done.
- */
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';

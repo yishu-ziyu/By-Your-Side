@@ -99,12 +99,10 @@ function buttonsMaskFor(sessionId: string): number {
   return mask;
 }
 
-/** 页面里核对后拒绝填写（不可填、没有这个选项）：页面一点没动，确定没执行。 */
 class FillRefused extends Error {
   readonly executionFact = "not_executed" as const;
 }
 
-/** debugger 被占用/分离一类的失败：只有这类失败可以改走 domops 页面内路径。 */
 function isDebuggerUnavailable(error: unknown): boolean {
   return /占用|DevTools|debugger|detach/i.test(oneLine(error));
 }
@@ -116,17 +114,14 @@ interface DomRect {
   height: number;
 }
 
-/** CDP/DOM 读回的 rect 未必真带齐字段；按 DomRect 契约在边界校验一次，调用点不再各自 typeof。 */
 function isDomRect(value: DomRect | undefined | null): value is DomRect {
   return !!value && typeof value.x === "number";
 }
 
-/** tabIds 可能来自消息边界，调用方未必过类型；按 chrome.tabs 的 id 契约（正整数）校验一次。 */
 function isTabId(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
-/** Serialized into the page by callDom; keep this function self-contained. */
 function readDomTargetRect(target: string): { ok: true; rect: DomRect } | { ok: false; error: string } {
   const dom = window.__sideagent?.dom;
 
@@ -139,7 +134,6 @@ function readDomTargetRect(target: string): { ok: true; rect: DomRect } | { ok: 
   }
 }
 
-/** "@N" → ref 号；非 @N 形式返回 null。 */
 function parseRef(target: string): number | null {
   if (!target.startsWith("@")) return null;
   const n = Number(target.slice(1));
@@ -147,7 +141,6 @@ function parseRef(target: string): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-/** AX ref → 元素视口包围盒（scrollIntoView + getBoundingClientRect）。 */
 async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOnly = false, beforeDispatch?: DispatchGuard, nativeTimeHost = false): Promise<DomRect> {
   const rect = await callOnBackendNode<DomRect | undefined>(
     tabId,
@@ -165,21 +158,14 @@ async function rectOfBackendNode(tabId: number, backendNodeId: number, contentOn
   return rect;
 }
 
-/** 填写回执：浏览器判定越界时带上 rangeIssue（值、问题、允许范围），不报成单纯成功。 */
 function filledResult(range: InputRangeReadout | null | undefined, readback?: FieldReadback, select?: boolean): ToolContract["fill"]["data"] {
   const rangeIssue = rangeIssueOf(range);
 
-  // An unreadable select (page re-rendered it) still fires change again on a repeat: the ledger must know it is a select.
   if (readback && select && readback.match === "unreadable" && !readback.sensitive) readback = { ...readback, select: true };
 
   return { filled: true, ...(rangeIssue ? { rangeIssue } : {}), ...(readback ? { readback } : {}) };
 }
 
-/**
- * 落点上的「发送」按钮属于哪一栏（R2 确认框上的内容）。在页面里执行，保持自包含。
- * 有表单只在表单里找；没有表单从按钮往上找，第一个有输入栏的容器为准，到 body 就停。
- * 只认唯一的一栏：多行栏（textarea、contenteditable）唯一就用它；没有多行栏时单行文字栏唯一才用。认不准就不给，不猜。
- */
 function findSendFieldInPage(px: number, py: number): Element | null {
   let el = document.elementFromPoint(px, py);
 
@@ -224,7 +210,6 @@ function findSendFieldInPage(px: number, py: number): Element | null {
 
 const SEND_CONTENT_MAX = 120;
 
-/** 确认框要写的：内容、发给谁、按钮在网页上的位置（同时圈出来）。 */
 async function readSendDetails(tabId: number, x: number, y: number): Promise<SendDetails> {
   const [draft, target] = await Promise.all([readSendContent(tabId, x, y), sendTargetIdentity(tabId, x, y)]);
   try {
@@ -254,7 +239,6 @@ async function sendFingerprint(value: string): Promise<string> {
   return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** 确认框上的摘要和用于确认后核对的发送区域快照。 */
 async function readSendContent(tabId: number, x: number, y: number): Promise<Pick<SendDetails, "content" | "binding">> {
   try {
     const expression = `(() => {
@@ -280,10 +264,6 @@ async function readSendContent(tabId: number, x: number, y: number): Promise<Pic
   } catch { return { binding: "unavailable" }; }
 }
 
-/**
- * 比较要写的与读回的（做法参考 Skyvern 的 field commit 核对）。fill 整栏替换，要求读回等于 requested；
- * type_text 是在原有内容里插入，只要求读回里含有 requested；下拉框按选中项文字，包含关系也算对上（fill 会按部分文字挑选项）。
- */
 function classifyReadback(field: PageField | null, requested: string, mode: "replace" | "insert"): FieldReadback {
   if (!field) return { name: "", match: "unreadable" };
 
@@ -296,7 +276,6 @@ function classifyReadback(field: PageField | null, requested: string, mode: "rep
   if (observed === "" && requested !== "") match = "not_held";
   else if (mode === "insert") match = observed.includes(requested) ? "same" : norm(observed).includes(norm(requested)) ? "reformatted" : "different";
   else if (observed === wanted) match = "same";
-  // 下拉框：要写的是选项的 value（如 CN）而页面显示文字（中国）时，对上了选中项的 value 也算一样。
   else if (field.select && norm(wanted) !== "" && (norm(wanted) === norm(observed) || norm(wanted) === norm(field.optionValue ?? ""))) match = "same";
   else if (norm(observed) === norm(wanted) || (field.select && wanted.trim() !== "" && (observed.includes(wanted.trim()) || wanted.includes(observed)))) match = "reformatted";
   else match = "different";
@@ -304,7 +283,6 @@ function classifyReadback(field: PageField | null, requested: string, mode: "rep
   return { name: field.name, match, requested: requested.slice(0, FIELD_READBACK_MAX), observed, ...(field.truncated ? { truncated: true as const } : {}), ...(field.select ? { select: true as const } : {}) };
 }
 
-/** 读回失败不影响写入结果：读不到记 unreadable。 */
 async function readBackField(tabId: number, where: { backendNodeId: number } | { target: string | null }, requested: string, mode: "replace" | "insert", max = FIELD_READBACK_MAX): Promise<FieldReadback> {
   let field: PageField | null = null;
 
@@ -312,14 +290,12 @@ async function readBackField(tabId: number, where: { backendNodeId: number } | {
     field = "backendNodeId" in where
       ? await callOnBackendNode<PageField | null>(tabId, where.backendNodeId, `function(max, sensitiveName) { return (${readFieldInPage.toString()}).call(this, null, max, sensitiveName); }`, [max, SENSITIVE_FIELD_NAME.source])
       : await callDom(tabId, readFieldInPage, [where.target, max, SENSITIVE_FIELD_NAME.source]);
-  } catch { /* 读不回不算写入失败 */ }
+  } catch {  }
 
   return classifyReadback(field ?? null, requested, mode);
 }
 
-/** AX ref → 填充（原生 value setter + input/change 事件，与 domops fill 同逻辑）。 */
 async function fillBackendNode(tabId: number, backendNodeId: number, value: string, expectedDocumentId?:string, beforeDispatch?: DispatchGuard): Promise<{ range?: InputRangeReadout | null; select?: true }> {
-  // 先核对目标能不能填、选项在不在，再聚焦写入：核对不过时页面一点没动，回执按「没执行」上报。
   const outcome = await callOnBackendNode<{ refused: string } | { filled: true; range?: InputRangeReadout | null; select?: true }>(
     tabId,
     backendNodeId,
@@ -369,7 +345,6 @@ async function fillBackendNode(tabId: number, backendNodeId: number, value: stri
     expectedDocumentId, beforeDispatch,
   );
 
-  // 旧行为不看返回值：拿不到回值（undefined）时照旧当作已填写，只认明确的拒绝。
   if (outcome && "refused" in outcome) throw new FillRefused(outcome.refused);
 
   return { range: outcome?.range, ...(outcome && "select" in outcome && outcome.select ? { select: true as const } : {}) };
@@ -394,7 +369,6 @@ async function cursorMove(tabId: number, x: number, y: number, id: string): Prom
       window.__sideagent?.cursor?.for(cid)?.arrive?.(x, y);
     }, [x, y, id]);
   } catch {
-    /* 页面禁止注入则跳过可视化 */
   }
 }
 
@@ -425,7 +399,6 @@ async function beginCursorAction(
       }, [cid, actionId, kind, target ?? null, label ?? ""]);
     }
   } catch {
-    // 可视化不可用不改变执行判定；不凭坐标猜另一个元素来画框。
   }
 
   return actionId;
@@ -437,11 +410,6 @@ type GazeRead =
   | { kind: "rest" }
   | { kind: "off" };
 
-/**
- * 注视区：把它正在读的位置画到页面上。只画真实发生的读——读具体元素才落到那个元素上，
- * 整页读不画；旧 ref 找不到节点时不画，不凭选择器猜另一个元素。
- * 画不上不影响读本身，也不算执行证据。
- */
 export async function cursorGaze(tabId: number, cid: string, read: GazeRead): Promise<void> {
   try {
     if (read.kind === "rest" || read.kind === "off") {
@@ -496,7 +464,6 @@ export async function cursorGaze(tabId: number, cid: string, read: GazeRead): Pr
       window.__sideagent?.cursor?.for(c)?.gaze?.({ mode: "at", rects });
     }, [cid, read.selector]);
   } catch {
-    /* 页面禁止注入或节点已变：不画，读照常 */
   }
 }
 
@@ -507,7 +474,7 @@ async function endCursorAction(
     await callDom(tabId, (cid: string, id: string, outcome: "done" | "failed" | "unknown", point: [number, number] | null) => {
       window.__sideagent?.cursor?.for(cid)?.endAction(id, outcome, point ?? undefined);
     }, [cid, actionId, outcome, point ?? null]);
-  } catch { /* 导航或退出后的旧动作不能重建提示 */ }
+  } catch {  }
 }
 
 async function recordCursorTrail(
@@ -575,11 +542,9 @@ export async function stopTrailReplay(sessionId?: string): Promise<void> {
       [cursorId(trail.sessionId)],
     );
   } catch {
-    /* 标签关了 */
   }
 }
 
-/** 松开拿住态：摘按住姿态、名牌恢复成员名，光标停在原处。注入失败静默跳过。 */
 async function releaseHold(sessionId: string): Promise<void> {
   const tabId = await resolveOverlayTabId(sessionId);
 
@@ -595,7 +560,6 @@ async function releaseHold(sessionId: string): Promise<void> {
       [cursorId(sessionId)],
     );
   } catch {
-    /* 页面禁止注入则跳过 */
   }
 }
 
@@ -603,19 +567,15 @@ type ClickParams = {
   tabId?: number;
   target?: string;
   point?: [number, number];
-  /** 相对 target 左上角的 CSS 像素偏移；有绝对 point 时忽略。 */
   position?: ElementPosition;
   button?: MouseButton;
   clickCount?: number;
-  /** 绕过指针拦截/命中核对仍派发（force）。 */
   force?: boolean;
   label?: string;
 };
 
-/** 跟随打开的新标签页：url 只在读到时才带上。 */
 type OpenedTab = { tabId: number; url?: string };
 
-/** CDP Input.dispatchKeyEvent 参数；commands / text 只在需要时才带上。 */
 type KeyEventParams = {
   type: string;
   key: string;
@@ -634,7 +594,6 @@ async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
 
     if (claimed != null) return claimed;
   } catch {
-    /* 没有工作标签 */
   }
 
   try {
@@ -660,7 +619,7 @@ export function takeLastActionTarget(): PageTarget | null {
 async function rememberActionTarget(tabId: number, target: string | undefined, label: string): Promise<PageTarget> {
   let url = "";
 
-  try { url = (await chrome.tabs.get(tabId)).url ?? ""; } catch { /* 标签没了就空着 */ }
+  try { url = (await chrome.tabs.get(tabId)).url ?? ""; } catch {  }
   lastActionTarget = { target: target ?? "", label, tabId, url };
 
   return lastActionTarget;
@@ -683,7 +642,6 @@ async function hideCursors(sessionId: string = LEAD_SESSION_ID): Promise<void> {
       [cid],
     );
   } catch {
-    /* 页面禁止注入则跳过 */
   }
 }
 
@@ -705,7 +663,6 @@ async function leaveCursorsTowardPanel(sessionId: string = LEAD_SESSION_ID): Pro
       [cid],
     );
   } catch {
-    /* 页面禁止注入则跳过 */
   }
 }
 
@@ -727,7 +684,6 @@ async function returnCursorsFromPanel(sessionId: string = LEAD_SESSION_ID): Prom
       [cid],
     );
   } catch {
-    /* 页面禁止注入则跳过 */
   }
 }
 
@@ -792,7 +748,7 @@ export async function inspectStepTarget(tabId: number, target: string, caption: 
 export async function clearStepInspect(tabId: number): Promise<void> {
   try {
     await callDom(tabId, () => window.__sideagent?.cursor?.clearInspect?.() ?? Promise.resolve(), []);
-  } catch { /* 页关了就不必收 */ }
+  } catch {  }
 }
 
 function stripHash(url: string): string {
@@ -815,7 +771,6 @@ type ControlBannerView = {
   members?: Array<{ id: string; initial: string; color: string }>;
 };
 
-// 每页保留各会话的期望状态；最后更新的会话负责当前可见文案。
 const controlBannerOwners = new Map<number, Map<string, ControlBannerView | null>>();
 
 const controlBannerRevision = new Map<string, number>();
@@ -824,7 +779,6 @@ const controlBannerPaints = new Map<number, Promise<void>>();
 
 const paintedControlBannerOwner = new Map<number, string>();
 
-/** 路由页面上的交还按钮：页面归属和控制条来源可能不是同一会话。 */
 export function getControlBannerOwner(tabId: number): string | undefined {
   const owner = paintedControlBannerOwner.get(tabId);
 
@@ -840,7 +794,6 @@ function beginBannerShow(owner: string): number {
   return revision;
 }
 
-/** 同页绘制串行，执行时读取最新期望状态，迟到的旧绘制后必定收敛到新状态。 */
 function renderControlBanner(tabId: number): Promise<void> {
   const previous = controlBannerPaints.get(tabId) ?? Promise.resolve();
 
@@ -860,7 +813,7 @@ function renderControlBanner(tabId: number): Promise<void> {
 
       if (visible) paintedControlBannerOwner.set(tabId, visible[0]);
       else paintedControlBannerOwner.delete(tabId);
-    } catch { /* 页面关闭或禁止注入，其他页仍继续清理。 */ }
+    } catch {  }
   });
 
   controlBannerPaints.set(tabId, next);
@@ -872,7 +825,6 @@ function renderControlBanner(tabId: number): Promise<void> {
 }
 
 async function showControlBanners(ids: Set<number>, view: ControlBannerView | null | undefined, owner: string, revision: number): Promise<void> {
-  // 只读页面查询也会迟到，过期的展示不再登记或绘制。
   if (controlBannerRevision.get(owner) !== revision) return;
 
   for (const id of ids) {
@@ -894,7 +846,7 @@ export async function showTeamControlBanners(tabIds: Iterable<number>, view?: Co
     const [active] = await activeTargetTabs();
 
     if (active?.id != null) ids.add(active.id);
-  } catch { /* 无活动页 */ }
+  } catch {  }
 
   await showControlBanners(ids, view, key, revision);
 }
@@ -911,7 +863,6 @@ export async function returnCursorsForSessions(sessionIds: Iterable<string>): Pr
   await Promise.all([...sessionIds].map(id => returnCursorsFromPanel(id)));
 }
 
-/** 清理该会话实际展示过的全部页；其他会话的控制条重新按其状态绘制。 */
 export async function hideControlBannersForOwner(owner: string, alsoHide: Iterable<number> = []): Promise<void> {
   const key = bannerOwnerKey(owner);
   beginBannerShow(key);
@@ -929,28 +880,19 @@ export async function hideControlBannersForOwner(owner: string, alsoHide: Iterab
 
 export async function hideUserControlBanners(tabId?: number, owner?: string): Promise<void> {
   if (tabId == null) return hideControlBannersForOwner(bannerOwnerKey(owner));
-  // 扩展启动时清理由旧 isolated world 遗留的单页控制条。
   controlBannerOwners.delete(tabId);
   await renderControlBanner(tabId);
 }
 
-/** 名牌「取消」：收起标注，松开停在目标上的手。 */
 export async function cancelMarkHold(sessionId: string = LEAD_SESSION_ID): Promise<void> {
   try {
     await clearMarks(sessionId);
   } catch {
-    /* 没有标注可清 */
   }
 
   await releaseHold(sessionId);
 }
 
-/**
- * plate：光标名牌上显示的目标名，先取页面上元素自己的名字，读不到再用模型写的 label。
- * buttons：只用来判断是不是「发送」，不取模型写的 label。目标按钮和落点上的按钮各取 aria-label、title、文字三个名字，
- * 分开判断：任何一个以发送开头都算（表单里的按钮也取原文，不换成「提交表单」）。
- * 落点总是另读一次：点一个大容器、坐标落在里面的「发送」上，或者 force 点被盖住的目标，都绕不过发送确认。
- */
 async function namesOfClickTarget(tabId: number, params: ClickParams, point: [number, number] | undefined): Promise<{ plate: string; buttons: string[]; frame?: boolean }> {
   const names = await pageNamesOfClickTarget(tabId, params, point);
 
@@ -990,19 +932,19 @@ async function pageNamesOfClickTarget(
         fromTarget = await callDom(tabId, readNamesInPage, [target, 0, 0]);
       }
     }
-  } catch { /* 读不到目标的名字：下面落点照样读 */ }
+  } catch {  }
 
   let atPoint: { plate: string; buttons: string[]; frame?: boolean; unverified?: boolean } = none;
 
   try {
     if (point) atPoint = await sendNamesAt(tabId, point[0], point[1]);
-  } catch { /* 读不到落点 */ }
+  } catch {  }
 
   if (atPoint.unverified) throw notExecuted(new Error("无法核对内嵌页面中的操作目标，未点击；请由用户自己操作。"));
   return { plate: target ? fromTarget.plate : atPoint.plate, buttons: [...(fromTarget.buttons ?? []), ...(atPoint.buttons ?? [])], frame: atPoint.frame };
 }
 
-/** 在页面 ISOLATED world 里读目标（t）或坐标落点上按钮的名字；序列化进页面，必须自包含。 */
+/** WHY: 在页面 ISOLATED world 里读目标（t）或坐标落点上按钮的名字；序列化进页面，必须自包含。 */
 function readNamesInPage(t: string | null, px: number, py: number): { plate: string; buttons: string[]; frame?: boolean } {
   let el: Element | null | undefined;
 
@@ -1010,7 +952,6 @@ function readNamesInPage(t: string | null, px: number, py: number): { plate: str
   else {
     el = document.elementFromPoint(px, py);
 
-    // 开放的 shadow DOM 里继续往下找落点；closed shadow 找不进去。
     while (el?.shadowRoot) {
       const inner = el.shadowRoot.elementFromPoint(px, py);
 
@@ -1030,7 +971,6 @@ function readNamesInPage(t: string | null, px: number, py: number): { plate: str
   return { plate: t === null ? "" : label(el), buttons, frame: t === null && /^(IFRAME|FRAME)$/.test(el.tagName) };
 }
 
-/** 真正派发的落点上按钮的名字。 */
 async function sendNamesAt(tabId: number, x: number, y: number): Promise<{ plate: string; buttons: string[]; frame?: boolean; unverified?: boolean }> {
   try {
     const names = await callDom(tabId, readNamesInPage, [null, x, y]);
@@ -1103,7 +1043,6 @@ async function framePointNames(tabId: number, x: number, y: number): Promise<{ p
   } finally { releaseAttachHold(tabId); }
 }
 
-/** 定位目标只读页面、不发任何输入：这里的任何失败都意味着操作没有执行。 */
 async function resolvePointerTarget(
   tabId: number,
   params: ClickParams,
@@ -1133,8 +1072,6 @@ async function locatePointerTarget(
   let targetRect: DomRect | undefined;
 
   if (target) {
-    // target → 元素中心视口坐标与包围盒。@N 若来自 AX 快照（ref 即 backendDOMNodeId）走 CDP；
-    // 否则（DOM 回退快照的 ref 或 CSS/loc 形式）或 debugger 被占用时走 domops 页面内解析。
     const ref = parseRef(target);
     const backendNodeId = axBackendNodeFor(tabId, ref);
     let resolvedViaCdp = false;
@@ -1159,13 +1096,9 @@ async function locatePointerTarget(
           }
           throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
         }
-        // debugger 不可用：落到 domops 路径（注意此时 @N 依赖 DOM 快照的 refs，
-        // 若上次快照是 AX 版会解析不到——属边缘情况，让 domops 报「已失效」即可）
       }
     }
 
-    // Even with an explicit point, resolve the named target afresh before clicking.
-    // This refreshes domops' identity lock without overwriting the user's point.
     if (!resolvedViaCdp) {
       await ensureDomOps(tabId, beforeDispatch);
 
@@ -1238,7 +1171,6 @@ function assertUsable(el) {
   if (el.checkVisibility && !el.checkVisibility({ checkVisibilityCSS: true })) throw new Error("目标不可见，操作未执行。请重新 snapshot 确认当前目标。");
 }`;
 
-// 快照里的编号可能落在按钮里的文字节点上（弹窗的「Close」）：按包住它的元素来点。
 const CONFIRM_CLICK_JS = `function() {
   ${TARGET_OWNS_HIT_JS}
   const el = this && this.nodeType === 3 ? this.parentElement : this;
@@ -1272,14 +1204,11 @@ const HIT_TEST_AT_JS = `function(x, y) {
 }`;
 
 function isPrePressTargetError(e: unknown): boolean {
-  // TARGET_GONE：text=/role 目标在按下前核对时文字不在了（domops 只读核对，没派发按下）。
   return /覆盖|挡住|已失效|可命中|不可见|不可用|不稳定|未找到目标|视口|坐标|替换|TARGET_GONE/.test(oneLine(e));
 }
 
-/** 只读核对自己抛出的「被挡、失效、不可见、不可用」：页面没动，确定没执行。 */
 const TARGET_CHECK_REFUSAL = /已失效|覆盖|可命中|不可见|不可用/;
 
-/** 页面里命中的最上层元素（穿过开放的 shadow DOM）。point 缺省时取目标中心，同 CONFIRM_CLICK_JS。 */
 const TOP_AT_JS = `function(point) {
   const el = this && this.nodeType === 3 ? this.parentElement : this;
   const r = el.getBoundingClientRect();
@@ -1290,12 +1219,11 @@ const TOP_AT_JS = `function(point) {
 }`;
 
 /**
- * 「被覆盖」改写成「被 @N 角色 挡住」并带上名字：模型据此先处理挡住的元素。
+ * WHY: 「被覆盖」改写成「被 @N 角色 挡住」并带上名字：模型据此先处理挡住的元素。
  * 从页面里的命中元素出发；按坐标问 CDP（DOM.getNodeForLocation）会命中扩展自己画的状态层。
  * 读不到就保留原说明。
  */
 async function explainRefusal(tabId: number, backendNodeId: number, error: unknown, point?: [number, number]): Promise<string> {
-  // 页面脚本抛出的错误带着调用栈（"Error: … at assertUsable …"），对模型没用，只留说明。
   const message = oneLine(error).replace(/^Error:\s*/, "").split(/\s+at\s+\S+\s+\(/)[0]!.trim();
 
   if (!/覆盖/.test(message)) return message;
@@ -1311,13 +1239,12 @@ async function explainRefusal(tabId: number, backendNodeId: number, error: unkno
     const hit = (await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId: top.result.objectId })).node.backendNodeId;
     const { nodes } = await sendCommand<{ nodes: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId: hit, fetchRelatives: true });
     const byId = new Map(nodes.map(n => [n.nodeId, n]));
-    // 目标自己的祖先（例如装着目标的对话框）不能算挡住它的东西：叫模型关掉它，等于关掉目标所在的弹窗。
+    // WHY: 目标自己的祖先（例如装着目标的对话框）不能算挡住它的东西：叫模型关掉它，等于关掉目标所在的弹窗。
     const targetTree = await sendCommand<{ nodes: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId, fetchRelatives: true });
     const holdsTarget = new Set(targetTree.nodes.map(n => n.nodeId));
     const first = nodes.find(n => n.backendDOMNodeId === hit);
     let named = first;
 
-    // 往上找第一个有名字或是对话框的节点；碰到目标的祖先或到了整页还没有，就用命中的元素本身。
     while (named && named.role?.value !== "RootWebArea" && !holdsTarget.has(named.nodeId) && (named.ignored || !(String(named.name?.value ?? "").trim() || /dialog/.test(named.role?.value ?? "")))) {
       named = named.parentId ? byId.get(named.parentId) : undefined;
     }
@@ -1329,7 +1256,7 @@ async function explainRefusal(tabId: number, backendNodeId: number, error: unkno
     const ownText = named.childIds?.map(c => byId.get(c)).find(c => c?.role?.value === "StaticText")?.name?.value;
     const name = String(named.name?.value || ownText || "").replace(/\s+/g, " ").trim().slice(0, 40);
 
-    // 等这几次 CDP 调用时页面可能已换（导航、DOM 快照）：目标编号仍登记着才登记新编号，不把旧编号带回来。
+    // WHY: 等这几次 CDP 调用时页面可能已换（导航、DOM 快照）：目标编号仍登记着才登记新编号，不把旧编号带回来。
     if (isAxNode(tabId, backendNodeId)) addAxRefs(tabId, [id]);
 
     return `目标被 @${id} ${named.ignored ? "元素" : named.role?.value ?? "元素"} 挡住，操作未执行，挡住它的元素也没有被点。${name ? `挡住的元素名字：${wrapPageContent(name)}` : ""}先处理挡住的元素（例如关掉弹层），再重新 snapshot 确认目标。`;
@@ -1340,10 +1267,6 @@ async function explainRefusal(tabId: number, backendNodeId: number, error: unkno
   }
 }
 
-/**
- * 视觉等待后再次确认同一目标仍存在且可命中；失败则停，不点原坐标处的其他对象。
- * 确认阶段还没向页面派发任何输入：任何失败（被覆盖、已失效、找不到）都是「没执行」。
- */
 async function confirmPointerTarget(
   tabId: number,
   target: string,
@@ -1376,7 +1299,6 @@ async function checkPointerTarget(
       };
     } catch (e) {
       if (!isDebuggerUnavailable(e)) {
-        // 只读的目标核对自己抛出的「被挡、失效、不可见、不可用」：页面没动，确定没执行（页面脚本报错默认记成结果不确定）。
         if (TARGET_CHECK_REFUSAL.test(oneLine(e))) throw notExecuted(new Error(await explainRefusal(tabId, backendNodeId, e)));
 
         if (e && typeof e === "object" && "executionFact" in e) throw e;
@@ -1422,7 +1344,6 @@ async function checkPointerTarget(
   };
 }
 
-/** 在即将按下的坐标确认仍是同一目标。不滚动，避免把命中检查做成另一次布局扰动。 */
 async function hitTestPointerTarget(tabId: number, target: string, x: number, y: number): Promise<void> {
   const ref = parseRef(target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
@@ -1434,7 +1355,6 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
       return;
     } catch (e) {
       if (!isDebuggerUnavailable(e)) {
-        // 只读的目标核对自己抛出的「被挡、失效、不可见、不可用」：页面没动，确定没执行（页面脚本报错默认记成结果不确定）。
         if (TARGET_CHECK_REFUSAL.test(oneLine(e))) throw notExecuted(new Error(await explainRefusal(tabId, backendNodeId, e, [x, y])));
 
         if (e && typeof e === "object" && "executionFact" in e) throw e;
@@ -1474,7 +1394,7 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
 }
 
 /**
- * 点击期间工作页自己打开的新窗口（CDP Page.windowOpen）和点击前该窗口的活动页。
+ * WHY: 点击期间工作页自己打开的新窗口（CDP Page.windowOpen）和点击前该窗口的活动页。
  * 工作页在后台时，Chrome 把新页的打开者记成当时的活动页（多半是用户的页），不是工作页；
  * 所以只凭打开者认不出新页。
  */
@@ -1483,21 +1403,20 @@ type OpenWatch = { workingTabId: number; windowId: number; activeBefore?: number
 async function watchOpenedTabs(tab: chrome.tabs.Tab & { id: number }): Promise<OpenWatch> {
   const watch: OpenWatch = { workingTabId: tab.id, windowId: tab.windowId, windowOpens: 0, stop: () => {} };
 
-  try { watch.activeBefore = (await chrome.tabs.query({ active: true, windowId: tab.windowId }))[0]?.id; } catch { /* 读不到就只按打开者认 */ }
+  try { watch.activeBefore = (await chrome.tabs.query({ active: true, windowId: tab.windowId }))[0]?.id; } catch {  }
   const onEvent = (source: chrome.debugger.Debuggee, method: string) => { if (source.tabId === tab.id && method === "Page.windowOpen") watch.windowOpens += 1; };
-  // Chrome 会把点开的新页设成活动页：一出现就把用户原来在看的页放回去，不等点击做完。
+  // WHY: Chrome 会把点开的新页设成活动页：一出现就把用户原来在看的页放回去，不等点击做完。
   const onCreated = (created: chrome.tabs.Tab) => { if (created.id !== undefined && openedByAssistant(created, watch, false)) void restoreForeground(created.id, watch); };
 
   try {
     chrome.debugger.onEvent.addListener(onEvent);
     chrome.tabs.onCreated.addListener(onCreated);
     watch.stop = () => { chrome.debugger.onEvent.removeListener(onEvent); chrome.tabs.onCreated.removeListener(onCreated); };
-  } catch { /* 监听不可用：退回只按打开者认 */ }
+  } catch {  }
 
   return watch;
 }
 
-/** 新页是不是工作页这一下点开的。allowUnknownOpener：跟随时沿用旧规则，打开者缺省也认；放回前台时不认，免得把用户自己新开的页换走。 */
 function openedByAssistant(tab: chrome.tabs.Tab, watch: OpenWatch, allowUnknownOpener: boolean): boolean {
   if (tab.openerTabId === watch.workingTabId) return true;
 
@@ -1506,7 +1425,6 @@ function openedByAssistant(tab: chrome.tabs.Tab, watch: OpenWatch, allowUnknownO
   return watch.windowOpens > 0 && tab.openerTabId === watch.activeBefore && tab.windowId === watch.windowId;
 }
 
-/** 新页被 Chrome 设成了活动页，而用户点击前在看别的页：把那一页放回活动页。用户自己已经换过页就不动；从不聚焦窗口。 */
 async function restoreForeground(openedId: number, watch: OpenWatch): Promise<void> {
   if (watch.activeBefore === undefined || watch.activeBefore === openedId) return;
 
@@ -1515,13 +1433,9 @@ async function restoreForeground(openedId: number, watch: OpenWatch): Promise<vo
 
     if (active?.id !== openedId) return;
     await putBackUserTab(watch.activeBefore);
-  } catch { /* 原页已关：不动 */ }
+  } catch {  }
 }
 
-/**
- * 点开新标签页时跟随：`target="_blank"` / `window.open` 会把结果放在隔壁——
- * 不跟的话 agent 会对着「什么都没变」的原页反复重试。归属校验失败（被别人占）只报告不跟随。
- */
 async function followOpenedTab(before: ReadonlySet<number>, watch: OpenWatch, sessionId: string): Promise<{ tabId: number; url?: string } | undefined> {
   try {
     const tabs = await chrome.tabs.query({});
@@ -1537,7 +1451,6 @@ async function followOpenedTab(before: ReadonlySet<number>, watch: OpenWatch, se
     try {
       await switchTab({ tabId: opened.id }, sessionId);
     } catch {
-      /* 新页归别人/坐不上就只报告，不抢 */
     }
 
     const openedTab: OpenedTab = { tabId: opened.id };
@@ -1551,7 +1464,7 @@ async function followOpenedTab(before: ReadonlySet<number>, watch: OpenWatch, se
 }
 
 /**
- * 助手不能点我们自己画在页面上的界面（名牌上的「确认 / 提交」、控制条等）：那些是留给用户的。
+ * WHY: 助手不能点我们自己画在页面上的界面（名牌上的「确认 / 提交」、控制条等）：那些是留给用户的。
  * 模型会去点名牌上自己起名为「提交订阅」的确认键：若没被别的检查挡住，就等于自己批准自己。
  * 看真正派发的落点：按编号、选择器、坐标点都一样。用户确认后由扩展重放的那一下不经过这里。
  */
@@ -1565,7 +1478,6 @@ async function assertNotOwnOverlay(tabId: number, x: number, y: number): Promise
   if (hit === true) throw notExecuted(new Error("这里是助手自己在页面上画的确认按钮或状态条，只能由用户来点，操作未执行。请在回复里请用户确认，不要点它。"));
 }
 
-/** 只给明确的网页目标让位；坐标点按和交接控件仍走原有保护。租用按 token 释放，避免并行动作提前恢复。 */
 async function withUncoveredTarget<T>(params: ClickParams, sessionId: string, beforeDispatch: DispatchGuard | undefined, action: () => Promise<T>): Promise<T> {
   if (!params.target) return action();
   const tab = await resolveWorkingTab(params.tabId, sessionId);
@@ -1587,7 +1499,7 @@ async function withUncoveredTarget<T>(params: ClickParams, sessionId: string, be
         return el ? window.__sideagent?.uncoverPageTarget?.(el, px, py, id) ?? false : false;
       }, [params.target, x, y, token]);
     }
-  } catch { /* 让位失败不放宽命中检查，实际点击仍会被原有保护拦下。 */ }
+  } catch {  }
   try {
     return await action();
   } finally {
@@ -1629,7 +1541,6 @@ async function callPointGuard(
   }
 }
 
-/** 只派发真实鼠标移动；虚拟光标不是页面的 CSS :hover 状态。 */
 export async function hover(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
@@ -1647,7 +1558,6 @@ export async function hover(
   try {
     if (!beforeDispatch) await cursorMove(tab.id, x, y, cid);
     if (beforeDispatch) {
-      // 光标不飞过去时，先登记落点，页面光效才不会把这次移动当成用户接手。
       await callDom(tab.id, (px: number, py: number, id: string) => { window.__sideagent?.cursor?.for(id)?.expect?.(px, py); }, [x, y, cid]).catch(() => {});
       await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, beforeDispatch);
     } else await sendCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
@@ -1687,7 +1597,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
   const target = params.target;
   const pressGuard = beforeDispatch && Object.assign(async () => beforeDispatch(), { checkNow: beforeDispatch.checkNow, noteEffect: beforeDispatch.notePointerEffect ?? beforeDispatch.noteEffect });
 
-  // 点开新页检测用：记下点击前的标签集合（拿不到就跳过跟随，不影响点击）。
   const tabsBefore = new Set<number>(await (async () => {
     try {
       const tabs = await chrome.tabs.query({});
@@ -1703,7 +1612,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
   if (point) await assertNotOwnOverlay(tabId, point[0], point[1]);
 
   const { plate: name, buttons, frame } = await namesOfClickTarget(tabId, params, point);
-  // 付款按钮永远不点，用户在聊天里同意也不点。
   const payName = buttons.find(isPayLabel);
 
   if (payName) await stopBeforePay(tabId, payName, point[0], point[1]);
@@ -1712,7 +1620,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
   if (sendName && (params.clickCount ?? 1) > 1) throw notExecuted(new Error(SEND_MULTI_CLICK));
 
   await beforeDispatch?.();
-  // 「发送」按钮：先在网页上等用户确认（页面先切到前台，用户才看得见）。用户点「发送」后，下面照常重新定位、核对命中再点。
   let [x, y] = point!;
   let sendConfirmed = await confirmSendIfNeeded(tabId, sendName, sendGuard, () => readSendDetails(tabId, x, y));
 
@@ -1729,7 +1636,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
   const opens = await watchOpenedTabs({ ...tab, id: tabId });
 
   try {
-    // 目标边框与浅弧移动并行；不再为高亮和预播放波纹额外等待。
     if (showCursor) await cursorMove(tabId, x, y, cid);
 
     if (target && !force) {
@@ -1753,7 +1659,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
     let undo: Awaited<ReturnType<typeof beforeWrite>> | undefined;
 
     try {
-      // 重新定位后落点可能变了：派发前再读一次真正落点上的按钮，是付款就不点，是「发送」就照样先问。
       const finalNames = x !== point[0] || y !== point[1] ? await sendNamesAt(tabId, x, y).catch(() => ({ buttons: [] as string[] })) : { buttons: [] as string[] };
       if ("unverified" in finalNames && finalNames.unverified) throw notExecuted(new Error("无法核对内嵌页面中的操作目标，未点击；请由用户自己操作。"));
       const finalButtons = finalNames.buttons;
@@ -1772,13 +1677,9 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
       await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers },beforeDispatch);
       cdpMouseMoved = true;
       heldOf(sessionId).pointer = [x, y];
-      // 基线与命中核对并行：60ms 的页面活跃度采样不额外压在一次点击的串行等待上。
       const effectPending = beginEffect(tabId, { point: [x, y] });
-      // 还原填写：点的是勾选框、单选框就记下点之前的样子。和效果采样一起跑，不拉长命中核对到按下之间的时间。
       const undoPending = beforeWrite(sessionId, tabId, { point: [x, y] });
 
-      // 真实 mouseMoved 可能触发 mouseenter 把目标移走、原位露出 trap。
-      // 按下前只核对当前命中与原目标身份；变化则拒绝，不追逐新坐标。
       if (!force) {
         if (target) {
           await hitTestPointerTarget(tabId, target, x, y);
@@ -1797,8 +1698,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
         if (pay) await stopBeforePay(tabId, pay, x, y);
         if (!sendConfirmed && current.buttons.some(isSendLabel)) throw notExecuted(new Error("内嵌页面的操作目标已变为发送按钮，未点击；请重新查看页面。"));
       }
-      // 点击弹出原生 alert/confirm/prompt 时页面被对话框挡住，松开鼠标与效果采样要等对话框关掉才返回（等满 30 秒）。
-      // 一弹出就按「已点击，页面弹出对话框」返回；还没返回的命令留在后台，对话框关掉后自然结束。
       const dialogWatch = watchDialog(tabId);
 
       const pressing = (async () => {
@@ -1849,7 +1748,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
       }
     } catch (e) {
       if (e && typeof e === "object" && "executionFact" in e && e.executionFact === "not_executed") {
-        // 鼠标移过去后才发现目标被挡、失效：没有按下，点击确定没发生，仍算没执行，允许重新确认后再点。
         if (cdpMouseMoved && !isPrePressTargetError(e)) Object.assign(e,{executionFact:"unknown"});
         throw e;
       }
@@ -1869,13 +1767,11 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
         );
       }
 
-      // 尚未向页面派发任何 CDP 输入（如 DevTools 占用）时，才允许 DOM 回退一次
-      // 右键/中键/非左键不提供 DOM 回退（document 无法等价 contextmenu/中键）。
       if (target && button === "left" && clickCount === 1 && !force) {
         await ensureDomOps(tabId, beforeDispatch);
         let fallbackEffect: EffectReport | undefined;
         const fallbackToken = await beginEffect(tabId, { point: [x, y] });
-        // 与 CDP 点击同理：DOM click 弹出原生对话框会挡住页面，callDom 要等对话框关掉才返回。
+        // WHY: 与 CDP 点击同理：DOM click 弹出原生对话框会挡住页面，callDom 要等对话框关掉才返回。
         const fallbackWatch = watchDialog(tabId);
 
         try {
@@ -1940,7 +1836,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
     const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
 
     if (effect) clicked.effect = effect;
-    // 开出新标签页时沿用新标签页的回执，不再读原来那一页。
     const appeared = newTab ? undefined : await pageChangesAfter(tabId, sessionId, effect);
 
     if (appeared) clicked.appeared = appeared;
@@ -1964,10 +1859,6 @@ type DoubleClickResult =
   | { doubleClicked: true; effect?: EffectReport; appeared?: PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog }
   | { doubleClicked: false; dialog: OpenedDialog };
 
-/**
- * 真实双击：与 click 同一解析/确认/命中核对/effect 管线，CDP clickCount 1→2。
- * 不提供 DOM dispatchEvent 伪造回退——伪造双击不算双击能力（Issue §五）。
- */
 export async function doubleClick(
   params: ClickParams,
   sessionId: string = LEAD_SESSION_ID,
@@ -2003,7 +1894,6 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
 
   if (payName) await stopBeforePay(tabId, payName, point[0], point[1]);
 
-  // 双击「发送」可能发两次，也不经过发送确认：不点，改用 click。
   if (buttons.some(isSendLabel)) throw notExecuted(new Error("「发送」按钮不能双击：双击可能发出两次，也不会先问用户。这次没有点；要发送请用 click 工具单击，扩展会先在网页上问用户。"));
 
   await beforeDispatch?.();
@@ -2154,7 +2044,6 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
         throw new Error(`双击是否送达无法确认，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：双击没生效就再双击一次。`);
       }
 
-      // 尚未向页面派发任何 CDP 输入：按未执行上报；不允许 DOM dispatchEvent 伪造双击。
       if (isPrePressTargetError(e)) throw notExecuted(e);
       throw notExecuted(new Error(`双击未执行（${oneLine(e)}）。本工具不提供 DOM 伪造回退；请 snapshot 核验目标与调试器状态后重试。`));
     }
@@ -2183,10 +2072,6 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
 }
 
 
-/**
- * 按记忆填的那一格标「记得的」：先给元素挂一个一次性记号属性，再让页面脚本找到它、画记号并摘掉属性。
- * 只是画在页面上面，不改这一格的值；画不出来不影响填写结果。
- */
 async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["fill"]["params"]["memory"]>, backendNodeId: number | undefined, target: string): Promise<void> {
   const token = crypto.randomUUID();
 
@@ -2195,16 +2080,11 @@ async function markMemoryField(tabId: number, memory: NonNullable<ToolContract["
     else await callDom(tabId, (t: string, k: string) => { window.__sideagent?.dom?.resolve(t)?.setAttribute("data-sideagent-memory-field", k); }, [target, token]);
     const message: PageInteractionMessage = { type: "MEMORY_FIELD_MARK", token, memory };
     await chrome.tabs.sendMessage(tabId, message);
-  } catch { /* 记号只是提示：页面变了或脚本不在就不画。 */ }
+  } catch {  }
 }
 
-/**
- * 先用真实键盘输入写（exec/fill-typing.ts），键盘写不进的框（日期、下拉框）和两次都没写进去的，用旧写法 legacy 再写。
- * typing 是 "failed" 时旧写法也没写进去：回执要如实说，并建议改用键盘逐字输入。
- */
 async function writeField<T extends { range?: InputRangeReadout | null; select?: true }>(tabId: number, run: PageRun, legacy: () => Promise<T>, value: string, guard?: DispatchGuard): Promise<T & { typing?: "keyboard" | "fallback" | "failed" }> {
   const started = Date.now();
-  // 调试器不可用、页面中途换了：按没写处理，交给旧写法（旧写法是整栏替换，重写一次不会叠字）。
   const typed = await typeIntoField(tabId, run, value, guard).catch(error => {
     if (error instanceof TypingInterrupted) throw error;
     return { grade: null, fallback: { beforeLen: -1, beforeHash: 0 } };
@@ -2221,10 +2101,6 @@ async function writeField<T extends { range?: InputRangeReadout | null; select?:
   return { ...out, typing };
 }
 
-/**
- * 先给模型带回“填完以后页面上新出现了什么”（下拉建议、跟着出来的栏、校验提示），再交回填写结果。
- * 填写本身的值变化不算：没有目标元素的采样只看页面多没多东西。
- */
 export async function fill(
   params: { target: string; value?: string; from?: FillSource; copyRange?: CopyTextRange; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; submit?: boolean },
   sessionId: string = LEAD_SESSION_ID,
@@ -2253,7 +2129,6 @@ export async function fill(
     throw notExecuted(new Error("本次需要按指定句或段原样复制，请用 from 指定页面文字来源和正确的 range；填写未执行。"));
   }
 
-  // 先读来源再动页面：读不到、是敏感栏时目标栏一点没动。
   const source = params.from ? await readFillSource({ tabId: params.from.tabId ?? params.tabId, target: params.from.target }, sessionId).catch((error: unknown) => { throw notExecuted(error); }) : undefined;
   let copied = source;
 
@@ -2271,7 +2146,6 @@ export async function fill(
       const sourceCount = copyUnitCount(source, requestedRange.unit);
       const start = requestedRange.first > 0 ? requestedRange.first - 1 : sourceCount + requestedRange.first;
 
-      // A source node can already contain only the requested unit; its ordinal belongs to the surrounding page.
       if (start >= 0 && start + requestedRange.count <= sourceCount && copied !== selectCopyText(source, requestedRange)) {
         throw new Error("当前来源选区与用户指定的句或段不一致，请指定正确的 from.range；填写未执行。");
       }
@@ -2283,12 +2157,11 @@ export async function fill(
   const value = copied ?? params.value!;
   const { copiedTarget, ...written } = await withAppeared(params.tabId, sessionId, () => fillField({ ...params, value, ...(copied !== undefined ? { readbackMax: copied.length + 1 } : {}) }, sessionId, beforeDispatch, showCursor));
   const copyProof = copied !== undefined && copiedTarget ? { ...copiedTarget, sha256: await textSha256(copied), chars: [...copied].length, ...(range ? { range } : {}), ...(requestedRange ? { requestedRange } : {}) } : undefined;
-  // 搬运的文字不回给模型、不进诊断记录：读回只留核对结论，另附长度和首尾几个字让模型确认取对了元素。
   const data = copied === undefined ? written : { ...written, source: sourceSummary(copied), ...(copyProof ? { copyProof } : {}), ...(written.readback ? { readback: withoutText(written.readback) } : {}) };
 
   if (!params.submit) return data;
 
-  // 没写进去就不回车：不然会用空值或旧值把表单提交出去。
+  // WHY: 没写进去就不回车：不然会用空值或旧值把表单提交出去。
   if (data.typing === "failed" || data.readback?.match === "not_held" || data.readback?.match === "different") {
     return { ...data, submit: { refused: "这一栏没写进去，没有回车。" } };
   }
@@ -2311,7 +2184,7 @@ function withoutText(readback: FieldReadback): FieldReadback {
 }
 
 /**
- * 「填完回车」：只在搜索框和普通单行框上按一次真回车（规则见 fill-typing.ts 的 submitRefusalInPage），省一轮来回。
+ * WHY: 「填完回车」：只在搜索框和普通单行框上按一次真回车（规则见 fill-typing.ts 的 submitRefusalInPage），省一轮来回。
  * 回车可能就是“发送”的框不按，填好的字留着：回车发送不经过发送确认是已知缺口（docs/web-actions.md），不能扩大。
  */
 async function submitAfterFill(params: { target: string; tabId?: number }, sessionId: string, beforeDispatch?: DispatchGuard): Promise<NonNullable<ToolContract["fill"]["data"]["submit"]>> {
@@ -2326,7 +2199,6 @@ async function submitAfterFill(params: { target: string; tabId?: number }, sessi
     if (!probe) return { refused: "读不到这个框，没有回车。" };
 
     if ("refused" in probe) return probe;
-    // 和点击同一套规则：附近有「发送」「支付」这类按钮，回车可能就是发送或付款。
     const risky = probe.labels.find(label => isSendLabel(label) || isPayLabel(label));
 
     if (risky) return { refused: `这个框旁边有「${risky.slice(0, 12)}」，回车可能直接发出去或付款：已填好，没有回车。要做这一步请点那个按钮，会先问用户。` };
@@ -2335,18 +2207,15 @@ async function submitAfterFill(params: { target: string; tabId?: number }, sessi
     try {
       pressed = await pressKey({ key: "Enter", tabId }, sessionId, beforeDispatch);
     } catch (error) {
-      // 回车可能已经送到页面（提交可能已经发生）：说不确定，别让模型以为没按、再按一次。
       return { uncertain: `回车可能已经送到页面，结果不确定（${oneLine(error)}）。先看页面，不要再按一次。` };
     }
 
     return pressed.pressed ? { pressed: true, ...(pressed.effect ? { effect: pressed.effect } : {}), ...(pressed.appeared ? { appeared: pressed.appeared } : {}), ...(pressed.dialog ? { dialog: pressed.dialog } : {}) } : { pressed: false, dialog: pressed.dialog };
   } catch (error) {
-    // 按回车之前出错：值已经填好了，只说没按，不让整次填写报失败。
     return { refused: `没能按回车（${oneLine(error)}）：已填好，没有回车。` };
   }
 }
 
-/** 填写、选择外面包一层：动作前开始记页面上哪里变了，动作后带回新出现的行。 */
 async function withAppeared<T extends object>(tabIdParam: number | undefined, sessionId: string, act: () => Promise<T>): Promise<T & { appeared?: PageAppeared }> {
   const started = Date.now();
   const tabId = (await resolveWorkingTab(tabIdParam, sessionId).catch(() => null))?.id;
@@ -2368,7 +2237,7 @@ async function withAppeared<T extends object>(tabIdParam: number | undefined, se
 }
 
 async function fillField(
-  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"]; /** 读回比较的长度上限；搬运整段文字时要整段核对。 */ readbackMax?: number },
+  params: { target: string; value: string; tabId?: number; expectedDocumentId?:string; expectedBackendNodeId?:number; memory?: ToolContract["fill"]["params"]["memory"];  readbackMax?: number },
   sessionId: string,
   beforeDispatch?: DispatchGuard,
   showCursor = !beforeDispatch,
@@ -2387,9 +2256,7 @@ async function fillField(
   const cid = cursorId(sessionId);
   await beforeDispatch?.();
 
-  // 宿主绑定了原节点身份时不找替身：换了节点就该按「身份无法核对」拒绝。
   const refound = params.expectedBackendNodeId === undefined && await refindDetachedRef(tabId, params.target);
-  // AX 快照的 @N（ref 即 backendDOMNodeId）走 CDP（同 domops fill 逻辑）；其余走 domops 页面内解析
   const ref = parseRef(params.target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
 
@@ -2403,7 +2270,6 @@ async function fillField(
     return identity && (backendNodeId === undefined || identity.backendNodeId === backendNodeId) ? identity : null;
   };
 
-  // 操作前在 scrollIntoView 之后取目标包围盒，动作边框持续到操作返回。
   let targetRect: DomRect | undefined;
 
   if (backendNodeId !== undefined) {
@@ -2413,7 +2279,6 @@ async function fillField(
       if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
         throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
       }
-      // debugger 不可用时落到 domops
     }
   }
 
@@ -2446,7 +2311,6 @@ async function fillField(
       if (showCursor) await cursorMove(tabId, Math.round(targetRect.x + targetRect.width / 2), Math.round(targetRect.y + targetRect.height / 2), cid);
     }
 
-    // 2. 真实填充操作
     if(params.expectedDocumentId) {
       try { await assertSameDocument(tabId,params.expectedDocumentId); }
       catch(error) { throw notExecuted(error); }
@@ -2482,10 +2346,8 @@ async function fillField(
         if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
           const reason = `ref @${ref} 填充失败（${oneLine(e)}）`;
 
-          // 页面里核对不过（不可填、没这个选项）时什么都没写：保留「没执行」，不记成结果不确定。
           throw e instanceof FillRefused ? new FillRefused(reason) : new Error(reason);
         }
-        // debugger 不可用时落到 domops（其 refs 若无此 ref 会报「已失效」）
       }
     }
 
@@ -2554,7 +2416,6 @@ type SelectOptionValue =
   | { value?: string; label?: string; index?: number }
   | null;
 
-/** CAP-02C：原生 select 的 value/label/index、多选、清空；返回最终选中集合与可见 label。 */
 export async function selectOption(
   params: Parameters<typeof selectOptions>[0],
   sessionId: string = LEAD_SESSION_ID,
@@ -2676,11 +2537,6 @@ async function selectOptions(
 
 type UploadOutcome = ToolContract["upload_file"]["data"] | { refused: string };
 
-/**
- * 页面内执行（自包含：经 executeScript 或 toString 注入）。where 是元素（AX ref 已解析）、定位串，或 null（找页面上唯一的文件框）。
- * 目标可以是文件框本身、它的 <label>，或只包着一个文件框的容器（常见的自绘上传按钮把文件框藏在里面）。
- * 用 DataTransfer 构造 File 放进 input.files，发冒泡的 input/change，再读回 files 作回执。
- */
 function putFilesInPage(where: Element | string | null, files: ToolContract["upload_file"]["params"]["files"]): UploadOutcome {
   const isFileInput = (el: Element | null | undefined): el is HTMLInputElement => el?.tagName === "INPUT" && (el as HTMLInputElement).type === "file";
 
@@ -2693,7 +2549,6 @@ function putFilesInPage(where: Element | string | null, files: ToolContract["upl
     const found = fileInputsIn(document);
     const [only] = found;
 
-    // 几个文件框时列出可用的 CSS 定位（id、name 或 class），模型下一步直接带 target，不必再读页面。
     const locator = (el: HTMLInputElement) => el.id ? `#${CSS.escape(el.id)}` : el.name ? `input[type=file][name="${el.name}"]` : el.classList.length ? `input[type=file].${[...el.classList].map(c => CSS.escape(c)).join(".")}` : "input[type=file]（无 id/name/class）";
 
     if (found.length !== 1 || !only) return { refused: found.length === 0 ? "页面上没有文件选择框（input type=file），操作未执行。" : `页面上有 ${found.length} 个文件选择框，请用 target 指定其中一个，操作未执行。候选：${found.slice(0, 6).map(locator).join("、")}` };
@@ -2726,7 +2581,6 @@ function putFilesInPage(where: Element | string | null, files: ToolContract["upl
   return { files: [...(input.files ?? [])].map(f => ({ name: f.name, size: f.size, type: f.type })) };
 }
 
-/** 上传文件：不开系统选择框、不经本机磁盘；target 缺省时用页面上唯一的文件框。回执只认从文件框读回的文件。 */
 export async function uploadFile(
   params: ToolContract["upload_file"]["params"],
   sessionId: string = LEAD_SESSION_ID,
@@ -2772,7 +2626,6 @@ export async function typeText(
   await beforeDispatch?.();
   await beforeDispatch?.();
   const undo = await beforeWrite(sessionId, tab.id, { focused: true }, true);
-  // 富文本编辑器直接 focus() 时光标默认落在最开头（offset 0）：若选区折叠在根节点开头且已有文字，把光标移到末尾再追加。
   await callDom(tab.id, function prepareEditableCaret() {
     let active = document.activeElement as HTMLElement | null;
     while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement as HTMLElement;
@@ -2790,12 +2643,11 @@ export async function typeText(
   }, []).catch(() => null);
   await sendCommand(tab.id, "Input.insertText", { text: params.text },beforeDispatch);
   await undo.done();
-  // 焦点不在可写的栏上（按钮、正文）时读不到，记 unreadable。
   return { typed: true, readback: await readBackField(tab.id, { target: null }, params.text, "insert") };
 }
 
 /**
- * 回车或空格落在付款上：焦点本身是付款按钮，或回车时焦点所在的表单、附近区域里有付款按钮（单行框回车会提交表单）。
+ * WHY: 回车或空格落在付款上：焦点本身是付款按钮，或回车时焦点所在的表单、附近区域里有付款按钮（单行框回车会提交表单）。
  * 付款候选取自当前焦点所在的文档。序列化进页面，必须自包含。
  */
 function keyPayCandidatesInPage(enter: boolean): { focused: boolean; frame: boolean; names: string[] } {
@@ -2805,19 +2657,15 @@ function keyPayCandidatesInPage(enter: boolean): { focused: boolean; frame: bool
   if (!el) return { focused, frame: false, names: [] };
   if (/^(IFRAME|FRAME)$/.test(el.tagName)) return { focused, frame: true, names: [] };
   const nameOf = (node: Element) => (node.getAttribute("aria-label") || (node.tagName === "INPUT" ? (node as HTMLInputElement).value : (node as HTMLElement).innerText ?? node.textContent ?? "") || node.getAttribute("title") || "").trim().replace(/\s+/g, " ");
-  // 焦点在按钮或链接上时，回车、空格只按下它自己：按它的名字判，不看旁边的按钮。
   const own = el.closest('button,[role="button"],input[type="submit"],input[type="button"],input[type="image"],a');
   if (own) return { focused, frame: false, names: [nameOf(own)] };
-  // 空格只按下焦点上的控件；多行框和编辑器里回车只是换行。
   if (!enter || el.tagName === "TEXTAREA" || el.isContentEditable) return { focused, frame: false, names: [] };
-  // 输入框用 form 属性关联到别处的表单时，form 指向真正会被提交的那个；表单外用 form 属性关联的按钮在 elements 里。
   const form = (el as HTMLInputElement).form ?? el.closest("form");
   let region: Element | null = form ?? el.closest('[role="dialog"],[role="form"]');
   if (!region) {
     region = el.parentElement;
     for (let n = 1; n < 3 && region?.parentElement && region.parentElement !== el.ownerDocument.body; n++) region = region.parentElement;
   }
-  // 只看能点的控件：标题、说明文字（「付款记录」）和输入框里的字都不是按钮。
   const BUTTONS = 'button,[role="button"],input[type="submit"],input[type="button"],input[type="image"]';
   const nodes = [...(form ? [...form.elements] : []), ...(region && region !== el.ownerDocument.body && region !== el.ownerDocument.documentElement ? region.querySelectorAll(`${BUTTONS},a,[onclick]`) : [])];
   const names: string[] = [];
@@ -2825,7 +2673,6 @@ function keyPayCandidatesInPage(enter: boolean): { focused: boolean; frame: bool
     if (node === el) continue;
     const button = node.matches(BUTTONS);
     if (!button && !node.matches("a,[onclick]")) continue;
-    // 真按钮按完整名字判（长的「立即支付 …商品说明」也是付款）；链接和带点击的块可能包着整张商品卡，只看 40 字以内的名字。
     const name = nameOf(node);
     if (name && (button || name.length <= 40)) names.push(name);
   }
@@ -2838,12 +2685,11 @@ function isKeyPayCandidates(value: unknown): value is ReturnType<typeof keyPayCa
   return typeof candidate.focused === "boolean" && typeof candidate.frame === "boolean" && Array.isArray(candidate.names) && candidate.names.every(name => typeof name === "string");
 }
 
-/** 回车会不会把东西发出去：焦点在有字的多行输入框、可编辑区，或焦点所在表单里有「发送」按钮。序列化进页面，必须自包含。 */
+/** WHY: 回车会不会把东西发出去：焦点在有字的多行输入框、可编辑区，或焦点所在表单里有「发送」按钮。序列化进页面，必须自包含。 */
 function enterWouldSendInPage(kindOf: (text: string) => "send" | "reply" | null): { label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null; send: boolean } | null {
   let el = document.activeElement as HTMLElement | null;
   while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
   if (!el) return null;
-  // 用户在确认框上点「发送」会把焦点带走：确认后按这个记号把焦点放回去再按回车。
   Object.defineProperty(window, "__sideagentEnterTarget", { value: el, configurable: true, enumerable: false });
   const multi = el.tagName === "TEXTAREA" || el.isContentEditable;
   const content = ((el as HTMLTextAreaElement).value ?? el.innerText ?? "").replace(/\s+/g, " ").trim();
@@ -2868,14 +2714,12 @@ async function readEnterSendDetails(tabId: number, rect: SendDetails["rect"] | n
   } catch { return { binding: "unavailable", route: "enter" }; }
 }
 
-/** 任务里的 press_key：回车（含 Ctrl/Cmd+回车，不含 Shift+回车换行）可能把消息发出去，先走和点「发送」同一个确认。 */
 export async function pressKeyGuarded(params: { key: string; tabId?: number }, sessionId: string, sendGuard: SendGuard, beforeDispatch?: DispatchGuard) {
   const info = resolveKey(params.key);
   const tab = await resolveWorkingTab(params.tabId, sessionId);
   let confirmed = false;
   const shift = info && tab.id != null ? ((info.modifiers | modifierMaskFor(sessionId, tab.id)) & 8) !== 0 : false;
 
-  // 付款永远用户自己点：回车提交表单、空格按下焦点上的按钮都等于点了它，所以和点击一样不做。
   if (info && tab.id != null && ((info.key === "Enter" && !shift) || info.key === " ")) {
     const read = await sendCommand<{ result?: { value?: unknown } }>(tab.id, "Runtime.evaluate", { expression: `(${keyPayCandidatesInPage.toString()})(${info.key === "Enter"})`, returnByValue: true }).catch(() => undefined);
     if (!isKeyPayCandidates(read?.result?.value)) throw notExecuted(new Error("无法核对焦点所在页面中回车或空格的作用，没有按；请由用户自己操作。"));
@@ -2911,9 +2755,8 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
   return Object.assign(result, confirmed ? { sendConfirmed: true as const } : {}) as typeof result & { sendConfirmed?: true };
 }
 
-/** 焦点是不是顶层文档里的单行文本框：多行框和可编辑区里回车只是换行，页面读数看不出来，只有单行文本框能说「回车没反应」。序列化进页面，必须自包含。 */
+/** WHY: 焦点是不是顶层文档里的单行文本框：多行框和可编辑区里回车只是换行，页面读数看不出来，只有单行文本框能说「回车没反应」。序列化进页面，必须自包含。 */
 function focusIsSingleLineInput(): boolean {
-  // 不进框架和 Shadow DOM：页面变化只在顶层文档的普通 DOM 里量，那里的回车成功了也量不到，报「没反应」会让模型重复成功的动作。
   const el = document.activeElement;
   return el instanceof HTMLInputElement && ["text", "search", "email", "url", "tel", "password", "number"].includes(el.type);
 }
@@ -2943,7 +2786,6 @@ export async function pressKey(
 
   const rawKeyDown: KeyEventParams = { type: info.text === undefined ? "rawKeyDown" : "keyDown", ...base };
 
-  // macOS editing shortcuts need the editor command as well as the synthesized key.
   if (info.code === "KeyA" && (info.modifiers | heldMods) === 4 && navigator.platform.startsWith("Mac")) {
     rawKeyDown.commands = ["selectAll"];
   }
@@ -2985,7 +2827,6 @@ export async function pressKey(
     return { dialog };
   });
 
-  // 只有回车常提交表单、发请求，所以只给回车报页面变化；方向键、Tab 连按时每下多等 600 毫秒不值得。
   const effectToken = info.key === "Enter" ? await beginEffect(keyboardTabId) : null;
   const singleLine = effectToken
     ? (await sendCommand<{ result?: { value?: unknown } }>(keyboardTabId, "Runtime.evaluate", { expression: `(${focusIsSingleLineInput.toString()})()`, returnByValue: true }).catch(() => undefined))?.result?.value === true
@@ -3060,12 +2901,6 @@ export async function scroll(
   return { atBottom: res.atBottom };
 }
 
-/**
- * mark 工具：在目标元素处画持久标注（描边框+箭头+名牌）。
- * 标注锚定目标元素：window 滚动走文档坐标，内部滚动容器在 scroll 捕获期按包围盒重算。
- * 带 actions 时光标飞到目标拿住，确认/取消双键长在光标名牌上（不在框外）。
- * target 定位串与 click 同语义；注入失败如实报错（标注是显式动作，需要反馈）。
- */
 export async function mark(
   params: {
     tabId?: number;
@@ -3090,7 +2925,6 @@ export async function mark(
   const tabId = tab.id;
   const cid = cursorId(sessionId);
 
-  // 与 click 同样的解析策略：AX 快照 ref 走 CDP，其余走 domops 页面内解析
   const backendNodeId = axBackendNodeFor(tabId, parseRef(params.target));
   const throughNodeId = params.through === undefined ? undefined : axBackendNodeFor(tabId, parseRef(params.through));
 
@@ -3116,7 +2950,6 @@ export async function mark(
       if (!end.object?.objectId) throw notExecuted(new Error(`ref ${params.through} 已失效，操作未执行。请重新 snapshot 后使用新的 ref`));
       await assertSameDocument(tabId, observedDocument);
 
-      // 同一行、同一页面的校验在页面里做；没通过时什么都还没画，如实记为未执行。
       {
         await callOnBackendNode(tabId, backendNodeId, `function(end,label,target,id,actions,options) {
           const {range, rect} = (${observedNodeRange.toString()}).call(this,end,(${observedNodeRect.toString()}));
@@ -3137,7 +2970,6 @@ export async function mark(
   }
 }
 
-/** mark 与 guide_step 共用的定位：只找目标、量位置，不画。失败一律是「未执行」。 */
 async function locateTarget(tabId: number, target: string, beforeDispatch?: DispatchGuard): Promise<{ backendNodeId?: number; rect: DomRect }> {
   const ref = parseRef(target);
   const backendNodeId = axBackendNodeFor(tabId, ref);
@@ -3179,14 +3011,9 @@ async function locateTarget(tabId: number, target: string, beforeDispatch?: Disp
 
   if (!res.rect || typeof res.rect.x !== "number") throw notExecuted(new Error(`未找到目标元素：${target}`));
 
-  // 原样带回 backendNodeId：debugger 一时不可用、改用页面内定位时，画的时候照旧按快照里的节点画。
   return { backendNodeId, rect: res.rect };
 }
 
-/**
- * 在定位好的目标上调用页面光标的 mark / guide：参数接在视口 rect 之后（null 换成 undefined）。
- * AX ref 时节点本身作为最后一个参数传进去，标注跟着这个节点；其余由页面按 target 重新找。返回页面函数的结果。
- */
 async function callCursorAt<T>(tabId: number, located: { backendNodeId?: number; rect: DomRect }, cid: string, method: "mark" | "guide" | "handoffMark", args: unknown[], observedDocument: string | null, beforeDispatch?: DispatchGuard): Promise<T> {
   if (located.backendNodeId !== undefined) {
     const contextId = await cursorContext(tabId);
@@ -3212,14 +3039,10 @@ async function callCursorAt<T>(tabId: number, located: { backendNodeId?: number;
   ) as Promise<T>;
 }
 
-/**
- * guide_step 的画法：按 mark 的方式找到 target，圈出来、名牌写 say、光标停在目标右下角，页面连上 portName 等用户自己点。
- * 不带 beforeDispatch：它会把之后的「停下、离开」记成结果未知，而这里从不派发输入。返回目标在网页上的可见名字。
- */
 export async function showGuide(tabId: number, target: string, say: string, portName: string, sessionId: string): Promise<{ name: string }> {
   const observedDocument = await assertObservedDocument(tabId, sessionId, [target]);
   const located = await locateTarget(tabId, target);
-  // @ref 走 CDP 时不会注入 domops；页面要靠它在网页重画后重新找到目标。
+  // WHY: @ref 走 CDP 时不会注入 domops；页面要靠它在网页重画后重新找到目标。
   await ensureDomOps(tabId);
   await ensureCursor(tabId);
   const motion = await getMarkMotion();
@@ -3228,16 +3051,12 @@ export async function showGuide(tabId: number, target: string, say: string, port
   return callCursorAt(tabId, located, cursorId(sessionId), "guide", [say, target, portName, { style: "sketch", motion }], observedDocument);
 }
 
-/**
- * 交给用户时圈出要用户填的栏和要点的按钮。按 mark 的方式逐个找目标；
- * 找不到的跳过，不报错。圈都画好后再摆名牌，名牌才能躲开别的圈。「现在归你」收起时页面自己清掉这些圈。
- */
 export async function showHandoffMarks(tabId: number, targets: string[], sessionId: string): Promise<void> {
   try {
     await ensureDomOps(tabId);
     await ensureCursor(tabId);
   } catch {
-    return; // 页面禁止注入（如 chrome://）：没法圈，页面照常交给用户。
+    return;
   }
 
   const cid = cursorId(sessionId);
@@ -3247,16 +3066,12 @@ export async function showHandoffMarks(tabId: number, targets: string[], session
     try {
       const located = await locateTarget(tabId, target);
       await callCursorAt(tabId, located, cid, "handoffMark", [target, { style: "sketch", motion }], null);
-    } catch { /* 这个目标圈不上，其余照常圈。 */ }
+    } catch {  }
   }
 
   await callDom(tabId, () => window.__sideagent?.cursor?.handoffLabels?.(), []).catch(() => {});
 }
 
-/**
- * mark 按文字圈：每个词在页面文字里的每一处可见出现各圈一个，每个词只在第一处挂名牌（词 ×处数）。
- * 只匹配单个文字节点内的原文（跨 <b>、<a> 断开的不算）；处数由页面实际画出的圈数给出，不由模型数。
- */
 async function markText(tabId: number, terms: string[], sessionId: string, beforeDispatch?: DispatchGuard): Promise<ToolContract["mark"]["data"]> {
   await ensureCursor(tabId, beforeDispatch);
   const motion = await getMarkMotion();
@@ -3278,8 +3093,6 @@ async function markText(tabId: number, terms: string[], sessionId: string, befor
           },
         });
 
-        // 一个词常被标签拆开（「72」「ha」是两个链接、「Forbid<b>den</b>」）：同一段落块里相邻的文字拼起来找，跨节点的就画一个跨节点的范围。
-        // 不跨段落、表格格子；不换行空格当普通空格（长度不变，偏移照旧对得上）。
         const BLOCK = "p,li,td,th,dd,dt,h1,h2,h3,h4,h5,h6,blockquote,pre,figcaption,caption,summary,label,button,div,section,article,header,footer,aside,nav,main,ul,ol,dl,table,tr,form,fieldset,body";
         const groups: Text[][] = [];
         let block: Element | null | undefined;
@@ -3316,7 +3129,6 @@ async function markText(tabId: number, terms: string[], sessionId: string, befor
           });
         }
 
-        // 先把第一处滚进视口再量：画圈用视口坐标，量和画在同一帧里完成。
         hits.flat()[0]?.startContainer.parentElement?.scrollIntoView({ block: "center" });
 
         return words.map((word, i) => {
@@ -3338,7 +3150,6 @@ async function markText(tabId: number, terms: string[], sessionId: string, befor
   }
 }
 
-/** clear_marks 工具：清除全部 mark 标注。受限页面本来就画不上标注，静默成功。 */
 export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: number, beforeDispatch?: DispatchGuard): Promise<{ cleared: true }> {
   await beforeDispatch?.();
   const tab = await resolveWorkingTab(tabId, sessionId);
@@ -3350,18 +3161,13 @@ export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: nu
     await callDom(tab.id, () => window.__sideagent?.cursor?.clearMarks?.(), [], undefined, beforeDispatch);
   } catch (error) {
     if (beforeDispatch) throw error;
-    /* 页面禁止注入（如 chrome://）时没有标注可清，静默 */
   }
 
   return { cleared: true };
 }
 
 /**
- * 回答里提到的控件这会儿还在不在页上：节点还连着、有大小、没被藏起来、没摆到页面之外。
- * 不滚动页面，只在加虚线前看一眼。
- */
-/**
- * 读页拿到的控件在页面上看得见的那一块：本身看得见就是它；看不见的复选框/输入框（维基「119 languages」那种藏起来的 checkbox + label 按钮）换成它看得见的 label。
+ * WHY: 读页拿到的控件在页面上看得见的那一块：本身看得见就是它；看不见的复选框/输入框（维基「119 languages」那种藏起来的 checkbox + label 按钮）换成它看得见的 label。
  * 序列化进页面，必须自包含。返回视口坐标，看不见返回 null。
  */
 const VISIBLE_RECT_OF_LOCATED = `function() {
@@ -3392,7 +3198,6 @@ export async function locatedStillThere(tabId: number, backendNodeId: number): P
   return (await visibleRectOfLocated(tabId, backendNodeId)) !== null;
 }
 
-/** 用户点了回答里的虚线：工作光标飞到那个控件、画一圈墨蓝。返回 false 表示控件已不在。 */
 export async function pointAtLocated(tabId: number, backendNodeId: number, caption = ""): Promise<boolean> {
   const rect = await visibleRectOfLocated(tabId, backendNodeId);
 

@@ -1,12 +1,7 @@
-/**
- * 在页面里执行代码的两条通道：chrome.scripting 注入隔离世界，CDP 按无障碍树节点调用。
- * 点击、填写、光标、高亮都从这里进页面；派发前的核对（DispatchGuard）也在这一处生效。
- */
 import { sendCommand } from "../debugger.js";
 import { assertSameDocument } from "../observation-document.js";
 import type { ToolExecutionFact } from "../../../../shared/protocol.js";
 
-/** 派发前的核对：checkNow 同步复查任务身份，noteEffect 记下页面输入已经发出。 */
 export type DispatchGuard = (() => Promise<void>) & {checkNow?: () => void; noteEffect?: () => void};
 
 export function notExecuted(error: unknown): Error {
@@ -18,12 +13,10 @@ export function notExecuted(error: unknown): Error {
   return err;
 }
 
-/** callOnBackendNode 参数里的页面对象：按 objectId 原样传入，不做 JSON 序列化。 */
 export class CdpObjectArg {
   constructor(readonly objectId: string) {}
 }
 
-/** 把 backendDOMNodeId 解析成页面内元素并执行函数（CDP Runtime.callFunctionOn）。 */
 export async function callOnBackendNode<T>(
   tabId: number,
   backendNodeId: number,
@@ -83,7 +76,6 @@ export async function ensureCursor(tabId: number, beforeDispatch?: DispatchGuard
   });
 }
 
-/** 在页面 ISOLATED world 里执行 func 并取回结果。 */
 export async function callDom<Args extends unknown[], Result>(
   tabId: number,
   func: (...args: Args) => Result,

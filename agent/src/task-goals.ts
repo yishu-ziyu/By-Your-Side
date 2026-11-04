@@ -5,7 +5,6 @@ function goalRevision(requirements: readonly string[]): string {
   return createHash('sha256').update(JSON.stringify(requirements)).digest('hex');
 }
 
-/** Owns outcome transitions only; never changes execution facts or write permissions. */
 export class TaskGoalBook {
   private plan: TaskGoalPlan | undefined;
 
@@ -49,12 +48,6 @@ export class TaskGoalBook {
     this.plan = structuredClone({ revision, coverage: 'verified', goals });
   }
 
-  /**
-   * Revise an already-fixed plan without dropping any user-visible requirement.
-   * Every condition/field/answer goal and any already-satisfied goal (including material)
-   * is carried over byte-for-byte; only a still-pending material with no field referencing
-   * its materialId may be dropped or replaced. New goals may be added. Requires a reason.
-   */
   amend(revision: string, definitions: readonly TaskGoalDefinition[], requirementCount: number, reason: string): void {
     if (!this.plan || this.plan.revision !== revision) throw new Error('用户要求已变化，旧目标方案未应用');
 
@@ -85,10 +78,8 @@ export class TaskGoalBook {
     this.plan = structuredClone(next);
   }
 
-  /** Shared by install/amend: every requirement covered, field->material references resolve, material ids unique. */
   private assertCoverage(revision: string, goals: TaskGoal[], requirementCount: number): void {
     const required = Array.from({ length: requirementCount }, (_, i) => taskRequirementId(i));
-    // The model revises its plan from this message alone: name only the violated rules and the offending ids.
     const problems: string[] = [];
     const unknown = [...new Set(goals.flatMap(g => g.requirements.filter(id => !required.includes(id))))];
     const uncovered = required.filter(id => !goals.some(g => g.requirements.includes(id)));

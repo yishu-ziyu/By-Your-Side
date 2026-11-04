@@ -1,6 +1,5 @@
 export const TASK_CHECKPOINT_UNAVAILABLE = '原任务检查点无法恢复，本会话已停止执行；原记录未被覆盖。请先修复检查点，不要重新提交可能已执行的操作；其他独立任务可另开会话。';
 
-/** 只保留已接受材料的身份与短摘要，不复制正文、图片或带参数的页面地址。 */
 export interface TaskMaterialReference {
   key: string;
   kind: 'page' | 'selection' | 'attachment';
@@ -18,12 +17,10 @@ export function isTaskMaterials(value: unknown): value is TaskMaterialReference[
     && new Set(value.map(item => item.key)).size === value.length;
 }
 
-/** Durable inputs. Page contents and image bytes are not copied into progress snapshots. */
 export interface TaskRecoveryInput {
   requirements:string[];
   page?:{tabId:number;urlHash:string};
   attachmentKeys:string[];
-  /** 旧检查点缺省代表没有材料清单证据，不从页面哈希猜正文。 */
   materials?: TaskMaterialReference[];
 }
 

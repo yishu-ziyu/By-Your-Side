@@ -1,6 +1,3 @@
-/**
- * Panel selectors: conversation state labels and the result card copy.
- */
 import type { ConversationSummary } from '../../../shared/protocol.js';
 import type { TaskHistoryEntry } from '../../../shared/task-history.js';
 
@@ -12,14 +9,12 @@ interface ConversationOutcome {
   line: string;
 }
 
-/** 会话列表一行的结局：先说状态，不写「空闲」。 */
 export function conversationOutcome(
   c: Pick<ConversationSummary, "state" | "checkpoint" | "ending" | "title">,
   extra?: { completed?: boolean; task?: Pick<TaskHistoryEntry, "outcome" | "done" | "unfinished" | "next"> },
 ): ConversationOutcome {
   if (c.checkpoint === "unavailable") return { kind: "error", icon: "!", line: c.ending || "恢复失败" };
   if (c.checkpoint === "interrupted") return { kind: "stopped", icon: "‖", line: c.ending || "任务中断了" };
-  // ending 是上一轮的结局，新一轮开始时不清；进行中照它写，会把正在做的事说成做完了。
   if (c.state === "running") return { kind: "running", icon: "·", line: "正在做" };
   if (c.state === "user") return { kind: "waiting", icon: "●", line: extra?.task?.next || c.ending || "页面现在归你" };
 
@@ -77,7 +72,6 @@ export function conversationBackgroundLabel(c: Pick<ConversationSummary, 'state'
   return '另一个会话的任务结束了';
 }
 
-/** 会话切换器里：说清这是别的任务，不要写成当前对话断了。 */
 export function otherTaskCopy(count: number, title: string): { line: string; action: string } {
   const name = title.trim() || "未命名任务";
   return {
@@ -86,7 +80,6 @@ export function otherTaskCopy(count: number, title: string): { line: string; act
   };
 }
 
-/** 结果卡：摘要是主信息，剩余项和声音失败弱化。没有摘要时整张卡不出现。 */
 export function resultCardCopy(opts: {
   summary: string | null;
   remaining?: string[];

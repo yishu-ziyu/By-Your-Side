@@ -3,14 +3,8 @@ import { nudgeableUrl } from '../shared/nudge.js';
 import { OVERLAY_ATTR } from '../shared/overlay.js';
 import { extensionAlive } from './alive.js';
 
-/**
- * 记下用户自己在网页上的每一步（打开、点击、填写、回车提交），交给后台按天存起来，用来发现反复做的事。
- * 开关和「助手正在这个标签页做事」都由后台判断：这里只管看见什么就报什么。
- */
-
 const CLICKABLE = 'a,button,summary,label,[role=button],[role=link],[role=tab],[role=menuitem],[role=option],[role=checkbox],[role=switch],[role=radio],input[type=submit],input[type=button],input[type=checkbox],input[type=radio]';
 
-/** 密码、卡号、验证码一类的栏：值不记，整步都不报。 */
 const SECRET_FIELD = /pass|pwd|card|cc-|cvc|cvv|csc|one-time|otp|验证码|密码|卡号/i;
 
 const squash = (s: string | null | undefined, max: number) => (s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -20,7 +14,7 @@ function send(step: BrowseStep): void {
 
   try {
     void chrome.runtime.sendMessage({ type: BROWSE_EVENT, step }).catch(() => {});
-  } catch { /* 扩展刚重载：旧脚本已断开。 */ }
+  } catch {  }
 }
 
 function fieldLabel(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string {
@@ -30,7 +24,6 @@ function fieldLabel(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEleme
   return squash(el.getAttribute('aria-label') || byIds || byFor || el.closest('label')?.textContent || ('placeholder' in el ? el.placeholder : '') || el.name || el.type, 60);
 }
 
-/** 13–19 位数字且通过 Luhn 校验：不管栏叫什么，都当卡号。 */
 function looksLikeCard(value: string): boolean {
   const digits = value.replace(/[\s-]/g, '');
 
@@ -63,7 +56,6 @@ export function installBrowseLog(): void {
   const visit = () => {
     if (location.href === href) return;
     href = location.href;
-    // 单页应用换页时标题常常晚一拍才改，等一下再读。
     setTimeout(() => send({ kind: 'visit', title: squash(document.title, 200) }), 800);
   };
 
@@ -99,7 +91,6 @@ export function installBrowseLog(): void {
     if (value) send({ kind: 'fill', label, value });
   }, true);
 
-  // 搜索框按回车时常常直接换页，change 来不及触发：回车当作一次提交，连同当时的值一起报。
   document.addEventListener('keydown', event => {
     const el = event.target;
 

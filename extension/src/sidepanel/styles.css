@@ -1,12 +1,9 @@
 @import url("./motion-tokens.css");
 @import url("./answer-cards.css");
 
-/* 产品名的手写体，只含拉丁字母；只用在首次打开的开场上。 */
 @font-face { font-family: "Caveat"; font-weight: 600; font-display: block; src: url("fonts/caveat-600.woff2") format("woff2"); }
 
-/* 暖纸与墨色。沿用既有 token 名，避免设置、语音和模型选择各自维护配色。 */
 :root, [data-tone-preview="blue"] {
-  /* 字号 4 档、圆角 3 档、间距 5 步。预览 overlay 的数量收紧，写进生产变量。 */
   --fs-read: 15px;
   --lh-read: 1.7;
   --fs-ui: 13px;
@@ -16,7 +13,6 @@
   --fs-code: 12px;
   --fs-micro: 12px;
   --fs-glyph: 9px;
-  /* 只给首次打开时的产品名用。 */
   --fs-display: 36px;
 
   --r: 12px;
@@ -34,7 +30,6 @@
   --gap-block: var(--s-3);
   --pad-x: var(--s-4);
 
-  /* 墨蓝同一色相（hue 255）：从 1% 极浅蓝白底到 90% 深蓝墨字全部带同一蓝调基底。 */
   --wallpaper: #f3f6fb;
   --chrome-frame: #f8fafe;
   --glass-surface: var(--wallpaper);
@@ -53,15 +48,12 @@
   --well-outline: rgb(15 23 42 / 0.06);
   --well-highlight: rgb(255 255 255 / 0.9);
 
-  /* 文字色彩层级（50%–90% 蓝调色阶） */
   --text-primary: #111827;
   --text-secondary: #3d4a5c;
   --text-tertiary: #5a6778;
   --text-quaternary: #5c6b7c;
-  /* 光球专用墨色：比 text-secondary 深一档。球是细线，用次要色会被 alpha 稀释到看不清。 */
   --orb-ink: #334155;
 
-  /* 兼容既有 token */
   --bg: var(--wallpaper);
   --surface: var(--content-bg);
   --surface-2: var(--content-subtle);
@@ -70,8 +62,6 @@
   --text-3: var(--text-tertiary);
   --border: var(--content-border);
 
-  /* Apple 状态强调色 */
-  /* 墨蓝：AI 的专属色，页面圈画、名牌、边缘光同色（见 content/cursor.ts）。 */
   --apple-blue: #2d4a86;
   --apple-blue-soft: rgba(45, 74, 134, .08);
   --apple-green: #438558;
@@ -87,12 +77,10 @@
   --err: var(--apple-red);
   --err-soft: var(--apple-red-soft);
 
-  /* 思考标签与选择器 (亮色高对比度清晰紫/灰/蓝，杜绝泛白泥浆) */
   --chip-active-bg: var(--content-bg);
   --btn-border-hover: rgba(15, 23, 42, 0.15);
   --popover-shadow: 0 10px 28px rgba(15, 23, 42, .10);
 
-  /* 动效时长和曲线见 motion-tokens.css（--d-* / --e-*）。 */
   --radius-dock: var(--r-shape);
   --card-padding: var(--s-1);
   --radius-inner: var(--s-2);
@@ -107,7 +95,6 @@
   --mono: "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* 暖纸色阶（hue 88）：用户在设置里选「暖纸」时切换整套 1%–90% 底色与墨色。 */
 :root[data-tone="warm"], [data-tone-preview="warm"] {
   --wallpaper: oklch(0.980 0.0055 88);
   --chrome-frame: oklch(0.992 0.002 88);
@@ -155,7 +142,6 @@
     --text-secondary: #a9b6ca;
     --text-tertiary: #8896ab;
     --text-quaternary: #58667a;
-    /* 深色下同理往亮的一侧挪一档，否则球会糊进背景 */
     --orb-ink: #c8d3e3;
 
     --apple-blue: #7aa2f7;
@@ -163,7 +149,6 @@
     --apple-green: #82b88e;
     --apple-red: #eb9284;
 
-    /* 思考标签与选择器 (暗色高对比，杜绝死硬纯黑) */
     --chip-active-bg: var(--content-bg);
     --btn-border-hover: rgba(255, 255, 255, 0.2);
     --popover-shadow: 0 10px 28px rgba(0,0,0,.24);
@@ -229,7 +214,6 @@ body {
 }
 #task-session-q { color: var(--text-primary); font-weight: 600; }
 
-/* ── 任务条：贴在输入框上方，一行说清「在做什么、多久了、作用在哪个网站」；目标与已送入材料点开再看 ── */
 #task-bar-root { min-width: 0; }
 #task-bar-root:empty { display: none; }
 .task-bar[hidden] { display: none; }
@@ -247,7 +231,6 @@ body {
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
-/* 组件内的状态行自带 display，hidden 必须显式生效。 */
 .task-bar [hidden] { display: none; }
 .tb-summary { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 22px; }
 .tb-summary .tb-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -267,7 +250,6 @@ body {
 .task-bar[data-expanded] .tb-expand::before { transform: translateY(2px) rotate(180deg); }
 .tb-expand:hover { background: var(--content-subtle); color: var(--text-primary); }
 .tb-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* 目标在对话里已有，任务条默认只显示状态。 */
 .task-bar:not([data-expanded]) .tb-head,
 .task-bar:not([data-expanded]) .tb-page { display: none; }
 .tb-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
@@ -351,7 +333,6 @@ html, body {
   height: 100vh;
   min-width: 0;
   overflow-x: hidden;
-  /* 窄侧栏按侧栏自身宽度分档（@container panel）。 */
   container: panel / inline-size;
 }
 
@@ -362,7 +343,6 @@ html, body {
   flex-shrink: 0;
 }
 
-/* ── 顶栏：只回答「在哪个会话」。品牌由 Chrome 标题栏给出，这里不重复；底色接住标题栏，平时不画分隔线。 ── */
 #topbar {
   position: relative;
   display: flex;
@@ -377,9 +357,7 @@ html, body {
   z-index: 10;
   transition: border-color var(--m-quick) var(--e-swift);
 }
-/* 对话滚到顶栏下面时才出现分隔线，区分顶栏与内容。 */
 
-/* Normal connectivity stays quiet; failure and active execution remain readable. */
 #status-pill.activity-island {
   display: inline-flex;
   align-items: center;
@@ -389,7 +367,6 @@ html, body {
   color: var(--text-secondary);
 }
 #status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 连上是常态，不占位置；只有连接中、断开时才出现。执行状态由输入框上方的任务条说明。 */
 #status-pill.status-on { display: none; }
 #status-pill.status-retry, #status-pill.status-off { color: var(--text-secondary); }
 .island-pulse-dot {
@@ -402,7 +379,6 @@ html, body {
 .island-pulse-dot.on { background: var(--apple-green); }
 .island-pulse-dot.retry { background: var(--apple-orange); }
 
-/* 顶栏 B：新会话、记忆两枚灰图标常驻，其余收进 ⋯。 */
 #header-more, #conversation-new, #memory-open {
   display: inline-flex;
   align-items: center;
@@ -419,7 +395,6 @@ html, body {
 }
 #header-more svg, #conversation-new svg, #memory-open svg { width: 15px; height: 15px; stroke-width: 1.8; }
 #memory-open[hidden] { display: none; }
-/* 记忆入口写字：图标认不出是什么，文字一眼看懂。 */
 #memory-open { width: auto; padding: 0 8px; font: 500 var(--fs-meta)/1 var(--font); color: var(--text-secondary); }
 #header-more:active, #conversation-new:active:not(:disabled), #memory-open:active { transform: scale(.95); }
 #header-more:focus-visible, #memory-open:focus-visible, #header-menu button:focus-visible {
@@ -473,7 +448,6 @@ html, body {
 
 #header-menu [hidden] { display: none; }
 
-/* 单独窗口这一版没有语音对话和说话输入。 */
 :root[data-popout] :is(#composer .voice-start, #dictate-btn, #voice-diagnostics-open, #attach-menu hr:has(+ #voice-diagnostics-open)) { display: none; }
 
 @media (hover: hover) and (pointer: fine) {
@@ -486,8 +460,6 @@ html, body {
   #header-more:active, #memory-open:active, #header-menu button:active, #conversation-new:active:not(:disabled) { transform: none; }
 }
 
-/* ── 消息流 ──────────────────────────────────────────────────────── */
-/* 对话区外框：只为放上下两条渐隐带。#messages 照旧是滚动容器。 */
 #messages-frame {
   position: relative;
   anchor-name: --messages-frame;
@@ -497,7 +469,6 @@ html, body {
   flex-direction: column;
 }
 
-/* Web 没有可变半径的 backdrop-filter；叠加不同半径与遮罩，模糊向正文减到零，避免单层材质加透明渐变的雾感。 */
 .scroll-fade {
   position: absolute;
   left: 0;
@@ -561,7 +532,6 @@ html, body {
   flex-direction: column;
   gap: var(--gap-turn);
   scrollbar-width: thin;
-  /* 滚动条出现、消失时正文宽度不变：拖短回答时段落不会因此换行，高度量得准。 */
   scrollbar-gutter: stable;
 }
 
@@ -595,7 +565,6 @@ html, body {
     inset 0 1px 0 var(--well-highlight);
 }
 
-/* 断线确定未送达的用户消息：弱化边框 + 原文重试，不隐藏内容 */
 .msg.user.undelivered {
   border-style: dashed;
   opacity: 0.88;
@@ -634,7 +603,6 @@ html, body {
   padding: 2px 0;
 }
 
-/* 正在流式的回答：第一次出字时上浮入场。 */
 .msg.assistant.stream-enter {
   animation: answerRise var(--m-rise) var(--e-rise) both;
 }
@@ -646,7 +614,6 @@ html, body {
   }
 }
 
-/* 回答按段淡入：只改透明度，时长见 --m-read。 */
 .chunk-fade {
   animation: chunkFade var(--m-read) linear both;
 }
@@ -672,7 +639,6 @@ html, body {
   color: var(--err);
 }
 
-/* assistant Markdown 排版 */
 .markdown > :first-child {
   margin-top: 0;
 }
@@ -719,7 +685,6 @@ html, body {
   padding: 1px 5px;
 }
 
-/* 回答里网上的图片：先是占位，用户点了才加载（answer-html.ts）。 */
 .markdown .answer-image-gate {
   display: inline-flex;
   align-items: center;
@@ -761,7 +726,6 @@ html, body {
   line-height: 1.55;
 }
 
-/* 代码块：上面一条语言名 + 换行 + 复制；默认换行，窄侧栏不出横向滚动条。条上的字由 markdown.ts 放在 data-* 里，这里显示。 */
 .markdown .code-block {
   margin: 8px 0;
   background: var(--content-subtle);
@@ -859,7 +823,6 @@ html, body {
   padding: 4px 8px;
 }
 
-/* ── 思考过程 ────────────────────────────────────────────────────── */
 details.thinking {
   position: relative;
   align-self: stretch;
@@ -868,7 +831,6 @@ details.thinking {
   font-size: var(--fs-meta);
 }
 
-/* A：运行中的光球放大呼吸（18 → 20px），结束一次性收束回原位；只动 transform/opacity */
 canvas.orb-live {
   animation: orbBreathe calc(var(--d-emph) * 2) var(--e-enter) infinite;
 }
@@ -887,7 +849,6 @@ canvas.orb-settle {
   to { transform: scale(1); }
 }
 
-/* B：完成是收束——行内文案落定一次，不反向播放 */
 .settle-once {
   animation: settleIn var(--d-state) var(--e-swift);
 }
@@ -909,7 +870,6 @@ details.thinking summary {
   list-style: none;
 }
 
-/* A：正在思考的那一行，名字也是信号；结束按 --m-move 退回次要色 */
 details.thinking.streaming summary {
   color: var(--apple-blue);
 }
@@ -937,7 +897,6 @@ details.thinking.streaming pre.overflowing {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
 }
 
-/* ── 单行执行状态与按需展开的过程 ────── */
 details.run-steps {
   align-self: stretch;
   flex-shrink: 0;
@@ -987,7 +946,6 @@ details.run-steps.done .run-icon {
   white-space: nowrap;
 }
 
-/* 步骤链："思考 → 读取页面结构 → 点击"，超出省略 */
 .run-chain {
   display: none;
 }
@@ -1086,8 +1044,6 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   }
 }
 
-/* ── Tool Chips ────────────────────────────────────────────── */
-/* 一段连续工具调用：chips 行（可换行）+ 共享详情区，点 chip 就地展开 */
 .chip-group {
   display: flex;
   flex-direction: column;
@@ -1125,7 +1081,6 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   transition: transform var(--m-quick) var(--e-swift);
 }
 
-/* 选中（详情展开中）：apple-blue 描边 + soft 底 */
 .chip.active {
   border-color: var(--apple-blue);
   background: var(--apple-blue-soft);
@@ -1137,13 +1092,11 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   background: var(--apple-red-soft);
 }
 
-/* A+B：正在跑的那个 chip 有蓝边和底色，跑完按 --m-move 退回常态（收束） */
 .chip.running {
   border-color: color-mix(in srgb, var(--apple-blue) 45%, transparent);
   background: var(--content-subtle-hover);
 }
 
-/* 状态点：运行中 accent 脉动，完成绿，失败红 */
 .chip-dot {
   width: 6px;
   height: 6px;
@@ -1163,7 +1116,6 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   background: var(--apple-red);
 }
 
-/* 04 settle：完成不是变色，是收束——点从放大处缩回原位 */
 .chip-dot.settling {
   background: var(--apple-green);
 }
@@ -1191,7 +1143,6 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   font-size: var(--fs-micro);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
-  /* 耗时读数推入（hidden 摘掉时才播，见 onToolEnd） */
   animation: durIn var(--m-move) var(--e-swift) both;
 }
 
@@ -1206,8 +1157,6 @@ details.run-steps:not(.done)[open] .run-body.overflowing {
   }
 }
 
-/* 结束后的过程：每一步是一行人话 + 细线状态标记（✓ / ✗），全部平铺在同一条竖线下。
-   思考与中间草稿不再分组显示，单步耗时也不显示；总耗时在过程行上。 */
 details.run-steps.done .run-body { gap: 2px; }
 details.run-steps.done .run-body > details.thinking { display: none; }
 details.run-steps.done .chip-group { gap: 2px; }
@@ -1255,7 +1204,6 @@ details.run-steps.done .chip.error { background: transparent; }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 原始工具名：弱化显示 */
 .chip-detail .raw {
   font-family: var(--mono);
   font-size: var(--fs-micro);
@@ -1275,8 +1223,6 @@ details.run-steps.done .chip.error { background: transparent; }
   overflow-y: auto;
 }
 
-/* 回到底部悬浮圆钮：内容超出一屏且用户上翻时出现。
-   输入框会随多行输入、附件、任务条长高；圆钮贴着对话区底边放，才不会压在输入框上。 */
 #to-bottom {
   position: absolute;
   position-anchor: --messages-frame;
@@ -1307,27 +1253,21 @@ details.run-steps.done .chip.error { background: transparent; }
   }
 }
 
-/* ── 起点引导：history 与当前草稿都恢复完（.starter-ready）且空、无草稿文字、未在跑时出现 ── */
 #starter {
   display: none;
   flex-shrink: 0;
   padding: 4px 14px 0;
   color: var(--text-secondary);
 }
-/* 空会话由脚本判断（#messages 里常驻续做卡挂载点，:empty 永远不成立；:has 又不能嵌套）。 */
-/* 空会话：光球、问候和「继续上次的事」作为一组，在空白区里上下居中，不再挤在输入框上方。 */
+/* WHY: 空会话由脚本判断（#messages 里常驻续做卡挂载点，:empty 永远不成立；:has 又不能嵌套）。 */
 #app.starter-ready.conversation-empty #starter { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; }
 #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #messages-frame { flex: 0 1 auto; }
-/* 空会话：问候、按钮和输入框收成一组上下居中（ChatGPT、Claude 新会话的做法），打字时也不跳回底边。
-   引导缩成内容高度，所以改成 static，让光带画布以整个侧栏为框、不跟着变短。 */
 #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #starter { position: static; flex: 0 0 auto; margin-top: auto; padding-bottom: var(--s-3); }
 #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) .composer-dock-wrap { margin-bottom: auto; }
 #starter-orb { width: 56px; height: 56px; margin-bottom: var(--s-3); }
-/* 点阵光带铺满起点区，只在光球那一条里有点；文字和按钮压在它上面。 */
 #starter { position: relative; }
 #starter > :not(#starter-glow) { position: relative; }
 #starter-glow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-/* 打开空会话时：光带先淡入，光球从小变大，文字和按钮依次浮上来。 */
 #starter.starter-enter #starter-glow { animation: starterGlowIn var(--m-starter-glow) var(--e-enter) both; }
 #starter.starter-enter #starter-orb { animation: starterOrbIn var(--d-emph) var(--e-spring) both; }
 #starter.starter-enter > :is(#starter-title, #starter-sub, #starter-connect) { animation: starterRise var(--d-emph) var(--e-enter) both; }
@@ -1338,7 +1278,6 @@ details.run-steps.done .chip.error { background: transparent; }
 @keyframes starterOrbIn { from { opacity: 0; transform: scale(.95); } }
 @keyframes starterRise { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) { #starter.starter-enter :is(#starter-glow, #starter-orb, #starter-title, #starter-sub, #starter-connect) { animation: none; } }
-/* 第一次打开：产品名逐字展开，之后光带、光球、文字依次出现。只播一次，播完名字留在光球上方。 */
 #starter-brand { display: none; margin: 0 0 var(--s-4); font-family: "Caveat", cursive; font-size: var(--fs-display); font-weight: 600; line-height: 1.2; color: var(--text-primary); white-space: pre; }
 #starter.starter-intro #starter-brand { display: block; }
 #starter.starter-intro #starter-brand { margin: 0 0 var(--s-5); }
@@ -1351,19 +1290,15 @@ details.run-steps.done .chip.error { background: transparent; }
 #starter.starter-intro.starter-enter > #starter-connect { animation-delay: calc(var(--m-starter-text-after-name) + var(--m-starter-step) * 2); }
 @keyframes starterLetter { from { opacity: 0; transform: translateY(.45em); } }
 @media (prefers-reduced-motion: reduce) { #starter-brand span { animation: none !important; } }
-/* 收起条件比出现条件多一层 :has，保证这些情况下引导不占位 */
 #app.starter-ready.conversation-empty:has(#status-pill.running, #send-btn.stopping) #starter { display: none; }
-/* 离开空会话时问候按上一帧的位置临时摆回、只淡出（composer-glide.ts），光带仍以整个侧栏为框。 */
 #app.starter-leaving #starter { display: flex !important; position: absolute; inset-inline: 0; top: var(--starter-leaving-top); height: var(--starter-leaving-height); flex: none; margin: 0; pointer-events: none; z-index: 1; }
 #app.starter-leaving #starter-glow { inset: auto 0; top: calc(-1 * var(--starter-leaving-top)); height: 100vh; }
 #starter-title { margin: 0 0 3px; font-size: var(--fs-read); font-weight: 600; color: var(--text-primary); }
 #starter-sub { margin: 0 0 8px; font-size: var(--fs-meta); line-height: 1.45; }
-/* 没连模型：问候下面只留「连接模型」 */
 #starter-connect { display: none; border: 0; border-radius: var(--r); background: var(--text-primary); color: var(--content-bg); font-size: var(--fs-meta); padding: 6px 12px; cursor: pointer; }
 #starter-connect:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
 #app.no-model #starter-connect { display: inline-flex; }
 
-/* ── 输入区：暖白纸面 ─────────────────────── */
 .composer-dock-wrap {
   margin: var(--s-2) var(--s-3) var(--s-3);
   position: relative;
@@ -1395,7 +1330,6 @@ details.run-steps.done .chip.error { background: transparent; }
     inset 0 1px 0 var(--well-highlight);
 }
 
-/* 页面感知胶囊 (Page Context Pill) */
 .morphing-page-pill {
   align-self: flex-start;
   display: inline-flex;
@@ -1493,7 +1427,6 @@ details.run-steps.done .chip.error { background: transparent; }
 }
 #ask-cite-close:hover { color: var(--text-primary); }
 
-/* 检查器浮层 (Morphing Dialog Sheet) */
 .page-morph-sheet {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -1516,7 +1449,6 @@ details.run-steps.done .chip.error { background: transparent; }
   z-index: 15;
 }
 
-/* hidden 立即生效，display 等收回播完才切。 */
 .page-morph-sheet[hidden] {
   opacity: 0;
   transform: scale(0.95) translateY(4px);
@@ -1568,7 +1500,7 @@ details.run-steps.done .chip.error { background: transparent; }
 }
 
 #input {
-  /* 不用 flex: 1：框高随内容走，flex-basis 为 0 会把 autoResize 写的高度压回最小高度，多行只能在两行里滚。 */
+  /* WHY: 不用 flex: 1：框高随内容走，flex-basis 为 0 会把 autoResize 写的高度压回最小高度，多行只能在两行里滚。 */
   flex: none;
   resize: none;
   border: none;
@@ -1613,13 +1545,11 @@ details.run-steps.done .chip.error { background: transparent; }
   background: var(--apple-blue-soft);
 }
 
-/* ── Composer 附件瓷贴 (Attachments Strip & 56px Tiles) ─────────────── */
 .attachments-strip {
   display: flex;
   align-items: center;
   gap: 8px;
   overflow-x: auto;
-  /* 横向滚动会连带裁掉竖向溢出：上下留出悬停上浮和阴影的地方。 */
   padding: 6px 2px 6px;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -1758,8 +1688,6 @@ details.run-steps.done .chip.error { background: transparent; }
   pointer-events: none;
 }
 
-/* 文件附件：瓷贴加宽放文件名；类型图标的颜色按格式区分（PDF 红、表格绿、PPT 橙、其余蓝）。
-   宽度按输入框算，一屏正好放下整数张（窄侧栏两张、宽侧栏三张），配合按卡片对齐的滑动，不会露出被切掉一半的卡。 */
 .tile-56.tile-file {
   width: calc((100cqw - 8px) / 2);
   cursor: default;
@@ -1812,7 +1740,6 @@ details.run-steps.done .chip.error { background: transparent; }
   text-overflow: ellipsis;
 }
 
-/* 已发出的消息里：同一张卡缩小一号，两张一行，不带进度环。 */
 .file-chip.user-msg-file {
   flex: 0 1 calc(50% - 3px);
   min-width: 0;
@@ -1880,7 +1807,6 @@ details.run-steps.done .chip.error { background: transparent; }
   position: absolute;
   bottom: 46px;
   left: 12px;
-  /* 从下方的「+」按钮处长出来。 */
   transform-origin: 18px calc(100% + 28px);
   width: 190px;
   background: var(--glass-surface-elevated);
@@ -2063,13 +1989,11 @@ details.run-steps.done .chip.error { background: transparent; }
   transition: transform var(--d-tap) var(--e-enter);
 }
 
-/* 位置 1：Send ↑ / Stop ■ 原位形变按钮 (Motion In-Place Morphing Button) */
 #send-btn.kinetic-morph-button {
   width: 29px;
   height: 29px;
   border-radius: var(--r-pill);
   background: var(--text-primary);
-  /* 跟着底色反相：深色模式下 --text-primary 是浅色，写死 #fff 会让箭头看不见 */
   color: var(--content-bg);
   border: 0;
   display: grid;
@@ -2078,7 +2002,6 @@ details.run-steps.done .chip.error { background: transparent; }
   position: relative;
   box-shadow: none;
   flex-shrink: 0;
-  /* 形变走 morph，底色走 move，松手回弹走 spring */
   transition: border-radius var(--m-morph) var(--e-spring),
               background var(--m-move) var(--e-swift),
               transform var(--d-micro) var(--e-enter);
@@ -2106,7 +2029,6 @@ details.run-steps.done .chip.error { background: transparent; }
   color: #fff !important;
 }
 
-/* Transitions icon swap：两个图标同帧换状态；高频按钮缩小幅度，不旋转。 */
 #send-btn.kinetic-morph-button :is(.morph-icon-send, .morph-icon-stop) {
   position: absolute;
   inset: 0;
@@ -2173,8 +2095,6 @@ details.run-steps.done .chip.error { background: transparent; }
   93% { transform: scaleY(0.12); }
 }
 
-/* ── 减弱动态偏好 ────────────────────────────────────────────────── */
-/* 入场 / 退场只留透明度：换成这两条，保留原时长和曲线；循环动效照旧关掉。 */
 @keyframes fadeOnlyIn { from { opacity: 0; } }
 @keyframes fadeOnlyOut { to { opacity: 0; } }
 
@@ -2190,7 +2110,6 @@ details.run-steps.done .chip.error { background: transparent; }
     animation: none;
   }
 
-  /* A+B 新增的持续/一次性动效：减少动态时只留状态色，不动位移与呼吸 */
   canvas.orb-live,
   canvas.orb-settle,
   .settle-once {
@@ -2216,11 +2135,9 @@ details.run-steps.done .chip.error { background: transparent; }
 
 }
 
-/* 会话入口：沿用现有侧栏材质，历史按需展开。 */
 @media (max-width: 360px) {
   #status-text { max-width: 4.5em; overflow: hidden; text-overflow: ellipsis; }
 }
-/* 会话名是「我在哪」的指示，不是标题：常规字重、次要色，别像要点的大按钮。 */
 #conversation-switcher { border:0; background:transparent; color:var(--text-secondary); border-radius:var(--r); height:28px; padding:0 6px; font:inherit; font-size:var(--fs-ui); cursor:pointer; }
 #conversation-switcher { flex:0 1 auto; min-width:0; margin-right:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; font-weight:400; }
 #conversation-switcher:hover { color:var(--text-primary); }
@@ -2261,12 +2178,10 @@ details.run-steps.done .chip.error { background: transparent; }
 
 #conversation-switcher { display:flex; align-items:center; gap:7px; }
 #conversation-switcher .conversation-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-/* 顶栏 B：任务名用正文色，旁边两枚图标更淡，一眼分清「在哪」和「能做什么」。 */
 #conversation-switcher .conversation-title { color:var(--text-primary); font-weight:500; }
-/* lucide 的 createElement 不带 .lucide 类名，按元素选中图标，否则是默认的 24px 粗箭头。 */
+/* WHY: lucide 的 createElement 不带 .lucide 类名，按元素选中图标，否则是默认的 24px 粗箭头。 */
 #conversation-switcher svg { flex-shrink:0; width:12px; height:12px; stroke-width:1.75; color:var(--text-tertiary); }
 
-/* 跨会话记忆 A：会话内回执 + 管理抽屉。 */
 #memory-shade { position:absolute; inset:0; z-index:34; border:0; padding:0; background:rgba(23,34,52,.18); cursor:default; }
 #memory-shade[hidden], #memory-drawer[hidden] { display:none; }
 #memory-drawer { position:absolute; inset:148px 0 0; z-index:35; display:flex; min-height:0; flex-direction:column; overflow:hidden; border:1px solid var(--glass-border-subtle); border-bottom:0; border-radius:20px 20px 0 0; background:var(--content-bg); box-shadow:0 -10px 34px rgba(31,42,60,.14),var(--glass-specular); animation:memoryDrawerIn var(--d-state) var(--spring-fluid); }
@@ -2300,7 +2215,6 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-row-meta > div { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:1px; }
 .memory-row-meta button, .memory-actions button { padding:4px 6px; }
 .memory-scope, .memory-receipt-scope { border-radius: var(--r-tail); background:var(--content-subtle); color:var(--text-secondary); font-size:var(--fs-micro); line-height:1.4; padding:3px 6px; white-space:nowrap; }
-/* 每条记忆的说明行：种类 · 用在哪（或到哪天为止）· 用过几次；安静、不抢正文。 */
 .memory-facts { display:flex; flex:1; flex-wrap:wrap; align-items:center; gap:4px 6px; min-width:0; }
 .memory-row-meta > .memory-facts + div { flex-wrap:nowrap; flex-shrink:0; }
 .memory-kind { color:var(--text-secondary); font-size:var(--fs-micro); line-height:1.4; white-space:nowrap; }
@@ -2336,13 +2250,11 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-empty { display:flex; min-height:156px; flex-direction:column; align-items:center; justify-content:center; padding:28px 12px; color:var(--text-tertiary); text-align:center; font-size:var(--fs-micro); }
 .memory-empty strong { color:var(--text-secondary); font-size:var(--fs-ui); font-weight:500; }
 .memory-empty p { max-width:260px; margin:7px 0 0; line-height:1.7; }
-/* 首句末尾「用了 N 条记忆 ›」：像脚注一样跟在句尾；展开后几行插在首句与正文之间，不加框、不加色。 */
 .memory-used-toggle { all:unset; margin-left:6px; color:var(--text-tertiary); font-family:var(--font); font-size:var(--fs-meta); line-height:1; white-space:nowrap; cursor:pointer; transition:color var(--m-quick) var(--e-swift); }
 .memory-used-toggle:hover, .memory-used-toggle[aria-expanded=true] { color:var(--text-tertiary); }
 .memory-used-chevron { display:inline-block; font-size: var(--fs-glyph); transform:translateY(-1px); transition:transform var(--m-move) var(--e-swift); }
 .memory-used-toggle[aria-expanded=true] .memory-used-chevron { transform:translateY(-1px) rotate(90deg); }
 .memory-used-cite-row .memory-used-toggle { margin-left:0; }
-/* 回答还没定稿时独立成行，样式同句尾。 */
 .memory-used-line { margin:0; font-family:var(--font); }
 #messages > .memory-used-line { margin:-8px 0 14px; }
 #messages > .memory-used-line > .memory-used-toggle { margin-left:0; }
@@ -2378,7 +2290,6 @@ details.run-steps.done .chip.error { background: transparent; }
 .memory-receipt-text { min-width:0; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .site-notes-list { margin:-10px 0 14px; padding:8px 10px 8px 24px; border-radius: var(--r-sm); background:var(--content-subtle); color:var(--text-secondary); font-size:var(--fs-micro); line-height:1.5; }
 .site-notes-list li + li { margin-top:4px; }
-/* 当前目标与草稿直接构成确认内容，流程状态只由等待事件决定。 */
 #confirm-dock { margin: 0 0 var(--s-2); }
 #confirm-dock[hidden] { display: none; }
 #confirm-dock .send-confirm { margin: 0; }
@@ -2400,11 +2311,9 @@ details.run-steps.done .chip.error { background: transparent; }
 .send-confirm-yes[data-arming] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--content-bg) 40%, transparent); }
 .send-confirm-no { flex: 0 0 auto; background: transparent; color: var(--text-secondary); }
 .send-confirm-acts button:hover:not(:disabled) { filter: brightness(.97); }
-/* 确认框在时，填写读回（「消息现在是」）先收起：要发的内容只在确认框里出现一次。 */
 #messages:has(.send-confirm[data-state=open]) .fill-evidence { display:none; }
 .send-confirm-acts button:disabled { opacity:.55; cursor:default; }
 .send-confirm-acts button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-/* 纠正后开口问「要我记住吗」：像助手接着说的一句话，两个浅色小胶囊不抢正文。 */
 .memory-ask { margin:-4px 0 16px; font-family:var(--reading-font); font-size:var(--fs-ui); line-height:1.7; color:var(--text-primary); }
 .memory-ask-line { margin:0; overflow-wrap:anywhere; }
 .memory-ask:not([data-state=open]):not([data-state=closed]) .memory-ask-line { color:var(--text-tertiary); font-size:var(--fs-code); }
@@ -2438,7 +2347,6 @@ details.run-steps.done .chip.error { background: transparent; }
 @media (max-height: 560px) { #memory-drawer { top:92px; } }
 @media (prefers-reduced-motion: reduce) { #memory-drawer { animation-name:fadeOnlyIn; } }
 
-/* 回答默认跟随界面字体；阅读外观设置仍可覆盖这两个变量。 */
 :root {
   --reading-font: var(--font);
   --reading-size: var(--fs-read);
@@ -2515,7 +2423,6 @@ details.run-steps.done .chip.error { background: transparent; }
 .answer-actions button:disabled { opacity: .6; cursor: default; }
 .answer-action-feedback:empty { display: none; }
 
-/* 阅读外观面板（右上角齿轮展开）。只改回答排版，不改周边产品设计。 */
 .reading-settings { position: absolute; right: 14px; top: 40px; display: inline-flex; align-items: center; }
 .reading-settings #reading-settings-btn {
   display: inline-flex;
@@ -2605,7 +2512,6 @@ details.run-steps.done .chip.error { background: transparent; }
   .reading-settings-row { grid-template-columns: 30px minmax(0, 1fr); gap: 6px; }
 }
 
-/* Voice progress: approved Particles Orb composer. */
 .voice-start{display:inline-flex;align-items:center;gap:0;flex-shrink:0;border:1px solid var(--content-border);border-radius:18px;background:var(--content-bg);color:var(--text-secondary);padding:0 7px 0 0;font-size:var(--fs-micro);cursor:pointer}
 .voice-start canvas{width:30px;height:30px}.voice-start[aria-expanded="true"]{background:var(--content-subtle);border-color:var(--content-border)}
 .voice-progress{position:relative;text-align:center;padding:var(--s-2) 0 var(--s-3);margin-bottom:var(--s-2);flex-shrink:0}
@@ -2627,7 +2533,6 @@ details.run-steps.done .chip.error { background: transparent; }
   #takeover-btn { padding: 0 8px; }
 }
 
-/* Voice diagnostics: small manual capture block, not a console. */
 .voice-diag{border-top:1px solid var(--content-border);padding:2px 0 0;flex-shrink:0;font-size:var(--fs-micro);color:var(--text-secondary)}
 .voice-diag summary{cursor:pointer;font-size:var(--fs-micro);color:var(--text-tertiary);padding:2px 0}
 .voice-diag-body{padding:4px 0 8px}
@@ -2679,7 +2584,6 @@ details.disc[open] > summary::before { transform: rotate(90deg); }
 .check { margin: 0 0 8px; font-size: var(--fs-micro); color: var(--text-tertiary); line-height: 1.6; }
 .disc-body pre { margin: 0; padding: 9px; border-radius: var(--r-sm); background: var(--content-subtle, rgba(127,127,127,.08)); font-size: var(--fs-micro); line-height: 1.5; overflow: auto; max-height: 150px; color: var(--text-secondary); }
 
-/* 常规回执默认一行，原要求和目标留在可展开详情中。 */
 .msg.receipt { font-size: var(--fs-meta); color: var(--text-2); }
 .msg.receipt summary { cursor: pointer; overflow-wrap: anywhere; }
 .msg.receipt summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -2694,10 +2598,8 @@ details.disc[open] > summary::before { transform: rotate(90deg); }
 
 .collaboration-avatar { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; }
 
-/* 主球直接使用上游帧动画，不叠加产品自定的缩放、收拢或闪烁。 */
 .run-icon > canvas.orb-live, .run-icon > canvas.orb-settle { animation: none; }
 
-/* 已确认的状态标记：形状和文字传达含义，颜色只作辅助。 */
 .run-icon { align-items: center; gap: 5px; }
 .run-orb-mark { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%; }
 .run-orb-mark[hidden] { display: none; }
@@ -2707,7 +2609,6 @@ details.disc[open] > summary::before { transform: rotate(90deg); }
 .run-orb-mark[data-state="failed"] { color: var(--err); background: var(--err-soft); }
 .run-orb-mark[data-state="stopped"] { color: var(--text-tertiary); background: var(--content-subtle); }
 
-/* Quiet scrollbars across the sidebar; transparent tracks avoid nested grey gutters. */
 #messages, #input, details.thinking pre, .run-body {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text-3) 35%, transparent) transparent;
@@ -2722,17 +2623,13 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
   border-radius: 999px;
 }
 
-/* 回应和过程的边界：正文不包卡片，状态使用普通界面字体。 */
 .run-steps > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--s-1); }
 .run-steps > summary > .run-icon { min-width: 24px; justify-content: center; }
 .run-steps .thinking summary { font-size: var(--fs-micro); }
 .msg.assistant[data-delivery-kind="start_ack"] { font-family: var(--font); font-size: var(--fs-meta); color: var(--text-secondary); }
-/* 开场话是助手说要怎么做，不是回答：用小一号的说明字，回答才用正文大小。 */
 .msg.assistant.markdown.opening-line { font-family: var(--font); font-size: var(--fs-ui); line-height: 1.6; color: var(--text-secondary); }
 
-/* 原生 details 保留键盘语义；内容包裹层允许自然高度折叠。 */
 @supports selector(details::details-content) {
-  /* 过程行一天点很多次：开合都用 var(--d-state)，不回弹。 */
   details.run-steps::details-content {
     display: grid;
     grid-template-rows: 0fr;
@@ -2750,7 +2647,6 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
   }
 }
 
-/* 输入区：任务决策独立呈现，设置与诊断降低层级。 */
 #input { scrollbar-width:thin; }
 #composer-more { background:none; border:0; color:var(--text-secondary); font:inherit; cursor:pointer; padding:4px; border-radius: var(--r-tail); }
 #composer-more:hover { background:var(--content-subtle); color:var(--text-primary); }
@@ -2829,7 +2725,6 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 
 .msg.receipt.notice { align-self:stretch; }
 
-/* 模型写给用户的文件：一行文件名 + 类型大小，右侧「下载」用墨蓝，是这张卡片唯一的强调。 */
 .artifact-card { display: flex; align-items: center; gap: 12px; margin: 6px 0; padding: 10px 12px; border: 1px solid var(--content-border); border-radius: var(--radius-card); background: var(--content-bg); }
 .artifact-info { min-width: 0; flex: 1; }
 .artifact-name { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; color: var(--text-primary); font-size: var(--fs-ui); font-weight: 500; }
@@ -2860,7 +2755,6 @@ details.thinking pre::-webkit-scrollbar-thumb, .run-body::-webkit-scrollbar-thum
 .artifact-card[data-expanded="true"] .artifact-preview { grid-column: 1 / -1; grid-row: 3; width: 100%; height: auto; max-height: 320px; object-fit: contain; }
 .artifact-preview { display: block; grid-column: 1; grid-row: 1 / 3; width: 40px; height: 40px; max-width: 100%; object-fit: cover; object-position: left top; border: 1px solid var(--content-border); border-radius: var(--r-tail); background: var(--surface); cursor: zoom-in; }
 
-/* Interaction craft: scoped to actionable controls, never disabled ones. */
 button:not(:disabled), .pressable:not(:disabled):not([aria-disabled="true"]), .source-chip, .tab-chip {
   transition: transform var(--d-micro) var(--e-out), background-color var(--d-micro) var(--e-out), border-color var(--d-micro) var(--e-out);
 }
@@ -2900,7 +2794,6 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
   button:not(:disabled), .pressable, .source-chip, .tab-chip, .ai-task-reveal, .task-chevron, .ai-task-footer .resume-action { transition: none; }
 }
 
-/* S6–S9: page evidence has a location, never a fabricated completion state. */
 .citation-btn { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border:1px solid var(--content-border); border-radius:var(--r-tail); background:var(--content-subtle); color:var(--accent); font:inherit; font-size:var(--fs-micro); cursor:pointer; }
 .citation-btn:hover { background:var(--content-subtle-hover); }
 .citation-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
@@ -2916,9 +2809,7 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 @keyframes sonar-wave { 0% { box-shadow:0 0 0 0 rgba(45,74,134,.7); } 60% { box-shadow:0 0 0 14px rgba(45,74,134,0); } 100% { box-shadow:0 0 0 0 rgba(45,74,134,0); } }
 .sonar-pulse { animation:sonar-wave 1.2s ease-out; }
 @media(prefers-reduced-motion:reduce) { .marginalia-card { transition:none; } .sonar-pulse { animation:none; } }
-/* 当前页：输入框外上方一行灰字，不占框内位置。 */
 #page-pill { display:flex; margin:0 0 var(--s-1); padding:2px var(--s-3); border:0; background:none; }
-/* 顶栏 B / chip C：这一轮带了哪页改由用户消息下面的 chip 说明，输入框上方不再常驻页面条。 */
 #page-pill[hidden] { display:none; }
 #page-pill:active { transform:none; }
 #composer-menu .composer-menu-label { margin:2px 7px 2px; font:var(--fs-micro)/1.6 var(--font); color:var(--text-tertiary); }
@@ -2930,7 +2821,6 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 
 #app:has(#marginalia-rail:not([hidden])) #messages-frame, #app:has(#marginalia-rail:not([hidden])) #starter, #app:has(#marginalia-rail:not([hidden])) #to-bottom { display:none; }
 
-/* S10 直连按钮：顶栏下一行，只在当前页有可做的动作时出现；耗时读数几秒后收起。 */
 #ghost-bar { display:flex; align-items:center; gap:8px; padding:4px 10px 6px; background:var(--chrome-frame); flex-shrink:0; }
 #ghost-bar[hidden] { display:none; }
 #ghost-bar .ghost-actions { display:flex; gap:6px; flex-shrink:0; }
@@ -2942,7 +2832,6 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 #ghost-bar .ghost-timing.failed { color:var(--warn); }
 #ghost-bar .ghost-timing[hidden] { display:none; }
 
-/* 改方向：运行中输入区换成暖色边，上方一行快捷按钮；新回答前挂金色标记并淡入替换原来那段。 */
 #composer.steering-active { border-color:color-mix(in srgb, var(--apple-orange) 55%, var(--glass-border)); box-shadow:0 0 0 2px color-mix(in srgb, var(--apple-orange) 14%, transparent); }
 #steer-ribbon { display:flex; flex-direction:column; gap:6px; }
 #steer-ribbon[hidden] { display:none; }
@@ -2967,7 +2856,6 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .msg.steer-morph { animation:steer-morph-in var(--d-layout) var(--e-out); }
 @media(prefers-reduced-motion:reduce) { .msg.steer-morph { animation-name:fadeOnlyIn; } #ghost-bar .ghost-action, .steer-chip { transition:none; } }
 
-/* 语音：光球居中、球下一个灰字、字幕卡里当前句墨色、说过的退成静默色；不加彩色胶囊。 */
 .voice-progress .voice-state { margin-top: var(--s-1); font-size: var(--fs-meta); color: var(--text-tertiary); }
 .voice-progress[data-state="speaking"] .voice-state { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .voice-progress[data-state="error"] .voice-state { color: var(--err); }
@@ -2991,8 +2879,6 @@ button:active:not(:disabled), .pressable:active:not(:disabled):not([aria-disable
 .voice-progress .voice-actions button:hover { background: var(--content-subtle); }
 .voice-progress .voice-actions .voice-stop-speech[hidden] { display: none; }
 
-/* 动作卡 */
-/* 运行中每步一行：图标 + 动词 + 目标，右侧 › 展开参数；旁白夹在卡片之间。 */
 .chip-row { flex-direction: column; flex-wrap: nowrap; gap: 4px; }
 .chip { align-self: stretch; min-width: 0; text-align: left; }
 .chip-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3008,8 +2894,6 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
   .chip .dur { animation-name: fadeOnlyIn; transition: none; }
 }
 
-/* 技能 */
-/* 输入框开头敲 / 弹出的技能列表、运行前的澄清卡、管理面板，以及用户消息上的「存成技能」。 */
 .pskill-menu, .pskill-clarify { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 26; background: var(--glass-surface-elevated); border: 1px solid var(--glass-border); border-radius: var(--r); box-shadow: var(--popover-shadow); padding: 5px; }
 .pskill-menu { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 .pskill-menu[hidden], .pskill-sheet[hidden], .pskill-shade[hidden], .pskill-error[hidden] { display: none; }
@@ -3040,7 +2924,6 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .pskill-row { display: grid; grid-template-columns: 22px 1fr auto auto; align-items: center; gap: 6px; padding: 6px 4px; font-size: var(--fs-ui); color: var(--text-primary); border-bottom: 1px solid var(--glass-border-subtle); }
 .pskill-row .pskill-name { overflow: hidden; text-overflow: ellipsis; }
 .pskill-sheet > .pskill-btn.primary { align-self: flex-start; }
-/* 可直接运行的技能：图标用 lucide，名字后一枚「直接运行」或网站名。 */
 .pskill-item.pskill-op { grid-template-columns: 22px minmax(0, max-content) auto minmax(0, 1fr); }
 .pskill-emoji svg { width: 14px; height: 14px; vertical-align: -2px; color: var(--accent); }
 .pskill-badge { font-size: var(--fs-micro); color: var(--accent); border: 1px solid var(--accent-soft); border-radius: var(--radius-pill); padding: 0 6px; white-space: nowrap; }
@@ -3060,7 +2943,6 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .msg.user .pskill-save:hover { color: var(--text-primary); }
 @media (prefers-reduced-motion: reduce) { .msg.user .pskill-save { transition: none; } }
 
-/* 继续上次的事：光球下的一张无框清单。整行可点；× 只在指着时出现，占时间的位置。 */
 #open-threads { align-self: stretch; margin-top: var(--s-5); display: flex; flex-direction: column; gap: 2px; text-align: left; }
 #open-threads[hidden] { display: none; }
 #open-threads .open-threads-head { margin: 0 0 var(--s-1); padding: 0 var(--s-2); font-size: var(--fs-meta); color: var(--text-tertiary); }
@@ -3092,7 +2974,6 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 #open-threads .open-thread-close:hover { background: var(--content-subtle-hover); color: var(--text-primary); }
 #open-threads button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* 出处：回答前一行安静的署名（不是药丸按钮）；展开每个来源一行；正文角标是小号灰色数字。 */
 .msg.assistant .answer-sources { margin: 0 0 var(--s-2); font-family: var(--font); font-size: var(--fs-meta); color: var(--text-tertiary); }
 .msg.assistant .answer-sources > summary { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; list-style: none; user-select: none; transition: color var(--m-quick) var(--e-swift); }
 .msg.assistant .answer-sources > summary::-webkit-details-marker { display: none; }
@@ -3122,15 +3003,11 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .msg.assistant .answer-source:focus-visible, .msg.assistant .answer-sources > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--s-1); }
 .source-toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 50; padding: 6px 12px; border-radius: 999px; background: var(--text-primary); color: var(--content-subtle); font-size: var(--fs-meta); box-shadow: 0 4px 14px rgba(0,0,0,.12); pointer-events: none; }
 
-/* ── 过程灰字：一轮只留一行 ─────────────────────────
-   进行中「正在 动词 对象」，秒数贴在动词后面；结束收成「做了 N 件事 · 9 秒 ›」。
-   动词墨色、对象浅灰，无图标；展开是左边一条细线下的灰字步骤。 */
 details.run-steps .run-icon { display: none; }
 details.run-steps summary { gap: 6px; font-size: var(--fs-ui); }
 .run-title { flex: 0 1 auto; font-size: var(--fs-read); line-height: 22px; font-weight: 400; }
 .run-title .act-verb { color: var(--text-primary); font-weight: 500; }
 .run-title .act-object { color: var(--text-tertiary); }
-/* 行首的球：在想、在看页面、在动手、在等你各一种转法，墨色用正文主色（orb.ts 的浓墨）。不显示时球自己停帧。 */
 .run-beat {
   display: none;
   width: 16px;
@@ -3139,7 +3016,6 @@ details.run-steps summary { gap: 6px; font-size: var(--fs-ui); }
 }
 details.run-steps:not(.done):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-beat { display: inline-flex; }
 .run-beat > canvas.orb-live, .run-beat > canvas.orb-settle { animation: none; }
-/* 进行中的字用正文次要色、常规字重；做完收成回执另有样式。 */
 @keyframes runBeat { to { transform: rotate(1turn); } }
 details.run-steps:not(.done) .run-title .act-verb { color: var(--text-secondary); font-weight: 400; }
 details.run-steps:not(.done)[data-phase="thinking"] .run-time,
@@ -3147,8 +3023,6 @@ details.run-steps:not(.done)[data-phase="waiting"] .run-time {
   animation: runTimeBeat calc(var(--d-emph) * 2) var(--e-glide) infinite;
 }
 @keyframes runTimeBeat { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
-/* 助手在想、在做一步时，标签一道扫光：用遮罩调透明度，动词墨色、对象浅灰各自保留；秒数是另一个元素，不扫。
-   等你（接管、确认发送、教学等你点）时不扫。 */
 details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-title {
   -webkit-mask-image: linear-gradient(90deg, #000 0 40%, rgb(0 0 0 / 0.35) 50%, #000 60% 100%);
   mask-image: linear-gradient(90deg, #000 0 40%, rgb(0 0 0 / 0.35) 50%, #000 60% 100%);
@@ -3160,7 +3034,6 @@ details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data
   from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
   to { -webkit-mask-position: -50% 0; mask-position: -50% 0; }
 }
-/* 回答位置的骨架：后面一接上回答、卡片或出错，就收成 0 高、淡出，条叠在回答底下，回答不往下跳。 */
 .answer-skeleton {
   --sk-base: var(--content-subtle);
   --sk-hi: var(--content-bg);
@@ -3177,18 +3050,15 @@ details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data
   background: linear-gradient(105deg, var(--sk-base) 0 40%, var(--sk-hi) 50%, var(--sk-base) 60% 100%) 100% 0 / 300% 100%;
   animation: var(--sk-anim, skeletonSweep var(--m-sweep) var(--e-sweep) infinite);
 }
-/* 等你的时候回答位置不放骨架；不等了、还没出字就再放回来。 */
 details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer-skeleton { display: none; }
 .answer-skeleton i:nth-child(1) { width: 92%; margin-top: 7px; }
 .answer-skeleton i:nth-child(2) { width: 78%; }
 .answer-skeleton i:nth-child(3) { width: 60%; }
-/* 任务卡和接续入口常挂在末尾却没内容（不显示），不算接上了东西。 */
 .answer-skeleton:has(~ :not(.ai-task-card, #resume-entry-root)),
 .answer-skeleton:has(~ .ai-task-card #resume-entry-root:not([hidden]) > *, ~ #resume-entry-root:not([hidden]) > *),
 .answer-skeleton[data-state="gone"] {
   --sk-anim: none;
   height: 0;
-  /* 抵掉 #messages 的行距：回答落在骨架第一条的位置。 */
   margin-bottom: calc(-1 * var(--s-2));
   opacity: 0;
 }
@@ -3203,7 +3073,6 @@ details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer
 }
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 176px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
-/* 收尾后的分叉不留「查了 N 路」这类行：做过的事在展开的过程里，默认视图只留过程行和回答。 */
 .run-graph-group[data-state="folded"] { display: none; }
 .run-live-graph:not(:has(> .run-graph-group:not([data-state="folded"]))) { display: none; }
 .run-graph-group { position: relative; min-width: 0; }
@@ -3271,7 +3140,6 @@ details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer
 }
 details.run-steps:not(.done) .run-time { margin-left: auto; font-size: var(--fs-meta); color: var(--text-tertiary); }
 details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: hidden; }
-/* 进行中标题下方的最近几步：一条细线下的灰字，新的一步淡入；收尾时整块移除。 */
 .run-trail { margin: -2px 0 10px 7px; padding-left: 12px; border-left: 1px solid var(--content-border); display: flex; flex-direction: column; gap: 2px; }
 .run-trail .trail-step, .run-trail .trail-more { display: flex; gap: 8px; align-items: baseline; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 .run-trail .trail-step::before { content: "✓"; color: var(--text-quaternary); font-size: var(--fs-micro); }
@@ -3281,7 +3149,6 @@ details.run-steps:not(.done):not(:hover):not([open]) .run-chevron { visibility: 
 .run-trail .trail-more { color: var(--text-tertiary); }
 .run-trail .trail-aside { margin-top: 4px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 .run-trail .trail-aside.warn { color: var(--apple-orange); }
-/* 跑完后代码裁判的一行（核对 n/m）：过程折叠区里的一句说明，没过时颜色略深。 */
 .run-trail .trail-step:last-child { animation: trailIn var(--d-layout) var(--e-move) both; }
 @keyframes trailIn { from { opacity: 0; transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) { .run-trail .trail-step:last-child { animation-name: fadeOnlyIn; } }
@@ -3312,7 +3179,6 @@ details.run-steps .run-body details.thinking.narration > pre, details.run-steps.
   details.run-steps:not(.done)[data-phase="waiting"] .run-time { animation: none; }
 }
 
-/* 进行中两行——第一行写现在（秒数只数这一段），第二行小字「已做 N 步 ›」；做完收成一行回执，展开是记录。 */
 details.run-steps:not(.done) > summary { flex-wrap: wrap; row-gap: 0; }
 details.run-steps > summary > .run-escalate { display: inline-flex; gap: var(--s-2); flex-basis: 100%; margin-top: 2px; }
 details.run-steps > summary > .run-escalate button { border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-secondary); font: inherit; font-size: var(--fs-meta); padding: 2px 10px; cursor: pointer; }
@@ -3329,7 +3195,6 @@ details.run-steps.done > summary > .run-meta { display: none; }
 .run-receipt .run-check { flex-shrink: 0; color: var(--text-tertiary); white-space: pre; transition: color var(--m-move) var(--e-glide); }
 .run-receipt .run-check[data-tone="ok"] { color: var(--ok); }
 .run-receipt .run-check[data-tone="warn"] { color: var(--warn); }
-/* 回答出现后收进过程的开场话：一行安静的计划，不是气泡。 */
 .run-body > .run-plan { margin: 2px 0 6px; padding: 0; border: 0; background: none; font-size: var(--fs-ui); line-height: 1.6; color: var(--text-tertiary); }
 .run-body > .run-plan p { margin: 0; }
 .run-body > .fill-evidence { margin: 6px 0 4px; }
@@ -3337,7 +3202,6 @@ details.run-steps.done > summary > .run-meta { display: none; }
 .run-body .run-total { margin-top: 2px; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
 .run-body .chip .dur:not([hidden]) { display: inline; margin-left: 6px; font-size: var(--fs-meta); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 
-/* 任务卡只剩「还差什么 + 继续原任务」，放在回答之后；进行中没有内容就不占位。 */
 .ai-task-card { margin: 4px 0 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; animation: none; }
 .ai-task-card .ai-task-trigger, .ai-task-card .ai-task-reveal { display: none; }
 .ai-task-card:not(:has(#resume-entry-root:not([hidden]) > *)) { display: none; }
@@ -3345,11 +3209,8 @@ details.run-steps.done > summary > .run-meta { display: none; }
 .ai-task-footer .resume-action { border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-primary); font-size: var(--fs-ui); padding: 5px 12px; }
 .ai-task-footer .resume-action:hover { background: var(--content-subtle); }
 
-/* 一次性的系统提示：灰字，不用琥珀色。 */
 .msg.notice { color: var(--text-tertiary); font-size: var(--fs-meta); }
 
-/* ── 回执改版─────────────
-   回执是「图标 + 一句话」；准备动作不列；耗时、来源、记忆挪到回答下面一排。 */
 .run-act-icon { display: inline-grid; place-items: center; flex: none; width: 17px; height: 17px; color: var(--text-secondary); }
 .run-act-icon svg { width: 17px; height: 17px; stroke-width: 1.8; }
 details.run-steps.done .run-act-icon { width: 15px; height: 15px; color: var(--text-tertiary); }
@@ -3360,25 +3221,19 @@ details.run-steps .run-body .chip { gap: 7px; }
 details.run-steps .run-body .chip-icon { display: inline-grid; place-items: center; flex: none; width: 14px; height: 14px; color: var(--text-tertiary); }
 .run-body .chip-icon svg { width: 14px; height: 14px; stroke-width: 1.8; }
 
-/* 回答下面一排：最新一条常显，旧回答悬停才出现；只改透明度，不改高度。 */
 .answer-actions { gap: 2px; min-height: 28px; margin-top: 6px; transition: opacity var(--m-quick) var(--e-swift); }
 .msg.assistant:not(.answer-latest) > .answer-actions { opacity: 0; }
 .msg.assistant:hover > .answer-actions, .msg.assistant:focus-within > .answer-actions, .msg.assistant:has(> .answer-panel:not([hidden])) > .answer-actions { opacity: 1; }
-/* 写着没做成的原因时，旧回答这一排也不藏：原因要等用户回头看见。 */
 .msg.assistant > .answer-actions:has(> .answer-action-feedback:not(:empty):not(.answer-feedback-sr)) { opacity: 1; }
 .answer-actions .answer-show-tab:disabled:hover { background: transparent; color: inherit; }
 .answer-actions button { width: 28px; height: 28px; border-radius: var(--r-sm); }
 .answer-actions .answer-sources-btn { width: auto; gap: 5px; padding: 0 8px 0 6px; font-size: var(--fs-code); color: var(--text-secondary); }
 .answer-actions .answer-sources-btn[hidden] { display: none; }
 
-/* 拖短回答（answer-shorten.ts）：把手和层名在文末一排，长回答时贴着侧栏底部。收起展开的过程由脚本跟着手指画，这里只管最终收起的块。 */
 .msg.assistant .shorten-off { display: none; }
 .msg.assistant[data-shortening] > [data-shorten] { transition: none; }
 .answer-actions.has-grip { position: sticky; bottom: calc(-1 * var(--s-5)); z-index: 1; padding-bottom: var(--s-5); margin-bottom: calc(-1 * var(--s-5)); background: var(--wallpaper); }
-/* 贴底时正文不透到按钮和字下面：这一排本身不透明，只在上沿留一窄条渐隐；
-   #messages 底部有 --s-5 的内边距，贴底的位置放低这么多、底色也往下补这么多，内边距里不再透出正文。 */
 .answer-actions.has-grip::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--s-3); background: linear-gradient(to bottom, transparent, var(--wallpaper)); pointer-events: none; }
-/* 「来源」面板就开在这一排正下方：贴底时向下补的 24px 底色带（和 sticky 位移）会盖住面板顶部，把节标题「读过的网页」裁掉上半截；面板展开期间收回成普通一行。 */
 .answer-actions.has-grip:has(+ .answer-panel:not([hidden])) { position: static; padding-bottom: 0; margin-bottom: 0; }
 .shorten-grip { display: flex; align-items: center; margin: 0 auto; padding: 6px 18px; border-radius: var(--r); cursor: ns-resize; touch-action: none; user-select: none; }
 .shorten-grip i { display: block; width: 30px; height: 4px; border-radius: var(--r-pill); background: var(--text-quaternary); transition: background var(--d-micro) var(--e-enter), width var(--d-micro) var(--e-enter); }
@@ -3403,7 +3258,6 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .msg.assistant .answer-panel .memory-used-list { margin: 0; }
 .msg.assistant .answer-panel .memory-used-item { margin: 0; }
 
-/* 正文出处：站点图标长在链接文字前面，下划线淡到悬停才显；能回原页核对的数字带虚下划线。 */
 .answer-source-glyph { overflow: hidden; }
 .answer-source-glyph > img { display: block; width: min(16px, 100%); height: min(16px, 100%); object-fit: contain; }
 .answer-source-glyph:has(> img) { background: transparent !important; }
@@ -3414,7 +3268,6 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .msg.assistant .num-cite:hover { text-decoration-color: var(--accent); }
 .msg.assistant .num-cite:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* 没做成：浅底卡片，一句还差什么 + 实心按钮。 */
 .ai-task-card resume-entry { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; margin: 12px 0 0; padding: 13px 16px 14px; border-radius: var(--r); background: var(--content-subtle); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
 .ai-task-card resume-entry::before { content: ""; width: 16px; height: 16px; margin-top: 2px; background: var(--text-tertiary); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat; }
 .ai-task-card resume-entry .resume-line { font-size: var(--fs-read); line-height: 20px; font-weight: 500; color: var(--text-primary); }
@@ -3423,7 +3276,6 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .ai-task-footer .ai-task-card resume-entry .resume-action, .ai-task-card resume-entry .resume-action { justify-self: start; border: 0; border-radius: 999px; background: var(--text-primary); color: var(--content-bg); font-size: var(--fs-ui); font-weight: 500; padding: 6px 13px; }
 .ai-task-card resume-entry .resume-action:hover:not([disabled]) { background: var(--text-secondary); }
 
-/* 用户气泡：「存成技能」悬停时浮在气泡下方，不撑出空白。 */
 .msg.user { position: relative; padding: 8px 14px; line-height: 1.6; }
 .msg.user.held-pending { padding: 4px 10px; line-height: 1.4; }
 .msg.user.held-pending .pskill-save { display: none; }
@@ -3434,13 +3286,8 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .steer-received .pskill-save:hover { color: var(--text-primary); }
 @media (prefers-reduced-motion: reduce) { .steer-received .pskill-save { transition: none; } }
 
-/* 思考摘要、旁白里的小标题（模型写的 **粗体**）：比正文深一档，不放大。 */
 details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 
-/* ── 输入框改版────────────
-   一个圆角框，框里最多一行工具：＋ … 话筒 接管 [↑] ■。只用黑白灰；运行中不换颜色、不加提示区。
-   做法取自 Claude for Chrome、ChatGPT Atlas、Gemini in Chrome、Operator 的输入框。 */
-/* 框的材质沿用暖灰凹槽 + 顶边高光（用户要回这种质感），只改内边距。 */
 #composer { padding: 12px 10px 10px 14px; }
 #composer.steering-active { border-color: var(--well-outline); box-shadow: inset 0 1px 0 var(--well-highlight); }
 #steer-ribbon { display: none !important; }
@@ -3460,23 +3307,19 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 #send-btn.kinetic-morph-button { width: 32px; height: 32px; }
 #send-btn.kinetic-morph-button:hover { background: color-mix(in srgb, var(--text-primary) 82%, var(--content-bg)); color: var(--content-bg); }
 #send-btn.kinetic-morph-button.stopping { border-radius: 999px; background: var(--text-primary) !important; color: var(--content-bg) !important; }
-/* 没字也没附件：和 :disabled 同一个样子。放在 hover 规则后面，悬停也不变黑。 */
 #send-btn.kinetic-morph-button[aria-disabled="true"]:not(.stopping) { background: var(--content-subtle); color: var(--text-quaternary); cursor: default; transform: none; }
 #send-btn.kinetic-morph-button.stopping .morph-icon-stop svg { width: 12px; height: 12px; fill: currentColor; }
 
-/* ＋ 菜单：添加文件 + 边注 + 语音诊断，细线图标 */
 .action-menu-popover { width: 200px; }
 .action-menu-item { font-size: var(--fs-ui); }
 .action-menu-item-icon { display: inline-grid; place-items: center; width: 18px; color: var(--text-secondary); }
 .action-menu-item-key { margin-left: 6px; color: var(--text-tertiary); font-size: var(--fs-micro); }
 .action-menu-item-text { display: flex; flex-direction: column; min-width: 0; }
 .action-menu-item-sub { color: var(--text-tertiary); font-size: var(--fs-micro); }
-/* 回答里的 ①②：点一下页面滚回那一圈再指一下。靠编号对应页面上的圈；侧栏里用墨色，不另换色相。 */
 .circle-ref { all: unset; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin: 0 3px; border-radius: 50%; background: var(--text-primary); color: var(--content-bg); font: 600 var(--fs-meta)/18px var(--font); vertical-align: 1px; cursor: pointer; }
 .circle-ref:hover { background: var(--text-secondary); }
 .circle-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .circle-ref-gone { margin-left: 4px; color: var(--text-tertiary); font-size: var(--fs-meta); }
-/* 圈出来问的附件：左上角是页面上那一圈的编号（与页面上的橙色编号同款）。 */
 .tile-circle-num { position: absolute; left: 4px; top: 4px; z-index: 15; width: 18px; height: 18px; border-radius: 50%; background: #d2602a; color: #fff; font: 600 var(--fs-meta)/18px var(--font); text-align: center; box-shadow: 0 0 0 1.5px #fff; pointer-events: none; }
 .action-menu-item-icon svg { width: 16px; height: 16px; stroke-width: 1.8; }
 .action-menu-popover hr { width: calc(100% - 8px); margin: 4px; border: 0; border-top: 1px solid var(--content-border); }
@@ -3487,17 +3330,12 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 .action-menu-radio[aria-checked="true"]::after { content: "✓"; margin-left: auto; color: var(--text-secondary); }
 #voice-diagnostics-open { color: var(--text-secondary); }
 
-/* 当前页标签后不再挂含义不明的绿点；改方向标记与「已停止」回执用灰字，不用琥珀色 */
 #page-pill .tab-live-dot { display: none; }
 .steer-tag { background: var(--content-subtle); color: var(--text-tertiary); font-weight: 500; }
 .msg.receipt.notice { color: var(--text-tertiary); }
 
-/* ── 侧栏选定版（顶栏 B / chip C / 过程行 A / 记忆展开 A） ── */
-
-/* 过程行 A：一行灰字，不放图标；动词深、对象浅沿用 .act-verb / .act-object。 */
 details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-icon { display: none; }
 
-/* chip C：这一轮带了什么。描边胶囊，右对齐贴在用户消息下面，只读。 */
 .ctx-chips { display: flex; flex-wrap: wrap; align-self: flex-end; justify-content: flex-end; gap: 4px; max-width: 90%; min-width: 0; margin-top: calc(var(--gap-turn) * -1 + 6px); }
 .ctx-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 22px; padding: 0 7px; border-radius: var(--r-pill); box-shadow: inset 0 0 0 1px var(--content-border); color: var(--text-tertiary); font-size: var(--fs-meta); line-height: 22px; white-space: nowrap; }
 .ctx-chip.page-from { height: auto; padding: 0; border-radius: 0; box-shadow: none; background: transparent; color: var(--text-tertiary); font-size: var(--fs-meta); }
@@ -3506,7 +3344,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .ctx-chip .cg svg { stroke-width: 1.9; }
 .ctx-chip .cl { min-width: 0; max-width: 22em; overflow: hidden; text-overflow: ellipsis; }
 
-/* 记忆 D + X1：句尾灰字淡入，点开在首段下面撑开小条（Dia 密度：14px 图标 + 12px 灰字）。 */
 .msg.assistant .memory-used-toggle { animation: citePop var(--d-layout) var(--e-swift) both; }
 @keyframes citePop { from { opacity: 0; filter: blur(2px); } }
 .msg.assistant .memory-used-line {
@@ -3533,8 +3370,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   .msg.assistant .memory-used-line, .msg.assistant .memory-used-line[data-open=true] { transition: none; }
 }
 
-/* 错误卡：按错误种类给能修掉原因的动作；原文收进「技术详情」。
-   出错多半不是用户的问题，所以不用整片警示红：凹槽底带一点暖红，刚好跟普通消息分开又不跳。 */
 .error-card {
   --err-tint: color-mix(in srgb, var(--err) 7%, var(--well));
   --err-line: color-mix(in srgb, var(--err) 16%, var(--well-outline));
@@ -3569,16 +3404,13 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .error-card-tech { font-size: var(--fs-micro); color: var(--text-tertiary); }
 .error-card-tech summary { cursor: pointer; width: fit-content; }
 .error-card-tech pre { margin: 6px 0 0; padding: 8px 10px; border-radius: var(--r-sm); background: var(--content-subtle); white-space: pre-wrap; word-break: break-all; color: var(--text-secondary); font-size: var(--fs-micro); }
-/* 已经在接着做了，回到普通凹槽底，不再带红。 */
 .error-card.is-recovering { background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
 .error-card-status { margin: 0; color: var(--text-secondary); }
-/* 自动重试倒计时：细条从满到空，时长由脚本按这次的等待写进 --wait。 */
 .error-card .error-card-countdown { font-variant-numeric: tabular-nums; }
 .error-card-announce { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .error-card-wait { height: 3px; margin-top: 4px; border-radius: 2px; background: var(--err-line); overflow: hidden; }
 .error-card-wait > span { display: block; height: 100%; background: var(--err); transform-origin: left; animation: error-card-drain var(--wait) linear forwards; }
 @keyframes error-card-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-/* 错误卡已经给了修复动作：旧的「运行出错 · 继续原任务」入口说的是同一件事，不再重复。 */
 #messages:has(.error-card:not(.is-retired)) #resume-entry-root { display: none; }
 .error-card.is-retired { opacity: .6; }
 .error-card.is-retired .error-card-actions, .error-card.is-retired .error-card-menu { display: none; }
@@ -3586,7 +3418,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .error-receipt svg { width: 14px; height: 14px; }
 @keyframes error-card-in { from { opacity: 0; transform: translateY(6px); } }
 
-/* 换 key 面板：从侧栏底部升起，测试连接通过才能保存。 */
 #key-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 22px; background: var(--content-bg); border-top: 1px solid var(--content-border); border-radius: var(--r-shape) var(--r-shape) 0 0; box-shadow: 0 -12px 40px rgb(20 20 19 / .14); transform: translateY(105%); transition: transform var(--m-morph) var(--e-swift); font: var(--fs-ui)/var(--lh-ui) var(--font); }
 #key-sheet.is-open { transform: none; }
 #key-sheet h3 { margin: 0; font-size: var(--fs-read); font-weight: 600; }
@@ -3603,7 +3434,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #key-sheet-status[data-tone="err"] { color: var(--err); }
 @media (prefers-reduced-motion: reduce) { .error-card { animation-name: fadeOnlyIn; } #key-sheet { transition: none; } }
 
-/* 输入框左下角「模型 · 快」（model-menu.ts）：静时是一行灰字，悬停和打开时有浅底。 */
 #composer { position: relative; }
 #think-chip { all: unset; display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 190px; height: 26px; padding: 0 8px; border-radius: var(--r-sm); font-size: var(--fs-meta); color: var(--text-secondary); cursor: pointer; white-space: nowrap; transition: background var(--m-quick) ease, color var(--m-quick) ease, transform var(--m-quick) var(--e-swift); }
 #think-chip[hidden] { display: none; }
@@ -3616,7 +3446,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #think-chip[aria-expanded="true"] svg { transform: rotate(180deg); }
 #think-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #think-chip .think-swap { display: inline-block; animation: think-swap var(--d-state) var(--e-swift); }
-/* 对话用量：占到一半在模型名旁画环；悬停或键盘聚焦开关时出卡片。 */
 #think-chip .think-ring { flex: none; width: 12px; height: 12px; border-radius: 50%; background: conic-gradient(var(--accent) calc(var(--ctx-fill) * 1turn), color-mix(in srgb, currentColor 18%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px)); }
 #ctx-pop { position: absolute; bottom: calc(100% + 6px); width: min(250px, calc(100% - 16px)); padding: 10px 12px; border-radius: var(--r); border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); font-size: var(--fs-meta); line-height: 1.5; color: var(--text-secondary); visibility: hidden; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift), visibility 0s linear var(--d-state); z-index: 19; }
 #ctx-pop.show { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
@@ -3626,7 +3455,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #ctx-pop .ctx-bar { height: 4px; margin: 6px 0; border-radius: 2px; background: var(--content-subtle); overflow: hidden; }
 #ctx-pop .ctx-bar b { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
 @keyframes think-swap { from { opacity: 0; transform: translateY(3px); filter: blur(2px); } }
-/* 窄侧栏：模型按钮只留图标（全名在悬停提示里），不再被挤没；底栏按钮挨紧一点，一个都不收。画着用量环时环代替图标，两个圆挨着分不清。 */
 @container panel (max-width: 340px) {
   #think-chip { flex-shrink: 0; padding: 0 5px; gap: 2px; }
   #think-chip .think-model, #think-chip .think-sep, #think-chip .think-level { display: none; }
@@ -3639,7 +3467,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   #think-chip { padding: 0 4px; }
 }
 
-/* 模型菜单：从开关长出来；两层并排放，「更多模型」整体左滑，高度跟着当前一层变。 */
 #think-menu { position: absolute; left: 10px; bottom: calc(100% + 6px); width: min(280px, calc(100% - 20px)); border-radius: var(--r); border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); overflow: hidden; outline: none; opacity: 0; transform: translateY(4px) scale(.96); transform-origin: 24px calc(100% + 18px); pointer-events: none; transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift), height var(--d-state) var(--e-swift); z-index: 20; }
 #think-menu.open { opacity: 1; transform: none; pointer-events: auto; }
 #think-menu.mm-instant { transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift); }
@@ -3676,7 +3503,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   #ctx-pop { transform: none; }
 }
 
-/* 主动卡：一句话，第一个词是按钮，下面一行出处；悬停出 × */
 .pc { position: relative; overflow: hidden; align-self: stretch; }
 .pc-face {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2);
@@ -3711,7 +3537,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .pc.collapse { height: 0 !important; margin-top: calc(-1 * var(--gap-block)); transition: height var(--m-move) var(--e-swift), margin var(--m-move) var(--e-swift); }
 .pc-face { transition: background var(--m-morph) var(--e-out), border-color var(--m-morph) var(--e-out); }
 .pc-face > * { transition: opacity var(--m-quick) var(--e-swift); }
-/* 按下后：文字淡出，壳留在原位，等这一轮进对话 */
 .pc.fading .pc-face { background: var(--well); border-color: transparent; }
 .pc.fading .pc-face > * { opacity: 0; }
 .pc.fading .pc-x { display: none; }
@@ -3728,7 +3553,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .pc-undo:disabled, .pc-verb:disabled { cursor: wait; opacity: .6; }
 .pc-outcome { flex-basis: 100%; font-weight: 600; }
 .pc-result .pc-x { opacity: 1; }
-/* 按卡发起的这一轮：用户消息画成按下的卡，动词实心，不是气泡 */
 .msg.user.card-turn {
   align-self: stretch; max-width: none; padding: 0; border: 0; background: transparent; box-shadow: none;
   border-radius: var(--r-shape); white-space: normal;
@@ -3744,13 +3568,11 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   .pc-face, .pc-face > *, .pc.gone, .pc.collapse { transition: none; }
   .msg.user.card-turn .pc-face > * { animation-name: fadeOnlyIn; }
 }
-/* 改过网页的一轮：程序读回的这一栏、核对发现 */
 .fill-evidence { margin: 4px 0 8px; padding: 6px 10px; border: 1px solid var(--content-border); border-radius: var(--radius-sm); background: var(--content-bg); font-size: var(--fs-ui); }
 .fill-evidence-line { overflow-wrap: anywhere; }
 .fill-evidence-line b { font-weight: 600; }
 .run-superseded { margin: 2px 0; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-tertiary); overflow-wrap: anywhere; }
 
-/* 交给你：与错误卡同一种卡片，左边线用强调色。 */
 .handoff-card { align-self: stretch; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--content-border); border-left: 3px solid var(--accent); border-radius: var(--r); background: var(--content-bg); font: var(--fs-ui)/var(--lh-ui) var(--font); }
 .handoff-card strong { font-size: var(--fs-ui); font-weight: 600; }
 .handoff-card > p { margin: 0; color: var(--text-primary); }
@@ -3759,7 +3581,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .handoff-card .btn-primary { font: 600 var(--fs-ui)/1 var(--font); padding: 8px 14px; border: 0; border-radius: var(--r-pill); background: var(--text-primary); color: var(--content-bg); cursor: pointer; }
 .handoff-done { font-size: var(--fs-meta); color: var(--text-tertiary); }
 
-/* A2 页面胶囊：@ 弹层与输入区里的待读/已读/读不到 */
 .mention-strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
 .mention-strip[hidden] { display: none; }
 .tab-mention-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 24px; padding: 0 6px 0 7px; border-radius: var(--r-pill); font-size: var(--fs-meta); line-height: 24px; color: var(--text-secondary); box-shadow: inset 0 0 0 1px var(--content-border); background: transparent; transition: background var(--d-state) var(--e-enter), box-shadow var(--d-state) var(--e-enter), color var(--d-state) var(--e-enter); }
@@ -3783,7 +3604,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .tab-mention-empty { padding: 10px 12px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 .tab-mention-fly { position: fixed; z-index: 40; pointer-events: none; transition: transform var(--d-state) var(--e-move); }
 
-/* ── 这次任务：把真正会送出的页面、选区、标签页和附件收在同一个材料夹里 ── */
 #materials-tray-root { min-width: 0; }
 #materials-tray-root[hidden] { display: none; }
 #app.materials-tray-active #page-pill,
@@ -3792,7 +3612,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #app.materials-tray-active #composer #attachments-strip { display: none !important; }
 
 .materials-tray { display: flex; min-width: 0; }
-/* 材料条是输入框里的一排芯片；弹层挂在 #composer 上，向上展开，不撑高输入框。 */
 #materials-tray-root.is-over .mt-head { outline: 2px dashed var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
 .mt-head { display: flex; align-items: center; gap: var(--s-1); min-width: 0; margin: -4px 0 0 -6px; }
 .mt-chip {
@@ -3831,7 +3650,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .mt-item { cursor: pointer; }
 .mt-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 .mt-item[aria-expanded="true"] { background: var(--content-bg); }
-/* 读取中的文件：标签底色按真实读取进度铺满。 */
 .mt-item[data-state="reading"] { background: linear-gradient(90deg, var(--accent-soft) var(--mt-progress, 0%), transparent var(--mt-progress, 0%)); }
 .mt-thumb { display: block; width: 16px; height: 16px; border-radius: var(--r-tail); object-fit: cover; }
 .mt-preview { gap: var(--s-1); max-height: min(60vh, 420px); overflow: auto; }
@@ -4026,10 +3844,8 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .ctx-chip[data-status="unread"] { text-decoration: line-through; color: var(--text-tertiary); }
 .ctx-chip .ctx-ok { color: var(--ok); font-size: var(--fs-micro); }
 
-/* A3 计划行 */
 .task-plan-goal { margin: 0 0 4px; font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--text-secondary); }
 
-/* 计划卡：要写页面的一轮，过程行是一张卡，卡头是计划；做完同一张卡收成一行回执，细节点开还是这张卡。 */
 details.run-steps.plan-card {
   padding: 6px 12px;
   border-radius: var(--r);
@@ -4039,7 +3855,6 @@ details.run-steps.plan-card {
 details.run-steps.plan-card:not(.done)[open] .run-body { max-height: none; overflow: visible; border-left: 0; padding-left: 0; }
 details.run-steps.plan-card.plan-done summary > :not(.plan-receipt-line) { display: none; }
 .plan-receipt-line { display: none; }
-/* 卡里的步骤：› 正在做，✓ 做完，✕ 没做成；不用动作图标，和收起后的回执是同一套记号。 */
 details.run-steps.plan-card .run-body .chip-icon { display: none; }
 details.run-steps.plan-card .run-body .chip-dot {
   display: inline-block; width: 12px; height: auto; border-radius: 0; background: none;
@@ -4059,11 +3874,9 @@ details.run-steps.plan-card.plan-done .plan-receipt-line {
 .plan-details { color: var(--text-secondary); }
 .plan-details::before { content: "细节 ›"; }
 details.run-steps.plan-card[open] .plan-details::before { content: "收起"; }
-/* 没做完、停下：卡展开，没做成那一步标 ✕ 并用红字，停下时正在做的那一步标 ■。 */
 details.run-steps.plan-card.plan-failed .run-body .chip.error .chip-label { color: var(--apple-red); }
 details.run-steps.plan-card.plan-stopped .run-body .chip-dot.running::before { content: "■"; color: var(--text-secondary); }
 .plan-undo-result { margin: 4px 2px 0; }
-/* 计划卡里的「继续原任务」：卡头已经写了没做完、中止，这里只留按钮和回执说明。 */
 .plan-resume resume-entry { margin: 6px 0 4px; }
 .plan-resume resume-entry .resume-line { display: none; }
 .plan-resume resume-entry .resume-action { border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-primary); font-size: var(--fs-ui); padding: 5px 12px; }
@@ -4078,19 +3891,16 @@ details.run-steps.plan-card.plan-done summary:hover .plan-details { color: var(-
   details.run-steps.plan-card .run-body .chip-dot { transition: none; }
 }
 
-/* A8 主动作 + 动作列表 */
 .answer-actions button.answer-primary { width: auto; min-width: 28px; height: 28px; padding: 0 8px; border-radius: var(--r-sm); font-size: var(--fs-code); color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; }
 .answer-actions button.answer-primary:hover { color: var(--text-primary); }
 .answer-actions button.answer-primary svg { width: 14px; height: 14px; }
 .answer-actions button.answer-primary:disabled { opacity: 1; color: var(--text-quaternary); }
-/* 还原填写（fill-undo.ts）：结果写在文末一排下面；还原后上面那段回答变淡，表示它说的已经不作数。 */
 .msg.assistant.fill-undo-settled > .answer-actions { opacity: 1; }
 .fill-undo-result { margin-top: 2px; font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-tertiary); }
 .fill-undo-result b { font-weight: 600; color: var(--text-secondary); }
 .msg.assistant > :is(p, ul, ol, h1, h2, h3, h4, h5, h6, table, pre, blockquote, .gen-card) { transition: opacity var(--d-state) var(--e-enter); }
 .msg.assistant.fill-undone > :is(p, ul, ol, h1, h2, h3, h4, h5, h6, table, pre, blockquote, .gen-card) { opacity: .45; }
 .answer-enter-hint { font-size: var(--fs-micro); color: var(--text-tertiary); }
-/* 复制成功：「复制」往上淡出，一笔画出对勾和「已复制」，1.5 秒后变回（answer-actions.ts showCopied）。 */
 .answer-actions button.answer-primary:has(.answer-face) { display: inline-grid; }
 .answer-face { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 5px; justify-self: start; transition: opacity var(--d-micro) var(--e-exit), transform var(--d-micro) var(--e-exit); }
 .answer-face-done { opacity: 0; transform: translateY(4px); color: var(--text-primary); }
@@ -4136,16 +3946,11 @@ details.run-steps.plan-card.plan-done summary:hover .plan-details { color: var(-
 @media (prefers-reduced-motion: reduce) {
   #handoff-banner:not([hidden]) { animation-name: fadeOnlyIn; opacity: 1; transform: none; }
 }
-/* ── 设计收紧：在上面各条规则之上收紧层级、间距和次要按钮 ──────────────
-   依据：Refactoring UI「Emphasize by de-emphasizing」「Avoid ambiguous spacing」「Use shadows to convey elevation」
-   「Semantics are secondary」；NN/g「How to communicate errors」；Apple HIG Toolbars / Text fields。 */
 
-/* 间距分组：一轮之内 8，轮与轮之间 28：间距一样时看不出哪些是一组。 */
 #messages { gap: var(--s-2); }
 #messages > .msg.user:not(:first-child) { margin-top: 20px; }
 .ctx-chips { margin-top: -4px; }
 
-/* 过程行：进行中和做完一样是 13 号字，不比回答大；秒数紧跟标题，不甩到最右边。 */
 .run-title { font-size: var(--fs-ui); line-height: 20px; }
 details.run-steps:not(.done) .run-time {
   margin-left: 6px;
@@ -4174,30 +3979,23 @@ details.run-steps.run-quieting .run-time { animation: none; }
   details.run-steps.run-quieting { transition: none; }
 }
 
-/* 系统说明（调试横幅）：一条浅底小提示，不挂在过程的竖线下面，免得像引用的回答。 */
 .run-trail:has(> .trail-aside:only-child) { border-left: 0; padding-left: 0; margin-left: 0; }
 .run-trail .trail-aside { margin-top: 6px; padding: 8px 10px; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); color: var(--text-secondary); }
 
-/* 输入框：空着时一行高，打字后随内容长高；材质用上面的凹槽，不浮起来。 */
 #input { min-height: 22px; line-height: 22px; font-size: var(--fs-read); }
 #composer { gap: 6px; padding: 10px 8px 8px 14px; }
 
-/* 「接管」和旁边的图标按钮同一种样子（无边框），停止仍是唯一的实心圆。 */
 #takeover-btn { box-shadow: none; color: var(--text-secondary); padding: 0 10px; }
 
-/* 顶栏：三样都用图标。「记忆」从文字换成书签图标（悬停仍显示说明）。 */
 #memory-open { width: 28px; padding: 0; font-size: 0; color: var(--text-secondary); }
 #memory-open::before { content: ""; width: 15px; height: 15px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.5.86l-5-2.86a1 1 0 0 0-1 0l-5 2.86A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") center / contain no-repeat; }
 
 
-/* 用到的记忆：回答下的安静脚注；展开看完整原文，控制操作常显。 */
 .msg.assistant .memory-used-toggle { display: block; width: fit-content; max-width: 100%; min-height: 40px; margin: 5px 0 0 -6px; padding: 6px; color: var(--text-tertiary); line-height: 1.5; text-align: left; white-space: normal; }
 .msg.assistant .memory-used-line .memory-used-text { flex: 1 1 calc(100% - 24px); overflow: visible; white-space: normal; text-overflow: clip; }
 .msg.assistant .memory-used-line .memory-used-actions { flex: 0 0 100%; gap: 14px; padding-left: 23px; opacity: 1; }
 .msg.assistant .memory-used-line .memory-used-actions button { min-height: 40px; }
 
-/* 文件卡：一行排开，左边类型图标（图片用缩略图），右边灰色图标按钮（打开、下载、展开）。
-   墨蓝留给助手在页面上的动作；次要操作用图标，不做成一排带底色的按钮（Refactoring UI「Semantics are secondary」）。 */
 .artifact-card { gap: 10px; padding: 8px 6px 8px 8px; border: 0; border-radius: var(--r); background: var(--well); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
 .artifact-card:not([data-kind="image"]):not([data-kind="interactive-html"])::before { content: ""; flex: none; width: 36px; height: 36px; border-radius: var(--r); background: var(--content-bg) center / 16px no-repeat; box-shadow: inset 0 0 0 1px var(--well-outline); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f5e58' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v5h6M8 13h8M8 17h5'/%3E%3C/svg%3E"); }
 .artifact-open, .artifact-download, .artifact-preview-toggle { width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-secondary); font-size: 0; display: inline-grid; place-items: center; }
@@ -4219,10 +4017,8 @@ details.run-steps.run-quieting .run-time { animation: none; }
 .artifact-card[data-kind="image"][data-expanded="true"] .artifact-info { grid-column: 1 / 3; padding-left: 4px; }
 .artifact-card[data-kind="image"][data-expanded="true"] .artifact-preview { grid-column: 1 / -1; grid-row: 2; width: 100%; height: auto; border-radius: var(--r-sm); }
 
-/* 侧栏只上下滚：展开的过程不再把消息区撑出横向滚动条。 */
 #messages { overflow-x: hidden; }
 
-/* 说话输入：边说边出字。说的时候输入框换成实时文字，工具栏换成声波。 */
 #composer.dictating { box-shadow: 0 0 0 1px var(--text-primary); }
 #composer.dictating #input, #composer.dictating #composer-bar { display: none; }
 #dictation-text { min-height: 22px; max-height: 160px; overflow-y: auto; font-size: var(--fs-read); line-height: 22px; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
@@ -4252,14 +4048,12 @@ details.run-steps.run-quieting .run-time { animation: none; }
   #dictation-text .dictation-caret { animation: none; }
 }
 
-/* ── 章节：新任务上方的分隔线，满 3 章时对话区上方一排跳转按钮 ───────────── */
 .chapter-divider {
   display: flex;
   align-items: center;
   gap: var(--s-2);
   font-size: var(--fs-meta);
   color: var(--text-tertiary);
-  /* 跳到这一章时停在顶部渐隐带下面，不被它糊住。 */
   scroll-margin-top: var(--s-5);
 }
 .chapter-divider[hidden] { display: none; }
@@ -4305,7 +4099,6 @@ details.run-steps.run-quieting .run-time { animation: none; }
 .chapter-row[data-fade-start="true"] { mask-image: linear-gradient(to right, transparent, #000 var(--s-5)); }
 .chapter-row[data-fade-start="true"][data-fade-end="true"] { mask-image: linear-gradient(to right, transparent, #000 var(--s-5), #000 calc(100% - var(--s-5)), transparent); }
 
-/* 核对确认做完：回执前一个绿对勾。当场核对完的那一次一笔画出、轻弹一下；之后都是画好的样子。 */
 .run-done-mark { display: inline-flex; flex: none; align-self: center; width: 14px; height: 14px; margin-right: 6px; color: var(--ok); }
 .run-done-mark svg { width: 14px; height: 14px; overflow: visible; }
 .run-done-mark path { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
@@ -4314,14 +4107,12 @@ details.run-steps.run-quieting .run-time { animation: none; }
 @keyframes doneMarkDraw { to { stroke-dashoffset: 0; } }
 @keyframes doneMarkPop { from { opacity: 0; transform: scale(.9); } }
 
-/* 新的一章：当场开的那条分隔线从中间向两边展开，章名随后浮上来；从记录重画的不动。 */
 .chapter-divider.fresh::before { transform-origin: 100% 50%; animation: chapterLine var(--m-read) var(--e-move) both; }
 .chapter-divider.fresh::after { transform-origin: 0 50%; animation: chapterLine var(--m-read) var(--e-move) both; }
 .chapter-divider.fresh > span { animation: chapterName var(--d-layout) var(--e-enter) var(--d-state) both; }
 @keyframes chapterLine { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes chapterName { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
-/* 往上翻着读时下面写出了新内容：「到最新」带一个墨蓝小点，轻跳两下。 */
 #to-bottom { overflow: visible; }
 #to-bottom .to-bottom-dot { position: absolute; top: -1px; right: -1px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--content-bg); opacity: 0; transform: scale(.9); transition: opacity var(--d-state) var(--e-enter), transform var(--d-state) var(--e-enter); pointer-events: none; }
 #to-bottom.has-new .to-bottom-dot { opacity: 1; transform: scale(1); }
@@ -4334,7 +4125,6 @@ details.run-steps.run-quieting .run-time { animation: none; }
   #to-bottom .to-bottom-dot { transition: none; }
 }
 
-/* 回答里能在页面上指出来的控件：虚线下划线；圈出后变墨蓝。 */
 .page-ref { all: unset; cursor: pointer; color: inherit; border-bottom: 1px dashed var(--text-tertiary); transition: color var(--d-layout) var(--e-enter), border-color var(--d-layout) var(--e-enter); }
 .page-ref:hover { border-bottom-color: var(--text-secondary); }
 .page-ref.pointing, .page-ref.pointed { color: var(--apple-blue); border-bottom-color: var(--apple-blue); }
@@ -4352,7 +4142,6 @@ details.run-steps.run-quieting .run-time { animation: none; }
 
 details.plan-card:not([open]) > .plan-fill-scope { display: none; }
 
-/* 思考档位的输入层与视觉层分开，触点始终跟随真实刻度。 */
 #think-menu .mm-power-head { display:grid;grid-template-columns:22px 1fr 22px;gap:8px;align-items:start;padding:10px 10px 14px; }
 #think-menu .mm-power-center { min-width:0;text-align:center; }
 #think-menu .mm-power-level { display:block;font-size: var(--fs-read);font-weight:500;color:var(--apple-blue);line-height:24px; }
@@ -4376,7 +4165,6 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
 #think-menu .mm-power-note { padding:9px 10px 5px;font-size:var(--fs-micro);color:var(--text-tertiary);line-height:1.5; }
 @media(prefers-reduced-motion:reduce){#think-menu .mm-power-knob,#think-menu .mm-power-fill {transition:none;}}
 
-/* 动效图标：只在图标真的对应一个动作时动；同一时刻最多一个持续循环。 */
 [data-motion-icon] svg path,
 [data-motion-icon] svg rect,
 [data-motion-icon] svg circle,
@@ -4525,7 +4313,6 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
   }
 }
 
-/* 侧栏拉宽或整页打开：对话和输入框收成居中一栏；空会话时输入框跟着问候停在页面中间，打字时也不掉回底部。 */
 @media (min-width: 640px) {
   .composer-dock-wrap { width: min(calc(100% - 2 * var(--s-3)), 720px); margin-inline: auto; }
   #messages { padding-inline: max(var(--pad-x), calc((100% - 720px) / 2)); }
@@ -4534,7 +4321,6 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
   #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden])))::after { content: ""; flex: 1.3 1 0; }
 }
 
-/* 模拟用户试用期间的提示条。 */
 #self-use-banner {
   padding: 6px 12px;
   border-bottom: 1px solid var(--glass-border);
@@ -4560,7 +4346,6 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
 .mt-delivery[data-state="rejected"] { color: var(--warn); }
 .mt-delivery-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 未连接卡（发出一句后）：Toaster 两层外壳材质，色阶取自面板本身的蓝灰（--content-*），暖纸/暗色随主题走。连上后的绿色小胶囊保持原样。 */
 .needs-model-card:not(.needs-model-connected) {
   --t1: color-mix(in oklab, var(--content-bg) 80%, var(--content-subtle));
   --t3: color-mix(in oklab, var(--content-subtle-hover) 88%, var(--apple-blue));
@@ -4577,6 +4362,5 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
 .needs-model-card .needs-model-connect { height: 32px; padding: 0 14px !important; border-radius: var(--r-pill) !important; background: var(--content-bg) !important; color: var(--text-primary) !important; font-size: var(--fs-ui); font-weight: 600; box-shadow: 0 1px 2px var(--content-border), 0 0 0 1px var(--glass-border-subtle); }
 @media (prefers-color-scheme: dark) {
   .needs-model-card:not(.needs-model-connected) { --t1: var(--content-subtle-hover); --t3: var(--content-bg); --t4: var(--content-subtle); --sheen: transparent; }
-  /* 深色下这是卡上唯一要点的东西，保持亮按钮。 */
   .needs-model-card .needs-model-connect { background: var(--text-primary) !important; color: var(--content-bg) !important; box-shadow: none; }
 }

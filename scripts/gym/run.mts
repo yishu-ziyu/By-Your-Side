@@ -1,9 +1,3 @@
-/**
- * Real BYS sidebar → existing agent → AX/CDP → local app. No scripted model.
- * npm run gym -- --headless [--tasks=todo,form,search] [--seeds=11,29,47] [--groups=A,B]
- *   [--seconds=180] [--commands=600] [--fault=none|drop|late-drop|stale|unknown|waiting] [--out=absolute-directory] [--no-video]
- * Uses one frozen build and a fresh profile per episode. Failed samples are append-only.
- */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile, appendFile, readdir } from 'node:fs/promises';
@@ -17,7 +11,6 @@ import { evaluate, feedback, claimFrom } from './evaluator.mjs';
 import { installAudit, installBudget, networkUsage } from './instrumentation.mts';
 
 requireHeadless();
-// 每个任务已录 execution.mp4；评测跑几十个任务，不再叠一份自动录屏。
 process.env.SIDEAGENT_RECORD ??= '0';
 const arg = (key: string) => process.argv.find(x => x.startsWith(`--${key}=`))?.slice(key.length + 3);
 const selectedTasks = arg('tasks')?.split(',') ?? tasks;
@@ -33,7 +26,7 @@ await mkdir(dirname(out), { recursive: true });
 await mkdir(out, { recursive: false });
 const model = DEFAULT_TEST_MODEL;
 const plan = await loadModelPlan(model);
-// The test extension must not race the user's login refresh owner.
+// WHY: The test extension must not race the user's login refresh owner.
 if (plan.credential.type === 'oauth') plan.credential.refresh = '';
 const git = (...args: string[]) => execFileSync('git', args, { cwd: REPO, encoding: 'utf8' }).trim();
 const version = git('rev-parse', 'HEAD');
@@ -92,7 +85,6 @@ async function run(task: string, seed: number, group: string) {
       if (serialized !== lastState) { await appendFile(join(dir,'states.jsonl'),JSON.stringify({at:Date.now(),state:current})+'\n'); lastState=serialized; }
       trace = await rp.evaluate(panel,traceExpression);
       const busy = !await rp.evaluate(panel,idleExpression);
-      // Let the existing asynchronous goal checker finish; never substitute an early oracle stop for A.
       const meaningful = trace.filter(e => !['stage_start','stage_end'].includes(e.type)).length;
       if (busy || meaningful !== previousTraceCount) quietSince=0;
       previousTraceCount=meaningful;
@@ -106,7 +98,6 @@ async function run(task: string, seed: number, group: string) {
       const text = feedback(verdict);
       row.corrections.push({at:Date.now(),text}); await say(text); quietSince=0;
     }
-    // End the scoring window before screenshots/video encoding or persistence probes.
     row.elapsedMs=Date.now()-started;
     row.stopped ??= row.elapsedMs>=seconds*1000 ? 'time_budget' : 'settled';
     await rp.cdp.send('Emulation.setScriptExecutionDisabled',{value:true},work);

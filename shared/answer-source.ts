@@ -1,4 +1,3 @@
-/** One complete, immutable read. Locators always refer to this version, not the live page. */
 export interface AnswerSource {
   id: string;
   text: string;
@@ -42,6 +41,6 @@ export function resolveDiagramCite(cite: DiagramCite, sources?: AnswerSourceMap)
   const words = text.match(/\S+\s*/g) ?? [];
   const prefix = Array.from(words.slice(0, 20).join('')).slice(0, 100).join('').trimEnd();
   let url: string | undefined;
-  try { const parsed = new URL(source.from); if (['http:', 'https:'].includes(parsed.protocol)) url = parsed.href; } catch { /* A read can have no page URL. */ }
+  try { const parsed = new URL(source.from); if (['http:', 'https:'].includes(parsed.protocol)) url = parsed.href; } catch {  }
   return { text: (start ? '…' : '') + prefix + (prefix.length < text.length ? '…' : ''), from: source.from, ...(url ? { url } : {}) };
 }

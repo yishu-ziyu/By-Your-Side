@@ -10,7 +10,6 @@ import { isShortened, visibleBody, visibleMarkdown } from "./answer-shorten.js";
 import { bindMotionIcon, setMotionIcon } from "./motion-icon.js";
 import { uiEvent } from "./ui-trace.js";
 
-/** 不属于回答正文的界面文字：复制时去掉。收短时只复制看得到的那一层，多半是要转给别人。 */
 const CHROME = ".gc-actions,.gc-faces,.gc-evidence,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 
 function resultCommandShortcut(): string {
@@ -32,11 +31,6 @@ function answerBody(answer: HTMLElement): HTMLElement {
   return body;
 }
 
-/**
- * 回答的纯文本，按屏幕上的样子断行：段落之间空一行，列表每项一行，表格每行一行，单元格之间是制表符。
- * innerText 只在元素画出来时按版式断行；摘出来的副本没画出来，innerText 退回 textContent，各段会连成一行。
- * 所以先挂到页面上读，挂在 body 下而不是对话区：对话区可能没在显示，也不惊动盯着对话区的观察者。读完同步拿掉，不会画到屏幕上。
- */
 export function answerPlainText(body: HTMLElement): string {
   Object.assign(body.style, { position: "fixed", top: "0", left: "-100000px", pointerEvents: "none" });
   body.setAttribute("aria-hidden", "true");
@@ -62,7 +56,6 @@ async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
   await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown, sourceExcerpts).trim() : answerPlainText(answerBody(answer)));
 }
 
-/** 去掉「切过去看」后主按钮要跟着换，否则按钮还写「在页面上查看」，点下去却是复制。 */
 function removeShowTab(button: Element): void {
   const answer = button.closest<HTMLElement>(".msg.assistant");
   button.remove();
@@ -87,7 +80,6 @@ export function listResultActions(answer: HTMLElement): ResultAction[] {
   const actions: ResultAction[] = [];
   const undo = fillUndoOf(answer);
 
-  // 这一轮填过表、还没提交：最可能要做的是把填错的改回去，所以它当主动作。
   if (undo?.state === "ready") actions.push({ id: "undo-fill", label: fillUndoLabel(undo), primary: true, run: requestFillUndo });
   const table = tableTsv(answerBody(answer));
   const pageBtn = answer.querySelector<HTMLButtonElement>(".answer-show-tab");
@@ -118,7 +110,6 @@ function refreshPrimaryAction(answer: HTMLElement): void {
   const primary = answer.querySelector<HTMLButtonElement>(".answer-primary");
   if (!primary) return;
   const undo = fillUndoOf(answer);
-  // 还原过、已提交、页面变了：按钮灰掉，写为什么不能再点；正在还原时也灰掉。
   const stuck = undo && (undo.state !== "ready" || isFillUndoPending(answer));
   const action = stuck ? null : listResultActions(answer).find((a) => a.primary);
   if (!stuck && !action) return;
@@ -145,7 +136,6 @@ function refreshPrimaryAction(answer: HTMLElement): void {
     return;
   }
 
-  // 复制按钮两面叠在同一格：宽度按较宽的一面算，切换时旁边的东西不动。
   const idle = document.createElement("span");
   idle.className = "answer-face";
   idle.append(label, hint);
@@ -160,12 +150,10 @@ function refreshPrimaryAction(answer: HTMLElement): void {
 
 const COPIED_MS = 1500;
 
-/** 动作没做成：在一排末尾看得见地写出来（复制成功时这一格只给读屏，这里要撤掉）。 */
 export function showFailed(answer: HTMLElement): void {
   noteFailure(answer, "没做成");
 }
 
-/** 复制成功：复制按钮原地变成画出来的对勾，1.5 秒后变回；主按钮不是复制时（比如还原）在一排末尾写一句，同样到时清掉。读屏都念“已复制”。 */
 export function showCopied(answer: HTMLElement): void {
   const primary = answer.querySelector<HTMLButtonElement>(".answer-primary");
   const feedback = answer.querySelector<HTMLElement>(".answer-action-feedback");
@@ -190,7 +178,6 @@ export function showCopied(answer: HTMLElement): void {
   }, COPIED_MS));
 }
 
-/** keyboard：空输入框按回车。还原会改网页里的格子，只能点按钮，回车不触发；按钮灰着时回车什么也不做。 */
 export async function runPrimaryAction(answer: HTMLElement, { keyboard = false } = {}): Promise<void> {
   const undo = fillUndoOf(answer);
 
@@ -209,11 +196,6 @@ onFillUndoChange(refreshPrimaryAction);
 
 const SECTION_TITLES = { sources: "读过的网页" } as const;
 
-/**
- * 文末一排在回答落定时添加：复制 · 来源 · 耗时。
- * 最新一条回答一直显示，旧回答悬停才出现（样式表按 .answer-latest 区分）。
- * 「来源」展开回答下方的面板：读过的网页，由 answer-sources 填进来；用到的记忆跟在首句后面（main.ts placeUsedLine）。
- */
 export function attachAnswerActions(answer: HTMLElement): void {
   if (answer.querySelector(".answer-actions") || !answer.textContent?.trim()) return;
   const actions = document.createElement("div");
@@ -250,12 +232,10 @@ export function attachAnswerActions(answer: HTMLElement): void {
     uiEvent("ui_answer_sources", { open: !panel.hidden });
     sources.setAttribute("aria-expanded", String(!panel.hidden));
 
-    // 来源列表常在最后一条回答下面，展开时滚到看得见。
     if (!panel.hidden) panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
   };
 
   actions.append(primary, more, sources, time, feedback);
-  // 收短后主动作跟着当前层：一句层里看不到的表格不再是“复制为表格”。
   answer.addEventListener("answer-shorten", () => refreshPrimaryAction(answer));
   answer.append(actions, panel);
   document.querySelectorAll(".answer-latest").forEach(node => node.classList.remove("answer-latest"));
@@ -263,7 +243,6 @@ export function attachAnswerActions(answer: HTMLElement): void {
   refreshPrimaryAction(answer);
 }
 
-/** 「来源」面板里的一节；回答还没有文末一排时返回 null。 */
 export function answerPanelSection(answer: HTMLElement, kind: keyof typeof SECTION_TITLES): HTMLElement | null {
   const panel = answer.querySelector<HTMLElement>(":scope > .answer-panel");
 
@@ -286,7 +265,6 @@ export function answerPanelSection(answer: HTMLElement, kind: keyof typeof SECTI
   return section.querySelector<HTMLElement>(".answer-panel-body")!;
 }
 
-/** 面板内容变了之后调用：有内容才露出「来源」，按钮前放最多两个站点的首字母方块。 */
 export function refreshAnswerPanel(answer: HTMLElement): void {
   const button = answer.querySelector<HTMLButtonElement>(":scope > .answer-actions > .answer-sources-btn");
   const panel = answer.querySelector<HTMLElement>(":scope > .answer-panel");
@@ -310,7 +288,6 @@ export function refreshAnswerPanel(answer: HTMLElement): void {
   button.replaceChildren(...squares, "来源");
 }
 
-/** 站点图标：浏览器缓存里的网站真图标；取不到时退回首字母方块。 */
 export function siteGlyph(url: string, host: string): HTMLElement {
   const glyph = document.createElement("span");
   glyph.className = "answer-source-glyph";
@@ -334,12 +311,6 @@ export function siteGlyph(url: string, host: string): HTMLElement {
   return glyph;
 }
 
-/** 后台把每个对话的工作标签页记在 storage.session 的这个键下（background/state.ts），侧栏只读。 */
-/**
- * 结果页在后台时，最新回答的文末一排加「切过去看」：助手不替用户切标签，由用户点。
- * 只给普通网页、这一轮读过或打开过它的网站、且侧栏所在窗口没在看它时出现：工作页跨任务保留，纯问答不该挂上一次的结果页。
- * 点过、页面关了、用户自己切过去就去掉（main.ts 监听标签事件）。
- */
 export async function offerWorkingTab(answer: HTMLElement, conversationId: string, sources: ReadonlyArray<{ url: string }>): Promise<void> {
   if (!chrome.storage?.session || !chrome.tabs?.get) return;
   const stored = await chrome.storage.session.get(WORKING_TABS_STORAGE_KEY).catch(() => null);
@@ -358,11 +329,10 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
   const time = answer.querySelector<HTMLElement>(":scope > .answer-actions > .answer-time");
 
   if (!time || !answer.isConnected || !answer.classList.contains("answer-latest") || answer.querySelector(".answer-show-tab")) return;
-  // 只有最新一条回答带这个按钮。
   document.querySelectorAll(".answer-show-tab").forEach(removeShowTab);
   let host = tab.url;
 
-  try { host = new URL(tab.url).host.replace(/^www\./, ""); } catch { /* 上面已确认是网址 */ }
+  try { host = new URL(tab.url).host.replace(/^www\./, ""); } catch {  }
   const title = (tab.title || host).trim();
   const label = `切过去看：${title.length > 30 ? `${title.slice(0, 30)}…` : title}`;
   const button = document.createElement("button");
@@ -378,7 +348,6 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
     button.disabled = true;
     const now = await chrome.tabs.get(tabId).catch(() => null);
 
-    // 按钮留在原处写明关掉了：直接拿掉的话，用户回头只看到按钮没了，不知道发生过什么。
     if (!now) {
       button.replaceChildren(...button.querySelectorAll(".answer-source-glyph"), "那一页已关掉");
       button.title = "那一页已经关掉了";
@@ -391,7 +360,6 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
     const targetWindow = await targetWindowId();
     await chrome.tabs.update(tabId, { active: true }).catch(() => undefined);
 
-    // 在会话小窗口里点：标签页所在的浏览器窗口可能压在后面，要提到前面才看得见。
     if (now.windowId !== targetWindow || isPopout) await chrome.windows.update(now.windowId, { focused: true }).catch(() => undefined);
   };
 
@@ -399,7 +367,6 @@ export async function offerWorkingTab(answer: HTMLElement, conversationId: strin
   refreshPrimaryAction(answer);
 }
 
-/** 那一页关了或已经在眼前：去掉指向它的「切过去看」。 */
 export function dropShowTab(tabId: number): void {
   document.querySelectorAll(`.answer-show-tab[data-tab-id="${tabId}"]`).forEach(removeShowTab);
 }

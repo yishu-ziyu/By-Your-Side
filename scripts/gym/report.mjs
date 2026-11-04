@@ -1,4 +1,3 @@
-/** node scripts/gym/report.mjs <run-directory> — never edits raw samples. */
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 if(!process.argv[2])throw new Error('Usage: node scripts/gym/report.mjs <run-directory>');

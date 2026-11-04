@@ -1,7 +1,3 @@
-/**
- * 试听样本：对每个音色开一条真实的 Realtime 3 会话，确认 session.updated 回显的音色就是请求的音色，
- * 再让模型念同一句话，存成 WAV。用法：npx tsx scripts/voice/voice-samples.mts [输出目录] [音色...]
- */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';

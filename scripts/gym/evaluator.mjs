@@ -1,4 +1,3 @@
-/** Private oracle: never sent to the extension, page, model or feedback channel. */
 export const snapshotExpression = `(()=>({
  url:location.href,ready:document.readyState,status:document.querySelector('#status')?.textContent,
  fields:Object.fromEntries([...document.querySelectorAll('[name]')].map(e=>[e.name,e.type==='checkbox'?e.checked:e.value])),
@@ -10,8 +9,6 @@ export const snapshotExpression = `(()=>({
 
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 export function evaluate(task, state, effects, audit, refreshed = null, commands = []) {
-  // Page JavaScript remains available to both agents. It is not assumed read-only
-  // because the model labels it so. Unproven provenance cannot earn success.
   const errors = [];
   if (effects.length || audit.some(x => x.type === 'submit')) errors.push('UNEXPECTED_SUBMISSION');
   const scripts = commands.filter(command => typeof command.pageScript === 'string' && command.status !== 'not_executed');
@@ -19,7 +16,7 @@ export function evaluate(task, state, effects, audit, refreshed = null, commands
   if(errors.length) return {status:'failure',errors};
   if (scripts.length) return { status: 'unknown', errors: ['UNVERIFIED_PAGE_SCRIPT'] };
   if (!state || state.ready !== 'complete' || state.status === '更新中…') return { status: 'unknown', errors: ['STATE_UNSETTLED'] };
-  // CDP fill's built-in compatibility adapter emits synthetic DOM events.
+  // WHY: CDP fill's built-in compatibility adapter emits synthetic DOM events.
   // Accept its provenance, not its claim of success: values are still read independently.
   const browserInput = event => event.trusted || commands.some(command => command.inputAdapter === 'fill' && command.status === 'executed' && command.name === event.name && command.value === event.value && event.at >= command.at && event.at <= command.completedAt);
   if (task === 'todo') {
@@ -48,7 +45,6 @@ export function evaluate(task, state, effects, audit, refreshed = null, commands
 }
 
 export function feedback(verdict) {
-  // No counts, values, item names, selectors, expected sets, or private state.
   return `独立核对未通过。错误类型：${verdict.errors.join('、')}。先重新观察当前页面，核对哪些动作已经生效。只纠正尚未完成的部分，不重复已完成动作。结果未知时不得盲目重试新增、提交等动作；若无法确认就停止并说明。保持原任务的所有限制，不提交任何表单。`;
 }
 

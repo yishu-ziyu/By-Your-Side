@@ -1,7 +1,3 @@
-/**
- * 真扩展 + 真 content script，隔离无头 Chrome；不使用真实模型或日常浏览器。
- * npx tsx scripts/acceptance/real-path/visual-ui-presence.mts --headless
- */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -12,7 +8,6 @@ import { startScriptedModel } from "./scripted-model.mts";
 requireHeadless();
 const out = join(REPO, "out/acceptance/visual-ui-production/real-extension");
 await mkdir(out, { recursive: true });
-// /hover：网页自己记下光效浮层有没有进入过「用户接手」，覆盖助手不移动光标就派发的悬停。
 const HOVER_PAGE = '<!doctype html><meta charset="utf-8"><title>悬停让位</title><h1 id="title" style="margin:200px 0 0 300px">悬停目标</h1><script>window.__everUserActive=false;new MutationObserver(()=>{const h=document.querySelector("[data-sideagent-overlay=cursor]");if(h&&h.classList.contains("user-active"))window.__everUserActive=true}).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["class"]})</script>';
 const HOVER_TASK = "把鼠标停在标题上";
 const site = createServer((req, res) => {
@@ -27,7 +22,6 @@ try {
   rp = await launchRealPath();
   const siteTarget = (await rp.cdp.send("Target.createTarget", { url: `http://127.0.0.1:${port}/` })).targetId as string;
   const page = await rp.attach(siteTarget);
-  // 从真实侧栏的扩展权限调用，避免借用 service worker 的非扩展执行上下文。
   const panel = await rp.attach(await rp.openSidePanel());
   await until(async () => (await rp!.evaluate(panel, "typeof chrome !== 'undefined' && !!chrome.scripting")) || undefined, 10_000, "扩展侧栏权限");
   const tabId = await rp.evaluate(panel, `chrome.tabs.query({}).then(ts => ts.find(t=>t.url?.startsWith("http://127.0.0.1:${port}/"))?.id ?? null)`) as number | null;
@@ -36,8 +30,6 @@ try {
     `chrome.scripting.executeScript({target:{tabId:${tabId}},world:"ISOLATED",func:()=>{${body}}}).then(rs=>rs[0]?.result)`);
   const state = () => isolated("return window.__sideagent?.cursorState?.() ?? null;") as Promise<{ hidden: boolean; resting: boolean; x: number; y: number } | null>;
   await rp.cdp.send("DOM.enable", {}, page);
-  // DevTools can inspect a closed shadow root even though scripts on the page
-  // cannot. Check CSS classes directly instead of pixel-identical screenshots.
   type DomNode = {
     attributes?: string[];
     children?: DomNode[];
@@ -80,7 +72,6 @@ try {
   const first = await readFile(join(out, "01-parked.png"));
   const second = await readFile(join(out, "02-reading-glow.png"));
   assert.notEqual(Buffer.compare(first, second), 0, "亮起彩边后真实网页像素应发生变化");
-  // 让位：助手的鼠标事件落在光标刚飞到的点上，不算用户；用户自己动鼠标，彩边和光标退淡，停下后亮回。
   const receded = () => rp!.evaluate(page, 'document.querySelector("[data-sideagent-overlay=cursor]")?.classList.contains("user-active") === true') as Promise<boolean>;
   const flight = await isolated("return window.__sideagent.cursor.move(120, 90);") as number;
   await sleep(flight + 150);
@@ -98,15 +89,12 @@ try {
   await until(async () => !(await receded()) || undefined, 3_000, "用户停下后彩边亮回");
   await isolated("window.__sideagent.cursor.setGlow(false); window.__sideagent.cursor.hide(); return true;");
   assert.equal((await state())?.hidden, true, "显式停止必须隐藏光标");
-  // Chrome BFCache 恢复的是同一个 Document；不会重新执行 content script。
-  // 两次往返还要覆盖重复挂载与上一页正在运行的彩边残留。
   for (let i = 0; i < 2; i++) {
     await isolated("window.__sideagent.cursor.setGlow(true); return true;");
     assert((await edgeClasses()).some(c => c.split(/\s+/).includes("on")),
       "对照组：被关闭的旧彩边之前确实处于亮起状态");
     await rp.evaluate(page, 'dispatchEvent(new PageTransitionEvent("pagehide", {persisted:true}));true');
     await rp.evaluate(page, 'dispatchEvent(new PageTransitionEvent("pageshow", {persisted:true}));true');
-    // 光标先问后台上一页停在哪，再出现。
     const restored = await until(async () => (await state()) || undefined, 3_000, "BFCache 恢复后的主光标");
     assert(restored.resting && !restored.hidden, "BFCache 恢复后重新出现一个可见的主光标");
     assert.equal(await rp.evaluate(page, 'document.querySelectorAll("[data-sideagent-overlay=cursor]").length'), 1,
@@ -116,13 +104,10 @@ try {
   }
   await rp.screenshot(page, join(out, "03-after-cache-restore.png"));
 
-  // 真正的历史前进/后退也应有光标。若 Chrome 没把该页放进 BFCache，
-  // 新加载应靠 content script 注入；usedBfCache 如实记录。
   const history = await rp.cdp.send("Page.getNavigationHistory", {}, page) as {
     currentIndex: number; entries: Array<{ id: number; url: string }>;
   };
   const originalEntry = history.entries[history.currentIndex]!;
-  // 合成 pageshow 已设置过此标志，真实导航前先清空，防止 BFCache 假阳性。
   await rp.evaluate(page, "window.__restoredFromCache=false;true");
   await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${port}/other` }, page);
   await until(async () => await rp!.evaluate(page, 'location.pathname === "/other"') || undefined, 10_000, "浏览器进入下一页");
@@ -135,10 +120,8 @@ try {
     "真实后退返回旧 Document 后，也不得恢复上一轮的彩边");
   const usedBfCache = await rp.evaluate(page, 'window.__restoredFromCache===true') as boolean;
   console.log("HISTORY_BACK", JSON.stringify({ usedBfCache, cursorVisible: true }));
-  // 真实工具路径：脚本模型打开 /hover，再悬停标题（受保护的悬停不移动光标）。光效亮着，但不能让位。
   const model = await startScriptedModel([{ match: HOVER_TASK, steps: [
     { tool: { name: "navigate", args: { url: `http://127.0.0.1:${port}/hover` } } },
-    // 光效跟着文档走、在工具开始时异步点亮：先读一次新页面让它亮起，再隔一会儿悬停，像真模型那样。
     { tool: { name: "js", args: { code: "document.title" } } },
     { tool: { name: "hover", args: { target: "#title", label: "标题" } }, delayMs: 1500 },
     { tool: { name: "hover", args: { target: "#title", label: "标题" } }, delayMs: 800 },
@@ -151,7 +134,6 @@ try {
     await rp.click(panel, "#input");
     await rp.typeText(panel, HOVER_TASK);
     await rp.pressEnter(panel);
-    // 跳到新网页后彩边要在新文档上亮起（以前同一标签页只画一次，跳页后整轮都没有彩边）。
     let litAfterNavigate = false;
     const answered = () => rp!.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].some(m => m.textContent.includes("停好了"))`) as Promise<boolean>;
     for (const t0 = Date.now(); Date.now() - t0 < 60_000 && !(await answered()); await sleep(150)) {
@@ -161,7 +143,7 @@ try {
         const s = await rp.attach(t.targetId);
         await rp.cdp.send("DOM.enable", {}, s);
         litAfterNavigate = (await edgeClasses(s)).some(c => c.split(/\s+/).includes("on"));
-      } catch { /* 页面正在加载 */ }
+      } catch {  }
     }
     await until(async () => (await answered()) || undefined, 5_000, "悬停任务答复");
     assert(litAfterNavigate, "跳到新网页后彩边应在新页面上亮起");
