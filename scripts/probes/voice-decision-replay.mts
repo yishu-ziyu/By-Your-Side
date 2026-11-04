@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { fastOpContent, parseFastDecision, VOICE_FAST_OP_PROMPT, type FastOpTurn } from "../../agent/src/voice-fast-op.js";
+import { fastOpContent, parseFastDecision, VOICE_FAST_OP_PROMPT } from "../../agent/src/voice-fast-op.js";
 import type { VoicePageState } from "../../shared/voice-page-op.js";
 
 const card = (row: number, col: number) => ({ row, col, title: `视频${row}-${col}`, url: `https://www.youtube.com/watch?v=r${row}c${col}` });
@@ -10,8 +10,7 @@ const BILI: VoicePageState = { ...HOME, url: "https://www.bilibili.com/", title:
 const WATCH: VoicePageState = { url: "https://www.youtube.com/watch?v=r1c1", title: "视频1-1", media: { playing: true, currentTime: 40, duration: 300 }, hasNext: true, cards: [] };
 
 type Expected = string | string[];
-const said = (...texts: string[]): FastOpTurn[] => texts.map(text => ({ role: "user", text }));
-const CASES: Array<{ text: string; page: VoicePageState; recent?: FastOpTurn[]; expect: Expected }> = [
+const CASES: Array<{ text: string; page: VoicePageState; recent?: string[]; expect: Expected }> = [
   { text: "嗨你好", page: HOME, expect: "chat" },
   { text: "打开YouTube", page: BILI, expect: "task" },
   { text: "聊天切换到YouTube的那个页面OK,然后点击第一行的第一个视频", page: BILI, expect: "task" },
@@ -27,20 +26,17 @@ const CASES: Array<{ text: string; page: VoicePageState; recent?: FastOpTurn[]; 
   { text: "嗯,打开第一行的 第三个 视频", page: HOME, expect: "open:1-3" },
   { text: ",尝试获取它的 字幕", page: WATCH, expect: "task" },
   { text: "可以,你先暂停视频", page: WATCH, expect: "pause" },
-  { text: "没有暂停啊", page: WATCH, recent: said("可以,你先暂停视频"), expect: ["pause", "task"] },
+  { text: "没有暂停啊", page: WATCH, recent: ["可以,你先暂停视频"], expect: ["pause", "task"] },
   { text: "重新试了一下,你读一下日志,然后再分析一下,我觉得他依旧很糟糕", page: WATCH, expect: "chat" },
   { text: "你好", page: HOME, expect: "chat" },
   { text: "打开YouTube", page: BILI, expect: "task" },
   { text: "打开bilibili", page: HOME, expect: "task" },
   { text: "切换到bilibili的页面", page: HOME, expect: "task" },
   { text: "切换到YouTube页面", page: BILI, expect: "task" },
-  { text: "打开第二行", page: HOME, expect: "chat" },
-  { text: "第一个视频", page: HOME, recent: said("打开第二行"), expect: "open:2-1" },
-  { text: "调错 了,我 说 是 第二 行 第 一个,第一 行 第 一个", page: WATCH, recent: said("打开第二行", "第一个视频"), expect: "task" },
-  { text: "第二行 第 一个", page: WATCH, recent: said("打开第二行", "第一个视频"), expect: "task" },
-  { text: "第二行的第一个视频", page: HOME, recent: said("你好", "打开YouTube"), expect: "open:2-1" },
-  { text: "要", page: WATCH, recent: [...said("第二行的第一个视频"), { role: "assistant", text: "我点到第一行第一个了，要不要回去重新点第二行第一个？" }], expect: "task" },
-  { text: "不用", page: WATCH, recent: [{ role: "assistant", text: "要不要回去重新点第二行第一个？" }], expect: "chat" },
+  { text: "打开第二行", page: HOME, expect: "listen" },
+  { text: "第一个视频", page: HOME, recent: ["打开第二行"], expect: "open:2-1" },
+  { text: "调错 了,我 说 是 第二 行 第 一个,第一 行 第 一个", page: WATCH, recent: ["打开第二行", "第一个视频"], expect: "task" },
+  { text: "第二行 第 一个", page: WATCH, recent: ["打开第二行", "第一个视频"], expect: "task" },
 ];
 
 const MODEL = process.argv.find(a => a.startsWith("--model="))?.slice(8) ?? "MiniMax-M3.1-Flash-Preview";
