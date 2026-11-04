@@ -41,22 +41,6 @@ const CONDITIONAL = /之后|以后|然后|[完好]了?(?:再|就)|后(?:告诉|�
 
 const CLOSING = /^(?:掉|了|吧|啊|呀|丫|啦|哦|哈|呗|谢谢|多谢)*$/;
 
-const TASK_PAUSE = /^(?:先)?(?:暂停|接管)(?:一下)?(?:当前|这个|这项)?任务(?:吧|了)?$/;
-
-const TASK_RESUME = /^(?:继续|交还)(?:吧|任务|原任务)?$/;
-
-export function delegatedVoiceAction(text: string, state: string): 'abort' | 'pause' | 'resume' | 'start' | 'steer' {
-  const short = normalizeSpeech(text ?? "");
-
-  if (isExplicitTaskAbort(text)) return 'abort';
-
-  if (TASK_PAUSE.test(short)) return 'pause';
-
-  if (state === 'paused' && TASK_RESUME.test(short)) return 'resume';
-
-  return state === 'interrupted' ? 'start' : 'steer';
-}
-
 export function isExplicitTaskAbort(text: string): boolean {
   if (/[?？]/.test(text ?? "")) return false;
   const short = normalizeSpeech(text ?? "");

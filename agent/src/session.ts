@@ -42,8 +42,6 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
 import type { AgentToolResult, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { isJsonObject, isParamRejection, lowestEffort, parseJsonReply, SideCallError, sideJudgment, type RejectedEfforts, type SideCallHost } from "./side-judgment.js";
 import { MainEffort, restingEffort, thinkingChoice } from "./main-effort.js";
-import { fastOpContent, parseFastDecision, VOICE_FAST_OP_PROMPT, type VoiceFastDecision } from "./voice-fast-op.js";
-import type { VoicePageState } from "../../shared/voice-page-op.js";
 import { RunNotStarted, userWaiting, withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
@@ -191,8 +189,6 @@ function loopModel(models: ModelPort, pattern: string | undefined) {
 const PAGE_CHANGE_TOOLS = new Set(["page_translation", "navigate", "open_tab", "click", "double_click", "fill", "type_text", "press_key", "js", "mark", "accept_dialog", "dismiss_dialog"]);
 
 const PROGRAM_TOOLS = new Set(["browser_run", "learned_operation"]);
-
-const VOICE_FAST_OP_TIMEOUT_MS = 4_000;
 
 export class BrowserAgentSession {
   private activeGoal:string|null=null;
@@ -564,7 +560,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
     if (!kind || kind === 'ack' || this.answerHold.settled || this.memberId) return false;
 
-    return !this.spokenAsk && this.severalAsksNow();
+    return this.spokenAsk || this.severalAsksNow();
   }
 
   private releaseAnswer(): void {
@@ -1671,22 +1667,6 @@ return;}
     } else {
       this.sendUserMessage(text, context, attachments, spoken ? { spoken: true } : undefined);
     }
-  }
-
-  async decideVoiceFastOp(text: string, state: VoicePageState, recent: readonly string[], signal?: AbortSignal): Promise<VoiceFastDecision> {
-    const call = this.voiceModelCall();
-
-    if (!call) throw new Error("模型不可用");
-
-    return sideJudgment({ models: { completeSimple: (model, context, options) => call.runtime.completeSimple(model, context, userWaiting(options ?? {})) }, rejected: call.rejected, record: call.record }, call.model, {
-      purpose: "voice_fast_op", systemPrompt: VOICE_FAST_OP_PROMPT, content: fastOpContent(text, state, recent),
-      maxTokens: 200, temperature: 0, timeoutMs: VOICE_FAST_OP_TIMEOUT_MS, retry: "none", signal, sessionId: call.sessionId, headers: call.headers,
-      parse: reply => parseFastDecision(reply, state),
-    }).then(decision => {
-      this.runTrace?.record("voice_fast_op_decision", { op: decision.op, cards: state.cards.length, media: !!state.media, recent: recent.length });
-
-      return decision;
-    });
   }
 
   private voiceModelCall(): VoiceModelCall | null {
@@ -3048,7 +3028,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           {
             const checkGoal = this.goalCheckEligible(event.messages);
-            const gate = checkGoal && !this.answerHold.settled && !this.spokenAsk && this.severalAsksNow();
+            const gate = checkGoal && !this.answerHold.settled && (this.spokenAsk || this.severalAsksNow());
 
             if (checkGoal) emit({ kind: "goal_check", status: "checking", ...(gate ? { gate: true } : {}) });
 
@@ -3419,7 +3399,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     const continuation = verdict ? this.continuePolicy.next(verdict, { runId, snapshot, goal: this.activeGoal ?? "", failed: this.goalLedger.failuresFor(runId), progress: this.noProgressPolicy?.progressVersion }) : null;
 
-    if (verdict && continuation && "prompt" in continuation && this.session && !movedTo && !this.spokenAsk) {
+    if (verdict && continuation && "prompt" in continuation && this.session && !movedTo) {
       const session = this.session;
 
       for (let waited = 0; session.isStreaming && waited < 3_000; waited += 50) await new Promise(done => setTimeout(done, 50));
