@@ -1,3 +1,4 @@
+import { plainError } from "../../../shared/user-facing.js";
 import { createElement as icon, Zap, X } from "lucide";
 import { isLearnedOperationResult, type LearnedOperationResult } from "../../../shared/learned-operations.js";
 import { SKILL_PACKAGES_KEY, SKILL_PACKAGE_RUN, sanitizeSkillPackageConfigs, type SkillPackageConfig } from "../../../shared/skill-packages.js";
@@ -72,9 +73,9 @@ function install(): () => void {
 
   function paintResult(view: ReturnType<typeof resultCard>, ok: boolean, result: LearnedOperationResult | undefined, error: string | undefined): void {
     view.card.dataset.state = ok && (result?.status === "observed" || result?.status === "empty") ? result.status : "error";
-    if (!ok) view.body.textContent = `没有运行成功：${error ?? "连接中断，请再试一次。"}`;
+    if (!ok) view.body.textContent = `没有运行成功：${plainError(error, "连接中断，请再试一次。")}`;
     else if (result?.status === "observed" || result?.status === "empty") view.body.textContent = dataText(result.data);
-    else view.body.textContent = `没有运行成功：${result && "reason" in result ? result.reason : "没有取得结果"}`;
+    else view.body.textContent = `没有运行成功：${plainError(result && "reason" in result ? result.reason : "", "没有取得结果")}`;
     if (result?.status === "empty") view.meta.textContent += " · 没有读到内容";
   }
 

@@ -405,7 +405,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       if (this.live !== live) return;
 
       if (!response.ok) {
-        this.fail(response.status === 401 || response.status === 403 ? 'ChatGPT 登录已失效：请在设置里重新登录后再开启语音。' : `GPT-Live 没有接通（${response.status}），请稍后重试。`);
+        this.fail(response.status === 401 || response.status === 403 ? 'ChatGPT 登录已失效：请在设置里重新登录后再开启语音。' : 'GPT-Live 没有接通，请稍后重试。');
 
         return;
       }

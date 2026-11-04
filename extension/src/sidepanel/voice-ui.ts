@@ -130,7 +130,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   const diagStop = node('button', 'voice-diag-stop', '结束录音') as HTMLButtonElement;
   diagStop.type = 'button';
   diagStop.disabled = true;
-  const diagExport = node('button', 'voice-diag-export', '导出JSON') as HTMLButtonElement;
+  const diagExport = node('button', 'voice-diag-export', '导出记录') as HTMLButtonElement;
   diagExport.type = 'button';
   const diagClear = node('button', 'voice-diag-clear', '清空') as HTMLButtonElement;
   diagClear.type = 'button';
@@ -139,7 +139,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   const diagDetail = node('div', 'voice-diag-detail');
   const fields = new Map<string, HTMLElement>();
 
-  for (const label of ['状态', '连续收音 C0', '实际上行 C1', '原始转写（过滤前）', '服务端转发', '侧栏收到', '侧栏显示文字', '一致性', '异常']) {
+  for (const label of ['状态', '麦克风收到', '发给语音服务', '识别结果（原始）', '语音服务返回', '侧栏收到', '侧栏显示文字', '一致性', '异常']) {
     const row = node('div', 'voice-diag-row');
     const name = node('span', 'voice-diag-label', label);
     const value = node('span', 'voice-diag-value', '');
@@ -149,9 +149,9 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   }
 
   const audioRow = node('div', 'voice-diag-audio');
-  const loadC0 = node('button', 'voice-diag-load-c0', '载入C0') as HTMLButtonElement;
+  const loadC0 = node('button', 'voice-diag-load-c0', '听麦克风收到的') as HTMLButtonElement;
   loadC0.type = 'button';
-  const loadC1 = node('button', 'voice-diag-load-c1', '载入C1') as HTMLButtonElement;
+  const loadC1 = node('button', 'voice-diag-load-c1', '听发出去的') as HTMLButtonElement;
   loadC1.type = 'button';
   const playerC0 = node('audio', 'voice-diag-player-c0') as HTMLAudioElement;
   playerC0.controls = true;
@@ -237,11 +237,11 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     const status = log.status(latest);
     const checks = log.checks(latest);
     fields.get('状态')!.textContent = status.complete ? '完整' : `未完成：${status.reasons.join('、')}`;
-    fields.get('连续收音 C0')!.textContent = `${(latest.samples / latest.sampleRate).toFixed(1)} 秒 / ${latest.frames.length} 帧 / 采样率 ${latest.sampleRate}${latest.track ? ` / track ${latest.track.sampleRate}Hz ${latest.track.channelCount}ch` : ' / track 未知'}`;
+    fields.get('麦克风收到')!.textContent = `${(latest.samples / latest.sampleRate).toFixed(1)} 秒`;
     const sent = latest.upstream.reduce((sum, entry) => sum + entry.samples, 0);
-    fields.get('实际上行 C1')!.textContent = `${(sent / latest.sampleRate).toFixed(1)} 秒 / ${latest.upstream.length} 段${latest.itemId ? ` / item ${latest.itemId}` : ' / 无 item'}${latest.commit ? '' : ' / 无 commit'}`;
-    fields.get('原始转写（过滤前）')!.textContent = `${text(latest.rawAsr?.text)}（${latest.rawAsr?.outcome ?? '未收到'}${latest.rawAsr?.turn != null ? ` / 第${latest.rawAsr.turn}段` : ''}）`;
-    fields.get('服务端转发')!.textContent = text(latest.forwarded?.text);
+    fields.get('发给语音服务')!.textContent = `${(sent / latest.sampleRate).toFixed(1)} 秒 / ${latest.upstream.length} 段`;
+    fields.get('识别结果（原始）')!.textContent = text(latest.rawAsr?.text);
+    fields.get('语音服务返回')!.textContent = text(latest.forwarded?.text);
     fields.get('侧栏收到')!.textContent = text(latest.serverText?.text);
     fields.get('侧栏显示文字')!.textContent = text(latest.displayText?.text);
     fields.get('一致性')!.textContent = [
@@ -264,7 +264,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     const blob = log.wav(latest.id, which);
 
     if (!blob) {
-      notice(which === 'c1' ? '这条记录的 C1 尚未完整，暂不可播放。' : '这条记录的连续收音已释放。');
+      notice(which === 'c1' ? '这条记录发出去的录音还不完整，暂时不能播放。' : '这条记录的麦克风录音已释放。');
 
       return;
     }

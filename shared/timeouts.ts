@@ -52,7 +52,7 @@ export function describeTimeout(raw: string): TimeoutCopy | null {
 
   if (/stream idle timeout|sent nothing for \d+ s mid-response|模型中途没了声音/i.test(text)) {
     const n = sec || SEC(MODEL_STALL_MID_STREAM_MS);
-    return { kind: "model", title: "模型中途没了声音", copy: `回答写到一半停住，已经 ${n} 秒没有新内容。可以重试，或换个方法。`, waitedSec: n, retry: true };
+    return { kind: "model", title: "模型中途没了声音", copy: `回答写到一半断了，已经 ${n} 秒没有新内容。可以重试，或换个方法。`, waitedSec: n, retry: true };
   }
 
   if (/Tool call ".+" timed out after|这一步超时了/i.test(text) || /工具.{0,6}超时/i.test(text)) {

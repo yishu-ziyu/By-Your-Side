@@ -1,3 +1,4 @@
+import { plainError } from "../../../../shared/user-facing.js";
 import { FILE_BYTES_KEEP_MAX, FILE_READ_MAX_BYTES, FILE_TEXT_MAX, type FileAttachment, type FileFormat } from "../../../../shared/protocol.js";
 import { OfficeError, readDocx, readPptx, readXlsx } from "./ooxml.js";
 import { PdfError, readPdf } from "./pdf.js";
@@ -78,7 +79,7 @@ export async function readAttachmentFile(file: File, id: string, onProgress: (fr
   } catch (error) {
     if (error instanceof PdfError || error instanceof OfficeError || error instanceof ZipError) throw new FileReadError(`${file.name}：${error.message}。`);
 
-    throw new FileReadError(`${file.name} 没读出来：${error instanceof Error ? error.message : String(error)}`);
+    throw new FileReadError(`${file.name} 没读出来：${plainError(error, "文件内容读不了")}`);
   }
 
   onProgress(1);

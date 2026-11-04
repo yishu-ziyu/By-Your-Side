@@ -1,3 +1,4 @@
+import { plainError } from "../../../shared/user-facing.js";
 import { PTT_KEY, pttKeyOf, type PttPageMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
 import { createPttCapsule } from "./ptt-capsule.js";
@@ -16,7 +17,7 @@ export function installPushToTalkKeys(companion?: PttCompanion): void {
       console.debug('[ptt] page_reply', phase, reply.ok, reply.reason);
       if (phase === 'start' && !reply.ok && turn === interaction) {
         companion?.cancel();
-        capsule.show({ phase: 'failed', reason: typeof reply.message === 'string' ? reply.message : '语音没有接上，请重新按住说话。' });
+        capsule.show({ phase: 'failed', reason: plainError(reply.message, '语音没有接上，请重新按住说话。') });
       }
       return reply.ok;
     }).catch(error => {

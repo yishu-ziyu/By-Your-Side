@@ -1,3 +1,4 @@
+import { plainError } from "../../../shared/user-facing.js";
 import type { TaskReceipt } from '../../../shared/task-actions.js';
 import { D_LAYOUT, D_STATE, E_ENTER } from "../shared/motion-tokens.js";
 import { receiptCopy } from './receipt-copy.js';
@@ -41,7 +42,7 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
     create.disabled = true; dismiss.disabled = true; status.textContent = '正在转交新会话…';
 
     try { await fork(receipt); status.textContent = '已转交新会话'; }
-    catch (error) { status.textContent = error instanceof Error ? error.message : '未能转交，原任务不变。'; create.disabled = false; dismiss.disabled = false; }
+    catch (error) { status.textContent = plainError(error, '未能转交，原任务不变。'); create.disabled = false; dismiss.disabled = false; }
   };
 
   dismiss.onclick = () => { actions.hidden = true; title.textContent = '新请求暂不处理'; description.textContent = '原请求保留在下方记录中。'; };
