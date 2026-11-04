@@ -1,9 +1,3 @@
-/**
- * OPFS 的同步读写（createSyncAccessHandle）只在专用 Worker 里可用。它能原地追加和截断，
- * 不像页面里的 createWritable 那样每次复制整个文件。
- * 每次操作完立刻 close：句柄占着文件的独占锁，不关的话页面里的 getFile、move、removeEntry 都会失败。
- * offscreen 文档被关掉重开时，旧 Worker 的锁不一定已经放开，所以拿锁失败要等一会儿再试。
- */
 type SyncHandle = {
   getSize(): number;
   write(buffer: Uint8Array, options: { at: number }): number;
@@ -30,7 +24,7 @@ async function open(path: string): Promise<SyncHandle> {
   }
 }
 
-/** 规范允许 write 只写进一部分而不报错；没写完就当失败，pi-durable 不能把半条记录当成已保存。 */
+/** WHY: 规范允许 write 只写进一部分而不报错；没写完就当失败，pi-durable 不能把半条记录当成已保存。 */
 function writeAll(handle: SyncHandle, data: Uint8Array, at: number) {
   for (let done = 0; done < data.length;) {
     const n = handle.write(data.subarray(done), { at: at + done });

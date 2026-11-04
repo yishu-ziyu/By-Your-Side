@@ -1,5 +1,5 @@
 /**
- * A8：对一条结果做什么。主动作留在回答末尾；其余收进动作列表。
+ * WHY: A8：对一条结果做什么。主动作留在回答末尾；其余收进动作列表。
  * Chrome 的 Ctrl/⌘K 会抢去地址栏搜索，所以用 Ctrl/⌘+Shift+K，和 / 技能菜单分开。
  */
 import { answerPlainText, listResultActions, runPrimaryAction, showCopied, showFailed, type ResultAction } from "./answer-actions.js";
@@ -98,10 +98,6 @@ export function mountAnswerCommand(opts: {
     }
   }
 
-  /**
-   * 产生这条回答的用户原话：往回跳过同一轮里助手的过渡句，收集连着的用户消息（中途补的话也算），按发出顺序。
-   * 技能存的是请求；存回答全文的话，下次运行就是把旧回答当新请求发出去。
-   */
   const requestOf = (answer: HTMLElement): string => {
     const said: string[] = [];
 

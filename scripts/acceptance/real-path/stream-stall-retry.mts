@@ -1,11 +1,3 @@
-/**
- * 模型回复写了几个字就不再推进（连接仍发空事件）：助手很快自己重发，用户不用干等到连接被服务端掐断。
- * 只装扩展、隔离构建、本机脚本模型；前面一层代理让第一次主任务回复写出几个字后挂住 120 秒再掐断。
- *   npx tsx scripts/acceptance/real-path/stream-stall-retry.mts --headless
- *   a) 发出后 60 秒内出现完整回答。
- *   b) 回答只出现一遍，断流前写出的半句不留在回答里。
- * 失败方式：没有断流计时，要等 120 秒连接被掐断才重发，a 失败。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -30,7 +22,6 @@ const proxy = createServer(async (req, res) => {
 
   req.setEncoding('utf8'); for await (const chunk of req) body += chunk;
 
-  // 空 delta 经过供应商原始事件钩子，但没有推进正文；连接活着不等于回答在推进。
   if (!stalled && req.method === "POST" && body.includes(TASK) && body.includes('"tools"')) {
     stalled = true;
     res.writeHead(200, { "content-type": "text/event-stream" });

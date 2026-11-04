@@ -16,7 +16,6 @@ const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
 
 const uncertain=():VoiceRouteResult=>({kind:'action',ok:false,status:'unknown',message:'这份语音计划的结果无法确认，请查询已有结果；不会重新分类或执行。'});
 
-/** Claim before classification; step journal before effects; replay never resumes an unfinished plan. */
 export class VoicePlanStore {
  private memory=new Map<string,Record>();
  private active=new Map<string,{fingerprint:string;promise:Promise<VoiceRouteResult>}>();
@@ -89,8 +88,7 @@ if(active)return active.fingerprint===fingerprint?active.promise:Promise.resolve
 
 return final;
    }catch(error){
-    // Preserve classifier errors for the caller while making a replay fail closed.
-    try{record=this.read(key)!;this.write(key,{...record,result:uncertain()});}catch{/* original pending journal remains */}
+    try{record=this.read(key)!;this.write(key,{...record,result:uncertain()});}catch{}
 
     if(error instanceof VoiceIntentError||error instanceof TaskActionRejected)throw error;
 

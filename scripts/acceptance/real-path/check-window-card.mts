@@ -1,11 +1,3 @@
-/**
- * 中途有一步没找到目标、但任务做完了：目标核对出结论前的几秒里，不先闪出「没做成 · 继续原任务」再收回。
- * 只装扩展、隔离构建、本机脚本模型；目标核对晚 4 秒回「做完了」，这段时间每 200 毫秒看一次侧栏。
- *   npx tsx scripts/acceptance/real-path/check-window-card.mts --headless
- *   a) 回答出来到核对出结论之间，一次都没出现「继续原任务」。
- *   b) 核对出结论后过程行是「已核对页面」，也没有「继续原任务」。
- * 失败方式：核对期间照常按任务视图出卡，a 失败。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -27,7 +19,6 @@ const ANSWER = "已打开「故宫」条目。";
 const DONE_JSON = JSON.stringify({ items: [{ text: "打开条目", done: true }], status: "done", remaining: "" });
 
 const model = await startScriptedModel([
-  // 目标核对的输入带 lastReply，排在前面；晚 4 秒回，留出能看清的核对窗口。
   { match: `"lastReply"`, steps: [{ text: DONE_JSON, delayMs: 4_000 }] },
   { match: TASK, steps: [
     { tool: { name: "navigate", args: { url: `http://127.0.0.1:${siteAddress(site).port}/` } } },

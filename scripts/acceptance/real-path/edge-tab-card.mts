@@ -1,15 +1,3 @@
-/**
- * 网页右边缘胶囊能拖、能展开成进度卡、能在卡上补一句：只装扩展的隔离无头 Chrome、真侧栏、本机报名表页、本机脚本模型（一轮填 5 项，第 3、4 步前各停 9、15 秒，留出试卡片的时间）。
- * 用户报告：胶囊拖不动；想不开侧栏也知道在做什么、能改方向。
- * a 停靠的窄条用真鼠标往下拖 300px：松手停在新位置，不算点（没开始翻译）；移开后收回窄条。
- * b 新开一页：停在拖过的高度；第一页跟着同步。
- * c 拖到窗口底：不出界。
- * d 关掉侧栏、任务在跑：鼠标停在胶囊上，原地长成进度卡，写着目标和做过的步骤。胶囊在窗口底部，卡往上长：整张卡在窗口里，停止键还在鼠标底下没挪。
- * e 在卡上打一句、回车：卡上说已交给助手；模型下一次请求里带着这句；字没漏进网页输入框；打字时移开鼠标不收起。
- * f 发完移开：收回一行。深色、减少动态效果：卡照样展开、读得到。
- *   npx tsx scripts/acceptance/real-path/edge-tab-card.mts --headless
- * 证据在 out/acceptance/real-path/<时间>-edge-tab-card/：每一步右边缘的截图、result.json。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -32,14 +20,12 @@ const model = await startScriptedModel([{ match: "报名表五项", steps: [fill
 const rp = await launchRealPath();
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
-/** 胶囊停靠时的竖直中线（edge-tab.ts 的 TOP + H / 2）。 */
 const MID_Y = 84;
 type Rect = { x: number; y: number; width: number; height: number };
 type Tab = { shown: boolean; tone: string | null; a: string; rect: Rect | null; button: Rect | null; offset: number | null; task: boolean; card: { rect: Rect; input: Rect; goal: string; steps: number; placeholder: string } | null };
 
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
-  // 胶囊读数在扩展内容脚本的隔离环境里：按会话记下隔离环境，逐个试。
   const isolated = new Map<string, Set<number>>();
   rp.cdp.onEvent("Runtime.executionContextCreated", (m: { sessionId?: string; params: { context: { id: number; origin: string; auxData?: { type?: string } } } }) => {
     if (m.sessionId && m.params.context.auxData?.type === "isolated" && m.params.context.origin.startsWith("chrome-extension://")) { const set = isolated.get(m.sessionId) ?? new Set(); set.add(m.params.context.id); isolated.set(m.sessionId, set); }
@@ -99,7 +85,6 @@ try {
   check("b2 第一页跟着同步", await atEdge(work, bottom) === "edge-tab", await atEdge(work, bottom));
   await rp.cdp.send("Target.closeTarget", { targetId: otherId });
 
-  // 任务从侧栏开始，然后关掉侧栏：用户在网页上只看得到胶囊。胶囊此刻停在窗口底部，展开的卡要往上让。
   await rp.cdp.send("Page.bringToFront", {}, work);
   const panel = await rp.attach(await rp.openSidePanel());
   await until(async () => await rp.evaluate(panel, `document.querySelector("#send-btn")?.disabled === false`) || undefined, 30_000, "侧栏可发送");
@@ -144,9 +129,7 @@ try {
     await mouse(work, "mouseMoved", width - 600, 320);
     const closed = await until(async () => { const t = await tab(); return t && !t.card ? true : null; }, 4000, "收起").then(() => true, () => false);
 
-    // 深色、减少动态效果：卡照样展开。任务第 4 步前还停着，胶囊仍在做。
     await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }, { name: "prefers-reduced-motion", value: "reduce" }] }, work);
-    // 等卡缩回一行再碰：缩的过程中碰到的那一块，缩完就不在胶囊上了。
     const again = await until(async () => { const t = await tab(); return t?.rect && t.rect.height < 41 && t.button ? t : null; }, 3000, "缩回一行").catch(() => null);
     const beforeDark = again ? { tone: again.tone, task: again.task, button: again.button } : null;
     if (again?.button) await mouse(work, "mouseMoved", again.button.x - 30, again.button.y + again.button.height / 2);

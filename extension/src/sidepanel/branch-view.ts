@@ -1,8 +1,3 @@
-/**
- * 过程块进行中的分叉层：挂在 summary 下面，不改 A+C 两行。
- * 几何与画法从认可的分支原型（git graph / 标签页扇形）直接移植：主轨、曲线分叉、
- * 虚线死路、空心汇合点、交给你时的蓝色通道。单步回合这里是空的。
- */
 import { siteGlyph } from "./answer-actions.js";
 import {
   FOLD_HOLD_MS,
@@ -28,7 +23,6 @@ export type LiveGraph = {
   start: (tool: GraphTool) => void;
   end: (id: string, update: Partial<Pick<GraphTool, "failed" | "reason" | "result" | "label">>) => void;
   user: (on: boolean) => void;
-  /** 这一轮收尾：还开着的分支按结束画，并收成一行，不留在转的节点。 */
   finish: () => void;
 };
 
@@ -310,7 +304,6 @@ export function mountLiveGraph(opts: { history: () => boolean }): LiveGraph {
     end(id, update) {
       const tool = open.find((item) => item.id === id);
       if (!tool) return;
-      // 已经结束的一步不再和下一步凑成「同时」：只有同时在跑的才画分叉（历史回放也是先开始、后结束、再开始下一步）。
       burst = burst.filter((item) => item.id !== id);
       Object.assign(tool, update);
       if (update.failed) tool.failed = true;

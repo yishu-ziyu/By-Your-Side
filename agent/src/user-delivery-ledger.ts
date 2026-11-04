@@ -1,6 +1,5 @@
 import { isUserDelivery, type UserDelivery } from "../../shared/voice.js";
 
-/** 每 run 的正式交付台账：只记账，不是消息框架。接线（beginRun/record/markPlayback）由宿主完成。 */
 export class UserDeliveryLedger {
   private runId: string | null = null;
   private readonly deliveries = new Map<string, UserDelivery>();
@@ -9,7 +8,6 @@ export class UserDeliveryLedger {
 
   constructor(private readonly conversationId: string) {}
 
-  /** 新 run 开账并清空本 run；之后旧 run 的迟到交付不能写入。null-run 闲聊允许。 */
   beginRun(runId: string | null): void {
     this.runId = runId;
     this.deliveries.clear();
@@ -17,7 +15,6 @@ export class UserDeliveryLedger {
     this.sawFinding = false;
   }
 
-  /** 首次有效 true；重复 id、同 id 改文、越界（非法/别会话/旧 run）一律 false。 */
   record(delivery: UserDelivery): boolean {
     if (!isUserDelivery(delivery)) return false;
 
@@ -34,7 +31,6 @@ export class UserDeliveryLedger {
     return true;
   }
 
-  /** 本 run 最近的有效交付副本；迟到 ack 不覆盖 finding/reply。 */
   latest(): UserDelivery | null {
     for (let i = this.order.length - 1; i >= 0; i--) {
       const d = this.deliveries.get(this.order[i]!)!;
@@ -47,12 +43,10 @@ export class UserDeliveryLedger {
     return last ? { ...this.deliveries.get(last)! } : null;
   }
 
-  /** 仅表示本 run 曾交付 finding；不被 ack 改变。 */
   hasFinding(): boolean {
     return this.sawFinding;
   }
 
-  /** 只更新本 run 已知 id 的播放状态；不倒退、不造正文，未知 id 返回 null。 */
   markPlayback(id: string, status: "speaking" | "played"): UserDelivery | null {
     const d = this.deliveries.get(id);
 

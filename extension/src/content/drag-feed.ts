@@ -4,11 +4,6 @@ import { extensionAlive } from './alive.js';
 
 const FEED_PREFIX = 'by-your-side-feed:';
 
-/**
- * 把网页内容拖进侧栏。页面元素一律不设成可拖动，所以在正文里按住拖动始终是选字。
- * 两种拖法：选中任意文字后按住选区拖，材料就是选中的那段；表格和代码块悬停时左上角出把手，按住把手拖整块。
- */
-
 const BLOCKS = 'table,pre';
 
 const GRIP_SIZE = 24;
@@ -98,7 +93,7 @@ export function installDragFeed(): void {
   addEventListener('scroll', () => { if (current) place(); }, { capture: true, passive: true });
   addEventListener('resize', () => { if (current) place(); }, { passive: true });
 
-  // 拖动只认用户真拖：网页脚本派发的 dragstart 不能往后台登记材料。
+  // WHY: 拖动只认用户真拖：网页脚本派发的 dragstart 不能往后台登记材料。
   grip.addEventListener('dragstart', event => {
     if (!event.isTrusted) return;
     const block = current;
@@ -115,7 +110,6 @@ export function installDragFeed(): void {
     block.classList.add('bys-feed-dragging');
   });
 
-  // 拖动已选中的文字：浏览器照常带上选中文字，我们只多附一个材料凭据。
   document.addEventListener('dragstart', event => {
     if (!event.isTrusted || event.composedPath().includes(grip) || !event.dataTransfer) return;
     const selection = getSelection();

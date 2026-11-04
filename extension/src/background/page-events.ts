@@ -70,7 +70,7 @@ const waiters = new Map<string, Array<{ resolve: (arm: ArmedPageEvent) => void; 
 
 const heldArmTokens = new Set<string>();
 
-/** 原生对话框弹出时要立刻知道的调用（点击）：对话框挡住页面后，派发输入的 CDP 命令要等它关掉才返回。 */
+/** WHY: 原生对话框弹出时要立刻知道的调用（点击）：对话框挡住页面后，派发输入的 CDP 命令要等它关掉才返回。 */
 const dialogWatchers = new Map<number, Set<(dialog: OpenedDialog) => void>>();
 
 export interface OpenedDialog { type: JsDialogType; message: string; defaultPrompt?: string }
@@ -81,10 +81,9 @@ let tabsListening = false;
 
 let downloadsListening = false;
 
-/** 下载结束前 wait_event 最多再等多久；只有 chrome.downloads 报 complete 才算下载完成。 */
 const DOWNLOAD_SETTLE_MS = 60_000;
 
-/** chrome.downloads 先于 Page.downloadWillBegin 到达时暂存，按 URL 等对方。 */
+/** WHY: chrome.downloads 先于 Page.downloadWillBegin 到达时暂存，按 URL 等对方。 */
 const unboundChromeDownloads = new Map<number, { url: string; finalUrl?: string; at: number }>();
 
 const UNBOUND_TTL_MS = 30_000;
@@ -97,7 +96,6 @@ let holdAttachFn: AttachHoldFn | null = null;
 
 let releaseAttachHoldFn: AttachHoldFn | null = null;
 
-/** 打破与 debugger.ts 的循环依赖：由 index/exec 在加载后注入。 */
 export function bindAttachHolds(hold: AttachHoldFn, release: AttachHoldFn): void {
   holdAttachFn = hold;
   releaseAttachHoldFn = release;
@@ -122,7 +120,6 @@ function listenPageEvents(): void {
   events.addListener((source, method, params) => {
     if (source.tabId == null) return;
 
-    // 故意不处理 Network.* —— 留给 network-log 唯一监听器。
     if (method.startsWith("Network.")) return;
     void onDebuggerEvent(source.tabId, method, (params ?? {}) as Record<string, unknown>);
   });
@@ -230,7 +227,7 @@ async function onDebuggerEvent(tabId: number, method: string, params: Record<str
     notifyWaiters(matched.arm);
   }
 
-  // Page.downloadProgress 故意不处理：CDP 把中断也报成 canceled，完成与否只认 chrome.downloads。
+  // WHY: Page.downloadProgress 故意不处理：CDP 把中断也报成 canceled，完成与否只认 chrome.downloads。
 }
 
 function listenDownloads(): void {
@@ -260,7 +257,6 @@ function listenDownloads(): void {
   });
 }
 
-/** 按 chrome.downloads 当前记录更新账本；完成时的路径和字节数也从这里读。 */
 async function refreshChromeDownload(chromeId: number): Promise<void> {
   const [item] = await chrome.downloads.search({ id: chromeId }).catch(() => []);
 
@@ -288,7 +284,6 @@ function notifyDownloadWaiters(downloadId: string): void {
   for (const done of list) done();
 }
 
-/** 等到 chrome.downloads 报完成或中断；超时就原样返回，由调用方如实说「还没下完」。 */
 async function waitDownloadSettled(downloadId: string, timeoutMs: number): Promise<void> {
   const download = ledger.downloads.get(downloadId);
 
@@ -340,7 +335,6 @@ function clearArmTimer(token: string): void {
   armTimers.delete(token);
 }
 
-/** 幂等开启 Page 域；调用方已 attach。不碰 Network。 */
 export async function enablePageEventCapture(tabId: number, _opts?: { mode?: "fresh" | "late" }): Promise<void> {
   listenPageEvents();
   listenTabPopups();
@@ -375,7 +369,6 @@ export async function armEventForTab(input: {
   type: PageEventKind;
   timeoutMs?: number;
 }, beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void;noteEffect?: () => void}): Promise<ArmedPageEvent> {
-  // 没有 downloads 权限就收不到完成与否，不能接下载。
   if (input.type === "download" && !chrome.downloads?.onCreated) {
     throw new Error("DOWNLOAD_API_UNAVAILABLE: chrome.downloads is not available; page downloads cannot be confirmed.");
   }
@@ -447,7 +440,6 @@ async function resetArmSideEffects(arm: ArmedPageEvent): Promise<void> {
       });
     }
   } catch {
-    /* detach / 页面已毁 */
   }
 }
 
@@ -516,7 +508,6 @@ export async function waitArmedEvent(token: string, timeoutMs?: number): Promise
   return consumedPayload(consumeArm(ledger, matched.token), timeoutMs);
 }
 
-/** 下载开始后另给一段等完成的时间；调用方给了更长的 timeoutMs 就按它。 */
 function downloadSettleMs(timeoutMs?: number): number {
   return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) ? Math.min(Math.max(timeoutMs, DOWNLOAD_SETTLE_MS), 120_000) : DOWNLOAD_SETTLE_MS;
 }
@@ -534,10 +525,6 @@ export async function disarmArmedEvent(token: string): Promise<ArmedPageEvent> {
 
 interface DialogWatch { opened: Promise<OpenedDialog>; stop: () => void }
 
-/**
- * 等这一页弹出原生对话框（alert/confirm/prompt）。调用方在派发输入前开始等，结束时 stop。
- * 页面事件依赖调试器附着时开启的 Page 域；没开启时永远不会触发，调用方照旧等原命令返回。
- */
 export function watchDialog(tabId: number): DialogWatch {
   let notify: (dialog: OpenedDialog) => void = () => {};
 
@@ -573,7 +560,6 @@ export function readDialogInfo(tabId: number) {
   };
 }
 
-/** 这一页有未处理的原生对话框时，页面脚本被挡住，读取只会白等到超时；直接报出对话框与处理方式。 */
 export function assertNoPendingDialog(tabId: number): void {
   const { dialog } = readDialogInfo(tabId);
 
@@ -593,7 +579,6 @@ export async function handleJsDialog(
 
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
-  // promptText 只在 accept 且调用方给了值时才带上；缺省时这个键不出现。
   if (accept && promptText !== undefined) {
     await chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", { accept, promptText });
   } else {

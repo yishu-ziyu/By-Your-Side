@@ -1,4 +1,3 @@
-/** Real extension + >10 MB screenshot through MiniMax's actual protocol. --live checks the real model; default uses a provider stub enforcing the observed byte limit. */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';

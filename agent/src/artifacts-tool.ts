@@ -1,42 +1,20 @@
-/**
- * 会话里的文件（产物）：模型写出 CSV、Markdown、HTML 等文本文件，侧栏显示成卡片，用户点一下下载。
- * 命令沿用 Pi web-ui 的 artifacts 工具约定（create / update / rewrite / get / delete），模型对它已熟悉；
- * 扩展可注入持久存储，事务完成后每次改动发 `artifact` 事件，侧栏据此画卡片。
- * `browser_run` 的 `browser.saveFile` 写进同一文件区，工具拿到的大段数据不经模型重打。
- * 只有交给用户的文件才有卡片：模型存文件时标 deliver，没标的是助手自己用的中间文件（如要上传的文件），
- * 照样存、能读能改，但侧栏不显示。
- */
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 import type { AgentUiEvent } from "../../shared/protocol.js";
 import { defineTool } from "./define-tool.js";
 
-/** 单个文本文件上限；图片另有独立上限。 */
 const ARTIFACT_MAX_CHARS = 256_000;
 
-/** 交给用户的截图（PNG 的 base64）上限：约 6 MB 图片；更大的整页长图请用户缩小范围。 */
 const IMAGE_ARTIFACT_MAX_CHARS = 8_000_000;
 
-/** 只接受一层文件名：不许带目录、不许以点开头，扩展名决定侧栏怎么显示与下载。 */
 const FILENAME = /^[^/\\:*?"<>|.][^/\\:*?"<>|]{0,99}\.[A-Za-z0-9]{1,8}$/;
 
-/**
- * 本会话的文件区：`artifacts` 工具与 `browser_run` 里的 `browser.saveFile` 共用同一份，
- * 规则（文件名、大小）与侧栏卡片事件只在这里一处。
- */
 export interface ArtifactStore {
-  /** 文件内容；截图文件是 base64，用 isImage 区分。 */
   get(filename: string): string | undefined;
-  /** 这个文件是交给用户的图片（内容是 base64，不能当文字读或改）。 */
   isImage(filename: string): boolean;
   names(): string[];
-  /**
-   * 校验文件名与大小后保存；返回是否覆盖了同名文件、侧栏是否显示卡片。
-   * deliver 为真或这个文件已经交给过用户时才发 `artifact` 事件（卡片），否则只存不显示。
-   */
   save(filename: string, content: string, deliver?: boolean): { overwritten: boolean; shown: boolean };
-  /** 把一张 PNG 图（base64）存成交给用户的图片文件：文件名自动取 截图-<本地时间>.png，同秒重名加序号。 */
   saveImage(base64: string, at?: Date): { filename: string };
   delete(filename: string): boolean;
   flush?(): Promise<void>;
@@ -57,7 +35,6 @@ export interface ArtifactPersistence {
 export function createArtifactStore(emit: (event: AgentUiEvent) => void, persistence?: ArtifactPersistence, initial: ArtifactData[] = []): ArtifactStore {
   const files = new Map<string, string>();
   const images = new Set<string>();
-  /** 已经有卡片的文件：之后再改不必重标 deliver。恢复出来的文件不知道当初标没标，按有卡片算（与升级前一致）。 */
   const shown = new Set<string>();
 
   for (const item of initial) {
@@ -70,7 +47,6 @@ export function createArtifactStore(emit: (event: AgentUiEvent) => void, persist
   let tail: Promise<void> = Promise.resolve();
   let failure: unknown;
 
-  /** 先落盘再发事件；visible 为假（中间文件）时只落盘，不发侧栏事件。 */
   const publish = (event: Extract<AgentUiEvent,{kind:"artifact"}>, visible = true) => {
     if (!persistence) {
       if (visible) emit(event);
@@ -143,14 +119,12 @@ export function createArtifactStore(emit: (event: AgentUiEvent) => void, persist
   };
 }
 
-/** 程序里存文件的回执：只有文件名与长度，内容不回到模型上下文；shown 说侧栏有没有这张卡片。 */
 export type SavedFileReceipt = { filename: string; chars: number; lines: number; overwritten: boolean; shown: boolean };
 
 const SAVE_FILE_PARAMS = Type.Object({ filename: Type.String(), content: Type.String({ minLength: 1 }), deliver: Type.Optional(Type.Boolean()) });
 
 export type SaveFileParams = Static<typeof SAVE_FILE_PARAMS>;
 
-/** 程序传来的是 JSON；按 schema 认，不把数组、对象或空内容悄悄转成文本。 */
 export function isSaveFileParams(value: unknown): value is SaveFileParams {
   return Check(SAVE_FILE_PARAMS, value);
 }
@@ -159,7 +133,6 @@ export function rejectSaveFileParams(): never {
   throw new Error("INVALID_ARGUMENT: saveFile 需要 {filename: 字符串, content: 非空字符串, deliver?: 布尔}；表格或对象先在程序里拼成 CSV/JSON 文本，空内容不保存。");
 }
 
-/** `browser.saveFile({filename, content, deliver})` 的宿主实现：与 `artifacts` 同一文件区、同一规则；deliver 为真才有卡片。 */
 export function saveFileFromProgram(store: ArtifactStore, params: SaveFileParams): SavedFileReceipt {
   const filename = params.filename.trim();
   const { content } = params;
@@ -169,7 +142,7 @@ export function saveFileFromProgram(store: ArtifactStore, params: SaveFileParams
   return { filename, chars: content.length, lines, overwritten, shown };
 }
 
-type ArtifactsToolOptions = { emit: (event: AgentUiEvent) => void; /** 与 browser_run 共用时传入；不传则自建。 */ store?: ArtifactStore };
+type ArtifactsToolOptions = { emit: (event: AgentUiEvent) => void;  store?: ArtifactStore };
 
 type Command = "create" | "update" | "rewrite" | "get" | "delete";
 
@@ -204,7 +177,6 @@ export function createArtifactsTool(opts: ArtifactsToolOptions): ToolDefinition 
 
       assertArtifactFilename(filename);
 
-      // 截图是给用户看的图片，内容是 base64：不当文字读回、也不能改，只能删。
       if (store.isImage(filename) && params.command !== "delete" && params.command !== "create") {
         if (params.command === "get") return { content: [{ type: "text" as const, text: `${filename} 是交给用户的截图，已在侧栏显示成图片；图片内容不能当文字读取。` }], details: undefined };
         throw new Error(`${filename} 是截图图片，不能用 ${String(params.command)} 修改；需要新图请重新截图。`);

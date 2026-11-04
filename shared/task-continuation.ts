@@ -57,7 +57,6 @@ export function isWaitCondition(value: unknown): value is WaitCondition {
   if (Object.keys(value).some(key => !conditionKeys.has(key))) return false;
   const selector = value.target.startsWith('loc=css:') ? value.target.slice(8).trim() : value.target.trim();
 
-  // Persistent conditions cannot reuse snapshot references or an executable locator language.
   if (!selector || selector.startsWith('@') || /^(?:loc=|(?:javascript|xpath|text|role|href):)/i.test(selector) || /[\u0000-\u001f]/.test(selector)) return false;
   if (value.operator === 'changed' && /^(?:body|html|:root|\*)$/i.test(selector)) return false;
   if (typeof value.property !== 'string' || !['exists', 'text', 'value', 'enabled', 'checked', 'visible'].includes(value.property)

@@ -1,8 +1,3 @@
-/**
- * A2：输入 @ 把别的标签页拉进这次提问。
- * 弹层列站点图标、标题、域名；当前页排第一。选中后飞进输入区，变成页面胶囊。
- * 待读（描边）→ 已读（实心 + ✓，扩展后台真读到正文才变）→ 读不到（划线 + 原因）。
- */
 import { targetWindowId } from "./target-window.js";
 import { siteGlyph } from "./answer-actions.js";
 import { reducedMotion } from "./branch-graph.js";
@@ -23,7 +18,6 @@ interface TabMentions {
   items: () => MentionedTab[];
   clear: () => void;
   remove: (tabId: number) => void;
-  /** 切回会话时放回这段会话没发出去的 @ 页面。 */
   restore: (items: MentionedTab[], options?: { keepStatus?: boolean }) => void;
   isOpen: () => boolean;
 }
@@ -47,7 +41,6 @@ function isBrowserPage(url: string): boolean {
   return /^(chrome|edge|about|devtools|chrome-extension):/i.test(url);
 }
 
-/** 光标前最近一个独立的 @，后面直到光标的筛选字（不含空格）。 */
 function mentionQuery(value: string, cursor: number): { start: number; query: string } | null {
   const before = value.slice(0, cursor);
   const at = before.lastIndexOf("@");
@@ -62,7 +55,6 @@ export function mountTabMentions(opts: {
   composerEl: HTMLElement;
   inputEl: HTMLTextAreaElement;
   stripEl: HTMLElement;
-  /** 用户去掉了一页：草稿要跟着存。 */
   onChange?: () => void;
 }): TabMentions {
   const { composerEl, inputEl, stripEl } = opts;

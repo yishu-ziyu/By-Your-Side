@@ -1,11 +1,3 @@
-/**
- * 输入框下面的工具行（加号、模型开关、话筒、语音、发送）一直显示：空着、没点进去时也在。只装扩展，脚本模型不需要，无头。
- *
- *   npx tsx scripts/acceptance/real-path/composer-expand.mts --headless
- *
- * 失败方式：打开侧栏不点任何地方就看不到或点不到加号、模型开关；点进空框时输入框高度跳动；按住工具行空白时焦点没进输入框或工具闪一下；
- * 打完字失焦、清空、去掉附件、点发送后、出错后失焦，工具收起来；窄到 320 发送键不见或页面横向溢出。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -37,7 +29,6 @@ const blurComposer = (panel: string) => rp.evaluate(panel, `(() => {
   return true;
 })()`);
 
-// 工具要让读屏也读得到：查 Chrome 自己的无障碍树，不看 DOM 属性。
 const toolsInAx = async (panel: string) => {
   const { root } = await rp.cdp.send("DOM.getDocument", { depth: 0 }, panel);
   const shown: string[] = [];
@@ -117,7 +108,6 @@ try {
   await until(async () => (await view(panel)).starter || undefined, 20_000, "空侧栏出现连模型");
   await sleep(400);
 
-  // 没连模型时模型开关本来就藏着；这里当作已知模型，把它放出来再看它在不在工具行里。
   await rp.evaluate(panel, `document.querySelector("#think-chip").hidden = false; true`);
   await sleep(100);
   const idle = await view(panel);
@@ -168,7 +158,6 @@ try {
   const cleared = await view(panel);
   check("清空后：工具还在", rowShown(cleared), cleared);
 
-  // 和在系统文件框里选好图一样：文件交给附件菜单背后的那个文件框。
   const image = join(out, "attach.png");
   await writeFile(image, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64"));
   const { root } = await rp.cdp.send("DOM.getDocument", { depth: 0 }, panel);
@@ -180,7 +169,6 @@ try {
   await sleep(500);
   const withTile = await view(panel);
   await rp.screenshot(panel, join(out, "04-tile.png"));
-  // 材料栏默认收起，先展开才点得到附件那一行。
   await rp.click(panel, "#materials-tray-root .mt-item[data-kind='attachment'] .mt-item-remove");
   await until(async () => (await rp.evaluate(panel, `!document.querySelector("#materials-tray-root [data-kind='attachment']")`)) || undefined, 5_000, "附件去掉");
   await blurComposer(panel);
@@ -206,7 +194,6 @@ try {
   const errorBlur = await view(panel);
   await rp.screenshot(panel, join(out, "06-error.png"));
   check("出错后失焦：工具还在", erred.errorCard && rowShown(errorBlur), errorBlur);
-  // 没连模型时发一句话：只由那张卡说明一次；点进输入框时的预热不再各报一行红字，输入框上方也不再重复一行「未送达」。
   const repeats = await rp.evaluate(panel, `({ cards: document.querySelectorAll(".needs-model-card").length, errors: document.querySelectorAll(".msg.error").length, banner: !!document.querySelector("#materials-tray-root .mt-delivery"), autoSend: (document.querySelector(".needs-model-card")?.textContent ?? "").split("自动发").length - 1 })`);
   check("没连模型：同一件事只说一次", JSON.stringify(repeats) === JSON.stringify({ cards: 1, errors: 0, banner: false, autoSend: 1 }), repeats);
 

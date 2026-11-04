@@ -1,10 +1,3 @@
-/**
- * 改页面的工具已经做完、模型下一句还没回来时强杀浏览器：重开侧栏后任务不自己接着做，用户点「继续原任务」后做完，提交只发生一次。
- *   npx tsx scripts/acceptance/real-path/restart-resume.mts --headless
- *   npx tsx scripts/acceptance/real-path/restart-resume.mts --headless --wipe
- * --wipe 在重开前清掉 pi-durable 的存储，任务不该自己做完（用来证明这条用例会失败）。
- * 提交次数记在浏览器外面的本机页面上，扩展重载或浏览器被强杀都不清零。
- */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -33,7 +26,6 @@ await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 
 const answer = { text: ANSWER, delayMs: 30_000 };
 let sawToolResult = false;
-// 用户点「继续原任务」后的那次请求：对话里还带着强杀前那次点击的结果吗（真模型靠它知道已经点过）。
 let continuationCarriesClick: boolean | null = null;
 const submitRule = { match: "提交按钮", steps: [{ tool: { name: "click", args: { target: "#submit", label: "提交" } } }, answer] as Step[] };
 const model = await startModel();
@@ -47,7 +39,6 @@ function startModel() {
     if (messages.some(message => message.role === "tool")) sawToolResult = true;
     if (continuationCarriesClick === null && JSON.stringify(messages).includes("[RESTART CONTINUATION]")) {
       continuationCarriesClick = messages.some(message => message.role === "tool");
-      // 像读过记录的模型那样：已经点过，只回答。
       submitRule.steps = [answer];
     }
   }));
@@ -105,7 +96,6 @@ try {
     assert.equal(hits, 1, "清掉存储后也不该再点一次");
     assert.equal(body.includes(ANSWER), false, "清掉存储后任务不该自己答完");
   } else {
-    // 重启后不自己接着做：等用户看过页面、点「继续原任务」才做完。
     assert.equal((await text()).includes(ANSWER), false, "用户点继续之前任务不该自己答完");
     await until(async () => await rp.evaluate(againId, `(() => { const r = document.querySelector("#resume-entry-root"); return !!r && !r.hidden && !!r.querySelector(".resume-action"); })()`) || undefined, 15_000, "侧栏出现「继续原任务」");
     const reopened = fromOtherPage === 'missing' ? null : await rp.cdp.send("Target.createTarget", { url: `http://127.0.0.1:${port}/`, background: !!fromOtherPage });

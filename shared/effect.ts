@@ -1,47 +1,31 @@
-/**
- * 动作效果证据（纯逻辑，无 DOM / 无 chrome 依赖）。
- *
- * 判定只回答一个确定性问题：**页面动没动**，不猜成功失败。
- * 强证据 = 几乎不可能由页面自身产生的变化（目标自身状态、目标区块、body 顶层、页面提示）；
- * 弱证据 = 动态页面每时每刻都在产生的全局数字，只展示，不参与 changed。
- */
-
-/** 目标所在区块的候选；找不到时退回 body（按钮的兄弟节点里出现表单是最常见的交互形态）。 */
 export const EFFECT_SCOPE_SEL =
   'section,form,[role=dialog],[role=listbox],[role=menu],main,article,[class*="modal" i],[class*="dialog" i],[class*="popover" i],[class*="dropdown" i]';
 
-/** 页面自身是否在动的采样间隔与阈值。 */
 export const EFFECT_VOLATILE_WINDOW_MS = 60;
 
 export const EFFECT_VOLATILE_DELTA = 3;
 
-/** 早停轮询：有强证据立即返回，否则最多等这么久。 */
 const EFFECT_SETTLE_INTERVAL_MS = 100;
 
 const EFFECT_SETTLE_TIMEOUT_MS = 600;
 
-/** 点击后网站的请求还没回来时，最多等这么久。 */
 export const EFFECT_SETTLE_MAX_MS = 3000;
 
-/** 弱证据阈值：全局 DOM 节点数 / 全局正文长度。 */
 const EFFECT_WEAK_DOM_DELTA = 3;
 
 const EFFECT_WEAK_TEXT_DELTA = 4;
 
-/** 目标区块文本阈值：这块地方几乎不会漂来别的噪声。 */
 const EFFECT_SCOPE_TEXT_DELTA = 2;
 
 export interface EffectTargetState {
   gone: boolean;
   tag: string;
-  /** 目标自身的可见文本（按钮改名是最常见的一类真实反应：暂停 → 播放）。 */
   text?: string;
   value?: string;
   checked?: string;
   selected?: string;
   expanded?: string;
   disabled?: string;
-  /** 媒体元素的播放状态：原生控件点击的效果只体现在这里，DOM/文本都不变。 */
   paused?: string;
   ended?: string;
   cls?: string;
@@ -53,7 +37,6 @@ export interface EffectStats {
   active: string | null;
   bodyTextLen: number;
   target: EffectTargetState;
-  /** 当前焦点是否就在被操作元素自己身上（点击的机械后果，不算页面反应）。 */
   targetActive: boolean;
   scopeKids: number;
   scopeTextLen: number;
@@ -66,18 +49,13 @@ export interface EffectBaseline extends EffectStats {
 
 export interface EffectReport {
   changed: boolean;
-  /** 强证据：可归因于这次操作的变化。 */
   evidence: string[];
-  /** 弱证据：全局数字，只作参考。 */
   weak: string[];
   volatile: boolean;
-  /** 本次新出现的页面提示（校验错误、toast 等）。 */
   alerts: string[];
-  /** 动作让页面换了地址或文档。 */
   documentChanged?: true;
 }
 
-/** 动作之后页面上新出现的东西（和模型上次读到的这一页比）。ms 是为此多花的时间。 */
 export type PageAppeared = { text: string; ms: number } | { redrawn: true; ms: number };
 
 export const EMPTY_EFFECT_REPORT: EffectReport = { changed: false, evidence: [], weak: [], volatile: false, alerts: [] };
@@ -88,12 +66,10 @@ function signed(delta: number): string {
   return delta > 0 ? `+${delta}` : `${delta}`;
 }
 
-/** 只比较「变了没有」；变化值本身可能是密码，调用方负责先把值隐去。 */
 export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport {
   const evidence: string[] = [];
   const weak: string[] = [];
 
-  // ① 目标自身：最便宜也最强。展开下拉、勾选、受控组件回滚值都不改 DOM 节点数。
   const bt = base.target, nt = now.target;
 
   if (nt.gone && !bt.gone) evidence.push("target removed from the page");
@@ -108,12 +84,10 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
     if (bt.cls !== undefined && bt.cls !== nt.cls) evidence.push("target class changed");
   }
 
-  // ② 新增页面提示：表单流程最主要的失败模式（校验错误）常常在长页面下方。
   const fresh = now.alerts.filter((alert) => !base.alerts.includes(alert));
 
   if (fresh.length) evidence.push(`⚠ page notice: ${fresh.join(" / ")}`);
 
-  // ③ body 直接子元素：弹窗、抽屉、toast 几乎都挂在这一层。
   const dBodyKids = now.bodyKids - base.bodyKids;
 
   if (dBodyKids !== 0) {
@@ -124,7 +98,6 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
     );
   }
 
-  // ④ 目标区块：局部变化几乎不可能是别处噪声漂过来的。
   const dScopeKids = now.scopeKids - base.scopeKids;
 
   if (dScopeKids !== 0) evidence.push(`target region DOM ${signed(dScopeKids)} node(s)`);
@@ -136,7 +109,6 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
     }
   }
 
-  // ⑤ 弱证据：页面自己也会产生，不参与判定。
   const dEls = now.els - base.els;
 
   if (isFiniteDelta(dEls, EFFECT_WEAK_DOM_DELTA)) weak.push(`DOM ${signed(dEls)} node(s)`);
@@ -150,41 +122,31 @@ export function diffEffect(base: EffectBaseline, now: EffectStats): EffectReport
   return { changed: evidence.length > 0, evidence, weak, volatile: !!base.volatile, alerts: fresh };
 }
 
-/** 点击窗口内页面发出的请求（来自被动网络记录）。 */
 interface EffectRequest {
   method: string;
   url: string;
   resourceType: string;
   startedAt: number;
-  /** 下面四项来自被动网络记录：都没有时，网站还没回应。 */
   status?: number;
   endedTs?: number;
   failed?: string;
   canceled?: boolean;
 }
 
-/** 不算页面对点击的反应：取数类方法，以及浏览器标明的打点、跨域预检与安全报告。 */
 const QUIET_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 const QUIET_TYPES = new Set(["ping", "preflight", "cspviolationreport"]);
 
-/** 粗略的“同一网站”：主机名最后两段相同（IP 与单段主机按主机名本身）。多段公共后缀（如 .co.uk）会放宽，只影响是否计入证据。 */
 function siteOf(hostname: string): string {
   if (/^[\d.]+$/.test(hostname) || hostname.includes(":")) return hostname;
 
   return hostname.split(".").slice(-2).join(".");
 }
 
-/** 像密钥的路径段（够长且字母数字混合，或很长）换成 *：如写入链接里的令牌。 */
 function redactPath(pathname: string): string {
   return pathname.split("/").map(seg => (seg.length >= 8 && /\d/.test(seg) && /[a-z]/i.test(seg)) || seg.length >= 24 ? "*" : seg).join("/");
 }
 
-/**
- * 点击后页面发出的写类请求算强证据（保存结果可能显示在表单外，DOM 判据会漏判）。
- * 只认点击窗口 [since, until] 内开始、与当前页面同一网站的非 GET 请求；不认打点、预检、安全报告与第三方请求。
- * 只写方法、主机与隐去密钥段的路径，不写查询参数与正文。这只说明页面对点击有反应，不说明业务成功。
- */
 export function requestEvidence(requests: readonly EffectRequest[], since: number, until: number, pageUrl: string): string[] {
   let pageSite: string;
 
@@ -209,14 +171,8 @@ export function requestEvidence(requests: readonly EffectRequest[], since: numbe
   return sent.length > 3 ? [...sent.slice(0, 3), `and ${sent.length - 3} more request(s)`] : sent;
 }
 
-/** 只等页面取数和换文档；脚本、图片、字体这类附属资源不等，否则一次跳转要多等好几秒。 */
 const WAITED_TYPES = new Set(["xhr", "fetch", "document"]);
 
-/**
- * 动作之后开始、网站还没回应的同网站请求有几条。GET 也算：它不能证明页面有反应，但结果常在它回来之后才画出来。
- * 收到响应头就算回应了：流式回复、长轮询的正文可能一直不结束，等正文结束会让每次点击都等满上限。
- * 读不出页面网站时按 0 处理，即不多等。
- */
 export function pendingRequests(requests: readonly EffectRequest[], since: number, pageUrl: string): number {
   let pageSite: string;
 
@@ -237,7 +193,6 @@ export function pendingRequests(requests: readonly EffectRequest[], since: numbe
   }).length;
 }
 
-/** 点击窗口里开始的一次浏览器下载（取自 chrome.downloads；filename 只留文件名）。 */
 export interface EffectDownload {
   url: string;
   referrer: string;
@@ -246,15 +201,9 @@ export interface EffectDownload {
   state: "in_progress" | "interrupted" | "complete";
   bytes?: number;
   error?: string;
-  /** Chrome 判为危险、等用户在下载栏里选「保留」。 */
   danger?: string;
 }
 
-/**
- * 点击触发的下载算强证据，并如实写出 Chrome 报告的结果。
- * 没有先 arm_event 的下载也要进回执：不然文件已存好，回执却说「页面没变化」，网络记录只剩一条 ERR_ABORTED 的跳转，
- * 模型和目标核对都读成「没导出」，于是一再重导。只认与当前页面同一网站发起的下载；完成与否只认 chrome.downloads。
- */
 export function downloadEvidence(downloads: readonly EffectDownload[], pageUrl: string): string[] {
   let pageSite: string;
 
@@ -272,7 +221,6 @@ export function downloadEvidence(downloads: readonly EffectDownload[], pageUrl: 
     }
   };
 
-  // 下载没有 tabId：说成「处理这次点击期间开始的」，不断言就是这次点击产生的；文件不对时仍可重做。
   return downloads.filter(d => sameSite(d.referrer) || sameSite(d.url)).map(d => {
     const head = `a download "${d.filename}" started while this click was processed`;
 
@@ -286,7 +234,6 @@ export function downloadEvidence(downloads: readonly EffectDownload[], pageUrl: 
   });
 }
 
-/** 给模型看的工具结果文字：有变化给清单，没变化明说，只许正常动作再试一次。action 是动作的英文名（click、key press）。 */
 export function formatEffectReport(report: EffectReport | undefined, action = "click"): string {
   if (!report) return "";
   const detail = [...report.evidence, ...report.weak].join("; ");
@@ -302,13 +249,6 @@ export function formatEffectReport(report: EffectReport | undefined, action = "c
   return `${tail}${weak}. Likely causes: the element is only a container and the real control is inside or beside it; the effect is asynchronous; or the page ignored this input. Observe the page and check whether it took effect where its result would show (a list, a message, another page). Retry the normal action once only if it clearly did not; never repeat a submit, send or create whose result you cannot see. If it still has no effect, stop and tell the user which step had no effect.`;
 }
 
-/**
- * 轮询：每 intervalMs 取一次报告，出现强证据就返回；否则到 timeoutMs 返回最后一次。
- * pending 报告动作后发出的请求还有几条没完成：有就接着等，完成后再看一次（结果常在请求回来后才画出），
- * 最多等到 maxMs：一看到「加载中」就返回、或在请求回来前就判「没变化」都会判错。
- * 一次都没拿到报告（poll 一直返回 null/抛错，例如页面已经导航）时返回 undefined——
- * 不能把「拿不到证据」说成「没有变化」。
- */
 export async function settleEffectReport(
   poll: () => Promise<EffectReport | null | undefined>,
   opts: { now?: () => number; sleep?: (ms: number) => Promise<void>; timeoutMs?: number; intervalMs?: number; maxMs?: number; pending?: () => number } = {},
@@ -334,7 +274,6 @@ export async function settleEffectReport(
 
       if (now() >= hardDeadline) return last;
     } else if (waited) {
-      // 请求刚回来：页面多半还没画出结果，隔一拍再看一次。
       waited = false;
     } else if (last?.changed || now() >= deadline) return last;
 

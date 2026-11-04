@@ -7,7 +7,7 @@ import { readCurrentDocument } from './exec/page-readiness.js';
 const allowedRoles = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'treeitem', 'textbox', 'searchbox', 'combobox', 'spinbutton']);
 
 /**
- * role-less 悬停触发器的准入判据。
+ * WHY: role-less 悬停触发器的准入判据。
  *
  * 页面作者常用 `<div tabindex=0>账号</div>` 这种写法做悬停菜单触发器：它没有 ARIA role，
  * Chrome 的 AX 树给的 role 是 `generic`，而它是页面上唯一能展开 CSS hover 菜单的东西。
@@ -65,7 +65,7 @@ function decisionControls(nodes: readonly AxNodeLite[], refs?: readonly number[]
     childrenOf.set(n.parentId, list);
   }
 
-  /** Chrome 不为 generic 容器做 name-from-contents，名字散在子 StaticText 里；取文本后代拼接。 */
+  /** WHY: Chrome 不为 generic 容器做 name-from-contents，名字散在子 StaticText 里；取文本后代拼接。 */
   const textName = (n: AxNodeLite): string => {
     const parts: string[] = [];
     const stack = [...(childrenOf.get(n.nodeId) ?? [])];
@@ -93,7 +93,6 @@ function decisionControls(nodes: readonly AxNodeLite[], refs?: readonly number[]
   };
 
   const effectiveName = (n: AxNodeLite): string => (n.name?.value ?? '').trim() || textName(n);
-  /** 预设每轮只算一次：两个遍历循环（descendants 计数 + 主循环）必须用同一套准入结果。 */
   const admitted = new Set<string>();
 
   for (const n of nodes) {
@@ -196,9 +195,6 @@ export function decisionDialogs(nodes: readonly AxNodeLite[]): string[] {
 }
 
 function decisionControlsTruncated(nodes: readonly AxNodeLite[], controls: readonly BrowserControl[]): boolean {
-  // Use the same admission rule as collection, including focusable generics.
-  // Counting only allowedRoles made a fully collected three-control menu look
-  // truncated as soon as its role-less trigger was correctly admitted.
   const admitted = new Set(decisionControls(nodes).map(control => control.ref));
 
   const observed = nodes.filter(n => !n.ignored && n.backendDOMNodeId && admitted.has(`@${n.backendDOMNodeId}`)
@@ -312,7 +308,6 @@ function partitionByScope(controls: readonly BrowserControl[]): Array<{ id: stri
   return order.map(id => map.get(id)!);
 }
 
-/** Bound the model view; host keeps `collected` for verification and continue-reads. */
 export function selectObservationView(input: ObservationViewInput): ObservationView {
   const { collected, tabs = [], collectionComplete, collectionLimitReached, generation, textTruncated } = input;
 
@@ -331,7 +326,6 @@ export function selectObservationView(input: ObservationViewInput): ObservationV
     if (start >= partitions.length) throw new Error('DECISION_CURSOR: 分区摘要游标已过期。');
     const slice = partitions.slice(start, start + SCOPE_SUMMARY_BUDGET);
     const scopesHasMore = start + SCOPE_SUMMARY_BUDGET < partitions.length;
-    // Scope-summary continue does not change the control view; keep first control page.
     const controlView = selectObservationView({ ...input, cursor: undefined, viewScopeId });
 
     return {
@@ -368,7 +362,6 @@ export function selectObservationView(input: ObservationViewInput): ObservationV
     pool = part.controls;
     viewScopeLabel = part.label;
   } else if (hasSemanticScopes && collected.length > VIEW_CONTROL_BUDGET) {
-    // Default first view: first semantic partition that fits, else first partition page.
     const first = partitions[0]!;
 
     if (first.controls.length <= VIEW_CONTROL_BUDGET) {
@@ -385,7 +378,6 @@ export function selectObservationView(input: ObservationViewInput): ObservationV
   if (offset === pool.length && pool.length > 0) throw new Error('DECISION_CURSOR: 控件游标已过期。');
   const controls = pool.slice(offset, offset + VIEW_CONTROL_BUDGET);
   const hasMoreInPool = offset + controls.length < pool.length;
-  // More partitions after the current scoped/default window.
   let hasMorePartitions = false;
 
   if (viewScopeId && hasSemanticScopes) {
@@ -411,7 +403,6 @@ export function selectObservationView(input: ObservationViewInput): ObservationV
   const tabSlice = tabs.slice(0, VIEW_TAB_BUDGET);
   const tabsHasMore = tabs.length > VIEW_TAB_BUDGET;
 
-  // 分段构造：可选字段只在存在时才落到 view 上，保持"未提供就不带这个键"的语义。
   const view: ObservationView = {
     controls,
     tabs: tabs.length ? tabSlice : undefined,
@@ -453,7 +444,6 @@ export function selectObservationView(input: ObservationViewInput): ObservationV
   return view;
 }
 
-/** Collect interactive controls with an explicit host budget; never use text-render refs as existence. */
 export function collectDecisionControls(nodes: readonly AxNodeLite[], limit = MAX_COLLECTED_CONTROLS): {
   controls: BrowserControl[];
   collectionComplete: boolean;
@@ -468,7 +458,7 @@ export function collectDecisionControls(nodes: readonly AxNodeLite[], limit = MA
   return { controls: all.slice(0, limit), collectionComplete: false, collectionLimitReached: true };
 }
 
-// Exclude our own UI by DOM ownership, not by a business/site/name heuristic. Closed
+// WHY: Exclude our own UI by DOM ownership, not by a business/site/name heuristic. Closed
 // shadow roots are visible to CDP; the page cannot turn an assistant control into a task candidate.
 export async function readDecisionTree(tabId: number): Promise<AxNodeLite[]> {
   const { root } = await sendCommand<{
@@ -515,7 +505,6 @@ export async function readDecisionTree(tabId: number): Promise<AxNodeLite[]> {
   return (tree.nodes ?? []).filter(n => !n.backendDOMNodeId || !excluded.has(n.backendDOMNodeId));
 }
 
-/** One currently issued observation per execution member/tab. Consumed before any possible write. */
 class BrowserObservationRegistry {
   private pages = new Map<string, {
     member: string;
@@ -561,7 +550,6 @@ class BrowserObservationRegistry {
   peekCollected(member: string, tabId: number): BrowserControl[] | undefined {
     return this.pages.get(`${member}:${tabId}`)?.collected.map(c => ({ ...c }));
   }
-  /** Same-generation continue-read: host-owned collected baseline, not a model claim. */
   readActive(member: string, tabId: number): {
     page: BrowserObservation;
     collected: BrowserControl[];
@@ -612,7 +600,6 @@ class BrowserObservationRegistry {
       }
     }
     else {
-      // Target must appear in the issued view; verification uses the full collected baseline.
       const control = entry.page.controls.find(c => c.ref === guard.target);
 
       if (!control || control.disabled || control.protected || params.target !== control.ref || params.point !== undefined) {
@@ -627,13 +614,11 @@ class BrowserObservationRegistry {
         throw new Error('DECISION_INVALID: 按键目标不在焦点上。');
       }
 
-      // 「填完回车」不走这条路：这里核对的是填写目标，回车要的焦点核对在 press_key 那一条。
       if (operation === 'fill' && (control.readOnly || !['textbox', 'searchbox', 'combobox', 'spinbutton'].includes(control.role) || typeof params.value !== 'string' || params.submit !== undefined)) {
         throw new Error('DECISION_INVALID: 填写目标或参数无效。');
       }
     }
 
-    // Return collected controls as the verification baseline (view stays on entry.page for identity).
     return { ...entry.page, controls: entry.collected };
   }
 }
@@ -688,7 +673,6 @@ export async function assertBrowserDecision(member: string, operation: string, p
     viewport = result[0]?.result;
   }
 
-  // `page.controls` is the collected baseline from consume(); never compare a short view to a full tree.
   const changed = browserContextChange(page, { documentId: current!.documentId!, url: tab.url!, controls: fresh, dialogs: decisionDialogs(nodes), viewport }, guard.target);
 
   if (changed) {

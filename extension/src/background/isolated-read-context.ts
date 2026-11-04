@@ -1,6 +1,6 @@
 import {sendCommand} from './debugger.js';
 
-/** Never fall back to MAIN: a page can install effectful getters there. */
+/** WHY: Never fall back to MAIN: a page can install effectful getters there. */
 export async function isolatedReadContext(tabId:number):Promise<number> {
   const tree=await sendCommand<{frameTree?:{frame?:{id?:string}}}>(tabId,'Page.getFrameTree');
   const frameId=tree.frameTree?.frame?.id;

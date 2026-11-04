@@ -33,18 +33,16 @@ async function readStepVoiceKey(): Promise<string> {
       return key;
     }
   }
-  catch { /* one safe diagnostic, no key material */
+  catch {
   }
 
   throw new Error("请先配置本机 StepFun 开放平台 API Key，再重试。");
 }
 
-/** 仍未确认（unknown）或被阻碍（blocked）的执行项：用户必须知道的缺口，保留人话播报。 */
 function hasUnresolvedObstacle(snapshot: TaskProgressSnapshot): boolean {
   return projectTaskView(snapshot).outstanding.some(item => item.status === 'unknown' || item.status === 'blocked');
 }
 
-/** One explicit human voice connection; background task sessions stay independent. */
 export class VoiceService {
   private readonly deliveryOwners = new Map<string, string>();
   private active: {
@@ -64,8 +62,6 @@ export class VoiceService {
   }
   async handle(conversationId: string, message: VoiceClientMessage): Promise<void> {
     if (message.command.kind === "start") {
-      // Diagnostic capture is an explicit, server-confirmed mode; it is built without
-      // any route callable, so a diagnostic session cannot touch tasks or pages.
       const diag = message.command.diagnostic === true;
 
       if (this.active?.id === message.voiceId && this.active.conversationId === conversationId) {
@@ -87,7 +83,6 @@ export class VoiceService {
       const initialDelivery = initial.conversationContext?.latestDelivery;
       const announcedDeliveries = new Set<string>(initialDelivery?.id ? [initialDelivery.id] : []);
 
-      // 扩展与本机进程版本可能不同：不认识的音色退回默认，不拒绝整次开启。
       const requestedVoice = message.command.voice;
       const voice = STEP_VOICES.find(v => v.id === requestedVoice)?.id ?? DEFAULT_STEP_VOICE;
       const persona = voicePersonaText(parseVoicePersona(message.command.persona));
@@ -135,7 +130,6 @@ export class VoiceService {
         if (this.active === active) {
           active.session.close(false);
           this.active = null;
-          // 取 key 的一方最清楚去哪儿配（扩展里是设置页）。
           const detail = error instanceof Error && error.message ? error.message : "请先配置本机 StepFun 开放平台 API Key，再重试。";
           this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event: { kind: "state", state: "error", detail } });
         }
@@ -169,7 +163,6 @@ export class VoiceService {
     const active = this.active;
     if (!active) return;
 
-    // 语音排的队没开工就结束（取消、启动失败）：没有 run 可绑，只有这张收条，原委派要靠它收尾。
     const receipt = message.type === 'agent_event' && message.event.kind === 'notice' ? message.event.receipt : undefined;
 
     if (receipt?.source === 'voice' && receipt.runId === null && receipt.conversationId !== active.conversationId && (receipt.action === 'abort' ? receipt.status === 'applied' : ['rejected', 'failed', 'unknown'].includes(receipt.status))) {
@@ -286,7 +279,6 @@ export class VoiceService {
       return;
     }
 
-    // session.ts emits status idle before agent_end; do not broadcast premature empty idle on status message alone
     if (message.type === 'status' && message.state === 'idle' && !hasResult && !speakable && !hasUnresolvedObstacle(snapshot)) {
       return;
     }
@@ -306,8 +298,6 @@ export class VoiceService {
     if (!active.controls.size && snapshot.state === 'error' && snapshot.runId) {
       active.session.notify(snapshot);
     }
-    // 只有仍未确认或受阻的真实执行项才需要第二次开口；普通 running→idle 是内部状态，不补播。
-    // 已有结果文本不能呑掉未确认项（idle + 结果文本 + unknown 项仍需告知）。
     else if (!active.controls.size && snapshot.state === 'idle' && snapshot.runId && !delivery && hasUnresolvedObstacle(snapshot)) {
       active.session.notify(snapshot);
     }

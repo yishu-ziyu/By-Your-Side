@@ -5,7 +5,6 @@ import { executionKey, parseExecutionKey } from "./tab-bindings.js";
 
 const STOPPED = "worker 已停止，页面已交回父 Agent；操作未执行";
 
-/** 注册整个调用（包括异步权限检查），移交前排空；停止标记跨 SW 重启保留。 */
 class WorkerTabControl {
   private readonly stopped = new Set<string>();
   private readonly inflight = new Map<string, Set<Promise<unknown>>>();
@@ -51,7 +50,6 @@ class WorkerTabControl {
     }
 
     if (params.action !== "inspect" && params.action !== "claim") throw new Error("无效的页面管理操作");
-    // orActive：还没有工作页的新对话动手时用的是当前激活页（resolveWorkingTab 同样的取法），查归属也查这一页。
     const tabId = params.tabId ?? await getWorkingTabId(leadKey) ?? (params.orActive ? (await activeTargetTabs())[0]?.id ?? null : null);
 
     if (tabId == null) throw new Error("没有可接管的标签页");
@@ -75,8 +73,6 @@ class WorkerTabControl {
 
       if (conversationId === lead.conversationId && workers.length) throw new Error("worker 仍持有页面；请先停止并等待页面移交");
       const previous = (resource?.collaborators ?? []).filter(key => key !== leadKey);
-      // 页面级围栏在任何 await 之前就位：只封这一页，旧所有者在别的页仍可继续；
-      // 移交不是停止成员（停止成员是 release_worker 的职责），也不再有需要在抛错时回滚的成员状态。
       const releaseFence = beginTabTransfer(tabId, leadKey);
 
       try {

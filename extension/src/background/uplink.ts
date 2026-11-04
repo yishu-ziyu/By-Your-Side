@@ -1,8 +1,3 @@
-/**
- * 上行连接管理：background service worker ⇆ 扩展内 agent（offscreen 文档，见 ../inproc/）。
- * offscreen 文档建不起来时按退避重试。
- * 认证失败（hello_error）时停止自动重连，等面板触发 retry()。
- */
 import {
   PROTOCOL_VERSION,
   STORAGE_SCHEMA_VERSION,
@@ -30,7 +25,6 @@ export class Uplink {
   private retryAttempt = 0;
   private authFailed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 正在建 offscreen 文档：同时到达的第二次连接不再重复创建（重复创建会失败并误拆活连接）。 */
   private connecting = false;
   private connectStarted = 0;
 
@@ -39,7 +33,6 @@ export class Uplink {
   }
 
   start(): void {
-    // 设置里改了模型，立刻推给扩展内 agent，不用重连。
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
       const keys = Object.keys(changes);
@@ -49,14 +42,12 @@ export class Uplink {
 
       if (keys.some((key) => CORE_SETTING_KEYS.includes(key))) void this.pushCoreSettings();
 
-      // 语音 key 可能沿用阶跃星辰模型的凭据，所以凭据变了也要重算。
       if (keys.some((key) => key === INPROC_VOICE_KEY || key === INPROC_VOICE_MODEL_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX))) void this.pushVoiceKey();
     });
     void this.connectInproc();
   }
   wake(): void { if (this.transport === null) void this.connectInproc(); }
 
-  /** 面板请求重连。 */
   retry(): void {
     this.authFailed = false;
     this.retryAttempt = 0;
@@ -65,7 +56,6 @@ export class Uplink {
     void this.connectInproc();
   }
 
-  /** 已建立连接时发送并返回 true；控制权事务用 false 阻止本地提前提交。 */
   sendClientMessage(msg: ClientMessage): boolean {
     try {
       if (this.transport === "inproc" && this.inprocPort) {
@@ -84,7 +74,6 @@ export class Uplink {
     try {
       this.inprocPort?.disconnect();
     } catch {
-      /* 忽略 */
     }
 
     this.inprocPort = null;
@@ -92,7 +81,6 @@ export class Uplink {
   }
 
   private handleRaw(raw: unknown): void {
-    // port 通道收到的是已反序列化的对象；统一 stringify 后走协议守卫
     const msg = parseServerMessage(typeof raw === "string" ? raw : JSON.stringify(raw));
 
     if (!msg) return;
@@ -128,7 +116,6 @@ export class Uplink {
     this.handlers.onConnState("connecting", undefined, detail);
     const delay = Math.min(15_000, 1000 * 2 ** this.retryAttempt);
     this.retryAttempt += 1;
-    // 旧连接的断开可能晚于新连接建立：重连定时器不得掐掉已经活着的新连接（否则刚恢复的任务会被再次打断）。
     this.clearReconnectTimer();
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -138,11 +125,9 @@ export class Uplink {
     }, delay);
   }
 
-  /** offscreen 文档里的扩展内 agent 讲同一套协议。 */
   private async connectInproc(): Promise<void> {
     if (this.authFailed || this.connecting) return;
 
-    // 重连定时器或面板 retry 到达时，已有一个活的传输就不再拆掉它重建。
     if (this.transport !== null) return;
     this.teardown();
     this.handlers.onConnState("connecting", undefined);
@@ -153,14 +138,12 @@ export class Uplink {
       const existing = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
 
       if (existing.length === 0) {
-        // USER_MEDIA：按住说话在侧栏关着时也要在这里录音。
         await chrome.offscreen.createDocument({ url: INPROC_DOCUMENT, reasons: [chrome.offscreen.Reason.WORKERS, chrome.offscreen.Reason.USER_MEDIA], justification: "Run the agent loop inside the extension and record push-to-talk speech" });
       }
     } catch (err) {
       this.connecting = false;
       const detail = `助手没有启动：${err instanceof Error ? err.message : String(err)}`;
 
-      // 按退避重试扩展内 agent（例如 offscreen 刚崩溃、还没关干净时重建失败），不能停在「未连接」等用户重载扩展。
       this.handleDisconnect(detail);
 
       return;
@@ -198,11 +181,10 @@ export class Uplink {
           return true;
         }).then(async ok => {
           try { if (ok) await this.pushModelConfig(); port.postMessage({ type: "inproc_key_save_result", requestId: message.requestId, ok }); }
-          catch { try { port.postMessage({ type: "inproc_key_save_result", requestId: message.requestId, ok: false }); } catch { /* 端口断开，调用方按结果未知处理。 */ } }
-        }, () => { try { port.postMessage({ type: "inproc_key_save_result", requestId: message.requestId, ok: false }); } catch { /* 端口断开，调用方按结果未知处理。 */ } }).finally(() => keySaves.delete(message.requestId));
+          catch { try { port.postMessage({ type: "inproc_key_save_result", requestId: message.requestId, ok: false }); } catch {  } }
+        }, () => { try { port.postMessage({ type: "inproc_key_save_result", requestId: message.requestId, ok: false }); } catch {  } }).finally(() => keySaves.delete(message.requestId));
         return;
       }
-      // 心跳只为让 service worker 保持存活；刷新后的订阅令牌落盘。两者都不转给侧栏。
       if (isKeepalive(raw)) return;
 
       if (isCredentialWrite(raw)) void persistCredential(raw.providerId, raw.credential);
@@ -222,7 +204,7 @@ export class Uplink {
     port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
   }
 
-  /** 模型选择与各家凭据一起发：offscreen 文档读不到 chrome.storage。 */
+  /** WHY: 模型选择与各家凭据一起发：offscreen 文档读不到 chrome.storage。 */
   private async pushModelConfig(): Promise<void> {
     if (!this.inprocPort) return;
     const stored = await chrome.storage.local.get(null);
@@ -234,7 +216,6 @@ export class Uplink {
     this.inprocPort?.postMessage({ type: "inproc_catalog", codexCatalog: stored[CODEX_CATALOG_KEY] });
   }
 
-  /** 核心要读的开关单独推：随模型设置推会让每个对话重设一次模型。 */
   private async pushCoreSettings(): Promise<void> {
     if (!this.inprocPort) return;
     const values = await chrome.storage.local.get(CORE_SETTING_KEYS);
@@ -244,7 +225,7 @@ export class Uplink {
   private async pushVoiceKey(): Promise<void> {
     const stored = await chrome.storage.local.get(null);
     const configured = await installVoiceHeaderRule(resolveVoiceKey(Object.entries(stored))).catch(() => false);
-    // 不在这里修正无效选择：宿主须拒绝启动，不能偷偷回到按量接口。
+    // WHY: 不在这里修正无效选择：宿主须拒绝启动，不能偷偷回到按量接口。
     this.inprocPort?.postMessage({ type: "inproc_voice", configured, model: stored[INPROC_VOICE_MODEL_KEY] });
   }
 

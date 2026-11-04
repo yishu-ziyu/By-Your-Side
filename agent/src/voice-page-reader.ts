@@ -1,7 +1,6 @@
 import type {VoiceInputContext} from '../../shared/voice.js';
 import type {ToolRpc} from './rpc.js';
 
-/** Realtime's read_page consumes text only. Never route it through screenshot consistency. */
 export async function readVoicePage(rpc:Pick<ToolRpc,'call'>,input:VoiceInputContext):Promise<unknown>{
   if(!input.observation)throw new Error('本轮页面观察权限尚未就绪，请重新说明要查看的页面。');
   const value=await rpc.call('observe_page',{token:input.observation.token,mode:'text'},8000);

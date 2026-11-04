@@ -1,11 +1,3 @@
-/**
- * 用户嫌回答方式不好（「以后讲解都给我用卡片或图示」）→ 这一轮答完后侧栏问「…，要我记住吗？」并给出依据原话 →
- * 点「记住」后记忆里有这条到处适用的做法 → 新对话里讲解概念时回答用上了卡片。
- * 反例：只是追问话题的一句不问。
- *
- * 真扩展、隔离无头 Chrome、真模型（默认 MiniMax M3.1；密钥运行时读本机文件，不打印、不落盘）。
- *   npx tsx scripts/acceptance/real-path/style-feedback.mts --headless
- */
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -17,7 +9,6 @@ requireHeadless();
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-style-feedback`);
 await mkdir(out, { recursive: true });
 
-// 默认用 MiniMax M3.1（密钥在 ~/.pi/agent/auth.json）；BYS_STYLE_MODEL=commandcode 改用 Command Code 的 Claude Haiku 5.5。
 const useCommandCode = process.env.BYS_STYLE_MODEL === "commandcode";
 const authFile = useCommandCode ? join(homedir(), ".commandcode/auth.json") : join(homedir(), ".pi/agent/auth.json");
 const auth: unknown = JSON.parse(readFileSync(authFile, "utf8"));
@@ -27,7 +18,6 @@ const key = typeof keyValue === "string" ? keyValue : "";
 
 if (!key) throw new Error(`${authFile} 里没有可用的密钥`);
 const MODEL = useCommandCode ? { provider: "commandcode", modelId: "claude-haiku-5-5" } : { provider: "minimax-cn", modelId: "MiniMax-M3.1-Flash-Preview" };
-/** 前后问同一个没有数字的讲解问题：有数字时默认规则本来就会用卡片，分不出是不是记忆的作用。 */
 const EXPLAIN = "解释一下什么是用户画像";
 
 const checks: Array<{ item: string; pass: boolean; detail: Json }> = [];
@@ -73,7 +63,6 @@ async function turn(text: string): Promise<void> {
   if (idle < 12) throw new Error(`150 秒内这一轮没有结束：${text}`);
 }
 
-/** 最后一条用户消息之后出现的询问卡片。 */
 const lastAsk = async () => await rp.evaluate(panel, `(() => {
   const all = [...document.querySelectorAll("#messages > *")];
   const lastUser = all.map((n) => n.matches(".msg.user")).lastIndexOf(true);
@@ -102,14 +91,11 @@ try {
   panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: MODEL, inproc_fast_model_config: MODEL })}).then(() => true)`);
-  // 密钥直接写进隔离配置的存储，不经命令行和日志。
   await rp.evaluate(panel, `chrome.storage.local.set({["inproc_cred:" + ${JSON.stringify(MODEL.provider)}]: {type: "api_key", key: ${JSON.stringify(key)}}}).then(() => true)`);
   await rp.evaluate(panel, `location.reload(); true`);
   await sleep(1500);
   await until(async () => { const s = await read().catch(() => null); return s?.connected && s.ready ? s : undefined; }, 90_000, "侧栏就绪", 500);
 
-  // 反例：第一句只是问话题，答完不该问。
-  // 对照：记住之前，同一个讲解问题在 3 个新对话里各问一次，数用了卡片的次数；模型每次不同，一次分不出差别。
   let baseline = 0;
 
   for (let i = 0; i < SAMPLES; i++) {
@@ -135,7 +121,6 @@ try {
     const entry = saved ? (JSON.parse(saved).entries as Array<{ kind: string; text: string; scope: { kind: string }; status: string }>).find((e) => e.kind === "method" && e.status === "active") : null;
     check("点「记住」后记成到处适用的做法", !!entry && entry.scope.kind === "all", entry ? { text: entry.text, scope: entry.scope } : null);
     const all = saved ? (JSON.parse(saved).entries as Array<{ kind: string; text: string; status: string }>).filter((e) => e.status === "active") : [];
-    // 同一句话也可能被自动记忆记成「关于你」：两条都会交给模型，需要知道是哪条起作用。
     check("记忆里只多了这一条做法，没有重复记成别的", all.length === 1, all.map((e) => `${e.kind}: ${e.text}`));
     await shot("2-remembered");
 
@@ -152,7 +137,6 @@ try {
 } catch (error) {
   fatal = error instanceof Error ? error.stack ?? error.message : String(error);
 } finally {
-  // 复盘与询问的决定记录（不含原话）：失败时据此看卡在哪一步。
   const trace = panel ? await rp.evaluate(panel, `new Promise((resolve) => {
     const req = indexedDB.open("sideagent-diagnostics");
     req.onsuccess = () => { const all = req.result.transaction("trace-lines").objectStore("trace-lines").getAll(); all.onsuccess = () => resolve(all.result.map((r) => r.line).filter((l) => /turn_review|memory_ask_decision|side_call/.test(l))); all.onerror = () => resolve([]); };

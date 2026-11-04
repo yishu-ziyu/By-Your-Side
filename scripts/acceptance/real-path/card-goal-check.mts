@@ -1,10 +1,3 @@
-/**
- * Real extension: the goal check reads an answer card the way the side panel shows it — `{=name}` replaced by the
- * computed number and the card as text — plus a host fact naming the card's inputs, which the user changes in the
- * side panel; not the raw card markup.
- *   npx tsx scripts/acceptance/real-path/card-goal-check.mts --headless
- * The model and the checker are scripted, so this proves what the checker is given, not how a real checker judges it.
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -14,7 +7,6 @@ import {startScriptedModel} from './scripted-model.mts';
 requireHeadless();
 const out=join(REPO,'out/acceptance/real-path',`${new Date().toISOString().replace(/[:.]/g,'-')}-card-goal-check`);
 await mkdir(out,{recursive:true});
-// 只有动过网页的一轮才会核对：先读一页，再交卡片回答。
 const site=createServer((_req,res)=>res.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end('<!doctype html><title>Rooms</title><main><p>The palace has 8,886 rooms.</p></main>'));
 await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));
 const origin=`http://127.0.0.1:${siteAddress(site).port}/`;

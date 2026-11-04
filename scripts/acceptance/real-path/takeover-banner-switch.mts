@@ -1,10 +1,3 @@
-/**
- * 接管时换会话：只装扩展的隔离无头 Chrome、真侧栏、本机练习页与本机脚本模型。
- * 会话 A 在干活时用户点「接管」，侧栏写「你在操作 · 助手在旁边等」；新开会话 B，B 里不该再挂这一行；
- * 点顶上的「…：标题 ↗」切回 A，A 的页面仍归用户，这一行要回来。
- *   npx tsx scripts/acceptance/real-path/takeover-banner-switch.mts --headless
- * 证据在 out/acceptance/real-path/<时间>-takeover-banner-switch/：三张侧栏截图和 result.json。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -50,7 +43,6 @@ try {
   await rp.screenshot(panel, join(out, "1-a-taken-over.png"));
 
   await rp.click(panel, "#conversation-new"); await ready();
-  // 新会话画好之后再读：给它 3 秒，旧行还在就算没清。
   await sleep(3000);
   const inB = await banner();
   check("新开会话 B：不再挂「你在操作」", !inB.shown, inB);

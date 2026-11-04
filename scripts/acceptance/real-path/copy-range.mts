@@ -1,10 +1,3 @@
-/**
- * Real extension and page: copying a sentence or paragraph range writes exactly that text, and a range that is
- * out of bounds or disagrees with what the user asked for leaves the draft untouched.
- *   npx tsx scripts/acceptance/real-path/copy-range.mts --headless [--only=A,G]
- * The model is scripted (its fill arguments and the copy-intent judgment are fixed per case), so this proves the
- * browser and host layer, not that a real model picks the right range.
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -30,7 +23,6 @@ const CASES:Case[]=[
  {id:'D',ask:'把 Note 框全部原文复制到草稿框。',intent:null,expect:`${P1}\n\n${P2}`},
  {id:'E',ask:'把 Note 框第九句原文复制到草稿框。',intent:{unit:'sentence',first:9,count:1},quote:'第九句',modelRange:{unit:'sentence',first:9,count:1},expect:ORIGINAL,refused:/越界/},
  {id:'F',ask:'把 Note 框第一句原文复制到草稿框。',intent:{unit:'sentence',first:1,count:1},quote:'第一句',modelRange:{unit:'sentence',first:2,count:1},expect:ORIGINAL,refused:/不一致/},
- // 原来的回归：只要第一句，模型却整块复制。
  {id:'G',ask:'把 Note 框第一句原文复制到草稿框。',intent:{unit:'sentence',first:1,count:1},quote:'第一句',expect:ORIGINAL,refused:/用户要求复制 1 句/},
 ];
 const only=process.argv.find(a=>a.startsWith('--only='))?.slice(7).split(',');
@@ -45,7 +37,6 @@ for(const item of CASES.filter(c=>!only||only.includes(c.id))){
   {match:'"lastReply"',steps:[{text:JSON.stringify({status:'done',remaining:'',items:[{text:'复制到草稿框',done:true}]})}]},
   {match:task,steps:[{tool:{name:'navigate',args:{url:origin}}},{tool:{name:'fill',args:fill}},{text:`${tag}完成。`}]},
  ],undefined,payload=>{
-  // 消息内容可能是字符串，也可能是分段数组。
   const text=(content:unknown)=>typeof content==='string'?content:Array.isArray(content)?content.map(part=>typeof part?.text==='string'?part.text:'').join(''):'';
   const messages=payload.messages??[];
   const tool=messages.filter(m=>m.role==='tool').at(-1);

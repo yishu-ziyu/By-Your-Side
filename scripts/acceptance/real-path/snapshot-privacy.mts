@@ -1,11 +1,3 @@
-/**
- * 读页面不能把卡号、安全码、PIN 交给模型。只装扩展、隔离构建、本机脚本模型、本机练习页。
- *   npx tsx scripts/acceptance/real-path/snapshot-privacy.mts --headless
- *   a) 页面上已填好 cc-number、cc-csc、name=card_number、name=pin、一个密码栏和一个普通栏。助手读页（snapshot），
- *      点「显示」把密码栏变成 type=text，再读一次页：模型收到的请求里没有任何敏感值，有普通值；卡号那一行仍写明「已填」。
- *   b) 助手用 read_element 读 name=card_number 那一栏：模型收到的请求里没有它的值。
- * 失败方式：exec/snapshot.ts 的 readSecretFields 返回空集合，a 失败。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -40,7 +32,6 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 const ASK = "读页隐私：读一下这页，显示密码后再读一次，再读字段 X。";
 const DONE = "读页隐私读完了。";
 
-/** 模型收到的全部请求原文，和其中每条工具结果。 */
 const requests: string[] = [];
 const toolTexts: string[] = [];
 
@@ -96,18 +87,15 @@ try {
   evidence.reads = reads;
   await writeFile(join(artifacts, "model-requests.json"), all);
 
-  // 不空判：两次快照、一次 read_element 的结果都进了模型请求，普通值照常可见。
   assert.ok(snapshots.length >= 2, `two snapshot results reached the model: ${JSON.stringify(toolTexts)}`);
   assert.ok(reads.length >= 1, `the read_element result reached the model: ${JSON.stringify(toolTexts)}`);
   assert.ok(all.includes(PLAIN), "a: the plain field value reaches the model");
 
-  // a) 敏感值哪一次都没有；卡号行和切成明文的密码行写明已填。
   for (const [key, value] of Object.entries(SECRET)) assert.ok(!all.includes(value), `a/b: ${key} value is not in any model request`);
 
   assert.ok(snapshots.every(t => /textbox "Field X"[^\n]*value=<filled, hidden>/.test(t)), "a: the card line says it is filled");
   assert.ok(/textbox "Field Z"[^\n]*value=<filled, hidden>/.test(snapshots.at(-1)!), "a: the toggled password line says it is filled");
 
-  // b) read_element 的结果里有这一栏，但不是它的值。
   assert.ok(reads.some(t => t.includes("16 chars")), `b: read_element reports only the length: ${JSON.stringify(reads)}`);
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);

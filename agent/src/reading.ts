@@ -3,7 +3,6 @@ import { SideCallError } from './side-judgment.js';
 
 type ReadingGenerate = (transcript: ReadingTranscript, signal: AbortSignal, onText: (text: string) => void) => Promise<string>;
 
-/** Owns cancellation before asynchronous model setup; never touches execution state. */
 export class ReadingRequests {
   private readonly active = new Map<string, { requestId: string; abort: AbortController }>();
   async run(requestId: string, transcript: ReadingTranscript, generate: ReadingGenerate, emit: (event: ReadingEvent) => void): Promise<void> {
@@ -40,7 +39,6 @@ export class ReadingRequests {
       });
       publish(abort.signal.aborted ? 'stopped' : 'done');
     } catch (error) {
-      // 带上原因类别（模型拒绝了请求参数、超时……），不带服务商原文。
       const reason = error instanceof SideCallError ? error.message : undefined;
       publish(abort.signal.aborted ? 'stopped' : 'error', abort.signal.aborted ? undefined : `这次回答没有完成${reason ? `（${reason}）` : ''}。已保留内容，可以重试。`);
     } finally {

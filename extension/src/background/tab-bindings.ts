@@ -1,4 +1,3 @@
-/** 执行成员到标签页的稳定绑定。Chrome groupId 只负责展示，不进入持久身份。 */
 import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID, executionKey } from "../../../shared/protocol.js";
 
 export { executionKey };

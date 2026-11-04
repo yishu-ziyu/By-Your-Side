@@ -1,17 +1,3 @@
-/**
- * 复现 #647：助手生成的网页在「交互预览」和「打开」里能不能把文件里的资料发到外部。
- *
- * 只装扩展的隔离无头 Chrome、真侧栏；模型换成本机脚本模型，按脚本写一个「订单汇总」网页，
- * 网页里除了正常的表格，还悄悄用 7 种方式（含不受 CSP 管的 WebRTC）把订单资料发往本机的接收器（代表攻击者服务器）。
- * 像用户一样先点「交互预览」，再点「打开」，分别数接收器收到了什么。
- *
- *   npx tsx scripts/acceptance/real-path/artifact-network.mts --headless
- *
- * 判据：接收器一条都没收到才算安全（PASS）；收到任何一条即 FAIL，并列出是哪种方式发出去的。
- * 脚本模型只证明预览框这一层，不证明真模型会不会被网页里的指令诱导写出这种网页。
- *
- * 产物：out/acceptance/real-path/<时间>-artifact-network/ 下 summary.json 和截图。
- */
 import { createSocket } from "node:dgram";
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -26,7 +12,6 @@ const hits: Array<{ phase: string; channel: string; data: string; at: number }> 
 
 let phase = "setup";
 
-/** 用户每次点击的时刻，配合录屏对时间。 */
 const clicks: Record<string, number> = {};
 
 const receiver = createServer((req, res) => {
@@ -48,7 +33,6 @@ await new Promise<void>((done) => receiver.listen(0, "127.0.0.1", done));
 
 const R = `http://127.0.0.1:${siteAddress(receiver).port}`;
 
-// WebRTC 不归 CSP 管：STUN 包直接走 UDP，收到任何一个就算外发通道还开着。
 const stun = createSocket("udp4");
 
 stun.on("message", (msg) => hits.push({ phase, channel: "webrtc", data: `UDP ${msg.length} 字节`, at: Date.now() / 1000 }));

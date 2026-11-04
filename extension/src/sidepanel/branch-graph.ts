@@ -1,9 +1,3 @@
-/**
- * 过程块分叉：同一模型轮里同时做的几件事画成一组，做完再折成一行。
- * 只判断该不该画、画哪种；DOM 在 branch-view.ts。
- * 样式：竖向分支 + 扇形，加用户定的泳道。
- */
-
 export const FORK_MS = 450;
 export const FORK_STAGGER_MS = 70;
 export const MERGE_MS = 450;
@@ -26,7 +20,6 @@ export type GraphTool = {
   failed?: boolean;
   reason?: string;
   result?: string;
-  /** 交给用户的蓝色通道，不是助手自己的一步。 */
   user?: boolean;
 };
 
@@ -69,7 +62,6 @@ export function clipReason(reason: string): string {
   return text.length <= 16 ? text : `${text.slice(0, 15)}…`;
 }
 
-/** 汇合后那一行：查了几路、几路没成。只读页写「看了」，真开新页才写「开了」。 */
 export function groupSummary(kind: GraphKind, tools: readonly GraphTool[]): string {
   const yours = tools.filter((tool) => tool.user || tool.id === "you");
   const rest = tools.filter((tool) => !tool.user && tool.id !== "you");

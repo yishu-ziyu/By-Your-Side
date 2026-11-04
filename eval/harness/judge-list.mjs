@@ -1,4 +1,3 @@
-// Judge an explicit list of result files: node judge-list.mjs <runDir> <listFile> [concurrency]
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { judgeOne, verdictFresh, resultSha, JUDGE_VERSION } from "./judge.mjs";
@@ -17,7 +16,7 @@ await Promise.all(Array.from({ length: Number(conc) }, async () => {
     const f = files[i++]; const tr = JSON.parse(readFileSync(join(runDir, f), "utf8"));
     const slug = dirname(f), out = join(runDir, "judge", slug, basename(f));
 
-    if (verdictFresh(join(runDir, f), out)) { done++; continue; }  // stale (older judge or rerun result) -> re-judge
+    if (verdictFresh(join(runDir, f), out)) { done++; continue; }
 
     const task = all.find((t) => t.id === tr.id);
     const v = await judgeOne(task, tr, join(runDir, f).replace(/\.json$/, ".trace.jsonl"));
@@ -25,7 +24,6 @@ await Promise.all(Array.from({ length: Number(conc) }, async () => {
     writeFileSync(out, JSON.stringify({ task: tr.id, model: tr.model, ...v, success_rule: task.success_rule, judge_version: JUDGE_VERSION, result_sha: resultSha(join(runDir, f)), judged_at: new Date().toISOString() }, null, 2));
     console.log(`${++done}/${files.length} ${tr.model} ${tr.id} ${v.verdict} ${v.method}`);
 
-    // 判分器本身坏了（服务连不上、额度用完）时不要把整批结果都写成 judge_error 再往下跑
     failedInRow = v.verdict === "judge_error" ? failedInRow + 1 : 0;
 
     if (failedInRow >= 3) { console.error(`judge broken: 3 judge_error in a row, stopping. last: ${v.reason}`); process.exit(2); }

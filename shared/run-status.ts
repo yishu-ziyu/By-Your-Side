@@ -1,15 +1,7 @@
-/**
- * 过程行给人看的那一句：正在做什么、已经几秒、卡住时怎么说。
- * 时钟从外面传入，方便假时钟验收。
- */
-
-/** 有动作就要写出秒数：人在 1 秒内要知道系统还在。 */
 export const LIVE_SHOW_MS = 1_000;
 
-/** 超过这个要能插手：跳过或换方法。 */
 export const LIVE_ESCALATE_MS = 10_000;
 
-/** 失败步很少、或一步都没有时，不占第二行。 */
 export const RUN_META_MIN_STEPS = 2;
 
 export interface LiveStatus {
@@ -34,7 +26,6 @@ export function liveStatus(input: { step?: string; from?: number; now: number })
   return { title: `正在：${step}`, time, escalated: false };
 }
 
-/** 默认折叠的那一行。没有失败或步数太少时不写。 */
 export function runMetaLine(done: number, failed: number): string | null {
   if (failed <= 0 || done < RUN_META_MIN_STEPS) return null;
   return `已试了 ${done} 步，其中 ${failed} 次没做成，已换别的方法`;

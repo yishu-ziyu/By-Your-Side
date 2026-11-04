@@ -1,13 +1,3 @@
-/**
- * 交给你：只装扩展的隔离无头 Chrome、真侧栏、本机账单页与本机脚本模型。
- * 助手填好账号名称后调用 hand_to_user 把页面交给用户；用例以用户身份填卡号并保存，点侧栏「做好了，交还」，看助手是否从这页接着领取。
- * 交给用户时圈出要填的栏和按钮：圈的读数取自扩展的隔离环境，页面脚本读不到。
- * 第二段：再交给用户一次，用户在侧栏点停止，圈和胶囊上的「现在归你」都要收掉。
- *
- *   npx tsx scripts/acceptance/real-path/handoff.mts --headless --run=final
- *
- * --run= 只决定证据目录 out/acceptance/handoff/<run>/：不写时是 candidate。
- */
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -58,7 +48,6 @@ const GOAL2 = '帮我换一张卡';
 
 const ASK2 = '填好新卡号，点「保存」。';
 
-// 页面归用户期间的补充要求；「下次…」也是一条网站做法纠正，交还后要被记住。
 const STEER = '下次自行去邮箱里获取就行了，不需要问我。';
 
 const VERDICT = JSON.stringify({ correction: true, reusable: true, about: 'site', rule: '以后在这个网站要确认码时，我都自己去你打开的邮箱里取，不问你', evidence: '下次自行去邮箱里获取就行了', replaces: null, personalEvidence: '' });
@@ -66,9 +55,7 @@ const VERDICT = JSON.stringify({ correction: true, reusable: true, about: 'site'
 const payloads: string[] = [];
 
 const model = await startScriptedModel([
-  // 记忆侧的纠正判断：输入 JSON 里 userMessage 后紧跟空 recentTurns 的只有这一个判断。
   { match: '"userMessage":"下次自行去邮箱里获取就行了，不需要问我。","recentTurns":[]', steps: [{ text: VERDICT }] },
-  // 交还后的续跑：交还 prompt 带 [HANDOFF BOUNDARY]，步数从这里重新数。
   { match: '[HANDOFF BOUNDARY]', steps: [{ tool: { name: 'click', args: { target: '#claim' } } }, { text: '已领取 $30。' }] },
   { match: GOAL, steps: [{ tool: { name: 'tabs', args: { action: 'active' } } }, { tool: { name: 'snapshot', args: {} } },
     { tool: { name: 'fill', args: { target: '#acct', value: '测试账号' } } }, { tool: { name: 'hand_to_user', args: { ask: ASK, targets: ['#card', '#exp', '#cvc', '#save', '#does-not-exist'] } } }, { text: '（不该走到这一步）' }] },
@@ -85,7 +72,6 @@ const check = (name: string, pass: boolean, actual: Json) => { checks.push({ nam
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === 'about:blank')!.targetId);
 
-  // 圈的读数在扩展的隔离环境里，网页自己的环境读不到：记下这页上的隔离环境，逐个试。
   const isolated = new Set<number>();
 
   rp.cdp.onEvent('Runtime.executionContextCreated', (message: { sessionId?: string; params: { context: { id: number; origin: string; auxData?: { type?: string } } } }) => {
@@ -99,7 +85,6 @@ try {
 
   type Ring = { kind: 'field' | 'button'; name: string; label: string; labelRect: Rect | null; faded: boolean; shown: boolean };
 
-  /** 交给用户时画的圈；读不到（内容脚本还没注入）时为 null，不当成「没有圈」。 */
   const rings = async (): Promise<Ring[] | null> => {
     for (const contextId of [...isolated]) {
       // SAFETY: CDP Runtime.evaluate 返回 { result: { value } }；读数是可序列化的普通对象。
@@ -115,7 +100,6 @@ try {
 
   const noRings = (all: Ring[] | null) => Array.isArray(all) && all.length === 0;
 
-  /** 等到读数满足条件；超时不抛，带回最后一次读数，交给 check 判失败。 */
   const settle = async <T,>(read: () => Promise<T>, ok: (v: T) => boolean, ms = 5000): Promise<T> => {
     const end = Date.now() + ms;
     let value = await read();
@@ -142,19 +126,15 @@ try {
 
   const leaving = (n: DomNode) => !!n.attributes?.includes('data-leaving');
 
-  /** 同 walk，但不进正在淡出的旧字。 */
   const liveWalk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => leaving(n) ? undefined : hit(n) ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(c => liveWalk(c, hit)).find(Boolean);
 
-  /** 页面右边缘胶囊在 closed shadow 里：用 CDP 穿透读文字。 */
   const pageBar = async () => {
     // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
     const root = (await rp.cdp.send('DOM.getDocument', { depth: -1, pierce: true }, work)).root as DomNode;
-    // 「现在归你」占右边缘胶囊：带「继续」键的那一刻才算页面归你。
     const host = walk(root, n => n.nodeName === 'DIV' && !!n.attributes?.includes('edge-tab'));
     const bar = host && walk(host, n => n.nodeName === 'DIV' && !!n.attributes?.includes('clip'));
 
     if (!bar || !liveWalk(bar, n => n.nodeName === 'BUTTON' && !!n.attributes?.includes('act'))) return null;
-    // 换状态时旧字淡出约 0.1 秒，还在 DOM 里：只读留下来的字。
     const text = (n: DomNode): string => leaving(n) ? '' : (n.nodeValue ?? '') + (n.children ?? []).map(text).join(' ');
 
     return text(bar).replace(/\s+/g, ' ').trim();
@@ -166,22 +146,18 @@ try {
     for (const type of ['mousePressed', 'mouseReleased']) await rp.cdp.send('Input.dispatchMouseEvent', { type, ...at, button: 'left', clickCount: 1 }, work);
   };
 
-  // ── (a) 助手填好账号名称后交给用户 ──
   await rp.click(panel, '#input'); await rp.typeText(panel, GOAL); await rp.pressEnter(panel);
   await until(async () => !!(await card()), 30000, '侧栏出现「需要你来这一步」');
   await until(async () => !!(await pageBar()), 10000, '胶囊出现「现在归你」');
   const shown = await card();
   check('侧栏卡写明这一步、承诺和「做好了，交还」', !!shown && String(shown.text).includes('需要你来这一步') && String(shown.text).includes(ASK) && String(shown.text).includes('交给你期间，我不读也不动这个页面。') && shown.button === '做好了，交还' && String(shown.text).includes('或点页面右边的「继续」'), shown);
-  // 光标先退场再交给用户，胶囊会先写约 0.1 秒「正在停住」；最多等 2 秒。
   const bar = await until(async () => { const v = await pageBar(); return v?.startsWith('现在归你') && v.endsWith('继续') ? v : undefined; }, 3000, '胶囊写现在归你').catch(async () => await pageBar());
   check('页面右边缘胶囊显示「现在归你 在左边填好…」和「继续」', !!bar && bar.includes(`现在归你 ${ASK}`) && bar.endsWith('继续'), bar);
   check('助手填了账号名称', (await rp.evaluate(work, 'acct.value')) === '测试账号', await rp.evaluate(work, 'acct.value'));
-  // R1 + R4：页面上不存在的目标跳过，其余 4 个照常圈出，名牌按预览写。
   const LABEL_ALL = '你来填 · 卡号、有效期、安全码';
   const handed = await settle(rings, all => all?.length === 4 && ring(all, '卡号')?.label === LABEL_ALL && ring(all, '保存')?.label === '填完点这里');
   check('R1 交给用户时圈出 4 个目标（不存在的目标跳过），卡号名牌「你来填 · 卡号、有效期、安全码」，保存名牌「填完点这里」',
     handed?.length === 4 && handed.every(r => r.shown && !r.faded) && ring(handed, '卡号')?.label === LABEL_ALL && ring(handed, '有效期')?.label === '' && ring(handed, '安全码')?.label === '' && ring(handed, '保存')?.kind === 'button' && ring(handed, '保存')?.label === '填完点这里', handed);
-  // 名牌贴着自己的圈：名牌外扩 4px 后不碰页面上别的按钮、输入框和别的名牌（原来「填完点这里」挨着「领取 $30」）。
   const controls = await rp.evaluate(work, `[...document.querySelectorAll('input,button')].map(e=>{const r=e.getBoundingClientRect();return{id:e.id,x:r.x,y:r.y,width:r.width,height:r.height}})`) as Array<Rect & { id: string }>;
   const OWN: Record<string, string> = { 卡号: 'card', 有效期: 'exp', 安全码: 'cvc', 保存: 'save' };
   const touching = (handed ?? []).filter(r => r.labelRect).map(r => {
@@ -192,18 +168,17 @@ try {
     return { name: r.name, label: r.label, labelRect: l, near };
   });
   check('R1 名牌贴着自己的圈：不挨着页面上别的按钮、输入框和别的名牌', touching.length === 2 && touching.every(t => t.near.length === 0), touching);
-  await sleep(600); // 等圈画完再截图
+  await sleep(600);
   await rp.screenshot(panel, join(out, 'handed-panel.png')); await rp.screenshot(work, join(out, 'handed-page.png'));
   const heldRequests = model.requests.length, heldPosts = posts.length;
   await sleep(3000);
   check('交给用户后 3 秒内没有新的模型请求', model.requests.length === heldRequests, { before: heldRequests, after: model.requests.length });
   check('交给用户期间网站没收到助手的写入', posts.length === heldPosts && heldPosts === 0, posts);
 
-  // ── (b) 用户填卡号并保存，点侧栏「做好了，交还」──
   await mouseClick('#card'); await rp.typeText(work, '4242424242424242');
   const afterCard = await settle(rings, all => !!ring(all, '卡号')?.faded && ring(all, '有效期')?.label === '你来填 · 有效期、安全码');
   check('R2 填好卡号：卡号的圈淡出，名牌移到有效期，写「你来填 · 有效期、安全码」', !!ring(afterCard, '卡号')?.faded && ring(afterCard, '卡号')?.label === '' && ring(afterCard, '有效期')?.label === '你来填 · 有效期、安全码' && !ring(afterCard, '有效期')?.faded && !ring(afterCard, '保存')?.faded, afterCard);
-  await sleep(500); // 等淡出做完再截图
+  await sleep(500);
   await rp.screenshot(work, join(out, 'card-filled-page.png'));
 
   for (const [sel, value] of [['#exp', '12/30'], ['#cvc', '123']] as const) { await mouseClick(sel); await rp.typeText(work, value); }
@@ -211,7 +186,6 @@ try {
   await until(async () => (await rp.evaluate(work, 'st.textContent')) === '账单账号已保存', 10000, '用户保存了账单');
   const afterSave = await settle(rings, all => all?.length === 4 && all.every(r => r.faded));
   check('R2 三栏填好、用户点了保存：4 个圈都淡出', afterSave?.length === 4 && afterSave.every(r => r.faded), afterSave);
-  // 页面归用户时补一句要求：收下存成「交还后生效」，交还后随原任务一起续跑。
   await rp.click(panel, '#input'); await rp.typeText(panel, STEER); await rp.pressEnter(panel);
   const steerSaved = await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.user .user-msg-text")].some(n => n.textContent === ${JSON.stringify(STEER)})`) || undefined, 10000, '补充要求已发出').catch(() => null);
   check('页面归用户期间的补充要求发成了自己的消息', !!steerSaved, steerSaved);
@@ -225,14 +199,12 @@ try {
   const first = payloads[sentBefore] ?? '';
   check('交还后第一次模型请求带重读的账单页（已保存）、原目标和暂停中的补充', first.includes('账单账号已保存') && first.includes(GOAL) && first.includes(STEER), { saved: first.includes('账单账号已保存'), goal: first.includes(GOAL), steer: first.includes(STEER) });
   check('交还后的边界：原页不许动，但按用户要求可读别的标签页', first.includes('Reading or using another tab or site is allowed'), first.match(/Stay on this tab[^\]]*/)?.[0] ?? '');
-  // R4：用户在交给期间填的卡号，交还后的读页面也不给模型。
   check('交还后发给模型的内容里没有用户填的卡号', !payloads.some(p => p.includes('4242424242424242')), { leaked: payloads.filter(p => p.includes('4242424242424242')).length });
   check('网站收到一次领取', claims === 1, { claims, posts: posts.map(p => p.path) });
   await until(async () => String(await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].map(m=>m.textContent).join("|")')).includes('已领取 $30。'), 30000, '最终回答');
   check('最终回答出现', true, String(await rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].map(m=>m.textContent).join("|")')));
   await rp.screenshot(panel, join(out, 'resumed-panel.png'));
 
-  // 暂停中补的「下次…」按网站做法纠正处理：这一轮结束后自动记成这个网站的做法（可撤销），不问也不丢。
   const memories = async () => await rp.evaluate(panel, `new Promise((resolve) => {
     const req = indexedDB.open("sideagent-memory", 1);
     req.onsuccess = () => { const get = req.result.transaction("kv").objectStore("kv").get("memories"); get.onsuccess = () => resolve(get.result ?? null); get.onerror = () => resolve(null); };
@@ -245,7 +217,6 @@ try {
   check('侧栏显示已记住的做法卡（含可撤销入口）', !!askShown && String(askShown).includes('邮箱里取'), askShown);
   await rp.screenshot(panel, join(out, 'learned-method-panel.png'));
 
-  // ── (c) 再交给用户一次，用户在侧栏点停止：圈和「现在归你」一起收掉（R3 停止）──
   await rp.cdp.send('Page.navigate', { url: siteUrl }, work);
   await until(async () => (await rp.evaluate(work, 'document.readyState === "complete" && !!document.querySelector("#card")')) || undefined, 10000, '账单页重新打开');
   await rp.cdp.send('Page.bringToFront', {}, work);

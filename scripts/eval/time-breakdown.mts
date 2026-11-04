@@ -1,13 +1,3 @@
-/**
- * 时间花在哪（YIS-93）：读日常全套导出的诊断记录，把每个任务拆成「等模型」「动手」「其他」。
- *   npx tsx scripts/eval/time-breakdown.mts <everyday-baseline 产物目录 或 日常导出的 .jsonl 或 compare-real 产物目录> [--out=<表格.md>]
- *   npx tsx scripts/eval/time-breakdown.mts <compare-real 产物目录 A> --vs=<B>   两次真实网站护栏并排比（改动前后、两个版本同时跑）
- * 等模型：每轮从发出请求到模型回完（含重试）；动手：有工具在跑的墙钟时间（并行的工具不重复算）；其他：总耗时减去前两项（准备上下文、记忆判断等），单独列出，不摊进前两项。
- * 首个正文字：发送到第一个正文 token（#264 的首字口径，不含思考）；
- * 每次调用：主循环每轮送进模型的 token 数 / 其中命中缓存的数（#258；论文对照第 0 项）；最大上下文取其中最大的；继续：目标核对判「继续」后真的多跑了一轮的次数。
- * 回答后：第一次 agent_end 到这次运行最后一条后台记录（核对目标、记忆判断）（#259）。
- * 交付后又问：send_user_message 交付结论之后这次运行又发了几次模型请求（#546 换核心后丢了「交付即结束本轮」，每次多一轮）。
- */
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -17,7 +7,6 @@ type Line = { time: string; runId: string | null; turn: number; type: string; da
 
 type Row = { id: string; prompt: string; totalMs: number; modelMs: number; firstTokenMs: number[]; firstTextMs: number | null; calls: Array<{ context: number; cached: number }>; continues: number; afterMs: number; toolMs: number; turns: number; tools: Record<string, { n: number; ms: number }>; askedAfterFinding: number };
 
-// 回答后还在跑的后台判断：核对目标、记忆判断。
 const AFTER = new Set(["goal_check", "memory_decision", "memory_ask_decision"]);
 
 const ms = (l: Line) => Date.parse(l.time);
@@ -25,7 +14,6 @@ const ms = (l: Line) => Date.parse(l.time);
 // SAFETY: 诊断记录一行一个 JSON 对象，字段见 shared/run-trace-core.ts。
 const parse = (text: string) => text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Line);
 
-/** 按 runId 分组，每次运行拆成一行；没有 agent_end 的运行跳过。 */
 function breakdown(lines: Line[]): Array<Row & { runId: string; text: string }> {
   const byRun = new Map<string, Line[]>();
 
@@ -46,7 +34,6 @@ function breakdown(lines: Line[]): Array<Row & { runId: string; text: string }> 
       firstTextMs: firstText ? ms(firstText) - ms(start) : null,
       calls: [] as Row["calls"], continues: 0, afterMs: lastAfter ? ms(lastAfter) - ms(answered) : 0, toolMs: 0, turns: 0, tools: {} as Row["tools"], askedAfterFinding: 0 };
     let asked: number | null = null;
-    // 同一轮的工具会并行：「动手」按墙钟算（有任一工具在跑的时间），不把各工具耗时相加，否则「其他」变负。
     let running = 0, busySince = 0, delivered = false;
 
     for (const l of run) {
@@ -56,15 +43,12 @@ function breakdown(lines: Line[]): Array<Row & { runId: string; text: string }> 
 
       if (l.type === "first_response") row.firstTokenMs.push(Number(l.data?.elapsedMs ?? 0));
 
-      // 模型回完：发请求后第一次开工具，或这一轮结束。
       if (asked !== null && (l.type === "tool_execution_start" || l.type === "turn_end")) { row.modelMs += ms(l) - asked; asked = null; }
 
       if (l.type === "turn_start") row.turns++;
 
-      // 10-11 以前的导出 turn_end 不带 usage：calls 留空，表里显示「—」。
       if (l.type === "turn_end" && l.data?.usage) { const u = l.data.usage; row.calls.push({ context: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), cached: u.cacheRead ?? 0 }); }
 
-      // 催满次数或换了网页时，收尾记录里 status 仍是 continue，但没有多跑；只有数值 attempt 的那条才开了新一轮。
       if (l.type === "goal_check" && l.data?.status === "continue" && typeof l.data.attempt === "number") row.continues++;
 
       if (l.type === "tool_execution_start" && running++ === 0) busySince = ms(l);
@@ -85,14 +69,13 @@ function breakdown(lines: Line[]): Array<Row & { runId: string; text: string }> 
   return rows;
 }
 
-// --json a.trace.jsonl b.trace.jsonl …：评测报告（eval/harness/analyze.py）用，输出 {路径: 每次运行的拆分}，口径与下面的表格相同。
 if (process.argv.includes("--json")) {
   const paths = process.argv.slice(2).filter((a) => !a.startsWith("--"));
   const all: Record<string, ReturnType<typeof breakdown>> = {};
 
   for (const p of paths) all[p] = breakdown(parse(await readFile(p, "utf8")));
 
-  // 输出常超过管道缓冲；等写完再退出，否则 JSON 被截断。
+  // WHY: 输出常超过管道缓冲；等写完再退出，否则 JSON 被截断。
   await new Promise((done) => process.stdout.write(JSON.stringify(all) + "\n", done));
   process.exit(0);
 }
@@ -103,7 +86,6 @@ if (!dir) throw new Error("用法：time-breakdown.mts <everyday-baseline 产物
 
 const out = process.argv.find((a) => a.startsWith("--out="))?.slice(6);
 
-/** compare-real 产物目录：result-ext.json 记每条成败，ext/<编号>/trace.jsonl 是那条的诊断记录；分几路同时跑时每一路是一个子目录。 */
 async function guardrail(root: string): Promise<{ rows: Array<Row & { pass: boolean }>; missing: string[] }> {
   const subdirs = (await readdir(root, { withFileTypes: true }).catch(() => [])).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => join(root, d.name));
   const rows: Array<Row & { pass: boolean }> = [];
@@ -114,7 +96,6 @@ async function guardrail(root: string): Promise<{ rows: Array<Row & { pass: bool
     const results = await readFile(join(d, "result-ext.json"), "utf8").then((t) => JSON.parse(t) as Array<{ id: string; outcome: string }>, () => []);
 
     for (const r of results) {
-      // 一条任务可能有几次运行（--reply 再答一句）：合成一行，耗时、轮数相加。
       const runs = breakdown(parse(await readFile(join(d, "ext", r.id, "trace.jsonl"), "utf8").catch(() => "")));
 
       if (!runs.length) { missing.push(r.id); continue; }
@@ -137,7 +118,6 @@ if (guard.rows.length || guard.missing.length || vs) {
   const mid = (xs: number[]) => { const v = [...xs].sort((a, b) => a - b); const h = Math.floor(v.length / 2); return !v.length ? 0 : v.length % 2 ? v[h]! : (v[h - 1]! + v[h]!) / 2; };
   const sec = (n: number) => `${(n / 1000).toFixed(1)} s`;
   const share = (rs: Row[], f: (r: Row) => number) => `${Math.round((100 * rs.reduce((a, r) => a + f(r), 0)) / Math.max(1, rs.reduce((a, r) => a + r.totalMs, 0)))}%`;
-  // 耗时只看做成的那几条：失败的多半是网站连不上，时间长短说明不了产品。
   const line = (label: string, g: typeof guard) => { const rs = g.rows.filter((r) => r.pass);
     return `| ${label} | ${g.rows.length + g.missing.length} | ${rs.length} | ${g.missing.length} | ${sec(mid(rs.map((r) => r.totalMs)))} | ${mid(rs.map((r) => r.turns))} | ${share(rs, (r) => r.modelMs)} | ${share(rs, (r) => r.toolMs)} | ${sec(mid(rs.flatMap((r) => r.firstTokenMs.slice(0, 1))))} | ${sec(mid(rs.flatMap((r) => r.firstTokenMs.slice(1))))} | ${sec(mid(rs.flatMap((r) => r.firstTextMs === null ? [] : [r.firstTextMs])))} | ${sec(mid(rs.map((r) => r.afterMs)))} | ${g.rows.reduce((a, r) => a + r.askedAfterFinding, 0)} |`; };
   const task = (id: string) => id.replace(/-\d+$/, "");
@@ -168,7 +148,6 @@ if (guard.rows.length || guard.missing.length || vs) {
   process.exit(0);
 }
 
-// 参数是日常 Chrome 从设置页导出的 .jsonl 时，没有 summary.json：任务名用 runId 的前 8 位，原话取 run_start。
 const single = dir.endsWith(".jsonl");
 
 const traceFile = single ? dir : (await readdir(join(dir, "downloads"))).find((n) => n.startsWith("by-your-side-traces-"));
@@ -183,13 +162,11 @@ const summary = single
   : JSON.parse(await readFile(join(dir, "summary.json"), "utf8")) as { model: string; startedAt: string; results: Array<{ id: string; prompt: string }> };
 
 const rows: Row[] = breakdown(lines).map((r) => {
-  // 几条翻译任务开头相同：取原文被包含、且最长的那条。
   const known = summary.results.filter((k) => r.text.includes(k.prompt)).sort((x, y) => y.prompt.length - x.prompt.length)[0];
 
   return { ...r, id: known?.id ?? (single ? r.runId.slice(0, 8) : "?") };
 });
 
-// 几条翻译任务的原话完全相同：任务数和结果数一致时按先后对上名字。
 if (rows.length === summary.results.length) rows.forEach((r, i) => { r.id = summary.results[i]!.id; });
 
 const s = (n: number) => (n / 1000).toFixed(1);
@@ -204,7 +181,6 @@ const median = (xs: number[]) => { const v = [...xs].sort((a, b) => a - b);
 
   return v.length ? v[Math.floor((v.length - 1) / 2)]! : 0; };
 
-// 整页翻译的工具在里面分批调模型，「动手」其实是等模型；合计另给一行不含它的。
 const MODEL_INSIDE = new Set(["page_translation"]);
 
 const plain = rows.filter((r) => !Object.keys(r.tools).some((k) => MODEL_INSIDE.has(k)));

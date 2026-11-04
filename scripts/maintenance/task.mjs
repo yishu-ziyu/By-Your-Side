@@ -1,11 +1,3 @@
-/**
- * 开一个任务工作树：从最新 origin/main 建分支和 ../bys-<名>，并把依赖接好（不用再 npm ci）。
- *
- *   npm run task -- fix/slow-reply      # 分支 fix/slow-reply，目录 ../bys-slow-reply
- *
- * 依赖按 docs/development/checks.md#依赖 建：其他包逐个链回主目录，@sideagent/* 链到工作树自己的源码，
- * 因为整个 node_modules 指回主目录时，扩展构建会悄悄用上主目录的旧代码。
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, symlinkSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";

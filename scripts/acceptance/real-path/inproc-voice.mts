@@ -1,25 +1,3 @@
-/**
- * 语音迁移验收：只装扩展、不装伴随进程，语音在扩展里连 StepFun，完成一句真实语音请求。
- *
- *   --case=question  问页面内容："这个页面上的备注写的是什么"，回答要包含页面上的备注
- *   --case=mark      语音操作："帮我把保存按钮圈出来，不要点它"，圈要盖住「保存」且按钮没被点
- *   --case=chat      闲聊："我今天有点累，陪我聊两句吧。"，只留回答原文，供人判断人设语气
- *   --case=opinion   闲聊："你觉得这个页面做得怎么样？"，同上，是人设示例之外的留出题
- *   --case=barge-in   插话：先请它讲个长故事，回答播到一半时问备注；旧回答要在开口后马上停声，新问题照常回答
- *   --case=stop-task  点选等待中：问候照常回答、停声不停任务；说“终止任务”直接终止原任务，回执前不宣称已停，旧要求不能复活
- *   --case=ask-status 任务在跑时问「任务结束了吗？」：问句不是终止，原任务照常在跑，助手照常回答（文字模型用本机脚本模型拖住任务）
- *
- * 麦克风是 macOS say 合成的中文 WAV（Chrome 假设备只放一遍）。语音密钥来自 ~/.sideagent/stepfun-api.key，
- * 文字模型来自 ~/.sideagent/providers.local.json（--model=provider/id，默认 kimi-coding/kimi-for-coding）。
- *
- *   --voice=<音色>   先在设置页点选音色，再核对服务端 session.updated 回显的就是它
- *   --lead=<ms>      开头静音时长（默认 6000）；--lead=300 相当于点完麦克风马上开口，会话此时还没就绪
- *
- * 问答、圈画、闲聊用例另记开口时间线（result.opening）：开麦、握手帧、首帧音频、服务端断句与转写相对开麦的毫秒数，
- * 以及发给服务端的音频响度。判据 speechDelivered 比较 WAV 里的人声时长和实际发给服务端的人声时长，不依赖服务端断句。
- *
- *   npx tsx scripts/acceptance/real-path/inproc-voice.mts --headless --case=mark
- */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -37,7 +15,6 @@ import { MODEL } from "../../../agent/src/realtime-voice-connection.ts";
 
 requireHeadless();
 
-/** 导出的语音记录一行：本机同格式的公共字段；text 只在 asr / text / forward 行上有。 */
 const VoiceLineSchema = Type.Object({ at: Type.Number(), voiceId: Type.String(), type: Type.String(), text: Type.Optional(Type.String()) });
 
 type VoiceLine = Static<typeof VoiceLineSchema>;
@@ -77,28 +54,21 @@ const artifacts = join(REPO, "out/acceptance/real-path", `${startedAt.toISOStrin
 
 await mkdir(artifacts, { recursive: true });
 
-// 前面垫静音，后面垫静音让服务端断句。就绪前的人声由侧栏缓冲、就绪后补发。
 const wav = join(artifacts, "microphone.wav");
 
-// 终止用例两句：先问候（闸门放行、停声不停任务），再说终止（直接终止，不读回）。
-// 先去设置页选音色或人设会多耗几秒，开头静音跟着加长。假麦克风在 getUserMedia 时开始放（实测人声出现在开麦后 lead 毫秒）。
-// --lead=<ms>：开头静音。用 --lead=300 模拟用户点完麦克风马上开口（会话还没就绪）。
 const leadArg = process.argv.find((arg) => arg.startsWith("--lead="))?.slice(7);
 
 const lead = leadArg ? Number(leadArg) : process.argv.some((arg) => arg.startsWith("--voice=") || arg.startsWith("--persona=")) ? 14000 : 6000;
 
-/** 插话用例的第一句：要一段足够长的回答，第二句开口时它还在念。 */
 const STORY = "给我讲一个长一点的故事，慢慢讲。";
 
 const speech = caseName === "stop-task" ? `[[slnc ${lead}]]你好。[[slnc 12000]]${QUESTION}[[slnc 8000]]` : caseName === "barge-in" ? `[[slnc ${lead}]]${STORY}[[slnc 20000]]${QUESTION}[[slnc 8000]]` : `[[slnc ${lead}]]${QUESTION}[[slnc 4000]]`;
 
 execFileSync("say", ["-v", "Tingting", "-o", wav, "--data-format=LEI16@24000", speech]);
 
-/** 人声判定：20 ms 一窗，峰值超过它算有人声。静音和底噪都远低于它。 */
 const SPEECH_PEAK = 5000;
 let speechEndMs = 0;
 
-/** WAV 里有人声的总时长（毫秒），与发给服务端的音频比较，判断开口有没有被丢。 */
 const spokenMs = await readFile(wav).then((bytes) => {
   const data = bytes.indexOf("data") + 8;
   let ms = 0;
@@ -127,13 +97,8 @@ await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 
 const pageUrl = `http://127.0.0.1:${siteAddress(site).port}/note`;
 
-// 文字模型：用户选的套餐。Kimi 是订阅登录，只借用 Pi 里当前有效的令牌，不在测试里刷新。
 const modelArg = process.argv.find((arg) => arg.startsWith("--model="))?.slice("--model=".length) ?? "kimi-coding/kimi-for-coding";
 
-/**
- * ask-status 的原任务只需要一直在跑：文字模型换成本机脚本模型，对这句任务拖着不回。
- * 真模型可能直接用文字反问、任务当场结束，宿主的终止判断就不在场了。
- */
 const ASK_STATUS_TASK = "帮我把这个页面上的备注整理一下";
 
 const holdingModel = caseName === "ask-status" ? await startScriptedModel([{ match: "备注整理", steps: [{ text: "好的，我整理一下。", delayMs: 180_000 }] }]) : null;
@@ -172,7 +137,6 @@ const states: string[] = [];
 
 const result: JsonRecord = { case: `inproc-voice-${caseName}`, startedAt: startedAt.toISOString(), question: QUESTION, model: modelArg };
 
-// --native：原先同一段录音走本机伴随进程做对照；本机模式已退役，传了就报错。
 if (process.argv.includes("--native")) throw new Error("--native 已随本机模式退役，只能验收扩展内路径");
 
 const voiceArg = process.argv.find((arg) => arg.startsWith("--voice="))?.slice("--voice=".length);
@@ -181,7 +145,6 @@ if (voiceArg && !STEP_VOICES.some((v) => v.id === voiceArg)) throw new Error(`�
 
 result.voice = voiceArg ?? null;
 
-// --persona=robin|default|custom：像用户一样在设置页选人设（custom 会填一段描述并保存），再核对发给供应商的会话配置。
 const personaArg = process.argv.find((arg) => arg.startsWith("--persona="))?.slice("--persona=".length);
 
 const CUSTOM_PERSONA = "说话干脆利落，像一位老练的船长，偶尔来一句航海比喻。";
@@ -206,10 +169,8 @@ let panelSession: string | null = null;
 
 const providerTimeline: JsonRecord[] = [];
 
-/** 问答/圈画用例的开口时间线；失败超时也要落盘，所以在 finally 里调用。 */
 let recordOpening: (() => Promise<void>) | null = null;
 
-/** 插话用例的出声/开口判定；StepFun 挂住导致超时也要落盘，所以同样在 finally 里调用。 */
 let recordBargeIn: (() => Promise<void>) | null = null;
 
 try {
@@ -227,8 +188,6 @@ try {
   }
   panelSession = panel;
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
-  // 相当于用户在设置里填好文字模型和语音密钥。
-  // --shared-voice-key：不单独填语音 key，靠阶跃星辰模型的 key（需配合 --model=stepfun/…）。
   const sharedVoiceKey = process.argv.includes("--shared-voice-key");
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(sharedVoiceKey ? modelStorageItems(plan) : { ...modelStorageItems(plan), inproc_voice_key: voiceKey, ...(planVoice ? { inproc_voice_model: 'stepaudio-2.5-realtime' } : {}) })}).then(() => true)`);
   await until(async () => {
@@ -237,10 +196,8 @@ try {
 
     return state.connected && state.pill?.includes("订单备注") ? state : undefined;
   }, 60_000, "侧栏连上扩展内 agent 并认出练习页", 500);
-  // 侧栏启动时发的新建会话要等配置后才建好；在它切换会话之前点语音，会和会话切换撞在一起。
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#conversation-new")?.getAttribute("aria-busy") !== "true"`)) || undefined, 20_000, "启动时的新会话建好", 300);
 
-  // --voice=<id>：像用户一样在设置页点选音色；判据取服务端 session.updated 回显的音色，不看产品自己的日志。
   if (voiceArg) {
     const origin = await rp.evaluate(panel, "location.origin");
     // SAFETY: CDP 规范里 Target.createTarget 返回 { targetId }。
@@ -248,7 +205,6 @@ try {
     const settings = await rp.attach(targetId);
     await rp.cdp.send("Page.bringToFront", {}, settings);
     await until(async () => (await rp.evaluate(settings, `document.querySelectorAll(".timbre-option").length`)) === STEP_VOICES.length || undefined, 15_000, "设置页渲染音色");
-    // 音色在页面底部：先滚到可见处再点，和用户一样。
     await rp.evaluate(settings, `document.querySelector("#timbre-list").scrollIntoView({ block: "center" }); true`);
     await rp.click(settings, `.timbre-option[data-voice="${voiceArg}"]`);
     let pickState: PickState | null = null;
@@ -329,7 +285,7 @@ try {
         const event = JSON.parse(message.params?.response?.payloadData ?? "");
 
         if (event?.type === "session.update") sentInstructions = String(event.session?.instructions ?? "");
-      } catch { /* 音频等非 JSON 帧不关心 */ }
+      } catch {  }
     });
   }
 
@@ -361,7 +317,6 @@ try {
   };
 
   if (caseName === "stop-task" || caseName === "ask-status") {
-    // 供应商原始帧时间线：只留事件类型、ID、工具名和文字；音频只记每轮首帧时刻，密钥不在帧内容里。
     const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "扩展内 agent 文档");
     const off = await rp.attach(offscreen.targetId);
     await rp.cdp.send("Network.enable", {}, off);
@@ -399,7 +354,6 @@ try {
 
     result.stopTask = stopEvidence;
     stopEvidence.voiceSamples = voiceSamples;
-    // 旁路只记协议中可核验的身份、状态和回执；语音音频、凭据不进入产物。
     await rp.evaluate(panel, `(() => {
       const frames = [];
       const port = chrome.runtime.connect({ name: "sideagent-panel" });
@@ -462,7 +416,6 @@ try {
     };
 
     if (caseName === "ask-status") {
-      // 问任务状态的句子也带「结束…任务」：宿主不能把它当成终止，要交给模型照常回答，原任务照常在跑。
       const askedAt = Date.now();
 
       await rp.click(panel, "#input");
@@ -473,7 +426,6 @@ try {
         return state.heard.includes("任务") ? state : undefined;
       }, 40_000, "听到问任务状态", 200);
 
-      // 宿主误判时终止在转写后一两秒内就下发；等这句回答说完再看任务。
       await until(async () => {
         const state = await sample();
 
@@ -484,7 +436,6 @@ try {
       const aborted = frames.filter(frame => frame.kind === "receipt" && frame.action === "abort" && frame.at >= askedAt).map(frame => ({ ...frame }));
       const stopped = frames.some(frame => frame.at >= askedAt && ((frame.kind === "event" && frame.event === "run_stopped") || (frame.kind === "status" && frame.state === "aborted")));
 
-      // 转写要带「结束/取消…任务」这种终止说法的短句才测到了：转成「任务完成了吗」时，宿主本来就不会当成终止。
       const heardShort = asked.heard.replace(/[\p{P}\p{Z}\s]/gu, "");
       const abortWording = heardShort.length <= 16 && /(?:终止|中止|取消|停止|结束|停掉)(?:掉)?(?:当前|这个|这项|刚才的?)?任务|任务(?:给我)?(?:终止|中止|取消|停止|结束|停掉)/.test(heardShort);
 
@@ -500,7 +451,6 @@ try {
     }
 
     if (caseName === "stop-task") {
-      // 第一句是普通问候：可控任务期间的转写闸门必须放行，助手照常回答，任务不动。
       await rp.click(panel, "#input");
       await rp.click(panel, ".voice-start");
 
@@ -529,7 +479,6 @@ try {
       verdicts.muteKeepsOriginalTask = verdict(pendingAfterMute && afterMute.taskBusy && !abortedByMute, { muted, runId, pendingPicker: pendingAfterMute, taskBusy: afterMute.taskBusy, abortedByMute });
       await rp.screenshot(panel, join(artifacts, "02-muted-still-running.png"));
 
-      // 第二句“终止任务”：直接终止原任务，不复述确认；回执之前不能宣称已停。
       const confirmationWaitingAt = Date.now();
       let abort: StopFrame | undefined;
 
@@ -581,7 +530,6 @@ try {
       await writeFile(join(artifacts, "panel-transcript.txt"), (await rp.evaluate(panel, PANEL_STATE) as PanelState).transcript);
     }
   } else {
-  // 开口时间线：假麦克风从 getUserMedia 起放 WAV，就绪前的帧被侧栏丢弃；记下开麦、握手、首帧音频、断句与转写的时刻。
   const opening: Array<{ at: number; event: string; text?: string }> = [];
   const offscreen = await until(async () => (await rp.targets()).find((t) => t.url.endsWith("/inproc.html")), 10_000, "扩展内 agent 文档");
   const off = await rp.attach(offscreen.targetId);
@@ -606,10 +554,8 @@ try {
   const firstText = new Set<string>();
   const receivedBySecond = new Map<string, number>();
   const sessionIds: string[] = [];
-  // 服务端回显的断句参数，确认 session.update 里的取值真的生效。
   let turnDetection: Json | undefined;
   const wire = { appends: 0, lastAppendAt: 0, received: 0, lastReceivedAt: 0, lastReceivedType: "", spokenSentMs: 0 };
-  // 发给服务端的音频有多响：每 500 ms 一格记峰值（int16），判断是服务端没断句还是浏览器把声音压低了。
   const loudness: Array<{ at: number; peak: number }> = [];
 
   const onFrame = (dir: "sent" | "received") => (message: { sessionId?: string; params?: { response?: { payloadData?: string } } }) => {
@@ -632,7 +578,6 @@ try {
 
     if (dir === "received") {
       Object.assign(wire, { received: wire.received + 1, lastReceivedAt: Date.now(), lastReceivedType: type });
-      // 按秒记收到的事件类型：分清「挂住」时服务端到底还在发什么。
       const second = Math.floor((Date.now() - startedAt.getTime()) / 1000);
       receivedBySecond.set(`${second}:${type}`, (receivedBySecond.get(`${second}:${type}`) ?? 0) + 1);
     }
@@ -665,7 +610,6 @@ try {
       opening.push({ at: Date.now(), event: `${dir}:${type}`, text: isText(e.transcript) ? e.transcript : undefined });
     }
 
-    // 回复与工具：看被切成两轮时第一轮的工具调用去了哪；文字通道只记每个回复的第一段，区分是读出来的还是只有文字。
     // SAFETY: StepFun Realtime 事件是 JSON 对象，response/item 字段按其事件协议为对象或缺省；只读取可选字段。
     const item = e.item as JsonRecord | undefined;
     // SAFETY: 同上。
@@ -708,9 +652,6 @@ try {
   })()`);
 
   if (caseName === "barge-in") {
-    // 测试自己的两只耳朵，都不读产品状态：
-    // 出声——侧栏把回答接到扬声器的那个节点上旁挂一个音量计，每 20 ms 记一次实际输出音量；
-    // 开口——麦克风流上另挂音量计，记每段人声的起止（停顿超过 800 ms 才算新一段）。
     await rp.evaluate(panel, `(() => {
       window.__out = [];
       window.__segments = [];
@@ -767,16 +708,12 @@ try {
     const LOUD = 0.005;
     const audibleMs = (from: number, to: number) => out.filter(([at, rms]) => at >= from && at < to && rms > LOUD).length * 20;
     const [onset, spokenEnd] = segments[1] ?? [0, 0];
-    // 开口后从哪一刻起直到用户说完都没有声音（只看 400 ms 空档会被回答的句间停顿骗过，改前基线实测如此）。
     const silentFrom = onset ? out.find(([at]) => at >= onset && audibleMs(at, spokenEnd) === 0)?.[0] : undefined;
-    // 看开口前 1.5 秒：长回答句与句之间的停顿会超过半秒。
     const playingAtOnset = onset ? audibleMs(onset - 1500, onset) : 0;
     const talkOverMs = onset ? audibleMs(onset + 1500, spokenEnd) : null;
-    // 输出音量计的采样数和峰值：确认它真录到过回答的声音。
     const outPeak = Math.round(Math.max(0, ...out.map(([, rms]) => rms)) * 1000) / 1000;
     const timeline = { segments: segments.map(([a, b]) => [a - began, b - began]), playingAtOnsetMs: playingAtOnset, silencedAfterMs: silentFrom === undefined ? null : silentFrom - onset, talkOverMs, secondUtteranceMs: spokenEnd - onset, outSamples: out.length, outPeak };
     result.bargeIn = timeline;
-    // 开口前旧回答没在出声时，后两条没有意义，一并判不通过，不算作停声成功。
     const valid = segments.length >= 2 && playingAtOnset >= 200;
     verdicts.answerPlayingWhenUserSpoke = verdict(valid, timeline);
     verdicts.oldAnswerSilenced = verdict(valid && silentFrom !== undefined && silentFrom - onset <= 1500, timeline);
@@ -789,7 +726,6 @@ try {
     const t0 = micOpenedAt ?? began;
     // SAFETY: 同上，__voiceOnsetAt 只会是 null 或 Date.now() 数值。
     const voiceOnsetAt = await rp.evaluate(panel, "window.__voiceOnsetAt") as number | null;
-    // 开口没被丢：发给服务端的人声至少是 WAV 里人声的八成（浏览器自动增益会让个别音节过线或不过线）。
     verdicts.speechDelivered = verdict(wire.spokenSentMs >= spokenMs * 0.8, { spokenMs, sentMs: wire.spokenSentMs });
     if (firstUtterance) {
       const gates = await rp.evaluate(off, "window.__firstReadyGates") as Array<{ receivedAt: number; deliveredAt: number | null }>;
@@ -821,14 +757,12 @@ try {
 
     if (state.voiceState && states.at(-1) !== state.voiceState) states.push(state.voiceState);
 
-    // 状态和状态文字都记：挂住重连后「请再说一遍」是同一个 listening 状态下的文字变化。
     if (state.voiceState && `${state.voiceState}|${state.voiceStatus}` !== lastPanelStatus) {
       lastPanelStatus = `${state.voiceState}|${state.voiceStatus}`;
       opening.push({ at: Date.now(), event: `panel:${state.voiceState}`, text: state.voiceStatus });
     }
 
     if (state.voiceState === "error") return true;
-    // 插话用例要等第二句的回答：假麦克风放完、侧栏听到的是第二句之后才开始算回答稳定。
     const secondTurn = caseName !== "barge-in" || (state.heard.includes("备注") && Date.now() - began > lead + 40_000);
     const answerMatches = caseName !== "question" || state.answer.includes(NOTE);
     const answered = secondTurn && answerMatches && !!state.answer && state.voiceState === "listening" && states.includes("speaking");
@@ -856,7 +790,6 @@ try {
   if (voiceArg) verdicts.providerUsedPickedVoice = verdict(voiceFrames.requested === voiceArg && voiceFrames.confirmed === voiceArg, { picked: voiceArg, ...voiceFrames });
 
   {
-    // 语音鉴权头规则只该作用于本扩展发起的连接：普通网页自己连 StepFun，服务端不应认出它已鉴权。
     // SAFETY: 这段页面脚本只返回下面四种字符串之一。
     const borrowed = await rp.evaluate(page, `new Promise((done) => {
       const socket = new WebSocket("wss://api.stepfun.com/v1/realtime?model=${MODEL}");
@@ -869,14 +802,10 @@ try {
   }
 
   {
-    // 语音日常记录：像用户一样从设置页导出，读下载下来的文件。日常模式与本机一致只记 asr / forward / text
-    // （逐帧的 ready / append / commit 只在诊断模式产生，见 realtime-voice-session.ts）；识别文字要写进记录，
-    // 每行可解析，且不含语音密钥。
     const { exportStatus, voice } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
     const lines = voice.split("\n").filter(Boolean).map(parseVoiceLine);
     const types = new Set(lines.map((line) => line?.type));
     const recognized = lines.filter((line) => line && (line.type === "asr" || line.type === "text") && line.text).map((line) => line?.text ?? "");
-    // 记录要如实反映侧栏听到的那句话；听得准不准由 heardQuestion 单独判。
     const heard = (final?.heard ?? "").replace(/^你：/, "").trim();
     const pass = ["asr", "text"].every((type) => types.has(type)) && !!heard && recognized.some((text) => text.includes(heard)) && !lines.includes(null) && !voice.includes(voiceKey);
     verdicts.voiceRecordExported = verdict(pass, { heard, exportStatus, lines: lines.length, types: [...types].map(String), recognized: recognized.slice(0, 4), malformed: lines.filter((line) => !line).length });
@@ -884,11 +813,9 @@ try {
 
   if (caseName === "question" || caseName === "barge-in") verdicts.answerFromPage = verdict(!!final?.answer.includes(NOTE), { answer: final?.answer ?? "" });
   else if (caseName === "chat" || caseName === "opinion") {
-    // 闲聊只留回答原文给人判断人设语气；机器只查有回答。
     verdicts.answered = verdict(!!final?.answer.trim(), { answer: final?.answer ?? "" });
     result.answer = final?.answer ?? "";
   } else {
-    // 判据独立于产品定位逻辑：用 Chrome 自己算的盒子比较圈和按钮。
     // SAFETY: DOM.getDocument/querySelector/getBoxModel 的返回形状见 CDP 规范。
     const { root } = await rp.cdp.send("DOM.getDocument", { depth: 1 }, page) as { root: { nodeId: number } };
     // SAFETY: 同上。
@@ -912,7 +839,6 @@ try {
 
   if ((caseName === "stop-task" || caseName === "ask-status") && panelSession) result.stopTaskProtocol = await rp.evaluate(panelSession, "window.__stopProbe?.frames ?? []").catch(() => []);
 
-  // 语音连不上、出错的底层原因只进诊断记录：失败时导出一份，留下出错的几行。
   if (panelSession) result.voiceErrors = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads")).then(({ voice }) => voice.split("\n").filter((line) => /socket_error|fatal|"close|error/i.test(line)).slice(-10)).catch((error: unknown) => `诊断导出失败：${String(error)}`);
 
   if (panelSession) await rp.screenshot(panelSession, join(artifacts, "panel-failed.png")).catch(() => {});

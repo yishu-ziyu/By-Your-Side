@@ -1,16 +1,3 @@
-/**
- * 过程块 AC：进行中两行，做完一行回执，展开是记录。
- *   npx tsx scripts/acceptance/real-path/process-block.mts --headless
- * 脚本模型：想 4 秒 → 打开页 B → js（带用途「读出标题」）→ 点一个不存在的按钮（没做成）→ 想 8 秒 → 点「作品」→ 等 4 秒、写思考、2 秒后出字、回答放 3 秒。
- *   a) 想 8 秒那段：第一行写「正在：思考」，秒数从这段开始数（和真实时间差 ≤1.2 秒）；第二行「已试了 3 步，其中 1 次没做成，已换别的方法」。
- *   b) 侧栏任何时候都没有「执行脚本」「0.0s」「+ 前面」「件事」。
- *   c) 回执「做了 3 步 · 耗时 · 核对状态」（#334 的收尾样式，换了做法的那步在展开的过程里）；380px 和 300px 宽都是一行。
- *   d) 展开的记录：「想了 N 秒」只列三段长的（4 秒、8 秒左右，和最后一轮），末行「共 N 秒，其中想了 M 秒」，N 与发送到结束差 ≤1 秒。
- *   e) 重开侧栏（回放历史）后，过程块的文字和回放前一样；回放没有时钟时不写任何秒数。
- *   d0) 点开过程行 220ms 内展开到位：一天点很多次，等久了像卡。
- *   f) 最后一轮的思考块标题从上一步结束数到回答出第一个字（约 6 秒），不从第一个思考字数到这一轮结束（约 5 秒）（#261）。
- * 失败方式：标题仍拼「· 已做 N 步」、秒数数整轮、回执只写步数或写了耗时，对应的项失败。反例结果见验收文件。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -35,7 +22,6 @@ const ASK = "案例：打开作品页，点作品。";
 
 const ANSWER = "已经点开作品。";
 
-/** 第 2 段长思考：点了不存在的按钮之后，脚本模型过这么久才回下一步。 */
 const LONG_THINK_MS = 8_000;
 
 const port = siteAddress(site).port;
@@ -57,7 +43,6 @@ const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
 
-/** 最后一个过程块的读数。 */
 const READ = `(() => {
   const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
   if (!d) return null;
@@ -92,10 +77,8 @@ try {
   const sentAt = Date.now();
   await rp.pressEnter(panel);
 
-  // 不存在的按钮那一步结束后，就是 8 秒的那段思考。
   const read = async () => (await rp.evaluate(panel, READ)) as Read | null;
   const seen = new Set<string>();
-  // 第 4 个模型请求到达 = 第 3 步（不存在的按钮）的结果已经回给模型，8 秒的思考从这时开始。
   await until(async () => {
     const r = await read();
 
@@ -126,7 +109,6 @@ try {
   check("c2 300px 宽：回执仍是一行", narrow.oneLine && /^做了 3 步 · \d[^·]*秒 · (核对中…|已核对页面)$/.test(narrow.title), { title: narrow.title, oneLine: narrow.oneLine });
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 380, height: 760, deviceScaleFactor: 2, mobile: false }, panel);
 
-  // 量用户看到的：从点下到过程块高度不再变化（连续 5 帧不动）用了多久。
   const openMs = await rp.evaluate(panel, `new Promise(done => {
     const d = [...document.querySelectorAll("#messages details.run-steps")].at(-1);
     const start = performance.now();

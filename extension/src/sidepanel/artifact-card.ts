@@ -1,10 +1,3 @@
-/**
- * 模型写给用户的文件（artifacts 工具）在侧栏里的卡片：文件名、类型与大小、「打开」与「下载」按钮。
- * 模型交给用户的截图（encoding: base64 的 PNG）同样是一张卡片，上方直接显示图片，点图片与「打开」一样看大图。
- * 同名文件再次保存时更新同一张卡片；删除后卡片保留但标明已删除、不能再打开或下载。
- * 「打开」把内容放进 chrome.storage.session，再在新标签页开查看页（artifact-viewer-page.ts）；
- * 之后同名再保存或删除时同步这份副本，已开的查看页跟着更新或提示文件已不在。
- */
 import { readArtifact } from "../shared/durable-store.js";
 import type { AgentUiEvent } from "../../../shared/protocol.js";
 import { bindMotionIcon } from "./motion-icon.js";
@@ -23,7 +16,6 @@ export const lookup = (table: Record<string, string>, ext: string): string | und
 
 export const extensionOf = (filename: string) => filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
 
-/** base64 → 字节；截图卡片的下载与查看页的图片都用原始字节。 */
 export function bytesOf(base64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(base64);
   const out = new Uint8Array(binary.length);
@@ -41,12 +33,10 @@ function sizeLabel(content: string, encoding?: "base64"): string {
 
 export const mimeOf = (filename: string): string => lookup(MIME, extensionOf(filename)) ?? "text/plain";
 
-/** 查看页读的副本：chrome.storage.session 里的一项，键随卡片固定。 */
 export type ArtifactViewItem = { filename: string; content: string; encoding?: "base64" };
 
 export const VIEW_KEY_PREFIX = "artifactView:";
 
-/** CSV 前加 BOM：Excel 按 UTF-8 打开，中文不乱码。base64 内容（截图）按原始字节下载。 */
 export function download(filename: string, content: string, encoding?: "base64"): void {
   const ext = extensionOf(filename);
 
@@ -77,7 +67,6 @@ type Card = {
 
 export class ArtifactCards {
   private readonly cards = new Map<string, Card>();
-  /** 本轮新建或改过的卡片：回合结束时挪到回答下面，用户读完回答就能看到。 */
   private readonly touched = new Set<string>();
 
   private generation = 0;
@@ -92,7 +81,7 @@ export class ArtifactCards {
   constructor(
     private readonly append: (el: HTMLElement) => void,
     private readonly conversation: () => string = () => "default",
-    /** 必须再次由用户点按钮，才把沙箱里的选择填进草稿；永不自动发送。 */
+    /** WHY: 必须再次由用户点按钮，才把沙箱里的选择填进草稿；永不自动发送。 */
     private readonly onChoice: (text: string) => void = (text) => {
       const input = document.querySelector<HTMLTextAreaElement>("#input");
 
@@ -153,7 +142,6 @@ export class ArtifactCards {
     card.meta.textContent = `${event.encoding === "base64" ? "图片" : lookup(KIND_LABEL, extensionOf(event.filename)) ?? "文件"} · ${sizeLabel(content, event.encoding)}`;
   }
 
-  /** 回合结束卡片在回答之后。已展开的 iframe 必须保持连接，排列方式由 append callback 决定。 */
   settleAfterTurn(): void {
     for (const filename of this.touched) {
       const card = this.cards.get(filename);
@@ -228,7 +216,6 @@ export class ArtifactCards {
     return card;
   }
 
-  /** 默认缩略图保留文件名与操作；展开用同一原图，不调用模型。点图打开查看页。 */
   private preview(card: Card, contentChanged: boolean): void {
     const old = card.root.querySelector<HTMLImageElement>(".artifact-preview");
     card.previewToggle.hidden = card.encoding !== "base64";
@@ -236,8 +223,6 @@ export class ArtifactCards {
     const live = html && !card.inlineRoot.hidden;
 
     if (live && contentChanged && !card.inlineRoot.querySelector(".artifact-inline-stale")) {
-      // HTML changed during this turn. Keep the running iframe and user input.
-      // Loading the new version is an explicit decision (close and reopen).
       const notice = document.createElement("p");
       notice.className = "artifact-inline-stale";
       notice.textContent = "文件已更新。预览里还是你填的内容。收起再展开，就能看新版。";
@@ -268,7 +253,6 @@ export class ArtifactCards {
     }
   }
 
-  /** 只有主动展开才装入脚本；回传只准备本地草稿，不触发模型或网页动作。 */
   private openInline(card: Card): void {
     if (card.encoding || !["html", "htm"].includes(extensionOf(card.root.dataset.filename ?? ""))) return;
     this.closeInline(card);
@@ -345,7 +329,6 @@ export class ArtifactCards {
     return chrome.storage.session.set({ [card.viewKey]: item });
   }
 
-  /** 先写好副本再开标签页：查看页一加载就能读到。 */
   private async open(filename: string, card: Card): Promise<void> {
     await this.share(filename, card);
     card.opened = true;

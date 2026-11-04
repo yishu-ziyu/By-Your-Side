@@ -3,11 +3,6 @@ import { isTransientModelError } from "../../shared/provider-busy.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AgentSession, AgentSessionEvent, AgentSessionEventListener, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 
-/**
- * 会话层（session.ts）对底层 agent 循环的全部依赖，按实际访问的成员列出。
- * 本机实现就是 pi-coding-agent 的 AgentSession；扩展里另给一个基于 pi-agent-core Agent 的实现，
- * 这样同一份会话代码能在两处运行。加成员前先确认两边都能提供。
- */
 export interface AgentLoop extends Pick<
   AgentSession,
   | "abort" | "clearQueue" | "dispose" | "getActiveToolNames" | "getToolDefinition" | "isStreaming"
@@ -23,63 +18,31 @@ export interface AgentLoop extends Pick<
     getBranch(): ReturnType<SessionManager["getBranch"]>;
   };
   flushPersistence?(): Promise<void>;
-  /** 这一轮发给模型的系统提示词（Pi 1.0 的 agent.state.systemPrompt 不再反映它）。 */
   readonly systemPrompt: string;
-  /**
-   * 可重试的模型错误要不要在同一模型上重试；返回 false 时这一轮直接结束（willRetry=false），由外层换备用模型。
-   * 只有扩展里的循环支持；本机 AgentSession 照旧按自己的重试设置。
-   */
   retryGate?: (message: AssistantMessage) => boolean;
-  /** 接着当前上下文再跑一轮，并带自动重试；没有时退回 agent.continue()（不带重试）。 */
   resume?(): Promise<void>;
-  /** 点进输入框时先把系统提示词和工具清单送进服务商的前缀缓存；只有扩展里的循环支持。 */
   warmPromptCache?(next: { toolNames: readonly string[]; systemPrompt: (base: string) => string }): Promise<"sent" | "skipped" | "aborted" | "error">;
-  /** 面板断开时不取消存储里的运行，进程死掉后才能从存储接着做。 */
   readonly keepsRunAfterDisconnect?: boolean;
-  /**
-   * 模型正在写正文（还没开始写工具调用）时，把已写的部分当成这次调用的完整回复收下，让循环立刻读排队的插话。
-   * 模型还一个字没写（在思考或还没回话）时，丢掉这次调用，收下一条空回复，循环同样立刻读插话。
-   * 截断了返回 true；已开始写工具调用、或没有正在进行的模型调用时返回 false，插话照旧等这一步结束。
-   */
   interruptText?(): boolean;
 }
 
-/**
- * 任务核心对模型运行时的依赖。本机实现是 pi-coding-agent 的 ModelRuntime；
- * 扩展里用 pi-ai 的模型目录包一层。注册验收模型、cliproxy 这类本机专用能力不在这里。
- */
 export type ModelPort = Pick<ModelRuntime, "completeSimple" | "getAvailable" | "getModel" | "streamSimple"> & {
-  /** 即时动作（划词解释、网页翻译批次）用的快速模型，调用时不开思考；没有设置时返回 undefined，沿用会话主模型。 */
   fastModel?: () => Model<Api> | undefined;
-  /** 主任务的备用模型：用户在设置里选的；没选时返回 undefined，主模型出错不换。 */
   backupModel?: () => Model<Api> | undefined;
-  /** 服务商在界面上的名字（如「阶跃星辰」），用于切换提示；不知道时返回 undefined。 */
   providerName?: (provider: string) => string | undefined;
-  /**
-   * 同一个服务商并发闸门、换一个观察者：经返回的接口发出的请求排队较久时回调 onWait，诊断记录由此归到发请求的会话。
-   * purpose：流式请求（主任务、正式回答、阅读回答）和标了 userWaiting 的一次性调用记 main，其余一次性调用（记忆、核对、翻译、站点笔记）记 side。
-   */
   observeQueue?: (onWait: (wait: { provider: string; purpose: "main" | "side"; waitedMs: number }) => void) => ModelPort;
-  /** 和这个端口同一份 pi-ai 目录。Harness 用它解析服务商；真正的流式调用仍走本端口。 */
   pi?: Models;
 };
 
-/**
- * ModelPort 调用可多带的选项（不是 pi-ai 的字段，适配层不认、原样忽略）。服务商有并发上限时请求先在扩展里排队，这两项告诉排队的一方：
- * userWaiting：用户正在等这次一次性调用的结果（语音意图、非流式正式回答），按主任务请求的优先级排队；
- * onQueued：这次请求要排队时同步调用，sent 在请求真正发出时兑现。首字计时和对冲计时从发出时算，排队的时间不算。
- */
 export interface ModelQueueOptions {
   userWaiting?: true;
   onQueued?: (sent: Promise<void>) => void;
 }
 
-/** 给一次性调用的选项标上「用户在等」。 */
 export function userWaiting<T extends object>(options: T): T & ModelQueueOptions {
   return { ...options, userWaiting: true };
 }
 
-/** 这一轮还没提交给模型就被停下了：不会有 agent_end 来收尾，会话层按「停下、没开工」处理，不当成错误。 */
 export class RunNotStarted extends Error {
   constructor() {
     super("本轮已取消，没有启动模型或操作页面。");
@@ -87,15 +50,8 @@ export class RunNotStarted extends Error {
   }
 }
 
-/** 换到备用模型多久之后，用户的下一条消息回主模型（用户定的 5 分钟）。 */
 const MODEL_SWITCH_BACK_AFTER_MS = 5 * 60_000;
 
-/**
- * 模型服务出错（挂起超时、连接错误、429、5xx、流提前结束）时，第一次失败就换备用模型接着做，每轮最多换一次。
- * 备用模型：显式给的 provider/id（须有凭据）；没给时用设置里的备用模型。和当前模型相同时不换。
- * 能换时不在原模型上重试（retryGate）；换过之后，备用模型照常自动重试。
- * 换过去满 MODEL_SWITCH_BACK_AFTER_MS 后，用户的下一条消息先换回原模型（reason="restore"）；一轮中途不换回。
- */
 export function withModelFailover(
   loop: AgentLoop,
   models: ModelPort,
@@ -114,7 +70,6 @@ class FailoverLoop implements AgentLoop {
   private running = false;
   private stopped = false;
   private switchedThisRun = false;
-  /** 换到备用模型的时间和原模型；用户自己换模型或已换回时清空。只在内存里。 */
   private switchedAt: number | undefined;
   private primary: Model<Api> | undefined;
   private readonly idleWaiters: Array<() => void> = [];
@@ -147,7 +102,7 @@ class FailoverLoop implements AgentLoop {
   get isStreaming() { return this.running || this.inner.isStreaming; }
 
   prompt(...args: Parameters<AgentLoop["prompt"]>): Promise<void> {
-    // The underlying Agent is briefly idle while credentials are checked and the
+    // WHY: The underlying Agent is briefly idle while credentials are checked and the
     // backup model is selected. A new prompt must not overtake that continuation.
     if (this.running && !this.inner.isStreaming) return this.waitForIdle().then(() => this.prompt(...args));
 
@@ -223,8 +178,6 @@ class FailoverLoop implements AgentLoop {
 
       if (!previous || this.stopped) return;
 
-      // If the failed response is no longer the response in this context, do not
-      // guess which message to remove or risk replaying an earlier tool call.
       const failedMessage = lastAssistant(failed.messages);
       const messages = this.inner.agent.state.messages;
       const index = failedMessage ? messages.lastIndexOf(failedMessage) : -1;
@@ -235,7 +188,6 @@ class FailoverLoop implements AgentLoop {
       this.heldEnd = undefined;
 
       if (!backup || !await this.inner.setModel(backup).then(() => true, () => false)) {
-        // 备用模型没有凭据或换不过去：回到原模型的自动重试，不因为没换成就少试。
         this.inner.agent.state.messages = [...messages.slice(0, index), ...messages.slice(index + 1)];
 
         if (this.stopped) return;
@@ -251,11 +203,8 @@ class FailoverLoop implements AgentLoop {
       this.primary = previous;
       await this.inner.sessionManager.appendCustomEntry("sideagent-model-fallback-v1", { from, to });
       this.onSwitch(from, to, "fallback");
-      // Pi's normal retry removes only the failed assistant from model context.
-      // Tool results remain, so continuing cannot execute already finished tools again.
       this.inner.agent.state.messages = [...messages.slice(0, index), ...messages.slice(index + 1)];
 
-      // 换模型要等写盘；这段时间里用户点了「停」，备用模型就不再发请求。
       if (this.stopped) return;
 
       await this.continueRun();
@@ -274,7 +223,6 @@ class FailoverLoop implements AgentLoop {
     }
   }
 
-  /** 新的一次提问开始前：换到备用已满 MODEL_SWITCH_BACK_AFTER_MS，就先换回原模型。换不回去时留在备用上。 */
   private async switchBackIfDue(): Promise<void> {
     const primary = this.primary;
     const backup = this.inner.model;
@@ -309,7 +257,6 @@ class FailoverLoop implements AgentLoop {
     return !!message && this.canSwitch(message);
   }
 
-  /** 这次失败能不能换备用模型：本轮没换过、有和当前不同的备用模型、错误属于服务暂时不可用。 */
   private canSwitch(message: AssistantMessage): boolean {
     const model = this.inner.model;
     const backup = this.candidate();
@@ -330,7 +277,6 @@ class FailoverLoop implements AgentLoop {
     return this.models.getModel(this.backupPattern.slice(0, slash), this.backupPattern.slice(slash + 1));
   }
 
-  /** 显式指定的备用模型要有凭据；设置里的备用模型只列有凭据的服务商，直接用（没凭据时 setModel 失败，回到原模型重试）。 */
   private async usableBackup(): Promise<Model<Api> | undefined> {
     const candidate = this.candidate();
 

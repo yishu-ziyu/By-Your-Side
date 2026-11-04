@@ -1,9 +1,3 @@
-/**
- * 沟通方式的证据累积：每轮复盘（memory-review.ts）判出的抱怨、要求和认可按方面攒起来，够了才问用户要不要记成做法。
- * 一句抱怨可能只是这一次不满意，所以要么用户明说「以后都」，要么「抱怨 → 改了 → 认可」成对出现，
- * 要么同一方面在两个不同的回合里被抱怨过，才问。问过的方面不再问（用户删掉那条做法后也不会自己冒出来）。
- * 纯逻辑，不读时钟，状态是纯 JSON。
- */
 import { REVIEW_ASPECTS, type ReviewAspect, type TurnReview } from "./memory-review.js";
 
 interface StyleSignal {
@@ -18,14 +12,12 @@ interface StyleSignal {
 
 interface StyleState {
   signals: StyleSignal[];
-  /** 问过的方面 → 问的时间。 */
   asked: Partial<Record<ReviewAspect, number>>;
 }
 
 interface StyleAsk {
   aspect: ReviewAspect;
   rule: string;
-  /** 依据：用户说过的原话，最早的在前。 */
   quotes: string[];
   reason: "lasting" | "praised" | "repeated";
 }
@@ -47,7 +39,6 @@ function isSignal(value: unknown): value is StyleSignal {
     && typeof value.turnKey === "string" && typeof value.at === "number" && typeof value.rule === "string" && typeof value.evidence === "string";
 }
 
-/** 存储里读出的文本：形状不对的部分丢掉，只是少了些证据。 */
 export function parseStyleState(text: string | null): StyleState {
   try {
     const raw: unknown = JSON.parse(text ?? "null");
@@ -80,6 +71,5 @@ export function observeStyle(state: StyleState, signal: StyleSignal, lasting: bo
   next.asked[signal.aspect] = signal.at;
   const quotes = [...new Set((reason === "lasting" ? [signal] : same.filter(old => old.feedback !== "none")).map(old => old.evidence))].slice(-3);
 
-  // 认可的那句描述的是已经奏效的做法，规则取它；其余取最近一句。
   return { state: next, ask: { aspect: signal.aspect, rule: signal.rule, quotes, reason } };
 }

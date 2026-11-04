@@ -8,14 +8,11 @@ export interface PageReadiness {
   readiness:PageReadinessValue;
   documentId?:string;
   waitMs:number;
-  /** waitMs 里等 DOM 安静的部分。 */
   quietMs?:number;
-  /** waitMs 里错误页自动重试花掉的部分。 */
   retryMs?:number;
   download?:NavigationDownload;
 }
 
-/** 读当前文档；读不到时带上 Chrome 给的原因（错误页、不允许注入的地址）。 */
 async function probeDocument(tabId:number):Promise<{doc:{documentId:string;url:string;readyState:DocumentReadyState}|null;error?:string}> {
   try {
     const [frame]=await chrome.scripting.executeScript({target:{tabId},injectImmediately:true,world:'ISOLATED',func:()=>({url:location.href,readyState:document.readyState})});
@@ -28,21 +25,20 @@ export async function readCurrentDocument(tabId:number) {
   return (await probeDocument(tabId)).doc;
 }
 
-/** 扩展按设计就不能注入脚本的地址：浏览器自己的页、别的扩展、Chrome 应用商店。只有这些地址读不到文档时才算加载完。 */
+/** WHY: 扩展按设计就不能注入脚本的地址：浏览器自己的页、别的扩展、Chrome 应用商店。只有这些地址读不到文档时才算加载完。 */
 function unscriptableByDesign(url:string|undefined):boolean { return isRestrictedPage(url) || url === 'about:blank'; }
 
-/** 给模型看的一句话：Chrome 显示了它自己的错误页，页面没打开。navigate 和新开标签页共用。 */
 export const ERROR_PAGE_NOTE="Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";
 
 /**
- * 只重试这些 Chrome 网络错误：连接在建立或传输途中断了、本机网络刚变过，同一地址隔一秒再开常常就好。
+ * WHY: 只重试这些 Chrome 网络错误：连接在建立或传输途中断了、本机网络刚变过，同一地址隔一秒再开常常就好。
  * 域名不存在、证书错误这类是地址或网站本身的问题，服务器回了 4xx/5xx 的页面也是网站自己的答复，再开一次结果一样，所以不在其中。
  */
 const TRANSIENT_NET_ERRORS=new Set(['ERR_CONNECTION_CLOSED','ERR_CONNECTION_RESET','ERR_CONNECTION_REFUSED','ERR_CONNECTION_FAILED','ERR_CONNECTION_TIMED_OUT','ERR_TIMED_OUT','ERR_EMPTY_RESPONSE','ERR_NETWORK_CHANGED','ERR_INTERNET_DISCONNECTED']);
 
 const RETRY_DELAY_MS=1000;
 
-/** 错误页上 Chrome 写的网络错误名。扩展脚本注入不了错误页，调试器可以读；不是错误页或读不到时返回 undefined。 */
+/** WHY: 错误页上 Chrome 写的网络错误名。扩展脚本注入不了错误页，调试器可以读；不是错误页或读不到时返回 undefined。 */
 async function readNetErrorName(tabId:number):Promise<string|undefined> {
   try{
     const reply=await sendCommand<{result?:{value?:unknown}}>(tabId,'Runtime.evaluate',{expression:"location.protocol==='chrome-error:'?(document.querySelector('.error-code')?.textContent??''):''",returnByValue:true},undefined,1500);
@@ -53,7 +49,7 @@ async function readNetErrorName(tabId:number):Promise<string|undefined> {
 }
 
 /**
- * 等完那一秒后标签页的样子，和第一次发现错误页时标签页所在的地址比：请求的网址可能先跳转（如 http 301 到 https）再出错。
+ * WHY: 等完那一秒后标签页的样子，和第一次发现错误页时标签页所在的地址比：请求的网址可能先跳转（如 http 301 到 https）再出错。
  * changed：换到了别的地址或标签页没了。reloading：还在这个地址，但不再是原错误页了，
  * 多半是 Chrome 自己在重新加载（前台标签页的错误页约一秒后会自动重新加载），也可能是用户刷新。error_page：还停在原错误页。
  */
@@ -70,12 +66,6 @@ async function tabAfterWait(tabId:number,errorUrl:string|undefined,error:string)
   return 'reloading';
 }
 
-/**
- * 按网址打开（navigate、新开标签页）撞上一次性网络错误时，隔一秒再开同一地址一次，免得模型把偶发断连当成网站打不开告诉用户。
- * 只给按网址打开用：那是不带表单数据的 GET，重放没有副作用；点击、表单提交引起的跳转不走这里。
- * 等的这一秒里用户可能接管或自己换了页：cancelled 为真（接管、任务停止、控制轮次变了）或标签页已换到别的地址，就不重试，照原样返回错误页。
- * 这个地址已经在重新加载时不再发第二次请求，只等这次加载的结果。
- */
 export async function retryTransientErrorPage(tabId:number,url:string,ready:PageReadiness,timeoutMs:number,cancelled?:()=>boolean):Promise<{ready:PageReadiness;retry?:string}> {
   if(ready.readiness!=='error_page')return {ready};
   const error=await readNetErrorName(tabId);
@@ -119,10 +109,9 @@ export async function retryTransientErrorPage(tabId:number,url:string,ready:Page
     :`${head}; the retry's result: document ${again.readiness}.`};
 }
 
-/** Chrome 拒绝往它自己的错误页注入时给的原因（连不上网站、DNS 失败等）。 */
+/** WHY: Chrome 拒绝往它自己的错误页注入时给的原因（连不上网站、DNS 失败等）。 */
 const ERROR_PAGE=/showing error page/i;
 
-/** 下载出现后最多再等多久 Chrome 报完成（同点击后的下载等待）。 */
 const DOWNLOAD_SETTLE_MS=3000;
 
 const sameUrl=(a:string|undefined,b:string)=>{
@@ -156,7 +145,6 @@ async function settleDownload(id:number,settleMs=DOWNLOAD_SETTLE_MS):Promise<Nav
   };
 }
 
-/** 给模型看的一句话：地址变成了下载，标签页没换页；存好与否只照 Chrome 的报告说。 */
 export function downloadNote(d:NavigationDownload,tab:'stays'|'closed'='stays'):string {
   const where=tab==='closed'?'Chrome closed the new tab it had opened for it':'the tab stays on its current page';
   const head=`This address started a download instead of opening a page; ${where}. Download "${d.filename}"`;
@@ -171,7 +159,7 @@ export function downloadNote(d:NavigationDownload,tab:'stays'|'closed'='stays'):
 }
 
 /**
- * DOM readiness, not completion of images/ads. Confirm the current document twice.
+ * WHY: DOM readiness, not completion of images/ads. Confirm the current document twice.
  * 注入脚本问不到的情况由浏览器通知补上：地址变成下载时标签页一直是旧文档，
  * chrome:// 页不能注入，原来都要等到超时。dispatch 在监听装好之后才发出跳转，免得几毫秒内的通知漏掉。
  */
@@ -181,14 +169,12 @@ export async function waitForInteractive(tabId:number,timeoutMs:number,options:{
   let timer:ReturnType<typeof setTimeout>|undefined;
   let requested='';
 
-  try{requested=options.requestedUrl?new URL(options.requestedUrl).href:'';}catch{/* 不是绝对地址：不认下载 */}
+  try{requested=options.requestedUrl?new URL(options.requestedUrl).href:'';}catch{}
 
   let onDownload:((item:chrome.downloads.DownloadItem)=>void)|undefined;
   let onTab:((id:number,info:chrome.tabs.OnUpdatedInfo,tab:chrome.tabs.Tab)=>void)|undefined;
-  /** 已认出的下载：调用方的超时先到时，结果仍带上这次下载。 */
   let downloadId:number|undefined;
 
-  // 地址变成下载：下载的起始或最终地址就是这次要打开的地址。
   const download=new Promise<PageReadiness>(resolve=>{
     if(!requested||!chrome.downloads?.onCreated)return;
     let found=false;
@@ -200,11 +186,10 @@ export async function waitForInteractive(tabId:number,timeoutMs:number,options:{
     };
     onDownload=take;
     chrome.downloads.onCreated.addListener(take);
-    // 监听装好之前已经开始的下载：只在打开新标签页时补查，因为那时没法先装监听。先装监听再跳转时补查只会认错旧下载。
     if(!options.dispatch)void Promise.resolve(chrome.downloads.search({startedAfter:new Date(started-1000).toISOString()})).then(items=>items.forEach(take),()=>{});
   });
 
-  // 标签页先报 loading 再报 complete 之后读一次文档：读到新文档就算加载完；Chrome 说是错误页就如实报；
+  // WHY: 标签页先报 loading 再报 complete 之后读一次文档：读到新文档就算加载完；Chrome 说是错误页就如实报；
   // 按设计不能注入的地址（chrome:// 等）读不到也算加载完。其余读不到的情况（如本该能注入的网页）交给轮询，宁可超时也不报加载完。
   const loaded=new Promise<PageReadiness>(resolve=>{
     let loading=false;
@@ -213,7 +198,6 @@ export async function waitForInteractive(tabId:number,timeoutMs:number,options:{
 
       if(info.status==='loading'){loading=true;return;}
 
-      // 新标签页先加载一次空白页，那不是要打开的地址。
       if(info.status!=='complete'||!loading||(tab.url==='about:blank'&&requested!=='about:blank'))return;
       void probeDocument(tabId).then(({doc,error})=>{
         if(stopped)return;
@@ -235,7 +219,6 @@ export async function waitForInteractive(tabId:number,timeoutMs:number,options:{
     stopped=true;
 
     if(downloadId===undefined){resolve({readiness:'timeout',waitMs:Date.now()-started});return;}
-    // 下载已经开始、还没等到 Chrome 报结果：带上此刻的下载状态，不丢掉。
     void settleDownload(downloadId,0).then(d=>resolve({readiness:'download',download:d,waitMs:Date.now()-started}));
   },timeoutMs);});
 
@@ -246,7 +229,7 @@ export async function waitForInteractive(tabId:number,timeoutMs:number,options:{
 
       if(stopped)break;
 
-      // 读不到是因为 Chrome 显示了错误页：只在标签页已停在要打开的地址、没有待提交的跳转时认。
+      // WHY: 读不到是因为 Chrome 显示了错误页：只在标签页已停在要打开的地址、没有待提交的跳转时认。
       // 新开标签页时「开始加载」通知常早于监听装好，上面的 loaded 收不到，不在这里认就只能等到超时。
       if(!first&&probe.error&&ERROR_PAGE.test(probe.error)){
         const tab=await chrome.tabs.get(tabId).catch(()=>null);
@@ -289,19 +272,16 @@ if(onDownload)chrome.downloads.onCreated.removeListener(onDownload);
 if(onTab)chrome.tabs.onUpdated.removeListener(onTab);}
 }
 
-/** 这么久没有 DOM 变化就算页面画完了。 */
 const DOM_QUIET_MS=400;
 
-/** 等页面画完最多多等这么久；一直在动的页面（轮播、时钟）到时照常返回。 */
 const DOM_QUIET_BOUND_MS=3000;
 
-/** 这几种就绪结果说明眼前是新打开的网页，值得等它画完；下载、错误页、标签页被关掉都不等。 */
 export function settlesContent(readiness:PageReadinessValue|undefined):boolean {
   return readiness==='interactive'||readiness==='complete'||readiness==='timeout';
 }
 
 /**
- * 客户端渲染的页面在文档可交互后还在往里画内容（TodoMVC 读到时只有页脚）：等 body 里安静一会儿再返回，
+ * WHY: 客户端渲染的页面在文档可交互后还在往里画内容（TodoMVC 读到时只有页脚）：等 body 里安静一会儿再返回，
  * 打开后附带的快照才读得到内容。安静从 DOMContentLoaded 结束时开始算（延迟脚本和模块脚本已经跑完），不等 load：
  * 图片、字体、广告和统计请求不管多久都不算，有的网站 load 要好几秒，内容早就画好了。
  * 只看 body 里增删节点和文字，不看属性和 head，免得动画、样式注入让它一直等满。
@@ -313,7 +293,7 @@ export function settlesContent(readiness:PageReadinessValue|undefined):boolean {
 export async function waitForQuietDom(tabId:number):Promise<number> {
   const started=Date.now();
   const left=()=>DOM_QUIET_BOUND_MS-(Date.now()-started);
-  // 页面卡在弹窗或长脚本里时注入不会返回，每次短读也要有上限。
+  // WHY: 页面卡在弹窗或长脚本里时注入不会返回，每次短读也要有上限。
   const bounded=<T>(work:Promise<T>)=>withTimeout(work,Math.max(left(),0)+500,'DOM 安静等待超时');
   let target:{tabId:number;documentIds:string[]}|undefined;
 
@@ -342,23 +322,21 @@ export async function waitForQuietDom(tabId:number):Promise<number> {
       if(!state||(state.quietMs>=DOM_QUIET_MS&&!state.empty))break;
       await new Promise(resolve=>setTimeout(resolve,Math.min(100,Math.max(left(),0))));
     }
-  }catch{/* 不等也照常返回 */}
+  }catch{}
   finally{
-    // 不等它返回：页面卡住时不多耽误；拆不掉也有页面里自己的上限兜着。
     if(target)void chrome.scripting.executeScript({target,injectImmediately:true,world:'ISOLATED',func:stopWatchInPage}).catch(()=>{});
   }
 
   return Date.now()-started;
 }
 
-/** 页面里观察器记下的状态。隔离环境里只有本扩展的脚本，几次注入之间靠这个全局变量传递。 */
 interface QuietDomState {last:number;stop:()=>void}
 
 declare global {
   var __sideagentQuietDom:QuietDomState|undefined;
 }
 
-/** 在页面里执行，保持自包含，必须立刻返回。记下 body 里最后一次增删节点或改文字的时间；助手自己挂上的节点不算。到上限自己拆掉。 */
+/** WHY: 在页面里执行，保持自包含，必须立刻返回。记下 body 里最后一次增删节点或改文字的时间；助手自己挂上的节点不算。到上限自己拆掉。 */
 function watchBodyInPage(boundMs:number,ownSelector:string):void {
   globalThis.__sideagentQuietDom?.stop();
   const own=(node:Node)=>node instanceof Element&&!!node.closest(ownSelector);
@@ -369,7 +347,6 @@ function watchBodyInPage(boundMs:number,ownSelector:string):void {
     if(records.some(r=>inBody(r.target)&&!own(r.target)&&!(r.type==='childList'&&[...r.addedNodes,...r.removedNodes].every(own))))state.last=performance.now();
   });
 
-  // 观察整个文档而不只是当时的 body：页面可能整个换掉 body。
   mutations.observe(document,{subtree:true,childList:true,characterData:true});
   const bound=setTimeout(()=>state.stop(),boundMs+1000);
 
@@ -382,17 +359,11 @@ function watchBodyInPage(boundMs:number,ownSelector:string):void {
   globalThis.__sideagentQuietDom=state;
 }
 
-/**
- * 在页面里执行，保持自包含：DOMContentLoaded 结束后 body 安静了多久，以及 body 是不是还没画出内容的空壳。
- * 空壳：没有可见文字，也没有链接、按钮、输入框、图像或嵌入内容。不设字数门槛：中文页面几个字就是内容。
- * 没有 body 的文档（SVG 等）不会再长出 body，不算空壳。
- */
 function readQuietInPage():{quietMs:number;empty:boolean}|null {
   const state=globalThis.__sideagentQuietDom;
 
   if(!state)return null;
   const navigation=performance.getEntriesByType('navigation')[0];
-  // 没有导航计时的文档（极少见）就从观察器装好时算。
   const contentLoaded=navigation instanceof PerformanceNavigationTiming?navigation.domContentLoadedEventEnd:state.last;
   const body=document.body;
   const empty=!!body&&!body.innerText.trim()&&!body.querySelector('a[href],button,input,select,textarea,img,svg,canvas,video,embed,object,iframe,frame');
@@ -400,7 +371,6 @@ function readQuietInPage():{quietMs:number;empty:boolean}|null {
   return {quietMs:contentLoaded>0?performance.now()-Math.max(state.last,contentLoaded):0,empty};
 }
 
-/** 在页面里执行，保持自包含：拆掉观察器、删掉状态。 */
 function stopWatchInPage():void {
   globalThis.__sideagentQuietDom?.stop();
 }

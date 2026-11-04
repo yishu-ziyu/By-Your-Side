@@ -1,43 +1,30 @@
 /**
- * 记忆备份：卸载扩展时 Chrome 会删掉它的全部存储，记忆只在这里另存一份到下载文件夹，重装后从设置页选文件恢复。
+ * WHY: 记忆备份：卸载扩展时 Chrome 会删掉它的全部存储，记忆只在这里另存一份到下载文件夹，重装后从设置页选文件恢复。
  * 后台、离屏宿主、设置页共用的键、文件格式和读写。凭据（inproc_cred:*、settings_connection:*）从不进备份。
  */
 import { BROWSE_ON_KEY } from "./browse-habits.js";
 
-/** 离屏宿主 → 后台：记忆库刚写过，排一次备份。 */
 export const MEMORY_CHANGED = "memory_backup_changed";
 export const MEMORY_RESTORED = "memory_backup_restored";
 
-/** chrome.storage.local：这次安装的开始时间（毫秒）。备份文件名带上它，重装后的新安装不会覆盖旧安装留下的那份。 */
 export const BACKUP_INSTALL_KEY = "memory_backup_install";
 
-/** chrome.storage.local：最近一次备份 { at, file }，设置页显示。 */
 export const BACKUP_LAST_KEY = "memory_backup_last";
 export const BACKUP_ERROR_KEY = "memory_backup_error";
 export const MAX_BACKUP_BYTES = 8 * 1024 * 1024;
 
 export const BACKUP_FOLDER = "By-Your-Side";
 
-/** 自定义类型只用来认出自己发起的下载：网页操作的下载记录要排除它。 */
 const BACKUP_URL_PREFIX = "data:application/x-by-your-side-memory-backup+json;base64,";
 
-/**
- * 备份文件明文落在下载文件夹：浏览记录、习惯归纳和删除名单都由网页内容生成（网址查询串、输入框的值可能带 token），
- * 只带开关；习惯在重装后重新从浏览里学。
- */
 export const BACKUP_STORAGE_KEYS = [BROWSE_ON_KEY] as const;
 
-/**
- * 只备份用户已经确认或做成的内容。pending-memory 存着还没判完的原话，habits 存着从浏览里数出来的计数，都不出这个扩展。
- * 恢复时也只认这几份，别的键一律拒绝。
- */
 const BACKUP_DOCUMENTS = ["memories", "tasks", "site-notes", "learned-operations"] as const;
 export function isBackupDocumentKey(key: string): boolean { return BACKUP_DOCUMENTS.some(name => name === key); }
 
 const FORMAT = "by-your-side-memory-backup";
 const VERSION = 1;
 
-/** 与 inproc/document-idb.ts 同一个库；那边的锁名是 `${DB_NAME}:${key}`，恢复时用同名锁，避免和宿主的读改写交错。 */
 const DB_NAME = "sideagent-memory";
 const STORE = "kv";
 export const MEMORY_RESTORE_JOURNAL = "memory-restore-journal-v1";
@@ -48,7 +35,6 @@ export interface MemoryBackup {
   version: typeof VERSION;
   savedAt: number;
   extensionVersion: string;
-  /** IndexedDB 里每一份文档的原文（记忆、过往任务、站点笔记、已保存做法等）。 */
   documents: Record<string, string>;
   storage: Partial<Record<(typeof BACKUP_STORAGE_KEYS)[number], unknown>>;
 }
@@ -76,7 +62,7 @@ export async function isOwnBackupDownload(item: { id: number; url?: string; fina
   const url = [item.url, item.finalUrl].find(value => value?.startsWith(BACKUP_URL_PREFIX));
   if (!url) return false;
   if (item.byExtensionId !== undefined) return item.byExtensionId === chrome.runtime.id;
-  // onCreated can precede Chrome's extension attribution; use the actual download() result, never the MIME prefix alone.
+  // WHY: onCreated can precede Chrome's extension attribution; use the actual download() result, never the MIME prefix alone.
   await startingBackupDownload?.catch(() => undefined);
   const saved: unknown = (await chrome.storage.local.get(BACKUP_DOWNLOAD_KEY))[BACKUP_DOWNLOAD_KEY];
   return !!saved && typeof saved === "object" && "id" in saved && saved.id === item.id
@@ -107,7 +93,6 @@ function settle<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
-/** 记忆库里的全部文档；只收字符串值，和 IdbDocument 存的形状一致。 */
 export async function readMemoryDocuments(): Promise<Record<string, string>> {
   const db = await openDb();
 
@@ -239,7 +224,6 @@ function isBackupDocument(key: unknown): key is (typeof BACKUP_DOCUMENTS)[number
   return typeof key === "string" && (BACKUP_DOCUMENTS as readonly string[]).includes(key);
 }
 
-/** 每份文档都必须是 JSON 对象；宿主读到不认识的版本会只读不写，但损坏的文本会让它报错。 */
 function isDocumentText(text: string): boolean {
   try {
     return isRecord(JSON.parse(text));
@@ -248,7 +232,6 @@ function isDocumentText(text: string): boolean {
   }
 }
 
-/** 用户选的文件：形状不对就返回原因，不写任何东西。 */
 export function parseBackup(text: string): MemoryBackup | string {
   if (new TextEncoder().encode(text).byteLength > MAX_BACKUP_BYTES) return "备份文件超过 8 MB，无法恢复。";
   let raw: unknown;
@@ -283,7 +266,6 @@ export function parseBackup(text: string): MemoryBackup | string {
   };
 }
 
-/** 生效中的记忆条数与过往任务条数；读不懂的文档按 0 算。 */
 export function countBackup(documents: Record<string, string>): { memories: number; tasks: number } {
   const entries = (text: string | undefined, field: string): unknown[] => {
     try {
@@ -323,7 +305,6 @@ export async function restoreBackup(backup: MemoryBackup): Promise<void> {
   });
 }
 
-/** UTF-8 文本 → base64；大文本分段转，避免 String.fromCharCode 参数过多。 */
 export function backupDataUrl(text: string): string {
   const bytes = new TextEncoder().encode(text);
   if (bytes.byteLength > MAX_BACKUP_BYTES) throw new Error("记忆备份超过 8 MB，无法保存。");

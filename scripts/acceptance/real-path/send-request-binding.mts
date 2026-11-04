@@ -1,4 +1,3 @@
-/** 隔离扩展：用户确认后重放的网络请求必须保留已确认的地址、头和内容。 */
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";

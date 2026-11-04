@@ -14,17 +14,14 @@ const MAX_ELEMENT_CHARS = 1_000_000;
 
 type ReadElementResult = ToolContract["read_element"]["data"];
 
-/** secret、layoutText、unrendered 只在扩展内部用（fill 的 from 据它们拒读或取字），不出现在 read_element 的回执里。 */
 type ElementData = Omit<ReadElementResult, 'tabId' | 'target' | 'check' | 'documentId'> & { textContent: string; editable?: true; secret?: true; layoutText?: string; unrendered?: true };
 
 type InternalReadResult = ReadElementResult & ElementData;
 
 type ReadReply = { ok: true; data: ElementData } | { ok: false; error: string };
 
-/** 一次元素读取的结果：页面返回的数据 + 本次读取到的文档身份。 */
 interface ElementRead { data: ElementData; documentId?: string }
 
-/** 把定位/读取失败收成稳定错误码，等待 helper 禁止用中文文案分支。 */
 function typedReadElementError(error: unknown): Error {
   const text = error instanceof Error ? error.message : String(error);
 
@@ -49,12 +46,11 @@ function typedReadElementError(error: unknown): Error {
   return error instanceof Error ? error : new Error(text);
 }
 
-/** Serialized unchanged into either CDP or executeScript; no closure or page-supplied code. */
+/** WHY: Serialized unchanged into either CDP or executeScript; no closure or page-supplied code. */
 function readInPage(kind: "ref" | "css", ref: number | null, selector: string | null, properties: ElementProperty[], supplied: Element | null, readback: {deadline:number;originalNode?:boolean} | null, sensitiveName: string, layout = false): ReadReply {
   try {
     if(readback&&Date.now()>=readback.deadline)throw new Error('READBACK_TIMEOUT');
 
-    // An adjunct read must receive the original CDP object, never re-query a locator.
     if(readback && !supplied?.isConnected)throw new Error('READBACK_NODE_DETACHED');
     let element: Element | null | undefined = supplied;
 
@@ -81,8 +77,6 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     const tagName = element.nodeType === 3 ? '#text' : String(element.tagName || '').toLowerCase();
     const hasValue = ['input', 'textarea', 'select', 'option'].includes(tagName);
 
-    // 密码/验证码/卡号字段的**值**不进模型上下文，也只报位数：这类字段读回来没有正当用途。
-    // 规则同 exec/input.ts 的 readFieldInPage：type、autocomplete、字段名（sensitiveName 是 SENSITIVE_FIELD_NAME 的正则源码）、「曾经是 password」的标记。
     const labelledBy = el.getAttribute?.('aria-labelledby');
     const label = el.getAttribute?.('aria-label')
       || (labelledBy ? labelledBy.split(/\s+/).map((id) => el.ownerDocument.getElementById(id)?.textContent ?? '').join(' ') : '')
@@ -109,7 +103,6 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       const excludedTags = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT']);
       const renderedPath = new Map<Element, boolean>();
 
-      // 逐个文字节点检查折叠状态，不能让已缓存的 summary 可见状态放行正文。
       const isAllowedByDetails = (node: Node): boolean => {
         for (let ancestor = node.parentElement; ancestor; ancestor = ancestor.parentElement) {
           if (ancestor.tagName !== 'DETAILS' || (ancestor as HTMLDetailsElement).open) continue;
@@ -169,7 +162,6 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       else if (property === 'visibleText') value = renderedText();
       else if (property === 'value' && hasValue) value = maskValue(String(el.value ?? ''));
       else if (property === 'displayValue' && hasValue) {
-        // 显示值：select 取当前选中项的可见文字，option 取自身文字，其余取字段值。
         // SAFETY: 上一分支已断言 tagName==='select'，运行时即 HTMLSelectElement。
         const select = tagName === 'select' ? el as unknown as HTMLSelectElement : null;
         // SAFETY: 上一分支已断言 tagName==='option'，运行时即 HTMLOptionElement。
@@ -190,21 +182,20 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
         else if (aria === 'mixed') value = aria;
       } else if (['paused', 'ended', 'currentTime', 'duration'].includes(property) && ['audio', 'video'].includes(tagName)) value = el[property as 'paused' | 'ended' | 'currentTime' | 'duration'];
 
-      // 读不到的属性记为 null 并写明，不作废同一次读到的其他属性。
       if (value === undefined || (typeof value === 'number' && !Number.isFinite(value))) {
         values[property] = null;
         unavailable.push(property);
       } else values[property] = value;
     }
 
-    // Extract only naming sources here. The shared anchorFor() owns naming priority and
+    // WHY: Extract only naming sources here. The shared anchorFor() owns naming priority and
     // clipping; this function is serialized into Chrome and cannot close over imports.
     let anchorSource: ElementData['anchorSource'];
     let fullText: string | undefined;
     let inputRange: ElementData['inputRange'];
 
     if (element.nodeType !== 3 && typeof el.getAttribute === 'function') {
-      // Page readout rules (shared/page-readout.ts), inlined because this function is serialized:
+      // WHY: Page readout rules (shared/page-readout.ts), inlined because this function is serialized:
       // a shown text ending in an ellipsis gains the fuller title/aria value that starts with it.
       const shown = textContent.replace(/\s+/g, ' ').trim();
       const tail = /(?:…|\.{3})$/;
@@ -216,7 +207,6 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
           .find(full => full.length > prefix.length && full.toLowerCase().startsWith(prefix) && full !== shown);
       }
 
-      // Native range inputs: the page's own min/max/step and the browser's verdict on the value.
       if (tagName === 'input' && ['time', 'date', 'datetime-local', 'month', 'week', 'number', 'range'].includes(el.type)) {
         const range: NonNullable<ElementData['inputRange']> = { type: el.type };
 
@@ -282,14 +272,11 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
     if(secretField)data.secret=true;
 
-    // Default reads and native copies share the browser-rendered text, including paragraph breaks.
-    // 元素自己没渲染时 innerText 退回 textContent，会带上隐藏的字和脚本、样式，所以这时不取字。
     if(layout || properties.length === 0){
       const box=element.nodeType===3?element.parentElement:el;
       const visibleBox = (node: Element) => node.getClientRects().length > 0
         && (typeof node.checkVisibility !== 'function' || node.checkVisibility({ visibilityProperty: true }));
       let rendered = !!box && visibleBox(box);
-      // display:contents has no box of its own; its rendered descendants still contribute innerText.
       if (box && !rendered && getComputedStyle(box).display === 'contents') {
         for (const child of box.querySelectorAll('*')) {
           if (visibleBox(child)) { rendered = true; break; }
@@ -310,7 +297,6 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
 
     if(properties.length)data.properties=values;
 
-    // 说明会放在页面内容包装之外，只用固定文字和已校验的属性名，不带任何网页文字（包括标签名）。
     if(unavailable.length)data.note=`该元素不支持或尚无有效的 ${unavailable.join('、')} 属性，已返回 null；请观察实际目标状态。`;
 
     if(anchorSource)data.anchorSource=anchorSource;
@@ -347,7 +333,6 @@ function parseTarget(target: string): {
   return { kind: args.kind as "css" | "xpath" | "text" | "role" | "href", selector: args.selector, normalized: args.kind === "css" ? `loc=css:${args.selector}` : target };
 }
 
-/** xpath/text 统一 resolver 在页面里解析出元素对象，再走与 ref 相同的 callFunctionOn 读取。 */
 async function readResolvedNode(
   tabId: number,
   target: { kind: "xpath" | "text" | "role" | "href" | "css"; selector: string },
@@ -400,7 +385,7 @@ async function readResolvedNode(
     }
     return data;
   } finally {
-    await sendCommand(tabId, "Runtime.releaseObject", { objectId }).catch(() => { /* 已释放 */ });
+    await sendCommand(tabId, "Runtime.releaseObject", { objectId }).catch(() => {  });
   }
 }
 
@@ -420,7 +405,6 @@ function assertComplete(data: ElementData): ElementData {
 
 async function readAxRef(tabId: number, ref: number, properties: ElementProperty[], readback?: {documentId:string;deadline:number;originalNode?:boolean}, check=()=>{}, layout = false): Promise<ElementData> {
   check();
-  // 填写时被找回的 ref 指向页面换上的新节点，读它而不是已离开文档的旧节点。
   const backendNodeId=readback?.originalNode ? ref : axBackendNodeFor(tabId,ref)??ref;
   const executionContextId=await isolatedReadContext(tabId);
   check();
@@ -518,12 +502,6 @@ export async function copyTargetIdentity(params: { tabId?: number; target: strin
   return { tabId: data.tabId, documentId: data.documentId, backendNodeId: data.nodeIdentity.backendNodeId };
 }
 
-/**
- * fill 的 from：读出要原样写进另一栏的文字，不经过模型。输入框、下拉框取 displayValue，富文本编辑器取页面显示文字（同 read_element），
- * 其余按渲染布局取 innerText：网页回答多是一段段 <p>、<li>，textContent 和 visibleText 会把段落挤成一行。快照里的 text 行是文字节点，取它自己的文字。去掉首尾空白。
- * 来源元素本身没显示时拒读。读来源不改工作标签页（resolveTabForRead），写入仍落在原来要填的那一页。
- * 密码、验证码、卡号这类栏按 read_element 的同一条规则拒读：它们的值从不读出。
- */
 export async function readFillSource(source: {tabId?: number; target: string}, executionKey: string = LEAD_SESSION_ID): Promise<string> {
   let data: ElementData & {tabId: number};
 
@@ -551,7 +529,6 @@ async function readElementInner(
   params: ToolContract["read_element"]["params"],
   executionKey: string = LEAD_SESSION_ID,
   checkCurrent:()=>void=()=>{},
-  /** fill 的 from：多读布局文字和可见性，且读来源不改工作标签页。 */
   fillSource = false,
   captureIdentity = false,
 ): Promise<InternalReadResult> {
@@ -618,7 +595,6 @@ async function readElementInner(
     }
 
     if (target.kind === 'css') {
-      // CSS 也走统一 resolver（open shadow + 同源 frame），避免 readInPage 的浅 querySelectorAll。
       const observed = await withObservedDocumentIdentity(tabId, executionKey, () => readResolvedNode(tabId, { kind: "css", selector: target.selector ?? "" }, properties, check, fillSource, captureIdentity), check);
 
       const read: ElementRead = {data:observed.value};
@@ -678,7 +654,6 @@ async function readElementInner(
 
       if (actual === undefined) throw new Error(`页面未返回 ${expected.property} 属性，未验证成功。`);
 
-      // 等一个读不到的属性只会白等到超时，所以 expect 仍当场失败。
       if (actual === null) throw new Error(`该元素不支持或尚无有效的 ${expected.property} 属性；请观察实际目标状态。`);
 
       if (elementMatches(actual, expected)) return {tabId,target:target.normalized,...data,check:{matched:true as const,property:expected.property,elapsedMs:Date.now()-started}};

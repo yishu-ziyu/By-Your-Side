@@ -1,4 +1,3 @@
-/** 只有站点笔记时，恢复缺少该笔记的备份也必须先确认。 */
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";

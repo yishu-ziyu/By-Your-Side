@@ -3,57 +3,30 @@ import type { ServerMessage } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
 import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttSpeechReply } from '../shared/ptt.js';
 
-/**
- * 按住说话的网页底部胶囊：后台只管松开以后。
- * 按住、听写中由网页自己画；话交给助手后，按这个会话的任务视图和交付换成 正在做 / 等你 / 结果 / 已中止。
- * 只读任务视图和交付，不是第二套任务状态；胶囊只在说话的那个标签页上。
- * 结果和等你同时念出来：念的时候胶囊带 speaking，念完再去掉。
- * 交给助手的那一刻先念一句短确认（ackFor，取消或犹豫的话不念），免得用户等结果时半天没声音；结果、等你、停下一到就掐掉它。
- */
-
-/** 任务停下后等这么久再出结果：目标核对和交付可能随后才到。 */
 const SETTLE_MS = 800;
 
-/**
- * spokenText：已经交去念的整句，同一句不再念（目标核对、交付会让胶囊刷新几遍）。
- * 晚到的「留给你的」只是在原句后面多一段：排在 queue 里，等前一句念完接着念那一段，不从头重念。
- * utterance：每念一句加一，念完的回调只认自己那一句，旧的一句被打断或过期时不再改胶囊。ackUtterance：确认句是哪一句。
- */
 interface Tracked {
   tabId: number; conversationId: string; heard: string; sawRun: boolean; result: string | null; card: CardPreview | null; settle?: ReturnType<typeof setTimeout>;
   spokenText?: string; utterance: number; speaking?: boolean; queue: string[]; last?: Extract<PttCapsule, { phase: 'doing' | 'done' | 'waiting' }>; ack: string | null; ackUtterance?: number;
-  /** 分段计时：这次按住说话的编号，和已经记过的时间点（每个只记第一次）。 */
   timingId?: string; marked: Set<string>;
 }
 
-/** 按住说话的分段计时：只写语音日常记录，不改变胶囊和念的行为。 */
 export type PttTiming = (pttId: string, conversationId: string, point: string, at?: number) => void;
 
-/** 确认句没把握时的说法；问句用 ACK_QUESTION。 */
 const ACK_FALLBACK = '好，马上做。';
 
 const ACK_QUESTION = '好，我看一下。';
 
-/** 确认句里事情部分最多几个字；再长多半是整段口述，取不准。 */
 const ACK_MAX = 14;
 
-/** 句首的请求口头语，按整词、长的先去；「那个表」「好好」「你的」里的字不算口头语。 */
 const ACK_FILLER = /^(?:能不能帮我|可不可以帮我|能不能|可不可以|麻烦你|麻烦|帮忙|请你|请|帮我|给我|替我|嗯|呃|(?:那|好|你)(?![个的们好]))/;
 
-/** 只是应声、不是事情的分句。 */
 const ACK_BARE = /^(?:嗯+|呃+|啊+|那个|这个|好的?|好吧|行|对|ok|okay)$/i;
 
-/** 取消或犹豫的话：回「好，马上做」是反着的，不念确认句。 */
 const ACK_HESITANT = /不用|算了|想想|没事|等等|等一下|先别|取消/;
 
-/** 复述不了的：有人称（要换成「你」才对）、否定、只是补充条件。 */
 const ACK_UNSAFE = /[我你他她]|不要|别|就行|就好|就可以|即可|也行|都行|最好/;
 
-/**
- * 松开后马上念的确认句：从听写原话本地取，不问模型，所以不拖慢结果。
- * 只在有把握时复述：去掉口头语后正好一个分句、没有人称、含汉字、长短合适；否则说通用句，宁可笼统也不说错。
- * 取消或犹豫的话返回 null：不出声。
- */
 function ackFor(heard: string): string | null {
   if (ACK_HESITANT.test(heard)) return null;
 
@@ -70,7 +43,6 @@ function ackFor(heard: string): string | null {
   return task.length >= 2 && task.length <= ACK_MAX && /[\u4e00-\u9fff]/.test(task) && !ACK_UNSAFE.test(task) ? `好，${task}。` : ACK_FALLBACK;
 }
 
-/** 回答的第一句；太长就截断。 */
 function firstSentence(text: string): string {
   const plain = text.replace(/[#*`>_[\]]/g, '').replace(/\s+/g, ' ').trim();
   const end = plain.search(/[。！？!?](\s|$)|[。！？]/);
@@ -79,13 +51,10 @@ function firstSentence(text: string): string {
   return sentence.length > 80 ? `${sentence.slice(0, 79)}…` : sentence;
 }
 
-/** 当前步骤：和侧栏任务栏一样取正在做的动作，没有就是上一步。 */
 const stepOf = (view: TaskView) => view.active.at(-1)?.action ?? view.lastAction?.action ?? null;
 
-/** 念结果：speak 在不念（没 Key、关了）时返回 null，否则等念完；quiet 时念失败也不在侧栏提示（确认句）。hush 马上停。 */
 export interface PttVoice { prepare(): void; speak(text: string, conversationId: string, quiet?: boolean): Promise<PttSpeechReply> | null; hush(): void }
 
-/** 要念的那一句：结果 + 留给你的；等你时说需要你做什么。 */
 function speechFor(capsule: PttCapsule): string | null {
   if (capsule.phase === 'done') return capsule.left ? `${capsule.result} 留给你的：${capsule.left}` : capsule.result;
 
@@ -99,7 +68,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
   let recordingTab: number | null = null;
 
   const show = (tabId: number, capsule: PttCapsule | null) => {
-    void chrome.tabs.sendMessage(tabId, { type: PTT_CAPSULE, capsule }).catch(() => { /* 网页已关或没有内容脚本 */ });
+    void chrome.tabs.sendMessage(tabId, { type: PTT_CAPSULE, capsule }).catch(() => {  });
   };
 
   const mark = (t: Tracked, point: string, at = Date.now()) => {
@@ -110,7 +79,6 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
 
   const current = (t: Tracked) => t.last ? (t.speaking ? { ...t.last, speaking: true as const } : t.last) : null;
 
-  /** 念一句；念完接着念排队的下一段。被打断（Esc、✕、新的一句）或失败就清掉队列。 */
   const start = (t: Tracked, text: string, ack = false) => {
     const id = ++t.utterance;
     t.ackUtterance = ack ? id : undefined;
@@ -132,7 +100,6 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
     });
   };
 
-  /** 显示结果或等你，并念出来。只是后面多了一段，就排队念那一段；整句变了，就从这一句重新念。 */
   const showAndSay = (t: Tracked, capsule: Extract<PttCapsule, { phase: 'done' | 'waiting' }>) => {
     t.last = capsule;
     const text = speechFor(capsule);
@@ -149,7 +116,6 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
     show(t.tabId, current(t)!);
   };
 
-  /** 任务又跑起来、停下或出错：正在念的那句作废，旧结果不再回到胶囊上。任务刚跑起来时（keepAck）确认句接着念完。 */
   const silence = (t: Tracked, keepAck = false) => {
     if (!(keepAck && t.speaking && t.ackUtterance === t.utterance)) {
       if (t.speaking) voice.hush();
@@ -194,7 +160,6 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
     } else if (view.state === 'paused') {
       showAndSay(t, { phase: 'waiting', heard: t.heard, reason: '页面现在归你。操作完，点「交还」。' });
     } else if (t.sawRun && (view.state === 'idle' || view.state === 'aborted' || view.state === 'error')) {
-      // 中止、出错马上停声音（多半是确认句听出理解错了），胶囊照旧稍后再换。
       mark(t, 'task_end');
 
       if (view.state !== 'idle') { silence(t); show(t.tabId, { phase: 'doing', heard: t.heard, step: stepOf(view), ack: t.ack }); }
@@ -203,9 +168,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
   };
 
   return {
-    /** 现在显示胶囊的标签页：边缘胶囊在这一页让位。 */
     tabId: () => tracked?.tabId ?? recordingTab,
-    /** 按下：记住是哪一页在录，音量往这一页送。 */
     recording(tabId: number) {
       voice.hush();
 
@@ -213,7 +176,6 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
       tracked = null; recordingTab = tabId; onChange();
     },
     level(level: number) { if (recordingTab !== null) void chrome.tabs.sendMessage(recordingTab, { type: PTT_LEVEL, level }).catch(() => {}); },
-    /** 松开后的结局：交给了助手（开始跟踪），或没成（直接显示原因）。 */
     handedOff(tabId: number, conversationId: string, heard: string, timingId?: string) {
       recordingTab = null;
       const t: Tracked = { tabId, conversationId, heard, sawRun: false, result: null, card: null, utterance: 0, queue: [], ack: ackFor(heard), marked: new Set(), ...timingId ? { timingId } : {} };
@@ -228,20 +190,17 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
       show(tabId, heard ? { phase: 'failed', reason, heard } : { phase: 'failed', reason });
       onChange();
     },
-    /** 网页收起了胶囊（取消、✕、到时间）。 */
     closed(tabId: number) {
       if (tracked?.tabId === tabId) { clearTimeout(tracked.settle); tracked = null; voice.hush(); }
 
       if (recordingTab === tabId) recordingTab = null;
       onChange();
     },
-    /** 这句话交给了页面上的阅读卡：回答在卡里，胶囊收起。 */
     dismiss(tabId: number) {
       if (recordingTab === tabId) recordingTab = null;
       show(tabId, null);
       onChange();
     },
-    /** 念的时候按了 Esc：停下声音，胶囊留着。 */
     hush() { voice.hush(); },
     conversationId: () => tracked?.conversationId ?? null,
     heard: () => tracked?.heard ?? null,
@@ -251,7 +210,6 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
       if (msg.type === 'agent_event' && tracked && msg.conversationId === tracked.conversationId && msg.event.kind === 'user_delivery') {
         tracked.result = answerSpeech(msg.event.delivery.text);
         const card = cardPreview(msg.event.delivery.text);
-        // 回答只有卡片时，胶囊那一句就是卡片标题：卡片不再重复标题，只列行。
         tracked.card = card && tracked.result.split('；').includes(card.title) ? { ...card, title: '' } : card;
       }
     },

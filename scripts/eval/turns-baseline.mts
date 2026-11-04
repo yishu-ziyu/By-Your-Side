@@ -1,10 +1,3 @@
-/**
- * 三种转折的读数（不是验收）：答完补一句、做到一半改方向、做到一半补信息。
- *   npx tsx scripts/eval/turns-baseline.mts --headless [--model=provider/id] [--repeat=N] [--only=follow,redirect,addinfo] [--keep-memory]
- * 本机练习站：会议室一览、预订表单、我的预订（可取消）、5 款笔记本的列表和详情页；服务器记下每次预订、取消和页面访问。
- * 每题一个新会话。插话的时机由服务器触发：助手第一次打开预订表单或某个笔记本详情页时，像用户一样在侧栏打字回车。
- * 读数取自诊断记录和服务器：你说完到助手收到（听到）、到下一段正文出字、到做完，插话之后旧方向又做了几步，最后对不对。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -21,20 +14,17 @@ const repeat = Number(arg("repeat") ?? 1);
 
 const only = arg("only")?.split(",");
 
-// 每次会话前清空记忆与过往任务，前一次的回答不漏进后一次（#305）。--keep-memory 保留，用来复现记忆带来的问题。
 const keepMemory = process.argv.includes("--keep-memory");
 
 const out = join(REPO, "out/eval/turns", new Date().toISOString().replace(/[:.]/g, "-"));
 
 await mkdir(out, { recursive: true });
 
-// 会议室：12 日 15:00 够 8 人又带投影仪的只有金桂（排在最后）；红枫那时已被订。
 const ROOMS = [
   { name: "青松", cap: 10, projector: false }, { name: "白桦", cap: 6, projector: true },
   { name: "红枫", cap: 12, projector: true, taken: "10 月 12 日 15:00" }, { name: "银杏", cap: 8, projector: false }, { name: "金桂", cap: 9, projector: true },
 ];
 
-// 笔记本：最轻的是 D（8999 元），6000 元以下最轻的是 E。列表页不写重量，要进详情页看。
 const LAPTOPS = [
   { id: "a", name: "青羽 A14", price: 4999, kg: 1.6 }, { id: "b", name: "云帆 B13", price: 6999, kg: 1.1 }, { id: "c", name: "星河 C14", price: 5599, kg: 1.3 },
   { id: "d", name: "极光 D13", price: 8999, kg: 0.98 }, { id: "e", name: "晨风 E13", price: 5899, kg: 1.25 },
@@ -115,7 +105,6 @@ const TASKS: Task[] = [
       return { ok, why: `有效预订：${a.map(b => `${b.date} ${b.time} ${b.room}`).join("、") || "无"}；12 日订过 ${bookings.filter(b => b.date === "10 月 12 日").length} 次` }; },
     oldDirection: since => bookings.filter(b => b.at > since && b.date === "10 月 12 日").length },
   { id: "addinfo", start: "/laptops", ask: "看看这 5 款笔记本，告诉我哪款最轻。", turn: "只看 6000 元以下的。", when: path => path.startsWith("/laptop/"),
-    // 只看最后一段回答（跳过回答下面「按上次做过的…」那行）：说最轻的是晨风，而且没把别的型号说成最轻。
     judge: answer => { const last = answer.split("\n").filter(l => l.trim() && !l.startsWith("按上次做过的") && !/^(来源|\d+ 秒)/.test(l.trim())).at(-1) ?? ""; const named = [...last.matchAll(/(青羽|云帆|星河|极光|晨风)[^，。；]{0,8}最轻|最轻的?是?[^，。；]{0,4}(青羽|云帆|星河|极光|晨风)/g)].map(m => m[1] ?? m[2]);
 
       return { ok: named.length > 0 && named.every(n => n === "晨风"), why: last.slice(0, 160) }; },
@@ -134,7 +123,6 @@ try {
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(modelStorageItems(await loadModelPlan(modelId)))}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, `document.querySelector("#status-dot")?.classList.contains("on")`) || undefined, 90_000, "侧栏连上", 500);
   const say = async (text: string) => { await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel); return Date.now(); };
-  // 回答后目标核对约 3 秒才决定接着做，期间侧栏显示空闲：连续 16 秒空闲才算这一题做完。
   const waitIdle = async (label: string) => { await sleep(1500); let quiet = 0;
 
     for (const end = Date.now() + 300_000; Date.now() < end && quiet < 32; await sleep(500)) quiet = await rp.evaluate(panel, IDLE) ? quiet + 1 : 0;
@@ -164,8 +152,6 @@ try {
     await waitIdle(`${task.id}-${i}`);
     await sleep(4000);
     const doneAt = Date.now();
-    // 取回答文字：去掉侧栏附加的部分（出处面板、「按上次做过的…」按钮和展开条），按段落分行，再去掉只由链接组成的段落。
-    // 10-12 回答末尾带「晨风 E13 · 青羽 A14」一串链接，判分只读最后一行，正确回答被判错。
     const answer = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => {
       const c = m.cloneNode(true);
       c.querySelectorAll(".answer-panel,.memory-used-line,.memory-used-toggle").forEach(e => e.remove());
@@ -182,7 +168,6 @@ try {
   }
 
   const { traces, exportStatus } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "downloads"));
-  // 没有诊断记录就读不出秒数：说清导出结果，不留一个空文件冒充读数。
   if (!traces.trim()) throw new Error(`诊断记录导出为空：${exportStatus}（读数目录 ${out}）`);
   await writeFile(join(out, "traces.jsonl"), traces);
 } finally {

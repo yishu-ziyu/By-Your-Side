@@ -1,9 +1,3 @@
-/**
- * 卡片里可调的数。
- *   npx tsx scripts/acceptance/real-path/card-inputs.mts --headless
- * 脚本模型写一张订阅卡：月数（加减）、人数（加减 + 滑块）、引用它们的数字格 / 选项 / 表格 / 正文与说明文字里的 {=名字}，外加另一张只有清单的卡。
- * 点加号、打字超出范围、点滑块，看卡片和正文当场重算；勾一项后重开侧栏，看调过的数和勾选都还在、另一张卡不受影响。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -48,7 +42,6 @@ const evidence: Record<string, unknown> = {};
 
 type Seen = { months: string; people: string; slider: string | null; monthsSlider: boolean; stats: string[]; notes: string[]; labels: string[]; formula: string; option: string; cells: string[]; evidence: string[]; prose: string; checks: boolean[]; otherChecks: boolean[] };
 
-/** 第一张卡和它所在回答的现状。 */
 const SEEN = `(() => {
   const a = [...document.querySelectorAll("#messages .msg.assistant")].find(m => m.querySelector(".gen-card"));
   const [card, other] = a?.querySelectorAll(".gen-card") ?? [];
@@ -86,14 +79,12 @@ try {
   await until(async () => await rp.evaluate(panel, `!!document.querySelector("#messages .msg.assistant .answer-actions") && !!document.querySelector("#messages .gen-card[data-gc-card] .gc-num") && !document.querySelector("#messages .msg.assistant.streaming")`) || undefined, 60_000, "回答写完");
   await sleep(500);
   const seen = async () => await rp.evaluate(panel, SEEN) as Seen;
-  // 用户先把要点的东西滚到眼前再点。
   const tap = async (selector: string) => {
     await rp.evaluate(panel, `document.querySelector(${JSON.stringify("#messages " + selector)})?.scrollIntoView({ block: "center" }), true`);
     await sleep(100);
     await rp.click(panel, `#messages ${selector}`);
   };
 
-  // R1：画出来了，初始值算对；月数档位少只有加减，人数档位多另有滑块。
   const first = await seen();
   evidence.first = first;
   await rp.screenshot(panel, join(artifacts, "1-drawn.png"));
@@ -101,11 +92,9 @@ try {
   assert.equal(first.people, "2", "R1: people input drawn");
   assert.ok(!first.monthsSlider && first.slider === "2", `R1: slider only for the input with many steps: ${JSON.stringify(first)}`);
   assert.deepEqual(first.stats, ["¥816", "¥398", "¥1,214", "¥607"], "R1: initial values computed");
-  // 说明文字里的 {=名字} 也画成算出的数；{=months} 后面模型再写的「个月」只留一个。
   assert.ok(first.notes[3]?.startsWith("¥1,214 由 2 人分"), `R1: note refs filled: ${first.notes[3]}`);
   assert.ok(first.prose.includes("共 12 个月，每人 3 次/月。"), `R1: unit not doubled: ${first.prose}`);
 
-  // R2：点两下月数的加号 → 14 个月，所有引用它的地方都重算。
   const plus = '.gen-card .gc-input:nth-child(1) .gc-bump[data-gc-bump="1"]';
   await tap(plus);
   await tap(plus);
@@ -122,7 +111,6 @@ try {
   assert.ok(after.prose.includes("按 14 个月 算，一共花 ¥1,350"), `R2: prose {=months} {=total} recomputed: ${after.prose}`);
   assert.ok(after.notes[3]?.startsWith("¥1,350 由 2 人分"), `R2: note follows the input: ${after.notes[3]}`);
 
-  // R1：打字超出范围，失焦后夹回 20；在 20 上再点加号仍是 20；再打回 14。
   const months = '.gen-card .gc-num[data-gc-var="months"]';
   const typeInto = async (text: string) => {
     await tap(months);
@@ -139,7 +127,6 @@ try {
   await typeInto("14");
   assert.equal((await seen()).stats[2], "¥1,350", "R2: typed value recomputes");
 
-  // R2：点滑块中间 → 数字框跟着变，每人按新人数算。
   await tap('.gen-card .gc-range[data-gc-var="people"]');
   await sleep(200);
   const slid = await seen();
@@ -150,7 +137,6 @@ try {
   assert.ok(slid.notes[3]?.startsWith(`¥1,350 由 ${people} 人分`), `R2: note follows the slider: ${slid.notes[3]}`);
   assert.equal(slid.labels[3], `每人（${people} 人）`, `R2: label follows the slider: ${slid.labels[3]}`);
 
-  // R3：勾第一项，重开侧栏，调过的数和勾选都还在；另一张卡不受影响。
   await tap(".gen-card .gc-check:first-child label");
   await sleep(500);
   assert.deepEqual((await seen()).checks, [true, false], "R3: ticked");
@@ -167,7 +153,6 @@ try {
   assert.ok(replay.prose.includes("按 14 个月 算，一共花 ¥1,350"), `R3: prose recomputed after reopening: ${replay.prose}`);
   assert.deepEqual(replay.checks, [true, false], "R3: tick kept after reopening");
   assert.deepEqual(replay.otherChecks, [false], "R3: the other card is untouched");
-  // 深色下的样子只留截图给人看。
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, panel);
   await rp.evaluate(panel, `document.querySelector("#messages .gen-card .gc-inputs")?.scrollIntoView({ block: "start" }), true`);
   await sleep(300);

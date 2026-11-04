@@ -1,12 +1,3 @@
-/**
- * 结果从做完到被用户听见的规则。时钟从外面传入、不开计时器：会话把发生的事翻译成事件交进来，
- * 按返回的动作去念，同一套规则可以拿假时钟逐毫秒验。
- */
-
-/**
- * 只靠说话的用户看不到侧栏：委派的事做了这么久还没出声，就念一句正在做哪一步（取任务栏同一个步骤名）。
- * 同一步至少隔 REPEAT 才再提，每次委派最多念 MAX 句；用户刚说完话时不插嘴。
- */
 const PROGRESS_AFTER_MS = 10_000;
 const PROGRESS_REPEAT_MS = 15_000;
 const PROGRESS_MAX = 8;
@@ -14,7 +5,6 @@ const PROGRESS_QUIET_AFTER_USER_MS = 4_000;
 
 export type VoiceDeliveryClock = { now(): number };
 
-/** running：这个委派绑定的任务就是快照里正在跑的那个；step 只在 running 时有意义。 */
 export type WaitingDelegation = { delegationId: string; runId: string; running: boolean; step: string | null };
 
 export type VoiceDeliveryEvent =
@@ -36,7 +26,6 @@ export function createVoiceDelivery(clock: VoiceDeliveryClock): { handle(event: 
 
     if (lastUserAt !== null && now - lastUserAt < PROGRESS_QUIET_AFTER_USER_MS) return [];
 
-    // 同一时刻只念一句：几个委派都在等时，按委派先后轮到第一个该念的。
     for (const item of waiting) {
       const state = progress.get(item.delegationId);
 

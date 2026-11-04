@@ -7,11 +7,6 @@ import { sendCommand } from "./debugger.js";
 import { callDom, ensureDomOps } from "./exec/page-call.js";
 import { resolveWorkingTab } from "./state.js";
 
-/**
- * 怎么认一个控件（提交前核对用）：无障碍树里的角色 + 名字 + 所在区域，与模型看到的同源。
- * 产品原有的 loc=role: 自己算名字，和模型看到的不一致（预订页 11 个控件 6 个找不到），所以不用它。
- */
-// 文字块也能认（ROUTE_TEXT_ROLES）。
 const ROLES = new Set(["link", "button", "textbox", "searchbox", "combobox", "listbox", "checkbox", "radio", "switch", "slider", "spinbutton", "tab", "menuitem", "menuitemcheckbox", "menuitemradio", "option", "treeitem", ...ROUTE_TEXT_ROLES]);
 
 const AREAS = new Set(["form", "dialog", "alertdialog", "region", "group", "row", "article", "listitem", "navigation", "main", "complementary", "banner", "contentinfo", "search"]);
@@ -22,7 +17,6 @@ const MAX = 40;
 
 const clean = (text: string | undefined) => (text ?? "").replace(/\s+/g, " ").trim();
 
-/** 页面上每个可认的控件及其描述，按 backendDOMNodeId 索引。 */
 function routeTargets(nodes: readonly AxNodeLite[]): Map<number, RouteTarget> {
   const byId = new Map(nodes.map((n) => [n.nodeId, n]));
 
@@ -61,7 +55,6 @@ function routeTargets(nodes: readonly AxNodeLite[]): Map<number, RouteTarget> {
     items.push({ node: n, chain, target: { role: n.role!.value!, name: name.slice(0, 300), area, box: "" } });
   }
 
-  // 同名控件：往上找「只装着它一个同名控件」的最小容器，取容器里第一段不是它自己名字的文字（如卡片标题「青松」）。
   const groups = new Map<string, typeof items>();
 
   for (const item of items) {
@@ -83,10 +76,6 @@ function routeTargets(nodes: readonly AxNodeLite[]): Map<number, RouteTarget> {
 
 type DomNode = { backendNodeId?: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[]; contentDocument?: DomNode };
 
-/**
- * 选择器（如 #date）指向的那一个元素的 backendDOMNodeId：在页面里用动作同一套解析找到它（指向不唯一时解析就失败），临时打个记号，再从 CDP 文档树里找回记号。
- * 认不出返回 undefined。
- */
 async function backendOfSelector(tabId: number, target: string): Promise<number | undefined> {
   const mark = Math.random().toString(36).slice(2);
   await ensureDomOps(tabId);
@@ -123,7 +112,6 @@ async function backendOfSelector(tabId: number, target: string): Promise<number 
   }
 }
 
-/** 读当前页的无障碍树，给一个控件（@N 或选择器）写出描述；认不出（不在树里、没名字）返回 null。只读。 */
 export async function describeTarget(params: ToolContract["describe_target"]["params"], sessionId: string = LEAD_SESSION_ID): Promise<ToolContract["describe_target"]["data"]> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 

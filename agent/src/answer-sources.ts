@@ -27,14 +27,14 @@ export function citationEvidence(text: string, sources?: ReadonlyMap<string, Ans
   return { items: items.slice(0, 32), documents:selected, truncated: items.length > 32 || selected.length < documents.size };
 }
 
-/** The in-memory cache is bounded, but an id already shown to the model must stay resolvable: misses fall back to the saved session. */
+/** WHY: The in-memory cache is bounded, but an id already shown to the model must stay resolvable: misses fall back to the saved session. */
 class ArchivedSources extends Map<string, AnswerSource> {
   archive?: (id: string) => AnswerSource | undefined;
   override get(id: string): AnswerSource | undefined { return super.get(id) ?? this.archive?.(id); }
   override has(id: string): boolean { return this.get(id) !== undefined; }
 }
 
-/** Source ids belong to captured text, never a live DOM ref or a model-supplied quote. */
+/** WHY: Source ids belong to captured text, never a live DOM ref or a model-supplied quote. */
 export class AnswerSources {
   readonly records = new ArchivedSources();
   private readonly candidates = new Map<string, AnswerSource>();
@@ -72,7 +72,7 @@ export class AnswerSources {
     }
   }
 
-  /** Decorate only text already present in the model's read result; never append unseen material. */
+  /** WHY: Decorate only text already present in the model's read result; never append unseen material. */
   mark(text: string): string {
     const hits: Array<{ start: number; end: number; source: AnswerSource }> = [];
     for (const source of this.candidates.values()) {

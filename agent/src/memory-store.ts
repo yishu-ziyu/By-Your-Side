@@ -26,14 +26,8 @@ import { parseSavedOpen } from "./saved-opens.js";
 import { placeMemory, sameMemoryScope, validateMemoryDecision, type MemoryDecision } from "./memory-decision.js";
 import type { DocumentPersistence } from "./document-persistence.js";
 
-/**
- * format 3：每条带 factId（同一件事的所有版本共用），整份带递增版本号 rev。
- * format 1、2 读入时升级（替换链上的条目共用链上最早那条的 id），下次写入即为 3。
- * 更新的格式只读：能认的条目照常读出，写入一律拒绝，不覆盖原文件。
- */
 interface StoreFile {
   format: typeof MEMORY_FORMAT_VERSION;
-  /** 整份记忆的版本号：每次成功写入加 1；旧格式没有，按 0 算。 */
   rev: number;
   entries: MemoryEntry[];
   forgottenExperiences?: string[];
@@ -41,7 +35,6 @@ interface StoreFile {
 }
 
 interface StoreState extends StoreFile {
-  /** 文件来自更新的版本时记下它的格式号；此时只读。 */
   newerFormat?: number;
 }
 
@@ -57,7 +50,6 @@ export interface SemanticMemoryIndex {
 
 const semanticIndexes = new WeakMap<MemoryStore, SemanticMemoryIndex>();
 
-/** 语义索引只是派生数据；未就绪或失败时仍使用原关键词挑选。 */
 export function useSemanticMemory(store: MemoryStore, index: SemanticMemoryIndex): MemoryStore {
   semanticIndexes.set(store, index);
   return store;
@@ -65,7 +57,6 @@ export function useSemanticMemory(store: MemoryStore, index: SemanticMemoryIndex
 
 const randomUUID = () => globalThis.crypto.randomUUID();
 
-/** saveMethod：要替换的那条在询问之后被改过、撤下或不再生效。 */
 export class ReplaceTargetChanged extends Error {}
 
 export class MemoryStore {
@@ -77,12 +68,10 @@ export class MemoryStore {
 
   async methodRevision(): Promise<number> { return (await this.readState()).methodRev ?? 0; }
 
-  /** 整份记忆当前的版本号；从没写过为 0。 */
   async currentRev(): Promise<number> {
     return (await this.readState()).rev;
   }
 
-  /** One direct user operation, checked again under the lock; no partial duplicate updates. */
   async applyDecision(decision: MemoryDecision, userMessage: string, sourceConversationId: string, guard: () => boolean): Promise<MemoryEntry[]> {
     if (!["save", "update", "forget"].includes(decision.action)) throw new Error("Not a memory mutation");
     assertCreateInput({ text: decision.text || "forget", scope: decision.scope, sourceConversationId });
@@ -92,10 +81,8 @@ export class MemoryStore {
       validateMemoryDecision(decision, userMessage, entries);
       const targets = entries.filter(e => decision.targets.some(t => t.id === e.id));
 
-      // 被替换或失效的旧值只作历史，不能再被判断当作要改的那条。
       if (targets.some(e => e.status !== "active")) throw new Error("记忆目标或版本无效");
 
-      // 忘记一条事实：连同它被替换 / 撤下的旧值一起删掉，之后无从恢复。
       if (decision.action === "forget") {
         for (const entry of targets) removeFact(entries, forgotten, entry.factId);
 
@@ -115,7 +102,6 @@ export class MemoryStore {
       const now = Date.now();
       const quote = decision.evidence.trim().slice(0, MEMORY_QUOTE_MAX);
       const id = randomUUID();
-      // 新值归入被替换的那件事；一次替换几件事时并成一件，用其中最早那条的编号。
       const oldest = targets.reduce<MemoryEntry | undefined>((min, e) => (!min || e.createdAt < min.createdAt ? e : min), undefined);
       const factId = oldest?.factId ?? id;
       const merged = new Set(targets.map(e => e.factId));
@@ -136,12 +122,10 @@ export class MemoryStore {
 
       if (placement.date) next.date = placement.date;
 
-      // 同一事实换了新值：旧条目标为「被替换」留作历史（不再带给助手），面板可撤销。
       for (const target of targets) {
         const index = entries.findIndex(e => e.id === target.id);
         const entry = entries[index]!;
 
-        // A user replacement must not be resurrected by an old experience job.
         if (entry.experience) forgotten.push(entry.experience.runId);
         entries[index] = { ...entry, version: entry.version + 1, status: "replaced", replacedBy: next.id, updatedAt: Math.max(now, entry.updatedAt + 1) };
       }
@@ -194,10 +178,6 @@ export class MemoryStore {
     }, input.guard);
   }
 
-  /**
-   * 「记下来」时记一条「对 X 感兴趣」（关于你，所有网站，来源原话 = 用户那句）。
-   * 同一主题以前被忘掉过就不写（forgotten）；已有一模一样的生效条目就不重复写（already）。
-   */
   async saveInterest(input: { topic: string; sourceQuote: string; sourceConversationId: string; guard: () => boolean }): Promise<{ status: "saved" | "already" | "forgotten"; entry: MemoryEntry | null }> {
     const text = interestText(input.topic);
     assertCreateInput({ text, scope: { kind: "all" }, sourceConversationId: input.sourceConversationId });
@@ -223,12 +203,6 @@ export class MemoryStore {
     }, input.guard, () => !wrote);
   }
 
-  /**
-   * 用户点「记住」后存一条确认过的「做事的方法」（来源原话 = 用户那句纠正）。返回改动的条目：新条目在前，被替换的旧条目在后。
-   * replaces 指向同一件事的旧做法：旧条目版本 +1、标「被替换」并指向新条目，新条目沿用它的 factId。
-   * 要替换的那条已被删掉就只存新的；已被改过或不再生效则抛 ReplaceTargetChanged（不悄悄并存两条相反的做法）。
-   * 同范围已有同样文字的生效做法时不写入（版本号 rev 不变），返回那一条并标 alreadySaved。
-   */
   async saveMethod(input: { text: string; scope: MemoryScope; sourceConversationId: string; sourceQuote?: string; replaces?: { id: string; version: number }; guard?: () => boolean; expectedMethodRev?: number }): Promise<{ entries: MemoryEntry[]; alreadySaved: boolean; methodRev: number }> {
     assertCreateInput(input);
 
@@ -270,7 +244,6 @@ export class MemoryStore {
       if (target) {
         const index = entries.indexOf(target);
 
-        // 用户换掉的自动总结不能被后台整理再写回来。
         if (target.experience) forgotten.push(target.experience.runId);
         entries[index] = { ...target, version: target.version + 1, status: "replaced", replacedBy: id, updatedAt: Math.max(now, target.updatedAt + 1) };
         changed.push(entries[index]!);
@@ -285,7 +258,7 @@ export class MemoryStore {
     return { entries, alreadySaved, methodRev };
   }
 
-  /** Retrying a background job never overwrites a user edit or resurrects a forgotten experience. */
+  /** WHY: Retrying a background job never overwrites a user edit or resurrects a forgotten experience. */
   async createExperience(input: { runId: string; text: string; scope: MemoryScope; sourceConversationId: string; evidence: string[]; topic?: string }): Promise<MemoryEntry | null> {
     assertCreateInput(input);
 
@@ -336,8 +309,6 @@ export class MemoryStore {
         updatedAt: Math.max(Date.now(), current.updatedAt + 1),
       };
 
-      // 「说 X 就打开」只认原话里的那句话和网址；用户在面板里改了这条，原话就不再是它说的事。
-      // 改后的文字是用户自己写的：还写着那句话和网址就按它打开，否则不再自动打开。
       if (current.sourceQuote && text !== current.text && parseSavedOpen(current.sourceQuote)) {
         if (parseSavedOpen(text)) entry.sourceQuote = text.slice(0, MEMORY_QUOTE_MAX);
         else delete entry.sourceQuote;
@@ -349,7 +320,6 @@ export class MemoryStore {
     });
   }
 
-  /** 返回删掉的条目（忘记生效的值时是整件事的全部版本），供 unforget 撤销。 */
   async forget(input: { id: string; expectedVersion: number }): Promise<MemoryEntry[]> {
     assertMutationIdentity(input.id, input.expectedVersion);
 
@@ -362,7 +332,6 @@ export class MemoryStore {
 
       if (current.version !== input.expectedVersion) throw new Error("Memory version conflict");
 
-      // 忘记生效的值 = 忘记这条事实：整条历史一起删。
       if (current.status === "active") {
         const removed = entries.filter(entry => entry.factId === current.factId);
         removeFact(entries, forgotten, current.factId);
@@ -370,7 +339,6 @@ export class MemoryStore {
         return removed;
       }
 
-      // 只删一条历史：指向它的旧值改指向它的下一条，链不断开。
       const now = Date.now();
 
       for (let i = 0; i < entries.length; i++) {
@@ -391,10 +359,6 @@ export class MemoryStore {
     });
   }
 
-  /**
-   * 撤销「忘掉」：把 forget 删掉的条目原样放回（编号、版本、用过次数不变）。
-   * 这件事这期间又有了值、或这些条目已经放回过时拒绝，不出现两个生效值。
-   */
   async unforget(removed: MemoryEntry[]): Promise<MemoryEntry[]> {
     if (!Array.isArray(removed) || !removed.length || !removed.every(isMemoryEntry)) throw new Error("Memory entries are invalid");
     const factId = removed[0]!.factId;
@@ -413,7 +377,6 @@ export class MemoryStore {
     });
   }
 
-  /** 「这里别用」：off=true 在这个网站不再带这条，off=false 恢复。不删除、不改版本号（内容没变）。 */
   async setNotHere(input: { id: string; expectedVersion: number; hostname: string; off: boolean }): Promise<MemoryEntry> {
     assertMutationIdentity(input.id, input.expectedVersion);
 
@@ -431,10 +394,6 @@ export class MemoryStore {
     });
   }
 
-  /**
-   * 撤销：把一条被替换或失效的旧值恢复成这条事实唯一的生效值。链里当前生效的值改为失效，
-   * 并指向恢复的这条（留在历史里，可再撤回去）。所有改动的条目版本 +1。返回改动的条目（恢复的在前）。
-   */
   async restore(input: { id: string; expectedVersion: number }): Promise<MemoryEntry[]> {
     assertMutationIdentity(input.id, input.expectedVersion);
 
@@ -465,10 +424,6 @@ export class MemoryStore {
     });
   }
 
-  /**
-   * 这一轮带给了助手：用过次数 +1、记下时间，返回仍然生效且版本没变的那些（挑选之后被忘记、修改或替换的不再带）。
-   * 不改版本号（不和用户的修改抢版本）。
-   */
   async markUsed(picked: Array<{ id: string; version: number }>): Promise<MemoryEntry[]> {
     if (!picked.length) return [];
     const wanted = new Map(picked.map(({ id, version }) => [id, version]));
@@ -518,7 +473,6 @@ export class MemoryStore {
     const wanted = new Map(selected.map(({ id, version }) => [id, version]));
     const hostname = hostnameFromUrl(query.url);
 
-    // select 已按当次请求挑选；这里只防止挑选后被改掉、忘掉或跨网站使用，不再用语义无法通过的字面规则重筛。
     return cloneEntries((await this.read()).filter((entry) =>
       wanted.get(entry.id) === entry.version && entry.status === "active" && scopeAllows(entry.scope, hostname) && usableOnHost(entry, hostname),
     ));
@@ -549,14 +503,12 @@ export class MemoryStore {
 
     if (!isRev(rev) || (file.methodRev !== undefined && !isRev(file.methodRev))) throw new Error("Memory store is corrupt");
 
-    // 更新的版本写的：尽量读出字段齐全的条目给面板看（只在内存里当作当前格式，从不写回），写入时拒绝（不覆盖）。
     if (format > MEMORY_FORMAT_VERSION) {
       const shown = file.entries.filter(hasMemoryDisplayFields).map((e): MemoryEntry => ({ ...e, factId: "factId" in e && validMemoryId(e.factId) ? e.factId : e.id, formatVersion: MEMORY_FORMAT_VERSION }));
 
       return { format: MEMORY_FORMAT_VERSION, rev, entries: cloneEntries(shown), forgottenExperiences: [], newerFormat: format };
     }
 
-    // 升级前的条目补默认值；每种格式逐条严格核对。任何一条不对都按损坏报出，不当作空记忆覆盖。
     const check = format === 1 ? isStoredMemoryEntry : format === 2 ? isFormat2MemoryEntry : format === MEMORY_FORMAT_VERSION ? isMemoryEntry : null;
 
     if (!check || !file.entries.every(check)) throw new Error("Memory store is corrupt");
@@ -576,7 +528,6 @@ export class MemoryStore {
     return { format: MEMORY_FORMAT_VERSION, rev, methodRev: typeof file.methodRev === "number" ? file.methodRev : 0, entries: cloneEntries(entries), forgottenExperiences: (file.forgottenExperiences as string[] | undefined) ?? [] };
   }
 
-  /** unchanged 在改完后返回 true 时不写入（整份版本号不变）。 */
   private async withWriteLock<T>(mutate: (entries: MemoryEntry[], forgotten: string[], methodRev: number) => Promise<T> | T, commitGuard?: () => boolean, unchanged?: () => boolean): Promise<T> {
     return this.doc.exclusive(async () => {
       const state = await this.readState();
@@ -603,7 +554,7 @@ function isRev(value: unknown): value is number {
 }
 
 /**
- * 写入前必须成立，否则整次写入作废、原文件不动：
+ * WHY: 写入前必须成立，否则整次写入作废、原文件不动：
  * 一件事（factId）至多一个生效值；replacedBy 指向存在且属于同一件事的条目；replacedBy 不成环。
  */
 function checkInvariants(entries: MemoryEntry[]): void {
@@ -624,7 +575,6 @@ function checkInvariants(entries: MemoryEntry[]): void {
     if (next.factId !== entry.factId) throw new Error(`Memory invariant violated: ${entry.id} is replaced by an entry of another fact`);
   }
 
-  // 顺着 replacedBy 走到头；走过的路都确认无环，后面的起点碰到就停。
   const acyclic = new Set<string>();
 
   for (const start of entries) {
@@ -641,15 +591,6 @@ function checkInvariants(entries: MemoryEntry[]): void {
   }
 }
 
-/**
- * 旧格式（1、2）升级：先修复已经违反规则的数据，再分 factId。只改状态和链接、不删条目、不改版本号，
- * 结果只取决于数据本身（每次读到同一份旧文件修出来都一样）：
- * 1. replacedBy 指向不存在的条目：去掉这条链接。
- * 2. replacedBy 成环：在环上最早（createdAt 最小）的条目处断开。
- * 3. 因此没了后继的旧值改为失效（留在历史里，用户可以恢复）；从不把不生效的条目改成生效，免得旧值重新带给助手。
- * 4. 一件事多个生效值：留最近修改的那个，其余改为被它替换。
- * 格式 3 不修：违反规则就拒绝写入。
- */
 function upgradeLegacyEntries(input: MemoryEntry[]): MemoryEntry[] {
   const entries = input.map(e => ({ ...e }));
   const byId = new Map(entries.map(e => [e.id, e]));
@@ -705,7 +646,6 @@ function upgradeLegacyEntries(input: MemoryEntry[]): MemoryEntry[] {
   return grouped;
 }
 
-/** 旧格式升级：顺着 replacedBy 连在一起的条目是同一件事，共用其中最早（createdAt 最小）那条的 id。 */
 function assignFactIds(entries: MemoryEntry[]): MemoryEntry[] {
   const parent = new Map(entries.map(e => [e.id, e.id]));
   const created = new Map(entries.map(e => [e.id, e.createdAt]));
@@ -724,7 +664,6 @@ function assignFactIds(entries: MemoryEntry[]): MemoryEntry[] {
     const b = root(entry.replacedBy);
 
     if (a === b) continue;
-    // 根保留更早的那条（同一时刻按先出现的）。
     const [keep, drop] = created.get(b)! < created.get(a)! ? [b, a] : [a, b];
     parent.set(drop, keep);
   }
@@ -732,7 +671,6 @@ function assignFactIds(entries: MemoryEntry[]): MemoryEntry[] {
   return entries.map(e => ({ ...e, factId: root(e.id) }));
 }
 
-/** 忘记一件事：它的所有版本一起删，之后无从恢复。 */
 function removeFact(entries: MemoryEntry[], forgotten: string[], factId: string): void {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i]!;
@@ -745,15 +683,10 @@ function removeFact(entries: MemoryEntry[], forgotten: string[], factId: string)
   }
 }
 
-/** 记忆里「对 X 感兴趣」这一条的写法：和其他记忆条目一样不带主语。 */
 export function interestText(topic: string): string {
   return `对${topic.trim()}感兴趣`;
 }
 
-/**
- * 忘掉的兴趣只留一个指纹，存在 forgottenExperiences 里：同一主题以后说「记下来」也不写回去，
- * 文件里又不留下主题原文。指纹按去掉空白和标点、小写后的主题算。
- */
 function interestMarks(entry: MemoryEntry): string[] {
   const topic = /^对(.+)感兴趣$/su.exec(entry.text)?.[1];
 
@@ -803,11 +736,6 @@ function scopeAllows(scope: MemoryScope, hostname: string | null): boolean {
   return scope.kind === "all" || (hostname !== null && scope.hostname === hostname);
 }
 
-/**
- * A user edit (version > 1) replaces the topic with the user's own wording, so
- * edited entries keep the permissive rule like any other personal entry.
- * Automatic, unedited experiences match by task object instead.
- */
 function isEntryRelevant(entry: MemoryEntry, query: string): boolean {
   if (entry.version === 1 && entry.experience) return isRelevantExperience(entry.experience.topic ?? entry.text, query);
 

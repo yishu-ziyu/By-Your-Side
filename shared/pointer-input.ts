@@ -1,15 +1,9 @@
-/**
- * 指针与按键参数形状与纯函数。只放类型与纯逻辑；执行（CDP）留在 extension。
- */
-
 export type MouseButton = "left" | "middle" | "right";
 
-/** 相对元素左上角的 CSS 像素偏移（与 EGO `position: {x,y}` 同语义）。 */
 export type ElementPosition = { x: number; y: number };
 
 type DomRectLike = { x: number; y: number; width: number; height: number };
 
-/** 按下某键时 CDP `buttons` 位掩码：left=1, right=2, middle=4。 */
 export function pressedButtonsMask(button: MouseButton): number {
   if (button === "left") return 1;
 
@@ -19,10 +13,6 @@ export function pressedButtonsMask(button: MouseButton): number {
   throw new Error(`unsupported mouse button: ${button}`);
 }
 
-/**
- * 元素内点击点：无 position 时取中心；有则相对左上角 CSS 像素。
- * 结果四舍五入到整数 CSS 像素（不乘 DPR）。
- */
 export function pointInElementRect(
   rect: DomRectLike,
   position?: ElementPosition | null,
@@ -41,7 +31,6 @@ export function pointInElementRect(
   return [Math.round(rect.x + position.x), Math.round(rect.y + position.y)];
 }
 
-/** macOS → Meta，其它 → Control（EGO ControlOrMeta）。 */
 export function controlOrMetaKey(platform: string): "Meta" | "Control" {
   return /mac|iphone|ipad|ipod/i.test(platform) ? "Meta" : "Control";
 }

@@ -1,8 +1,3 @@
-/**
- * 页面控制权：现在归 Agent 还是归用户。
- * 硬闸门在执行层（不靠模型自觉）。接管确认出现前必须排空已开始的写操作；
- * 排队或迟到的写调用一律不落地。交还不得回退到旧标签页。
- */
 import {
   LEAD_SESSION_ID,
   isLeadSession,
@@ -23,7 +18,6 @@ type ControlOwner = "agent" | "user";
 
 export const USER_BLOCKED_ERROR = "页面现在归你，操作未执行";
 
-/** 页归另一会话时的拦截文案前缀；宿主据此在对方空闲时自动接手。 */
 export const FOREIGN_TAB_ERROR = "该页正在由其他会话使用";
 
 export function aggregateRunState(states: Iterable<AgentRunState>): AgentRunState {
@@ -113,7 +107,6 @@ export function panelLive(
   };
 }
 
-/** 刷新/跳转后 content overlay 已 teardown。只有 load complete 且仍归用户时才重画条。 */
 export function shouldRestoreUserControlBanner(opts: {
   owner: ControlOwner;
   changeInfo: { status?: string; url?: string };
@@ -127,7 +120,6 @@ type ControlSnapshot = {
   lastStatus: AgentRunState;
   team?: TeamView;
   sessions?: Record<string, ControlOwner>;
-  /** 已完成的写操作身份，SW 重启后仍能识别重复投递；不保存结果正文。 */
   completed?: string[];
 };
 
@@ -213,7 +205,6 @@ export function applyControlSnapshot(
   return { restoredUser: false, lastStatus: snap.lastStatus === "running" ? "running" : "idle" };
 }
 
-/** uplink / SW 断线：归用户时不得 abort 闸门，也不能把状态打成 idle。 */
 export function uplinkLostWhileHeld(owner: ControlOwner): {
   abortGate: boolean;
   hideBanner: boolean;
@@ -246,21 +237,15 @@ export function handbackContinueText(context: PageContext, snapshot: string,orig
   ].join("\n");
 }
 
-/**
- * 执行层闸门。takeover() 先挡住新的写操作，等已开始的写操作结束，再把 owner 设为 user。
- * abort() 与 takeover 不同：立刻回到 agent，不等待。
- */
 function sessionKey(sessionId?: string | null): string {
   return isLeadSession(sessionId) ? LEAD_SESSION_ID : sessionId!;
 }
 
-/** 已完成写操作的保留上限；超出后按完成先后淘汰，SW 重启由持久快照补回。 */
 const CONTROL_COMPLETED_MAX = 256;
 
 type CompletedOutcome =
   | { status: "resolved"; name: ToolName; value: unknown }
   | { status: "rejected"; name: ToolName; error: unknown }
-  /** 只从持久快照恢复：知道已执行，但拿不到原结果。 */
   | { status: "replayed"; name: ToolName | null };
 
 export class ControlGate {
@@ -269,7 +254,6 @@ export class ControlGate {
   private draining = false;
   private inflight = new Map<string, { settled: Promise<unknown>; sessionId: string; name: ToolName }>();
   private completed = new Map<string, CompletedOutcome>();
-  /** true = 该 session 仍归用户，写操作与认领别页都禁止。 */
   private sessionBlocked = new Map<string, boolean>();
 
   get control(): ControlOwner {
@@ -300,7 +284,6 @@ export class ControlGate {
     return [...new Set([...this.inflight.values()].map((entry) => entry.sessionId))];
   }
 
-  /** 已完成的操作身份（session::id），供持久快照跨 SW 重启去重。 */
   completedIds(): string[] {
     return [...this.completed.keys()].slice(-CONTROL_COMPLETED_MAX);
   }
@@ -343,7 +326,6 @@ export class ControlGate {
     }
 
     const key = `${sessionKey(sessionId)}::${id}`;
-    // 重复投递先于控制权检查：已完成的回执原样回传，绝不二次落地。
     const done = this.completed.get(key);
 
     if (done) return this.replayCompleted<T>(done, name);
@@ -397,7 +379,6 @@ export class ControlGate {
 
     if (done.status === "rejected") throw done.error;
     const error = new Error("该操作已在之前的扩展进程中执行过，本次未重复执行；以原来的结果为准。");
-    // 跨进程只能证明“执行过”，不能证明结果；沿错误对象携带结构化事实。
     (error as Error & { executionFact?: string }).executionFact = "unknown";
     throw error;
   }
@@ -430,13 +411,8 @@ export class ControlGate {
     return { generation: gen, superseded: false };
   }
 
-  /**
-   * 按页接管只等这页成员已开始的写操作：别的页上的助手照常干活，所以不走 beginTakeover 的全局排空。
-   * 写操作卡住时不能让用户一直看着「正在停住」：到 limitMs 就返回 false，由调用方当结果未知继续交还。
-   */
   async drainSessions(sessionIds: Iterable<string>, limitMs: number): Promise<boolean> {
     const ids = new Set([...sessionIds].map(sessionKey));
-    // 等页面事件（下载、弹窗）不改页面，它最长能等两分钟，不该让停止陪着等。
     const pending = [...this.inflight.values()].filter((entry) => ids.has(entry.sessionId) && entry.name !== "wait_event").map((entry) => entry.settled);
 
     if (!pending.length) return true;
@@ -509,7 +485,6 @@ export class ControlGate {
     return { generation: this.generation, settled };
   }
 
-  /** SW 重启后从 session storage 灌回。不等待 inflight（进程已空）。 */
   hydrate(owner: ControlOwner, generation: number, sessions?: Record<string, ControlOwner>, completed?: string[]): void {
     this.owner = owner;
     this.generation = generation;
@@ -531,7 +506,6 @@ export class ControlGate {
   }
 }
 
-/** 会话侧：接管不等于中止；agent_end 在 hold 期间不得变成 idle。 */
 export class SessionHold {
   private held = false;
 
@@ -910,7 +884,6 @@ function memberPhaseLabel(phase: TeamMemberPhase): string {
   }
 }
 
-/** 名册行状态文案：暂停态带真实原因时说真话（恢复超时 ≠ 没读到新状态），无原因回退 phase 文案。 */
 export function memberStatusLabel(m: Pick<TeamMemberView, "phase" | "reason">): string {
   if (
     (m.phase === "paused_snapshot_failed" || m.phase === "paused_tab_closed") &&

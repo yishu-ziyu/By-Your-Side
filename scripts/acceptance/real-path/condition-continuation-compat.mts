@@ -1,12 +1,3 @@
-/**
- * Legacy checkpoint compatibility through real A -> B package replacement.
- * A leaves an ordinary read task open, with no continuation metadata. B must
- * recover its original goal/run and prior answer, wait for the real resume
- * user message "继续原任务", then read the original page and finish the remaining item.
- * No checkpoint or protocol facts are injected. Only the model and page are scripted.
- * npx tsx scripts/acceptance/real-path/condition-continuation-compat.mts --headless --baseline=/abs/A --candidate=/abs/B-final
- * This case does not test B -> A downgrade; report that separately as unrun.
- */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';

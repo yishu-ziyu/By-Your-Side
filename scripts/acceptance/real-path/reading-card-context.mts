@@ -1,17 +1,3 @@
-/**
- * 划词解释要看得到这页在讲什么：正文用 div 排版、或跨段选中时，请求里仍带着选区前后的正文和所在小节标题。
- * 只认 p/li 等段落标签时，这两种页面拿到的上下文是空的，回答只能看着选中的几个字猜（用户反馈「回答不基于页面上下文」）。
- *
- * 真扩展、隔离无头 Chrome、本机练习页、本机脚本模型。脚本模型只证明请求里带了什么，不证明真实回答好坏。
- *   npx tsx scripts/acceptance/real-path/reading-card-context.mts --headless [--live] [--model=服务商/模型]
- * --live：换成真实模型（默认 gpt-6-luna），另判回答本身说出了「这个决定」指的是换锌版——这层意思只写在前一段里；
- *   再在卡片里追问作者的证据：证据只写在全文末尾的附录里，相邻段落里没有。卡片要交给侧栏同一个助手读全文，
- *   卡上显示助手在做哪一步，答案写回卡片；点「继续聊天」，侧栏就是那个会话。
- *
- * 判据：
- *   div 排版  请求里有选区前一段的线索句和小节标题。
- *   跨段选中  请求里有两段之外的前文线索句。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -29,13 +15,11 @@ await mkdir(out, { recursive: true });
 
 const HEADING = "第三节：铜版的退场";
 const CLUE = "工坊在一八九零年把铜版换成了更便宜的锌版";
-// 选区旁边用户还没发出的草稿、页面藏起来的标题：都不该进模型请求。
 const DRAFT = "草稿：下周三请假一天";
 const HIDDEN = "内部备注不要公开";
 const ACCOUNT = "账户余额 9,980 元";
 const FILLER = "<div>学徒们每天清晨先擦版，再调墨，最后才开始印刷当天的订单。</div>".repeat(6);
 
-// 像很多资讯站和单页应用：正文全是 div，没有 p。
 const DIVS = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>印刷工坊</title>
 <style>body{margin:0}.post{max-width:36rem;margin:56px 72px;font:17px/1.75 serif}.post>div{margin:0 0 14px}</style></head><body>
 <aside><h3>${ACCOUNT}</h3><div>${ACCOUNT}</div></aside><div class="post"><h2>${HEADING}</h2>${FILLER}<div>${CLUE}，账本上的开销因此少了三成。</div>
@@ -43,7 +27,6 @@ const DIVS = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
 <div id="pick"><span id="pick-text">这个决定让老师傅们很不满意</span>，他们说新版印出的线条发虚。</div>
 <div contenteditable="plaintext-only">${DRAFT}</div>${FILLER}</div></body></html>`;
 
-// 段落标签齐全，但选区跨了两段：共同祖先是 article，不是某一段。
 const CROSS = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>印刷工坊</title>
 <style>body{margin:0}article{max-width:36rem;margin:56px 72px;font:17px/1.75 serif}</style></head><body>
 <aside>${ACCOUNT}</aside><article><h2>${HEADING}</h2><p>${CLUE}，账本上的开销因此少了三成。</p>
@@ -80,7 +63,6 @@ try {
   await until(async () => (await rp.evaluate(work, `document.readyState === "complete" && !!document.querySelector("[data-sideagent-ask]")`)) || undefined, 15_000, "练习页");
   const panel = await rp.attach(await rp.openSidePanel());
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#conversation-new")?.disabled === false`)) || undefined, 60_000, "侧栏就绪");
-  // 主模型和快速模型指到同一个：脚本模型只看请求里带了什么；--live 时是真模型。
   const items = livePlan ? modelStorageItems(livePlan) : { inproc_model_config: { provider: "custom", modelId: "reader", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ ...items, inproc_fast_model_config: items.inproc_model_config })}).then(() => true)`);
   await rp.cdp.send("Target.activateTarget", { targetId: workTargetId }).catch(() => {});
@@ -112,7 +94,6 @@ try {
     return String(reply.result.value ?? "");
   };
 
-  /** 像用户一样从 from 的开头拖到 to 的结尾，点「解释」，返回这次发给模型的内容。 */
   const explain = async (path: string, from: string, to: string) => {
     await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${port}${path}` }, work);
     await until(async () => (await rp.evaluate(work, `location.pathname === ${JSON.stringify(path)} && document.readyState === "complete" && !!document.querySelector("[data-sideagent-ask]")`)) || undefined, 15_000, path);
@@ -126,14 +107,12 @@ try {
     const point = await until(explainPoint, 10_000, "解释");
     await sleep(200);
     for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await rp.cdp.send("Input.dispatchMouseEvent", { type, button: "left", clickCount: 1, ...point }, work);
-    // 卡上没有「写完了」的标记：回答连续 3 秒不再变长才算写完。
     if (LIVE) { let last = "", since = Date.now(); await until(async () => { const text = await answerText(); if (text !== last) { last = text; since = Date.now(); } return text.length > 20 && Date.now() - since > 3000 ? text : undefined; }, 120_000, "真模型回答写完", 500); }
     else await until(async () => asked.length > before || undefined, 30_000, "解释请求");
     await rp.screenshot(work, join(out, `${path.slice(1)}.png`));
     return { selected, sent: asked[asked.length - 1] ?? "", answer: LIVE ? await answerText() : "" };
   };
 
-  // 要说清是改用锌版，不能是「没说明」「无法确定」或说反了方向。
   const understood = (a: string) => /(改用|改成|换成|换用|换为|改为)[^。，]{0,6}锌版/.test(a) && !/没有说明|未说明|无法确定|不清楚|没有交代|不是[^。]{0,8}锌|被铜版[^。]{0,4}(代替|取代|替代)|锌版换成铜版|改用铜版/.test(a);
   const divs = await explain("/divs", "#pick-text", "#pick-text");
   if (LIVE) {

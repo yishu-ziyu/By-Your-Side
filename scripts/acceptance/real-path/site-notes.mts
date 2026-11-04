@@ -1,4 +1,3 @@
-/** 暂停站点笔记：旧数据不进入任务、不再生成；仍可从管理列表查看和删除。 */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";

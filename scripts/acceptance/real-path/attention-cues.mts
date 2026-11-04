@@ -1,19 +1,3 @@
-/**
- * 提示音：用户没在看任何开着侧栏的窗口时，任务做完响一声「做完」；在看时不响；设置关掉不响。
- * 只装扩展、隔离构建、本机脚本模型；目标核对请求经本机转发服务改写成脚本结论。
- *   npx tsx scripts/acceptance/real-path/attention-cues.mts
- * 「没在看」要真实的窗口焦点：无头 Chrome 总有一个窗口在前台，所以 A、D、C 用有窗口的 Chrome，在后台启动、不抢用户焦点，
- * 它的窗口本来就不在前台，正是用户在别的应用里的情形。运行时不要点那个窗口，点了这次不算数。所以不进 run-all 整轮。
- *   A) 有窗口、窗口不在前台：做完一个任务 → 听到一次「做完」三音（523/659/784 Hz），且有声音输出。
- *   D) 同上，目标核对先判「接着做」、续做后判「做完」→ 整个任务只听到一次「做完」。
- *   C) 同一个浏览器，在设置页把「提示音」关掉 → 再做完一个任务 → 没有声音。
- *   B) 无头、开着侧栏的窗口在前台：做完一个任务 → 没有声音。
- *   E) 无头、几个窗口：前台窗口没开侧栏 → 侧栏响一次；前台窗口也开着侧栏 → 两个侧栏都不响；
- *      前台换到第三个没开侧栏的窗口 → 两个侧栏加起来只响一次。
- * 听到什么：侧栏页面加载前注入观察脚本（Page.addScriptToEvaluateOnNewDocument），记下每个振荡器开始时的频率，
- * 并在输出端前挂一个分析器读峰值。不读产品模块的内部状态。
- * 失败方式：去掉「等核对结论再响」，D 听到两次「做完」（结果写在 PR 描述里）。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -31,7 +15,6 @@ const TASK_D = "提示音丁：看看开着哪些标签页";
 
 const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished the user's goal";
 
-// 规则按数组顺序匹配：续做的提示里也带着任务原话，所以 [GOAL CHECK] 放在最前。
 const model = await startScriptedModel([
   { match: "[GOAL CHECK]", steps: [{ tool: { name: "tabs", args: { action: "list" } } }, { text: "补上了。【d完成】" }] },
   { match: TASK_D, steps: [{ tool: { name: "tabs", args: { action: "list" } } }, { text: "开着一个标签页。" }] },
@@ -40,7 +23,6 @@ const model = await startScriptedModel([
   { match: "GOAL-CHECK-DONE", steps: [{ text: JSON.stringify({ status: "done" }) }] },
 ]);
 
-/** 接下来几次目标核对依次怎么判；用完后一律判做完。 */
 let verdicts: Array<"continue" | "done"> = [];
 
 let checks = 0;
@@ -71,7 +53,6 @@ await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
 
 await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
-/** 只观察，不改变声音：振荡器开始时记频率；连到输出端的节点先经过一个分析器，再到输出端。 */
 const LISTEN = `(() => {
   const heard = window.__heard = { starts: [], peak: 0 };
   const taps = new WeakMap();
@@ -105,7 +86,6 @@ const configItems = {
   "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" },
 };
 
-/** 给一个已开的侧栏注入观察脚本，重载后等它就绪。 */
 async function listenTo(rp: Browser, targetId: string): Promise<string> {
   const panel = await rp.attach(targetId);
   await rp.cdp.send("Page.enable", {}, panel);
@@ -116,7 +96,6 @@ async function listenTo(rp: Browser, targetId: string): Promise<string> {
   return panel;
 }
 
-/** 开一个隔离浏览器，工作标签页打开练习页，打开侧栏并接好脚本模型。 */
 async function openBrowser(headed: boolean) {
   const rp = await launchRealPath({ headed });
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
@@ -131,7 +110,6 @@ async function openBrowser(headed: boolean) {
 
 const FOCUS_JS = "Promise.all([chrome.windows.getLastFocused(), chrome.windows.getCurrent()]).then(([last, mine]) => ({ front: last.focused ? last.id : null, mine: mine.id }))";
 
-/** 从 sender 发一句、等 done 文字出现、任务空闲后再等 2.5 秒（提示音不到 1 秒），返回每个侧栏这段时间听到的。 */
 async function finishTask(rp: Browser, sender: string, listeners: string[], ask: string, done: string, settle: () => Promise<boolean> = async () => true) {
   for (const panel of listeners) await rp.evaluate(panel, "window.__heard.starts = []; window.__heard.peak = 0; true");
   await rp.click(sender, "#input");
@@ -157,7 +135,6 @@ const evidence: Record<string, unknown> = {};
 let error: string | null = null;
 
 try {
-  // A、D、C：有窗口，窗口不在前台。
   const headed = await openBrowser(true);
 
   try {
@@ -168,7 +145,6 @@ try {
     assert.deepEqual(hz(a), DONE_HZ, `a: one done cue (three tones) plays: ${JSON.stringify(a)}`);
     assert.ok(a.starts.every(s => s.state === "running") && a.peak > 0.05, `a: the cue reaches the output: ${JSON.stringify(a)}`);
 
-    // D：核对先判接着做，续做后判做完。
     verdicts = ["continue", "done"];
     const before = checks;
     const [d] = await finishTask(rp, panel, [panel], TASK_D, "【d完成】", async () => checks >= before + 2);
@@ -176,7 +152,6 @@ try {
     assert.equal(checks - before, 2, `d: precondition — two goal checks ran: ${JSON.stringify(evidence.d)}`);
     assert.deepEqual(hz(d), DONE_HZ, `d: exactly one done cue for the whole task: ${JSON.stringify(evidence.d)}`);
 
-    // C：在设置页关掉「提示音」。
     const settingsTab = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html`, background: true })).targetId;
     const settings = await rp.attach(settingsTab);
     await until(async () => await rp.evaluate(settings, 'document.querySelector("#attention-cues")?.checked === true').catch(() => false) || undefined, 15_000, "c: 设置页的提示音默认开");
@@ -194,7 +169,6 @@ try {
     await headed.rp.remove();
   }
 
-  // B、E：无头。
   const front = await openBrowser(false);
 
   try {
@@ -204,14 +178,12 @@ try {
     assert.equal(b.front, b.mine, `b: precondition — the panel's window is in front: ${JSON.stringify(b)}`);
     assert.deepEqual(b.starts, [], `b: no cue while the user looks at the panel's window: ${JSON.stringify(b)}`);
 
-    // E1：前台换到一个没开侧栏的窗口。
     const w2 = Number(await rp.evaluate(p1, `chrome.windows.create({ url: "about:blank", focused: true }).then(w => w.id)`));
     const [e1] = await finishTask(rp, p1, [p1], ASKS.e1, "【e1完成】");
     evidence.e1 = e1;
     assert.equal(e1.front, w2, `e1: precondition — the new window without a panel is in front: ${JSON.stringify(e1)}`);
     assert.deepEqual(hz(e1), DONE_HZ, `e1: the panel plays once when the front window has no panel: ${JSON.stringify(e1)}`);
 
-    // E2：前台窗口也开着侧栏。
     const known = new Set((await rp.targets()).map(t => t.targetId));
     const opened = await rp.evaluate(p1, `chrome.sidePanel.open({ windowId: ${w2} }).then(() => "opened", e => "error: " + e.message)`, { userGesture: true });
     assert.equal(opened, "opened", "e2: the second side panel opens");
@@ -222,7 +194,6 @@ try {
     assert.equal(e2[1].front, e2[1].mine, `e2: precondition — the front window has a panel: ${JSON.stringify(e2)}`);
     assert.deepEqual(e2.map(h => h.starts.length), [0, 0], `e2: neither panel plays while the user looks at one: ${JSON.stringify(e2)}`);
 
-    // E3：前台换到第三个没开侧栏的窗口。
     const w3 = Number(await rp.evaluate(p1, `chrome.windows.create({ url: "about:blank", focused: true }).then(w => w.id)`));
     const e3 = await finishTask(rp, p2, [p1, p2], ASKS.e3, "【e3完成】");
     evidence.e3 = e3;

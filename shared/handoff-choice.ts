@@ -1,6 +1,5 @@
 const PERSONAL_STEP = /密码|口令|验证码|安全码|卡号|有效期|安全验证|身份验证|二次验证|付款|支付|银行卡|授权|password|passcode|captcha|verification|security code|card number|expir|\bcvv\b|\bcvc\b|two.factor|\b2fa\b|payment|authori[sz]/i;
 
-/** A choice reply may resume only a handoff that asks for a choice, never a personal verification step. */
 export function handoffChoices(ask: unknown, kind: unknown, options: unknown): string[] | null {
   if (kind !== 'choice' || typeof ask !== 'string' || !Array.isArray(options)) return null;
   if (PERSONAL_STEP.test(ask)) return null;
@@ -20,7 +19,6 @@ function oneEdit(a: string, b: string): boolean {
   return edits + Number(i < a.length || j < b.length) <= 1;
 }
 
-/** Only a unique affirmative choice is enough to hand the page back. */
 export function matchesHandoffChoice(text: string, choices: string[]): boolean {
   const input = text.trim().toLowerCase();
   if (!input || PERSONAL_STEP.test(input) || /不要|不用|不选|不是|除了|排除|别|取消|停止|暂停|等等|稍后|先不|\b(?:not|don't|do not|except|stop|wait|cancel)\b/i.test(input)) return false;

@@ -1,17 +1,3 @@
-/**
- * 交付后核对什么时候让助手接着去邮箱：只有页面明说邮件已发出时才去；回答在问用户别的事时问话照常交给用户。
- *
- *   npx tsx scripts/acceptance/real-path/email-step.mts --headless [--case=sms|sms-done|mail-sent|email-question|email|email-ask]
- *
- * 不带 --case 依次跑六种：
- * - sms：手机号登录页有「发送验证码」和挨着短信状态的「邮箱登录」标签，助手填好手机号后问「要提交吗？」。侧栏留着这句问话，不出现「去邮箱」的接着做，也没有提交。
- * - sms-done：同一页，助手说填好了、没提交（不是问句）。只看页面文字：「发送验证码」不算邮件，不出现「去邮箱」。
- * - mail-sent：写信页显示「邮件已发送」「Your email has been sent.」，助手说信已发出。发出去的信不是等你确认的邮件，不出现「去邮箱」。
- * - email-question：页面写着确认邮件已发送，助手提了一句邮箱、问的却是别的事（「要换个备注吗？」）。问话交给用户，不直接去邮箱。
- * - email：同一页，助手说已提交、请用户确认邮件里的链接。请用户做的是邮件这一步，所以核对照旧让助手接着去邮箱。
- * - email-ask：同一页，助手问「要我帮你打开邮箱点确认链接吗？」。用户定过为目标去邮箱不问，所以照样接着去。
- * 核对用的快速模型由本地代理按脚本回「接着做」（模拟实测里快速模型把「要提交吗？」判成助手能自己做），主模型是脚本模型。
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -38,7 +24,6 @@ async function run(scenario:Scenario){
  const out=join(REPO,'out/acceptance/real-path',`${new Date().toISOString().replace(/[:.]/g,'-')}-email-step-${scenario}`);
  await mkdir(out,{recursive:true});
  const sms=scenario.startsWith('sms');
- /** 这一轮不该接着去邮箱：问话或「没提交」交回给用户。 */
  const staysPut=sms||scenario==='mail-sent'||scenario==='email-question';
  const TASK=sms?'填好手机号 13800000000，提交前问我。':scenario==='mail-sent'?'把备注填成「来自邀请」，信发出去就行。':'帮我把备注填成「来自邀请」，注册的事接着办完。';
  const REPLY={sms:'已填好手机号 13800000000，要提交吗？','sms-done':'已填好手机号 13800000000，没有提交。','mail-sent':'备注已填好，邮件已经发送给对方。','email-question':'备注已填好，接下来可以打开邮箱，要换个备注吗？',email:'备注已填好，注册已提交。确认邮件已发出，请确认邮件中的链接以完成注册。','email-ask':'备注已填好。要我帮你打开邮箱点确认链接吗？'}[scenario];
@@ -84,7 +69,6 @@ async function run(scenario:Scenario){
   await rp.evaluate(panel,`chrome.storage.local.set(${JSON.stringify({inproc_model_config:{provider:'custom',modelId:'email-step-fixture',baseUrl:`http://127.0.0.1:${siteAddress(proxy).port}/v1`},'inproc_cred:custom':{type:'api_key',key:'local-fixture'}})}).then(()=>true)`);
   await until(async()=>await rp!.evaluate(panel,'document.querySelector("#send-btn")?.disabled===false')||undefined,60000,'sidebar');
   await rp.click(panel,'#input');await rp.typeText(panel,TASK);await rp.pressEnter(panel);
-  // 核对有结论后再等一会：判「接着做」时主模型那一轮要跑完才看得到 [GOAL CHECK]。
   await until(async()=>{
    trace=await rp!.evaluate(panel,traceExpr);
    return trace.some(e=>e.type==='goal_check'&&e.data?.status&&e.data.status!=='checking')?true:undefined;

@@ -1,6 +1,3 @@
-/**
- * 哪些文件能读、读不了时怎么说。侧栏一开就要用，所以和解析代码（file-read.js）分开，不随侧栏加载 pdf.js。
- */
 import { FILE_READ_MAX_BYTES, type FileFormat } from "../../../../shared/protocol.js";
 
 const TEXT_EXTENSIONS = new Set([
@@ -18,7 +15,6 @@ const OTHER_HINTS: Record<string, string> = {
 
 const extensionOf = (name: string): string => /\.([^.]+)$/.exec(name)?.[1]?.toLowerCase() ?? "";
 
-/** 侧栏要不要把这个文件当文件读（图片走原来的图片附件）。 */
 export function readableFormat(file: File): FileFormat | null {
   const ext = extensionOf(file.name);
 
@@ -39,7 +35,6 @@ export function readableFormat(file: File): FileFormat | null {
   return null;
 }
 
-/** 读不了时给用户的一句话：说清是什么格式、可以怎么办。 */
 export function unsupportedReason(file: File): string {
   const ext = extensionOf(file.name);
 

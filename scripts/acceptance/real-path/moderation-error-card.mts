@@ -1,10 +1,3 @@
-/**
- * Real extension: when the model provider's content moderation blocks the answer (MiniMax "output new_sensitive (1027)"),
- * the error card says so and offers only "换一个模型" — retrying the same model would be blocked again. A plain
- * unexplained failure still gets the generic card with "重试".
- *   npx tsx scripts/acceptance/real-path/moderation-error-card.mts --headless
- * The model is scripted (it returns the provider's error body), so this proves the panel layer.
- */
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';

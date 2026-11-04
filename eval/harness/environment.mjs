@@ -1,4 +1,3 @@
-/** Only browser/page evidence can exclude a result; the assistant's explanation is not evidence. */
 export function siteBlock(page) {
   if (!page) return null;
   const { url = '', title = '', text = '', errorText = '', status = null, challenge = false, requestedUrl = '' } = page;

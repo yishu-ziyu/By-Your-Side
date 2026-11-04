@@ -2,19 +2,15 @@ import { parseClientMessage, type ClientMessage, type ServerMessage } from "../.
 import { VoiceObservation } from './voice-observation.js';
 import { GPT_LIVE_MODEL, type VoiceInputContext } from '../../../shared/voice.js';
 
-/** 侧栏换端口后要在这段时间内用同一个 voiceId 认领；比侧栏自己的等待（30 秒）长，由侧栏先决定重连。 */
 const REATTACH_GRACE_MS = 35_000;
 const DETACHED_BUFFER_MAX = 500;
 
-/** Audio bypasses persisted task history and is delivered only to its owning panel. */
 export class VoiceRelay {
   private readonly observation = new VoiceObservation();
   private detachTimer: ReturnType<typeof setTimeout> | null = null;
   private lease: {
-    /** null：侧栏端口断了，等它带同一个 voiceId 回来；期间的宿主消息存进 buffer。 */
     port: chrome.runtime.Port | null;
     buffer: Extract<ServerMessage, { type: "voice" }>[];
-    /** 只有 GPT-Live 的通话不走端口，能撑过换端口；阶跃星辰的音频走端口，断了就停。 */
     live: boolean;
     voiceId: string;
     conversationId: string;
@@ -35,7 +31,6 @@ export class VoiceRelay {
 
         return;
       }
-      // 后台忙时侧栏会换端口，但 GPT-Live 通话不走端口，还活着：先留着会话等它认领，不当场停掉。
       lease.port = null;
       console.info("[voice] relay_detached", JSON.stringify({ voiceId: lease.voiceId }));
       this.detachTimer = setTimeout(() => { if (this.lease === lease && !lease.port) this.stop("panel_disconnected"); }, REATTACH_GRACE_MS);
@@ -58,13 +53,10 @@ export class VoiceRelay {
         return;
       }
 
-      // Context completion is produced by this relay, never by a panel.
       if (message.command.kind === 'input_context') {
         return;
       }
 
-      // voiceId 只有开这次语音的侧栏知道：同一个 id 从新端口来，就是它换了端口回来认领。
-      // 换端口前排队的命令可能先于认领的 start 到达，所以任何一条命令都能认领。
       const held = this.lease;
 
       if (held && held.port !== port && held.voiceId === message.voiceId && held.conversationId === message.conversationId && message.conversationId === this.selected(port)) {
@@ -110,12 +102,10 @@ export class VoiceRelay {
         return;
       }
 
-      // GPT-Live 一次委派一轮，断开期间补发的几轮会同时等页面资料；宿主只认自己还在等的轮次。
       if (message.command.kind === 'commit' && (lease.live ? message.command.turn > lease.turn : message.command.turn !== lease.turn)) {
         return;
       }
 
-      // A diagnostic take never reads the page: its commit carries no observation or ask context.
       if (message.command.kind === 'commit' && this.enrich && !lease.diagnostic) {
         const command = message.command;
 
@@ -212,7 +202,7 @@ export class VoiceRelay {
     try {
       lease?.port?.postMessage({ kind: "server", conversationId: message.conversationId, msg: message });
     }
-    catch { /* panel closed */
+    catch {
     }
   }
   private rebind(lease: NonNullable<VoiceRelay["lease"]>, port: chrome.runtime.Port): void {
@@ -222,10 +212,8 @@ export class VoiceRelay {
     console.info("[voice] relay_reattached", JSON.stringify({ voiceId: lease.voiceId, buffered: lease.buffer.length }));
 
     for (const message of lease.buffer.splice(0)) this.post(message);
-    // 中继替宿主确认：会话一直在，不经宿主重发 ready，免得重置轮次。
     this.post({ type: "voice", voiceId: lease.voiceId, conversationId: lease.conversationId, event: { kind: "state", state: "ready", detail: "已重新连上" } });
   }
-  /** Only the panel that holds the voice lease can end it by switching conversation. */
   selectionChanged(port: chrome.runtime.Port, id: string): void {
     if (this.lease?.port === port && this.lease.conversationId !== id) {
       this.stop("selection_changed");
@@ -258,7 +246,7 @@ export class VoiceRelay {
     try {
       lease.port?.postMessage({ kind: "server", conversationId, msg: { type: "voice", voiceId, conversationId, event: { kind: "state", state: "closed" } } });
     }
-    catch { /* panel closed */
+    catch {
     }
   }
 }

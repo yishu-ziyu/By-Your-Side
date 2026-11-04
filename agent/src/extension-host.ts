@@ -1,23 +1,9 @@
-/**
- * 在不依赖 pi-coding-agent 运行时的地方（扩展里的循环）执行我们的 Pi 扩展钩子。
- *
- * 只实现我们三个钩子（tool-failure-policy、memory-runtime、product-context）实际用到的部分：
- * `pi.on` 的 input / context / before_agent_start / tool_call / tool_result，`pi.getActiveTools`、`pi.getAllTools`，
- * 以及回调里的 `ctx.abort`。组合规则照 pi-coding-agent 0.84.4 的 ExtensionRunner（dist/core/extensions/runner.js）：
- * - before_agent_start、context、tool_result：按注册顺序接力，后一个收到前一个改过的值；
- * - tool_call：第一个返回 block 的钩子立即生效；
- * - 除 tool_call 外，钩子抛错只记录，不中断任务。
- * 另外 `notify` 把循环的只读生命周期事件（OBSERVED_EVENTS）交给同名钩子，使 `agent_settled` 等在两个宿主表现一致。
- * 未转发（Pi 里存在、扩展循环没有对应来源或有可改写结果）：project_trust、resources_discover、session_*、
- * before_provider_request/headers、after_provider_response、ui_prompt_*、model_select、thinking_level_select、user_bash、message_end。
- */
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
 
 type Handler = (event: HookEvent, ctx: HookContext) => HookResult | void | Promise<HookResult | void>;
 
-/** 钩子收到的事件：各事件只用到这里列出的字段。 */
 interface HookEvent {
   type: string;
   systemPrompt?: string;
@@ -33,11 +19,6 @@ interface HookEvent {
 
 interface HookResult {
   systemPrompt?: string;
-  /**
-   * before_agent_start：只属于这一次运行的上下文（日期、记忆、任务状态），字段同 Pi。
-   * 和 Pi 不同：宿主把它放在本次用户消息前，只在本次运行里带，不写进会话记录（过期的日期和任务状态不留在历史里）。
-   * 它不进系统提示词，免得打碎前缀缓存。
-   */
   message?: { customType: string; content?: HookValue; display?: boolean };
   messages?: readonly HookMessage[];
   block?: boolean;
@@ -47,7 +28,6 @@ interface HookResult {
   isError?: boolean;
 }
 
-/** 只读通知类事件：钩子无返回值语义，语义与 Pi 同名事件一致。 */
 export const OBSERVED_EVENTS: ReadonlySet<string> = new Set([
   "agent_start", "agent_end", "agent_settled", "turn_start", "turn_end", "message_start", "message_update",
   "tool_execution_start", "tool_execution_update", "tool_execution_end",
@@ -63,7 +43,6 @@ type HookContent = TextContent | ImageContent;
 
 export interface HookMessage { role: string; customType?: string; content?: HookValue; timestamp?: number; display?: boolean }
 
-/** 钩子能看到的工具信息。 */
 interface HookTool { name: string; description: string; parameters: TSchema; promptGuidelines?: readonly string[] }
 
 interface ExtensionHostOptions {
@@ -126,7 +105,6 @@ export class ExtensionHost {
     return current;
   }
 
-  /** 第一个 block 立即返回；钩子抛错按 Pi 的做法阻止执行。 */
   async toolCall(toolName: string, toolCallId: string, input: HookArgs): Promise<HookResult | undefined> {
     let result: HookResult | undefined;
 
@@ -156,7 +134,6 @@ export class ExtensionHost {
     return modified ? { content: current.content, details: current.details, isError: current.isError } : undefined;
   }
 
-  /** 把只读生命周期事件交给同名钩子；钩子抛错只记录。 */
   async notify(event: { type: string }): Promise<void> {
     if (!OBSERVED_EVENTS.has(event.type)) return;
     // SAFETY: 只读事件对象带 type 与 Pi 同名事件的字段；钩子只按需读取，不依赖 HookEvent 里未列出的键。

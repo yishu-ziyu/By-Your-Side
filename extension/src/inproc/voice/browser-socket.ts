@@ -1,6 +1,5 @@
 import { resolveVoiceModel, type InprocVoiceModel } from "../shared.js";
 
-/** 浏览器 WebSocket 到语音会话所需 ws 子集的适配。鉴权头由 background 安装。 */
 export class BrowserSocket {
   private readonly socket: WebSocket;
 

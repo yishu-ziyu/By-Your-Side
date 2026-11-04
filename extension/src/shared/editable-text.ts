@@ -1,4 +1,3 @@
-/** Also serialized into a page for AX targets; keep this function self-contained. */
 export function replaceEditableText(element: HTMLElement, value: string): void {
   const document = element.ownerDocument;
   const selection = document.getSelection();
@@ -19,14 +18,10 @@ export function replaceEditableText(element: HTMLElement, value: string): void {
     if (document.execCommand('delete', false) || (element.innerText ?? '').replace(/\n$/, '') === '') return;
   }
 
-  // Use one editing transaction. Direct textContent assignment is parsed back
-  // by rich editors and can turn newlines into spaces; key events may submit.
   const inserted = value !== '' && document.execCommand('insertText', false, value);
   const afterInsert = (element.isConnected ? element.innerText : host.innerText).replace(/\n$/, '');
   if (inserted && (afterInsert !== before || before === value)) return;
 
-  // Modern rich editors (ProseMirror, Slate, Notion/Feishu blocks) often ignore execCommand
-  // and update internal document state from ClipboardEvent('paste') / beforeinput DataTransfer.
   if (typeof DataTransfer === 'function' && typeof ClipboardEvent === 'function') {
     const dt = new DataTransfer();
     dt.setData('text/plain', value);

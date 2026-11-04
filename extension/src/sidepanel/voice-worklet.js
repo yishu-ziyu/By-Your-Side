@@ -1,4 +1,3 @@
-/* Loaded only after an explicit voice start; its output stays silent. */
 class VoiceCaptureProcessor extends AudioWorkletProcessor {
   constructor() { super(); this.frame = new Int16Array(480); this.offset = 0; this.energy = 0; }
   process(inputs) {

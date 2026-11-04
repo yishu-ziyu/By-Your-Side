@@ -1,7 +1,3 @@
-/** PNG download → upload regression: real extension, Chrome downloads and receiving HTTP server.
- * Scripted model fixes tool order; --live uses the configured ChatGPT plan with user authorization.
- * npx tsx scripts/acceptance/real-path/download-image-upload.mts --headless [--live --thinking=medium]
- */
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";

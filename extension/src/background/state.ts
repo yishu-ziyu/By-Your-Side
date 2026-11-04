@@ -1,4 +1,3 @@
-/** 工作标签页和会话页资源；storage.session 让扩展 SW 重启后可恢复。 */
 import { activeTargetTabs } from "./target-window.js";
 import { DEFAULT_CONVERSATION_ID, LEAD_SESSION_ID, isLeadSession, WORKING_TABS_STORAGE_KEY } from "../../../shared/protocol.js";
 import { CLAIM_BLOCKED_ERROR, FOREIGN_TAB_ERROR } from "../../../shared/control.js";
@@ -27,10 +26,8 @@ let cachedResources: TabResourceMap | undefined;
 
 const claimBlocked = new Set<string>();
 
-/** 被关掉的工作标签页：key → tabId。切到或打开新页之前，不带 tabId 的调用都不能悄悄落到别的页上。 */
 const closedWorkingTabs = new Map<string, number>();
 
-/** 页面级交接围栏：tabId → 接手方 key。围栏期间只有接手方能对该页采取动作。 */
 const tabTransfers = new Map<number, string>();
 
 const groupByConversation = new Map<string, number>();
@@ -52,7 +49,6 @@ function mutateState<T>(fn: () => Promise<T>): Promise<T> {
 
 function keyOf(value: string): string { return value || LEAD_SESSION_ID; }
 
-/** 只影响前台展示，不参与任何资源路由。 */
 export function setVisibleConversationId(conversationId: string): void {
   visibleConversationId = conversationId || DEFAULT_CONVERSATION_ID;
 }
@@ -70,10 +66,6 @@ export function setSessionClaimBlocked(key: string, blocked: boolean): void {
   else claimBlocked.delete(normalized);
 }
 
-/**
- * 页面交接围栏。调用后该页立刻停止接受接手方以外的新操作，调用方再排空已进入的操作，
- * 然后才变更归属。返回的释放函数必须放在 finally 里，失败也要归还围栏。
- */
 export function beginTabTransfer(tabId: number, claimKey: string): () => void {
   const owner = keyOf(claimKey);
   const current = tabTransfers.get(tabId);
@@ -87,7 +79,6 @@ export function beginTabTransfer(tabId: number, claimKey: string): () => void {
   return () => { if (tabTransfers.get(tabId) === owner) tabTransfers.delete(tabId); };
 }
 
-/** 旧工作指针离开页面不改变页资源归属；围栏按页而不是按工作指针判定。 */
 function assertTabNotTransferring(tabId: number, key: string): void {
   const owner = tabTransfers.get(tabId);
 
@@ -129,7 +120,7 @@ async function persist(map: TabBindingMap, resources?: TabResourceMap): Promise<
     } else {
       await chrome.storage.session.set({ [STORAGE_KEY]: map });
     }
-  } catch { /* storage failure does not make a browser action fail */ }
+  } catch {  }
 }
 
 function inferredResource(map: TabBindingMap, tabId: number): TabResource | undefined {
@@ -151,7 +142,6 @@ export async function getWorkingTabId(key: string = LEAD_SESSION_ID): Promise<nu
   return typeof id === "number" ? id : null;
 }
 
-/** 主 Agent 可全局只读；读取不认领、不切换、不改变其他成员的工作指针。 */
 export async function resolveReadableTab(tabId: number | undefined, key: string): Promise<chrome.tabs.Tab> {
   if (!isLeadSession(parseExecutionKey(key).sessionId)) return resolveWorkingTab(tabId, key);
   const id = tabId ?? await getWorkingTabId(key);
@@ -164,7 +154,6 @@ export async function resolveReadableTab(tabId: number | undefined, key: string)
   return active;
 }
 
-/** 原成员已停止并排空；用检查时的归属防止并发接手互相覆盖。 */
 export async function claimGlobalTab(tabId: number, key: string, expectedConversationId: string | null): Promise<void> {
   if (!isLeadSession(parseExecutionKey(key).sessionId)) throw new Error("只有主助手可以接手页面");
   assertTabNotTransferring(tabId, key);
@@ -187,7 +176,6 @@ export async function getTabResource(tabId: number): Promise<TabResource | undef
 
 export async function findSessionsForTab(tabId: number): Promise<string[]> { return sessionsForTab(await loadMap(), tabId); }
 
-/** @deprecated 共享页会有多个成员；新代码使用 findSessionsForTab。 */
 function groupTitle(conversationId: string): string {
   return titleByConversation.get(conversationId) ?? (conversationId === DEFAULT_CONVERSATION_ID ? "By Your Side" : "新会话");
 }
@@ -220,13 +208,12 @@ async function findConversationGroupId(conversationId: string, excludingTabId?: 
 
         return tab.groupId;
       }
-    } catch { /* stale tab */ }
+    } catch {  }
   }
 
   return undefined;
 }
 
-/** 会话标题只控制 Chrome 标签组展示，不进入资源身份。 */
 export async function setConversationTitle(conversationId: string, title: string): Promise<void> {
   const cid = conversationId || DEFAULT_CONVERSATION_ID;
   const normalized = title.trim().replace(/\s+/g, " ").slice(0, 48);
@@ -241,7 +228,7 @@ export async function setConversationTitle(conversationId: string, title: string
 
   try {
     await chrome.tabGroups.update(groupId, { title: groupTitle(cid), color: groupColor(cid), collapsed: false });
-  } catch { /* presentation update must not alter ownership */ }
+  } catch {  }
 }
 
 async function ensureConversationGroup(tabId: number, conversationId: string): Promise<void> {
@@ -268,20 +255,15 @@ async function applyConversationGroup(tabId: number, conversationId: string): Pr
       }
     } catch (error) {
       if (groupId == null) throw error;
-      // Chrome destroys a group after its last tab closes; the conversation survives.
       groupByConversation.delete(conversationId);
       groupId = await tabsApi.group({ tabIds: tabId });
     }
 
     groupByConversation.set(conversationId, groupId);
     await chrome.tabGroups.update(groupId, { title: groupTitle(conversationId), color: groupColor(conversationId), collapsed: false });
-  } catch { /* grouping is display-only; stable ownership remains in resources */ }
+  } catch {  }
 }
 
-/**
- * 只读一页、不改任何人的工作标签页：fill 的 from 读来源用。worker 按 resolveWorkingTab 的同一套归属检查，
- * 但不把来源页设成它的工作页，否则紧接着的写入会落到来源页上。
- */
 export async function resolveTabForRead(tabId: number | undefined, key: string): Promise<chrome.tabs.Tab> {
   if (isLeadSession(parseExecutionKey(key).sessionId) || tabId == null) return resolveReadableTab(tabId, key);
   const normalized = keyOf(key);
@@ -297,7 +279,6 @@ function assertResourceAccess(resource: TabResource | undefined, key: string): v
   if (mayAccessResource(resource, key)) return;
   const who = parseExecutionKey(key);
 
-  // 归属检查在动页面之前：拦下就是没执行（工具已标「结果未知」也按没执行算，空闲的旧会话才能被自动接手）。
   const blocked = (message: string) => Object.assign(new Error(message), { executionFact: "not_executed" as const });
 
   if (resource?.conversationId !== who.conversationId) throw blocked(isLeadSession(who.sessionId) ? `${FOREIGN_TAB_ERROR}，请调用 take_tab 协调接手后操作` : "标签页属于其他会话，未分配给当前 worker");
@@ -306,7 +287,6 @@ function assertResourceAccess(resource: TabResource | undefined, key: string): v
   throw blocked("标签页未向当前成员共享，请由父 Agent 分配页面");
 }
 
-/** 调用方已冻结并排空 worker。移交所有历史页面，不改变父 Agent 当前工作指针。 */
 export async function reclaimWorkerTabs(leadKey: string, workerKey: string): Promise<number[]> {
   const lead = parseExecutionKey(leadKey);
 
@@ -354,14 +334,12 @@ export async function setWorkingTab(id: number | null, key: string = LEAD_SESSIO
 
       if (!existing) resources = bindExclusiveResource(resources, id, normalized);
     } else map = applyTabBinding(map, normalized, null);
-    // 工作指针离开不等于释放页面。页资源属于 conversation，直到标签关闭或未来显式释放。
     await persist(map, resources);
   });
 
   if (id != null) await ensureConversationGroup(id, parseExecutionKey(keyOf(key)).conversationId);
 }
 
-/** controller 在每个工具执行前调用：页面归属与移交中的拦截。 */
 export async function guardToolAccess(name: string, key: string, explicitTabId?: number): Promise<void> {
   if (name === "worker_tabs" || name === "list_tabs" || name === "get_active_tab") return;
 
@@ -375,7 +353,6 @@ export async function guardToolAccess(name: string, key: string, explicitTabId?:
   assertResourceAccess(resource, normalized);
 }
 
-/** 显式 tabId → 已认领页 → 当前会话可认领的空闲页。 */
 export async function resolveWorkingTab(preferredTabId?: number, key: string = LEAD_SESSION_ID): Promise<chrome.tabs.Tab> {
   const normalized = keyOf(key);
   const blocked = claimBlocked.has(normalized);
@@ -424,15 +401,9 @@ export async function resolveWorkingTab(preferredTabId?: number, key: string = L
   return active;
 }
 
-/**
- * 调用的目标页（显式 tabId，或已被关掉的工作标签页）不在了：不执行，告诉模型用户正在看哪一页、怎样继续。
- * 不替模型换页：程序跑到一半换了目标，后面的写操作会落到模型没看过的页上。
- * 用户页的标题来自网页，不放进这句框架文字里。
- */
 export async function assertTargetTabOpen(requestedTabId: number | undefined, key: string): Promise<void> {
   const normalized = keyOf(key);
 
-  // onRemoved 的清理排在状态队列里；先等它落定，才知道关掉的是不是工作标签页。
   await mutateState(async () => {});
   const closedWorking = closedWorkingTabs.get(normalized);
   let gone: number;
@@ -453,7 +424,6 @@ export async function assertTargetTabOpen(requestedTabId: number | undefined, ke
   }
 
   const [active] = await activeTargetTabs().catch(() => []);
-  // 只有被关掉的工作标签页能确定是「已关闭」；别的页号可能从来没有过（例如 0）。
   const what = gone === closedWorking ? `工作标签页 ${gone} 已关闭` : `标签页 ${gone} 不存在或已关闭`;
 
   const message = active?.id != null

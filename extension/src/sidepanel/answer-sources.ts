@@ -1,6 +1,5 @@
 import { isAnswerSource, type AnswerSource } from '../../../shared/answer-source.js';
 
-/** Each panel replays its selected conversation's source events before rendering its replies. */
 export const sourceExcerpts = new Map<string, AnswerSource>();
 
 export function receiveSourceExcerpts(value: unknown): void {
@@ -8,16 +7,6 @@ export function receiveSourceExcerpts(value: unknown): void {
   for (const source of value) if (isAnswerSource(source) && !sourceExcerpts.has(source.id)) sourceExcerpts.set(source.id, source);
 }
 
-/**
- * 回答出处：读过的页面列在回答下面「来源」面板里，每个来源一行；正文里引到的已读页面，链接前加站点图标
- * 。
- * 点开出处 → 主窗口切到那一页（已开着就复用）、尽量定位并高亮段落。输入框旁的「当前页」标签随之换成这一页，不另挂第二个。
- *
- * 诚实边界（与 delivery-presentation 一致）：
- * - 只用交付事实链 `facts.sources`（本 run 真实读到/打开的页面）；旧记录没有这个字段就什么都不画。
- * - 图标只加在正文链接指向已读页面的地方；模型正文里没读过的链接不标成出处。
- * - 段落定位复用 PINPOINT_DOM_TARGET：找不到唯一位置就不假装高亮，回到页顶并提示「已打开来源页」。
- */
 import { isPopout, targetWindowId } from "./target-window.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 import { USER_DELIVERY_SOURCE_MAX, type UserDeliverySourceRef } from "../../../shared/voice.js";
@@ -27,7 +16,6 @@ import { answerPanelSection, refreshAnswerPanel, siteGlyph } from "./answer-acti
 import { createElement as icon, ExternalLink } from "lucide";
 import { bindMotionIcon } from "./motion-icon.js";
 
-/** 同一页面：忽略锚点和末尾斜杠，其余（含查询串）都要一致。 */
 function pageKey(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -38,7 +26,6 @@ function pageKey(url: string): string | null {
   } catch { return null; }
 }
 
-/** 已开着这一页就切过去（优先这个页面要操作的窗口），否则在当前标签旁新开，不覆盖用户正在看的页面。 */
 async function bringSourceTab(url: string): Promise<{ tab: chrome.tabs.Tab; reused: boolean } | null> {
   const key = pageKey(url);
   const targetWindow = await targetWindowId();
@@ -49,7 +36,6 @@ async function bringSourceTab(url: string): Promise<{ tab: chrome.tabs.Tab; reus
   if (reuse?.id) {
     const tab = await chrome.tabs.update(reuse.id, { active: true });
 
-    // 在会话小窗口里点：标签页所在的浏览器窗口可能压在后面，要提到前面才看得见。
     if (reuse.windowId !== targetWindow || isPopout) await chrome.windows.update(reuse.windowId, { focused: true }).catch(() => undefined);
 
     return tab ? { tab, reused: true } : null;
@@ -81,14 +67,12 @@ async function waitForLoad(tabId: number, timeoutMs = 10_000): Promise<chrome.ta
   return chrome.tabs.get(tabId).catch(() => null);
 }
 
-/** 用主张里的数字在原页找唯一段落并高亮；没有可核对的数字或位置不唯一就返回 null。 */
 async function pinpointClaim(tabId: number, url: string, claim: string): Promise<PageElementSource | null> {
   const values = citationValues(claim);
 
   if (!values.length) return null;
   let context = await captureCitationContext({ tabId, url });
 
-  // 新开的页面刚加载完，页面脚本可能还没就绪：稍等再问一次。
   if (!context) { await new Promise(resolve => setTimeout(resolve, 400)); context = await captureCitationContext({ tabId, url }); }
 
   if (!context) return null;
@@ -125,11 +109,9 @@ async function openAnswerSource(from: Element, source: UserDeliverySourceRef, cl
 }
 
 function hostOf(url: string): string {
-  // host 带非默认端口：同一台机器上的几个站分得开；常见网站端口默认，不受影响。
   try { return new URL(url).host.replace(/^www\./, ""); } catch { return sourceLabel(url); }
 }
 
-/** 角标对应的主张：链接所在的那一段。 */
 function claimOf(link: HTMLElement): string {
   // SAFETY: cloneNode 保持原节点类型；link 本身是 HTMLElement，closest 命中的也是元素。
   const block = (link.closest("p,li,td,th,blockquote") ?? link).cloneNode(true) as HTMLElement;
@@ -138,10 +120,6 @@ function claimOf(link: HTMLElement): string {
   return block.textContent ?? "";
 }
 
-/**
- * 给一条已渲染的回答加出处。可重复调用（正文重渲染后再调一次），不会叠出两份。
- * sources 缺省（旧记录）或为空时不画任何东西。
- */
 export function attachAnswerSources(answer: HTMLElement, sources: readonly UserDeliverySourceRef[] | undefined): void {
   answer.querySelectorAll(".answer-sources,.source-fav").forEach(node => node.remove());
   refreshAnswerPanel(answer);
@@ -187,7 +165,6 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     button.append(number, glyph, text, where);
     bindMotionIcon(button, "external-link");
 
-    // 没有标题时第三列已经是地址，右边不再重复一遍。
     if (!source.title?.trim()) { button.classList.add("untitled"); untitled.push({ key, text, where }); }
 
     button.onclick = () => void openAnswerSource(button, source, null);
@@ -195,7 +172,6 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     list.append(item);
   }
 
-  // 宿主最多记 USER_DELIVERY_SOURCE_MAX 条，记满时实际可能更多：面板末尾说一句。
   if (sources.length >= USER_DELIVERY_SOURCE_MAX) {
     const more = document.createElement("li");
     more.className = "answer-sources-capped";
@@ -207,7 +183,6 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
   slot?.replaceChildren(list);
   refreshAnswerPanel(answer);
 
-  // 用批量脚本读的页面不带标题；这些页面多半还开着，标签页知道标题。
   if (untitled.length && chrome.tabs?.query) {
     void chrome.tabs.query({}).then((tabs) => {
       for (const row of untitled) {
@@ -224,10 +199,8 @@ export function attachAnswerSources(answer: HTMLElement, sources: readonly UserD
     const entry = keyed.get(pageKey(link.href) ?? "");
 
     if (!entry) continue;
-    // 正文里指向已读页面的链接和它的角标做同一件事，不再一个开新标签、一个定位出处。
     link.onclick = (ev) => { ev.preventDefault(); void openAnswerSource(link, entry.source, claimOf(link)); };
 
-    // 站点图标长在链接文字前面，不在后面另挂胶囊；站名和标题放在悬停提示里。
     const glyph = siteGlyph(entry.source.url, entry.host);
     glyph.classList.add("source-fav");
     link.prepend(glyph);

@@ -1,8 +1,3 @@
-/**
- * 在 SideAgent SW 里跑验收步骤。只调用 globalThis.__saCall
- * （= uplink.handleRaw(tool_call) → executeToolCall → handlers）。
- * 禁止在这里重写 snapshot/click/fill。
- */
 export async function swDriver(opts) {
   const started = Date.now();
   const durations = {};
@@ -57,7 +52,6 @@ export async function swDriver(opts) {
 
       if (data && data.imageBase64) out.screenshots[key] = data.imageBase64;
     } catch {
-      /* 截图失败不挡四步断言 */
     }
   }
 
@@ -95,7 +89,6 @@ export async function swDriver(opts) {
       try {
         await call("acpt-close-" + Date.now(), "close_tab", { tabId: out.tabId }, sid);
       } catch {
-        /* 标签可能已关 */
       }
     }
 

@@ -1,12 +1,3 @@
-/**
- * 「发布 / 回复」这类把内容发给别人的按钮，和「发送」一样先在侧栏确认。只装扩展、隔离构建、本机脚本模型、本机练习页。
- *   npx tsx scripts/acceptance/real-path/panel-publish-confirm.mts --headless
- * 判据只看侧栏上的确认卡和服务器收到的 POST。
- *   q1) 助手点「发布」（框里有草稿）：侧栏出确认卡；用户点「先不发」，服务器 0 条。
- *   q2) 助手点「Reply」（框里有草稿）：同上。
- *   q3) 助手点只用来展开回复框的「回复」（还没写内容）：不出卡，回复框展开。
- *   q4) 助手点排序用的「发布时间」：不出卡，列表照常排序。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -33,7 +24,7 @@ document.querySelector('#sort').onclick = () => { document.querySelector('#sorte
 const posts: string[] = [];
 
 const site = createServer(async (req, res) => {
-  if (req.method === "POST") { for await (const _ of req) { /* 读完请求体 */ } posts.push(req.url ?? ""); res.end("ok"); return; }
+  if (req.method === "POST") { for await (const _ of req) {  } posts.push(req.url ?? ""); res.end("ok"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 

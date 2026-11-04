@@ -39,7 +39,6 @@ interface MemoryDrawerDeps {
   selectedConversationId: () => string;
   conversationTitle: (id: string) => string | undefined;
   onPastTasksRendered: () => void;
-  /** 对话里的记忆界面（回答下那一行、询问卡片）发出的请求，结果交回给它。 */
   onOutcome: (outcome: MemoryApplyResult) => void;
 }
 
@@ -82,7 +81,6 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
 
   const memoryEditorBusy = (): boolean => !!(memoryEdit || memoryForget || memoryRestore);
   const memoryMatches = (...texts: Array<string | undefined>) => !memoryQuery || texts.some(text => text?.toLowerCase().includes(memoryQuery));
-  // 习惯的 key 由浏览内容生成，不进诊断；只记动作。
   const browseControl = (message: { action: "dismiss"; key: string } | { action: "clear" }) => {
     uiEvent(message.action === "clear" ? "ui_browse_clear" : "ui_browse_habit_dismiss");
 
@@ -838,7 +836,6 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
   }
 
   function dispatchMemoryRequest(message: Extract<ClientMessage, { type: "memory_list" | "memory_update" | "memory_forget" | "memory_restore" | "memory_ask_answer" | "memory_site" | "memory_unforget" }>, ui: MemoryUiRequest): void {
-    // 「ask」由询问卡片自己记（带显示时长）；这里记面板里对一条记忆的处理。
     if (ui.action !== "list" && ui.action !== "ask") {
       const kind = ui.entryId ? memoryState.get(ui.entryId)?.kind : undefined;
       uiEvent("ui_memory_entry_action", { action: ui.action, entryId: ui.entryId, kind, ...(message.type === "memory_site" ? { off: message.off } : {}) });

@@ -1,8 +1,5 @@
 import { useSavedSettingsModel } from './inproc-config.mts';
 import type { TranslationCommand } from '../../../shared/page-translation.js';
-/** Real extension, native page/panel renderer targets; no visible Chrome window.
- *   npx tsx scripts/acceptance/real-path/killer-interactions.mts --headless --run=final
- * Translation batches come from a fixture, so this does not measure provider translation quality. */
 import { createServer } from 'node:http';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { transform } from 'esbuild';
@@ -104,7 +101,6 @@ try {
   const citations=await rp.evaluate(panel,'Array.from(document.querySelectorAll(".num-cite")).map(b=>b.textContent)');
   check('有据数字生成引用、未知数字不生成',citations.length===2&&citations.some((s:string)=>s.includes('62.4%'))&&!citations.some((s:string)=>s.includes('99.99%')),citations);
 
-  // 声纳圈在 closed shadow 里：用 CDP 穿透读出圈的路径，看它是否圈住真实数据格。
   const circle=async()=>{
     const {root}=await rp.cdp.send('DOM.getDocument',{depth:-1,pierce:true},work);
 
@@ -178,7 +174,6 @@ try {
   check('原文改写后旧引用拒绝定位',await circle()===null,null);
   await rp.evaluate(work,'document.querySelector("table tr td:last-child").textContent="62.4%"');
   await rp.evaluate(work,'scrollTo(0,0)');await sleep(300);
-  // 表格本身不再可拖：悬停表格，从左上角把手拖整张表。
   const showGrip=async()=>{const cell=await rp.evaluate(work,'(()=>{const r=document.querySelector("table td").getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()');await rp.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',...cell,button:'none',buttons:0},work);await sleep(300);};
 
   await showGrip();

@@ -1,4 +1,3 @@
-/** 长任务超过三分钟后仍能完成剩余网页操作；隔离扩展、本机脚本模型，约三分半。 */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -22,7 +21,6 @@ const at = (path: string) => ({ name: "navigate", args: { url: `http://127.0.0.1
 
 const TASK = "计时核对：把这期视频的字幕找出来";
 const DONE = "已完成全部四个页面的整理。";
-// 每段停 5 秒、不超过断流计时：3 分多钟一直在出字，然后才调第一个工具。
 const slow = Array.from({ length: 38 }, () => ({ text: "…", delayMs: 5_000 }));
 const notes: string[] = [];
 const textOf = (content: unknown): string => typeof content === "string" ? content : Array.isArray(content) ? content.map((part: { text?: string }) => part.text ?? "").join("") : "";
@@ -36,7 +34,6 @@ const model = await startScriptedModel([
     { text: DONE },
   ] },
 ], undefined, payload => {
-  // 工具结果后面可能还跟着产品插的上下文段，不一定是最后一条。
   for (const message of payload.messages ?? []) if (message.role === "tool" && !notes.includes(textOf(message.content))) notes.push(textOf(message.content));
 });
 

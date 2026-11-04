@@ -12,7 +12,6 @@ export async function openRealtimeDictation(key: string, signal: AbortSignal, on
   signal.throwIfAborted();
   const nonce = crypto.randomUUID();
   const ruleId = crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000_000 + 100_000;
-  // 每次握手独占规则；不覆盖右侧语音凭据，也不给网页发起的连接补头。
   await chrome.declarativeNetRequest.updateSessionRules({ addRules: [{
     id: ruleId, priority: 2,
     action: { type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS, requestHeaders: [{ header: "Authorization", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `Bearer ${key.trim()}` }] },
@@ -90,12 +89,10 @@ export async function openRealtimeDictation(key: string, signal: AbortSignal, on
       } else if (event.type === "session.updated" && !ready) {
         const session = record(event.session) ? event.session : null;
         const vad = session?.turn_detection;
-        // 服务端把关闭 VAD 的 null 回显为 { type: "" }。
         if (!session || session.model !== MODEL || session.input_audio_format !== "pcm16" || !Array.isArray(session.modalities) || !session.modalities.includes("text") || !(vad === null || record(vad) && vad.type === "")) { fail("听写服务没有关闭自动回复，已中止连接。"); return; }
         ready = true; clearTimeout(timer); readyResolve(api);
       } else if (event.type === "conversation.item.input_audio_transcription.delta") {
         if (typeof event.delta !== "string") throw new Error("invalid transcript delta");
-        // Realtime 3 的 delta 是当前整句快照，可能回改数字和标点。
         text = event.delta; onText(text);
       } else if (event.type === "conversation.item.input_audio_transcription.completed") {
         if (!committed || typeof event.transcript !== "string") throw new Error("unexpected transcript");

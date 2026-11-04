@@ -1,13 +1,3 @@
-/**
- * 后台判断（目标核对、续接、记忆、找词/翻译意图、目标复核、语音判断、经验提取）的唯一入口。
- *
- * 一次判断：
- * 1. 使用调用方指定的可用思考档，未指定时取最低档（能力只从 shared/model-capabilities.ts 读）；本会话被服务端拒绝过的档跳过；
- * 2. 服务端因档位/思考参数拒绝（400 参数错误）时，换下一个允许的档重试一次，并在本会话记住被拒的档；
- * 3. 回复不合要求（不是要求的 JSON、只有思考没有正文）时，带更严格的要求重试一次；只有思考时放大输出额度；
- * 4. 仍失败抛 SideCallError，只带原因类别（不带服务商原文，不会带出凭据）；
- * 5. 每次判断写一行诊断 side_call{purpose, model, effort, attempts, outcome, reason?}。
- */
 import type { Api, AssistantMessage, ImageContent, Model, ModelThinkingLevel, SimpleStreamOptions, TextContent } from "@earendil-works/pi-ai";
 import { thinkingProfile } from "../../shared/model-capabilities.js";
 import { GOAL_CHECK_FORMAT_SUFFIX } from "../../shared/trace-sanitize.js";
@@ -15,7 +5,6 @@ import type { ModelPort } from "./agent-loop.js";
 
 type SideFailureReason = "rejected_params" | "bad_format" | "timeout" | "provider_error" | "cancelled";
 
-/** 给用户看的原因类别。 */
 const SIDE_FAILURE_TEXT: Readonly<Record<SideFailureReason, string>> = {
   rejected_params: "模型拒绝了请求参数",
   bad_format: "模型回复格式不对",
@@ -31,7 +20,6 @@ export class SideCallError extends Error {
   }
 }
 
-/** 本会话里服务端拒绝过的档位，按「服务商/模型」记。 */
 export type RejectedEfforts = Map<string, Set<ModelThinkingLevel>>;
 
 export interface SideCallHost {
@@ -40,10 +28,8 @@ export interface SideCallHost {
   record?: (type: "side_call", data: SideCallRecord) => void;
 }
 
-/** 一行 side_call 诊断（类型字面量：可直接交给诊断记录）。 */
 export type SideCallRecord = {
   purpose: string;
-  /** 失败时服务商最后一次的报错原文（状态码与说明，截断）：只区分「服务出错」看不出是限流、鉴权还是宕机。 */
   detail?: string;
   model: string;
   effort: ModelThinkingLevel;
@@ -55,36 +41,22 @@ export type SideCallRecord = {
 export type AttemptOutcome = "accepted" | "bad_format" | "rejected_params" | "provider_error" | "request_failed" | "timeout" | "cancelled";
 
 interface SideCallSpec<T> {
-  /** 诊断里的用途名，例如 goal_check。 */
   purpose: string;
   systemPrompt: string;
   content: string | (TextContent | ImageContent)[];
   maxTokens: number;
-  /** Evidence comparisons may need reasoning; quick routing keeps the default lowest effort. */
   effort?: ModelThinkingLevel;
-  /** 整次判断（含重试）的总时限。 */
   timeoutMs: number;
-  /** 调用方的取消信号；它中止算「已取消」，除非它本身是超时信号。 */
   signal?: AbortSignal;
   sessionId?: string;
   headers?: Record<string, string>;
   temperature?: number;
-  /** 从正文得到结果；抛错算格式不对。 */
   parse: (text: string) => T;
-  /**
-   * 允许的重试（换档重试不计在内）：
-   * format = 格式不对时修复重试一次（默认）；any = 格式不对或请求失败/超时都可重试一次；none = 不重试。
-   */
   retry?: "format" | "any" | "none";
-  /** 每次尝试各自的时限（第 i 次取第 i 个，超出取最后一个）。 */
   attemptTimeoutsMs?: readonly number[];
-  /** 重试时追加到系统提示词后的要求；默认要求只回 JSON。参数是上一次的解析错误（请求失败时为 undefined）。 */
   retryPrompt?: (parseError: Error | undefined) => string;
-  /** 每次尝试结束时回调（语音的逐次诊断用）。 */
   onAttempt?: (attempt: AttemptReport) => void;
-  /** 与 side_call 同一份实际模型、档位和重试结果。 */
   onRecord?: (line: SideCallRecord) => void;
-  /** 每次真正发给服务商前回调；格式重试会改变提示词和用户输入。 */
   onRequest?: (request: SideCallRequest) => void;
 }
 
@@ -94,13 +66,8 @@ interface AttemptReport { attempt: number; elapsedMs: number; outcome: AttemptOu
 
 const STRICT_JSON = GOAL_CHECK_FORMAT_SUFFIX;
 
-/** 只有思考没有正文时，下一次的输出额度放大到这个倍数。 */
 const EMPTY_REPLY_BUDGET_FACTOR = 5;
 
-/**
- * 服务端因请求参数（思考档位等）拒绝：400 且提到参数/思考/档位，
- * 或 ChatGPT 账号通道不带状态码的「Unsupported value: … is not supported with the … model」。
- */
 export function isParamRejection(message: string | undefined): boolean {
   if (!message) return false;
 
@@ -109,10 +76,6 @@ export function isParamRejection(message: string | undefined): boolean {
     || /unsupported value\b.*\bnot supported with the\b.*\bmodel/is.test(message);
 }
 
-/**
- * 去掉代码块围栏后解析 JSON；前后夹了说明文字时取第一个 { 到最后一个 } 之间。
- * 结果必须通过 guard，否则抛错（算格式不对）。
- */
 export function parseJsonReply<T>(text: string, guard: (value: unknown) => value is T): T {
   const raw = text.trim().replace(/^```(?:json)?\s*/u, "").replace(/\s*```$/u, "");
   let value: unknown;
@@ -132,14 +95,12 @@ export function parseJsonReply<T>(text: string, guard: (value: unknown) => value
   return value;
 }
 
-/** 任意 JSON 对象（不含数组）。 */
 export function isJsonObject(value: unknown): value is object {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 const modelKey = (model: Model<Api>) => `${model.provider}/${model.id}`;
 
-/** 该模型在本会话还允许的最低档（后台判断、划词问答这类短调用都用它）。 */
 export function lowestEffort(model: Model<Api>, rejected?: RejectedEfforts): ModelThinkingLevel {
   const { levels } = thinkingProfile(model);
   const skip = rejected?.get(modelKey(model));
@@ -188,7 +149,6 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
     throw new SideCallError(reason, { cause });
   };
 
-  /** 调用方取消算「已取消」（它本身是超时信号时算超时）；我们自己的时限算超时。 */
   const abortReason = (attemptSignal: AbortSignal): SideFailureReason | null => {
     if (spec.signal?.aborted) return spec.signal.reason instanceof DOMException && spec.signal.reason.name === "TimeoutError" ? "timeout" : "cancelled";
 
@@ -208,7 +168,6 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
       spec.onAttempt?.(attempt);
     };
 
-    /** 请求没成功：能按 any 重试就重试，否则按原因失败。 */
     const transient = (outcome: AttemptOutcome, reason: SideFailureReason): void => {
       report(outcome);
 
@@ -222,7 +181,6 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
 
     if (effort !== "off") options.reasoning = effort;
 
-    // ChatGPT 账号通道不接受 temperature；传给适配层会让真实语音判断整轮失败。
     if (spec.temperature !== undefined && model.api !== "openai-codex-responses") options.temperature = spec.temperature;
 
     if (spec.sessionId !== undefined) options.sessionId = spec.sessionId;
@@ -288,7 +246,6 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
       if (!text) maxTokens = spec.maxTokens * EMPTY_REPLY_BUDGET_FACTOR;
       suffix = spec.retryPrompt ? spec.retryPrompt(error) : STRICT_JSON;
 
-      // 有的模型（如阶跃）不太听系统提示词，默认要求在用户消息末尾再说一次。
       if (!spec.retryPrompt) userSuffix = STRICT_JSON;
     }
   }

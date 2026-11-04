@@ -1,7 +1,6 @@
 import type { PageTextEvidence } from '../../../shared/page-text-evidence.js';
 import type { AxNodeLite } from './axtree.js';
 
-/** Preserve source text and explicit breaks before the compact control snapshot clips them. */
 export function axTextEvidence(nodes: readonly AxNodeLite[]): PageTextEvidence {
   const byId=new Map(nodes.map(node=>[node.nodeId,node]));
   const fragments: PageTextEvidence['fragments']=[], seen=new Set<string>();

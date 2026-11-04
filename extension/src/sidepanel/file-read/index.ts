@@ -1,7 +1,3 @@
-/**
- * 侧栏附上的文件在本机读成文字（file-read.js，用到时才加载，不拖慢侧栏打开）。
- * 返回的附件只带文字和必要的图，原文件只在不大时随附件留着，供 upload_file 原样上传。
- */
 import { FILE_BYTES_KEEP_MAX, FILE_READ_MAX_BYTES, FILE_TEXT_MAX, type FileAttachment, type FileFormat } from "../../../../shared/protocol.js";
 import { OfficeError, readDocx, readPptx, readXlsx } from "./ooxml.js";
 import { PdfError, readPdf } from "./pdf.js";
@@ -25,7 +21,6 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** 有些文件扩展名对不上内容（例如 .xlsx 实为 CSV）：用文件头认一次，免得报「已损坏」。 */
 function sniff(bytes: Uint8Array, format: FileFormat): FileFormat {
   const zip = bytes[0] === 0x50 && bytes[1] === 0x4b;
   const pdf = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
@@ -46,7 +41,6 @@ export async function readAttachmentFile(file: File, id: string, onProgress: (fr
 
   if (file.size === 0) throw new FileReadError(`${file.name} 是空文件。`);
   const bytes = new Uint8Array(await file.arrayBuffer());
-  // PDF 解析可能把字节所有权转给 worker；先留下原件身份和可上传副本，再交给解析器。
   const originalSha256 = await sha256(bytes);
   const originalBase64 = file.size <= FILE_BYTES_KEEP_MAX ? base64(bytes) : undefined;
   const format = sniff(bytes, declared);

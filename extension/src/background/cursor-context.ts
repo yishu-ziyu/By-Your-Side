@@ -1,7 +1,5 @@
 import {sendCommand} from './debugger.js';
 
-// Keep the actual extension realm, so a backend node reaches the renderer as the
-// same DOM object. Coordinates are geometry, not a substitute for node identity.
 const contexts = new Map<number, Set<number>>();
 
 let listening = false;

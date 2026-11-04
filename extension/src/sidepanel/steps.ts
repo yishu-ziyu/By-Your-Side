@@ -1,23 +1,15 @@
-/**
- * "执行步骤"聚合块的纯逻辑：工具人性化描述、步骤链、耗时格式化。
- * 与 DOM 解耦；main.ts 负责渲染。
- */
 import { displayNameFor, personFor } from "../../../shared/cast.js";
 import { extractSearchQuery } from "../../../shared/request-confirm.js";
 import { toolAction } from "../../../shared/user-facing.js";
 import type { HeldReason } from "../../../shared/protocol.js";
 
 interface ToolAction {
-  /** 步骤链里用的短动作名，如 "读页"。 */
   short: string;
-  /** 工具卡标题，带得上关键参数就带，如 "点击「结算服务」"。 */
   full: string;
 }
 
-/** 工具名 → 中文动作；未登记的名称用共用的人话动作，不露原始名。 */
 const ACTION_NAMES: Record<string, string> = {
   tabs: "标签页",
-  // 合并前的旧名保留：历史会话回放里仍会出现。
   list_tabs: "列出标签页",
   get_active_tab: "定位当前页",
   open_tab: "打开标签页",
@@ -79,7 +71,6 @@ function hostOf(url: unknown): string | null {
     const host = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).host.replace(/^www\./, "");
     const name = host.replace(/:\d+$/, "").toLowerCase();
 
-    // 本机地址不当域名写给用户。
     if (name === "localhost" || name === "0.0.0.0" || name === "[::1]" || name.startsWith("127.") || /^(\d{1,3}\.){3}\d{1,3}$/.test(name)) return null;
 
     return host;
@@ -93,7 +84,6 @@ function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
-/** 工具调用 → 人性化动作描述。 */
 export function describeTool(name: string, params: Record<string, unknown>): ToolAction {
   const short = ACTION_NAMES[name] ?? toolAction(name);
 
@@ -226,7 +216,6 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
   }
 }
 
-/** 侧栏动作卡的一行字。点/填/看与页面光标旁的话同一套动词（content/cursor.ts renderActionLabel）。 */
 const CURSOR_VERBS = new Map([
   ["click", { verb: "点", unnamed: "点击" }],
   ["fill", { verb: "填", unnamed: "填写" }],
@@ -234,7 +223,6 @@ const CURSOR_VERBS = new Map([
   ["hover", { verb: "看", unnamed: "查看" }],
 ]);
 
-/** 真实模型常只给读页编号（@2、e12），这不是给人看的名字：当作没有名字。 */
 const REF_ONLY = /^@?[a-z]?\d+$/i;
 
 export function actionCardLabel(name: string, params: Parameters<typeof describeTool>[1], plate?: string): string {
@@ -246,10 +234,6 @@ export function actionCardLabel(name: string, params: Parameters<typeof describe
   return label ? `${words.verb}「${clip(label)}」` : words.unnamed;
 }
 
-/**
- * 步骤链：相邻重复去重，超长时只保留最近几步（前缀 "…"）。
- * 例：思考 → 读页 → 思考 → 点击
- */
 export class StepChain {
   private steps: string[] = [];
   push(label: string): void {
@@ -257,7 +241,6 @@ export class StepChain {
       this.steps.push(label);
     }
   }
-  /** 最多保留最近 keep 步渲染；超出时前缀省略号。 */
   render(keep = 3): string {
     if (this.steps.length === 0) {
       return "";
@@ -270,7 +253,6 @@ export class StepChain {
   }
 }
 
-/** chip 状态：tool_end 前运行中；结束后按 isError 分完成/失败。 */
 type ChipState = "running" | "done" | "error";
 
 export function chipState(ended: boolean, isError: boolean): ChipState {
@@ -281,12 +263,10 @@ export function chipState(ended: boolean, isError: boolean): ChipState {
   return isError ? "error" : "done";
 }
 
-/** 运行状态行的动作名：最近一个工具的中文动作，尚无工具时为"思考"。 */
 export function loaderSubtitle(lastToolShort: string | null): string {
   return lastToolShort ?? "思考";
 }
 
-/** 耗时格式化：<10s 一位小数（"1.3s"），<60s 整数（"12s"），否则 "2m 28s"。 */
 export function formatDuration(ms: number): string {
   const s = Math.max(0, ms) / 1000;
 
@@ -303,7 +283,6 @@ export function formatDuration(ms: number): string {
   return `${m}m ${Math.round(s % 60)}s`;
 }
 
-/** Legacy history has no reliable clock; never use replay wall time for it. */
 export function historyEventTime(applyingHistory: boolean, occurredAt?: number): number {
   if (applyingHistory) {
     if (typeof occurredAt === "number" && Number.isFinite(occurredAt)) {
@@ -316,7 +295,6 @@ export function historyEventTime(applyingHistory: boolean, occurredAt?: number):
   return Date.now();
 }
 
-/** 结束后的过程行用中文读数：「15 秒」「1 分 53 秒」。 */
 export function spokenDuration(start: number, end: number): string | null {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
   const s = Math.max(1, Math.round((end - start) / 1000));
@@ -324,7 +302,6 @@ export function spokenDuration(start: number, end: number): string | null {
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
 
-/** 存成、用上或没用上技能的那一步，过程行和步骤上怎么写。 */
 export function skillStepText(skill: { name: string; outcome: "saved" | "used" | "unused" }): string {
   const name = `「${clip(skill.name, 24)}」`;
 
@@ -335,7 +312,6 @@ export function skillStepText(skill: { name: string; outcome: "saved" | "used" |
   return `技能${name}这次没用上，改用普通步骤`;
 }
 
-/** 过程行标题：做了几步，以及没做成/中止。放得下时 main.ts 在后面接短名链。 */
 export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | "completed", failed = 1): string {
   const done = steps > 0 ? `做了 ${steps} 步` : "查看执行过程";
 
@@ -346,12 +322,7 @@ export function finishedRunTitle(steps: number, outcome: "failed" | "stopped" | 
   return done;
 }
 
-/**
- * 因为用户没执行的那一步：按扩展给出的原因说一句人话，不当成失败。
- * 只看原因，不读给助手的文字：改写给助手的话不会让侧栏说错。
- */
 export const HELD_TEXT: Record<HeldReason, string> = {
-  // 付款按钮：助手不点，留给用户。
   pay: "停在付款前，等你自己点",
   stopped: "没发：你中止了任务",
   left: "没发：你离开了这个页面",
@@ -361,7 +332,6 @@ export const HELD_TEXT: Record<HeldReason, string> = {
   busy: "没发：前一个确认还在等你",
   send_changed: "没发：确认后的内容、收件人或目标已变化",
   send_unverified: "没发：无法核对发送内容",
-  // 教学一步没完成：照实说，不画成失败。
   guide_stopped: "你中止了，这一步没做完",
   guide_left: "你离开了这个页面，这一步没做完",
   guide_no_change: "点了两次，页面都没有变化",
@@ -372,7 +342,6 @@ export function recordedDuration(start: number, end: number): string | null {
   return Number.isFinite(start) && Number.isFinite(end) && end >= start ? formatDuration(end - start) : null;
 }
 
-/** 执行中过程窗是否钉在底部；程序滚动不要走这条，只认人滚。 */
 const LIVE_VIEWPORT_SLOP_PX = 12;
 
 export function isLiveViewportPinned(scrollTop: number, scrollHeight: number, clientHeight: number, slop = LIVE_VIEWPORT_SLOP_PX): boolean {
@@ -383,7 +352,6 @@ export function liveViewportOverflows(scrollHeight: number, clientHeight: number
   return scrollHeight > clientHeight + 1;
 }
 
-/** 过程灰字拆成动词与对象：「填写「出发日期」」→ 填写 / 「出发日期」；没有对象就整句当动词。 */
 export function splitAction(text: string): { verb: string; object: string } {
   const quote = text.indexOf("「");
   const space = text.indexOf(" ");
@@ -392,7 +360,6 @@ export function splitAction(text: string): { verb: string; object: string } {
   return at < 0 ? { verb: text, object: "" } : { verb: text.slice(0, at).trim(), object: text.slice(at).trim() };
 }
 
-/** 准备动作：看清页面、等它就绪。回执不计数、展开不列；读过的页面在回答下面的「来源」里。 */
 const PREP_TOOLS = new Set(["list_tabs", "get_active_tab", "snapshot", "read_element", "read_elements", "screenshot", "wait_for", "sleep", "scroll", "arm_event", "wait_event", "disarm_event", "judge_browser_action", "clear_marks"]);
 
 export function isPrepTool(name: string, params: Parameters<typeof describeTool>[1]): boolean {
@@ -401,7 +368,6 @@ export function isPrepTool(name: string, params: Parameters<typeof describeTool>
   return PREP_TOOLS.has(name);
 }
 
-/** 回执与步骤前的图标种类：每种动作都有自己的图标，认不出的工具用扳手，不会有的有图标、有的只有一个点。 */
 export type ActionKind = "open" | "fill" | "click" | "key" | "script" | "run" | "look" | "pick" | "mark" | "tab" | "close" | "translate" | "download" | "team" | "remember" | "other";
 
 const KIND_OF_TOOL: Record<string, ActionKind> = {
@@ -429,7 +395,6 @@ export function actionKind(name: string, params: Parameters<typeof describeTool>
   return KIND_OF_TOOL[name] ?? "other";
 }
 
-/** 只做了一件事时，回执就写这件事：「打开了 whirl.chat」「点了「查询车票」」。 */
 export function pastAction(name: string, params: Parameters<typeof describeTool>[1]): string {
   if (actionKind(name, params) === "open") {
     const host = hostOf(params.url);
@@ -447,11 +412,6 @@ export function pastAction(name: string, params: Parameters<typeof describeTool>
   return describeTool(name, params).full;
 }
 
-/**
- * 打开页面这一步的结果里取页面标题（步骤名写「Lumen 光子 · 公司资料」，不写 127.0.0.1:53623）。
- * 程序里的 navigate 结果是 JSON（可能被截断），单独的 navigate 是「Navigation result: 网址 — 标题; document: …」。
- * 取不到、是空白或就是网址时返回 null，调用方沿用域名。
- */
 export function openedPageTitle(resultText: string): string | null {
   const json = /"title":"((?:[^"\\]|\\.)*)"/.exec(resultText);
   const line = json ? null : /^Navigation result: (\S+) — (.+?); document:/m.exec(resultText);
@@ -474,11 +434,6 @@ export function openedPageTitle(resultText: string): string | null {
   return title.length > 30 ? `${title.slice(0, 29)}…` : title;
 }
 
-/**
- * 回执里的短名，四五个字：「打开 Studio Gh…」「点作品」「圈出 11 处」。
- * 有中文时最多 6 个字（英文字母算半个），纯英文最多 14 个字符，超出加「…」。
- * pageTitle：打开页面这一步结束后取到的标题，没有时用域名。
- */
 export function shortAction(name: string, params: Parameters<typeof describeTool>[1], pageTitle?: string | null): string {
   const label = str(params.label);
   let text: string;

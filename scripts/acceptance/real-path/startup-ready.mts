@@ -1,8 +1,3 @@
-/**
- * 重载含长记录的真实扩展：等待真正就绪，随后打开旧会话并发送，模型输入必须仍带着旧记录。
- * 本机脚本模型只用于核对恢复后的输入；不测远端模型速度。
- * --rounds=N 重复同一份存储的重载；--baseline 只采集旧版时间，不要求优化后的读量与档位行为。
- */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -48,7 +43,6 @@ try {
   await attachPanel();
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: 'custom', modelId: 'fixture', baseUrl: model.baseUrl }, 'inproc_cred:custom': { type: 'api_key', key: 'local-fixture' } })}).then(()=>true)`);
   await until(async () => await rp.evaluate(panel, `document.querySelector('#think-chip')?.textContent?.includes('fixture')`), 60_000, '模型目录已返回');
-  // 夹具只写隔离扩展的数据；长的非主分支记录模拟实际积累的上下文，不占这次模型的窗口。
   await rp.evaluate(panel, `(async()=>{
     const open=(name,store)=>new Promise((resolve,reject)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>r.result.createObjectStore(store);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
     const write=(db,store,entries)=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');for(const [key,value] of entries)tx.objectStore(store).put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
@@ -72,7 +66,6 @@ try {
     const workerUrl = `chrome-extension://${rp.extensionId}/background.js`;
     const previousWorker = (await rp.targets()).find(t => t.url === workerUrl)?.targetId;
     const start = Date.now();
-    // 扩展重载会销毁旧端口，不能等待该端口返回。
     await rp.evaluate(panel, `setTimeout(()=>chrome.runtime.reload(),100);true`);
     await until(async () => !(await rp.targets()).some(t => t.url.endsWith('/sidepanel.html') && t.url.includes(rp.extensionId)), 15_000, '旧侧栏已关闭', 50);
     await until(async () => (await rp.targets()).find(t => t.type === 'service_worker' && t.url === workerUrl && t.targetId !== previousWorker), 20_000, '重载后新后台注册', 50);
@@ -110,7 +103,6 @@ try {
   await until(async () => await rp.evaluate(panel, `!document.querySelector('.msg.assistant.streaming,.msg.assistant[data-revealing]') && !document.querySelector('#status-pill')?.classList.contains('running')`), 30_000, '恢复后的回答完整显示');
   await rp.screenshot(panel, join(artifacts, 'panel.png'));
   if (!baseline) {
-    // 只模拟服务商的能力目录，不调用远端模型；档位设置、恢复和显示仍走真实扩展。
     const identity = createHash('sha256').update('openai-codex\0startup-fixture').digest('hex');
     const entries = [
       { id: 'startup-low-high', name: '缺中档模型', efforts: ['low', 'high'], input: ['text'], contextWindow: 128000, discoveryOnly: false },

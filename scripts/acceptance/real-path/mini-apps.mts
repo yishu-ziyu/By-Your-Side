@@ -1,10 +1,3 @@
-/**
- * 实验功能「回答里的小程序」。
- *   npx tsx scripts/acceptance/real-path/mini-apps.mts --headless
- * 脚本模型写三个小程序：计数器（bys.save / bys.say）、往本机服务器偷数据的、一加载就报错的。
- * 先在开关关着时看只出一句说明；到设置页打开后原地换成小程序；点「加一」、放进输入框、重开侧栏接着算；
- * 偷数据的服务器一次也收不到；报错的给「让助手修好」，点了才发；最后关掉开关又只剩说明。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -89,7 +82,6 @@ try {
   };
   const lastApp = `[...document.querySelectorAll("#messages .gc-app")].at(-1)`;
   const bar = async () => await rp.evaluate(panel, `(() => { const b = ${lastApp}?.querySelector(".gc-app-bar"); return b && !b.hidden ? b.textContent : null; })()`) as string | null;
-  /** 点小程序里的位置：x、y 是相对小程序框左上角的像素。 */
   const clickInApp = async (x: number, y: number) => {
     await rp.evaluate(panel, `${lastApp}.scrollIntoView({ block: "center" }), true`);
     await sleep(150);
@@ -98,7 +90,6 @@ try {
     for (const type of ["mouseMoved", "mousePressed", "mouseReleased"] as const) await rp.cdp.send("Input.dispatchMouseEvent", { type, x: r.x + x, y: r.y + y, button: "left", clickCount: 1 }, panel);
   };
 
-  // R2：写的过程中只有空位，不露出程序原文。R1：开关关着，写完只出一句怎么打开。
   const leaks: string[] = [];
   let sawPlaceholder = false;
   await rp.click(panel, "#input");
@@ -123,11 +114,9 @@ try {
   assert.ok(sawPlaceholder, "R2: a placeholder shows while the app is being written");
   assert.ok(off.note?.includes("设置 → 实验功能") && !off.frame, `R1: off by default, only a note: ${JSON.stringify(off)}`);
 
-  // R1：在设置页打开开关，同一条回答原地换成小程序。
   const settingsTab = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html`, background: true })).targetId;
   const settings = await rp.attach(settingsTab);
   await until(async () => await rp.evaluate(settings, 'document.querySelector("#mini-apps")?.checked === false').catch(() => false) || undefined, 15_000, "设置页的小程序开关默认关");
-  // 开关在「实验功能」分栏里，默认隐藏；像用户一样先切过去，否则点的是看不见的元素。
   await rp.click(settings, '[data-settings-page="labs"]');
   await until(async () => await rp.evaluate(settings, 'document.querySelector("#mini-apps").checkVisibility()') || undefined, 5_000, "切到实验功能");
   await rp.evaluate(settings,'document.querySelector("#mini-apps").scrollIntoView({ block: "center" }); true');
@@ -137,15 +126,12 @@ try {
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTab });
   await until(async () => await rp.evaluate(panel, `!!${lastApp}?.querySelector("iframe")`) || undefined, 10_000, "R1: 打开后原地换成小程序");
 
-  // R2：高度跟内容走（按钮 + 数字 + 260px 的框，约 390px）。
   const height = await until(async () => { const h = await rp.evaluate(panel, `${lastApp}.querySelector("iframe").getBoundingClientRect().height`) as number; return h > 300 ? h : undefined; }, 10_000, "R2: 框高跟内容").catch(async () => await rp.evaluate(panel, `${lastApp}.querySelector("iframe").getBoundingClientRect().height`) as number);
   evidence.height = height;
   assert.ok(height > 300 && height < 500, `R2: frame height follows content: ${height}`);
-  // 框高等于内容高：小程序里没有滚动条。
   await sleep(500);
   await rp.screenshot(panel, join(artifacts, "2b-height.png"));
 
-  // R2：点两次「加一」，下面出现小程序想放进输入框的话；点「放进输入框」只放进去不发。
   await clickInApp(60, 32);
   await sleep(300);
   await clickInApp(60, 32);
@@ -160,15 +146,12 @@ try {
   assert.equal(await rp.evaluate(panel, `document.querySelectorAll("#messages .msg.user").length`), users, "R3: the app cannot send by itself");
   await rp.evaluate(panel, `(() => { const i = document.querySelector("#input"); i.value = ""; i.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
 
-  // R4：重开侧栏，小程序从 2 接着算。
   await rp.cdp.send("Page.reload", {}, panel);
   const restored = await until(async () => { const b = await bar().catch(() => null); return b?.includes("恢复到 2") ? b : undefined; }, 30_000, "R4: 恢复到 2").catch(async () => await bar().catch(() => null));
   evidence.restored = restored;
   assert.ok(restored?.includes("恢复到 2"), `R4: app state restored after reopening: ${restored}`);
 
-  // R3：偷数据的小程序，服务器一次也收不到。
   await ask("偷数据");
-  // 它一放进去就会试着跳走，被拦下后框收起：等到框出现过或那一行出现。
   await until(async () => await rp.evaluate(panel, `!!${lastApp}?.querySelector("iframe") || !${lastApp}?.querySelector(".gc-app-bar")?.hidden`) || undefined, 10_000, "偷数据的小程序放进去");
   await sleep(3_000);
   evidence.leaks = [...hits];
@@ -178,7 +161,6 @@ try {
   assert.deepEqual(hits, [], `R3: nothing reaches the network: ${hits.join(", ")}`);
   assert.ok(blocked?.includes("已拦下") && !(await rp.evaluate(panel, `!!${lastApp}.querySelector("iframe")`)), `R3: the blocked navigation is folded into one line: ${blocked}`);
 
-  // R2：报错的小程序，给「让助手修好」，点了才发。
   await ask("坏的小程序");
   const broken = await until(async () => { const b = await bar(); return b?.includes("小程序出错了") ? b : undefined; }, 10_000, "R2: 报错").catch(async () => await bar());
   evidence.broken = broken;
@@ -187,7 +169,6 @@ try {
   await rp.evaluate(panel, `${lastApp}.querySelector(".gc-app-bar button").click(), true`);
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].some(m => m.textContent.includes("小程序「坏的」出错了"))`) || undefined, 10_000, "R2: 点了才发出修复请求");
 
-  // R1：关掉开关，小程序又只剩一句说明。
   await rp.evaluate(panel, `chrome.storage.local.set({ sideagent_mini_apps: false }).then(() => true)`);
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .gc-app")].every(a => !a.querySelector("iframe") && a.querySelector(".gc-app-off"))`) || undefined, 10_000, "R1: 关掉后只剩说明");
 } catch (caught) {

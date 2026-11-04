@@ -20,7 +20,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   button.title = '语音对话：问进度或调整当前任务';
   button.setAttribute('aria-label', '开始语音对话');
   button.setAttribute('aria-expanded', 'false');
-  // 语音对话用声波图标；话筒留给说话输入（dictation.ts），和 ChatGPT 输入框的分法一样。光球只在进入语音后的大界面里。
   button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></svg>';
   bindMotionIcon(button, 'audio-lines');
   composer.querySelector('#composer-spacer')!.after(button);
@@ -32,7 +31,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   stopSpeech.textContent = '停声';
   stopSpeech.title = '停声。任务继续。';
   stopSpeech.hidden = true;
-  // 停声、结束放在底部居中，和光球、字幕同一条中线。
   region.querySelector('.voice-actions')!.append(stopSpeech, end);
   const transcript = region.querySelector<HTMLElement>('.voice-answer')!;
   const question = region.querySelector<HTMLElement>('.voice-question')!;
@@ -40,14 +38,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   const stateDetail = region.querySelector<HTMLElement>('.voice-state-detail')!;
   const sources = region.querySelector<HTMLElement>('.voice-sources')!;
   let phase: VoicePhase = 'idle';
-  /** 字幕区当前这段回答的全文；正在说时按句高亮最后一句。 */
   let answerText = '';
 
-  /**
-   * 字幕：正在说时把当前句（累积文本的最后一句）单独标出来。
-   * 降级说明：Realtime 只给累积的 audio_transcript 文本，没有词级时间戳（VoiceEvent 'text' 只有 text），
-   * 所以不加粗当前词，只按句高亮；要做词级需另改语音后端协议。
-   */
   const renderAnswer = (): void => {
     const sentences = phase === 'speaking' ? answerText.match(/[^。！？!?；;\n]+[。！？!?；;\n]*/g) ?? [] : [];
 
@@ -71,7 +63,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     renderAnswer();
   };
 
-  /** 本轮真实读过的网站（交付事实链 facts.sources）：「读了 a、b 等 N 个网站」；没有就不显示。 */
   const setSources = (list: readonly { url: string }[]): void => {
     const hosts = [...new Set(list.flatMap((item) => {
       try { return [new URL(item.url).hostname.replace(/^www\./, '')]; } catch { return []; }
@@ -82,10 +73,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   };
 
   let shownTurn = 0;
-  /**
-   * 「你：」这一行的各段。StepAudio 3 会按语义把一句带停顿的话切成几轮，前半句的转写常在后半句开口后才到：
-   * 同一轮里的几段按到达顺序拼起来；最后一段之后助手还没回答就又开口，也接着拼，答过了才换新问题。
-   */
   let questionParts: string[] = [];
   let answeredSinceQuestion = true;
 
@@ -94,9 +81,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   };
 
   let currentDeliveryKind: UserDelivery['kind'] | null = null;
-  // 语音诊断：正常语音自动留证（agent 落盘），这里保留手动复现、导出、清空与一次点击的问题标记。
-  // 「记录本轮问题」只写日志，不是纠错入口；改正仍走输入框或语音。
-  // Frames arrive every 20ms; the block refreshes on a short throttle instead.
   let renderTimer: ReturnType<typeof setTimeout> | null = null;
 
   const scheduleDiag = (): void => {
@@ -213,7 +197,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
   function renderDiag(): void {
     const latest = log.latest();
-    // Idle retries stay available; while a session is open and unconfirmed the wait itself is the feedback.
     diagStart.disabled = client.diagnosticRecording || (client.active && !log.isConfirmed);
     diagStop.disabled = !client.diagnosticRecording;
     let diagnosticStatus: string;
@@ -353,7 +336,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     client.finishDiagnostic();
   };
 
-  // 一次点击完成：按钮只发一条标记命令，不弹输入、不打断录音、不停止语音、不改任何语音状态。
   markButton.onclick = () => {
     const marked = client.markLatest();
     markNote.textContent = marked.ok ? `已标记 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}` : (marked.detail ?? '标记未发送');
@@ -374,7 +356,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     region.hidden = next === 'idle';
     button.setAttribute('aria-expanded', String(next !== 'idle'));
     button.setAttribute('aria-label', next === 'idle' ? '开始语音对话' : '结束语音对话');
-    // 状态由光球自己的动法表达，球下只留一个灰字：在听 / 在想（有具体说明就写说明，如「在读这个页面」）/ 在说（字幕在说话，只给读屏）。
     const plainDetail = detail && detail !== '正在处理这句话' ? detail : '';
     const stateText: Partial<Record<VoicePhase, string>> = { listening: plainDetail || '在听', thinking: plainDetail || '在想', speaking: '在说', connecting: '正在连接', error: '语音不可用' };
     status.textContent = stateText[next] ?? (next === 'idle' ? '' : detail ?? '');
@@ -385,7 +366,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     }
 
     end.textContent = next === 'error' ? (client.needsMicrophonePermission ? '开启麦克风' : '重试') : '结束';
-    // 「停声」只在正在说时有用；其他时候收起，也不和右上角的「开启麦克风」叠在一起。
     stopSpeech.hidden = next !== 'speaking';
     region.dataset.state = next;
 
@@ -395,7 +375,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
     renderAnswer();
   }, event => {
-    // 上一轮晚到的那段话是先说的：拼在当前各段前面，不切换轮次。
     if (event.kind === 'text' && event.role === 'user' && event.turn === shownTurn - 1) {
       if (!questionParts.includes(event.text)) questionParts = [event.text, ...questionParts].slice(0, 3);
       answeredSinceQuestion = false;
@@ -499,11 +478,8 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
   return {
     stop: () => client.stop(),
-    /** 设置页选的音色：下次开启语音时带上，正在进行的会话不打断。 */
     setVoice: (value: StepVoice) => { client.voice = value; },
-    /** 设置页选的人设：同样下次开启语音时生效。 */
     setPersona: (value: VoicePersona) => { client.persona = value; },
-    /** 设置页选的语音模型：同样下次开启语音时生效。 */
     setVoiceModel: (value: unknown) => { client.voiceModel = value; },
     disconnect: () => {
       if (client.active) {

@@ -1,11 +1,3 @@
-/**
- * 自动续做阶段没有新证据且超过两分钟：不再开启下一次续做。
- * 只装扩展、隔离构建、本机脚本模型（目标核对也由脚本回「接着做」）。约 2.5 分钟。
- *   npx tsx scripts/acceptance/real-path/goal-continue-budget.mts --headless
- *   a) 允许第一次续做；续做超过两分钟后不再发第三次请求。
- *   b) 过程行写「还没做成」，用户能看到没做完。
- * 失败方式：只按次数上限判断，a 失败。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -23,7 +15,6 @@ const FIRST = "只整理了第一项青松，第二项还没有整理。";
 const SECOND = "第二项白鹭还没有整理。";
 const THIRD = "不应该自动开始第三次。";
 const CONTINUE_JSON = JSON.stringify({ items: [{ text: "列出两项资料", done: false }], status: "continue", verificationSubject: 'answer', evidence: FIRST, remaining: "第二项资料", correction: "读完并列出第二项资料", finding: "第二项尚未整理" });
-// 每段停 5 秒、不超过断流计时：两分多钟里一直在出字，像一次很长的作答。
 const slow = Array.from({ length: 26 }, () => ({ text: "…", delayMs: 5_000 }));
 
 const site = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(`<!doctype html><html lang="zh"><meta charset="utf-8"><title>两项资料</title><body><main><h1>资料</h1><p>第一项青松，第二项白鹭。</p><input id="progress" aria-label="整理进度"></main></body></html>`));
@@ -33,10 +24,8 @@ await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const continueStep = { text: "…".repeat(slow.length) + SECOND, pieces: [...slow, { text: SECOND }] };
 const checkStep = { text: CONTINUE_JSON };
 const model = await startScriptedModel([
-  // 目标核对的输入带 lastReply；接着做的那一轮以 [GOAL CHECK] 开头，也带着原话，所以都排在原话前面。
   { match: `"lastReply"`, steps: [checkStep] },
   { match: "[GOAL CHECK]", steps: [continueStep] },
-  // 用过浏览器工具的一轮才核对；打开一页才有过程行，核对结论写在过程行上。
   { match: TASK, steps: [{ tool: { name: "navigate", args: { url: `http://127.0.0.1:${siteAddress(site).port}/` } } }, { text: FIRST }] },
 ], undefined, payload => {
   for (const message of payload.messages ?? []) {
@@ -44,7 +33,7 @@ const model = await startScriptedModel([
     try {
       const input = JSON.parse(message.content);
       if (typeof input.lastReply === 'string') checkStep.text = JSON.stringify({ ...JSON.parse(CONTINUE_JSON), evidence: input.lastReply.slice(-100) });
-    } catch { /* 普通用户指令不是核对输入。 */ }
+    } catch {  }
   }
 });
 
@@ -61,9 +50,7 @@ try {
   await rp.typeText(panel, TASK);
   await rp.pressEnter(panel);
   const answers = `[...document.querySelectorAll(".msg.assistant")].map(m => m.textContent).join("\\n")`;
-  // 自动接着做时第一次回答被扣下不显示，侧栏只出第二次的。
   await until(async () => { const text = await rp.evaluate(panel, answers) as string; return text.includes(FIRST) || text.includes(SECOND) || undefined; }, 200_000, "回答");
-  // 核对约 2 秒出结论；自动接着做的话第二次回答几秒内就到。
   await sleep(15_000);
   const text = await rp.evaluate(panel, answers) as string;
   const line = await rp.evaluate(panel, `[...document.querySelectorAll(".run-check")].map(e => e.textContent.replace("·", "").trim()).filter(Boolean).at(-1) ?? ""`) as string;

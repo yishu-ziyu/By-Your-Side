@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-/**
- * Paired comparison of code versions in one `run.mjs --arms` run (after finalize.sh judged it):
- *   node eval/harness/paired.mjs <runDir> [--base base] [--cand cand]
- * Pairs = same task and repeat on both arms. A pair is dropped when either side is an environment failure,
- * an unjudged result or a judge error, and dropped pairs are counted, never hidden.
- * Writes <runDir>/paired.json and paired.md.
- */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -13,7 +6,6 @@ const runDir = process.argv[2];
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const BASE = arg("base", "base"), CAND = arg("cand", "cand");
 const BROWSER_TOOLS = new Set(["click", "double_click", "hover", "fill", "type_text", "press_key", "select_option", "scroll", "navigate", "snapshot", "read_element", "read_elements", "screenshot", "tabs", "browser_run", "js", "fetch", "network", "download_url", "upload_file", "accept_dialog", "dismiss_dialog", "wait_event", "arm_event"]);
-// 回答承认没做完的说法；扩展自动加的脚注（「有一步已经做了，但还没确认结果」）也算承认。
 const ADMITS = /没(有)?(完成|做成|做完|做到|成功|找到|能|办法)|未(能|完成|做完|成功|找到|确认)|还没(确认|做|完成)|无法|做不到|找不到|请你|需要你|失败|不能确定|not (been )?(completed|done|able)|could ?n[o']t|unable|failed/i;
 
 const readJson = (p) => existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
@@ -31,7 +23,6 @@ function metrics(dir, task) {
   const tools = of("tool_execution_end").map((e) => e.data ?? {});
   const browser = tools.filter((t) => BROWSER_TOOLS.has(t.toolName));
   const checks = of("goal_check").map((e) => e.data ?? {});
-  // judge.mjs already turns a fail caused by proved site unavailability into "environment"; a pass stays a pass
   const verdict = judge?.verdict ?? (rec.status === "environment" ? "environment" : judge?.judge_error ? "judge_error" : "unjudged");
   const answer = rec.final_answer_verbatim ?? "";
   const claimed = !!answer && !ADMITS.test(answer);
@@ -76,12 +67,10 @@ for (const s of series.filter((x) => x.arm === BASE || x.arm === CAND)) {
 const median = (xs) => { const v = xs.filter((x) => x != null && !Number.isNaN(x)).sort((p, q) => p - q); return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2) : null; };
 const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 
-// exact two-sided McNemar on discordant pairs
 function mcnemar(b, c) {
   const n = b + c;
 
   if (!n) return 1;
-  // binomial(n, 1/2) tail in log space: 2 ** n overflows past n = 1023
   const logChoose = (n, k) => { let r = 0; for (let i = 1; i <= k; i++) r += Math.log(n - k + i) - Math.log(i); return r; };
   let p = 0;
 
@@ -90,7 +79,6 @@ function mcnemar(b, c) {
   return Math.min(1, 2 * p);
 }
 
-// task-clustered bootstrap of a paired statistic, fixed seed so the report is reproducible
 function bootstrap(stat, iters = 4000) {
   const byTask = Object.values(Object.groupBy(pairs, (p) => p.task));
   let seed = 20261020;

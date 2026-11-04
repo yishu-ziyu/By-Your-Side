@@ -10,7 +10,6 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
-/** Selection → local reading conversation. UI only relays selection or reading records; never task/steer messages. */
 import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
@@ -81,22 +80,17 @@ export function selectionSnapshot(): SelectionSnapshot | null {
   return { source: { text, surrounding, location: selectionLocation(range), truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
 }
 
-/** 与样式宽度一致，用于判断正文旁是否放得下回答。 */
 const CARD_WIDTH = 450;
 
-/** 右下角能拉到多小；再小回答就只剩一条缝。 */
 const CARD_MIN_WIDTH = 320;
 const CARD_MIN_HEIGHT = 240;
 
 const PLACE_MARGIN = 12;
 
-/** 正文和回答之间留出的缝。 */
 const BESIDE_GAP = 40;
 
-/** 工具条和选区之间留一点气口；胶囊本身不再画三角。 */
 const LENS_GAP = 6;
 
-/** 「更多」里的常用提问；钉上的出现在工具条上。存的是 id，改文案不丢已钉的。 */
 const PROMPTS = [
   { id: 'translate', label: '翻译', question: READING_TRANSLATE_QUESTION },
   { id: 'define', label: '定义', question: '这段里的关键词是什么意思？' },
@@ -113,14 +107,10 @@ const PROMPT_ICONS = {
   evidence: BookOpenText,
 };
 
-/** 输入框下的快捷问题：从常用提问里取跟着读下去最常问的三个。 */
 const QUICK_QUESTIONS = PROMPTS.filter(prompt => ['example', 'why', 'evidence'].includes(prompt.id));
 
 const PINS_KEY = 'reading_bar_pins';
 
-/** 一轮里换过段时，那轮上面引用原文的长度：认得出是哪一段就够。 */
-
-/** 系统默认的双击间隔约 500ms，网页里多数连击在 400ms 内。 */
 const MULTI_CLICK_MS = 420;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, Math.max(min, max)));
@@ -143,7 +133,6 @@ function paints(style: CSSStyleDeclaration): boolean {
   return Boolean(style.boxShadow && style.boxShadow !== 'none');
 }
 
-/** 采样点上有没有正文块以外的可见内容。包住正文的整页容器不算，侧栏、广告、目录算。 */
 function gutterOccupied(host: HTMLElement, block: Element, x: number, y: number): boolean {
   for (const el of document.elementsFromPoint(x, y)) {
     if (el === host || host.contains(el) || el === document.documentElement || el === document.body) continue;
@@ -179,19 +168,14 @@ function gutterBlank(host: HTMLElement, block: Element, region: { left: number; 
   return true;
 }
 
-/** 本页已装的那份网页脚本留下的存活检查（同一扩展的网页脚本共用这个 window）。 */
 const BOOTED = '__sideagentContentAlive';
 
 /**
- * 同一页面只装一份：网页在安装时正在加载，Chrome 按 manifest 装一份，background/reinject.ts 又补装一份，两份都连着扩展，
+ * WHY: 同一页面只装一份：网页在安装时正在加载，Chrome 按 manifest 装一份，background/reinject.ts 又补装一份，两份都连着扩展，
  * 胶囊、边缘光条、按键就都成了两份。旧的那份还连着就不再装；断开了（扩展重载、更新后）照常装，补装不受影响。
  */
 const WORDS = new Intl.Segmenter('zh', { granularity: 'word' });
 
-/**
- * 流式回答每来一段都会整段重画；按词切开正文，只给第 shown 个之后的词挂淡入，
- * 已经读到的字不会跟着闪。代码块不切，保留原样可复制。返回现在的总词数。
- */
 function fadeNewWords(root: HTMLElement, shown: number): number {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: node => node.parentElement?.closest('pre, code') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
@@ -261,7 +245,6 @@ function boot(): void {
   host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483645';
   syncColorTone(host);
   const root = host.attachShadow({ mode: 'closed' });
-  // 封闭的影子根让网页看到的焦点是一个普通 div：Claude 网页版这类「随处打字就聚焦自己输入框」的网站会把卡片里的按键抢走，所以按键不再冒泡出卡片。
   for (const type of ['keydown', 'keypress', 'keyup'] as const) host.addEventListener(type, event => event.stopPropagation());
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
@@ -349,19 +332,14 @@ function boot(): void {
     metaKey: string;
     detailed: boolean;
     text: string;
-    /** 已经显示过的词数：流式重画时只让后面新出来的词淡入。 */
     words: number;
   }> = [];
 
-  /** 哪几轮是用深度模型答的；记录里只存最近一次的档位。 */
   const deepTurns = new Set<number>();
 
   const drafts = new Map<string, string>();
-  /** 输入框左边的模型芯片：打字问时用快速还是深度。整页沿用，不随换段重置。 */
   let typedDepth: 'fast' | 'deep' = 'fast';
-  /** 钉到工具条上的常用提问。 */
   let pins: string[] = [];
-  /** 朗读默认不出现，只有用户在设置里主动开启后才进入工具条和回答卡。 */
   let aloudEnabled = false;
   let pinned = false;
 
@@ -402,36 +380,21 @@ function boot(): void {
     else barTipTimer = setTimeout(reveal, 160);
   }
 
-  /**
-   * 按住说话的这一次交流，只在页面里：按下时抓住的那段字（之后用户点别处、改选都不影响这一句问的是哪），
-   * listening 是还按着，released 是松开后等回答接上。新的一次按下整个换掉旧的。previous：松开前卡片指着的那段，话没交给卡时指回去。
-   */
   let voice: { phase: 'listening' | 'released'; target: SelectionSnapshot; heard: string; previous: SelectionSnapshot | null } | null = null;
-  /** 光标陪着这张卡：从按住说话起，到卡收起为止。 */
   let companion = false;
-  /** 正在念哪张卡的回答。 */
   let speakingThread = '';
-  /** 用户正在滚动读正文：浮在正文上的卡片和光标先让开。 */
   let quiet = false;
   let quietTimer: ReturnType<typeof setTimeout> | undefined;
   let followTimer: ReturnType<typeof setInterval> | undefined;
-  /** 按住说话时按 Esc 只取消这一次说话，不连带收起卡片。 */
   let swallowEscape = false;
-  /** 卡开着时按下鼠标先不收：可能是去选另一段接着问，松开时没选中文字才收。 */
   let dismissOnUp = false;
   let dismissTimer: ReturnType<typeof setTimeout> | undefined;
-  /** 卡开着时新选中的一段：打字问时问的是它。 */
   let candidate: SelectionSnapshot | null = null;
   let pendingTurn: HTMLElement | null = null;
-  /** 回答放在选区哪一边：打开时定一次，之后回答变长也不换边，免得跳位。右侧空白够放时不用这一边。 */
   let side: 'above' | 'below' | null = null;
-  /** 用户把卡拖到别处后记着这一处：不再跟着选区走，滚动也不动。 */
   let manualPos: { left: number; top: number } | null = null;
-  /** 用户拉过右下角后的大小：跨卡片沿用，存进本地。 */
   let manualSize: ReadingCardSize | null = null;
-  /** 拉的过程中别的标签页存了新尺寸：松手且没拉动时再用，不打断手指。 */
   let pendingCardSize: ReadingCardSize | null = null;
-  /** 已经写到卡上的大小：流式回答每次重绘时不重复改样式。 */
   let appliedSize: ReadingCardSize | null = null;
   let drag: { pointerId: number; startX: number; startY: number; left: number; top: number; moved: boolean } | null = null;
   let resize: { pointerId: number; startX: number; startY: number; left: number; top: number; width: number; height: number; moved: boolean } | null = null;
@@ -502,8 +465,6 @@ function boot(): void {
 
     const margin = PLACE_MARGIN;
 
-    // 用户把卡拖走后，位置由他定：只把卡收在窗口内，不再跟着选区或滚动走。
-    // 快捷键恢复的卡没有选区（snapshot 为空），手动位置仍然要能用。
     if (manualPos) {
       delete surface.dataset.tail;
       surface.dataset.place = 'manual';
@@ -517,11 +478,9 @@ function boot(): void {
       return;
     }
 
-    // 按住说话问另一段时，卡片一按下就让到那段旁边：不压住用户刚选的字。
     const anchor = voice?.target ?? snapshot;
 
     if (!anchor) {
-      // 快捷键恢复时没有选区：卡片留在原处，只保证窗口变过之后还在视口里。
       const box = surface.getBoundingClientRect();
       surface.style.left = `${clamp(box.left, margin, Math.max(margin, innerWidth - box.width - margin))}px`;
       surface.style.top = `${clamp(box.top, margin, Math.max(margin, innerHeight - box.height - margin))}px`;
@@ -535,7 +494,6 @@ function boot(): void {
     const first = lines[0] ?? r;
     const last = lines.at(-1) ?? r;
 
-    // 还没有回答时是一条贴着选区的胶囊：放在第一行上方，小三角指着它；上方放不下才放到最后一行下方。
     if (!expanded || (!record?.turns.length && voice?.phase !== 'released')) {
       surface.style.maxHeight = '';
       const box = surface.getBoundingClientRect();
@@ -556,7 +514,6 @@ function boot(): void {
 
     delete surface.dataset.tail;
 
-    // 这段滚出视口时卡片靠到右上角，滚回来再回到这段旁边：卡片始终对着能看见的那段，或者让开正文。
     pinned = r.bottom < 0 || r.top > innerHeight;
 
     const block = pinned ? null : contentBlockOf(anchor.range);
@@ -569,7 +526,6 @@ function boot(): void {
       top: Math.max(0, Math.min(blockRect.top, r.top)),
       bottom: Math.min(innerHeight, Math.max(blockRect.bottom, r.top + Math.min(540, innerHeight - margin * 2))),
     } : null;
-    // 正文右侧到窗口右边缘真是空白、并且放得下回答和两侧间距时，写在正文旁边；否则浮在选区下方。
     const beside = !pinned && !!besideRegion && !!block && gutterBlank(host, block, besideRegion);
     const room = { above: r.top - margin - 8, below: innerHeight - r.bottom - margin - 8 };
     side ??= room.below >= 220 || room.below >= room.above ? 'below' : 'above';
@@ -597,7 +553,6 @@ function boot(): void {
     surface.style.setProperty('--origin', pinned ? 'right top' : side === 'above' ? 'bottom center' : 'top center');
   }
 
-  /** 把用户拉过的大小落到卡上；窗口变小只收显示，不改存着的尺寸。 */
   function applyManualSize(): void {
     if (!expanded || !manualSize) {
       if (!appliedSize) return;
@@ -612,7 +567,6 @@ function boot(): void {
     }
 
     const margin = PLACE_MARGIN;
-    // 窗口比最小尺寸还小时，先保证卡和右下角把手留在视口里。
     const maxWidth = Math.max(200, innerWidth - margin * 2);
     const maxHeight = Math.max(160, innerHeight - margin * 2);
     const width = clamp(manualSize.width, Math.min(CARD_MIN_WIDTH, maxWidth), maxWidth);
@@ -663,7 +617,6 @@ function boot(): void {
     }
   }
 
-  /** 标题栏拖动整张卡：拖过就由用户定位置，不再跟着选区走。 */
   function startDrag(event: PointerEvent): void {
     if (event.button !== 0 || !expanded || drag || resize || (event.target as Element).closest('button')) return;
 
@@ -695,7 +648,6 @@ function boot(): void {
     surface.classList.remove('dragging');
   }
 
-  /** 右下角拉大小：从当前位置往外拉，拉过就不再自动贴回选区。 */
   function startResize(event: PointerEvent): void {
     if (event.button !== 0 || !expanded || drag || resize) return;
 
@@ -737,7 +689,7 @@ function boot(): void {
 
     if (moved && manualSize) {
       pendingCardSize = null;
-      void chrome.storage.local.set({ [READING_CARD_SIZE_KEY]: manualSize }).catch(() => { /* 扩展刚重载 */ });
+      void chrome.storage.local.set({ [READING_CARD_SIZE_KEY]: manualSize }).catch(() => {  });
     }
     else if (pendingCardSize) {
       manualSize = pendingCardSize;
@@ -747,13 +699,12 @@ function boot(): void {
     }
   }
 
-  /** 双击右下角回到默认大小；拖动过的位置留着。 */
   function resetSize(event: MouseEvent): void {
     event.preventDefault();
     manualSize = null;
     resize = null;
     applyManualSize();
-    void chrome.storage.local.remove(READING_CARD_SIZE_KEY).catch(() => { /* 扩展刚重载 */ });
+    void chrome.storage.local.remove(READING_CARD_SIZE_KEY).catch(() => {  });
     position();
   }
 
@@ -786,7 +737,6 @@ function boot(): void {
 
   const questionLabel = (question: string) => question === EXPLAIN_PROMPT ? '解释这段文字' : PROMPTS.find(prompt => prompt.question === question)?.label ?? question;
   const preset = (question: string) => question === EXPLAIN_PROMPT || PROMPTS.some(prompt => prompt.question === question);
-  /** 卡片标题用这一问的动作名（解释、翻译…），自己打的问题统一叫「问这段」。 */
   const actionName = (question: string) => question === EXPLAIN_PROMPT ? '解释' : PROMPTS.find(prompt => prompt.question === question)?.label ?? '问这段';
 
   function metaButton(label: string, act: string, turn: number): HTMLButtonElement {
@@ -809,7 +759,6 @@ function boot(): void {
     surface.classList.toggle('composing', composing);
     applyManualSize();
     el('.bar').hidden = expanded;
-    // 打字用的输入卡也能拖：标题栏一直留着，标题写「提问」。
     el('.head').hidden = !expanded;
     const hasAnswer = turns.some(turn => turn.answer.trim());
     el('.foot').hidden = !expanded || !hasAnswer;
@@ -818,7 +767,6 @@ function boot(): void {
     el('[data-act="speak"]').hidden = !hasAnswer || !aloudEnabled;
     answerMore.hidden = !hasAnswer;
     messages.hidden = !answering;
-    // 生成中不露回答操作：写完才出现，卡片不会边写边跳高。
     surface.classList.toggle('live', turns.some(turn => turn.state === 'pending' || turn.state === 'streaming') || waiting);
     el('.composer').hidden = !expanded;
     el('.chips').hidden = !composing;
@@ -843,7 +791,6 @@ function boot(): void {
     const lastIndex = turns.length - 1;
     const sources = turns.map((_, index) => sourceOf(index));
     const waitingSource = waiting ? voice!.target.source.text : undefined;
-    // 问过不止一段时，每段第一问上面引用它那段原文：旧回答留着自己的出处，新一轮引用新的一段。
     const several = turns.some(turn => !!turn.source) || new Set([...sources, ...(waitingSource ? [waitingSource] : [])]).size > 1;
 
     for (const [index, turn] of turns.entries()) {
@@ -861,7 +808,6 @@ function boot(): void {
         meta.className = 'meta';
         wrapper.append(question, summary, node, meta);
         messages.append(wrapper);
-        // 回答默认整段显示：边听边看的内容写完后不缩成一句，用户自己点「收起」才收。
         answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: true, text: '', words: 0 });
       }
 
@@ -870,7 +816,6 @@ function boot(): void {
       setSourceQuote(item.turn, showsSource ? sources[index]! : '', index);
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
-      // 第一问是解释、翻译这类动作时，标题已经说了，不再重复一行。
       item.question.hidden = index === 0 && preset(turn.question) && !corrected.includes(index);
 
       if (fixed) {
@@ -880,7 +825,6 @@ function boot(): void {
         item.question.append(tag);
       }
 
-      // 被改口停下的旧回答原样留着，新回答接在下面。
       const interrupted = turn.state === 'stopped' && corrected.includes(index + 1);
 
       if (item.text !== turn.answer) {
@@ -905,7 +849,6 @@ function boot(): void {
       const hasMoreText = summaryText.length > summaryLimit;
       const done = turn.state === 'done';
       const hasDetails = done && (item.node.childElementCount > 1 || hasMoreText || Boolean(first && first.tagName !== 'P'));
-      // 摘要只用纯文字；原回答保留完整结构，收起时也不留下不可见的可聚焦链接。
       item.summary.textContent = summaryText.slice(0, summaryLimit) + (hasMoreText && summaryLimit === 100 ? '…' : '');
       item.summary.hidden = !hasDetails || item.detailed;
       item.node.hidden = hasDetails && !item.detailed;
@@ -959,7 +902,6 @@ function boot(): void {
     const latestQuestion = turns.at(-1)?.question ?? '';
     el('.title').textContent = actionName(latestQuestion);
     const busy = readingBusy(record);
-    // 生成中输入框有字时，按钮是改口；空着时才是停止。
     const stops = busy && !input.value.trim();
     const label = stops ? '停止回答' : busy ? '停止这条回答，按新问题重新回答' : '发送问题';
     submit.replaceChildren(icon(stops ? Square : ArrowUp));
@@ -981,7 +923,6 @@ function boot(): void {
     pushPointer();
   }
 
-  /** 复制成功：图标换成对勾一会儿，不另弹提示。 */
   function flash(button: HTMLElement): void {
     const glyph = button.querySelector('svg');
 
@@ -996,7 +937,6 @@ function boot(): void {
     }, 1200);
   }
 
-  /** 回原文：跨得远时直接到，别让平滑滚动拖几秒；只在附近才用动画。 */
   function revealSource(node: Node | null | undefined): void {
     const element = node instanceof Element ? node : node?.parentElement;
 
@@ -1006,7 +946,6 @@ function boot(): void {
     element.scrollIntoView({ block: 'center', behavior: far ? 'auto' : 'smooth' });
   }
 
-  /** 工具条上「解释」「朗读」后面跟着用户钉上的常用提问，菜单里的图钉同步亮。 */
   function renderPins(): void {
     hideBarTip();
     el('.pins').replaceChildren(...PROMPTS.filter(prompt => pins.includes(prompt.id)).map(prompt => {
@@ -1030,7 +969,6 @@ function boot(): void {
   }
 
 
-  /** 第 index 问针对哪段原文：往前最近一个换过段的轮次，没有就是卡片打开时那段。 */
   function sourceOf(index: number): string {
     const turns = record?.turns ?? [];
 
@@ -1064,7 +1002,6 @@ function boot(): void {
     quote.title = text.slice(0, 400);
   }
 
-  /** 松开后、回答接上前的那一轮：先写「听写中…」，听到后换成听到的话。不进记录，回答接上时换成真的一轮。 */
   function renderWaitingTurn(sourceText: string): void {
     if (voice?.phase !== 'released') {
       pendingTurn?.remove();
@@ -1086,7 +1023,6 @@ function boot(): void {
     if (pendingTurn.parentElement !== messages || pendingTurn !== messages.lastElementChild) messages.append(pendingTurn);
   }
 
-  /** 先在原地把胶囊变成输入框、拿到焦点，再去后台开阅读记录：选中后直接打字的那个字不能丢。 */
   function openReading(keyboard = false): Promise<void> {
     if (!snapshot) {
       return Promise.resolve();
@@ -1133,7 +1069,6 @@ function boot(): void {
     return tracked;
   }
 
-  /** 按住说话这句话对着哪段：按下时抓住的那段；卡开着时带上卡上最近一问。 */
   function voiceTarget(): { selection?: string; asked?: string; source?: { text: string; surrounding: string; location?: string; truncated?: boolean } } {
     const card = visible && expanded && record?.turns.length ? record : undefined;
     const target = voice?.target ?? selectionSnapshot() ?? (card ? snapshot : null);
@@ -1141,16 +1076,13 @@ function boot(): void {
     if (!target) return {};
     const asked = card?.turns.at(-1)?.question;
 
-    // source 与 voiceAsk 发问时带的一样：后台判断去向的同时按它先写回答，拼出的问答才对得上。
     return { selection: target.source.text, source: { text: target.source.text, surrounding: target.source.surrounding, location: target.source.location, truncated: target.source.truncated }, ...(asked ? { asked: questionLabel(asked) } : {}) };
   }
 
-  /** 说的话交给阅读卡：卡开着就接在这张卡里（换了段，这一轮带上新的一段）；没开就在这段旁边开卡。还在回答时就是改口。 */
   async function voiceAsk(question: string): Promise<void> {
     const exchange = voice;
     const target = exchange?.target ?? selectionSnapshot();
 
-    // 等开卡的这段时间里用户可能又按住说话了：那时这一句作废，不能再提交、停掉新的回答。
     const stale = () => exchange ? voice !== exchange || exchange.phase === 'listening' : !!voice;
 
     if (stale()) throw new Error('又按住说话了。');
@@ -1173,7 +1105,6 @@ function boot(): void {
     if (record?.turns.at(-1)?.question !== question) throw new Error('没能交给阅读卡。');
   }
 
-  /** 松开后马上在这段旁边展开卡片：先有引用和「听写中…」，不出现打字用的输入态。卡片从光标所在的位置长出来。 */
   function voiceOpen(): Promise<void> {
     if (!snapshot) return Promise.resolve();
     const version = selectionVersion;
@@ -1217,9 +1148,6 @@ function boot(): void {
     surface.style.setProperty('--origin', `${Math.round(clamp(tip.x - box.left, 0, box.width))}px ${Math.round(clamp(tip.y - box.top, 0, box.height))}px`);
   }
 
-  // ── 陪读：光标、高亮和卡片指着同一段字 ─────────────────────────────
-
-  /** 光标该在哪：这段最后一行的末尾边上；这段不在视口里时靠在卡片左上角，不停在别的正文上；都没有就隐去。 */
   function pointerPoint(): { x: number; y: number } | null {
     const range = (voice?.target ?? snapshot)?.range;
     const live = range?.startContainer.isConnected && !range.collapsed ? range : null;
@@ -1260,7 +1188,6 @@ function boot(): void {
     const phase = companionPhase();
     const said = phase === 'listening' || phase === 'transcribing' || phase === 'thinking' || phase === 'speaking' ? phase : null;
     const card = visible && expanded && !surface.hidden ? surface.getBoundingClientRect() : null;
-    // 名牌避开卡片：卡片里是要读的回答，不能被挡住。
     window.__sideagent?.cursor?.companion?.({ point: pointerPoint(), voice: said, fly, quiet, ...(card ? { avoid: { x: card.x, y: card.y, width: card.width, height: card.height } } : {}) });
   }
 
@@ -1272,7 +1199,6 @@ function boot(): void {
     clearInterval(followTimer);
     surface.classList.remove('receding');
 
-    // 卡收起了，念着的回答也停下。
     if (speakingThread) {
       speakingThread = '';
       void chrome.runtime.sendMessage({ type: 'ptt_capsule_action', action: 'hush' } satisfies PttCapsuleAction).catch(() => {});
@@ -1281,7 +1207,6 @@ function boot(): void {
     window.__sideagent?.cursor?.companion?.(null);
   }
 
-  /** 按住右 ⌥：有选中的字或开着的卡，就由光标来听，飞到这段末尾；否则交给底部胶囊。 */
   function companionStart(): boolean {
     if (retired()) return false;
     const live = selectionSnapshot();
@@ -1293,7 +1218,6 @@ function boot(): void {
     companion = true;
     closeMenu();
 
-    // 划词工具条先收起：松开后在这里长成卡片。
     if (visible && !expanded) {
       visible = false;
       surface.hidden = true;
@@ -1308,7 +1232,6 @@ function boot(): void {
     highlight();
     pushPointer(true);
     clearInterval(followTimer);
-    // 图片晚加载、网页自己改排版时没有滚动事件，隔一会儿重量一次那段字的位置。
     followTimer = setInterval(() => pushPointer(), 300);
 
     return true;
@@ -1344,7 +1267,6 @@ function boot(): void {
     retract();
   }
 
-  /** 这句话没进卡（取消、交给了助手、没听清）：卡上没有回答就收起，有就指回原来那段。 */
   function retract(): void {
     if (!voice) return;
     const previous = voice.previous;
@@ -1367,7 +1289,6 @@ function boot(): void {
     pushPointer(true);
   }
 
-  /** 换到另一段时卡片滑过去，不瞬移。 */
   function glide(): void {
     surface.classList.add('glide');
     setTimeout(() => surface.classList.remove('glide'), 320);
@@ -1376,7 +1297,6 @@ function boot(): void {
   function recede(): void {
     if (!visible || !expanded) return;
     quiet = true;
-    // 拖走的卡片留在原处，但陪读光标和名牌仍要让开正文。
     if (!manualPos) surface.classList.toggle('receding', surface.dataset.place !== 'beside');
     clearTimeout(quietTimer);
     quietTimer = setTimeout(() => {
@@ -1386,7 +1306,6 @@ function boot(): void {
     }, 600);
   }
 
-  /** correction 只由输入框和说话发出（打字后回车、点发送、按住说话）：再点一次「解释」不算改口。spoken：说出来的，回答会被念出来。 */
   async function send(question: string, retry = false, correction = false, depth: 'fast' | 'deep' = 'fast', spoken = false, source?: ReadingSource, accepted?: () => void): Promise<void> {
     if (opening) await opening.catch(() => {});
 
@@ -1413,7 +1332,6 @@ function boot(): void {
       if (depth === 'deep') deepTurns.add(index);
       else deepTurns.delete(index);
 
-      // 说出来的问题不碰输入框里打了一半的字。
       if (!spoken && record?.turns.at(-1)?.state !== 'error') {
         input.value = '';
         rememberDraft();
@@ -1428,7 +1346,6 @@ function boot(): void {
     }
   }
 
-  /** 打字问：卡开着时新选了一段，问的就是那一段，接在同一张卡里。 */
   function typed(question: string, depth: 'fast' | 'deep' = typedDepth): Promise<void> {
     const next = candidate;
 
@@ -1484,7 +1401,6 @@ function boot(): void {
       else if (quick) {
         closeMenu();
 
-        // 从工具条或菜单点的：卡还没展开就先在原地展开，和「解释」一样。
         if (!expanded) await openReading();
         await typed(quick, 'fast');
       }
@@ -1505,7 +1421,6 @@ function boot(): void {
         else closeMenu();
       }
       else if (action === 'read') {
-        // 朗读只在本页用浏览器声音出声，不发起任何阅读或页面任务。
         const current = snapshot;
         hide();
 
@@ -1549,7 +1464,6 @@ function boot(): void {
         }
 
         record = restored.record;
-        // 问过几段时接着问的是最近那段。
         const latest = [...record!.turns].reverse().find(turn => turn.source)?.source;
         snapshot ??= { source: latest ? { ...record!.source, ...latest } : record!.source, range: null, rect: new DOMRect(innerWidth - 400, 80, 0, 0) };
         expanded = true;
@@ -1594,7 +1508,7 @@ function boot(): void {
                 located = true;
               }
             }
-          } catch { /* 失效位置统一在引用旁提示。 */ }
+          } catch {  }
         }
         if (!located) report('原文位置已变化，摘录仍保留。');
       }
@@ -1627,7 +1541,6 @@ function boot(): void {
       }
     });
   });
-  // 点工具条和菜单不能清掉网页上的选区；输入框照常拿焦点。
   for (const part of [el('.bar'), menu, el('.chips'), el('.depth')]) part.addEventListener('pointerdown', event => event.preventDefault());
   el<HTMLFormElement>('.composer').addEventListener('submit', event => {
     event.preventDefault();
@@ -1648,12 +1561,10 @@ function boot(): void {
   input.addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
-      // 空回车在生成中什么也不做；有字就发出，生成中即改口。
       void typed(input.value);
     }
   });
 
-  // 设置页的「划词工具条」开关：只管选中后自动弹出；⌘J 与右键菜单是用户主动发起，不受影响。
   let barEnabled = true;
 
   const applyBarSetting = (off: boolean) => {
@@ -1679,7 +1590,6 @@ function boot(): void {
   const applyCardSize = (value: unknown) => {
     const next = readReadingCardSize(value);
 
-    // 正在拉右下角时先记下，松手没拉动再用，不打断手指。
     if (resize) {
       pendingCardSize = next;
 
@@ -1717,12 +1627,10 @@ function boot(): void {
   function changedSelection(keyboard = false): void {
     const next = selectionSnapshot();
 
-    // 选中以后常接着按住右 ⌥ 问这段：先让后台把听写连好，松开后少等一次握手。
     if (next) {
       void chrome.runtime.sendMessage({ type: PTT_WARM }).catch(() => {});
     }
 
-    // 卡开着时选另一段不收起回答：记下这段，按住说话或打字问时就问它。
     if (visible && expanded && record?.turns.length) {
       if (next) {
         candidate = !sameSelection(next, snapshot) ? next : null;
@@ -1753,7 +1661,7 @@ function boot(): void {
     show(keyboard);
   }
 
-  // 扩展更新或重载后，后台给已打开的网页再装一份阅读卡（background/reinject.ts）。新的一份给旧宿主打上记号再删掉。
+  // WHY: 扩展更新或重载后，后台给已打开的网页再装一份阅读卡（background/reinject.ts）。新的一份给旧宿主打上记号再删掉。
   // 旧的一份见到记号就撤掉自己的监听，不再接点击、选区和按键：否则用户点进新卡片时，旧卡片会收起并删掉两份共用的段落高亮。
   // 只认记号，不认宿主断开：有的网页会删掉 <html> 下的外来节点，那时这一份仍是网页里唯一的阅读卡。
   const listening = new AbortController();
@@ -1782,7 +1690,7 @@ function boot(): void {
     if (visible && expanded && record?.turns.length) dismissOnUp = true;
     else hide();
   }, { capture: true, signal });
-  // 选字、按键只认用户真实输入：网页脚本伪造的事件不能弹出工具条、抢焦点、停掉本页的回答。
+  // WHY: 选字、按键只认用户真实输入：网页脚本伪造的事件不能弹出工具条、抢焦点、停掉本页的回答。
   document.addEventListener('pointerup', event => {
     if (event.isTrusted && !retired() && !event.composedPath().includes(host)) {
       setTimeout(() => {
@@ -1793,7 +1701,6 @@ function boot(): void {
           return;
         }
 
-        // 双击、三击选字的第一下松开时还没有选区：过了连击间隔仍没选中文字才收。
         dismissTimer = setTimeout(() => {
           dismissOnUp = false;
 
@@ -1826,7 +1733,6 @@ function boot(): void {
       return;
     }
 
-    // 工具条开着时直接打字就是提问：先把焦点交给输入框，这个键的字（含输入法）随之落进去；网页自己的单键快捷键这一下不触发。
     const typing = (event.key.length === 1 && event.key !== ' ') || event.key === 'Process' || event.keyCode === 229;
 
     if (!typing) {
@@ -1864,10 +1770,8 @@ function boot(): void {
     }
   };
   window.addEventListener('resize', relayout, { signal });
-  // 双指缩放只改可视视口，不触发 window 的 resize。
   visualViewport?.addEventListener('resize', relayout, { signal });
   visualViewport?.addEventListener('scroll', relayout, { signal });
-  // 网页可以把指针捕获抢到宿主上：抬起事件到不了标题栏或把手时，在这里收尾，状态不留在拖动中。
   const endGestures = (event: PointerEvent) => {
     endDrag(event);
     endResize(event);
@@ -1882,7 +1786,6 @@ function boot(): void {
     }
   }, { signal });
 
-  // SPA navigation has no content-script reinjection; release the old document UI.
   const navigation = () => {
     if (retired() || location.href === pageUrl) {
       return;
@@ -1944,7 +1847,6 @@ function boot(): void {
       return;
     }
 
-    // 交不进卡时后台改交给助手，卡上不留错误。
     void voiceAsk(String(raw.question ?? '').trim()).then(() => respond({ ok: true }), () => respond({ ok: false }));
 
     return true;
@@ -1954,7 +1856,6 @@ function boot(): void {
 
     if (raw.type === PTT_LEVEL && 'level' in raw && typeof raw.level === 'number' && voice?.phase === 'listening') window.__sideagent?.cursor?.companionLevel?.(raw.level);
 
-    // 底部胶囊出现了：这句话交给了助手，或没听清、没连上。卡片不再等它，光标也交还，助手要用它动手。
     if (raw.type === PTT_CAPSULE && 'capsule' in raw && raw.capsule && voice) {
       retract();
       endCompanion();

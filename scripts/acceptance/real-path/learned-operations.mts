@@ -1,4 +1,3 @@
-/** Real extension and sidebar, scripted model and a local read-only fixture. Goal checking is scripted; real-model evidence is separate. */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -111,7 +110,6 @@ const turns = new Map<string, string[]>();
 const model = await startScriptedModel(rules, undefined, payload => {
   const messages = payload.messages ?? [];
   const textOf = (content: unknown) => typeof content === "string" ? content : Array.isArray(content) ? content.map((part: { text?: string }) => part.text ?? "").join("") : "";
-  // 宿主会在用户原话后追加运行上下文和状态快照两条 user 数据消息，它们不是这一轮的用户原话。
   let at = -1;
   for (let index = messages.length - 1; index >= 0; index -= 1) if (messages[index]?.role === "user" && !PRODUCT_DATA.some(head => textOf(messages[index]!.content).startsWith(head))) { at = index; break; }
   if (at < 0) return;
@@ -130,7 +128,7 @@ const model = await startScriptedModel(rules, undefined, payload => {
         deleteArgs.id = saved.operationId;
         for (const rule of rules) if ([OTHER_TENANT, RUN_INVALID, STALE, SAME_WINDOW].includes(rule.match) && "tool" in rule.steps[0]!) rule.steps[0].tool.args.id = saved.operationId;
         break;
-      } catch { /* JSON 后可能还有宿主附加提示，向后找完整对象。 */ }
+      } catch {  }
     }
   }
 });
@@ -143,7 +141,7 @@ const operationResult = (ask: string): Record<string, unknown> | null => {
       try {
         const result = JSON.parse(text.slice(start, end)) as Record<string, unknown>;
         if (typeof result.status === "string" && "operationId" in result) return result;
-      } catch { /* 向后找完整对象。 */ }
+      } catch {  }
     }
   }
   return null;
@@ -167,7 +165,6 @@ const idb = (value: string) => `new Promise((resolve,reject)=>{const req=indexed
 const readOperationDocument = async () => rp.evaluate(panel, idb('const get=db.transaction("kv").objectStore("kv").get("learned-operations");get.onerror=()=>reject(get.error);get.onsuccess=()=>{db.close();resolve(get.result??null)}'));
 const readOperations = async () => { const raw = await readOperationDocument() as string | null; return raw ? JSON.parse(raw) as { operations: Array<Record<string, unknown>> } : null; };
 const writeOperationDocument = async (raw: string) => rp.evaluate(panel, idb(`const tx=db.transaction("kv","readwrite");tx.objectStore("kv").put(${JSON.stringify(raw)},"learned-operations");tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)`));
-/** 这句用户消息后面那一轮的过程行文字（用户看到的「做了几步 · 耗时 · 核对」那一行）。 */
 const runTitleAfter = (ask: string) => rp.evaluate(panel, `(() => { const user = [...document.querySelectorAll(".msg.user")].reverse().find(m => m.textContent.includes(${JSON.stringify(ask)})); let node = user?.nextElementSibling; while (node && !node.matches("details.run-steps")) node = node.nextElementSibling; return node?.querySelector("summary")?.textContent?.replace(/\\s+/g, " ").trim() ?? null; })()`) as Promise<string | null>;
 const openPanel = async () => {
   panel = await rp.attach(await rp.openSidePanel());
@@ -180,7 +177,6 @@ const restartBrowser = async () => {
   if (!target) throw new Error(`重启后找不到工作页：${JSON.stringify(targets)}`);
   work = await rp.attach(target.targetId);
   if (target.url !== START) await rp.cdp.send("Page.navigate", { url: START }, work);
-  // 用户重启后是站在这个网站页面上发话的：把它切到前台，侧栏读到的「当前页」才是它。
   await rp.cdp.send("Page.bringToFront", {}, work);
   await until(() => rp.evaluate(work, `location.href === ${JSON.stringify(START)} && document.readyState === "complete"`), 15_000, "重启后工作页加载");
   await openPanel();
@@ -216,7 +212,6 @@ try {
   check("复用那一轮写明用了哪个技能", !!reusedTitle?.includes("用了技能「查询订单」"), reusedTitle);
   await rp.screenshot(panel, join(out, "reused.png"));
 
-  // 在这个网站上打 /：选中后直接问运行参数，不再变成发给模型的提示词。
   await rp.click(panel, "#input");
   await rp.typeText(panel, "/");
   await until(() => rp.evaluate(panel, `!document.querySelector("#pskill-menu")?.hidden && [...document.querySelectorAll("#pskill-menu .pskill-op")].some(r => r.textContent.includes("查询订单") && r.textContent.includes("直接运行"))`), 15_000, "/ 菜单出现直接运行的技能");
@@ -237,7 +232,6 @@ try {
 
   const existingTarget = await rp.cdp.send("Target.createTarget", { url: `${origin}/search?q=gamma`, background: true });
   const existing = await rp.attach(existingTarget.targetId);
-  // 新标签页先是空白页、也会报 complete：要等地址真的到了搜索页。
   await until(() => rp.evaluate(existing, "location.search === '?q=gamma' && document.readyState === 'complete' && !!document.querySelector('#query')"), 15_000, "已开搜索页加载");
   await rp.evaluate(existing, "document.querySelector('#query')?.remove();true");
   const windows = await rp.evaluate(panel, `(async()=>{const tabs=await chrome.tabs.query({});return ${JSON.stringify([0])}.map(()=>null),tabs.filter(t=>t.url?.includes("127.0.0.1")).map(t=>({id:t.id,url:t.url,windowId:t.windowId}))})()`);
@@ -307,11 +301,9 @@ try {
   const deltaBefore = siteRequests.filter(url => url.includes("q=delta")).length;
   await rp.typeText(panel, LOCKED_CANCEL);
   await rp.pressEnter(panel);
-  // 侧栏和后台 offscreen 同属扩展来源，共用 Web Locks：等写存档的请求真的排在锁后面再停，才测到「验证完、等写入时取消」。
   await until(() => rp.evaluate(panel, `navigator.locks.query().then(state => state.pending.some(lock => lock.name === ${JSON.stringify(lockKey)}))`), 30_000, "保存进入存储锁等待");
   check("停止前保存仍在进行", await rp.evaluate(panel, 'document.querySelector("#send-btn")?.classList.contains("stopping")') && siteRequests.filter(url => url.includes("q=delta")).length > deltaBefore, { stopping: await rp.evaluate(panel, 'document.querySelector("#send-btn")?.className'), deltaRequests: siteRequests.filter(url => url.includes("q=delta")).length - deltaBefore });
   await rp.click(panel, "#send-btn");
-  // 先等停止真正生效（侧栏回到空闲）再放锁：停止之后写入才不该发生；放锁早于停止送达是另一回事。
   await until(() => rp.evaluate(panel, idle), 20_000, "停止等待存储锁的保存");
   await rp.evaluate(panel, "window.__releaseOperationLock?.();true");
   await until(() => rp.evaluate(panel, `navigator.locks.query().then(state => !state.pending.some(lock => lock.name === ${JSON.stringify(lockKey)}) && !state.held.some(lock => lock.name === ${JSON.stringify(lockKey)}))`), 20_000, "放锁后排队的写入结束");
@@ -325,10 +317,8 @@ try {
   check("损坏存档保持原文不被覆盖", corruptedDocument === "{broken", corruptedDocument as Json);
   await writeOperationDocument(originalDocument);
 
-  // 「撤销」：刚存成的技能点一下就删掉，存档里不再有它。
   await send(SAVE_AGAIN, FINISH.saved, 3);
   await until(async () => (await readOperations())?.operations.some(item => item.name === "查询订单二") || undefined, 20_000, "再次存成技能");
-  // 只认这一句后面那条回答上的「撤销」：前面那次保存的回答上也有一个。
   const undoAfter = `(() => { const user = [...document.querySelectorAll(".msg.user")].reverse().find(m => m.textContent.includes(${JSON.stringify(SAVE_AGAIN)})); let node = user?.nextElementSibling; while (node && !node.querySelector(".skill-undo")) node = node.nextElementSibling; return node?.querySelector(".skill-undo") ?? null; })()`;
   await until(() => rp.evaluate(panel, `${undoAfter}?.textContent === "撤销"`), 15_000, "这次保存的撤销出现");
   await rp.evaluate(panel, `${undoAfter}.click();true`);
@@ -337,7 +327,6 @@ try {
   check("撤销后这条技能被删掉", !afterUndo?.operations.some(item => item.name === "查询订单二"), afterUndo as Json);
   await rp.screenshot(panel, join(out, "undone.png"));
 
-  // 「存成技能」：最近一个核对做成的任务（不算存、删技能的那几轮）上给「直接运行」，勾着保存就让助手验证后存成技能。
   const saveButtonOf = (ask: string) => `[...document.querySelectorAll(".msg.user")].reverse().find(m => m.textContent.includes(${JSON.stringify(ask)}))?.querySelector(".pskill-save")`;
   await rp.evaluate(panel, `${saveButtonOf(SAVE_AGAIN)}.click();true`);
   await until(() => rp.evaluate(panel, `!document.querySelector(".pskill-sheet")?.hidden`), 10_000, "存成技能编辑打开");

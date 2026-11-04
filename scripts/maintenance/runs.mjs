@@ -1,10 +1,3 @@
-/**
- * 真实路径用例的运行汇总：今天（或 --days=N 天内）每个用例跑了几次、过了几次、被拦了几次、花了多久。
- * 数据来自 scripts/acceptance/runs-ledger.mjs 记在主目录的 out/acceptance/real-path/runs.jsonl。
- *
- *   npm run runs
- *   npm run runs -- --days=7
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -21,7 +14,7 @@ const rows = existsSync(ledger)
       try {
         return [JSON.parse(line)];
       } catch {
-        return []; // 写到一半被打断的行
+        return [];
       }
     }).filter((row) => new Date(row.at) >= since)
   : [];
@@ -51,7 +44,6 @@ const minutes = Math.round(rows.reduce((sum, row) => sum + row.seconds, 0) / 60)
 
 console.table(table);
 
-// 日常装着的那份构建现在哪些用例坏着：每个用例只看最近一次。
 const daily = new Map(rows.filter((row) => row.role === "daily" && typeof row.ok === "boolean").map((row) => [[row.case, ...row.args].join(" "), row]));
 const broken = [...daily].filter(([, row]) => !row.ok).map(([key]) => key);
 if (daily.size) console.log(`日常版本：最近一次跑过的 ${daily.size} 个用例里 ${broken.length} 个没过${broken.length ? `：${broken.join("、")}` : ""}。`);

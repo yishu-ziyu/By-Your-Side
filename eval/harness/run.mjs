@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-/**
- * BYS eval harness (extension-only: each job is a headless Chrome with only the extension; see job.mjs).
- *   node eval/harness/run.mjs --models zai-coding-cn/glm-5.3-flash,minimax-cn/MiniMax-M3.1-Flash-Preview+zai-coding-cn/glm-5.3-flash \
- *        --tasks BYS-006,BYS-008 [--concurrency 2] [--run-id X] [--cap-sec 240] [--no-judge]
- *        [--arms base=/abs/dist,cand=/abs/dist] [--repeats 3]
- * --arms runs each (task, repeat) on every prebuilt extension back to back, order alternating per repeat, so code
- * versions are compared on the same task in the same time window; results go to <arm>--r<k>--<model slug> dirs.
- * A model spec is main[+fast], each provider/modelId; fast defaults to main.
- * Output: $BYS_RUNS_DIR (default eval/runs)/<run-id>/<model slug>/<task>.json (+ .png page+panel, -page.png, -panel.png, .trace.jsonl, .artifact.*, .dl.*)
- *         <runs>/<run-id>/judge/<model slug>/<task>.json, summary.csv
- */
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, renameSync } from "node:fs";
 import { join, relative } from "node:path";
 import { createHash } from "node:crypto";
@@ -33,7 +22,6 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   };
 
   const resume = process.argv.includes("--resume");
-  // --resume --run-id X: reuse X's models/tasks unless given, run only (model, task) pairs without a valid result
   const prev = resume && arg("run-id") && existsSync(join(RUNS_DIR, arg("run-id"), "run.json")) ? JSON.parse(readFileSync(join(RUNS_DIR, arg("run-id"), "run.json"), "utf8")) : null;
 
   if (resume && !prev) throw new Error("--resume needs --run-id of an existing run");
@@ -83,17 +71,14 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
 
   const arms = armsArg ? Object.fromEntries(armsArg.split(",").map((a) => { const [name, dist] = a.split("="); return [name, { dist, dist_sha: distSha(dist) }]; })) : null;
   const armNames = arms ? Object.keys(arms) : [null];
-  // one result series per dir; plain runs keep the old <model> dirs
   const specOf = (arm, rep, model) => arm ? `${arm}--r${rep}--${model}` : model;
   const repoHead = (() => { try { return execFileSync("git", ["-C", REPO, "rev-parse", "HEAD"]).toString().trim(); } catch { return null; } })();
   const code = { repo: REPO, repo_head: repoHead, arms };
 
-  // resuming onto another build would mix code versions in one series
   for (const [name, a] of Object.entries(prev?.arms ?? {})) if (arms?.[name]?.dist_sha !== a.dist_sha) throw new Error(`--resume: arm ${name} is now ${arms?.[name]?.dist_sha ?? "missing"}, the run used ${a.dist_sha}`);
 
   if (prev) writeFileSync(join(runDir, "run.json"), JSON.stringify({ ...prev, models: [...new Set([...(prev.models ?? []), ...models])], resumes: [...(prev.resumes ?? []), { at: new Date().toISOString(), concurrency, models, code }] }, null, 2));
   else writeFileSync(join(runDir, "run.json"), JSON.stringify({ runId, models, tasks: ids, concurrency, capMs, ...(arms ? { arms, repeats } : {}), code, started_at: new Date().toISOString() }, null, 2));
-  // interleave models and arms so parallel slots compare them on the same task at the same time
   const jobs = [];
 
   for (let rep = 1; rep <= (arms ? repeats : 1); rep++) for (const task of tasks) for (const model of models) {
@@ -102,11 +87,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     for (const arm of order) if (!resume || !validResult(specOf(arm, rep, model), task.id)) jobs.push({ task, model, arm, spec: specOf(arm, rep, model) });
   }
 
-  // tasks on local ladder pages ({ladder} in a URL): one server for the whole run, closed when the process exits
   if (tasks.some((t) => JSON.stringify(t).includes("{ladder}"))) process.env.BYS_LADDER_BASE = (await startLadderSites()).base;
   const hostOf = (task) => new URL(task.site_url.replace("{ladder}", process.env.BYS_LADDER_BASE)).hostname;
   let quotaHits = 0, stopped = false;
-  // never let a stray socket error kill the whole run; the job in flight is marked error/retried
   process.on("uncaughtException", (e) => console.log(`[${new Date().toLocaleTimeString("en-GB")}] uncaught (ignored): ${e.code ?? ""} ${e.message}`));
   process.on("unhandledRejection", (e) => console.log(`[${new Date().toLocaleTimeString("en-GB")}] unhandled rejection (ignored): ${e?.message ?? e}`));
 
@@ -155,7 +138,6 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
 
       activeSites.delete(site);
 
-      // quota guard: park the result in _quota_errors/ and stop after 2 quota errors
       if (isQuota(rec)) {
         const qdir = join(runDir, "_quota_errors", slugOf(spec)); mkdirSync(qdir, { recursive: true });
 
@@ -174,7 +156,5 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   }
 
   log(`done: ${runDir}`);
-  // the ladder server and stray sockets keep the event loop alive; exit so the caller's next step runs,
-  // but only after piped stdout has flushed (an immediate exit truncates the summary table and this line)
   process.stdout.write("", () => process.exit(0));
 }

@@ -1,31 +1,18 @@
-/**
- * 继续上次的事：空白新对话的起点区里，最多摆 3 张「没做完的事」卡，每张一个下一步按钮。
- *
- * 诚实边界：
- * - 只用本机已有记录：会话清单（中断、页面交给你）、过往任务（没做完的那条）、阅读记录（追问没答完）。
- * - 按钮只做记录里有依据的事：回到原会话（续做仍走那里的「继续原任务」）或切回原标签页。
- *   不发任务、不写页面、不编下一步。没有符合的记录就什么都不显示。
- * - 设置「继续上次的事」默认关；单张卡点 × 后 7 天内不再出现。
- */
 import type { ClientMessage, ConversationSummary, ServerMessage } from "../../../shared/protocol.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import type { ReadingTurn } from "../../../shared/reading.js";
 import { plainStep } from "../../../shared/user-facing.js";
 
-/** chrome.storage.local：true 才开启（默认关）。 */
 export const OPEN_THREADS_KEY = "sideagent_open_threads";
 
-/** chrome.storage.local：卡片 id → 隐藏到期时间（毫秒）。 */
 const HIDDEN_KEY = "sideagent_open_threads_hidden";
 
-/** 与 background/reading.ts 的存储键一致（chrome.storage.session）。 */
 const READING_STORE = "readingRecords";
 
 const OPEN_THREADS_MAX = 3;
 
 const OPEN_THREADS_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** 过往任务清单的缓存时长：起点区反复刷新时不每次都去宿主读。 */
 const PAST_TASKS_FRESH_MS = 20_000;
 
 type OpenThreadAction =
@@ -35,16 +22,13 @@ type OpenThreadAction =
 interface OpenThread {
   id: string;
   title: string;
-  /** 记录里的处境（悬停时看）；行上只露主题、时间和下一步。 */
   where: string;
   label: string;
-  /** 网站主机名，取首字做灰底单字图标；会话卡没有网站。 */
   site?: string;
   at: number;
   action: OpenThreadAction;
 }
 
-/** 面板里拿得到的阅读记录字段（background ReadingRecord 的子集）。 */
 interface ReadingSnapshot {
   threadId: string;
   source: { title: string; url: string; text: string; tabId: number };
@@ -66,7 +50,6 @@ function hostOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 
-/** 「刚才 / 今天 / 昨天 / N 天前」：清单只需要大概多久以前。 */
 function relativeDay(at: number, now: number): string {
   const day = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0);
 
@@ -92,13 +75,11 @@ const PAST_OUTCOME_LINE: Record<TaskHistoryEntry["outcome"], string> = {
   error: "上次出错，任务停在中途",
 };
 
-/** 纯函数：记录 → 至多 3 张卡。只收有依据的线索，新的在前。 */
 function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
   const out: OpenThread[] = [];
   const known = new Map(input.conversations.map((c) => [c.id, c]));
   const claimed = new Set<string>();
 
-  // 1. 会话清单：中断（有检查点）或页面交给了你。
   for (const c of input.conversations) {
     if (c.id === input.currentConversationId || c.state === "running") continue;
     const title = clip(c.title || "未命名会话", 40);
@@ -112,7 +93,6 @@ function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
     }
   }
 
-  // 2. 过往任务：每个会话只看最新一条；最新一条做完了就不算没做完。会话已删的不出（没有可回去的地方）。
   const latest = new Map<string, TaskHistoryEntry>();
 
   for (const t of input.pastTasks) {
@@ -129,7 +109,6 @@ function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
 
     if (!open) continue;
     const where = t.unfinished.length ? `还差：${clip(plainStep(t.unfinished[0]!), 30)}${t.unfinished.length > 1 ? ` 等 ${t.unfinished.length} 件` : ""}` : PAST_OUTCOME_LINE[t.outcome];
-    // 短主题与下一步由任务结束时的快速模型起（见 agent memory-runtime labelPastTask）；没有就沿用原话目标。
     const thread: OpenThread = { id: `task:${t.id}`, title: t.title ?? clip(t.goal, 40), where, label: t.next ?? "回到这个任务", at: t.endedAt, action: { kind: "conversation", conversationId: t.conversationId } };
 
     if (t.hosts[0]) thread.site = t.hosts[0];
@@ -137,7 +116,6 @@ function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
     claimed.add(t.conversationId);
   }
 
-  // 3. 阅读记录：最后一次追问没答完（出错或被停下）。已转到侧栏的按会话处理，不在这里重复。
   for (const r of input.readings) {
     const last = r.turns.at(-1);
 
@@ -159,15 +137,11 @@ function collectOpenThreads(input: OpenThreadInputs): OpenThread[] {
     .slice(0, OPEN_THREADS_MAX);
 }
 
-// ── 面板挂载：模块级状态，面板启动早期也能安全调用 refreshOpenThreads ──
-
 interface OpenThreadsDeps {
-  /** 起点区（#starter）；卡片容器挂在它里面。 */
   root: HTMLElement;
   send: (msg: ClientMessage) => boolean;
   conversations: () => Iterable<ConversationSummary>;
   currentConversationId: () => string;
-  /** 起点区此刻是否该出现（历史与草稿恢复完、会话为空）。 */
   ready: () => boolean;
   selectConversation: (id: string) => void;
 }
@@ -194,7 +168,6 @@ export function configureOpenThreads(next: OpenThreadsDeps): void {
   refreshOpenThreads();
 }
 
-/** 宿主回的过往任务清单：是本模块发的请求才收下并返回 true，否则交还给记忆面板。 */
 export function receiveOpenThreadsTasks(msg: Extract<ServerMessage, { type: "task_history_result" }>): boolean {
   if (!requestId || msg.requestId !== requestId) return false;
   requestId = null;
@@ -235,7 +208,6 @@ function clear(): void {
   el.replaceChildren();
 }
 
-/** 读设置、隐藏表和阅读记录，按需补取过往任务，然后重画。设置关闭或起点区不该出现时清空。 */
 export function refreshOpenThreads(): void {
   if (!deps || typeof chrome === "undefined" || !chrome.storage?.local) return;
   const seq = ++renderSeq;
@@ -263,7 +235,6 @@ export function refreshOpenThreads(): void {
       readings = Array.isArray(raw) ? raw.filter(isReadingSnapshot) : [];
     } catch { readings = []; }
 
-    // 阅读记录跟着标签页走：标签页已关或已换页，就没有可回去的地方。
     readings = (await Promise.all(readings.map(async (r) => {
       try {
         const tab = await chrome.tabs.get(r.source.tabId);
@@ -330,7 +301,6 @@ function render(threads: OpenThread[]): void {
   head.textContent = "继续上次的事";
   const now = Date.now();
 
-  // 无框清单：整行都能点（等于点下一步）；× 只在指着那一行时出现，占时间的位置。
   const rows = threads.map((thread) => {
     const row = document.createElement("div");
     row.className = "open-thread";

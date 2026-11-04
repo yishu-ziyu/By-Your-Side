@@ -1,10 +1,6 @@
-/**
- * Chromium 私有的 scrollIntoViewIfNeeded 没有 lib.dom 类型；这里只声明本函数真正会传的
- * 两个对齐参数，语义与标准 scrollIntoView 的 block/inline 一致。
- */
 type ScrollAlignOptions = { block?: string; inline?: string };
 
-/** Serialized into the observed node's realm via CDP. Keep this function self-contained. */
+/** WHY: Serialized into the observed node's realm via CDP. Keep this function self-contained. */
 export function observedNodeRect(this: Node, contentOnly = false) {
   if (!this.isConnected) throw new Error('节点已离开文档，请重新 snapshot');
   const el = this.nodeType === 3 ? this.parentElement : this as Element;
@@ -46,7 +42,7 @@ export function observedNodeRect(this: Node, contentOnly = false) {
 }
 
 /**
- * mark 的 target..through：两个节点围成一个 Range，框住同一行里从起点到终点的全部内容。
+ * WHY: mark 的 target..through：两个节点围成一个 Range，框住同一行里从起点到终点的全部内容。
  * nodeRect 传 observedNodeRect（滚入视口、校验可见并折算 iframe 偏移）。
  * Serialized into the observed node's realm via CDP. Keep this function self-contained.
  */
@@ -57,7 +53,6 @@ export function observedNodeRange(
 ) {
   if (!end?.isConnected || end.ownerDocument !== this.ownerDocument) throw new Error('through 必须和 target 在同一个页面里；请重新 snapshot');
   nodeRect.call(end, true);
-  // 最后滚 target，框的位置以它为准；a 已含 iframe 偏移。
   const a = nodeRect.call(this, true);
 
   const localRect = (node: Node) => {

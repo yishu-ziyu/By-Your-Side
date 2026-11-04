@@ -1,4 +1,3 @@
-/** Given 用户主动接管，When 补充选择，Then 页面仍归用户且助手不点击。 */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
