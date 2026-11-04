@@ -14,14 +14,15 @@ const origin=`http://127.0.0.1:${siteAddress(site).port}/`;
 
 type Case={id:string;tool:'js'|'browser_run';code:string;expect:RegExp;ran?:string};
 const NOT_CALLED=/尚未调用的函数/;
+const REFUSED=/JS 只允许读取页面和计算数据/;
 const CASES:Case[]=[
  {id:'A',tool:'js',code:'() => document.title',expect:new RegExp(TITLE)},
- {id:'B',tool:'js',code:"async () => { await new Promise(r => setTimeout(r, 10)); return document.querySelector('#v').textContent; }; // read the value",expect:/value-42/},
+ {id:'B',tool:'js',code:"async () => { await new Promise(r => setTimeout(r, 10)); return document.querySelector('#v').textContent; }; // read the value",expect:REFUSED},
  {id:'C',tool:'browser_run',code:'return await browser.js({code: "() => document.title"});',expect:new RegExp(TITLE)},
- {id:'D',tool:'js',code:'() => { document.body.dataset.ran = String(Number(document.body.dataset.ran || 0) + 1); return "ran=" + document.body.dataset.ran; }',expect:/ran=1/,ran:'1'},
+ {id:'D',tool:'js',code:'() => { document.body.dataset.ran = String(Number(document.body.dataset.ran || 0) + 1); return "ran=" + document.body.dataset.ran; }',expect:REFUSED},
  {id:'E',tool:'js',code:'(() => document.title)()',expect:new RegExp(TITLE)},
- {id:'F',tool:'js',code:'(x) => x',expect:NOT_CALLED},
- {id:'G',tool:'js',code:'() => 1; document.title',expect:new RegExp(TITLE)},
+ {id:'F',tool:'js',code:'(x) => x',expect:REFUSED},
+ {id:'G',tool:'js',code:'() => 1; document.title',expect:REFUSED},
 ];
 const only=process.argv.find(a=>a.startsWith('--only='))?.slice(7).split(',');
 const results:Array<{id:string;status:'pass'|'fail';toolResult?:string;error?:string}>=[];
@@ -46,7 +47,7 @@ for(const item of CASES.filter(c=>!only||only.includes(c.id))){
   page=await rp.attach((await until(async()=>(await rp.targets()).find(t=>t.url===origin),20000,'practice page')).targetId);
   await until(()=>rp.evaluate(panel,`document.body.innerText.includes(${JSON.stringify(`函数验收${item.id}完成`)})`),60000,'scripted run finished');
   assert.match(toolResult,item.expect,`${item.id}: tool result`);
-  if(item.expect!==NOT_CALLED)assert.doesNotMatch(toolResult,NOT_CALLED,`${item.id}: no uninvoked-function refusal`);
+  assert.doesNotMatch(toolResult,NOT_CALLED,`${item.id}: no uninvoked-function refusal`);
   if(item.ran)assert.equal(await rp.evaluate(page,`document.body.dataset.ran`),item.ran,`${item.id}: body ran once`);
   results.push({id:item.id,status:'pass',toolResult:toolResult.slice(0,200)});
  }catch(e){
