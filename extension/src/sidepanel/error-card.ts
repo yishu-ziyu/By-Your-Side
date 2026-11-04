@@ -248,6 +248,7 @@ export function mountErrorCards(host: ErrorCardHost) {
     const model = copy.model ?? "";
     const [provider = "", ...rest] = model.split("/");
     const owner = card;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const targetPromise = copy.modelConnection && copy.model === `${copy.modelConnection.provider}/${copy.modelConnection.modelId}` ? host.resolveKeyTarget(copy.modelConnection).catch(() => null) : Promise.resolve(null);
     const sheet = document.createElement("section");
     sheet.id = "key-sheet";
@@ -272,7 +273,17 @@ export function mountErrorCards(host: ErrorCardHost) {
     const status = sheet.querySelector<HTMLElement>("#key-sheet-status")!;
     let tested = "";
 
-    const close = () => { sheet.classList.remove("is-open"); setTimeout(() => sheet.remove(), 260); };
+    const close = () => {
+      sheet.classList.remove("is-open");
+      setTimeout(() => sheet.remove(), 260);
+      (opener?.isConnected ? opener : document.getElementById("input"))?.focus();
+    };
+
+    sheet.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || event.isComposing) return;
+      event.preventDefault();
+      close();
+    });
 
     input.addEventListener("input", () => { save.disabled = input.value.trim() !== tested || !tested; });
     sheet.querySelector(".key-sheet-link")!.addEventListener("click", () => void chrome.runtime.openOptionsPage());

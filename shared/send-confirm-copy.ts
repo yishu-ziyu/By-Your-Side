@@ -76,10 +76,15 @@ export function confirmCopy(view: Pick<SendConfirmView, "host" | "label" | "cont
   };
 }
 
-export function confirmCountdown(now: number, startedAt: number | undefined, expiresAt: number | undefined): string {
+export function confirmSecondsLeft(now: number, startedAt: number | undefined, expiresAt: number | undefined): number {
   const start = startedAt ?? (expiresAt !== undefined ? expiresAt - SEND_CONFIRM_MS : now);
   const end = expiresAt ?? start + SEND_CONFIRM_MS;
-  const left = Math.max(0, Math.ceil((end - now) / 1000));
+
+  return Math.max(0, Math.ceil((end - now) / 1000));
+}
+
+export function confirmCountdown(now: number, startedAt: number | undefined, expiresAt: number | undefined): string {
+  const left = confirmSecondsLeft(now, startedAt, expiresAt);
   if (left === 0) return "已到期";
   const minutes = String(Math.floor(left / 60)).padStart(2, "0");
   const seconds = String(left % 60).padStart(2, "0");

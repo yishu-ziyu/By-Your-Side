@@ -1794,6 +1794,7 @@ details.run-steps.done .chip.error { background: transparent; }
   background: var(--content-subtle);
 }
 #attach-btn:active, #translate-btn:active { transform: scale(.95); }
+#translate-btn[hidden] { display: none; }
 #translate-btn svg { width: 16px; height: 16px; }
 #attach-btn.active {
   color: var(--apple-blue);
@@ -1823,6 +1824,7 @@ details.run-steps.done .chip.error { background: transparent; }
               display var(--d-state) allow-discrete;
 }
 .action-menu-popover[hidden] {
+  display: none;
   opacity: 0;
   transform: translateY(4px) scale(0.95);
   pointer-events: none;
@@ -1847,10 +1849,23 @@ details.run-steps.done .chip.error { background: transparent; }
     .action-menu-popover:not([hidden]) { transform: none; }
   }
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .action-menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
   padding: 7px 10px;
   border-radius: var(--r-sm);
   font-size: var(--fs-meta);
@@ -3258,7 +3273,7 @@ details.thinking pre strong { font-weight: 500; color: var(--text-secondary); }
 #composer .voice-start { display: inline-grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--text-secondary); }
 #composer .voice-start:hover, #composer .voice-start[aria-expanded="true"] { background: var(--content-subtle); color: var(--text-primary); }
 #composer .voice-start svg { width: 17px; height: 17px; stroke-width: 1.8; }
-#takeover-btn { height: 32px; padding: 0 12px; background: transparent; color: var(--text-secondary); box-shadow: inset 0 0 0 1px var(--content-border); font-weight: 400; font-size: var(--fs-ui); }
+#takeover-btn { flex: none; height: 32px; padding: 0 12px; background: transparent; color: var(--text-secondary); box-shadow: inset 0 0 0 1px var(--content-border); font-weight: 400; font-size: var(--fs-ui); }
 #takeover-btn:hover { opacity: 1; transform: none; background: var(--content-subtle); color: var(--text-primary); }
 #steer-send-btn { display: inline-grid; place-items: center; padding: 0; border: 0; background: var(--text-primary); color: var(--content-bg); cursor: pointer; }
 #steer-send-btn[hidden] { display: none; }
