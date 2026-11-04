@@ -53,6 +53,6 @@ for (const { n, f } of results) {
   const parts = [`开机 ${f.up}`, `负载 ${f.load}/${f.cores} 核`, f.memfree && `可用内存 ${f.memfree}`,
     n.chrome ? (f.chrome ? "Chrome 在" : "没有 Chrome") : "",
     f.testchrome && f.testchrome.split("/")[1] !== "0" && `残留测试 Chrome ${f.testchrome.split("/")[1]} 个（没在跑测试时应为 0）`,
-    n.name === "grokbox" ? (f.keepalive ?? "没有保活，随时会睡（见 docs/testing/cloud-nodes.md）") : ""].filter(Boolean);
+    n.name === "grokbox" ? (f.keepalive ?? "没有保活，随时会睡（见 cloud-nodes 技能）") : ""].filter(Boolean);
   console.log(`✔ ${n.name.padEnd(8)} ${parts.join("，")}`);
 }
