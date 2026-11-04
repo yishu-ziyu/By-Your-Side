@@ -14,7 +14,6 @@ with tempfile.TemporaryDirectory() as d:
     subprocess.run(["codex", "exec", "--skip-git-repo-check", "-s", "read-only", "--output-last-message", out, "-"], input=prompt, text=True, cwd=d, timeout=900, capture_output=True)
     text = open(out).read()
 j = json.loads(re.search(r'\{[\s\S]*\}', text).group(0))
-# sanity: counts match task lists, every failure covered
 for m, cl in j['clusters'].items():
     for c in cl: c['count'] = len(c['tasks'])
     got = sorted(t for c in cl for t in c['tasks']); want = sorted(f['task'] for f in fails.get(m, []))

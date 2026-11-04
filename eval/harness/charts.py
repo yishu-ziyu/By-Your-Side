@@ -38,7 +38,6 @@ def clean(ax):
     for s in ax.spines.values(): s.set_visible(False)
     ax.tick_params(length=0)
 
-# ---------- Chart A ----------
 third = ('每次通过的成本（美元）', lambda s: s['cost_per_pass_usd'] or 0, lambda v: f'${v:.4f}') if priced else \
         ('每题平均 token（主模型）', lambda s: s['mean_tokens_total'], lambda v: f'{v / 1000:.1f}k')
 fig, axes = plt.subplots(1, 3, figsize=(15, 1.1 * len(order) + 2.6))
@@ -66,7 +65,6 @@ fig.text(0.02, 0.2 / fig.get_figheight(), f'FIG 1  ·  run {R["run"]}  ·  {cost
 fig.subplots_adjust(left=0.2, right=0.98, top=1 - 1.2 / fig.get_figheight(), bottom=0.55 / fig.get_figheight(), wspace=0.12)
 fig.savefig(f'{RUN}/chartA.png', dpi=160); plt.close(fig)
 
-# ---------- Chart B ----------
 CAT = {'page_understanding': '页面理解', 'selection_ask': '划词提问*', 'translation': '页面翻译', 'browser_action_single': '单步操作',
        'browser_action_multistep': '多步操作', 'extraction_to_table': '抽取成表', 'research_multi_page': '多页调研', 'form_fill_no_submit': '填表不提交*',
        'cross_tab': '跨标签页*', 'memory_skill': '记忆/技能*', 'other': '其他'}
