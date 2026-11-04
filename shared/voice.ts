@@ -129,6 +129,7 @@ export type RealtimeVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5
 
 export interface VoiceRouteContext {
   nativeChat?: boolean;
+  delegated?: true;
   awaitInputDecision?: () => Promise<void>;
   onInputDecision?: (readOnly: boolean, incomplete?:boolean) => void;
   pendingDelegation?: boolean;
