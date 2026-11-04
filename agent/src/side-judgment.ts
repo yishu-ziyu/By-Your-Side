@@ -34,6 +34,7 @@ export type SideCallRecord = {
   model: string;
   effort: ModelThinkingLevel;
   attempts: number;
+  ms: number;
   outcome: "ok" | "failed";
   reason?: SideFailureReason;
 };
@@ -122,6 +123,7 @@ function appendText(content: SideCallSpec<never>["content"], extra: string): Sid
 }
 
 export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spec: SideCallSpec<T>): Promise<T> {
+  const calledAt = Date.now();
   const budget = AbortSignal.timeout(spec.timeoutMs);
   const total = spec.signal ? AbortSignal.any([spec.signal, budget]) : budget;
   const retry = spec.retry ?? "format";
@@ -135,7 +137,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
   let lastError: string | undefined;
 
   const finish = (outcome: "ok" | "failed", reason?: SideFailureReason) => {
-    const line: SideCallRecord = { purpose: spec.purpose, model: modelKey(model), effort, attempts, outcome };
+    const line: SideCallRecord = { purpose: spec.purpose, model: modelKey(model), effort, attempts, ms: Date.now() - calledAt, outcome };
 
     if (reason) line.reason = reason;
 
