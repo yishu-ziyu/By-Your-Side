@@ -1,6 +1,3 @@
-/** Observable contract: long titles occupy at most two readable lines, update time is visible,
- * selected state/keyboard activation/Escape work, and switching preserves each conversation draft.
- * Real extension + sidepanel; scripted provider only configures the product, no model task is sent. */
 import assert from 'node:assert/strict';
 import{mkdir,writeFile}from'node:fs/promises';
 import{join}from'node:path';

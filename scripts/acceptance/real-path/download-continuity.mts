@@ -1,9 +1,3 @@
-/**
- * 网页点击下载 PDF 后，不重新选择文件，直接按关键词读正文。
- * 真扩展、真 Chrome 下载、真 PDF 解析；脚本模型只固定工具顺序。
- *   npx tsx scripts/acceptance/real-path/download-continuity.mts --headless
- * 失败方式：不捕获下载原件或 read_attachment 未注册时，正文检查失败；重复 GET 也算失败。
- */
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
@@ -16,7 +10,6 @@ requireHeadless();
 const ASK = "下载合同并查交付日期";
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-download-continuity`);
 const sourcePdf = await readFile(join(REPO, "scripts/acceptance/fixtures/files/contract.pdf"));
-// 超过 5 MB 的原件只留会话内存；尾部填充不改变这份 PDF 的正文。
 const pdf = Buffer.concat([sourcePdf, Buffer.alloc(6 * 1024 * 1024)]);
 const expectedSha256 = createHash("sha256").update(pdf).digest("hex");
 const requests: string[] = [];

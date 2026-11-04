@@ -1,4 +1,3 @@
-/** 真实隔离扩展：设置页是当前标签页时在侧栏发一句话，读页面被拒后助手照常回答，侧栏和设置页都不卡死。 */
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -14,7 +13,6 @@ const model = await startScriptedModel([
 ], undefined, payload => { for (const m of payload.messages ?? []) if (m.role === "tool") toolMessages.push(typeof m.content === "string" ? m.content : JSON.stringify(m.content)); });
 let rp: Awaited<ReturnType<typeof launchRealPath>> | undefined;
 let result: Record<string, unknown> = {};
-// 渲染进程卡死时 CDP 求值永远不返回，给每次探测一个上限。
 const alive = (session: string) => Promise.race([rp!.evaluate(session, "1+1").then(v => v === 2), sleep(5000).then(() => false)]);
 try {
   rp = await launchRealPath();

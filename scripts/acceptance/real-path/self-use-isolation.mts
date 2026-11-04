@@ -1,13 +1,3 @@
-/**
- * 模拟用户模式：代理替用户试用时说的话不进用户的记忆、过往任务，诊断里标 self-use，侧栏顶上写明。
- * 只装扩展、隔离构建、本机脚本模型（记忆判断按原话回「记住」）。
- *   npx tsx scripts/acceptance/real-path/self-use-isolation.mts --headless
- *   a) 对照：模式关着，说「记住我的邮箱是 a1@…，以后讲解都用卡片」，记忆多出一条。
- *   b) 打开模式：侧栏顶上出现提示条。
- *   c) 新对话里说同样的话（换个邮箱），记忆条数不变、过往任务不变、没有「已记住」回执和「要我记住吗」卡片。
- *   d) 诊断里这次运行的 run_start 标了 selfUse，对照那次没有。关掉模式后提示条消失。
- * 失败方式：去掉 browser-host 里的只读包装和 usePausedMemory，c 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, sleep, until, type Json } from "./harness.mts";
@@ -27,7 +17,6 @@ const decision = (email: string) => JSON.stringify({
   about: { longTerm: true, date: null, onlyThisTask: false, explicitRequest: true, dateIsTheTask: false },
 });
 
-// 记忆判断的输入是带 "userMessage" 字段的 JSON，排在前面先匹配；主对话的话不带这个字段。
 const model = await startScriptedModel([
   { match: `"userMessage":"${USER_A}`, steps: [{ text: decision("a1@example.com") }] },
   { match: `"userMessage":"${USER_B}`, steps: [{ text: decision("b2@example.com") }] },
@@ -38,7 +27,6 @@ const rp = await launchRealPath();
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
 
-/** 扩展自己的 IndexedDB：记忆与过往任务（库 sideagent-memory，表 kv），诊断（库 sideagent-diagnostics，表 trace-lines）。 */
 const readKv = (key: string) => `new Promise((resolve) => { const r = indexedDB.open("sideagent-memory"); r.onerror = () => resolve(null);
   r.onsuccess = () => { const db = r.result; if (!db.objectStoreNames.contains("kv")) { db.close(); resolve(null); return; }
     const q = db.transaction("kv").objectStore("kv").get(${JSON.stringify(key)}); q.onsuccess = () => { db.close(); resolve(q.result ?? null); }; q.onerror = () => { db.close(); resolve(null); }; }; })`;
@@ -62,18 +50,15 @@ try {
     await until(async () => await rp.evaluate(panel, ready), 60_000, "这一轮结束");
   };
 
-  // a) 对照：模式关着，记忆多出一条。
   await say(USER_A);
   const afterA = await until(async () => { const list = await memories(); return list.some(t => t.includes("a1@example.com")) ? list : null; }, 30_000, "对照记下邮箱");
   check("a 对照：模式关着时，这句话记进了记忆", afterA.length === 1, afterA);
   const tasksBefore = await tasks();
 
-  // b) 打开模式：侧栏顶上出现提示条。
   await rp.evaluate(panel, `chrome.storage.local.set({ sideagent_self_use: { until: Date.now() + 3600_000 } }).then(() => true)`);
   const banner = await until(async () => await rp.evaluate(panel, `(() => { const b = document.querySelector("#self-use-banner"); return b && !b.hidden ? b.textContent : null; })()`) as string | null, 10_000, "提示条出现");
   check("b 打开模式后侧栏顶上写明不写记忆", banner.includes("不写记忆"), banner);
 
-  // c) 新对话里说同样的话：记忆、过往任务都不变，没有回执和提问卡。
   await rp.click(panel, "#conversation-new");
   await sleep(1_500);
   await until(async () => await rp.evaluate(panel, ready), 60_000, "新对话就绪");
@@ -86,7 +71,6 @@ try {
   check("c 这段对话里没有「已记住」回执，也没有「要我记住吗」卡片", visible.receipts === 0 && visible.asks === 0, visible);
   await rp.screenshot(panel, join(out, "c-self-use.png"));
 
-  // d) 诊断里这次运行标了 self-use，对照那次没有；关掉后提示条消失。
   const starts = await rp.evaluate(panel, traceStarts) as Array<{ text: string; selfUse: boolean }>;
   const startA = starts.find(s => s.text.includes("a1@example.com"));
   const startB = starts.find(s => s.text.includes("b2@example.com"));

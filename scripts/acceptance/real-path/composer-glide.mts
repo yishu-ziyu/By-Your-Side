@@ -1,4 +1,3 @@
-/** 真实隔离扩展：空会话里输入框和问候居中成组，发出第一句后输入框滑到底边，不瞬移；减少动态效果时直接到位。 */
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,7 +10,6 @@ const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   { match: "整理成三条", steps: [{ text: "1. 第一条。\n2. 第二条。\n3. 第三条。" }] },
 ]);
-// 每帧记输入框画出来的底边（含动画位移）。
 const TRACE = `(()=>{window.__trace=[];const d=document.querySelector(".composer-dock-wrap");const t0=performance.now();const f=()=>{window.__trace.push([performance.now()-t0,d.getBoundingClientRect().bottom]);if(performance.now()-t0<1500)requestAnimationFrame(f)};requestAnimationFrame(f);return 1})()`;
 let rp: Awaited<ReturnType<typeof launchRealPath>> | undefined;
 let result: Record<string, unknown> = {};
@@ -46,7 +44,6 @@ try {
   const motion = await runOnce(false);
   await rp.screenshot(panel, join(out, "after-glide.png"));
   const reduced = await runOnce(true);
-  // 居中时离底边远（>150px）；滑动时相邻两帧最多挪 60px、整段走满 250ms 以上；最后贴底（<40px）。减少动态效果时一步到位。
   const glidePass = motion.centered > 150 && motion.maxStep <= 60 && motion.moveMs >= 250 && motion.gapAtEnd < 40;
   const reducedPass = reduced.centered > 150 && reduced.gapAtEnd < 40 && reduced.moveMs < 100;
   result = { motion, reduced, glidePass, reducedPass, pass: glidePass && reducedPass };

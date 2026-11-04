@@ -1,4 +1,3 @@
-/** 连接断开时可暂停、重连后重新计时的控制确认期限。 */
 export class PendingControlTimeout {
   private timer: ReturnType<typeof setTimeout> | null = null;
 

@@ -1,4 +1,3 @@
-/** Immutable source fragments from a single browser observation, never live element references. */
 export interface PageTextEvidence {
   fragments: Array<{ id: string; text: string; kind: 'text' | 'linebreak' }>;
   truncated: boolean;

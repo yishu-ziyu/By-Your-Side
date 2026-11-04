@@ -3,13 +3,10 @@ import { mulberry32 } from "./prng.js";
 
 interface Box { x: number; y: number; w: number; h: number }
 
-/** 手绘外框：SVG 路径和它实际占的范围（名牌据此摆放）。 */
 interface SketchOutline { d: string; frame: Box }
 
-/** 名牌相对标注外框的位置。 */
 interface LabelPosition { left: number; top: number }
 
-/** 宽高比超过它就画圆角框：宽而扁的目标（整行、长文字）用椭圆会切角、会压到相邻行。 */
 const WIDE_RATIO = 3.2;
 
 function roundedRectPoints(b: Box, r: number): Pt[] {
@@ -28,10 +25,6 @@ function roundedRectPoints(b: Box, r: number): Pt[] {
   ];
 }
 
-/**
- * 手绘外框：宽而扁的目标画贴合的圆角框（外扩 4px），紧凑目标画贴合的圈。只画一笔，
- * 不再叠两笔、不带箭头。返回路径和外框，外框用来摆名牌。
- */
 export function sketchFrame(target: Box, o: RoughOptions): SketchOutline {
   const rand = mulberry32(o.seed);
   const amp = 1.1 * o.roughness;
@@ -52,13 +45,8 @@ export function sketchFrame(target: Box, o: RoughOptions): SketchOutline {
   return { d: toPath(boilPass(jitter(ellipsePoints(cx, cy, rx, ry, 0, Math.PI * 2, n).slice(0, -1), rand, amp), o), true), frame: { x: cx - rx, y: cy - ry, w: rx * 2, h: ry * 2 } };
 }
 
-/** 候选名牌位置的判定：是否整块在可见区域内、底下是否没有页面内容（坐标与 frame 相同）。 */
 interface LabelRoom { inView(b: Box): boolean; clear(b: Box): boolean }
 
-/**
- * 名牌不压字：依次试框外右侧（垂直居中）、上方、下方、左侧；四处都压字时沿框的上沿、下沿往右找空白。
- * 都找不到空白时取第一个在可见区域内的候选（右侧优先），再不行放右侧。
- */
 export function sketchLabelPosition(frame: Box, label: { w: number; h: number }, room: LabelRoom): LabelPosition {
   const gap = 8;
   const above = frame.y - label.h - 2;
@@ -66,7 +54,6 @@ export function sketchLabelPosition(frame: Box, label: { w: number; h: number },
   const right = { left: frame.x + frame.w + gap, top: frame.y + frame.h / 2 - label.h / 2 };
   const candidates = [right, { left: frame.x, top: above }, { left: frame.x, top: below }, { left: frame.x - gap - label.w, top: right.top }];
 
-  // 名牌只贴在圈的四周，不挪到远处；四周都不合适时取第一个在视口里的。
   const boxOf = (c: LabelPosition) => ({ x: c.left, y: c.top, w: label.w, h: label.h });
   const visible = candidates.filter((c) => room.inView(boxOf(c)));
 

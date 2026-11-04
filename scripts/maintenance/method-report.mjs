@@ -1,16 +1,3 @@
-/**
- * 网站方法与网站笔记的周报：从日常诊断记录算出「方法待修」和「笔记升级候选」，写进 out/method-report/。
- *
- *   npm run lab -- methods                     读最近 7 天（先跑一次 logs.mjs）
- *   npm run lab -- methods --since 2026-10-16
- *   npm run lab -- methods --traces <traces.jsonl>
- *
- * 规则（方案见 docs/evals/20261023-site-methods.md）：
- * - 方法：最近 20 次调用里 unavailable/partial 超过 3 成进待修；login_required、no_captions、unconfirmed 是如实报告，不算失败。
- * - 笔记：按内容指纹算。同一条笔记在至少 3 个不同任务里用到、这些任务最终核对都是 done、任务里有动手操作（只读页面的笔记不省事），
- *   且任务结束后 3 分钟内同一会话没有紧接着再发一条，才进候选。候选只给开发者看，不自动生成代码。
- * 只给方向：日志里分不清真人和测试脚本发的任务，报告写明样本来源。
- */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -53,7 +40,6 @@ for (const row of rows) {
   if (row.type === "tool_execution_start" && ACTIONS.has(data.toolName)) run.actions += 1;
 
   if (row.type === "tool_execution_end") {
-    // 方法结果常被模型的程序再转成字符串：先去掉一层转义再找 method/status。
     const text = (data.result?.content ?? []).map((part) => part?.text ?? "").join("").replaceAll('\\"', '"');
 
     for (const match of text.matchAll(/"method":"([a-z]+\.[a-z-]+)"[\s\S]{0,800}?"status":"([a-z_]+)"/g)) run.methods.push({ id: match[1], status: match[2], at: row.time });

@@ -1,8 +1,3 @@
-/**
- * 单次任务的时间线页面（YIS-99）：读日常全套导出的诊断记录，每个任务生成一段时间线，一眼看出哪一步最慢、花了多少钱。
- *   npx tsx scripts/eval/run-timeline.mts <everyday-baseline 产物目录 或 日常导出的 .jsonl> [--out=<页面.html>]
- * 默认写到 <产物目录>/timeline.html。解析口径与 time-breakdown.mts 一致：等模型 = 每轮从发出请求到第一个工具开始或本轮结束；动手 = 工具执行。
- */
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -34,7 +29,6 @@ if (!dir) throw new Error("用法：run-timeline.mts <everyday-baseline 产物�
 
 const out = process.argv.find((a) => a.startsWith("--out="))?.slice(6) ?? (dir.endsWith(".jsonl") ? dir.replace(/\.jsonl$/, ".timeline.html") : join(dir, "timeline.html"));
 
-// 参数是日常 Chrome 从设置页导出的 .jsonl 时，没有 summary.json：任务名用 runId 的前 8 位，原话取 run_start。
 const single = dir.endsWith(".jsonl");
 
 const traceFile = single ? dir : (await readdir(join(dir, "downloads"))).find((n) => n.startsWith("by-your-side-traces-"));
@@ -55,7 +49,6 @@ const byRun = new Map<string, Line[]>();
 
 for (const l of lines) if (l.runId) byRun.set(l.runId, [...(byRun.get(l.runId) ?? []), l]);
 
-// 整页翻译的工具在里面分批调模型，「动手」其实是等模型。
 const MODEL_INSIDE = new Set(["page_translation"]);
 
 const runs: Run[] = [];
@@ -106,7 +99,6 @@ for (const lns of byRun.values()) {
     const msg = l.data?.message;
 
     if (msg?.role === "assistant") {
-      // 传输失败写在回复的诊断里；开头和结尾各带一份，按时间戳去重。
       for (const d of msg.diagnostics ?? []) {
         const key = `${d.type}@${d.timestamp}`;
 
@@ -137,7 +129,6 @@ for (const lns of byRun.values()) {
   runs.push(run);
 }
 
-// 几条翻译任务的原话完全相同：任务数和结果数一致时按先后对上名字。
 if (runs.length === summary.results.length) runs.forEach((r, i) => { r.id = summary.results[i]!.id; });
 
 const esc = (v: string | number) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);

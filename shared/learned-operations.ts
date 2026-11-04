@@ -65,7 +65,7 @@ export type LearnedOperationResult = LearnedOperationSuccess | LearnedOperationF
 export const isJsonObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** 做法按完整来源（协议 + 主机 + 端口）归属：同一注册域下的不同子域常属于不同的人，不能共用。 */
+/** WHY: 做法按完整来源（协议 + 主机 + 端口）归属：同一注册域下的不同子域常属于不同的人，不能共用。 */
 export function operationOrigin(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -84,8 +84,6 @@ const INPUT_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const MAX_SCHEMA_CHARS = 16_384;
 const MAX_SCHEMA_DEPTH = 8;
 
-// 契约只描述数据形状，长期保存、每轮提供给模型：不收常量、枚举、默认值、正则这类能夹带旧答案或秘密的关键词，
-// 也不收 TypeBox 认识但这里没审过的关键词。
 function isSchemaNode(value: unknown, depth: number): boolean {
   if (!isJsonObject(value) || depth > MAX_SCHEMA_DEPTH) return false;
 
@@ -115,7 +113,6 @@ export function isJsonSchema(value: unknown, input = false): value is JsonSchema
 }
 
 export function sanitizeOperationSchema(schema: JsonSchema): JsonSchema {
-  // properties 下面是业务字段名（可以就叫 title、description），只清 schema 自己的说明关键字。
   const sanitize = (value: unknown): unknown => Array.isArray(value)
     ? value.map(sanitize)
     : isJsonObject(value)

@@ -1,9 +1,3 @@
-/**
- * 把语音可用的浏览器工具清单导出成 JSON，供扩展内构建使用。
- * 清单由正式工具定义生成（agent/src/realtime-browser-tool-defs.ts），导出后扩展不必打包整条工具链。
- *
- *   npx tsx scripts/voice/export-realtime-tools.mts
- */
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

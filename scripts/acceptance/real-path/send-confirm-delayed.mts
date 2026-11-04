@@ -1,4 +1,3 @@
-/** 隔离扩展：只读 JS 拒绝延迟写入及重定向请求，不得到达接收端。 */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";

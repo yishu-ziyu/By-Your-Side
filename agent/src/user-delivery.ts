@@ -28,10 +28,8 @@ const RECORD_KINDS = ["ack", "finding", "reply"] as const;
 
 const HOST_TOOL_KINDS = ["ack", "finding"] as const;
 
-/** 宿主投影包含完整截断计数；模型只能请求保守的部分交付，不能升级完成状态。 */
 export type DeliveryFactInput = Omit<UserDeliveryFacts, "outcome"> & {pendingAnswers?:Array<{id:string;description:string}>};
 
-/** Called only while constructing an actual delivery, never by status/voice progress queries. */
 export function factsForDelivery(host:DeliveryFactInput,next:TaskNextStep|null|undefined):DeliveryFactInput {
   const {pendingAnswers,...facts}=host;
 
@@ -41,7 +39,6 @@ export function factsForDelivery(host:DeliveryFactInput,next:TaskNextStep|null|u
   return {...facts,delivered:descriptions.slice(0,USER_DELIVERY_FACT_ITEM_MAX),omittedDelivered:(facts.omittedDelivered??0)+Math.max(0,descriptions.length-USER_DELIVERY_FACT_ITEM_MAX),remaining:facts.remaining.filter(g=>!pendingAnswers.some(a=>a.id===g.id)),omittedRemaining:0};
 }
 
-/** 工具、普通正文补发及语音补发共用同一个事实投影。report 是报告许可，不是业务完成证明。 */
 export function projectDeliveryFacts(host: DeliveryFactInput, next: TaskNextStep | null | undefined, requestPartial = false): UserDeliveryFacts {
   const remaining = host.remaining.length + (host.omittedRemaining ?? 0);
   let outcome: UserDeliveryFacts['outcome'];
@@ -59,7 +56,6 @@ export function projectDeliveryFacts(host: DeliveryFactInput, next: TaskNextStep
   return { ...facts, outcome };
 }
 
-/** Lead has a conversationId; fleet workers do not. Memory store is unrelated. */
 export function isLeadDeliveryHost(conversationId?: string): boolean {
   return typeof conversationId === "string" && conversationId.length > 0;
 }
@@ -126,27 +122,16 @@ export type SendUserMessageOptions = {
   getRunId: () => string | null;
   emit: (event: AgentUiEvent) => void;
   clock?: () => number;
-  /** 还有未完成步骤时，finding 不得提前 terminate。 */
   hasUnfinishedWork?: () => boolean;
-  /** Bound to the current host snapshot, never to model-authored completion flags. */
   getNextStep?: () => TaskNextStep | null;
-  /** 宿主事实链：已满足项、未完成项、本 run 真实读到的页面；未接线时不附 facts。 */
   getDeliveryFacts?: () => DeliveryFactInput | null;
-  /** 本轮真实读到或打开的页面（回答出处），与有没有目标计划无关；未接线时不附。 */
   getSources?: () => readonly UserDeliverySourceRef[] | null;
 };
 
-/** 一轮里改页面的尝试次数与真正生效的次数（宿主按工具结果计）。不进交付，只留在会话里。 */
 export type PageChangeTally = { attempts: number; changes: number };
 
-/**
- * 把一段要对人说的话交给用户。只拒绝格式无效的正文；账本里仍有未完成或未核验的项时，
- * 照常交付并改标为 partial、附上宿主的未完成说明，由用户判断，而不是扣下回答。
- */
-/** 交付结果与宿主实际判定的完成度（模型请求 complete 也可能被标成 partial）。 */
 type DeliveredMessage = { delivery: UserDelivery; outcome: "complete" | "partial" };
 
-/** 模型列出的未完成项：去空、截长、限条数；格式不对的整体忽略，不因此拒绝交付。 */
 function cleanUnfinished(raw: string[] | undefined): string[] {
   if (!raw) return [];
 
@@ -180,9 +165,6 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
   const projected = hostFacts ? projectDeliveryFacts(hostFacts, next, !complete) : undefined;
   const facts = projected && isUserDeliveryFacts(projected) ? projected : undefined;
 
-  // 模型自己说了没做完：正文原样，部分完成记在 outcome/facts 上，由侧栏续做行说明。
-  // 模型声称做完而宿主知道没做完：补一句纠正，记在 hostNote 上，不改正文。侧栏在过程行说完成情况（目标核对判做完时不再提）；
-  // 念出来、旁路模型和过往任务仍用正文加这一句（deliveryTextWithNote）。
   const hostNote = input.kind === "finding" && !complete && requested === "complete"
     ? (next ? partialResultNote(next) : "（这件事还没全部完成。）")
     : undefined;
@@ -195,12 +177,10 @@ export function deliverUserMessage(opts: SendUserMessageOptions, input: { id: st
 
   if (facts) deliveryInput.facts = facts;
 
-  // 回答出处：结论和回复都附上本轮读过的页面；确认收到（ack）不附。
   const sources = input.kind === "ack" ? null : opts.getSources?.() ?? null;
 
   if (sources?.length) deliveryInput.sources = [...sources];
 
-  // 只有模型自己说没做完时才记它列的未完成项；声称完成却附带清单的，以宿主判定为准，不采信。
   if (input.kind === "finding" && requested === "partial") {
     const unfinished = cleanUnfinished(input.unfinished);
 
@@ -238,9 +218,6 @@ export function createSendUserMessageTool(opts: SendUserMessageOptions): ToolDef
         return {
           content: [{ type: "text" as const, text: `delivered:${delivery.id}` }],
           details: next ? { id: delivery.id, outcome: delivery.facts?.outcome ?? outcome, nextAction: next.action, resultIds: next.resultIds } : { id: delivery.id },
-          // finding 就是任务的最终结果：这一批工具结果带 terminate 后本轮结束，不再为收尾多问模型一次。
-          // ack 只是开场应答，提前终止会掐断任务，因此不参与早停。
-          // 浏览器调用仍在途（delivery=none）时话照常交付，但不结束本轮，模型还要看到那次调用的结果。
           terminate: params.kind === "finding" && (next ? next.delivery !== "none" : !opts.hasUnfinishedWork?.()),
         };
       } catch (error) {

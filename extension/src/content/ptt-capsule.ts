@@ -6,24 +6,14 @@ import { EDGE_PILL_OPEN } from '../shared/edge-pill.js';
 import { OVERLAY_ATTR, OVERLAY_KIND_PTT_CAPSULE } from '../shared/overlay.js';
 import { PTT_CAPSULE, PTT_LEVEL, type PttCapsule, type PttCapsuleAction } from '../shared/ptt.js';
 
-/**
- * 按住说话的网页底部胶囊。
- * 光球旁只放一个状态词：在听 / 听写中 / 正在做 / 等你 / 结果 / 已中止 / 没做成。按住、听写中由按键直接驱动；
- * 之后的内容都由后台按真实事件推来。shadow root 关着，网页读不到听写的话；data-phase / data-speaking 只给验收看现在是哪一步。
- * 念结果时光球是在说的样子，念完才开始倒计时收起；念的时候 Esc 只停声音。
- * 结果带卡片时，胶囊上方长出一张同材质、同宽的精简卡片（标题 + 最多 3 行），和胶囊一起出现、一起收起。
- */
-
 const BARS = 18;
 
-/** 自动收起：结果给人读完的时间；需要你动手的（等你、可重发）不自动收。 */
 const CLOSE_AFTER_MS: Partial<Record<PttCapsule['phase'], number>> = { done: 10_000, stopped: 4_000, failed: 6_000 };
 
 const WORD: Record<PttCapsule['phase'], string> = { listening: '在听', transcribing: '听写中', doing: '正在做', waiting: '等你', done: '结果', stopped: '已中止', failed: '没做成' };
 
 const ORB_STATE: Record<PttCapsule['phase'], OrbState> = { listening: 'listening', transcribing: 'thinking', doing: 'thinking', waiting: 'idle', done: 'idle', stopped: 'idle', failed: 'error' };
 
-// 和划词卡同一种纸：黑色块压在白网页上太突兀。
 const STYLE = `${PAPER_TOKENS}
 .wrap{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;
   max-width:min(560px,calc(100vw - 32px));color:var(--ink-fg);font:13px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
@@ -106,7 +96,6 @@ export function createPttCapsule() {
   const drawLevel = (next: number) => {
     level = next;
     levels.push(next); levels.shift();
-    // 中间高两边低：同一条音量历史左右对称地铺开。
     bars.forEach((bar, i) => {
       const fromCenter = Math.abs(i - (BARS - 1) / 2) / (BARS / 2);
       const height = 3 + 21 * levels[BARS - 1 - Math.floor(fromCenter * (BARS - 1))]! * (1 - fromCenter * 0.45);
@@ -138,7 +127,6 @@ export function createPttCapsule() {
 
   const speaking = () => !!shown && 'speaking' in shown && !!shown.speaking;
 
-  /** 鼠标停在胶囊或卡片上：不倒计时，后台刷新也不重新开始，移开后才计时。 */
   let hovering = false;
 
   const scheduleClose = () => {
@@ -147,14 +135,12 @@ export function createPttCapsule() {
     if (hovering) return;
     const after = shown && !speaking() && CLOSE_AFTER_MS[shown.phase];
 
-    // 可以重发的失败留着，等你决定。
     if (after && !(shown?.phase === 'failed' && shown.heard)) closeTimer = setTimeout(() => hide(), after);
   };
 
   wrap.addEventListener('pointerenter', () => { hovering = true; clearTimeout(closeTimer); });
   wrap.addEventListener('pointerleave', () => { hovering = false; scheduleClose(); });
 
-  /** 胶囊上方的精简卡片：字都用 textContent 填，原样取自回答。 */
   const drawCard = (preview: Extract<PttCapsule, { phase: 'done' }>['card']) => {
     card.hidden = !preview;
 
@@ -162,7 +148,6 @@ export function createPttCapsule() {
     card.querySelector('.title')!.textContent = preview.title;
     (card.querySelector('.title') as HTMLElement).hidden = !preview.title;
     card.querySelector('.rows')!.replaceChildren(...preview.rows.map(row => {
-      // 没有右侧数值的行（步骤、清单）让名称占满整行。
       const line = Object.assign(document.createElement('div'), { className: ['row', row.tag && 'tagged', !row.value && 'solo'].filter(Boolean).join(' ') });
       line.append(Object.assign(document.createElement('span'), { className: 'label', textContent: row.label }));
 
@@ -191,7 +176,6 @@ export function createPttCapsule() {
     const said = 'heard' in capsule ? capsule.heard ?? '' : '';
     heard.textContent = said ? `“${said}”` : '';
     heard.hidden = !said;
-    // 在做：念确认句时显示那一句，念完显示当前步骤。
     detail.textContent = capsule.phase === 'doing' ? (capsule.speaking && capsule.ack ? capsule.ack : capsule.step ?? capsule.ack ?? '交给助手了') : capsule.phase === 'waiting' ? capsule.reason
       : capsule.phase === 'done' ? capsule.result : capsule.phase === 'failed' ? capsule.reason : capsule.phase === 'transcribing' ? '…' : '';
     detail.hidden = !detail.textContent;
@@ -217,7 +201,7 @@ export function createPttCapsule() {
     scheduleClose();
   };
 
-  // 任务在跑时 Esc 中止（念着确认句也是：听出理解错了就叫停）；念结果时 Esc 只停声音；有结果时 Esc 收起。按住时的 Esc 由按键判定当作取消（ptt-keys.ts）。
+  // WHY: 任务在跑时 Esc 中止（念着确认句也是：听出理解错了就叫停）；念结果时 Esc 只停声音；有结果时 Esc 收起。按住时的 Esc 由按键判定当作取消（ptt-keys.ts）。
   // 只认用户真按的 Esc：网页脚本派发的 Esc 不能中止任务。
   addEventListener('keydown', event => {
     if (!event.isTrusted || event.key !== 'Escape' || !shown) return;
@@ -227,7 +211,7 @@ export function createPttCapsule() {
     else if (shown.phase !== 'listening' && shown.phase !== 'transcribing') hide();
   }, true);
 
-  // 光标脚本第一次注入时会清掉页面上所有扩展浮层：胶囊该显示时被清掉就挂回去。
+  // WHY: 光标脚本第一次注入时会清掉页面上所有扩展浮层：胶囊该显示时被清掉就挂回去。
   new MutationObserver(() => { if (shown && !host.isConnected) document.documentElement.append(host); }).observe(document.documentElement, { childList: true });
 
   chrome.runtime.onMessage.addListener((message: { type?: string; capsule?: PttCapsule | null; level?: number } | undefined, sender) => {

@@ -1,16 +1,3 @@
-/**
- * 回答里写成 ```mermaid 代码块的图，侧栏画成图；代码收在「Mermaid 代码」里，要复制还在。侧栏不认识的图种照旧显示代码。
- * 只装扩展、隔离构建、本机脚本模型。
- *   npx tsx scripts/acceptance/real-path/mermaid-diagram.mts --headless
- *   a) flowchart（带分组）画成了图，图里有节点文字。
- *   b) 图下面有「Mermaid 代码」，展开是原来的代码。
- *   c) timeline（用户说「在mermaid中呈现」时真模型写出的那种）画成了图，图里有事件文字。
- *   d) sequenceDiagram 画成了图。
- *   e) zenuml（侧栏不认识）照旧是一段代码。
- *   f) 以 --- 配置头开头的 flowchart 画成了图。
- *   g) 带配置头的 zenuml 后面紧跟一张图：zenuml 仍是代码，后一张图（配置头后有空行、多行 %%{init}%%）画成了图。
- * 失败方式：renderAnswerHtml 不经 withMermaidDiagrams，a、b 失败；只认流程图时 c、d 失败；图种不跳过配置头时 f 失败；配置头匹配跨出代码块或不认多行指令时 g 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, until, type Json } from "./harness.mts";

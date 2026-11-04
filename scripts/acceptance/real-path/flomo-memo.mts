@@ -1,13 +1,3 @@
-/**
- * 真扩展 + 隔离 Chrome + 脚本模型 + 拦截成练习页的 flomo：「记进 flomo」的内置方法。
- * 判定：在别的网站上说要记 flomo 时，模型能拿到 flomo.add-memo；方法新开 flomo 标签页、填写、点发送，读回新笔记才算记上；
- * 点了发送但列表里没出现时报 unconfirmed 且只点一次；没登录时报 login_required、什么都不写；用户原来的页面不被换走。
- * 「记下来」没说去处（用户 10-23 定：两个都记）：脚本模型照产品给的上下文办事——提供了 flomo.add-memo 才调它，
- * 上下文里有「Noting something down」才写兴趣记忆；判定只看用户看得到的：flomo 列表里的新笔记（要点 + 来源链接）、
- * 记忆面板里的「对……感兴趣」、回答里两件各自的结果。flomo 没登录时回答说没记进 flomo、记忆照写；
- * 点名「记进 flomo」时即使模型多调一次兴趣记忆也不写。
- *   npx tsx scripts/acceptance/real-path/flomo-memo.mts --headless [--case=saved|lost|signed-out|record|record-signed-out|record-named]
- */
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:https";
@@ -21,7 +11,6 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 await mkdir(out, { recursive: true });
 const cases = [
   { id: "saved", mode: "ok", expected: '"status":"observed"', also: ['"memoId":"m3"'], clicks: 1 },
-  // 只出现本地占位、一直没换成正式编号：不能算记上。
   { id: "unsynced", mode: "local", expected: '"status":"unconfirmed"', also: ["has not synced"], clicks: 1 },
   { id: "lost", mode: "lost", expected: '"status":"unconfirmed"', also: ["Do not send again"], clicks: 1 },
   { id: "signed-out", mode: "out", expected: '"status":"login_required"', also: [], clicks: 0 },
@@ -30,7 +19,6 @@ const ARTICLE = "https://article.example/post";
 const recordCases = [
   { id: "record", say: "把这段的要点帮我记下来 甲", mode: "ok", topic: "命令行工具的 Skill 设计", points: "要点甲：命令行工具加一份 README 就是一个 Skill", memo: true, memory: true, greedy: false },
   { id: "record-signed-out", say: "把这段的要点帮我记下来 乙", mode: "out", topic: "阅读时做标注的方法", points: "要点乙：读文章时先标出感兴趣的段落", memo: false, memory: true, greedy: false },
-  // 点名 flomo：模型就算多调一次兴趣记忆，也不该写进去。
   { id: "record-named", say: "这段的要点记进flomo 丙", mode: "ok", topic: "丙主题不该进记忆", points: "要点丙：只记 flomo", memo: true, memory: false, greedy: true },
 ].filter(c => !only || c.id === only);
 const MEMO = "命令行工具加一份 README，本质上就是一个 Skill。";
@@ -41,7 +29,6 @@ const rules: Rule[] = cases.map(c => {
   const reply = { text: "等待真实工具结果" }; replies.set(c.id, reply);
   return { match: `记进flomo ${c.id}`, steps: [{ tool: { name: "browser_run", args: { label: c.id, code: `return await browser.siteMethod(${JSON.stringify({ id: "flomo.add-memo", text: MEMO })});` } } }, reply] };
 });
-// 记下来的三条：首个主任务请求时按产品给的上下文排好步骤，最后一步按两件事各自的工具结果写回答。
 const recordReplies = new Map<string, TextStep>();
 const recordOffered = new Map<string, boolean>();
 for (const c of recordCases) {
@@ -77,7 +64,6 @@ const model = await startScriptedModel(rules, undefined, payload => {
   if (result && replies.has(id)) replies.get(id)!.text = `工具实际返回：\n\n\`\`\`text\n${textOf(result.content)}\n\`\`\`\n本次记录结束。`;
 });
 let mode = "ok";
-// 练习页：编辑器有字时才显示第二个发送按钮；点它把内容加成列表最前面的一条（lost 模式什么都不加）。置顶笔记永远在最上面。
 const flomo = () => `<!doctype html><html lang="zh"><meta charset="utf-8"><title>flomo</title><body>${mode === "out" ? "<a href='/login'>登录</a>" : `
 <div id="fl_editor" class="input-box"><div class="editor-content"><div class="tiptap ProseMirror" contenteditable="true"></div></div>
 <div class="editor-menu-bar"><div class="pin-right"><svg class="el-tooltip saveBtn" width="0" height="0"></svg><svg class="saveBtn" width="20" height="20" style="display:none"><rect width="20" height="20"/></svg></div></div></div>
@@ -97,7 +83,6 @@ btn.addEventListener('click',()=>{window.__clicks++;const t=ed.innerText.trim();
  m.querySelector('.richText').textContent=t;list.insertBefore(m,list.children[1]);
  if(${JSON.stringify(mode)}!=='local')setTimeout(()=>m.querySelector('a.time').setAttribute('href','/mine/?memo_id=m3'),800);});
 </script>`}</body></html>`;
-// 方法会新开 flomo 标签页，新页面不在拦截范围里：用本机 https 练习站（临时自签名证书）加域名映射顶替 v.flomoapp.com。
 execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=v.flomoapp.com", "-keyout", join(out, "key.pem"), "-out", join(out, "cert.pem")], { stdio: "ignore" });
 const site = createServer({ key: await readFile(join(out, "key.pem")), cert: await readFile(join(out, "cert.pem")) }, (_req, res) => res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(flomo()));
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
@@ -162,7 +147,6 @@ try {
     await until(() => rp.evaluate(panel, ready), 25_000, c.id + " 收尾");
   }
   if (recordCases.length) {
-    // 用户在记忆面板里看到的条目。
     for (let i = 0; i < 3 && !(await rp.evaluate(panel, `document.querySelector("#header-menu").matches(":popover-open")`)); i += 1) { await rp.click(panel, "#header-more"); await new Promise(r => setTimeout(r, 400)); }
     await rp.click(panel, "#memory-open");
     const memories = String(await until(async () => (await rp.evaluate(panel, `(() => { const t = document.querySelector("#memory-body")?.innerText ?? ""; return t.length > 0 && !t.includes("正在读取") ? t : ""; })()`)) || undefined, 15_000, "记忆面板读完"));

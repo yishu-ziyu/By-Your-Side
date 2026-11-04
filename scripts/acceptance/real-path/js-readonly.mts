@@ -1,4 +1,3 @@
-/** 真实隔离扩展：模型 JS 只读，返回值序列化也不得执行网页代码。 */
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";

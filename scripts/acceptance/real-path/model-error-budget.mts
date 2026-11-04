@@ -1,4 +1,3 @@
-/** Real extension regression: exhausted model retries stay an error, never trigger fact correction; manual recovery preserves page evidence. */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

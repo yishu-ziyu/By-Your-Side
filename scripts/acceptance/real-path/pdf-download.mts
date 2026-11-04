@@ -1,10 +1,3 @@
-/**
- * F1 inline PDF 只被打开，没有下载；F2 中断被说成完成；
- * F3 延迟下载重复启动；F4 file: 地址送到下载 API。
- * 真 PDF 阅读器、真侧栏、Chrome 下载目录；脚本模型只控制工具调用。
- *   npx tsx scripts/acceptance/real-path/pdf-download.mts --headless [--live|--arxiv]
- * --live 改用真实主模型（要 SIDEAGENT_TEST_MAIN_KEY）；--arxiv 复现 #25 的 arXiv 论文地址。
- */
 import { createServer } from "node:http";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -24,7 +17,6 @@ const out = join(REPO, "out/acceptance/pdf-download", new Date().toISOString().r
 
 await mkdir(out, { recursive: true });
 
-// 生成一页有效 PDF；xref 位置来自字节偏移，下载期望直接比较服务端原字节。
 const objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << >> /Contents 4 0 R >>", "<< /Length 0 >>\nstream\n\nendstream"];
 
 let pdfText = "%PDF-1.4\n";

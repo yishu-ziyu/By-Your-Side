@@ -1,6 +1,3 @@
-/**
- * 确认卡给人看的句子：先说要做什么，技术细节另放。读不到的字段不编。
- */
 import { classifyRequest, siteDisplayName } from "./request-confirm.js";
 import { SEND_CONFIRM_MS } from "./timeouts.js";
 import type { SendConfirmView } from "./protocol.js";

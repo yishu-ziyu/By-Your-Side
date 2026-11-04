@@ -1,24 +1,3 @@
-/**
- * 一步一步教我：圈出该点的地方，等用户自己点完再带下一步。
- * 只装扩展、隔离构建、本机三步练习页（Settings → Display → Dark theme）。默认用本机脚本模型按顺序调 guide_step；
- * 用户的点击和移动都是 CDP 派发的真实输入（isTrusted），按网页上圈出来的位置点。
- *   npx tsx scripts/acceptance/real-path/guided-teaching.mts --headless [--model=provider/id]
- *   N) R1：三步依次点中才推进；没点之前工具不返回；侧栏标题「第 N 步 · 等你操作」；最后页面是深色；网页收到的点击数等于用户点的次数（助手 0 次）。
- *      光标飞过去（第一次读到圈时光标还不在目标旁），停在目标右下角。正常页面上点中后不出现「没有生效」。
- *   M) R2：点在目标外：工具不返回，圈旁改成「这里不是要点的位置…」，光标停在目标右下角；用户一动鼠标，光标松开、离开目标；再点中才推进，结果里 misses=1。
- *   R) R2 反例：减少动态效果时，第一次读到圈时光标已经在目标旁（不飞行）。
- *   B) R3：开关点了没反应：3 秒左右圈旁改成「好像没有生效…」，侧栏出现「点了「Dark theme」，页面没有变化」；第二次仍没变化，这一步按「没完成」结束（guide_no_change），侧栏写「点了两次，页面都没有变化」，不画成失败。
- *   Q) 网页按下就切换并重画面板（像 Radix 标签）：点中照样算完成，三步走完、页面是深色。
- *   QR) 同 Q，但目标是快照里的 @ref，并且等用户点开关时面板晚到地整块重画一次：圈和光标跟到新开关上，点中算完成。
- *   L) 慢网页：开关点下 4 秒后才生效。3 秒出「没有生效」提示，之后页面变了，这一步照样算完成，提示收起。
- *   N 另查：完成结果告诉模型点完以后目标的状态（标签 aria-selected=true、开关 aria-checked=true）。
- *   S) R4：等用户点的时候点侧栏「停」：等待马上结束，圈和停住的光标都清掉；之后再点原目标，网页上什么都不出现；模型收到「用户停下了」。
- * --model：换成真实模型（~/.sideagent/providers.local.json），只跑 N 的自然说法；用户按圈出来的位置点，最多 6 步。
- *   判据：最后是深色；不超过 4 步；用户只点了 1 次 Dark theme 开关（模型没让用户把打开的开关再点回去）；助手没替用户点。
- * 失败方式：去掉「点中才返回」，N 的「没点之前不返回」失败；去掉点错提示或让开，M 失败；
- * 停下后不撤监听，S 再点原目标时会重新出圈或光标。实测抓到过：只听 click 时 Q 第 2 步一直不返回（按下就重画，浏览器不发 click）；
- * 画圈后的 resize 打断飞行时，N 的「半路」判据失败；@ref 目标被重画后按 @ref 找不回时，QR 的「圈跟到新开关」失败（反例结果见验收文件）。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -34,10 +13,6 @@ await mkdir(out, { recursive: true });
 
 const modelArg = process.argv.find(arg => arg.startsWith("--model="))?.slice(8);
 
-/**
- * 练习页：?broken 时 Dark theme 开关点了什么都不变；?rerender 时标签在按下时就切换，并整块重画面板；
- * ?late 时切到 Display 2.5 秒后面板再整块重画一次（像晚到的数据）；?slow 时开关点下 4 秒后才生效。网页记下收到的每一次点击。
- */
 const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>主题练习页</title>
 <style>body{font:15px/1.6 -apple-system,"PingFang SC",sans-serif;margin:0;background:#fff;color:#111}body.dark{background:#16181d;color:#eee}
 header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid #ccc}main{padding:20px 20px;max-width:520px}
@@ -96,7 +71,6 @@ const ASK = {
   l: "案例L：教我打开深色主题，开关在这里。",
 };
 
-/** QR 用快照里的 @ref：每次快照结果回来，按可访问名找出三个目标的 ref，填进后面的 guide_step。 */
 const REF_NAMES = ['button "⚙ Settings"', 'tab "Display"', 'switch "Dark theme"'];
 
 const refCalls = [0, 1, 2].map(i => ({ tool: { name: "guide_step", args: { target: "@0", say: SAY[i]!, step: i + 1 } } }));
@@ -107,13 +81,11 @@ const REAL_ASK = "教我打开深色主题，一步一步指给我看，我自�
 
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
 
-/** 模型收到的工具结果，按调用编号去重（每次请求都带着全部历史）。 */
 const toolTexts: string[] = [];
 
 const toolIds = new Set<string>();
 
 const scripted = modelArg ? null : await startScriptedModel([
-  // 目标核对的请求里带着用户原话：先认它，直接判完成，免得它匹配到下面的用例。
   { match: '"goalPage"', steps: [{ text: DONE }] },
   { match: ASK.n, steps: [guideCall(0), guideCall(1), guideCall(2), { text: "N 完成。" }] },
   { match: ASK.m, steps: [guideCall(0), guideCall(1), guideCall(2), { text: "M 完成。" }] },
@@ -128,7 +100,6 @@ const scripted = modelArg ? null : await startScriptedModel([
   const lastText = typeof last?.content === "string" ? last.content : Array.isArray(last?.content) ? last.content.map(p => p.text ?? "").join("") : "";
 
   REF_NAMES.forEach((name, i) => {
-    // 名字里没有正则特殊字符，原样拼进去。
     const ref = lastText.match(new RegExp(`\\[ref=(\\d+)\\] ${name}`))?.[1];
 
     if (ref) refCalls[i]!.tool.args.target = `@${ref}`;
@@ -158,7 +129,6 @@ type Box = { left: number; top: number; right: number; bottom: number };
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
 
-  // 扩展内容脚本的读数在扩展的隔离环境里，网页自己的环境读不到：记下这页上的隔离环境，逐个试。
   const isolated = new Set<number>();
 
   rp.cdp.onEvent("Runtime.executionContextCreated", (message: { sessionId?: string; params: { context: { id: number; origin: string; auxData?: { type?: string } } } }) => {
@@ -184,7 +154,6 @@ try {
 
   const markCount = async () => (await probe<number>("ns.markLayerCount()")) ?? 0;
 
-  /** 圈在视口里的中心：用户按圈出来的位置点。 */
   const markCenter = async () => {
     const box = await probe<{ x: number; y: number; width: number; height: number }>("ns.markLayout()[0] ?? null");
 
@@ -235,7 +204,6 @@ try {
 
   const warnRow = async () => String(await rp.evaluate(panel, '[...document.querySelectorAll(".run-trail .trail-aside.warn")].at(-1)?.textContent ?? ""'));
 
-  /** 打开练习页的新文档，等扩展的光标脚本就位。 */
   const openPage = async (query: string) => {
     await rp.cdp.send("Page.navigate", { url: pageUrl(query) }, work);
     await until(async () => (await rp.evaluate(work, '!!document.querySelector("#settings") && document.readyState === "complete"').catch(() => false)) || undefined, 15_000, "练习页加载");
@@ -243,7 +211,6 @@ try {
     await rp.cdp.send("Page.bringToFront", {}, work);
   };
 
-  /** 等第 step 步出现在网页上（圈旁写着 say），接着连续记下光标 600 毫秒内的位置（看它是飞过去还是直接到位）。 */
   const guideShown = async (say: string) => {
     const first = await until(async () => { const h = await hold(); return h?.guide?.label === say ? h : null; }, 30_000, `网页上出现「${say}」`, 0);
     const path: Array<{ ms: number; x: number; y: number }> = [{ ms: 0, x: first.x, y: first.y }];
@@ -257,7 +224,6 @@ try {
   const toolsSince = (from: number) => toolTexts.slice(from);
 
   if (modelArg) {
-    // ── 真实模型：只跑自然说法，用户按圈出来的位置点 ──
     await openPage("");
     const clicksBefore = await pageClicks();
     const userBefore = userClicks;
@@ -290,7 +256,6 @@ try {
     check("真实模型：不超过 4 步，Dark theme 开关只让用户点了 1 次（没有把打开的开关再点回去）", steps <= 4 && darkClicks === 1, { steps, darkClicks });
     check("真实模型：网页收到的点击数等于用户点的次数（助手没替用户点）", (await pageClicks()) - clicksBefore === userClicks - userBefore, { page: (await pageClicks()) - clicksBefore, user: userClicks - userBefore });
   } else {
-    // ── N：正常走完三步 ──
     await openPage("");
     let from = toolTexts.length;
     let clicksBefore = await pageClicks();
@@ -304,7 +269,6 @@ try {
       const r = await rectOf(TARGETS[i]!);
       const atCorner = (p: { x: number; y: number }) => nearCorner(p, r);
 
-      // 半路：既不在出发点，也不在目标旁。只看到出发点和终点就是跳过去的。
       const midway = path.filter(p => !atCorner(p) && Math.hypot(p.x - path[0]!.x, p.y - path[0]!.y) > 5);
 
       if (i === 0) check("N 光标飞过去：圈出现后能看到光标在半路，最后停到目标旁", midway.length >= 2 && atCorner(path.at(-1)!), { midway: midway.slice(0, 8), samples: path.length, start: path[0]!, target: r });
@@ -332,7 +296,6 @@ try {
     await idle();
     await rp.screenshot(work, join(out, "n-done-page.png"));
 
-    // ── M：点错 ──
     await openPage("");
     from = toolTexts.length;
     await ask(ASK.m);
@@ -361,7 +324,6 @@ try {
     check("M 再点中才推进：第 1 步结果是 done、misses=1", !!toolsSince(from)[0]?.includes("Step 1 done") && toolsSince(from)[0]!.includes("misses=1"), { tool: toolsSince(from) });
     await idle();
 
-    // ── R：减少动态效果 ──
     await openPage("");
     await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }, work);
     await ask(ASK.r);
@@ -373,7 +335,6 @@ try {
     await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, work);
     await idle();
 
-    // ── B：开关点了没反应 ──
     await openPage("?broken=1");
     await userClickOn("#settings");
     await userClickOn("#t-display");
@@ -400,7 +361,6 @@ try {
     await idle();
 
     if (!process.argv.includes("--visual")) {
-    // ── Q：按下就切换、整块重画 ──
     await openPage("?rerender=1");
     from = toolTexts.length;
     await ask(ASK.q);
@@ -416,7 +376,6 @@ try {
     check("Q 网页按下就切换并重画：三步都算完成，页面是深色", toolsSince(from).length === 3 && toolsSince(from).every((t, i) => t.includes(`Step ${i + 1} done`)) && (await dark()), { tool: toolsSince(from), dark: await dark() });
     await idle();
 
-    // ── QR：@ref 目标，等用户点的时候面板晚到地重画 ──
     await openPage("?rerender=1&late=1");
     from = toolTexts.length;
     await ask(ASK.qr);
@@ -443,7 +402,6 @@ try {
     check("QR @ref 目标：三步都算完成，页面是深色", guidesQR().length === 3 && guidesQR().every((t, i) => t.includes(`Step ${i + 1} done`)) && (await dark()), { tool: toolsSince(from), dark: await dark(), targets: refCalls.map(c => c.tool.args.target) });
     await idle().catch(() => {});
 
-    // ── L：慢网页，开关 4 秒后才生效 ──
     await openPage("?slow=1");
     await userClickOn("#settings");
     await userClickOn("#t-display");
@@ -462,7 +420,6 @@ try {
     check("L 慢网页：先出提示，4 秒后页面变了，这一步照样算完成，提示和圈都收起", !!hinted && !!toolsSince(from)[0]?.includes("Step 3 done") && (await dark()) && (await markCount()) === 0 && !(await warnRow()), { hinted: !!hinted, slowMs, tool: toolsSince(from), dark: await dark(), marks: await markCount(), warn: await warnRow() });
     await idle().catch(() => {});
 
-    // ── S：等用户点的时候点「停」──
     await openPage("");
     clicksBefore = await pageClicks();
     userBefore = userClicks;
@@ -486,13 +443,11 @@ try {
     await rp.screenshot(panel, join(out, "s-panel.png"));
     const stopChips = (measured.stopStepChips ?? []) as Array<{ text: string; error: boolean }>;
     check("S 侧栏把停下的那一步写成「你中止了，这一步没做完」，不画成失败", stopChips.some(c => c.text.includes("你中止了，这一步没做完") && !c.error), { chips: stopChips });
-    // S 停下后没有下一次模型请求；它的工具结果随下一次请求的历史送到模型这边。
     await openPage("");
     await ask(ASK.r);
     await guideShown(SAY[0]!);
     await userClick((await markCenter())!);
     await answered("R 完成。");
-    // 这轮复用了 R 的问题和答案，旧回答不能证明新的工具结果已经送到模型。
     await idle();
     const stopped = toolTexts.find(t => t.includes("用户停下了任务或接管了页面"));
     check("S 模型收到的结果写明用户停下、工具没有替用户点", !!stopped?.includes("没有替用户点"), { tool: stopped ?? null });

@@ -1,18 +1,3 @@
-/**
- * 阅读卡里中途改口：解释还在写时，用户在卡片输入框打一句改口并按回车。
- * 旧回答马上停在原处、原样留着，新回答接在同一张卡下面，仍对着同一段。
- *
- * 真扩展、隔离无头 Chrome、本机练习文章、本机脚本模型；只有模型回复是脚本。
- *   npx tsx scripts/acceptance/real-path/reading-correction.mts --headless
- *
- * 判据只读模型收到的请求原文和阅读卡里用户看得到的界面：
- *   请求  回车后 1.5 s 内模型收到含改口原话的请求，请求里有段落标记句、有一轮 state 为 stopped 的旧回答。
- *   取消  回车后 1.5 s 内，模型那边旧请求的连接没写完就关了（产品真的取消了旧请求，不只是界面不再显示）。
- *   停止  旧回答在回车后 1 s 内停止变长，一直看到旧回答在服务端写完为止也不再变长；新回答里没有旧回答的文字。
- *   界面  旧回答显示「已停在这里，按新要求接着答」，整段留在卡里（没有折叠、没被裁掉）；新回答带「已按新要求回答」；段落高亮回车前后都在；网页滚动位置不变。
- *   按钮  生成中输入框空时是停止键；输入了文字时是发送键（改口）。
- * 失败方式：生成中回车被吞掉（T1 之前的 main），请求、停止、界面、按钮都失败；改口时不取消旧请求，取消一项失败。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -26,7 +11,6 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 
 await mkdir(out, { recursive: true });
 
-// ── 练习文章：#para 开头是全页唯一的标记句 ──
 const MARKER = "The lighthouse keeper logged every storm in violet ink so that later sailors could trust the record.";
 
 const FILLER = "Coastal towns kept their own weather books long before national services existed. Harbour masters compared notes each spring to decide which channels were still safe.";
@@ -45,7 +29,6 @@ await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 
 const articleUrl = `http://127.0.0.1:${siteAddress(site).port}/article`;
 
-// ── 脚本模型：改口规则放第一位，因为改口请求的 JSON 里同时含旧问题与改口原话 ──
 const CORRECTION = "我想知道为什么";
 
 const OLD_TAIL = "旧定义的最后一句话到此为止。";
@@ -120,7 +103,6 @@ try {
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, work);
 
-  // ── 阅读卡在封闭 shadow root 里：CDP 穿透拿到它，再在里面执行函数 ──
   // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
   const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
   const find = (n: DomNode): DomNode | null => {
@@ -149,7 +131,6 @@ try {
   };
   const highlighted = async () => Boolean(await rp.evaluate(work, `CSS.highlights?.has(${JSON.stringify(HIGHLIGHT)}) ?? false`));
 
-  // ── 划选这一段，点「解释」，等旧解释写到一半 ──
   // SAFETY: 页面脚本返回段落文字首尾坐标。
   const span = await rp.evaluate(work, `(() => { document.querySelector("#para").scrollIntoView({block:"center"}); const r = document.querySelector("#para-text").getClientRects(); const a = r[0], b = r[r.length - 1]; return { x1: a.left + 1, y1: a.top + a.height / 2, x2: b.right - 1, y2: b.top + b.height / 2 }; })()`) as { x1: number; y1: number; x2: number; y2: number };
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: span.x1, y: span.y1 }, work);
@@ -166,7 +147,6 @@ try {
   await until(async () => {
     const t = (await card()).turns[0];
 
-    // 写出几行再改口：旧回答要比折叠后的高度长，折叠才看得出来。
     return t && t.status.includes("正在回答") && t.answer.length > 120 ? t : undefined;
   }, 30_000, "阅读卡正在生成且已写出 120 字以上", 100);
   const oldStart = captured.find((c) => c.reading)!.at;
@@ -175,7 +155,6 @@ try {
   const emptyInput = await card();
   await rp.screenshot(work, join(out, "1-generating.png"));
 
-  // ── 点进输入框，打改口 ──
   const inputPoint = await until(() => cardPoint("textarea"), 5_000, "阅读卡输入框可见");
   await mouseClick(inputPoint);
   await until(async () => (await card()).focused || undefined, 3_000, "阅读卡输入框获得焦点");
@@ -186,7 +165,6 @@ try {
     { empty: { icon: emptyInput.sendIcon, label: emptyInput.sendLabel }, withText: { icon: typed.sendIcon, label: typed.sendLabel }, stillGenerating: typed.turns[0]!.status });
   await rp.screenshot(work, join(out, "2-typed.png"));
 
-  // ── 回车：从这一刻起看旧回答，一直看到它在服务端本来会写完的时刻（每段 12 字，加 1.5 s 余量） ──
   const lenAtEnter = (await card()).turns[0]!.answer.length;
   const tEnter = Date.now();
   await rp.pressEnter(work);
@@ -204,13 +182,11 @@ try {
   const lenAt1s = [...timeline].reverse().find((p) => p.ms <= 1000)?.len ?? lenAtEnter;
   const lenMaxAfter1s = Math.max(lenAt1s, ...timeline.filter((p) => p.ms > 1000).map((p) => p.len));
 
-  // ── 旧请求被取消：模型那边的连接没写完就关了。只看界面分不出来，因为界面也会丢掉旧请求的迟到片段。 ──
   const oldRequest = model.requests.find((r) => r.rule === "解释这段选中的文字");
   check("取消：回车后 1.5 s 内旧请求的连接没写完就关了",
     !!oldRequest?.closedAt && oldRequest.closedAt - tEnter <= 1500 && oldRequest.finished === false,
     { closedAfterEnterMs: oldRequest?.closedAt ? oldRequest.closedAt - tEnter : null, finished: oldRequest?.finished ?? null });
 
-  // ── 请求 ──
   const req = captured.find((c) => c.reading && c.at >= tEnter && c.messages.some((m) => textOf(m.content).includes(CORRECTION)));
   let requestDetail: Json = { request: null };
   let requestPass = false;
@@ -219,7 +195,7 @@ try {
     const content = textOf(req.messages.find((m) => m.role === "user")?.content);
     let parsed: { source?: { text?: string }; conversation?: Array<{ question: string; answer: string; state: string }> } = {};
 
-    try { parsed = JSON.parse(content); } catch { /* 不是 JSON 时下面的判据都不成立 */ }
+    try { parsed = JSON.parse(content); } catch {  }
     const prior = parsed.conversation?.[0];
     const marker = !!parsed.source?.text?.includes(MARKER);
     const stopped = prior?.state === "stopped" && !!prior.answer && OLD.startsWith(prior.answer);
@@ -230,7 +206,6 @@ try {
 
   check("请求：回车后 1.5 s 内模型收到改口，带这一段和已停止的上一轮", requestPass, requestDetail);
 
-  // ── 停止 ──
   const done = await until(async () => {
     const s = await card();
     const t = s.turns[1];
@@ -245,7 +220,6 @@ try {
     { lenAtEnter, lenAt1s, lenMaxAfter1s, oldLenAtEnd: oldFinal.length, newAnswerDone: !!done, newHasOldText: newFinal.includes("旧定义"), oldTailAnywhere: final.text.includes(OLD_TAIL), turns: final.turns.length });
   await rp.screenshot(work, join(out, "4-done.png"));
 
-  // ── 界面：旧回答停住、原样留着；新回答带「已按新要求回答」；高亮还在；网页没滚动 ──
   const old = final.turns[0];
   const highlightAfter = await highlighted();
   const scrollAfter = await rp.evaluate(work, "scrollY") as number;

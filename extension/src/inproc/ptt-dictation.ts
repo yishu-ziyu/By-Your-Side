@@ -1,5 +1,5 @@
 /**
- * 按住说话的听写。
+ * WHY: 按住说话的听写。
  * 用按量的 Realtime 3 只做转写：关掉服务端 VAD、不给工具、松开时手动提交、从不请求回复。
  * Step Plan 套餐已不含任何语音模型（实时和 ASR 都回「模型不存在或无权限」），所以只能走按量的 /v1/realtime。
  * 计时从松开算：本机代理会让连接和回应慢上好几秒，
@@ -8,7 +8,6 @@
 
 const DICTATION_URL = "wss://api.stepfun.com/v1/realtime?model=stepaudio-3-realtime-preview";
 
-/** 浏览器 WebSocket 的最小子集。 */
 export interface DictationSocket {
   send: (data: string) => void;
   close: () => void;
@@ -23,25 +22,19 @@ export type DictationResult =
   | { ok: false; reason: "empty" | "failed" | "timeout" | "cancelled"; message?: string };
 
 export interface Dictation {
-  /** 连上服务端，可以在按下之前就调用：说话时音频随录随送，松开后只等最后一点转写。 */
   start: () => void;
-  /** 还没结束、还没松开：备好的连接能不能接着用。 */
   alive: () => boolean;
-  /** 录到的一帧 24kHz 单声道 pcm16。 */
   push: (frame: ArrayBuffer) => void;
-  /** 松开键：提交并等最终转写。 */
   stop: () => Promise<DictationResult>;
   cancel: () => void;
 }
 
-/** 发给服务端的三种事件。 */
 type ClientEvent =
   | { type: "session.update"; session: { modalities: ["text", "audio"]; input_audio_format: "pcm16"; output_audio_format: "pcm16"; turn_detection: null; tools: [] } }
   | { type: "input_audio_buffer.append"; audio: string }
   | { type: "input_audio_buffer.commit" }
   | { type: "input_audio_buffer.clear" };
 
-/** 服务端事件里用到的字段。 */
 interface ServerEvent { type?: string; transcript?: string; error?: { message?: string } }
 
 const base64 = (buffer: ArrayBuffer): string => {
@@ -53,16 +46,12 @@ const base64 = (buffer: ArrayBuffer): string => {
   return btoa(text);
 };
 
-/** 松开时还没连上：最多再等多久。 */
 const CONNECT_MS = 15_000;
 
-/** 提交后服务端多久一个事件都不回，算超时。 */
 const IDLE_MS = 8_000;
 
-/** 提交后无论如何最多等多久。 */
 const CAP_MS = 30_000;
 
-/** 连好还没开口时多久碰一下服务端：闲置约 60 秒它就以「太久没有操作」断开。清空的是空缓冲，不出声。 */
 const KEEPALIVE_MS = 25_000;
 
 export function createDictation(deps: { open: (url: string) => DictationSocket; connectMs?: number; idleMs?: number; capMs?: number }): Dictation {
@@ -92,7 +81,6 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
 
   const timeout = () => finish({ ok: false, reason: "timeout", message: "听写服务没有回应" });
 
-  /** 提交后重新等一段；服务端每回一个事件调一次。 */
   const waitIdle = () => {
     clearTimeout(timer);
     timer = setTimeout(timeout, idleMs);
@@ -110,7 +98,6 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
     if (committed) waitIdle();
 
     if (event.type === "session.created") {
-      // Realtime 3 只收 text+audio 两种都开；不请求回复就不会出声。
       send({ type: "session.update", session: { modalities: ["text", "audio"], input_audio_format: "pcm16", output_audio_format: "pcm16", turn_detection: null, tools: [] } });
     } else if (event.type === "session.updated" && !ready) {
       ready = true;

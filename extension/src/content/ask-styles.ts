@@ -1,4 +1,3 @@
-/** 网页上的纸面（划词卡、语音胶囊）共用的色阶：和侧栏同一套，设置里换「暖纸」或系统深色时一起换。 */
 export const PAPER_TOKENS = `
 :host {
   all: initial;
@@ -84,7 +83,6 @@ export const PAPER_TOKENS = `
 }
 `;
 
-/** 划词：一张纸卡从工具条长成输入框、再长成回答，和侧栏同一套色阶，层级只靠字的明暗。 */
 export const ASK_STYLES = `${PAPER_TOKENS}
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }

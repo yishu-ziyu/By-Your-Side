@@ -1,9 +1,3 @@
-/**
- * 真实扩展 + 真实本地语义模型：换个说法找到自动总结的做法；无关记忆不带入；忘记并重启扩展后找不回。
- * SIDEAGENT_SEMANTIC_OFFLINE=1 时阻断模型下载，验证原对话与关键词回退不受影响。
- *   npx tsx scripts/acceptance/real-path/memory-semantic-recall.mts --headless
- *   SIDEAGENT_SEMANTIC_OFFLINE=1 npx tsx scripts/acceptance/real-path/memory-semantic-recall.mts --headless
- */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";

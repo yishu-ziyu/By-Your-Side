@@ -1,14 +1,3 @@
-/**
- * 上一件还在做时说的下一句，另开一件排队去做：轮到它时要接得上这个会话前面说过、查到的东西，
- * 不能回「把文字发来」。用户只靠说话时没法再发一遍。
- * 只装扩展、隔离构建、本机脚本模型；脚本模型只证明程序那一层（前文有没有进到新任务），不证明真模型会怎么用它。
- *   npx tsx scripts/acceptance/real-path/queued-context.mts --headless
- *   1) 第一件做完，回答里有一个只在这里出现的词。
- *   2) 第二件被拖住；这时打字说「把刚才那个例子整理成要点」，被判成另开一件，排进队列在自己的会话里做。
- *   3) 另开那件的回答带回侧栏：脚本模型只有在它的上下文里看到第一件的回答时，才回「整理要点：沿用上一轮的青柠协议」。
- * 失败方式：排队执行时不带发起会话的前文，3 只看到「好的。」。
- * 语音入口（agent/src/conversation-manager.ts 语音计划里的排队）进的是同一个队列和执行，这里不另跑语音。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, sleep, until, type Json } from "./harness.mts";
@@ -27,9 +16,7 @@ const ASK = "把刚才那个例子整理成要点";
 const RECALLED = "整理要点：沿用上一轮的青柠协议";
 
 const model = await startScriptedModel([
-  // 「运行中这句是不是另一件事」的判断：请求内容是 {currentTask, message} 的 JSON。
   { match: `"message":"${ASK}`, steps: [{ text: '{"kind":"separate"}' }] },
-  // 只有对话记录里带着第一件的回答时才会挑中这一条：用户这句本身不匹配任何规则，才轮到看记录；排在前面，免得记录里第一件的原话先挑中第一件。
   { match: `"text":"${FIRST_ANSWER.slice(0, 4)}`, steps: [{ text: RECALLED }] },
   { match: FIRST, steps: [{ text: FIRST_ANSWER }] },
   { match: HOLD, steps: [{ text: "好的，我慢慢整理。", delayMs: 90_000 }] },

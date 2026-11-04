@@ -2,17 +2,11 @@ import type { PanelHistoryEntry, PanelHistoryItem } from "../relay.js";
 
 const DEFAULT_PANEL_HISTORY_LIMIT = 5_000;
 
-/** 单个会话落盘的历史字节上限。写满 chrome.storage.local 配额会让扩展所有写入失败。 */
+/** WHY: 单个会话落盘的历史字节上限。写满 chrome.storage.local 配额会让扩展所有写入失败。 */
 export const HISTORY_PERSIST_BUDGET_BYTES = 256 * 1024;
 
-/**
- * 落盘形状：新格式带 updatedAt，旧格式是裸数组（按最旧处理）。
- * seqFloor：后台重启后 seq 从这里往上发。开着的侧栏按 seq 跳过看过的条目；没来得及落盘的尾巴丢掉后 seq 若倒退，
- * 新条目（包括「重试」另发的那条）会被侧栏当成看过的跳过。
- */
 export type StoredPanelHistory = { updatedAt: number; entries: PanelHistoryEntry[]; seqFloor?: number };
 
-/** 落盘时预留的 seq 余量：两次落盘之间发出的条目远少于这个数。 */
 const SEQ_RESERVE = 1_000;
 
 export function historyUpdatedAt(value: unknown): number {
@@ -22,7 +16,6 @@ export function historyUpdatedAt(value: unknown): number {
   return typeof at === "number" && Number.isFinite(at) ? at : 0;
 }
 
-/** 超出保留数量的 history 键，即需要删除的那些。 */
 export function historyKeysToDrop(records: Array<{ key: string; updatedAt: number }>, keep: number): string[] {
   if (keep <= 0) return records.map((record) => record.key);
 
@@ -34,12 +27,6 @@ export function historyKeysToDrop(records: Array<{ key: string; updatedAt: numbe
     .map((record) => record.key);
 }
 
-/**
- * Service worker 生命周期内的侧栏回放日志。
- *
- * seq 永不复用；超过上限时只淘汰最旧条目。因此面板持有的旧游标即使落在
- * 已截断区间，since() 也会返回当前仍保留的完整窗口。
- */
 export class PanelHistory {
   private readonly entries: PanelHistoryEntry[] = [];
   private nextSeq = 1;
@@ -51,7 +38,6 @@ export class PanelHistory {
   }
 
   record(item: PanelHistoryItem): PanelHistoryEntry {
-    // 紧跟着同一状态的重复状态（每次重载扩展都会重发 idle）不再追加：它不改变侧栏，却会把最早的真实消息挤出落盘窗口。
     const last = this.entries.at(-1);
 
     if (last && sameStatus(last.item, item)) return last;
@@ -74,7 +60,6 @@ export class PanelHistory {
       }
     }
 
-    // 用量每次模型请求都报一条，侧栏只用最后一条：旧的不留，免得把真实消息挤出落盘窗口。
     if (contextUsage(item)) {
       for (let i = this.entries.length - 1; i >= 0; i--) {
         const old = this.entries[i]!.item;
@@ -161,10 +146,6 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
     if (entry?.item.kind === "user") entry.item.undelivered = { original };
   }
 
-  /**
-   * 「重试」指的那一条：还没送达就交出原文；已经送达回 delivered；
-   * 没有这条，或 seq 上的不是这句原话（后台重启后 seq 被别的条目占用）回 gone。
-   */
   retryTarget(seq: number, text: string): { original: import("../../../shared/protocol.js").ClientMessage } | "delivered" | "gone" {
     const entry = this.entries.find(item => item.seq === seq);
 
@@ -183,11 +164,6 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
     return this.entries.filter((entry) => entry.seq > afterSeq);
   }
 
-  /**
-   * 落盘窗口：从最新往回取，累计 UTF-8 字节不超过 budgetBytes，非空历史至少保留最新一条。
-   * 内存里仍是完整列表，这里只决定写进 storage 的那一份。
-   * 按字节而不是字符数计量：storage 配额算的是 UTF-8 字节，中文一个字占 3 字节。
-   */
   persistWindow(budgetBytes: number): PanelHistoryEntry[] {
     const encoder = new TextEncoder();
     const out: PanelHistoryEntry[] = [];
@@ -222,7 +198,6 @@ if(taskPlan(old.item)!.updatedAt>=plan.updatedAt)return old;this.entries.splice(
     if (typeof floor === "number" && Number.isSafeInteger(floor) && floor > this.nextSeq) this.nextSeq = floor;
   }
 
-  /** 写进落盘历史的 seqFloor：比已发出的 seq 多留一段，下一次落盘前发出的条目重启后也不会被重发。 */
   seqFloor(): number {
     return this.nextSeq + SEQ_RESERVE;
   }

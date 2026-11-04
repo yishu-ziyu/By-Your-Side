@@ -10,37 +10,32 @@ import { withTimeout } from "../timeout.js";
 interface ScreenshotResult {
   imageBase64: string;
   mediaType: "image/png";
-  /** 图像像素宽/高（PNG 解码实测，恒大于 0；解码失败则整个调用明确失败）。点击用的 CSS 坐标见 cssWidth/cssHeight。 */
   width: number;
   height: number;
   pixelWidth: number;
   pixelHeight: number;
-  /** 捕获区域的 CSS 宽高，可含小数；点击还需按 coordinates 换算原点与滚动。 */
   cssWidth: number;
   cssHeight: number;
-  /** 查不到为 0。 */
   devicePixelRatio: number;
   tabId: number;
   url: string;
   title: string;
   capturedAt: number;
-  /** cdp = 指定工作页直接捕获；visible-tab = 捕获前后均核对工作页在前台后的可见捕获。 */
   source: "cdp" | "visible-tab";
   fullPage?: boolean;
   clip?: { x: number; y: number; width: number; height: number; scale?: number };
   scale?: "css" | "raw";
   documentId?: string;
-  /** Null when capture geometry is unknown (for example a restricted browser page). */
   coordinates?: ToolContract["screenshot"]["data"]["coordinates"];
 }
 
 /**
- * 截图幕帘：拍之前把产品自己画的一切（光标、标注、控制条）藏起来，拍完放下。
+ * WHY: 截图幕帘：拍之前把产品自己画的一切（光标、标注、控制条）藏起来，拍完放下。
  * 不藏的话 agent 会在自己的截图里看到一个页面上并不存在的发光箭头，把它当页面元素去理解甚至去点。
  * 幕帘失败（页面禁止注入、导航换文档）绝不能弄失败截图本身。
  */
 async function curtain(tabId: number, hidden: boolean, beforeDispatch?: DispatchGuard, onDispatch?: () => void): Promise<void> {
-  // A revoked dispatch (stop/takeover) must escape the best-effort injection error handling.
+  // WHY: A revoked dispatch (stop/takeover) must escape the best-effort injection error handling.
   if (hidden) {
     await beforeDispatch?.();
     beforeDispatch?.checkNow?.();
@@ -67,7 +62,7 @@ async function curtain(tabId: number, hidden: boolean, beforeDispatch?: Dispatch
           }
         }
 
-        // 合成器要到下一帧才用上新样式；不等这一帧会拍到幕帘生效前的画面。
+        // WHY: 合成器要到下一帧才用上新样式；不等这一帧会拍到幕帘生效前的画面。
         // 页面被 JS dialog 挡住时 rAF 永不回调——必须有超时。
         if (hide) {
           await Promise.race([
@@ -84,11 +79,9 @@ async function curtain(tabId: number, hidden: boolean, beforeDispatch?: Dispatch
       new Promise<void>((resolve) => setTimeout(resolve, 800)),
     ]);
   } catch {
-    /* 幕帘失败不能弄失败截图本身 */
   }
 }
 
-/** PNG 解码失败即抛错：A1 要求像素尺寸真实正数，不允许 0 尺寸成功回包。 */
 async function decodePng(dataUrl: string): Promise<ImageBitmap> {
   const comma = dataUrl.indexOf(",");
   const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
@@ -116,7 +109,7 @@ async function pngPixels(dataUrl: string): Promise<{ width: number; height: numb
 
 type CaptureRegion = { x: number; y: number; width: number; height: number };
 
-/** Chromium may quantize a fractional clip before applying its scale. Capture
+/** WHY: Chromium may quantize a fractional clip before applying its scale. Capture
  * the integer enclosing region, then crop only those real captured pixels.
  * Never draw substitute content; unknown source geometry fails closed. */
 async function cropFractionalRegion(dataUrl: string, captured: CaptureRegion, requested: CaptureRegion, density: number): Promise<string> {
@@ -156,7 +149,6 @@ interface ViewportMetrics {
   scrollY: number;
 }
 
-/** Runtime.evaluate / chrome.scripting 读回来的原始视口读数，字段全部未经校验。 */
 interface RawViewportReading {
   w?: unknown;
   h?: unknown;
@@ -173,7 +165,6 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-/** 边界解析：CDP/scripting 读回的未知读数 → 具名视口指标；宽高任一非正数即未知。 */
 function parseViewport(reading: RawViewportReading | undefined): ViewportMetrics | null {
   const { w, h, dpr, x = 0, y = 0 } = reading ?? {};
 
@@ -188,11 +179,6 @@ function parseViewport(reading: RawViewportReading | undefined): ViewportMetrics
   };
 }
 
-/**
- * CSS 视口/DPR：先走 CDP Runtime.evaluate；debugger 不可用时回退 chrome.scripting
- * 在页内读取（正常网页；chrome:// 等不支持页 executeScript 直接失败，走未知分支）。
- * 两条路都读不到才返回 0（未知），不写固定假值。
- */
 async function queryViewport(
   tabId: number,
 ): Promise<ViewportMetrics> {
@@ -212,13 +198,11 @@ async function queryViewport(
 
     if (parsed) return parsed;
   } catch {
-    /* 不支持页：保持未知 */
   }
 
   return unknown;
 }
 
-/** 捕获前后已知视口/DPR 不一致则返回差异描述；任一侧未知则无法判定，返回 null（不拦截）。 */
 function viewportMismatch(
   pre: { cssWidth: number; cssHeight: number; devicePixelRatio: number },
   post: { cssWidth: number; cssHeight: number; devicePixelRatio: number },
@@ -261,7 +245,6 @@ async function buildResult(opts: {
   source: ScreenshotResult["source"];
   preUrl: string;
   preViewport: { cssWidth: number; cssHeight: number; devicePixelRatio: number };
-  /** visible-tab 回退需在捕获后再次确认工作页仍在前台；CDP 按 tab 捕获不受前台影响，只验 URL。 */
   verifyForeground: boolean;
   cssWidth: number;
   cssHeight: number;
@@ -274,7 +257,7 @@ async function buildResult(opts: {
   density?: number;
 }): Promise<ScreenshotResult> {
   const pixels = await pngPixels(opts.dataUrl);
-  // 捕获后重读：URL 必须与捕获前一致，否则是旧图配新 URL，直接丢弃。
+  // WHY: 捕获后重读：URL 必须与捕获前一致，否则是旧图配新 URL，直接丢弃。
   const post = await chrome.tabs.get(opts.tabId);
 
   if ((post.url ?? "") !== (opts.preUrl ?? "")) {
@@ -300,7 +283,7 @@ async function buildResult(opts: {
     throw new Error(`截图期间视口变化（${mismatch ?? "滚动位置改变"}），已丢弃本次截图，请重拍。`);
   }
 
-  // Last asynchronous check: a same-URL reload during the post-capture
+  // WHY: Last asynchronous check: a same-URL reload during the post-capture
   // viewport read must not return pixels labeled with the old document.
   const currentDocument = await readCurrentDocument(opts.tabId);
 
@@ -334,7 +317,6 @@ async function buildResult(opts: {
     } : null,
   };
 
-  // 可选字段：保留「未提供即不带这个键」的语义，不用 `...(cond ? {k} : {})` 掩盖省略。
   if (opts.fullPage) result.fullPage = true;
 
   if (opts.clip) result.clip = opts.clip;
@@ -347,7 +329,7 @@ async function buildResult(opts: {
 }
 
 /**
- * CDP 失败后的可见捕获回退：仅当工作页确为同窗口活动页才拍，
+ * WHY: CDP 失败后的可见捕获回退：仅当工作页确为同窗口活动页才拍，
  * 否则明确失败——绝不返回另一页的图片、绝不谎称工作页截图，也不为截图抢前台。
  */
 async function visibleFallback(tab: chrome.tabs.Tab, cdpError: unknown): Promise<string> {
@@ -407,8 +389,6 @@ export async function screenshot(
   const preViewport = await queryViewport(tab.id);
   const dpr = preViewport.devicePixelRatio;
 
-  // Restricted pages may have no geometry. Preserve real raw capture, explicitly
-  // dropping the CSS promise and coordinate conversion instead of guessing DPR.
   if (!dpr || !preViewport.cssWidth || !preViewport.cssHeight) {
     if (clip) throw new Error("截图区域/DPR 无法核对，局部或全页截图未执行。");
     scaleMode = "raw";
@@ -418,7 +398,6 @@ export async function screenshot(
     ? { x: preViewport.scrollX, y: preViewport.scrollY, width: preViewport.cssWidth, height: preViewport.cssHeight }
     : undefined);
 
-  // Explicit clip.scale overrides css/raw; it is the CDP scale, not DPR.
   const clipScale =
     clip?.scale !== undefined
       ? clip.scale
@@ -427,8 +406,6 @@ export async function screenshot(
         : 1;
 
   const density = dpr > 0 ? dpr * clipScale : undefined;
-  // Page.captureScreenshot reads clip in 100%-zoom pixels, not the page's CSS pixels: at any other page
-  // zoom the CSS region is converted first, and rounding to whole pixels happens in those units.
   const zoom = region ? await chrome.tabs.getZoom(tab.id).catch(() => 1) : 1;
   const zoomedRegion = region && { x: region.x * zoom, y: region.y * zoom, width: region.width * zoom, height: region.height * zoom };
   const zoomedDensity = density && density / zoom;
@@ -480,11 +457,8 @@ export async function screenshot(
       if (clip || fullPage) throw new Error(`局部/全页截图失败（${oneLine(e)}）`);
       dataUrl = await visibleFallback(tab, e);
       source = "visible-tab";
-      // captureVisibleTab is a raw capture. Do not label it CSS-scaled.
       scaleMode = "raw";
     } finally {
-      // Restore overlays before the final identity check, not after validating
-      // and constructing a reply for a document that may since have changed.
       await curtain(tab.id, false);
     }
 

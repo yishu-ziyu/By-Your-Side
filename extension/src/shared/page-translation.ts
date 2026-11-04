@@ -1,6 +1,6 @@
 import type { TranslationCommand, TranslationReceipt, TranslationMode, TranslationFont, TranslationPageResult } from '../../../shared/page-translation.js';
 
-/** Serialized into Chrome's ISOLATED world. Keep all runtime helpers inside this function. */
+/** WHY: Serialized into Chrome's ISOLATED world. Keep all runtime helpers inside this function. */
 export function translationInPage(command: TranslationCommand): TranslationPageResult {
   let mutated = false;
   let applied = 0;
@@ -26,7 +26,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   const world = globalThis as typeof globalThis & {__bysTranslation?: State};
   let state = world.__bysTranslation;
 
-  // Text nodes are grouped by paragraph, including inline links/emphasis as one context.
   const readParagraphs = () => {
     const excluded = 'script,style,noscript,textarea,input,select,button,pre,code,svg,canvas,iframe,[contenteditable]:not([contenteditable="false"]),[translate="no"],.notranslate,[data-bys-translation],[hidden],[aria-hidden="true"],[id^="__sideagent"],[id^="sideagent-"]';
     const groups = new Map<HTMLElement, Text[]>();
@@ -54,9 +53,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
  return r.bottom >= 0 && r.top < innerHeight ? 0 : Math.abs(r.top); };
 
-  // Read-only: the paragraphs a fresh translate would collect first, in the same order, so they can be translated
-  // while the model is still deciding. No state, marks or ids are left on the page.
-  // When this page already has translations, report them instead: a one-key toggle restores them.
   if (command.action === 'peek') {
     const found: TranslationReceipt['blocks'] = [];
 
@@ -66,7 +62,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
       return {document: state.token, language: state.language, mode: state.mode, fontSize: state.fontSize, fontFamily: state.fontFamily, translated: done, remaining: state.blocks.size - done, unsupported: 0, blocks: []};
     }
 
-    // A stale state from an earlier URL is handled by the real call, which restores it first.
     if (!state) {
       const paragraphs = [...readParagraphs()].filter(([, nodes]) => !tooLarge(nodes)).sort(([a], [b]) => fromViewport(a) - fromViewport(b));
 
@@ -97,7 +92,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     }
 
     block.families = undefined;
-    // Both font overrides are now released; the next cycle needs a fresh baseline.
     block.hadStyles = undefined;
   };
 
@@ -134,7 +128,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   const clear = () => { if (state?.blocks.size) mutated = true; state?.restore(); delete world.__bysTranslation; };
 
-  // The agent's own partial translations (js, data-bys-translation="manual") are not tool state: restore and a whole-page run remove them, so no paragraph shows two translations.
   const dropManual = () => { for (const el of document.querySelectorAll('[data-bys-translation="manual"]')) { el.remove(); mutated = true; } };
 
   if (command.action === 'restore') {
@@ -149,7 +142,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
       const owned = state;
       const release = () => { for (const b of owned.blocks.values()) { b.pendingMark?.remove(); b.pendingMark = undefined; } };
 
-      // A resumable failure: the model usually calls translate again within seconds; that call cancels this timer, so marks do not flash.
       if (command.delayMs) owned.markTimer = setTimeout(release, command.delayMs);
       else { for (const b of owned.blocks.values()) unmark(b); }
     }
@@ -204,7 +196,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     mutated = true;
 
     if (block.segments.every(s => s.translation !== undefined)) unmark(block);
-    // Keep original nodes and listeners; translated-only changes their text, not innerHTML.
     block.output?.remove(); block.output = undefined;
 
     for (const segment of block.segments) segment.node.data = current.mode === 'translated' ? segment.translation ?? segment.original : segment.original;
@@ -252,7 +243,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   };
 
   if (command.mode || command.fontSize !== undefined || command.fontFamily !== undefined) {
-    // Restore the prior font before replacing the desired size.
     for (const block of current.blocks.values()) restoreFont(block);
 
     if (command.fontFamily) current.fontFamily = command.fontFamily;
@@ -269,8 +259,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     const affected = [...current.blocks.values()].filter(b => b.segments.some(s => translations.has(s.id)));
 
     if (translations.size !== command.translations!.length) throw new Error('译文段落标识重复，未写入页面。');
-    // A live page can replace one paragraph while the model translates. Apply only
-    // complete, unchanged paragraphs; collect will pick up new source text next.
     const unchanged = affected.filter(b => b.element.isConnected && b.segments.every(s => translations.has(s.id) && s.node.isConnected && b.element.contains(s.node) && s.node.data === (current.mode === 'translated' ? s.translation ?? s.original : s.original)));
 
     for (const block of unchanged) {
@@ -301,11 +289,9 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   for (const [element, block] of current.blocks) if (!groups.has(element)) { undo(block); current.blocks.delete(element); }
 
   const pending = [...current.blocks.values()].filter(b => !b.segments.every(s => s.translation !== undefined));
-  // Read the user's visible paragraphs first; do not scroll the page to translate it.
   pending.sort((a, b) => fromViewport(a.element) - fromViewport(b.element));
 
   if (command.action === 'begin' || command.action === 'collect' || command.action === 'apply') {
-    // A paragraph waiting for its translation shows a quiet placeholder where the text will land.
     if (command.action !== 'apply') for (const block of pending) {
       if (block.pendingMark?.isConnected) continue;
 
@@ -321,7 +307,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
       block.element.append(mark); block.pendingMark = mark; mutated = true;
     }
 
-    // If the run dies without settling, marks must not stay forever; the agent itself gives up after 180 s idle.
+    // WHY: If the run dies without settling, marks must not stay forever; the agent itself gives up after 180 s idle.
     clearTimeout(current.markTimer);
     const owned = current;
     current.markTimer = setTimeout(() => {
@@ -350,7 +336,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   return receipt;
   } catch (error) {
-    // Chrome omits a thrown injection's result. Return an explicit receipt instead.
+    // WHY: Chrome omits a thrown injection's result. Return an explicit receipt instead.
     return {error: error instanceof Error ? error.message : String(error), executionFact: mutated ? 'unknown' : 'not_executed'};
   }
 }

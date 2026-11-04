@@ -1,11 +1,3 @@
-/**
- * 输入框里的材料标签：真正会随这一句送出的页面、选区、标签页和附件各露一个标签，放不下的折进「+N」清单；点标签看这份材料的内容。
- *
- * 只投影现有草稿，不另存一套材料，也不改变发送协议：
- * - 当前页或选区来源页由发送流程自动带入，所以标成不可移出；
- * - @ 标签页、选区和附件仍走原来的 tabMentions / pendingAsk / AttachmentsManager；
- * - 批量移出只调用这些现有入口，撤销时恢复移出前的草稿快照。
- */
 import { createElement as icon, AtSign, FileText, Globe2, TextQuote, X } from "lucide";
 import type { PendingAsk } from "../shared/ask-selection.js";
 import type { AttachmentSnapshot } from "./attachments.js";
@@ -55,12 +47,10 @@ interface MaterialsTrayOptions {
   onAdd(): void;
   onMention(): void;
   onAddFiles(files: File[]): void;
-  /** 移出真实草稿，返回能把这次移出恢复回来的函数。 */
   onRemove(items: TrayRemoval[]): (() => void) | void;
 }
 
 const CLIP_LABEL = 34;
-/** 预览只露开头，整份文字仍随消息送出。 */
 const PREVIEW_TEXT_MAX = 2000;
 
 function clip(text: string, max = CLIP_LABEL): string {
@@ -95,9 +85,7 @@ export class MaterialsTray {
   private lastSignature = "";
   private previousCount = -1;
   private expanded = false;
-  /** 正在预览的材料。 */
   private previewKey: string | null = null;
-  /** 上一次画出来的材料；新出现的标签才播落下动效。 */
   private shownKeys: Set<string> | null = null;
   private readonly deliveries = new Map<string, { request: TaskActionRequest; receipt: TaskReceipt | null }>();
   private undo: { label: string; restore: () => void; timer: ReturnType<typeof setTimeout> } | null = null;
@@ -122,7 +110,6 @@ export class MaterialsTray {
       this.root.classList.remove("is-over");
       opts.onAddFiles(Array.from(event.dataTransfer.files));
     });
-    // 侧栏拖宽拖窄时重新决定露几个标签。
     let width = 0;
     new ResizeObserver(([entry]) => {
       const next = Math.round(entry?.contentRect.width ?? 0);
@@ -382,7 +369,6 @@ export class MaterialsTray {
     if (draft) this.fitChips(head, chips, toggle, countNumber);
     const delivery = this.delivery();
 
-    // The "另开会话" and "还没有连接模型" cards in the conversation already state this rejection and offer the next step.
     if (delivery && !(delivery.receipt?.status === "rejected" && (delivery.receipt.newConversationRequest || delivery.receipt.needsModel))) {
       const receipt = delivery.receipt;
       const state = receipt?.status ?? "sending";
@@ -412,7 +398,6 @@ export class MaterialsTray {
     }
   }
 
-  /** 一行放不下时先把名字统一缩短一档，仍放不下再从末尾折进「+N」；不把名字压成一两个字。 */
   private fitChips(head: HTMLElement, chips: HTMLElement[], toggle: HTMLButtonElement, countNumber: HTMLElement): void {
     let shown = chips.length;
     const label = () => {
@@ -664,7 +649,6 @@ export class MaterialsTray {
     }
   }
 
-  /** stays：没做成的原因留到下一次提示替换它，不像成功提示那样自己消失。 */
   private showNote(text: string, { stays = false } = {}): void {
     const existing = this.root.querySelector(".mt-note");
 

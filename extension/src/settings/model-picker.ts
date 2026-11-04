@@ -1,6 +1,5 @@
 import { ChevronsUpDown, Search, Check, createElement } from 'lucide';
 
-/** Keep the native select as the single source of choices and its existing save event. */
 export function mountModelPicker(select: HTMLSelectElement, decorate: (value: string) => HTMLElement | SVGElement | null): void {
   const button = document.createElement('button');
   button.type = 'button';
@@ -30,7 +29,6 @@ export function mountModelPicker(select: HTMLSelectElement, decorate: (value: st
   list.role = 'listbox';
   list.setAttribute('aria-label', label);
   pop.append(head, list);
-  // A picker opened within a modal must belong to that dialog's top-layer subtree.
   (select.closest('dialog') ?? document.body).append(pop);
   let options: HTMLButtonElement[] = [];
   let active = 0;

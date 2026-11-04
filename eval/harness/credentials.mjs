@@ -1,11 +1,3 @@
-/**
- * Model credentials for eval jobs, in the shape the extension stores under `inproc_cred:<provider>`.
- * Sources, first match wins:
- *   1. env BYS_KEY_<PROVIDER> (provider id upper-cased, non-alphanumerics -> _), e.g. BYS_KEY_ZAI_CODING_CN
- *   2. stepfun: env SIDEAGENT_STEP_PLAN_KEY, else ~/.sideagent/step-plan.key (Step Plan URL only; see model-runtime.ts)
- *   3. ~/.pi/agent/auth.json[provider]: { type: "api_key", key } or an OAuth login { access, refresh, expires }
- * Never logs or returns the secret in any error message.
- */
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -38,13 +30,8 @@ export function loadCredential(provider) {
   throw new Error(`no credential for ${provider}: set ${envName(provider)} or add it to ~/.pi/agent/auth.json`);
 }
 
-/** Every secret string in a credential (used to scan job outputs for leaks). */
 export const secretsOf = (credential) => [credential.key, credential.access, credential.refresh].flatMap((s) => (s && String(s).length >= 8 ? [String(s)] : []));
 
-/**
- * "main[+fast]" -> { main, fast } as "provider/modelId"; fast defaults to main.
- * Example: minimax-cn/MiniMax-M3.1-Flash-Preview+zai-coding-cn/glm-5.3-flash
- */
 export function parseModelSpec(spec) {
   const [main, fast = main] = spec.split("+");
 
@@ -57,7 +44,6 @@ const split = (m) => { const i = m.indexOf("/");
 
  return { provider: m.slice(0, i), modelId: m.slice(i + 1) }; };
 
-/** chrome.storage.local items the settings page would write for this main + fast pair (contains secrets: never persist). */
 export function storageItemsFor(spec) {
   const { main, fast } = parseModelSpec(spec);
   const a = split(main), b = split(fast);

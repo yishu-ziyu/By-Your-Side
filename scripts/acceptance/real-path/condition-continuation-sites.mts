@@ -1,10 +1,3 @@
-/**
- * Public-site pilot: real Wikipedia search suggestions + real logged-in model.
- * Delays the original suggestion request until BYS has persisted a condition wait;
- * never supplies a fixture response or changes Wikipedia's result data.
- * npx tsx scripts/acceptance/real-path/condition-continuation-sites.mts --headless --site=wikipedia
- * Only Wikipedia is implemented and source-checked; other sites fail explicitly.
- */
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -41,7 +34,7 @@ const suggestionQuery = (raw: string): string | null => {
     if (url.hostname !== 'en.wikipedia.org') return null;
     if (url.pathname === '/w/rest.php/v1/search/title') return url.searchParams.get('q');
     if (url.pathname === '/w/api.php' && url.searchParams.get('action') === 'opensearch') return url.searchParams.get('search');
-  } catch { /* unrelated URL */ }
+  } catch {  }
   return null;
 };
 const publicApiUrl = (raw: string): string => {
@@ -252,7 +245,6 @@ try {
   if(rp&&work)await rp.screenshot(work,join(artifacts,'failure-page.png')).catch(()=>{});
   if(rp&&panel)await rp.screenshot(panel,join(artifacts,'failure-panel.png')).catch(()=>{});
 } finally {
-  // Never leave a public-site request paused after either a success or a failed assertion.
   released=true;
   if(rp&&work){for(const[id,entry]of[...pending]){try{await rp.cdp.send('Fetch.continueRequest',{requestId:id},work);entry.releasedAt=Date.now()}catch(caught){entry.error=redactCredentialText(String(caught))}pending.delete(id)}await rp.cdp.send('Fetch.disable',{},work).catch(()=>{})}
   stopPausedListener?.();await Promise.allSettled([...responseReads]);

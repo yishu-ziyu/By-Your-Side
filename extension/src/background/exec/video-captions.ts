@@ -1,8 +1,3 @@
-/**
- * `video_captions`：这一页的视频播放器自己有哪些字幕。只读，不改页面。
- * 来源只取播放器真用的：<video> 的字幕轨道、YouTube 页面里的字幕清单、页面自己发过的播放器接口
- * （原地址原样、带登录状态再取一次）。不拼接口：B 站对不带签名的 x/player/v2 每次回一份别的视频的 AI 字幕。
- */
 import { LEAD_SESSION_ID } from "../../../../shared/protocol.js";
 import { sendCommand } from "../debugger.js";
 import { resolveReadableTab } from "../state.js";
@@ -19,20 +14,17 @@ interface CaptionTrack {
 interface PageCaptions {
   pageUrl: string;
   videoId: string | null;
-  /** 播放器自己的标题与分P：用户问“哪个视频、第几P”时不必再读页面。 */
   title: string;
   part: { index: number; title: string; count: number } | null;
   identityVerified: boolean;
   videos: number;
   tracks: CaptionTrack[];
-  /** 页面自己的播放器接口里明说的字幕清单（字段名、条数），空清单就是这个视频没有字幕。 */
   lists: Array<{ request: string; field: string; count: number }>;
-  /** 网站说要登录才给字幕（B站未登录时字幕清单为空并带 need_login_subtitle）：这时的空清单不能当作没有字幕。 */
+  /** WHY: 网站说要登录才给字幕（B站未登录时字幕清单为空并带 need_login_subtitle）：这时的空清单不能当作没有字幕。 */
   loginRequired: boolean;
   failed: string[];
 }
 
-/** 在页面里跑（主世界）：读轨道和清单，再用页面自己的登录状态重取它发过的播放器接口。 */
 const READ_CAPTIONS = `(async () => {
   const page = new URL(location.href);
   const youtube = /(^|\\.)youtube\\.com$/.test(page.hostname);
@@ -93,7 +85,6 @@ const READ_CAPTIONS = `(async () => {
   return out;
 })()`;
 
-/** 页面脚本的回值是页面里算出来的，进来前核对形状；不合格的条目丢掉。 */
 function pageCaptions(value: unknown): PageCaptions {
   const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const text = (v: unknown) => (typeof v === "string" ? v.slice(0, 300) : "");
@@ -132,7 +123,6 @@ function report(found: PageCaptions): string {
 
   for (const list of found.lists) lines.push(`- ${list.request} → ${list.field}: ${list.count} entr${list.count === 1 ? "y" : "ies"}`);
 
-  // 带地址的轨道每条数百字：正文只列前 30 条，其余列出语言代码，按 language 仍能取到。
   if (found.tracks.length > 30) lines.push(`- ${found.tracks.length - 30} more tracks not listed below: ${found.tracks.slice(30).map(track => `${track.lang || "?"}${track.auto ? " (auto-generated)" : ""}`).join(", ")}`);
 
   for (const track of found.tracks.slice(0, 30)) lines.push(`- track [${track.source}] ${track.lang || "?"} ${track.label}${track.auto ? " (auto-generated)" : ""}${track.cues != null ? ` · ${track.cues} cues loaded` : ""}${track.url ? ` · ${track.url}` : ""}`);

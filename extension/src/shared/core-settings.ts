@@ -1,7 +1,3 @@
-/**
- * 扩展内核心（offscreen 文档）要读的设置开关。offscreen 文档里没有 chrome.storage：
- * 后台在连上时和这些键变化时整组推过来（inproc_settings），核心在这里同步读。
- */
 import { isMiniAppsOn, MINI_APPS_KEY } from "./mini-apps.js";
 import { CONTINUATION_KEY, PROGRAM_OBSERVATION_KEY } from '../../../shared/task-continuation.js';
 import { SELF_USE_KEY, selfUseActive } from "./self-use.js";

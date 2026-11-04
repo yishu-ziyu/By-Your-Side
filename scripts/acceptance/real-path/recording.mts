@@ -1,14 +1,3 @@
-/**
- * 验收自动录屏：同时录网页和侧栏，停下后并排合成，给人和代理逐帧查闪烁、跳动、先后顺序这类交互问题。
- * 出三样：run.mp4（真实速度）、slow.mp4（0.25 倍慢放，长时间不动的地方压到 1.5 秒）、overview.jpg（带时间戳的逐帧总览）。
- * 画面左上角是这一帧出现的真实时刻，从开始录算起。
- *
- * 命令行（npm run frames -- …）：
- *   （不带参数）                          重新合成最近一次录屏
- *   <目录>                                重新合成指定录屏（用例中途崩掉、没走到 close 时用）
- *   <目录> <起> <止> [--only=panel|page] [--all]
- *                                        把这段时间里的帧拼成图，逐帧看慢动作；默认跳过和上一帧看不出差别的帧（光标闪烁这类），--all 全留
- */
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -30,7 +19,6 @@ const HEIGHT_MAX = 900;
 
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
-/** SIDEAGENT_RECORD=0 关掉；全量验收（run-all）默认关，单跑一个用例默认开。 */
 export function recordingDir(): string | null {
   if (process.env.SIDEAGENT_RECORD === "0") return null;
   if (process.env.SIDEAGENT_RECORD_DIR) return resolve(process.env.SIDEAGENT_RECORD_DIR);
@@ -49,7 +37,6 @@ function trackOf(target: { type: string; url: string }, extensionId: string): Tr
   return "page";
 }
 
-/** out/ 下所有录屏目录：SIDEAGENT_RECORD_DIR 会把录屏放进 out/recordings 以外的地方。 */
 function recordingsUnder(dir: string): string[] {
   let entries;
   try {
@@ -65,13 +52,7 @@ function recordingsUnder(dir: string): string[] {
   });
 }
 
-/**
- * 边录边写盘，用例中途崩掉也留得下。录屏用自己的 CDP 会话，不碰用例附着的会话。
- * 几个标签页合成「网页」一条，只留各窗口当前标签页的帧：后台标签页加载时也出帧。
- * fps 限制每条画面每秒最多存几帧；不给就全存（看动效要逐帧）。
- */
 export async function startRecording(dir: string, extensionId: string, { fps }: { fps?: number } = {}) {
-  // 原始帧占地方，只留三天；视频和总览一直留着。
   for (const recording of recordingsUnder(join(REPO, "out"))) {
     const old = join(recording, "frames");
 
@@ -92,8 +73,6 @@ export async function startRecording(dir: string, extensionId: string, { fps }: 
     const seen = new Set<string>();
     let stopped = false;
 
-    // 不能用网页自己的 visibilityState：扩展用调试接口附着到后台页后，那页也报 visible。
-    // 借侧栏页面问 chrome.tabs 和 chrome.debugger（只读）；没有侧栏时不筛。
     let current: { at: number; targets: Promise<Set<string> | null> } | null = null;
     const activeTargets = () => {
       if (current && Date.now() - current.at < 100) return current.targets;
@@ -107,8 +86,6 @@ export async function startRecording(dir: string, extensionId: string, { fps }: 
       return targets;
     };
 
-    // 限的是存盘，不是出帧：每帧照样回 ack，不回 Chrome 就不发下一帧。间隔里后到的帧先压着，到点存最新那张，
-    // 画面停下前的最后样子才不会丢。
     const gap = fps ? 1 / fps : 0;
     const paced = new Map<string, { last: number; pending?: () => void; timer?: ReturnType<typeof setTimeout> }>();
     const flush = () => {
@@ -173,7 +150,6 @@ export async function startRecording(dir: string, extensionId: string, { fps }: 
             sessions.set(sessionId, { track, target: target.targetId });
             await cdp.send("Page.startScreencast", { format: "jpeg", quality: 70, everyNthFrame: 1 }, sessionId);
           } catch {
-            // 标签页在附着前已关掉。
           }
         }
 
@@ -197,7 +173,6 @@ export async function startRecording(dir: string, extensionId: string, { fps }: 
 
   return {
     dir,
-    /** 重启 Chrome 后换到新连接上接着录，时间轴不断。 */
     follow,
     stop: () => stopping ??= (async () => {
       await unfollow?.();
@@ -207,11 +182,8 @@ export async function startRecording(dir: string, extensionId: string, { fps }: 
   };
 }
 
-// ── 合成 ──────────────────────────────────────────
-
 type Prepared = { track: Track; frames: Array<{ at: number; file: string; distinct: boolean }>; black: string; width: number; height: number };
 
-// cron 这类精简环境的 PATH 里没有 Homebrew 的目录，夜间回放会因此找不到 ffmpeg。
 let bin: string | null | undefined;
 const ffmpegDir = () => bin !== undefined ? bin : bin = ["", "/opt/homebrew/bin/", "/usr/local/bin/"].find((prefix) => spawnSync(`${prefix}ffmpeg`, ["-version"]).status === 0 && spawnSync(`${prefix}ffprobe`, ["-version"]).status === 0) ?? null;
 
@@ -220,7 +192,6 @@ function ffmpeg(dir: string, args: string[]) {
 }
 
 const FONT = ["/System/Library/Fonts/Menlo.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/dejavu/DejaVuSansMono.ttf"].find((f) => existsSync(f));
-// 时间戳写在画面上方单独一条里，不盖住网页内容。
 const bar = (size: number) => `pad=iw:ih+${size + 14}:0:${size + 14}:color=0x202124`;
 const label = (size: number, text: string, x = "10", name = "") => `drawtext${name}=${FONT ? `fontfile=${FONT}:` : ""}text=${text}:x=${x}:y=7:fontsize=${size}:fontcolor=white`;
 
@@ -235,7 +206,6 @@ async function load(dir: string) {
   return { frames, end: Math.max(meta.ended ? meta.ended - meta.started : 0, last + 0.5) };
 }
 
-/** 读 JPEG 帧头（SOFn）里的宽高。 */
 function jpegSize(data: Buffer): string | null {
   for (let i = 2; i + 9 < data.length && data[i] === 0xff;) {
     const marker = data[i + 1];
@@ -247,10 +217,6 @@ function jpegSize(data: Buffer): string | null {
   return null;
 }
 
-/**
- * 同一条画面的尺寸会中途变（侧栏打开后网页变窄、换标签页），ffmpeg 的多路合成遇到尺寸变化会提前截断，
- * 所以先统一成这条画面里最常见的尺寸，其余的缩放后靠左上放、补深色。同一时刻的多帧只留最后一帧。
- */
 async function prepare(dir: string, frames: Frame[]): Promise<Prepared[]> {
   await rm(join(dir, "norm"), { recursive: true, force: true });
   const prepared: Prepared[] = [];
@@ -270,7 +236,6 @@ async function prepare(dir: string, frames: Frame[]): Promise<Prepared[]> {
     const size = [...sizes].sort((a, b) => b[1] - a[1])[0]?.[0];
 
     if (!size) continue;
-    // 视频编码要求宽高是偶数。
     const [width, height] = size.split("x").map((n) => Number(n) & ~1);
     const out = join("norm", track);
     await mkdir(join(dir, out), { recursive: true });
@@ -285,7 +250,6 @@ async function prepare(dir: string, frames: Frame[]): Promise<Prepared[]> {
   return prepared;
 }
 
-/** 把几条画面按时间并排：每条一份 concat 清单，统一缩到同一高度后横向拼起来，时间戳按 sendcmd 在每个变化时刻换字。 */
 function sideBySide(prepared: Prepared[]) {
   const height = Math.min(HEIGHT_MAX, Math.max(...prepared.map((p) => p.height))) & ~1;
   const scaled = prepared.map((_, i) => `[${i}]scale=-2:${height},setsar=1[v${i}]`);
@@ -294,7 +258,6 @@ function sideBySide(prepared: Prepared[]) {
   return { scaled, joined };
 }
 
-// concat 要把最后一帧再写一次，它的时长才生效；拼图不看时长，再写一次会多出一格。
 async function writeLists(dir: string, name: string, prepared: Prepared[], slots: Array<(p: Prepared) => Array<{ file: string; duration: number }>>, holdLast = true) {
   return Promise.all(prepared.map(async (p, i) => {
     const entries = slots[i](p).filter((e) => e.duration > 0.0005);
@@ -307,7 +270,6 @@ async function writeLists(dir: string, name: string, prepared: Prepared[], slots
   }));
 }
 
-/** 按时间轴合成视频：stretch 决定真实间隔在视频里占多久。 */
 async function video(dir: string, prepared: Prepared[], end: number, file: string, stretch: (gap: number) => number, fps: number, tag?: string) {
   const marks = [...new Set([0, ...prepared.flatMap((p) => p.frames.map((f) => f.at)), end])].sort((a, b) => a - b);
   const out = new Map<number, number>();
@@ -334,7 +296,6 @@ async function video(dir: string, prepared: Prepared[], end: number, file: strin
   return join(dir, file);
 }
 
-/** 把指定时刻的画面拼成图，每格一帧、左上角标时刻；一张放不下就拆成多张。 */
 async function sheet(dir: string, prepared: Prepared[], times: number[], file: string, cols: number, rows: number, tileWidth: number) {
   const latest = (p: Prepared, t: number) => p.frames.findLast((f) => f.at <= t)?.file ?? p.black;
   const lists = await writeLists(dir, file, prepared, prepared.map(() => (p: Prepared) => times.map((t) => ({ file: latest(p, t), duration: 1 }))), false);
@@ -354,7 +315,6 @@ const times = (prepared: Prepared[], all = false) => [...new Set(prepared.flatMa
 
 const spread = <T,>(items: T[], n: number) => items.length <= n ? items : Array.from({ length: n }, (_, i) => items[Math.round((i * (items.length - 1)) / (n - 1))]);
 
-/** 合成真实速度、慢放和总览。没有 ffmpeg 或没录到画面时不合成、说明是哪一种，不影响验收。 */
 export async function render(dir: string): Promise<{ run: string; slow: string; overview: string } | "no-ffmpeg" | "no-frames"> {
   if (ffmpegDir() === null) return "no-ffmpeg";
   const { frames, end } = await load(dir);
@@ -373,7 +333,6 @@ export async function render(dir: string): Promise<{ run: string; slow: string; 
   }
 }
 
-/** 把 from–to 秒之间出现的帧拼成图（最多 48 帧，多了均匀抽）。 */
 export async function zoom(dir: string, from: number, to: number, { only, all = false }: { only?: Track; all?: boolean } = {}) {
   const { frames } = await load(dir);
   const prepared = await prepare(dir, frames);

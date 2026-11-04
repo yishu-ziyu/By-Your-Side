@@ -1,18 +1,3 @@
-/**
- * #290：发不发看后果，不看路径。每条会把消息发出去的路径都要停在同一个确认上。只装扩展、隔离构建、本机脚本模型、本机练习页。
- *   npx tsx scripts/acceptance/real-path/program-send-confirm.mts --headless
- * 每个用例：助手走一条路径去发；判据是用户决定前服务器收到 0 条、侧栏出现确认卡（写明发给谁、哪个网站，按钮是「发送」「先不发」），网页只提示去侧栏确认，
- * 用户点「先不发」/按 Esc 后仍是 0 条；用户点「发送」后恰好 1 条。
- *   click：click 工具点「发送」            script-click：browser_run 里 browser.js 执行 el.click()
- *   script-enter：脚本 dispatchEvent 回车    key-enter：press_key 工具按回车
- *   script-submit：脚本 requestSubmit()      native-submit：脚本 form.submit()
- *   fetch：脚本 fetch POST 发送接口          xhr：脚本 XHR POST 发送接口
- *   save：脚本点「保存」不出确认框，照常保存（不误拦）
- *   tool-fetch / tool-fetch-send：请求工具 fetch 带登录态 POST 一个名字不像发送的接口（/api/orders），同样先问；卡上不露令牌
- *   tool-fetch-get：请求工具 fetch GET 同一个接口，不出确认框，照常取到
- * 失败方式：去掉 evaluate.ts 的拦截，脚本路径在用户决定前就收到 POST；去掉 pressKeyGuarded，key-enter 同样；
- * 去掉 index.ts 里 fetch 的 confirmPost，tool-fetch 在用户决定前就收到 POST。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -39,7 +24,7 @@ const posts: Array<{ path: string; at: number }> = [];
 let orderReads = 0;
 const site = createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/api/orders") { orderReads += 1; res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ orders: [{ id: 7, item: "季度报表打印" }] })); return; }
-  if (req.method === "POST") { for await (const _ of req) { /* drain */ } posts.push({ path: req.url ?? "", at: Date.now() }); if (req.url === "/api/send-error") { res.writeHead(503).end("service unavailable"); return; } res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
+  if (req.method === "POST") { for await (const _ of req) {  } posts.push({ path: req.url ?? "", at: Date.now() }); if (req.url === "/api/send-error") { res.writeHead(503).end("service unavailable"); return; } res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 const sendPosts = () => posts.filter(p => p.path !== "/save").length;
@@ -49,7 +34,6 @@ const js = (code: string) => ({ tool: { name: "browser_run", args: { label: "脚
 type Case = { id: string; step: unknown; answer: "decline" | "esc" | "send" | "none"; error?: boolean; confirmed?: boolean };
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 const siteUrl = `http://127.0.0.1:${siteAddress(site).port}/`;
-// fetch 拒抓本机地址（shared/fetch.ts）：用 host-resolver-rules 把一个公网名字映回本机测试站。
 const ORDERS_HOST = "orders-fixture.test";
 const order = (method: "GET" | "POST") => ({ tool: { name: "fetch", args: { url: `http://${ORDERS_HOST}:${siteAddress(site).port}/api/orders`, method, ...(method === "POST" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ item: "季度报表打印", passengers: 2, token: "tok-SECRET-42" }) } : {}) } } });
 const ALL_CASES: Case[] = [
@@ -135,7 +119,6 @@ try {
     const dlg = typeof seen === "object" ? seen : null;
     const postsBeforeDecision = sendPosts() - before;
     const card = dlg ? await panelCard() : "";
-    // 折叠的「技术细节」不在 innerText 里，查路径和遮挡要连它一起读。
     const cardAll = dlg ? String(await rp.evaluate(panel, `[...document.querySelectorAll(".send-confirm")].at(-1)?.textContent ?? ""`)) : "";
     if (dlg) { await rp.screenshot(work, join(out, `${c.id}-page.png`)); await rp.screenshot(panel, join(out, `${c.id}-panel.png`)); }
     if (dlg && c.answer === "decline" && dlg.no) await mouse(dlg.no);
@@ -161,7 +144,6 @@ const pass = rows.length === CASES.length && rows.every(r => {
   if (r.readOnly) return !r.confirmShown && r.allPostsAfter === 0 && tool.includes("JS 只允许读取页面");
   if (r.answer === "decline" && r.retryButtons !== 1) return false;
   if (r.id === "tool-fetch-get") return !r.confirmShown && r.postsAfter === 0 && r.reads === 1 && tool.includes("季度报表打印");
-  // 卡的标题写请求真正去的网站，路径和正文收在「技术细节」里；令牌这类字段只写占位，因为卡的内容会存进侧栏记录。
   if (r.id.startsWith("tool-fetch") && !(String(r.panelCard).includes(ORDERS_HOST) && String(r.panelCardAll).includes("/api/orders") && !String(r.panelCardAll).includes("tok-SECRET-42") && String(r.panelCardAll).includes('"passengers":2'))) return false;
   return r.confirmShown && r.pageButtons === 0 && String(r.pageNotice).includes("等你在侧栏确认") && r.postsBeforeDecision === 0 && r.postsAfter === (r.answer === "send" ? 1 : 0) && (r.answer === "send" ? String(r.cardAfter).includes("已发送") === r.expectedConfirmed : true);
 });

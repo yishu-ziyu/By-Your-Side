@@ -1,4 +1,3 @@
-/** 划词朗读：用浏览器自带的 speechSynthesis 读选区，用 CSS Custom Highlight 标出当前句/词，不改页面 DOM。只在本页出声，不发任何任务或消息。 */
 import { createElement as icon, Pause, Play, X } from 'lucide';
 
 const SENTENCE = 'by-your-side-read-aloud';
@@ -7,7 +6,7 @@ const WORD = 'by-your-side-read-aloud-word';
 
 const RATES = [1, 1.5, 2];
 
-/** Chrome 读太长的一段会中途断掉，所以按句切，过长的句子再按逗号/空格切。 */
+/** WHY: Chrome 读太长的一段会中途断掉，所以按句切，过长的句子再按逗号/空格切。 */
 const MAX_CHUNK = 220;
 
 const BLOCK = 'p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dt,dd,figcaption,div,section,article';
@@ -20,13 +19,10 @@ interface ReadAloud { start(text: string, range: Range | null): Promise<void>; s
 
 interface Chunk { start: number; end: number }
 
-// 旧版 Chrome 的 CSS 没有 highlights，用到处都带 ?. 容忍缺失。
 const registry = CSS.highlights;
 
-// 旧版 Chrome 没有全局 Highlight；存在性探测，缺失时划词朗读只出声不高亮。
 const HighlightClass = typeof Highlight === 'undefined' ? undefined : Highlight;
 
-/** 把选区里的可见文字连成一段朗读文本，同时记下每个文字节点在其中的位置，好把朗读进度映射回页面。 */
 function collect(range: Range | null, fallback: string): Collected {
   if (!range?.startContainer.isConnected) {
     return { text: fallback, segments: [] };
@@ -212,7 +208,6 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
     }
   }
 
-  /** 停声并清高亮；暂停也走这里，因为 speechSynthesis.pause() 在部分声音上不会立刻停。 */
   function silence(): void {
     generation++;
     playing = false;
@@ -264,7 +259,6 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
         }
 
         const at = start + event.charIndex;
-        // 有的声音不给 charLength；只对拉丁文字按词补算，中文没有长度就只保留句子高亮。
         const length = event.charLength || /^[A-Za-z0-9À-ɏ'’-]+/.exec(text.slice(at, end))?.[0].length || 0;
         mark(WORD, length ? rangeAt(at, at + length) : null, 1);
       };
@@ -306,7 +300,6 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
     chunks = split(text);
     current = 0;
 
-    // 去掉原生选区底色，让当前句的高亮看得见。
     if (segments.length) {
       getSelection()?.removeAllRanges();
     }

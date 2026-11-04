@@ -1,15 +1,3 @@
-/**
- * 助手双击打开新标签页后，下一步不带 tabId 的读页读的是新页，不是原页。
- * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
- *   npx tsx scripts/acceptance/real-path/double-click-new-tab.mts --headless
- * 练习页 A 上有两个元素：单击「单击打开 C」会用 window.open 开 C 页；双击「双击打开 B」会用 window.open 开 B 页。
- * 每页有一段只属于自己的标记文字。模型调 snapshot 时不带 tabId，和真实模型平常一样。
- *   对照段：助手单击「单击打开 C」，再 snapshot。判据：点击结果写明新页已是工作页；回到模型的读页结果里有 C 页的标记文字。
- *   主段：助手切回 A 页、读一次（确认读的是 A），双击「双击打开 B」，再 snapshot。
- *         判据：双击结果写明新页已是工作页；回到模型的读页结果里有 B 页的标记文字，没有 A 页的。
- * 判据只读回到模型的工具结果原文和扩展后台的 chrome.tabs.query。
- * 失败方式：Agent 一侧的缺省页只在单击跟到新页时更换、双击时不换，主段的读页仍读 A 页，主段失败、对照段通过。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -22,7 +10,6 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 
 await mkdir(out, { recursive: true });
 
-// 标记用普通文字：读页会把像口令的字串遮成 [redacted]；也不用页标题，因为页面上的助手状态条会提到新页的标题。
 const MARK = { a: "苹果园今天开门", b: "香蕉园今天开门", c: "樱桃园今天开门" };
 
 const PAGE_A = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>原页 A</title><body style="font:16px sans-serif;margin:40px">
@@ -46,7 +33,6 @@ const FINAL = { control: "对照完成。", main: "主段完成。" };
 const switchBack = { tool: { name: "tabs", args: { action: "switch", tabId: 0 } } };
 
 const model = await startScriptedModel([
-  // 目标核对的请求带着用户原话：先认它，直接判完成。
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   { match: ASK.control, steps: [
     { tool: { name: "snapshot", args: {} } },
@@ -72,7 +58,6 @@ const receipts: Receipt[] = [];
 const seenCalls = new Set<string>();
 let part = "setup";
 
-/** 回到模型的每个工具结果原文（每次请求带着全部历史，按调用编号去重）。 */
 function onPayload(payload: { messages?: Array<{ role: string; content?: unknown; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }>; tools?: unknown[] }) {
   if (!payload.tools?.length) return;
   const calls = new Map<string, { name: string; arguments: string }>();
@@ -88,7 +73,6 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
 }
 
 const has = (text: string | undefined, mark: string) => (text ?? "").includes(mark);
-/** 读页结果开头写着它读的是哪个标签页。 */
 const tabOf = (text: string | undefined) => Number(/<page-content untrusted tab=(\d+)/.exec(text ?? "")?.[1] ?? NaN);
 
 try {
@@ -108,7 +92,6 @@ try {
   const ask = async (text: string) => { await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel); };
   const answered = (text: string) => until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(text)}))`)) as boolean, 90_000, `回答「${text}」`);
 
-  // ── 对照段：单击开新页 C，再不带 tabId 读页 ──
   part = "control";
   await ask(ASK.control);
   await answered(FINAL.control);
@@ -119,7 +102,6 @@ try {
   check("对照 单击后不带 tabId 的读页读到 C 页", cSnaps.length === 2 && cSnaps.every(r => !/"tabId"/.test(r.args)) && has(cSnaps[1]?.text, MARK.c) && !has(cSnaps[1]?.text, MARK.a) && tabOf(cSnaps[1]?.text) === pageC, { pageA, pageC, snapshots: cSnaps.map(r => ({ args: r.args, tab: tabOf(r.text), hasA: has(r.text, MARK.a), hasC: has(r.text, MARK.c), head: r.text.slice(0, 300) })) });
   await rp.screenshot(panel, join(out, "control-panel.png"));
 
-  // ── 主段：切回 A，双击开新页 B，再不带 tabId 读页 ──
   part = "main";
   await rp.cdp.send("Page.bringToFront", {}, work);
   await ask(ASK.main);

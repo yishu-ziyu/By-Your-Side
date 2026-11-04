@@ -1,9 +1,3 @@
-/**
- * 界面底色色阶切换：只保留「淡蓝」和「暖纸」两种颜色。
- * 用户在设置页点一下，设置页、侧栏和已打开网页上的划词解释卡立即同步切换，无需重开侧栏或刷新网页。
- *
- *   npx tsx scripts/acceptance/real-path/color-tone-switch.mts --headless
- */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -45,7 +39,6 @@ try {
   const settings = await rp.attach(config.settingsTargetId);
   await rp.click(settings, '[data-settings-page="appearance"]');
 
-  // 打开网页上的划词解释卡
   await rp.evaluate(work, `(() => {
     const el = document.getElementById("para-text");
     const range = document.createRange();
@@ -79,7 +72,6 @@ try {
   await rp.screenshot(settings, join(out, "1-settings-blue.png"));
   await rp.screenshot(panel, join(out, "1-panel-blue.png"));
 
-  // 用户在设置页点击「暖纸」
   await rp.click(settings, `.tone-option[data-tone-option="warm"]`);
   await until(async () => (await rp.evaluate(panel, `document.documentElement.dataset.tone === "warm"`)) || undefined, 5_000, "panel switched to warm");
   await until(async () => (await rp.evaluate(work, `document.querySelector("[data-sideagent-ask]")?.getAttribute("data-tone") === "warm"`)) || undefined, 5_000, "ask host switched to warm");
@@ -94,7 +86,6 @@ try {
   await rp.screenshot(settings, join(out, "2-settings-warm.png"));
   await rp.screenshot(panel, join(out, "2-panel-warm.png"));
 
-  // 深色模式下暖纸的分隔线仍保持浅色半透明（不被浅色暖纸覆盖）
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, settings);
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, panel);
   await sleep(150);
@@ -109,11 +100,9 @@ try {
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] }, panel);
   await sleep(100);
 
-  // 重载侧栏后保持「暖纸」且同步缓存立即生效
   await rp.cdp.send("Page.reload", {}, panel);
   await until(async () => (await rp.evaluate(panel, `document.documentElement.dataset.tone === "warm"`)) || undefined, 5_000, "reloaded panel keeps warm tone");
 
-  // 再点回「淡蓝」
   await rp.click(settings, `.tone-option[data-tone-option="blue"]`);
   await until(async () => (await rp.evaluate(panel, `document.documentElement.dataset.tone === "blue"`)) || undefined, 5_000, "panel switched back to blue");
   const backBlue = await readColors();

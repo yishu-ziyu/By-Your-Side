@@ -1,13 +1,3 @@
-/**
- * 统一任务视图：由真实状态生成的只读展示投影。
- *
- * 规则：
- * - 只从 TaskProgressSnapshot 等正式事实投影，不是第二套任务状态机；
- * - 不产生模型调用、不作为可执行命令或新权限来源；
- * - successVerified 恒 false 的语义保留：视图不含任何「业务已成功」字段；
- * - 旧快照缺新增字段时按未知处理，不用猜测填满；
- * - 作用页面来自任务绑定的 recoveryInput.page，不跟随当前选中 tab。
- */
 import { isUnfinishedItem, USER_DELIVERY_KINDS, type TaskProgressSnapshot, type UserDelivery, type UserDeliveryKind } from "./voice.js";
 import { nextStepIgnoringPlaceholder, TASK_NEXT_REASONS, type TaskNextStep } from "./task-next-step.js";
 import { isSupersededUnknown, TASK_RESULT_ITEM_STATUSES, type TaskResultItemStatus } from "./task-results.js";
@@ -24,47 +14,23 @@ export interface TaskView {
   conversationId: string;
   runId: string | null;
   controlVersion: number;
-  /** 投影所依据事实的观察时刻 */
   observedAt: number;
   state: (typeof TASK_VIEW_STATES)[number];
-  /** 目标原文 */
   goal: string | null;
-  /** 已接受的修订原文（按接受顺序；首条之外的要求） */
   revisions: string[];
-  /** 任务绑定的作用页面；无可靠依据时为 null */
   page: TaskViewPage | null;
-  /** 已接受请求的材料摘要，身份由本视图 conversationId/runId 绑定。旧记录可缺省。 */
   materials?: TaskMaterialReference[];
   continuation?: TaskContinuation;
-  /** 当前进行中的活动 */
   active: { member: string; action: string; since: number }[];
   lastAction: { action: string; failed: boolean; at: number } | null;
-  /**
-   * 当前等待/阻塞：reason 直接取 nextStep.reason 或中断原因，不合并成含糊「思考中」。
-   * 正常执行中（running 且仅 in_flight/remaining/continue）为 null。
-   */
   waiting: { reason: TaskNextStep['reason']; detail: string | null } | null;
-  /** 已有成果引用（账本条目；状态原样，不升级） */
   results: TaskViewResultItem[];
-  /** 未完成项（pending/blocked/unknown，未被取代者） */
   outstanding: TaskViewResultItem[];
-  /** outstanding 是否来自用户目标清单；false 表示没有列目标，里面只是动作记录。旧视图缺省按目标处理。 */
   goalsListed?: boolean;
-  /** 最近一次正式交付引用；没有则为 null。unfinished 是模型自己列的未完成项（用户原话口吻），不是宿主核验结果。 */
   latestDelivery: { kind: UserDeliveryKind; unfinished?: string[] } | null;
-  /** 是否有可恢复的真实依据（中断并留有恢复输入；或已结束但只交付了部分结果）；「继续」按钮只能以此为凭 */
   resumable: boolean;
-  /**
-   * 最近一次目标核对：done 做完；waiting 等用户（回答、确认、登录）；open 还差、助手没做成；
-   * blocked 原因在助手和用户之外（网站连不上等），remaining 是给用户看的原因。remaining 是用户口吻的一句。没核对过时缺省。
-   */
   goalStatus?: { status: "done" | "waiting" | "open" | "blocked"; remaining: string | null };
-  /**
-   * 第一个没做成（受阻或结果未知）的执行步骤的人话原因（tool_end.reason）。只取执行账本项：目标项的 reason 是核对台账，
-   * 不给用户看。按计划列目标时受阻的执行项不成行（只有目标），原因也要从这里带到侧栏。没有就缺省。
-   */
   failureReason?: string;
-  /** 有写入步骤说不清是否已执行（中断时没登记结果）。只在为真时出现。 */
   unresolvedEffect?: true;
 }
 
@@ -77,7 +43,6 @@ function waitingFor(snapshot: TaskProgressSnapshot, nextStep: TaskNextStep | und
 
   if (snapshot.state === "aborted") return { reason: "cancelled", detail: null };
 
-  // 与 decideTaskNextStep 同优先级：failure_limit/unknown 先于 runtime_error
   if (nextStep) {
     switch (nextStep.reason) {
       case "failure_limit":
@@ -110,11 +75,9 @@ function waitingFor(snapshot: TaskProgressSnapshot, nextStep: TaskNextStep | und
   return null;
 }
 
-/** 只读投影：同一份事实（实时或重放恢复的快照）必须得到同一份视图。 */
 export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
   const requirements = snapshot.recoveryInput?.requirements ?? [];
   const executionResults = snapshot.results ?? [];
-  // 未列计划时的占位目标不是用户目标清单：只看执行记录，占位目标不算未完成项（与 nextStepIgnoringPlaceholder 同口径）。
   const rawResults = snapshot.goalPlan?.coverage === 'verified' ? [...snapshot.goalPlan.goals, ...executionResults.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionResults))] : executionResults;
 
   const results = rawResults.map((item): TaskViewResultItem => ({ id: item.id, description: item.description, status: item.status }));
@@ -134,7 +97,6 @@ export function projectTaskView(snapshot: TaskProgressSnapshot): TaskView {
     lastAction: snapshot.lastAction ? { ...snapshot.lastAction } : null,
     waiting: waitingFor(snapshot, snapshot.nextStep ?? nextStepIgnoringPlaceholder(snapshot)),
     results,
-    // 与 decideTaskNextStep 同口径：已被取代的 unknown 不再算未完成项
     outstanding,
     goalsListed: snapshot.goalPlan?.coverage === 'verified',
     latestDelivery: latestDeliveryRef(snapshot.conversationContext?.latestDelivery),
@@ -169,7 +131,6 @@ function latestDeliveryRef(delivery: UserDelivery | null | undefined): TaskView[
   return delivery.unfinished?.length ? { kind: delivery.kind, unfinished: [...delivery.unfinished] } : { kind: delivery.kind };
 }
 
-/** 结构校验：供协议解析；坏数据明确失败，不回退到更早状态。 */
 export function isTaskView(value: unknown): value is TaskView {
   if (!value || typeof value !== "object") return false;
   const v = value as TaskView;

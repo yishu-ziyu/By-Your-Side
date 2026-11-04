@@ -6,14 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
-// 验收隔离构建可输出到临时目录（默认仍是日常 dist）；不带环境变量时行为不变。
 const dist = process.env.SIDEAGENT_BUILD_DIST ? path.resolve(process.env.SIDEAGENT_BUILD_DIST) : path.join(root, "dist");
 
 await rm(dist, { recursive: true, force: true });
 
 await mkdir(dist, { recursive: true });
 
-// Pi 的浏览器端库是扩展的直接依赖（package.json 锁定版本）。订阅登录等子路径不在包的导出表里，所以直接指到 dist。
 const pi = path.join(root, "../node_modules/@earendil-works");
 
 const common = {
@@ -25,7 +23,6 @@ const common = {
   logLevel: "info",
 };
 
-// ESM 产物：background service worker 与 side panel 页面
 await esbuild.build({
   ...common,
   format: "esm",
@@ -36,22 +33,18 @@ await esbuild.build({
     "artifact-viewer": "src/sidepanel/artifact-viewer-page.ts",
     "diagram-engine": "src/sidepanel/diagram-engine.ts",
     "diagram-engine-more": "src/sidepanel/diagram-engine-more.ts",
-    // 附件解析（pdf.js、Office 读取）：侧栏附上文件时才 import，不随侧栏加载。
     "file-read": "src/sidepanel/file-read/index.ts",
   },
 });
 
-// 生成网页的沙箱页脚本：经典脚本，manifest 的 sandbox.pages 里加载，不与扩展页面共用模块。
 await esbuild.build({
   ...common,
   format: "iife",
   entryPoints: { "artifact-sandbox": "src/sidepanel/artifact-sandbox.ts", "mini-app-sandbox": "src/sidepanel/mini-app-sandbox.ts" },
 });
 
-// 语音工具清单由正式工具定义导出成 JSON，扩展内构建直接读它。
 execFileSync(process.execPath, [path.join(root, "../node_modules/tsx/dist/cli.mjs"), path.join(root, "../scripts/voice/export-realtime-tools.mts")], { stdio: "ignore" });
 
-// 语音复用 agent/src 的原模块；只把牵出本机依赖的几个导入换成浏览器版本。
 const agentSrc = path.join(root, "../agent/src");
 
 const shims = path.join(root, "src/inproc/shims");
@@ -64,7 +57,6 @@ const browserSwaps = {
 
     swap(/^\.\/realtime-browser-tool-defs\.js$/, path.join(root, "src/inproc/voice/tool-defs.ts"), true);
     swap(/^ws$/, path.join(shims, "ws.ts"), false);
-    // 任务核心（agent/src）里只在本机才用的模块：诊断记录写文件。
     swap(/^\.\/run-trace\.js$/, path.join(shims, "run-trace.ts"), true);
     swap(/^node:crypto$/, path.join(shims, "node-crypto.ts"), false);
     swap(/^(?:node:)?fs(?:\/promises)?$/, path.join(shims, "node-fs.ts"), false);
@@ -75,21 +67,17 @@ const browserSwaps = {
   },
 };
 
-// 扩展内 agent（offscreen 文档）：单独打包，避免 Pi 与各家 SDK 进入 background。
 await esbuild.build({
   ...common,
   format: "esm",
   entryPoints: { inproc: "src/inproc/main.ts", "opfs-worker": "src/inproc/opfs-worker.ts", settings: "src/settings/main.ts" },
-  // 订阅登录模块里有 Node 环境才走的动态 import（回调服务），浏览器里不会执行。
   external: ["node:*"],
   plugins: [browserSwaps],
-  // 浏览器没有 Node 环境变量；本机默认配置读取视为未设置。
   define: { "process.env": "{}" },
   alias: { "@earendil-works/pi-ai": path.join(pi, "pi-ai/dist"), "@earendil-works/pi-agent-core": path.join(pi, "pi-agent-core/dist") },
   logLevel: "warning",
 });
 
-// IIFE 产物：注入页面的 content scripts
 await esbuild.build({
   ...common,
   format: "iife",
@@ -126,30 +114,23 @@ for (const [from, to] of [
   await copyFile(path.join(root, from), path.join(dist, to));
 }
 
-// browser_run 的 QuickJS 沙箱：打包后的代码按 new URL("emscripten-module.wasm", import.meta.url) 取，
-// 所以放在 dist 根目录；缺了它，只装扩展时 browser_run 每次都报 wasm 加载失败。
 await copyFile(path.join(root, "../node_modules/@jitl/quickjs-wasmfile-release-sync/dist/emscripten-module.wasm"), path.join(dist, "emscripten-module.wasm"));
 
-// 图标：manifest 里以 icons/ 前缀引用，保持目录结构拷入 dist
 await cp(path.join(root, "icons"), path.join(dist, "icons"), { recursive: true });
 
-// PDF 正文解析用的字符映射表（中文、日文 PDF 要它才读得出字）。
 await cp(path.join(root, "../node_modules/pdfjs-dist/cmaps"), path.join(dist, "pdfjs/cmaps"), { recursive: true });
 
-// 侧栏读附上的 PDF：pdf.js 的解析线程，和画扫描页要用的标准字体。
 await copyFile(path.join(root, "../node_modules/pdfjs-dist/build/pdf.worker.min.mjs"), path.join(dist, "pdf.worker.mjs"));
 await cp(path.join(root, "../node_modules/pdfjs-dist/standard_fonts"), path.join(dist, "pdfjs/standard_fonts"), { recursive: true });
 
 await cp(path.join(root, "assets/cast"), path.join(dist, "cast"), { recursive: true });
 
-// 设置页的音色试听样本（scripts/voice/voice-samples.mts 用真实接口录制）。
 await cp(path.join(root, "assets/voices"), path.join(dist, "voices"), { recursive: true });
 
 await cp(path.join(root, "assets/orbs"), path.join(dist, "orbs"), { recursive: true });
 
 await cp(path.join(root, "assets/fonts"), path.join(dist, "fonts"), { recursive: true });
 
-// 本地语义模型的 WASM 运行时随扩展分发，不请求 CDN。
 await mkdir(path.join(dist, "ort"), { recursive: true });
 for (const file of [
   "ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm",

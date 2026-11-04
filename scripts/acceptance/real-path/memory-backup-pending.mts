@@ -1,4 +1,3 @@
-/** 隔离扩展：写入后后台重启，欠下的备份仍能落盘。 */
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";

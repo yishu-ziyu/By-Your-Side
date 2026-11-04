@@ -1,9 +1,3 @@
-/**
- * 生成文件的查看页（新标签页，扩展页面）：按文件类型显示侧栏卡片「打开」的那份文件。
- * 网页放进 manifest 沙箱页（不透明来源、无 chrome.* 接口），脚本能跑但碰不到扩展；
- * Markdown 用侧栏同一个渲染器并消毒；图片与 PDF 用本页生成的 blob 地址（截图是 base64，先还原成字节）；其余文本原样等宽显示。
- * 内容来自 chrome.storage.session 里侧栏写的副本；副本被删（文件已删除）时显示「文件已不在了」。
- */
 import DOMPurify from "dompurify";
 import { bytesOf, download, extensionOf, lookup, mimeOf, VIEW_KEY_PREFIX, type ArtifactViewItem } from "./artifact-card.js";
 import { renderMarkdownHtml } from "./markdown.js";
@@ -55,7 +49,6 @@ function blobOf(content: string, encoding?: "base64"): string {
   return blobUrl;
 }
 
-/** 网页：不带 allow-same-origin 的沙箱 iframe 加载 manifest 沙箱页，等它说 ready 再把正文发过去。 */
 function renderHtml(content: string): HTMLElement {
   const frame = document.createElement("iframe");
   frame.className = "frame";

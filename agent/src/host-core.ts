@@ -1,7 +1,3 @@
-/**
- * 与传输方式无关的宿主核心：会话管理、语音接线、hello 回应与消息分发。
- * 扩展 offscreen 文档（extension/src/inproc/main.ts，runtime 端口）用它；传输和存储由调用方提供。
- */
 import { PROTOCOL_VERSION, STORAGE_SCHEMA_VERSION, HOST_VERSION, type ClientMessage, type ServerMessage } from "../../shared/protocol.js";
 import type { ConversationPersistence } from "./conversation-persistence.js";
 import { ConversationManager } from "./conversation-manager.js";
@@ -24,19 +20,14 @@ export interface HostCoreOptions {
   createRuntime: ConstructorParameters<typeof ConversationManager>[0];
   store?: ConversationPersistence;
   memoryStore?: MemoryStore;
-  /** 过往任务（每个动手做过的任务结束时一条摘要）；不给就不记。 */
   taskHistory?: TaskHistoryStore;
   learnedOperations?: LearnedOperationStore;
   siteNotes?: SiteNotesStore;
   dispatcher?: TaskDispatcher;
-  /** 语音密钥与会话工厂；不给时用本机默认（读 ~/.sideagent 的密钥、ws 连接）。 */
   voiceKey?: ConstructorParameters<typeof VoiceService>[2];
   voiceSession?: ConstructorParameters<typeof VoiceService>[3];
-  /** 每条发往客户端的消息都会经过这里（本机用来录制语音诊断）。 */
   observe?: (msg: ServerMessage) => void;
-  /** 客户端发来的语音命令先经这里；返回 true 表示已处理（本机录音的 capture 命令）。 */
   onVoiceCommand?: (msg: Extract<ClientMessage, { type: "voice" }>, conversationId: string) => boolean;
-  /** 语音会话的诊断事件（带 voiceId、conversationId）；扩展把分段计时要的那几条写进语音日常记录。 */
   voiceDiagnostic?: (event: string, fields: Record<string, unknown>) => void;
   log: (message: string) => void;
 }
@@ -51,7 +42,6 @@ export interface HostCore {
   disposeAll(): void;
 }
 
-/** 内部错误码不直接给用户看：会话找不到时说清楚发生了什么、该怎么办。 */
 function userFacingError(message: string): string {
   return message.startsWith("CONVERSATION_NOT_FOUND") ? "这个会话在助手这边已经找不到了（助手可能刚重启过），这条没有发出去。请点右上角「＋」新建会话后再发。" : message;
 }

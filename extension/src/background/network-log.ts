@@ -1,8 +1,3 @@
-/**
- * CDP Network 事件的被动记录：按标签页环形缓冲 + 有界在途集合。
- * 只在扩展已经 attach 调试器时开启 Network 域；不额外 attach、不注入页面。
- * 展示 ring 的丢弃/clear 不抹掉仍在途请求；detach/晚接入/SW 重启记入捕获完整性。
- */
 import {
   applyNetworkLifecycle,
   clearNetworkDisplay,
@@ -80,7 +75,6 @@ export function networkIdleFor(tabId: number, idleMs: number = 0, now: number = 
   return idleObservation(life, { now, idleMs });
 }
 
-/** 清空该标签页的展示缓冲；在途集合保留。返回清掉的展示条数。 */
 export function clearNetworkRing(tabId: number): number {
   const life = lifeFor(tabId);
   const cleared = life.ring.entries.length;
@@ -89,10 +83,6 @@ export function clearNetworkRing(tabId: number): number {
   return cleared;
 }
 
-/**
- * 幂等开启 Network 域；要求调用方已 attach（本函数不 attach）。
- * mode=fresh：导航前接入，可证明完整捕获；mode=late：中途接入，不能把空缓冲当无请求。
- */
 export async function enableNetworkCapture(tabId: number, opts?: { mode?: "fresh" | "late" }): Promise<void> {
   listenNetworkEvents();
   const mode = opts?.mode ?? "late";

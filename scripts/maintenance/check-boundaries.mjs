@@ -1,10 +1,9 @@
-/** Check production dependency direction, without imposing arbitrary file-size limits. */
 import { readdir, readFile } from 'node:fs/promises';
 import { createRequire, isBuiltin } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// esbuild is owned by the extension workspace; do not rely on npm hoisting.
+// WHY: esbuild is owned by the extension workspace; do not rely on npm hoisting.
 const { build } = createRequire(new URL('../../extension/package.json', import.meta.url))('esbuild');
 
 const sourceRoots = ['agent/src', 'extension/src', 'shared'];
@@ -16,8 +15,6 @@ const surfaces = ['sidepanel', 'background', 'content'];
 const extensionSurface = file => [...surfaces, 'shared'].find(area => inside(file, `extension/src/${area}`));
 
 export async function dependencyViolations(file, source) {
-  // Use the same parser as the extension build. Type-only imports are erased and
-  // deliberately excluded: this check protects executable host boundaries.
   const result = await build({
     stdin: {
       contents: source,

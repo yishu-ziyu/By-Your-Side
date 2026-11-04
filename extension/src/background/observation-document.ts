@@ -1,13 +1,11 @@
 import {readCurrentDocument} from './exec/page-readiness.js';
 
-// A selector/ref belongs to the document observed by this execution member, even if the URL is unchanged.
 const observed = new Map<string, string>();
 
 const keyOf = (tabId: number, member: string) => `${tabId}:${member}`;
 
 const stale = () => Object.assign(new Error('页面文档已变化，旧目标未执行。请重新 snapshot 或 read_element 核对当前页面和目标。'),{code:'STALE_DOCUMENT'});
 
-/** Reads once and records the document it read; a document swap during the read throws instead of publishing it. */
 export async function withObservedDocumentIdentity<T>(tabId: number, member: string, read: () => Promise<T>, check=()=>{}): Promise<{value:T;documentId:string|null}> {
   check();
   const before = await readCurrentDocument(tabId);
@@ -30,7 +28,7 @@ export function recordObservedDocument(tabId: number, member: string, documentId
 }
 
 /**
- * Only an @N ref belongs to the snapshot's document. Selectors, text, coordinates, page js and cdp act on
+ * WHY: Only an @N ref belongs to the snapshot's document. Selectors, text, coordinates, page js and cdp act on
  * whatever page is current, so a reload/navigation after the last snapshot refuses only @N targets.
  */
 export async function assertObservedDocument(tabId: number, member: string, targets: ReadonlyArray<string | undefined>): Promise<string | null> {

@@ -1,9 +1,3 @@
-/**
- * 助手问用户时的表单卡。
- *   npx tsx scripts/acceptance/real-path/card-form.mts --headless
- * 脚本模型写一张订票前确认卡：车次是两个选项（预填一个、带出处）、乘客是文字框、备注选填，外加一栏“密码”（不该画）。
- * 清空必填栏看按钮变灰并标出；改值后重开侧栏看值还在；点「按这个订」看侧栏出现那句用户的话、模型收到它、表单变只读；再重开仍是已发送。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -94,7 +88,6 @@ try {
     await rp.click(panel, `#messages ${selector}`);
   };
 
-  // R1：三栏画出来，密码栏不画；车次是选项、预填的那个选中、出处在名字旁；乘客是文字框带预填值。
   const first = await seen();
   evidence.first = first;
   await rp.screenshot(panel, join(artifacts, "1-drawn.png"));
@@ -105,7 +98,6 @@ try {
   assert.equal(first.people, "1 位成人", "R1: text box prefilled");
   assert.deepEqual(first.button, { text: "按这个订", disabled: false }, "R1: submit button ready");
 
-  // R2（反）：清空必填的乘客，按钮不能点，乘客标出来；选填的备注空着不算。
   await tap('.gc-field[data-gc-field="people"] .gc-text');
   await rp.evaluate(panel, `document.querySelector('#messages .gc-field[data-gc-field="people"] .gc-text').select(), true`);
   for (const type of ["keyDown", "keyUp"]) await rp.cdp.send("Input.dispatchKeyEvent", { type, key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }, panel);
@@ -116,7 +108,6 @@ try {
   assert.deepEqual(empty.missing, ["people"], `R2: only the empty required field is marked: ${JSON.stringify(empty.missing)}`);
   assert.equal(empty.button?.disabled, true, "R2: submit disabled while a required field is empty");
 
-  // 改成 2 位成人、改选 G7301。
   await rp.typeText(panel, "2 位成人");
   await tap(".gen-card .gc-title");
   await tap('.gc-chip[data-gc-option="G7301 06:52"]');
@@ -126,7 +117,6 @@ try {
   assert.deepEqual(edited.chips.map(c => c.on), [true, false], "picked G7301");
   assert.equal(edited.button?.disabled, false, "R2: submit enabled again");
 
-  // R3：没发出去就重开侧栏，改过的值还在。
   await rp.cdp.send("Page.reload", {}, panel);
   await settled();
   await sleep(1_000);
@@ -135,7 +125,6 @@ try {
   assert.equal(reopened.people, "2 位成人", "R3: edited text kept after reopening");
   assert.deepEqual(reopened.chips.map(c => c.on), [true, false], "R3: picked option kept after reopening");
 
-  // 另一个窗口也开着侧栏（在后台，不抢前台）：发出表单不该串到那边。
   const otherWindow = Number(await rp.evaluate(panel, `chrome.windows.create({ url: "about:blank", focused: false }).then(w => w.id)`));
   await rp.evaluate(panel, `chrome.sidePanel.open({ windowId: ${otherWindow} }).then(() => true)`, { userGesture: true });
   await sleep(1_500);
@@ -143,7 +132,6 @@ try {
   const otherPanel = await rp.attach(panels.find(t => t.targetId !== panelTarget)!.targetId);
   await until(async () => await rp.evaluate(otherPanel, 'document.readyState === "complete" && !!document.querySelector("#messages")') || undefined, 15_000, "第二个侧栏就绪");
 
-  // R2：点「按这个订」，侧栏出现那句话，模型收到它，表单变只读、按钮写已发送。
   await tap("[data-card-submit]");
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].some(m => m.textContent.includes(${JSON.stringify(SENT)}))`) || undefined, 10_000, "R2: user message shown");
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].some(m => m.textContent.includes("好的，按 G7301 订两位"))`) || undefined, 60_000, "R2: follow-up answered");
@@ -154,13 +142,11 @@ try {
   assert.ok(asked.some(t => t.includes(SENT)), `R2: model received the form message: ${JSON.stringify(asked)}`);
   assert.deepEqual(sent.button, { text: "已发送", disabled: true }, `R2: button shows sent: ${JSON.stringify(sent.button)}`);
   assert.ok(sent.locked, "R2: fields read-only after sending");
-  // 两个窗口显示的是同一个会话：那边的同一张表单也要变成已发送、只读，不能再发一次。
   const other = await until(async () => { const b = await rp.evaluate(otherPanel, SEEN) as Seen; return b.button?.text === "已发送" ? b : undefined; }, 10_000, "另一个窗口的表单变成已发送").catch(async () => await rp.evaluate(otherPanel, SEEN) as Seen);
   evidence.other = other;
   assert.deepEqual(other.button, { text: "已发送", disabled: true }, `two windows: the other panel's form shows sent: ${JSON.stringify(other.button)}`);
   assert.ok(other.locked, "two windows: the other panel's form is read-only");
 
-  // R3：发出后重开，仍是已发送、只读。
   await rp.cdp.send("Page.reload", {}, panel);
   await until(async () => await rp.evaluate(panel, `!!document.querySelector("#messages .gen-card [data-card-submit]")`).catch(() => false) || undefined, 30_000, "重开后表单回放");
   await sleep(1_000);

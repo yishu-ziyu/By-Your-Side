@@ -1,15 +1,3 @@
-/**
- * 填写后的读回不能带出隐私。只装扩展、隔离构建、本机脚本模型、本机练习页。
- *   npx tsx scripts/acceptance/real-path/readback-privacy.mts --headless
- *   1) 普通文本框：侧栏显示读回的值；助手收到它；诊断记录导出里没有它。
- *   2) 标签「验证码」、name=otp、没有 autocomplete 的栏：侧栏、助手收到的回执、导出里都没有值。
- *   3) 密码栏先填一次，再点「显示密码」变成 type=text，换个标签叫「输入」再填：同上（靠「曾经是 password」的标记）。
- *   4) 同一类栏换个说法：type=text、name=password，没有任何先前读取：同上（靠字段名）。
- *   5) 标签中性、只有字段名 card_number、id cardNumber、name sms_code 的 input，和标签「身份证」的 textarea：同上（下划线、驼峰、多词、textarea）。
- *   6) 反例：name=shipping_address 的普通栏，侧栏和助手看得到值，导出里没有（不能把普通栏一起遮掉）。
- * 失败方式：去掉 shared/trace-sanitize.ts 里对读回值的遮挡，1 的导出检查失败；去掉 input.ts 的字段名判断，2 和 4 失败；
- * 把 SENSITIVE_FIELD_NAME 换回旧版正则（没有拆分下划线和驼峰的整词匹配），5 的 card_number 失败。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -50,7 +38,6 @@ const ASK = { normal: "隐私案例一：在草稿框里写一句话。", otp: "
 
 const DONE = { normal: "草稿写好了一。", otp: "验证码框写好了二。", toggled: "凭证框写好了三。", named: "登录框写好了四。", card: "字段甲写好了五。", camel: "字段乙写好了六。", sms: "字段丙写好了七。", idnote: "身份证框写好了八。", ship: "字段丁写好了九。" };
 
-/** 助手（脚本模型）收到的 fill 回执原文。 */
 const toolTexts: string[] = [];
 
 const model = await startScriptedModel([
@@ -93,7 +80,6 @@ try {
 
   const messages = async () => String(await rp.evaluate(panel, 'document.querySelector("#messages")?.textContent ?? ""'));
 
-  /** 发一个案例，等回答出现，返回侧栏全文。 */
   async function run(key: keyof typeof ASK): Promise<string> {
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")') || undefined, 60_000, "previous turn settled", 100);
     await rp.cdp.send("Page.navigate", { url: origin }, work);
@@ -118,12 +104,10 @@ try {
   evidence.exportChars = traces.length;
   assert.ok(traces.includes('"readback"'), "export carries the readback entries (so the absence checks below are not vacuous)");
 
-  // 1) 普通栏：侧栏和助手看得到，导出里没有。
   assert.ok(sidebar.normal.includes(MARK.normal), "1: sidebar shows the read-back value");
   assert.ok(receipts(MARK.normal).length > 0, `1: the model receipt carries the value: ${JSON.stringify(toolTexts)}`);
   assert.ok(!traces.includes(MARK.normal), "1: the diagnostic export does not contain the value");
 
-  // 2、3、4、5) 敏感栏：哪里都没有；助手被告知没有读回。
   const sensitiveKeys = ["otp", "toggled", "named", "card", "camel", "sms", "idnote"] as const;
 
   for (const key of sensitiveKeys) {
@@ -132,7 +116,6 @@ try {
     assert.ok(!traces.includes(MARK[key]), `${key}: the diagnostic export does not contain the value`);
   }
 
-  // 6) 反例：shipping_address 是普通栏，值照常显示。
   assert.ok(sidebar.ship.includes(MARK.ship), "6: sidebar shows the shipping_address value");
   assert.ok(receipts(MARK.ship).length > 0, `6: the model receipt carries the shipping_address value: ${JSON.stringify(toolTexts)}`);
   assert.ok(!traces.includes(MARK.ship), "6: the diagnostic export does not contain the value");

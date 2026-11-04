@@ -1,4 +1,3 @@
-/** Real extension UI with a local model; the panel port holds/rejects requests to exercise delivery states. */
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { REPO, launchRealPath, requireHeadless, until, sleep, type Json } from './harness.mts';

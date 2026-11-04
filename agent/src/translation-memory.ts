@@ -2,16 +2,10 @@ import { createHash } from "node:crypto";
 import type { TranslationBlock } from "../../shared/page-translation.js";
 import { TRANSLATION_PROMPT } from "./page-translation.js";
 
-/** 记住的原文加译文最多这么多字；超了先丢最久没用的。只在内存里，浏览器关掉就没了。 */
 const MEMORY_MAX_CHARS = 4_000_000;
 
-/** 换了翻译提示词，旧译文就不再算数。 */
 const PROMPT_VERSION = createHash("sha256").update(TRANSLATION_PROMPT).digest("hex").slice(0, 12);
 
-/**
- * 段落译文的记忆：同一模型、同一目标语言、同一风格、同一段原文（逐个文本节点）只翻一次。
- * 值是进行中的请求也算：预取还没回来时，真翻译等它，不再另发一次。null 表示这段没拿到，下次照常请求。
- */
 export class TranslationMemory {
   private readonly entries = new Map<string, { texts: Promise<string[] | null>; chars: number }>();
   private chars = 0;
@@ -63,5 +57,4 @@ export class TranslationMemory {
   }
 }
 
-/** 同一个扩展里的各个会话共用一份：在这个会话翻过的页面，换个会话再翻也不用等。 */
 export const translationMemory = new TranslationMemory();

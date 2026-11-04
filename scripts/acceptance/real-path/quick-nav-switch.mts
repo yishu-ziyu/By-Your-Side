@@ -1,11 +1,3 @@
-/**
- * 「切到某标签」确定性快捷通道：唯一匹配已开标签时宿主直接执行，不经模型。
- * 只装扩展、隔离构建、本机脚本模型。
- *   npx tsx scripts/acceptance/real-path/quick-nav-switch.mts --headless
- * a) 「切换到耳机比价」：0 次模型请求，标签切到前台，回答只有一句「已切到…」，过程行「已核对页面」，无核对框。
- * b) 客气变体「请帮我打开耳机比价吧」同样命中。
- * c) 匹配不到的「切换到xyz不存在的」回退完整路径（模型被调用、脚本回答出现）。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -31,7 +23,6 @@ const URL_A = `http://127.0.0.1:${siteAddress(siteA).port}/`;
 const URL_B = `http://127.0.0.1:${siteAddress(siteB).port}/`;
 
 const model = await startScriptedModel([
-  // 目标核对的输入带 lastReply 字段，排在前面先匹配。
   { match: `"lastReply"`, steps: [{ text: DONE_JSON }] },
   { match: FALLBACK, steps: [{ text: FALLBACK_ANSWER }] },
 ]);
@@ -46,7 +37,6 @@ try {
   const ready = 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';
   await until(async () => await rp.evaluate(panel, ready), 60_000, "侧栏就绪");
 
-  // 前台 A、后台 B 两个标签页。
   await rp.evaluate(panel, `chrome.tabs.create({ url: ${JSON.stringify(URL_A)}, active: true }).then((t) => t.id)`);
   await rp.evaluate(panel, `chrome.tabs.create({ url: ${JSON.stringify(URL_B)}, active: false }).then((t) => t.id)`);
   await sleep(500);
@@ -57,13 +47,11 @@ try {
     await rp.typeText(panel, text);
     const sentAt = Date.now();
     await rp.pressEnter(panel);
-    // 等一条「新」回答出现且含期望文字：上一轮的回答也含同样的字，不能拿来当这一轮的结果。
     await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].length > ${answersBefore} && [...document.querySelectorAll(".msg.assistant")].at(-1)?.textContent.includes(${JSON.stringify(answerIncludes)})`) || undefined, 30_000, `回答：${answerIncludes}`);
     await until(async () => await rp.evaluate(panel, ready), 30_000, "这一轮结束");
     return Date.now() - sentAt;
   };
 
-  // a) 标题精确命中：快捷通道。
   const fastMs = await say("切换到耳机比价", "已切到「耳机比价」");
   const activeAfterFast = await rp.evaluate(panel, `chrome.tabs.query({ active: true }).then((tabs) => tabs[0]?.url ?? "")`) as string;
   const fastState = {
@@ -80,7 +68,6 @@ try {
   check("a 标签切到前台", activeAfterFast === URL_B, fastState);
   check("a 回答只有一句、没有核对框", fastState.factCheckBox === false && (fastState.answer.match(/。/g)?.length ?? 0) <= 1, fastState);
 
-  // b) 客气变体：同样命中快捷通道。
   await rp.evaluate(panel, `chrome.tabs.query({ url: ${JSON.stringify(URL_B + "*")} }).then((tabs) => tabs[0] && chrome.tabs.update(tabs[0].id, { active: false }))`);
   await rp.evaluate(panel, `chrome.tabs.query({ url: ${JSON.stringify(URL_A + "*")} }).then((tabs) => tabs[0] && chrome.tabs.update(tabs[0].id, { active: true }))`);
   await sleep(300);
@@ -98,7 +85,6 @@ try {
   const originalActive = await rp.evaluate(panel, `chrome.tabs.query({active:true}).then(tabs=>tabs.some(t=>t.id===${originalTarget}))`);
   check('原始报告的切页请求直接到前台，不调用模型', originalActive === true && model.requests.length === 0, { originalActive, modelRequests: model.requests.length });
 
-  // c) 匹配不到：回退完整路径，模型被调用。
   const requestsBeforeC = model.requests.length;
   await say(FALLBACK, "完整路径接管");
   const requestsAfterC = model.requests.length;

@@ -103,10 +103,6 @@ export function parseDevToolsActivePort(text) {
   return Number.isInteger(port) && port > 0 ? port : null;
 }
 
-/**
- * 只认包装 bundle local.yishu.chrome-main 对应的 ChromeMain 实例。
- * 拒绝默认 profile / Playwright / Testing。不启动、不退出 Chrome。
- */
 export function discoverChromeMain(io = {}) {
   const exec = io.exec ?? defaultExec;
   const readFile = io.readFile ?? readFileSync;

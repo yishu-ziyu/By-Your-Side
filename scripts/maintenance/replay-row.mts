@@ -1,29 +1,15 @@
-/**
- * 自用回放的一句话结果，和「这一句算不算做成」的唯一定义；回放报告和 climb 判定都从这里取。
- * 任务池是用户原话，放在本机 out/self-use/ 下、不进仓库，读进来先过 poolOf。
- */
-
 import type { GoalFacts } from "../../agent/src/goal-facts.ts";
 
-/**
- * 每句的结果断言，按句号（从 1 数）登记。answer 对完整回答、page 对用户那页的正文、tab 对任一打开的网址，都是正则；answerNot 不许出现。
- * replyHas 是 CSS 选择器，回答里必须有这样的元素（例如画出来的图 .gc-diagram svg）：画没画出来看文字判不准。
- */
 export type Expect = { answer?: string[]; answerNot?: string[]; page?: string[]; tab?: string[]; replyHas?: string[] };
 export type PoolTask = { n: number; url: string; say: string[]; onPage?: number[]; expect: Record<string, Expect> };
 
 export type Row = {
   n: number;
-  /** 场景里的第几句（从 1 数）。 */
   k: number;
   say: string;
-  /** 发出到第一次回答写完。 */
   secs: number;
-  /** 回答写完后核对和续做又用的。 */
   checkSecs: number;
-  /** 发出到最终交付：用户真正等的时间。 */
   totalSecs: number;
-  /** 这一句自己开的几轮（含续做）的模型请求数，按 runId 从整份记录里数，晚到的也算回这一句。 */
   calls: number;
   load: [number, number];
   finished: boolean;
@@ -36,17 +22,14 @@ export type Row = {
   answer: string;
 };
 
-// 宿主补的那句「没给出最后的回答就停了」不是回答。
 export const noAnswer = (row: Pick<Row, "answer">) => /没给出最后的回答/.test(row.answer);
 
-/** 做成：做完、没报错、卡片没写没做成、没换目标、有回答，而且结果断言过了。 */
 export const ok = (row: Row) => row.finished && !row.error && !row.cardSaysFailed && !row.changedGoal && !!row.answer.trim() && !noAnswer(row) && row.expect === "pass";
 
 export const outcome = (row: Row) => !row.finished ? "没完成" : row.error ? `报错：${row.error.slice(0, 40)}` : row.cardSaysFailed ? "卡片写没做成" : row.changedGoal ? "换了目标" : noAnswer(row) ? "没给回答就停了" : row.expect === "fail" ? `结果不对：${row.missed.join("；").slice(0, 40)}` : "完成";
 
 const strings = (value: unknown) => Array.isArray(value) && value.every(item => typeof item === "string");
 
-/** 任务池的形状检查：不对就报出是哪一项，不带着坏数据跑一整轮。正则先编译一遍。 */
 export function poolOf(value: unknown): PoolTask[] {
   if (!Array.isArray(value)) throw new Error("任务池应当是数组");
 
@@ -67,7 +50,6 @@ export function poolOf(value: unknown): PoolTask[] {
       }
     }
 
-    // 没有断言的句子跑完也判不出对错，只会被算成做成。
     const bare = (say as string[]).map((_, i) => i + 1).filter(k => !Object.values((expect as Record<string, Record<string, string[]>>)[k] ?? {}).some(patterns => patterns.length));
     if (bare.length) throw new Error(`${where}第 ${bare.join("、")} 句没有结果断言`);
 
@@ -76,7 +58,6 @@ export function poolOf(value: unknown): PoolTask[] {
   });
 }
 
-/** 按登记的断言判一句：返回落空的那几条，空数组就是过。 */
 export function missedOf(rule: Expect, seen: { answer: string; page: string; tabs: string[]; replyHas: string[] }): string[] {
   const test = (pattern: string, text: string) => new RegExp(pattern, "i").test(text);
 
@@ -89,7 +70,6 @@ export function missedOf(rule: Expect, seen: { answer: string; page: string; tab
   ];
 }
 
-/** 诊断记录里宿主写下的核对事实（agent/src/goal-facts.ts）；形状不对就当没有。 */
 function factsOf(value: unknown): GoalFacts | null {
   if (!value || typeof value !== "object") return null;
   const { actions, searchedNotFromUser } = value as { actions?: unknown; searchedNotFromUser?: unknown };
@@ -102,19 +82,13 @@ function factsOf(value: unknown): GoalFacts | null {
 
 type TraceRecord = { type?: unknown; runId?: unknown; data?: { facts?: unknown; hostFacts?: { goalFacts?: unknown }; status?: unknown } };
 
-/**
- * 把往返、核对结论和换目标按 runId 归回各句。续做沿用原来的 runId；核对晚到、落进下一句那段记录时也归回原句，
- * 所以要拿整份记录来归，不能按时间切片。rowRuns[i] 是第 i 句自己开的 runId。
- */
 export function attribute(rows: Row[], rowRuns: Set<unknown>[], lines: string[], pool: PoolTask[]) {
   const parsed = lines.flatMap(line => { try { return [JSON.parse(line) as TraceRecord]; } catch { return []; } });
 
   rows.forEach((row, index) => {
     const task = pool.find(t => t.n === row.n);
-    // 记录里找不到这一句的开始（记录写满、侧栏没起跑）：往返和换目标都无从归属，不能当成 0 次、没换目标。
     if (!rowRuns[index]?.size) { row.error ??= "诊断记录里没有这一句的开始，往返和换目标无法归属"; return; }
     const mine = parsed.filter(r => rowRuns[index]!.has(r.runId));
-    // 和核对用同一份宿主事实：这句话指的是当时页面上的东西，动作却落在助手自己打开的别的页、或搜了用户没说过的词。落点没读到地址的不算。
     const facts = factsOf(mine.filter(r => r.type === "goal_check").at(-1)?.data?.hostFacts?.goalFacts ?? mine.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
     row.calls = mine.filter(r => r.type === "model_request").length;
     row.changedGoal = !!task?.onPage?.includes(row.k) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);

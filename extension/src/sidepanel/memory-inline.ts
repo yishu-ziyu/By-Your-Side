@@ -1,7 +1,3 @@
-/**
- * 对话里的记忆界面：回答首句后的「按你说过的…」、记住/忘记的回执、「要我记住吗」询问卡片。
- * 这些界面发出的记忆请求各自等自己的结果；结果由记忆抽屉统一收下后交回这里（settle）。
- */
 import { MEMORY_TEXT_MAX, type MemoryEntry, type MemoryScope } from "../../../shared/memory.js";
 import { isPageInteractionMessage, type AgentUiEvent, type ClientMessage } from "../../../shared/protocol.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
@@ -31,35 +27,26 @@ interface MemoryInlineDeps {
   send: (message: ClientMessage) => boolean;
   conversationId: () => string;
   replaying: () => boolean;
-  /** 抽屉要拿 settle 当回调，所以晚于本模块创建；这里只在用户点按时才取。 */
   drawer: () => ReturnType<typeof mountMemoryDrawer>;
 }
 
 export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, send, conversationId, replaying, drawer }: MemoryInlineDeps) {
-  /** 这一轮带给助手的记忆：先攒着，这一轮结束（agent_end）时放进回答首句。 */
   let pendingUsedLine: MemoryUsedLine | null = null;
 
-  /** 定稿回答 → 它的那一行。正文重渲染会冲掉插进去的节点，再挂复制按钮时放回。 */
   const usedLineByAnswer = new WeakMap<HTMLElement, MemoryUsedLine>();
 
-  /** 这一轮结束时回答还没定稿（或没有回答）：先独立显示一行，回答定稿后搬进去。 */
   let floatingUsedLine: MemoryUsedLine | null = null;
 
-  /** 「用了 N 条记忆」里各条按钮发出的请求，各自等自己的结果。 */
   const usedLineHandlers = new Map<string, (result: UsedLineResult) => void>();
 
-  /** 询问卡片的状态按 askId 留在面板内存里，切会话重绘时照原样画回；它发出的请求各自等自己的结果。 */
   const memoryAskCards = new Map<string, MemoryAskCard>();
 
   const memoryAskHandlers = new Map<string, (result: AskInput) => void>();
 
-  // 回答首句末尾「按你说过的「…」等 N 条 ›」：展开后插在首句与正文之间，每条可「忘掉」或「这里别用」。
-  /** 展开后先列几条，其余收在「另有 N 条」里。 */
   const USED_VISIBLE = 3;
 
   const usedItemKey = (item: UsedItem): string => item.kind === "entry" ? `entry:${item.entry.id}` : `task:${item.task.id}`;
 
-  /** 同一轮里多次带记忆（重试、助手又查了记忆）并成一行，同一条只算一次。 */
   function noteMemoryUsed(event: Extract<AgentUiEvent, { kind: "memory" }>): void {
     const line = pendingUsedLine ?? {
       cite: document.createElement("button"), el: document.createElement("div"), items: new Map<string, UsedItem>(),
@@ -78,7 +65,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     renderUsedLine(line);
   }
 
-  /** 最后一条用户消息之后、消息流里的最后一个回答。 */
   function latestAnswer(): HTMLElement | null {
     for (let node = messagesEl.lastElementChild; node && !node.matches(".msg.user"); node = node.previousElementSibling) {
       if (node instanceof HTMLElement && node.matches(".msg.assistant:not(.opening-line)")) return node;
@@ -94,10 +80,8 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     if (!line || !line.items.size) return;
     const answer = latestAnswer();
 
-    // 这一轮没有回答（停止、出错）：不单独挂这一行，免得它悬在空处。
     if (!answer) return;
 
-    // 复制按钮在最终稿放完后才挂：有它说明正文不会再整段重渲染。
     if (answer.querySelector(".answer-actions")) {
       placeUsedLine(line, answer);
 
@@ -110,7 +94,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     scrollToEnd();
   }
 
-  /** 回答定稿（或重渲染后重新挂复制按钮）时调用：把这一轮的那一行放进首句。 */
   function adoptUsedLine(answer: HTMLElement): void {
     const line = usedLineByAnswer.get(answer) ?? (floatingUsedLine && answer === latestAnswer() ? floatingUsedLine : null);
 
@@ -120,7 +103,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
   function placeUsedLine(line: MemoryUsedLine, answer: HTMLElement): void {
     if (floatingUsedLine === line) floatingUsedLine = null;
 
-    // 和上一行用的是同一组记忆：不再每条回答都重复一遍。也不登记到回答上，网页上点「忘记」时改的是看得到的那一行。
     if (repeatsEarlierUsedLine(line, answer)) {
       line.el.remove();
       line.cite.remove();
@@ -130,11 +112,9 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     }
     line.answer = answer;
     usedLineByAnswer.set(answer, line);
-    // 「用了 N 条记忆 ›」跟在首句后面，点开在首段下面撑出小条；「来源」面板只放网页。
     const first = answer.firstElementChild;
     let head: HTMLElement;
 
-    // 首段是段落或标题就接在句尾；是列表、代码块等就单独起一行放在最前。
     if (first instanceof HTMLElement && /^(P|H[1-6])$/.test(first.tagName)) {
       head = first;
     } else {
@@ -148,10 +128,8 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     renderUsedLine(line);
   }
 
-  /** 这一行实际用到的记忆（完整的一组，连同网站），摘要文字一样不代表用的是同几条。 */
   const usedLineKey = (line: MemoryUsedLine): string => `${line.hostname ?? ""}\n${[...line.items.keys()].sort().join("\n")}`;
 
-  /** 对话里在 anchor 之前、看得到的最后一行用的是同一组记忆：只和紧挨着的上一行比，换过一组再换回来时重新显示。 */
   function repeatsEarlierUsedLine(line: MemoryUsedLine, anchor: Node | null): boolean {
     const earlier = Array.from(messagesEl.querySelectorAll<HTMLElement>(".memory-used-toggle")).filter(cite =>
       cite !== line.cite && (!anchor || !!(cite.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING)));
@@ -165,7 +143,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     method: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 2.5h6M2 5h4M2 7.5h5"/></svg>',
   };
 
-  /** 行内点名用上的第一条（带给助手时排第一），多条时加「等 N 条」。太长的截断，全文在展开里。 */
   function usedLineLabel(line: MemoryUsedLine): string {
     const first = line.items.values().next().value!;
     const text = first.kind === "entry" ? first.entry.text : first.task.done || first.task.goal;
@@ -190,7 +167,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
 
     const list = document.createElement("ul");
     list.className = "memory-used-list";
-    // 放进回答后由外层按 data-open 弹簧撑开（styles.css），列表本身常在，展开收起不重建节点。
     list.hidden = !line.open && !line.answer;
     line.el.dataset.open = String(line.open);
     const items = Array.from(line.items.values());
@@ -210,7 +186,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
       list.appendChild(more);
     }
 
-    // 还没放进回答时，灰字和列表一起独立成行。
     line.el.replaceChildren(...(line.answer ? [] : [cite]), list);
   }
 
@@ -237,7 +212,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     glyph.innerHTML = USED_GLYPHS[item.kind === "entry" ? item.entry.kind : "past"];
     const text = document.createElement("span");
     text.className = "memory-used-text";
-    // 过往任务显示做成了什么（和带给助手的一样），没有时显示原话目标；完整原文在展开区换行。
     text.textContent = item.kind === "entry" ? item.entry.text : item.task.done || item.task.goal;
     text.title = text.textContent;
     const actions = document.createElement("span");
@@ -245,7 +219,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     const rerender = () => { if (line.el.isConnected || line === pendingUsedLine) renderUsedLine(line); };
 
     if (item.state === "used") {
-      // 没有当前网站（扩展页、空白页）就没有「这里」可言。
       if (line.hostname) actions.append(usedButton("在这个网站不用", "not-here", item, () => runUsedAction(item, "not-here", rerender, line.hostname!)));
       actions.append(usedButton("忘记", "forget", item, () => runUsedAction(item, "forget", rerender)));
     } else {
@@ -267,7 +240,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     return row;
   }
 
-  /** 本对话里最近一次带上这条记忆、还没动过的那一行（从最新的回答往前找）。 */
   function findUsedEntry(id: string): { line: MemoryUsedLine; item: UsedItem } | null {
     const answers = Array.from(messagesEl.querySelectorAll<HTMLElement>(".msg.assistant")).reverse();
     const lines = [pendingUsedLine, floatingUsedLine, ...answers.map(answer => usedLineByAnswer.get(answer) ?? null)];
@@ -281,7 +253,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     return null;
   }
 
-  // 网页上「记得的」小卡点「忘掉」：用回答下面那一行同一套「忘掉」，展开那一行让你看到「已忘掉 · 撤销」。
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if (!isPageInteractionMessage(message) || message.type !== "MEMORY_FIELD_FORGET") return;
     const found = findUsedEntry(message.id);
@@ -299,7 +270,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     return true;
   });
 
-  /** 忘掉 / 这里别用 / 撤销：记忆走记忆面板的同一套请求，过往任务走过往任务的请求。 */
   function runUsedAction(item: UsedItem, action: "forget" | "not-here" | "undo", rerender: () => void, hostname?: string, forgetRequestId?: string): void {
     const undoing = action === "undo" ? item.state : null;
     const next: UsedItem["state"] = action === "forget" ? "forgotten" : action === "not-here" ? "not-here" : "used";
@@ -353,7 +323,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     }
   }
 
-  /** 「原来是…」只写变了的部分：新旧值在同一个「：」或空格之前完全相同，就省掉这一段（不在词中间截断）。 */
   function changedPart(now: string, before: string): string {
     let cut = 0;
 
@@ -367,7 +336,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     receipt.className = `memory-receipt memory-receipt-${event.action}`;
     const mark = document.createElement("span");
     mark.className = "memory-receipt-mark";
-    // 记忆的身份标记：connecting 球（星座接线）。记录已落定，球定格不转。
     mark.appendChild(createOrb("connecting", ORB_BOX_RECEIPT).el);
     const button = document.createElement("button");
     button.type = "button";
@@ -384,11 +352,9 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     receipt.append(mark, button);
     const single = event.entries.length === 1 && !event.entries[0]!.experience ? event.entries[0]! : null;
     const saved = event.action === "saved" ? single : null;
-    // 改了一条资料：回执写出新值和旧值，「撤销」把旧值恢复回来。
     const previous = event.action === "updated" && single && event.replaced?.length === 1 && !event.replaced[0]!.experience ? event.replaced[0]! : null;
     const quick = saved ?? (previous && single);
 
-    // 自动记下或改过的资料：回执直接写出记了什么，旁边给「撤销」（用户选的「自动记，给撤销」）。
     if (quick) {
       const text = document.createElement("span");
       text.className = "memory-receipt-text";
@@ -429,11 +395,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     return receipt;
   }
 
-  // 纠正或攒够证据后开口问「要我记住吗」。
-  /**
-   * 询问事件：第一条带出卡片；同一 askId 带 outcome 的后续事件（现场或对话历史回放）把它推到结局。
-   * 没有本地状态的回放卡片直接停在结局；没有结局的照常可点。
-   */
   function renderMemoryAsk(event: MemoryAskEvent): void {
     if (!memoryAskCards.has(event.askId)) {
       const card = createAskCard(event, !replaying());
@@ -453,14 +414,12 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     scrollToEnd();
   }
 
-  /** 显示过、用户还没回应的询问卡片 → 显示时刻；复盘要分清「点了不记」和「根本没理」。 */
   const openMemoryAsks = new Map<string, number>();
 
   function askSource(event: MemoryAskEvent): string {
     return event.evidence ? "browsing" : event.quotes ? "style" : event.habit ? "habit" : "correction";
   }
 
-  /** 还开着的询问没被回应就离开了视线（换会话、关侧栏、后台作废）。 */
   function memoryAsksUnanswered(reason: string, only?: string): void {
     for (const [askId, shownAt] of openMemoryAsks) {
       if (only && askId !== only) continue;
@@ -469,7 +428,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     }
   }
 
-  /** 用户动作或后台结果交给询问卡片：重画，有请求就发出去，结果（含被忽略）再回到这里。 */
   function stepMemoryAsk(askId: string, input: AskInput): void {
     const current = memoryAskCards.get(askId);
 
@@ -528,7 +486,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
 
     if (card.phase === "open" || card.phase === "closed") {
       const rule = card.ask.rule.trim().replace(/[。.!！?？，,；;]+$/u, "");
-      // 习惯是不带主语的短句（「在 B 站提取字幕并保存」）；纠正是助手第一人称的承诺（「以后我都…」），不加前缀。
       line.textContent = card.ask.habit ? `你好像每次都这样做：${rule}。要我记住吗？` : `${rule}，要我记住吗？`;
 
       if (card.ask.evidence?.length) {
@@ -559,7 +516,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
         root.appendChild(replaces);
       }
 
-      // 已作废：问句加一行说明（后台的原话或「这条询问已结束」），不给按钮。
       if (card.phase === "closed") {
         const note = document.createElement("p");
         note.className = "memory-ask-replaces";
@@ -569,7 +525,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
         return root;
       }
 
-      // 「改一下」：在卡片里改规则文字，点「记住」时存改后的文字（范围仍是这张卡片的范围）。
       let draft: HTMLTextAreaElement | null = null;
 
       if (card.draft !== undefined) {
@@ -677,7 +632,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     return root;
   }
 
-  /** 记忆请求有了结果（抽屉已按结果更新本地记忆）：交给发出它的那一行或那张卡片，并同步已学会的规则。 */
   function settle(outcome: MemoryApplyResult): void {
     if (outcome.kind === "ignored") return;
 
@@ -710,7 +664,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     }
   }
 
-  /** 发出的请求被判作过期或不属于它：不会再有结果，那一条恢复可点。 */
   function settleIgnored(requestId: string): void {
     const lineHandler = usedLineHandlers.get(requestId);
     const askHandler = memoryAskHandlers.get(requestId);
@@ -734,7 +687,6 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
     asksUnanswered: memoryAsksUnanswered,
     settle,
     settleIgnored,
-    /** 过往任务的忘掉/撤销/这里别用的结果；不是这里发出的返回 false。 */
     settleTaskHistory(requestId: string, ok: boolean, error?: string): boolean {
       const handler = usedLineHandlers.get(requestId);
 

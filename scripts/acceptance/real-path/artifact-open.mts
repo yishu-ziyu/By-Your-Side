@@ -1,28 +1,3 @@
-/**
- * 「生成的文件直接在新标签页打开」验收。
- *
- * 只装扩展的隔离无头 Chrome、真侧栏；模型换成本机脚本模型（设置页「自定义地址」），按脚本调用产品的 artifacts 工具
- * 写 6 个文件：带越权探针的网页、Markdown、CSV、JSON、SVG、纯 ASCII 的 PDF。之后像用户一样点每张卡片的「打开」。
- *
- *   npx tsx scripts/acceptance/real-path/artifact-open.mts --headless
- *
- * 先列失败方式，判据逐条对应：
- *   noOpen      卡片上没有「打开」，或点了不开新标签页（旧代码在这里失败）。
- *   title       新标签页标题不是文件名；没有「下载」按钮；点「下载」得到的文件和生成的不一致。
- *   html        网页被当源码显示、脚本没跑，或没放进沙箱（iframe 缺 sandbox、带 allow-same-origin、不是扩展沙箱页）。
- *   escape      网页脚本读到扩展存储里的暗号、调到 chrome.runtime、读写到查看页 DOM、读到扩展来源 localStorage 里的暗号、
- *               把整个标签页导航走；任何一条成功即失败。对照组：同一组探针在查看页本身（扩展来源）
- *               必须能读到暗号，证明探针真能发现泄漏。
- *               只作证据、不判失败：读扩展安装包里的静态文件（manifest、打包代码）。Chrome 对 chrome-extension:// 资源
- *               不套页面 CSP，沙箱页总能读到自己扩展的安装包；那是公开代码，不含凭据、记忆或存储（10-02 首轮实测后修正）。
- *               另记 CDN 脚本是否被 CSP 拦下；生成网页不许联网，外发与否由 artifact-network 判。
- *   markdown    Markdown 显示成带 # 和 ** 的源码，而不是标题与加粗。
- *   image/pdf   SVG 不是图片（img 没解码出尺寸）；PDF 没交给 Chrome 的 PDF 显示（不是 application/pdf 的 blob）。
- *   text        CSV/JSON 不是原样（逐字比对）或不是等宽字体。
- *   missing     对话里删掉文件后，已开的查看页和重新载入的查看页不提示「文件已不在了」；不存在的地址也一样。
- *
- * 产物：out/acceptance/real-path/<时间>-artifact-open/ 下 summary.json、每个查看页的截图、侧栏截图、下载的文件。
- */
 import { createServer } from "node:http";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -165,7 +140,6 @@ async function viewerTargets() {
   return (await rp.targets()).filter((t) => t.type === "page" && t.url.startsWith(viewerPrefix()));
 }
 
-/** 像用户一样点卡片按钮「打开」，返回新开的查看页会话。 */
 async function openCard(filename: string): Promise<{ session: string; targetId: string; url: string }> {
   const before = new Set((await viewerTargets()).map((t) => t.targetId));
   const sel = `.artifact-card[data-filename=${JSON.stringify(filename)}] .artifact-open`;
@@ -192,7 +166,6 @@ const VIEWER_BASICS = `(() => ({
   missing: document.querySelector(".missing")?.innerText ?? null,
 }))()`;
 
-/** 沙箱 iframe 里的文档：站点隔离时它是单独的 iframe 目标，否则在同一进程里用隔离世界读。 */
 async function evaluateInSandbox(viewer: string, expression: string): Promise<Json> {
   const frameTarget = (await rp.targets()).find((t) => t.type === "iframe" && t.url.includes("/artifact-sandbox.html"));
 
@@ -230,7 +203,6 @@ try {
   await rp.cdp.send("Target.closeTarget", { targetId: configured.settingsTargetId });
   await until(async () => (await readPanel()).ready || undefined, 90_000, "侧栏就绪", 500);
 
-  // 扩展里放两个暗号：网页脚本能读到任何一个就算越权。
   await rp.evaluate(panel, `chrome.storage.local.set({ artifactProbeSecret: ${JSON.stringify(STORAGE_SECRET)} }).then(() => { localStorage.setItem("artifact-probe", ${JSON.stringify(LOCAL_SECRET)}); return true; })`);
 
   await send(MAKE, (s) => s.cards.filter((c) => !c.deleted).length >= FILES.length);
@@ -253,7 +225,6 @@ try {
   // SAFETY: 上面写入的 basics 每项都是 VIEWER_BASICS 的形状。
   checks.titleAndDownload = FILES.every((f) => (basics[f.filename] as { title: string; downloadVisible: boolean }).title === f.filename && (basics[f.filename] as { downloadVisible: boolean }).downloadVisible);
 
-  // 网页：沙箱、脚本跑了、探针全失败。
   const html = viewers["probe-page.html"]!;
   const frameInfo = await rp.evaluate(html.session, `(() => { const f = document.querySelector("#view iframe"); return f ? { sandbox: f.getAttribute("sandbox"), src: f.src } : null; })()`);
   evidence.htmlFrame = frameInfo;
@@ -283,7 +254,6 @@ try {
   // SAFETY: 上一行表达式的返回形状。
   const va = viewerAfter as { title: string; url: string; bodyHasPwned: boolean };
   checks.htmlIsolated = Object.keys(inside.probes).length === 8 && leaks.length === 0 && va.title === "probe-page.html" && va.url === html.url && !va.bodyHasPwned;
-  // 对照组：同样的读法在查看页本身（扩展来源）能拿到暗号，证明探针真能发现泄漏。
   const control = await rp.evaluate(html.session, `(async () => ({ storage: JSON.stringify(await chrome.storage.local.get("artifactProbeSecret")), local: localStorage.getItem("artifact-probe"), runtime: chrome.runtime.id }))()`);
   evidence.controlInExtensionOrigin = control;
   // SAFETY: 上一行表达式的返回形状。
@@ -291,7 +261,6 @@ try {
   checks.probeControl = ctl.storage.includes(STORAGE_SECRET) && ctl.local === LOCAL_SECRET && ctl.runtime === rp.extensionId;
   await shot(html.session, "viewer-html");
 
-  // Markdown：排版后的正文。
   const md = await rp.evaluate(viewers["notes.md"]!.session, `(() => { const a = document.querySelector("#view article"); return a ? { h1: a.querySelector("h1")?.textContent, strong: a.querySelector("strong")?.textContent, items: a.querySelectorAll("li").length, text: a.innerText } : null; })()`);
   evidence.markdown = md;
   // SAFETY: 上一行表达式的返回形状。
@@ -299,7 +268,6 @@ try {
   checks.markdown = !!mdv && mdv.h1 === "周报摘要" && mdv.strong === "三件事" && mdv.items === 2 && !mdv.text.includes("**") && !mdv.text.includes("# ");
   await shot(viewers["notes.md"]!.session, "viewer-md");
 
-  // 文本类：逐字原样、等宽。
   const textOf = async (name: string) => rp.evaluate(viewers[name]!.session, `(() => { const p = document.querySelector("#view pre"); return p ? { text: p.textContent, font: getComputedStyle(p).fontFamily } : null; })()`);
   const csv = await textOf("prices.csv");
   const json = await textOf("data.json");
@@ -310,7 +278,6 @@ try {
   await shot(viewers["prices.csv"]!.session, "viewer-csv");
   await shot(viewers["data.json"]!.session, "viewer-json");
 
-  // 图片与 PDF。
   const svg = await rp.evaluate(viewers["logo.svg"]!.session, `(async () => { const i = document.querySelector("#view img"); if (!i) return null; await i.decode().catch(() => {}); return { w: i.naturalWidth, h: i.naturalHeight, src: i.src.slice(0, 5) }; })()`);
   evidence.svg = svg;
   // SAFETY: 上一行表达式的返回形状。
@@ -325,7 +292,6 @@ try {
   await sleep(1500);
   await shot(viewers["hello.pdf"]!.session, "viewer-pdf");
 
-  // 查看页的「下载」：拿到的文件与生成的一致（CSV 多一个 BOM）。
   const downloadedMd = await downloadFromViewer(viewers["notes.md"]!.session, 1);
   const downloadedCsv = await downloadFromViewer(viewers["prices.csv"]!.session, 2);
   evidence.viewerDownloads = { md: downloadedMd, csv: downloadedCsv };
@@ -333,7 +299,6 @@ try {
   if (downloadedMd !== null) await writeFile(join(artifacts, "downloaded-notes.md"), downloadedMd);
   checks.viewerDownload = downloadedMd === MD && downloadedCsv === `﻿${CSV}`;
 
-  // 删除：已开的查看页随之提示；重新载入仍提示；不存在的地址也提示。
   await send(DELETE, (s) => s.cards.some((c) => c.filename === "notes.md" && c.deleted));
   const mdSession = viewers["notes.md"]!.session;
 

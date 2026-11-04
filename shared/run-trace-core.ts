@@ -1,16 +1,10 @@
-/**
- * 诊断记录（run trace）的行格式与限额：扩展内 agent 写 IndexedDB，本机 node 脚本写文件，行内容完全相同。
- * 每个会话一份记录，一行一个事件；只观察，不参与任何控制决定。
- */
 import { utf8ByteLength } from "./bytes.js";
 import { sanitizeTraceForStore } from "./trace-sanitize.js";
 
-/** 至少保留最近多少个会话的记录；更早的会话在 TRACE_MAX_AGE_DAYS 天内也保留，复盘要看得到一晚上的全部使用。 */
 const TRACE_SESSIONS_KEPT = 20;
 
 export const TRACE_MAX_AGE_DAYS = 30;
 
-/** 新会话开始前要删的旧会话：既不在最近 TRACE_SESSIONS_KEPT - 1 个里，也已超过保留天数。名字以开始毫秒开头，按名字排序即按时间排序。 */
 export function expiredSessions(older: readonly string[], now = Date.now()): string[] {
   const sorted = [...older].sort();
   const cutoff = now - TRACE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
@@ -22,14 +16,11 @@ export function expiredSessions(older: readonly string[], now = Date.now()): str
   });
 }
 
-/** 单行上限；超过只留摘要。 */
 const LINE_MAX_BYTES = 256 * 1024;
 const GOAL_CHECK_LINE_MAX_BYTES = 2 * 1024 * 1024;
 
-/** 写入排队上限；排满后丢事件并在下一行记数，诊断永远不拖慢任务。 */
 const QUEUE_MAX = 128;
 
-/** 一个会话的存储端：第一次写入前 prepare 一次（建目录、按保留数删旧会话），之后逐行追加。 */
 export interface TraceSink {
   prepare(): Promise<void>;
   append(line: string): Promise<void>;
@@ -40,7 +31,6 @@ export type TraceCorrelation = { runId: string | null; goalRevision: string | nu
 
 export class TraceRecorder {
   readonly sessionId = crypto.randomUUID();
-  /** 会话记录名：`<开始毫秒>-<sessionId>`，本机即文件名（不含 .jsonl）。 */
   readonly sessionName = `${Date.now()}-${this.sessionId}`;
   private readonly sink: TraceSink;
   private runId: string | null = null;
@@ -80,12 +70,10 @@ export class TraceRecorder {
     if (correlation.goalRevision) this.goalRevision = correlation.goalRevision;
   }
 
-  /** 侧栏一个会话里会切换对话：没有运行的对话要清掉上一次的 runId，不能沿用。 */
   setRun(runId: string | null): void {
     this.runId = runId;
   }
 
-  /** Process-local monotonic duration recorded in the existing trace stream. */
   stage(name: string, data: Record<string, unknown> = {}): { end: (outcome: string, details?: Record<string, unknown>) => void } {
     const stageId = crypto.randomUUID();
     const startedAt = performance.now();
@@ -115,7 +103,6 @@ export class TraceRecorder {
     };
   }
 
-  /** SDK events are observed only: no control decisions and no token-by-token logging. */
   event(event: { type: string; [key: string]: unknown }): void {
     const now = Date.now();
 
@@ -125,7 +112,6 @@ export class TraceRecorder {
         this.record("first_response", { elapsedMs: now - this.turnStarted });
       }
 
-      // 首个正文字：first_response 含思考，用户看到的是正文。
       // SAFETY: pi-ai 的 message_update 带 assistantMessageEvent；没有时下面的判断落空。
       if (!this.firstText && (event.assistantMessageEvent as { type?: string } | undefined)?.type === "text_delta") {
         this.firstText = true;
@@ -157,14 +143,12 @@ export class TraceRecorder {
     const data: Record<string, unknown> = { ...event };
     delete data.type;
 
-    // agent_end repeats the entire run; turn_end repeats already-recorded tool results.
     if (event.type === "agent_end") {
       delete data.messages;
       data.elapsedMs = this.started ? now - this.started : undefined;
     }
 
     if (event.type === "turn_end") {
-      // 只留用量：缓存命中（cacheRead）要看得出提示词前缀有没有被打碎。
       // SAFETY: turn_end 的 message 是 pi-ai 的 AssistantMessage；没有 usage 时记 undefined。
       const usage = (event.message as { usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } } | undefined)?.usage;
       data.usage = usage && { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite };
@@ -224,7 +208,6 @@ export class TraceRecorder {
 
       this.dropped = 0;
 
-      // 核对包含完整输入和复核读数；合法中文内容需要比普通事件更大的单行额度。
       if (utf8ByteLength(line) > (type === "goal_check" ? GOAL_CHECK_LINE_MAX_BYTES : LINE_MAX_BYTES)) {
         line = JSON.stringify({ time: new Date().toISOString(), sessionId: this.sessionId, runId: correlation.runId, goalRevision: correlation.goalRevision, turn: correlation.turn,
           type, toolCallId: data.toolCallId, truncated: true, originalBytes: utf8ByteLength(line), reason: "record size limit" }) + "\n";
@@ -245,8 +228,8 @@ export class TraceRecorder {
         }
 
         await this.sink.append(line);
-      }).catch(() => { /* Diagnostics must never interrupt the task. */ }).finally(() => { this.queued--; });
-    } catch { /* Circular or unexpected provider payload: ignore diagnostics only. */ }
+      }).catch(() => {  }).finally(() => { this.queued--; });
+    } catch {  }
   }
 
   flush(): Promise<void> { return this.queue; }

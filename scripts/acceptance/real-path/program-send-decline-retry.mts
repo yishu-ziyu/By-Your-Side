@@ -1,9 +1,3 @@
-/**
- * #290：用户选了「先不发」以后，同一轮里助手换路径再发都要直接拦下：不再弹确认框，服务器收到 0 条；脚本由只读限制拒绝。
- *   npx tsx scripts/acceptance/real-path/program-send-decline-retry.mts --headless
- * 脚本模型一轮里依次：click 点「发送」（出确认框，用户点「先不发」）→ 再 click 点「发送」→ 点消息框 → press_key 回车 → 脚本 requestSubmit() → POST。
- * 失败方式：send-confirm.ts 的「不发」记录按路径分开记时，回车或 POST 会再弹一次确认框。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -11,7 +5,6 @@ import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, type 
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
-// 关掉侧栏后，挂在侧栏上的 CDP 会话随之失效：那之后的侧栏调用报错不算判据。
 process.on("unhandledRejection", e => console.log("UNHANDLED", String(e)));
 process.on("uncaughtException", e => console.log("UNCAUGHT", String(e)));
 const out = process.env.OUT_DIR ?? join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-program-send-confirm`);
@@ -31,7 +24,7 @@ window.chatApi = { send: text => fetch('/api/send', { method: 'POST', headers: {
 
 const posts: Array<{ path: string; at: number }> = [];
 const site = createServer(async (req, res) => {
-  if (req.method === "POST") { for await (const _ of req) { /* drain */ } posts.push({ path: req.url ?? "", at: Date.now() }); res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
+  if (req.method === "POST") { for await (const _ of req) {  } posts.push({ path: req.url ?? "", at: Date.now() }); res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
@@ -83,7 +76,6 @@ try {
 
   type DomNode = { nodeName: string; nodeValue?: string; backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
   const walk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode[] => [...(hit(n) ? [n] : []), ...[...(n.children ?? []), ...(n.shadowRoots ?? [])].flatMap(c => walk(c, hit))];
-    // 07ac3454 起只在侧栏问：网页上只留圈和「等你在侧栏确认」，按钮在侧栏的确认卡上。
   const overlay = async () => {
     try {
       const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
@@ -103,7 +95,6 @@ try {
   const declinedAt = Date.now();
   await sleep(1500);
   result.panelConfirmCardsAfterDecline = await panelConfirms();
-  // 之后每 150ms 看一次网页上有没有又弹出确认框，直到这一轮回答写完。
   let done = false;
   const watch = (async () => { while (!done) { if (await box()) dialogs.push(Date.now()); await sleep(150); } })();
   await until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes("decline-retry 完成。"))`)) as boolean, 120_000, "回答写完").catch(() => null);
@@ -112,7 +103,6 @@ try {
   result.panelConfirmCardsAtEnd = await panelConfirms();
   result.postsAfterDecline = sendPosts() - Number(result.postsBeforeDecline);
   const after = toolTexts.filter(t => t.at >= declinedAt - 500).map(t => t.text);
-  // 工具结果按顺序：第一次点「发送」（先不发）、重试点击、点消息框（让回车落在消息框里）、重试回车、重试 requestSubmit、重试 POST。
   const all = toolTexts.map(t => t.text);
   result.toolResults = all as Json;
   result.retries = RETRIES.map((r, i) => ({ id: r.id, toolText: all[[1, 3, 4, 5][i]!] ?? null })) as Json;

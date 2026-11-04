@@ -1,14 +1,3 @@
-/**
- * 长会话分章节：只装扩展的隔离无头 Chrome、真侧栏、本机脚本模型、本机练习页。
- *   npx tsx scripts/acceptance/real-path/conversation-chapters.mts --headless
- * 路径：空闲时发第一件事 → 追问一句（只读一次页面再回答）→ 让它记住邮箱（只写记忆）→ 发第二件（模型慢慢答）→
- *   第二件还在做时插一句补充 → 发第三件 → 发第四件，第一次请求模型回 429，点「立即重试」后接着点按钮 →
- *   点顶部的「1」→ 重新打开侧栏。四件事每件都在练习页上点一下按钮再回答。
- * 判据只看侧栏里用户看得到的东西：分隔线的编号和名字；追问、记忆、插话上方没有分隔线；第四件出错时还没有分隔线、
- *   重试后点了按钮才有；满 3 章才有顶部一排、不压住消息；点「1」后第一章的分隔线在对话区里看得见、过一会儿也没被拉回底部；
- *   重新打开后章节一样。
- * 失败方式：只读页面也算动了页面（不按写操作过滤），追问上方就多出一条分隔线。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -30,7 +19,6 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 
-/** 回答写长一点，让对话区要滚动才看得到第一章。 */
 const long = (tag: string) => Array.from({ length: 8 }, (_, i) => `${tag}第 ${i + 1} 条：这里是一段足够长的说明文字，用来把对话撑高。`).join("\n\n");
 
 const TASKS = [
@@ -46,22 +34,18 @@ const MEMORY = { ask: "记住：我常用的邮箱是 demo@example.com", answer:
 
 const STEER = { ask: "补充一句：摘要语气轻松一点", answer: "好的，摘要语气放轻松。【插话完成】" };
 
-/** 每件事先在练习页上点一下按钮，再回答。 */
 const tool = { tool: { name: "click", args: { target: "#ok" } } };
 
 const model = await startScriptedModel([
   { match: TASKS[0]!.ask, steps: [tool, { text: TASKS[0]!.answer }] },
-  // 追问只读页面、记忆只写记忆：都不动页面。
   { match: FOLLOW_UP.ask, steps: [{ tool: { name: "snapshot", args: {} } }, { text: FOLLOW_UP.answer }] },
   { match: MEMORY.ask, steps: [{ tool: { name: "user_memory", args: { action: "change" } } }, { text: MEMORY.answer }] },
-  // 第二件慢慢答，留出插话的时间。
   { match: TASKS[1]!.ask, steps: [tool, { text: TASKS[1]!.answer, delayMs: 6_000 }] },
   { match: STEER.ask, steps: [{ text: STEER.answer }] },
   { match: TASKS[2]!.ask, steps: [tool, { text: TASKS[2]!.answer }] },
   { match: TASKS[3]!.ask, steps: [tool, { text: TASKS[3]!.answer }] },
 ]);
 
-/** 挡在模型前面：接下来几次任务请求（带工具表）回 429。循环自己会先快速重试两次，所以卡上失败一次 = 连回 3 次。 */
 let failNext = 0;
 
 const front = createServer(async (req, res) => {
@@ -82,7 +66,6 @@ const front = createServer(async (req, res) => {
 
 await new Promise<void>(resolve => front.listen(0, "127.0.0.1", resolve));
 
-/** 用户看得到的章节：分隔线文字（看不见的记 null）、哪条用户消息上方有分隔线、顶部一排的按钮、它和对话区的位置。 */
 const CHAPTERS_JS = `(() => {
   const vis = el => !!el && el.getClientRects().length > 0;
   const msgs = document.querySelector("#messages");
@@ -129,28 +112,24 @@ try {
   const say = async (text: string) => { await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel); };
   const answered = (mark: string) => until(async () => (await rp.evaluate(panel, `document.querySelector("#messages")?.innerText.includes(${JSON.stringify(mark)})`)) || undefined, 60_000, `answer ${mark}`, 100);
 
-  // 第一件。
   await say(TASKS[0]!.ask);
   await answered("【一完成】");
   await settled();
   const one = await read();
   evidence.afterOne = one;
 
-  // 追问：读一次页面再回答，不动页面。
   await say(FOLLOW_UP.ask);
   await answered("【追问完成】");
   await settled();
   const followUp = await read();
   evidence.afterFollowUp = followUp;
 
-  // 只写记忆。
   await say(MEMORY.ask);
   await answered("【记忆完成】");
   await settled();
   const memory = await read();
   evidence.afterMemory = memory;
 
-  // 第二件，做到一半插一句。
   await say(TASKS[1]!.ask);
   await until(async () => await rp.evaluate(panel, `!(${idle})`) || undefined, 15_000, "second task running", 100);
   await sleep(800);
@@ -162,7 +141,6 @@ try {
   evidence.afterTwo = two;
   await rp.screenshot(panel, join(artifacts, "two-chapters.png"));
 
-  // 第三件。
   await say(TASKS[2]!.ask);
   await answered("【三完成】");
   await settled();
@@ -171,7 +149,6 @@ try {
   evidence.afterThree = three;
   await rp.screenshot(panel, join(artifacts, "three-chapters-bottom.png"));
 
-  // 第四件：第一次请求出错，重试后才点按钮。
   failNext = 3;
   await say(TASKS[3]!.ask);
   await until(async () => await rp.evaluate(panel, `!!document.querySelector('.error-card [data-act="retry-now"]')?.getClientRects().length`) || undefined, 60_000, "429 error card", 100);
@@ -184,7 +161,6 @@ try {
   await sleep(500);
   const four = await read();
   evidence.afterFour = four;
-  // 鼠标还停在刚才「立即重试」的位置，会让上一条回答的长短手柄浮出来：挪开再截图。
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 }, panel);
   await sleep(400);
   await rp.screenshot(panel, join(artifacts, "four-chapters-bottom.png"));
@@ -250,7 +226,6 @@ try {
   };
   await checkDrag('live');
 
-  // 点「1」：第一章的分隔线在对话区里看得见。
   const firstInView = `(() => { const m = document.querySelector("#messages").getBoundingClientRect(); const d = document.querySelector("#messages > .chapter-divider").getBoundingClientRect(); return d.top >= m.top - 0.5 && d.bottom <= m.bottom + 0.5; })()`;
   assert.equal(await rp.evaluate(panel, firstInView), false, "precondition — chapter 1 is out of view at the bottom of the conversation");
   await rp.click(panel, ".chapter-row button:first-child");
@@ -260,12 +235,10 @@ try {
   assert.equal(evidence.afterJump, true, "chapter 1 stays in view after the jump (not pulled back to the bottom)");
   await rp.screenshot(panel, join(artifacts, "jumped-to-chapter-1.png"));
 
-  // 当场开的章节线带展开动画；重开侧栏从记录重画的不带。
   const freshDividers = `[...document.querySelectorAll("#messages > .chapter-divider")].map((d) => d.classList.contains("fresh"))`;
   evidence.liveFresh = await rp.evaluate(panel, freshDividers);
   assert.ok(evidence.liveFresh.length > 0 && evidence.liveFresh.every(Boolean), `live dividers unfold: ${JSON.stringify(evidence.liveFresh)}`);
 
-  // 重新打开侧栏：同样的章节。
   await rp.evaluate(panel, "location.reload()").catch(() => {});
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#messages")?.innerText.includes("【四完成】")`).catch(() => false)) || undefined, 30_000, "history restored", 200);
   await sleep(1_000);

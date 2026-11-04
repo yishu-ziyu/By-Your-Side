@@ -1,12 +1,3 @@
-/**
- * 「以后我说 X，就打开这几个网址」改过之后：在记忆面板改了网址，再说 X 打开的是新网址；改成不要自动打开，再说 X 就不由宿主打开。
- * 只装扩展、隔离构建、本机脚本模型、本机练习页。记忆按真实格式写进扩展的记忆库，修改走侧栏记忆面板的「修改」「保存修改」。
- *   npx tsx scripts/acceptance/real-path/saved-open-edit.mts --headless
- * 判据：
- *   a) 说「新模型发布了」：记下的两个旧渠道打开（起点）。
- *   b) 面板里把网址改成两个新渠道后再说：新渠道打开，旧渠道一个也不开。
- *   c) 面板里改成「听到“新模型发布了”时不要自动打开」后再说：宿主一个渠道也不开。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";

@@ -1,15 +1,7 @@
-/**
- * AX 快照的 ref 登记表（SW 内存，按标签页隔离）。
- * ref 就是 backendDOMNodeId；这里只记「上次快照输出过哪些 ref」，供 click/fill
- * 区分 AX ref（走 CDP）与 DOM 回退快照的 ref（走 domops）。
- * SW 重启后登记表丢失：@N 会落到 domops 路径并提示「已失效，请重新 snapshot」。
- */
-
 const byTab = new Map<number, Set<number>>();
 
 const latestKind = new Map<number, "ax" | "dom">();
 
-/** 页面重渲染后重新找到的节点：ref → 新的 backendDOMNodeId。下一次快照重新编号时作废。 */
 const movedByTab = new Map<number, Map<number, number>>();
 
 export function recordAxSnapshot(tabId: number, backendIds: number[]): void {
@@ -18,7 +10,6 @@ export function recordAxSnapshot(tabId: number, backendIds: number[]): void {
   movedByTab.delete(tabId);
 }
 
-/** ref 原来的节点被页面换掉、已按原身份找回唯一的新节点：之后这个 ref 指向新节点。 */
 export function moveAxRef(tabId: number, ref: number, backendNodeId: number): void {
   if (!isAxRef(tabId, ref)) return;
   const moved = movedByTab.get(tabId) ?? new Map<number, number>();
@@ -27,7 +18,6 @@ export function moveAxRef(tabId: number, ref: number, backendNodeId: number): vo
   movedByTab.set(tabId, moved);
 }
 
-/** 同一次 AX 采集的补充登记（续读、控件清单）：并入而不是替换，正文里给过的 ref 仍可执行。 */
 export function addAxRefs(tabId: number, backendIds: number[]): void {
   const known = byTab.get(tabId) ?? new Set<number>();
 
@@ -40,16 +30,10 @@ export function isAxRef(tabId: number, ref: number): boolean {
   return byTab.get(tabId)?.has(ref) ?? false;
 }
 
-/** backendDOMNodeId 属于这一页当前的 AX 登记：快照里的 ref 本身，或某个 ref 被找回后指向的新节点。 */
 export function isAxNode(tabId: number, backendNodeId: number): boolean {
   return isAxRef(tabId, backendNodeId) || [...(movedByTab.get(tabId)?.values() ?? [])].includes(backendNodeId);
 }
 
-/**
- * 执行动作前取 AX ref 的 backendDOMNodeId：属于当前标签页就返回它，DOM 快照的 ref 或非 ref 返回 undefined（走 domops）。
- * ref 不在当前标签页、却是另一个标签页 AX 快照里的 ref 时直接拒绝：动作没带 tabId 落到了工作标签页，
- * 若照旧走 domops 只会报「ref 已失效」，模型重新 snapshot 拿到的还是同一个 ref，陷入循环。
- */
 export function axBackendNodeFor(tabId: number, ref: number | null): number | undefined {
   if (ref === null) return undefined;
 
@@ -65,7 +49,7 @@ export function axBackendNodeFor(tabId: number, ref: number | null): number | un
 }
 
 /**
- * DOM 回退/视口快照后调用：旧 AX ref 不再适用，必须作废。
+ * WHY: DOM 回退/视口快照后调用：旧 AX ref 不再适用，必须作废。
  * DOM 快照的 ref 是自增小编号，与 backendDOMNodeId 同处一个数字空间；
  * 不清表会导致 click/fill 经 isAxRef 误判、把 DOM ref 当旧 AX ref 走 CDP。
  */
@@ -79,7 +63,6 @@ export function snapshotRefKind(tabId: number): "ax" | "dom" | undefined {
   return latestKind.get(tabId);
 }
 
-// 导航后 backendDOMNodeId 全部失效，整表作废
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (info.status === "loading") { byTab.delete(tabId); movedByTab.delete(tabId); latestKind.delete(tabId); }
 });

@@ -1,4 +1,3 @@
-/** Real extension regression: source tail, failure next to a button, and intentionally unsubmitted work. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';

@@ -1,7 +1,3 @@
-/**
- * 标注上的确认/取消按钮：解析 mark.actions、点下去对应的用户文本、按危险词推导默认按钮。
- * 纯函数。视觉是光标名牌上的双键（手拿住目标，键跟手走）。
- */
 import type { MarkAction, MarkActionId } from "../../../shared/protocol.js";
 
 function parseMarkActions(raw: unknown): MarkAction[] | undefined {
@@ -31,7 +27,6 @@ function parseMarkActions(raw: unknown): MarkAction[] | undefined {
   return out;
 }
 
-/** 点按钮后注入会话的文本，与侧栏打「确认」「取消」同一条路。 */
 export function markActionUserText(id: MarkActionId): "确认" | "取消" {
   return id === "confirm" ? "确认" : "取消";
 }
@@ -44,7 +39,6 @@ const DESTRUCTIVE_ZH = /^(删除|清空|支付|发送|归档)/;
 
 const DESTRUCTIVE_EN = /^(delete|remove|pay|send|archive)(\s|$)/i;
 
-/** 要点的控件文案是否属于删除 / 清空 / 支付 / 发送 / 归档。普通「分享」「编辑」「更多」不是。 */
 function isDestructiveLabel(text: string): boolean {
   const t = text.trim().replace(/\s+/g, " ");
 
@@ -58,7 +52,7 @@ function isDestructiveLabel(text: string): boolean {
 }
 
 /**
- * 把内容发给别人、发出去就收不回的按钮：点之前先停下问用户。
+ * WHY: 把内容发给别人、发出去就收不回的按钮：点之前先停下问用户。
  * send：发送、发布、发表、Post 这类，一点就发。reply：「回复」「评论」在很多网站上只是展开输入框，框里有字时才算发。
  * 只认整个名字，「发布时间」这类排序、筛选按钮不算。不含「提交」：报名、填表都靠它，用户让提交就是授权提交。
  * 页面里判回车时也用这一份（按 toString 传进页面函数），所以函数必须自包含。
@@ -80,13 +74,12 @@ export function isSendLabel(text: string): boolean {
 }
 
 /**
- * 付款按钮：助手永远不点，留给用户自己点。
+ * WHY: 付款按钮：助手永远不点，留给用户自己点。
  * 页面里拦脚本点击和回车时也用这一份（按 toString 传进页面函数），所以函数必须自包含，不引用模块里的常量。
  */
 export function isPayLabel(text: string): boolean {
   const t = text.trim().replace(/\s+/g, " ");
 
-  // 只是付款方式名字的按钮（选支付宝、微信支付这类选项）不算付款。
   if (!t || /^(支付宝|微信支付|银行卡|apple pay)$/i.test(t)) return false;
 
   if (/^(确认|立即|去|马上)?(支付|付款)(?!宝|方式)/.test(t)) return true;
@@ -114,10 +107,6 @@ function confirmLabelForDestructive(text: string): string {
   return "删除";
 }
 
-/**
- * 若模型调用 mark 时未显式提供 actions，但 label 表达了确认意图（如「待归档」「待删除」「待确认」或命中危险词），
- * 兜底推导 confirm/cancel 双键并在名牌上拿住，防止模型幻觉“光标停在上面”而页面光标未就地拿住。
- */
 export function resolveImplicitMarkActions(label?: string, actions?: unknown): MarkAction[] | undefined {
   const parsed = parseMarkActions(actions);
 

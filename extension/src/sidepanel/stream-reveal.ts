@@ -1,14 +1,3 @@
-/**
- * 回答的平滑显示：模型输出一阵一阵到，这里先缓冲，再按固定节拍一段段放出来。
- *
- * - 节拍：每 150～200ms 放一段，一段 14～24 字；积压多时把段放大，约 1.5 秒内追平。
- * - 淡入：每段 400ms 只改透明度，淡完拆掉 span。渲染结果只是在最后一个字后面多出续写时直接追加，否则只重渲染最后一块。
- * - 未闭合的 Markdown 先补齐，不让 `**`、`` ` ``、半截链接露出来。
- * - 有卡片的回答不分块：卡片前后的正文要用卡片里的数（{=名字}、「见下方卡片」），所以每段都按整个前缀渲染，
- *   走 patchAnswer 放进页面：已显示的卡片组件节点不动，卡片里的字不按段淡入，组件写完整块淡入。
- * - 卡片标记不走节拍，到多少放多少：组件自己管空位和淡入；按节拍切在组件中间，写得快的组件也会闪出占位条。
- */
-
 import { Lexer } from "marked";
 import { cardSpans, splitAnswer } from "../../../shared/answer-cards.js";
 import { D_READ } from "../shared/motion-tokens.js";
@@ -30,12 +19,10 @@ const AVG_BEAT = (BEAT_MIN + BEAT_MAX) / 2;
 
 type Fade = { from: number; to: number; at: number };
 
-/** html 是这一块上次的渲染结果，用来判断续写能不能直接追加；parsed 是它解析出来、没放进页面的那份，没有时再解析。 */
 type Block = { md: string; html: string; parsed: ChildNode[] | null; nodes: ChildNode[]; len: number; fades: Fade[] };
 
 type Options = {
   render: (text: string) => string;
-  /** 每次放出新内容后调用（用于跟随滚动）。 */
   onProgress?: () => void;
 };
 
@@ -43,7 +30,6 @@ function points(text: string): string[] {
   return [...text];
 }
 
-/** 未闭合的围栏、粗体、行内代码、链接先补上，渲染时不露记号。思路同 streamdown remend。 */
 function remendFence(md: string): string {
   let open = false;
 
@@ -77,7 +63,6 @@ function remendCode(md: string): string {
 }
 
 function remendLink(md: string): string {
-  // 没写完的图片先不显示：补上 `)` 会给半截地址出一个能点开的图片占位，点开的是错的那张。
   const image = /!\[[^\]\n]*(?:\]\([^)\n]*)?$/.exec(md);
 
   if (image) return md.slice(0, image.index);
@@ -93,7 +78,6 @@ function remend(md: string): string {
   return fenceOpen(md) ? fenced : remendLink(remendCode(remendBold(fenced)));
 }
 
-/** 从 at 起是卡片或小程序（at 在没写完的里面，或后面只隔空白就是开头）时，返回它的结尾或已到文字的结尾；否则返回 at。 */
 function cardEnd(text: string, at: number): number {
   for (const { start, end } of cardSpans(text)) {
     if (end <= at) continue;
@@ -104,10 +88,8 @@ function cardEnd(text: string, at: number): number {
   return at;
 }
 
-/** 有卡片或引用卡片里的数（{=名字}）时整段渲染：这类正文要看完整前缀才知道显示什么。 */
 const needsWhole = (md: string) => md.includes("{=") || splitAnswer(md).some((part) => "card" in part);
 
-/** 只补最后一张卡片之后的正文；停在没写完的卡片里时不补，补上的记号会混进卡片属性。 */
 function remendAfterCards(md: string): string {
   if ("card" in (splitAnswer(md).at(-1) ?? { card: undefined })) return md;
   let cut = 0;
@@ -177,7 +159,6 @@ function take(buffer: string, done: boolean, rng: () => number): { chunk: string
   return { chunk: prefix + chars.slice(0, n).join(""), rest: chars.slice(n).join("") };
 }
 
-/** 最后一个有字的文本节点。marked 在 </li>、</tbody>、</blockquote> 前留的换行不算，续写要接在条目里面。 */
 function lastText(nodes: ChildNode[]): Text | null {
   const texts = collectTexts(nodes);
 
@@ -186,7 +167,6 @@ function lastText(nodes: ChildNode[]): Text | null {
   return null;
 }
 
-/** 续写接在最后一个字后面：代码块的字后面还跟着渲染出来的换行，接在换行前。 */
 function insertAt(last: Text): Text {
   const end = last.data.trimEnd().length;
 
@@ -228,7 +208,7 @@ function fadeSpan(delay: number): HTMLSpanElement {
   const onEnd = (event: AnimationEvent) => {
     if (event.target === span) unwrap();
   };
-  // 不显示的元素里（<span hidden>、收起的 <details>）动画不跑，等不到 animationend；淡入时长过了就自己拆，
+  // WHY: 不显示的元素里（<span hidden>、收起的 <details>）动画不跑，等不到 animationend；淡入时长过了就自己拆，
   // 否则收尾一直等 .chunk-fade 消失，回答永远停在「正在显示」。
   const timer = window.setTimeout(unwrap, Math.max(FADE_MS - delay, 0) + FADE_SLACK_MS);
   span.addEventListener("animationend", onEnd);
@@ -288,7 +268,6 @@ class Reveal {
   private timer: number | null = null;
   private lastRelease = -1e9;
   private blocks: Block[] = [];
-  /** 有卡片时整段渲染的淡入记录（按渲染后文本的位置）；null 表示还在按块放。 */
   private whole: Fade[] | null = null;
   private wholeLen = 0;
   private entered = false;
@@ -310,7 +289,6 @@ class Reveal {
     this.schedule(final || cardEnd(text, this.shown) > this.shown);
   }
 
-  /** 立即显示全部（历史、减弱动态、被新回合打断时）。 */
   flush(): void {
     this.shown = this.target.length;
     this.blocks = [];
@@ -321,7 +299,6 @@ class Reveal {
   }
 
   private rewind(common: number): void {
-    // 整段渲染时交给 patchAnswer 对比：已显示的卡片（勾选、翻到的那面）留着，前缀里的字不重新淡入。
     if (this.whole && needsWhole(this.target.slice(0, common))) {
       this.shown = common;
       this.lastRelease = -1e9;
@@ -403,7 +380,7 @@ class Reveal {
     }
 
     delete this.el.dataset.revealing;
-    // 收尾会拆分正文节点；必须等淡入拆掉 span，避免复制节点时丢失 animationend 监听。
+    // WHY: 收尾会拆分正文节点；必须等淡入拆掉 span，避免复制节点时丢失 animationend 监听。
     this.finishIfDone();
   }
 
@@ -454,9 +431,7 @@ class Reveal {
   }
 
   private paintWhole(source: string, now: number): void {
-    // 从按块切到整段：正在淡入的段换算成整段里的位置接着淡，不突然变实。
     if (!this.whole) {
-      // 块之间的换行文本节点不算进 block.len，位置按页面里实际的字数算。
       const before = (node: ChildNode) => {
         let len = 0;
 
@@ -487,12 +462,11 @@ class Reveal {
   }
 
   /**
-   * 续写不含记号也可能改掉已渲染的结构：补上的 `)` 让「[来源](https:」先成了链接，后半截网址其实在地址里；
+   * WHY: 续写不含记号也可能改掉已渲染的结构：补上的 `)` 让「[来源](https:」先成了链接，后半截网址其实在地址里；
    * 「[来源]」接上「(网址)」才成链接；裸网址接着写要改地址；「```j」接上「s」语言名才完整；段尾的空行不是正文。
    * 所以只在新渲染结果正好等于旧结果最后一个字后面接上 added 时才直接追加，返回接上的位置（按块里的字数）；否则返回 null。
    */
   private appendOffset(old: Block, nodes: ChildNode[], added: string): number | null {
-    // 改的是旧块的那份解析：判完不管成不成，旧块的渲染结果都会换成新的。
     const before = old.parsed ?? topNodes(old.html, this.el);
     const last = lastText(before);
 
@@ -556,13 +530,8 @@ const reveals = new WeakMap<HTMLElement, Reveal>();
 
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-/**
- * 把一段回答（累计全文）显示到 el。live=false（历史回放）或减弱动态时直接整段显示。
- * final=true 表示这是最终稿；after 在最终稿全部放完后调用一次（挂复制按钮等要放在正文之后的东西）。
- */
 export function revealText(el: HTMLElement, text: string, opts: Options & { live: boolean; final: boolean; after?: () => void }): void {
   let reveal = reveals.get(el);
-  // 原文留在元素上：「复制为 Markdown」要原样的标题、列表、链接和代码块，渲染后的 DOM 里已经没有了。
   el.dataset.markdown = text;
 
   if (!opts.live || reducedMotion()) {

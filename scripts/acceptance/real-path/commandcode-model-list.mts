@@ -1,7 +1,3 @@
-/** 设置页连 Command Code：模型下拉列出它公开清单里的全部模型，Claude 和其他家的都在，用户自己挑。
- * 需要能连上 api.commandcode.ai（清单接口不要 key）。
- * npx tsx scripts/acceptance/real-path/commandcode-model-list.mts --headless
- */
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

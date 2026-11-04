@@ -2,7 +2,6 @@ import type { TaskReceipt } from '../../../shared/task-actions.js';
 import { D_LAYOUT, D_STATE, E_ENTER } from "../shared/motion-tokens.js";
 import { receiptCopy } from './receipt-copy.js';
 
-/** Receipt identity is kept; only ordinary accepted records are folded away. */
 export function renderReceipt(receipt: TaskReceipt, conversationId: string, previous: HTMLElement | undefined, fork: (receipt: TaskReceipt) => Promise<void>): HTMLElement {
   if (previous?.classList.contains('receipt-decision') && receipt.newConversationRequest && receipt.status === 'rejected') return previous;
   const copy = receiptCopy(receipt, conversationId);
@@ -19,7 +18,6 @@ export function renderReceipt(receipt: TaskReceipt, conversationId: string, prev
   detail.textContent = copy.detail;
   root.append(summary, detail);
 
-  // 连好后历史回放仍可能带 needsModel：沿用这张卡，避免再画出「还没有连接模型」。
   if (previous?.classList.contains("needs-model-card") && receipt.needsModel) return previous;
   if (receipt.needsModel) return needsModelCard(receipt.text.trim() !== "");
 
@@ -58,10 +56,6 @@ const CONNECT_FLIP_MS = D_LAYOUT;
 
 const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-/**
- * 没连模型时的回复：一个能点的入口，不让用户自己去找「更多 → 模型与语音」。
- * 有原话时，侧栏在连好模型后自动重发它（main.ts 的 resendAfterConnect）；只有图片没有字时不重发。
- */
 function needsModelCard(resends: boolean): HTMLElement {
   const card = document.createElement("section");
   card.className = "msg receipt-decision needs-model-card";
@@ -91,17 +85,14 @@ function needsModelCard(resends: boolean): HTMLElement {
   return card;
 }
 
-/** 侧栏不会替用户重发这句（回放的旧卡片、不是这个面板发的话）：改回请用户自己再发。 */
 export function noteNeedsModelManual(card: HTMLElement): void {
   const description = card.querySelector(".needs-model-old p") ?? card.querySelector("p");
 
   if (description) description.textContent = "连接好之后，请把刚才的提问再发一次。";
 }
 
-/** 同一会话又发了一句没连模型的话：旧卡不再自动发，暂存的那句放回原处，卡上改成请用户自己再发。 */
 export function dropPendingMessage(card: HTMLElement, bubble: HTMLElement | null): void {
   if (bubble?.classList.contains("held-pending")) releaseHeld(bubble, card);
-  // 已经变成「已连上」的卡（连好后发不出）：变回原来的卡，写明没发出。
   card.classList.remove("needs-model-connected");
   card.dataset.f01 = "card";
   card.querySelector(".needs-model-new")?.setAttribute("aria-hidden", "true");
@@ -113,7 +104,6 @@ export function dropPendingMessage(card: HTMLElement, bubble: HTMLElement | null
   if (description) description.textContent = "连接好之后只会自动发出最后一次提问。这条需要的话，请再发一次。";
 }
 
-/** 把刚发出的用户气泡收进未连接卡，显示成虚线胶囊；「会自动发出」只由卡上那句说明讲一次。 */
 export function holdPendingMessage(card: HTMLElement, bubble: HTMLElement | null): void {
   if (!bubble || !card.isConnected || bubble.classList.contains("held-pending")) return;
   const slot = card.querySelector(".held-slot");
@@ -143,7 +133,7 @@ async function playTransform(el: HTMLElement, from: string, ms: number): Promise
     { duration: ms, easing: E_ENTER, fill: "forwards" },
   );
 
-  try { await anim.finished; } catch { /* 被取消时落到结束态 */ }
+  try { await anim.finished; } catch {  }
   anim.cancel();
   el.style.transform = "";
 }
@@ -157,7 +147,7 @@ function markSpan(name: string, startMark: string, run: () => Promise<void>): Pr
     try {
       performance.mark(`${name}-end`);
       performance.measure(name, startMark, `${name}-end`);
-    } catch { /* 测量失败不影响产品 */ }
+    } catch {  }
   });
 }
 
@@ -177,7 +167,6 @@ function releaseHeld(bubble: HTMLElement, card: HTMLElement): void {
   card.after(bubble);
 }
 
-/** 未连接卡变成「已连上」确认；暂存句 FLIP 成已发气泡。减少动效时直接到结束态。 */
 export async function playConnectArrival(card: HTMLElement, model: string | null, bubble: HTMLElement | null): Promise<void> {
   if (!card.isConnected) return;
 

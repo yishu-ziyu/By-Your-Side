@@ -1,14 +1,3 @@
-/**
- * 统一 target 定位串解析（element-target 操作共享这一层）：
- *   "@N"                        — snapshot 输出中的 ref
- *   "loc=css:..."               — snapshot 给出的稳定定位串（去掉前缀即 CSS；穿 open shadow）
- *   "loc=role:…[name='…']"      — 可访问名（≠ textContent）+ role；name*= 为子串
- *   "loc=href:..."              — 按链接 href 子串定位
- *   "xpath=..."                 — XPath（各文档内 evaluate，要求唯一）
- *   "text=..."                  — 文本语义定位（规范化后唯一最深匹配，优先可见）
- *   其他非空字符串               — 原始 CSS（穿 open shadow；同源 frame 有作用域）
- * 非法输入返回 null。`:has-text` 等 Playwright 伪类仍拒绝（未实现正式语义）。
- */
 type ParsedTarget =
   | { kind: "ref"; n: number }
   | { kind: "css"; sel: string }
@@ -24,7 +13,6 @@ const LOC_ROLE = "loc=role:";
 
 const LOC_HREF = "loc=href:";
 
-/** 解析 loc=role:button[name="Save"] / name*="part"（引号可单可双）。 */
 function parseRoleLocator(body: string): ParsedTarget | null {
   const m = /^([A-Za-z0-9_-]+)\[name(\*=|=)(["'])([\s\S]*)\3\]$/.exec(body.trim());
 
@@ -83,12 +71,9 @@ export function parseTarget(raw: unknown): ParsedTarget | null {
     return sel ? { kind: "text", sel } : null;
   }
 
-  // 未知 loc= 前缀（如 loc=h3:has-text）仍当作原始字符串进 CSS 分支，
-  // 由 resolve 抛出明确的「不支持 :has-text」文案；不要静默吞掉。
   return { kind: "css", sel: s };
 }
 
-/** 把 ParsedTarget 编成 resolveTargetSelector 的 (kind, selector) 对；role/href 用 JSON。 */
 export function resolveArgs(parsed: Exclude<ParsedTarget, { kind: "ref" }>): { kind: string; selector: string } {
   if (parsed.kind === "role") {
     return {
@@ -109,7 +94,7 @@ export function resolveArgs(parsed: Exclude<ParsedTarget, { kind: "ref" }>): { k
 }
 
 /**
- * 在页面里把非 ref 的 target 解析成唯一元素。
+ * WHY: 在页面里把非 ref 的 target 解析成唯一元素。
  * 自包含：本函数会被 toString 序列化进 ISOLATED world 和 CDP Runtime.evaluate，
  * 不得引用任何模块作用域；语义（唯一匹配、错误文案）由这里统一拥有，
  * domops.mustResolve 与 upload/read_element 的 CDP 路径共用。
@@ -169,7 +154,7 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
             queue.push(child);
           }
         } catch {
-          /* 跨站 OOPIF：contentDocument 不可读 */
+          /* WHY: 跨站 OOPIF：contentDocument 不可读 */
         }
       }
     }
@@ -177,10 +162,6 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
     return docs;
   }
 
-  /**
-   * 歧义时列出前 5 个候选，每个带只指向它的 loc=css 路径（唯一 id 优先，否则逐层 :nth-child）。
-   * 只说「请 snapshot」时模型要再花一轮读页、再一轮操作；有了路径下一步直接用。
-   */
   function choices(pool: Element[]): string {
     const lines = pool.slice(0, 5).map((el, i) => {
       let path = "";
@@ -237,7 +218,6 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
     return pool[0]!;
   }
 
-  /** 先 top，再同源 frame；顶层有唯一命中即返回，不扫 frame。 */
   function resolveAcrossDocuments(findIn: (doc: Document) => Element[], label: string): Element {
     const docs = sameOriginDocuments();
     const top = findIn(docs[0]!);
@@ -305,7 +285,6 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
 
     if (title && normalize(title)) return normalize(title);
 
-    // 无显式 ARIA/label 时才回退 textContent（与 aria-label 不同时不得用显示文本伪装）。
     return normalize(el.textContent ?? "");
   }
 
@@ -448,7 +427,6 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
         return an === nameWanted;
       });
 
-      // 可见优先；全隐藏时仍返回隐藏命中以便 attached 等待，但多可见歧义失败。
       const visible = named.filter(isVisible);
       const pool = visible.length ? visible : named;
 
@@ -466,6 +444,5 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
     }, label);
   }
 
-  // css / loc=css:
   return resolveAcrossDocuments((doc) => queryAllOpenShadow(doc, selector), selector);
 }

@@ -17,34 +17,24 @@ export interface TaskActionRequest {
   tabId?:number;
   text?: string;
   context?: PageContext;
-  /** 用户用 @ 拉进来的其他标签页（不含当前页）。 */
   pages?: PageContext[];
   attachments?: Attachment[];
-  /** 用户点了「改成补充上一件」：发给另开的那件事（abort），宿主停掉它，把原话插进发起它的任务。 */
   supplement?: true;
 }
 
 export interface TaskReceiptChange {
-  /** Human label of the changed display attribute, e.g. 字体 / 显示模式. */
   attribute: string;
-  /** Host-observed value before the change. */
   from: string;
-  /** Host-verified value after the change (read back, not model-reported). */
   to: string;
 }
 
-/** structured field-change facts for a steering receipt. Host-facts only;
- * absent whenever old/new/target/preserved cannot all be backed by observation. */
 export interface TaskReceiptDiff {
-  /** Label of the object the change applied to (page title). */
   target: string;
   changed: TaskReceiptChange[];
-  /** Attribute labels read back as unchanged alongside the requested change. */
   preserved: string[];
 }
 
 export interface TaskReceipt {
-  /** Only rejected starts explicitly eligible for a new conversation carry their original input. */
   newConversationRequest?: TaskActionRequest;
   requestId: string;
   conversationId: string;
@@ -58,9 +48,7 @@ export interface TaskReceipt {
   message: string;
   updatedAt: number;
   diff?: TaskReceiptDiff;
-  /** Rejected because no model is connected: the panel offers a 「连一个模型」 button. */
   needsModel?: true;
-  /** 另开的那件事交出的回答，带回发起它的会话显示（只在有 originConversationId 时）。 */
   result?: { text: string; at: number };
 }
 

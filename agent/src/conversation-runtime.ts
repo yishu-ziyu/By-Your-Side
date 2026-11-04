@@ -26,7 +26,6 @@ export async function createConversationRuntime(
 
   const control = new TabControl(rpc);
   let toolSession: BrowserAgentSession | undefined;
-  // 交给用户：走与侧栏「接管」相同的暂停通道，宿主接线后才可用。
   let handToUser: ((ask: string, targets?: string[], choices?: string[]) => Promise<void>) | undefined;
   let waitForCondition: ((input: ConditionRegistration) => Promise<unknown>) | undefined;
   const conditionTool = defineTool({
@@ -62,7 +61,6 @@ export async function createConversationRuntime(
     }),
     execute: async (_id, params) => {
       const ask = String(params.ask ?? "").trim().slice(0, 120);
-      // 圈不上不挡交还：格式不对的目标直接丢掉，不报错。
       const targets = (Array.isArray(params.targets) ? params.targets : []).map(t => String(t ?? "").trim()).filter(t => t && t.length <= 200).slice(0, 6);
 
       if (!ask) throw new Error("ask 不能为空：写清用户要在页面上做什么。");
@@ -103,7 +101,6 @@ export async function createConversationRuntime(
     log("模型凭据未配置，会话暂不可用（连接面板后会收到设置指引）");
   }
 
-  /** 模型热切换只更新当前会话；manager 持久化其摘要。 */
   const handleSetModel = async (model: string): Promise<void> => {
     try {
       await session.setModel(model);
@@ -278,7 +275,6 @@ export async function createConversationRuntime(
         void handleSetModel(msg.model);
         break;
       case "retry_after_error":
-        // 倒计时自己发的重试落空（任务已在跑或已结束）时不提示：用户没有点任何东西。
         if (!session.retryAfterModelError(msg.auto ? "automatic" : "user") && !msg.auto) sendCurrent({ type: "agent_event", event: { kind: "notice", message: "没有要接着做的出错任务：任务已经在跑，或已经结束。" } });
         break;
       case "tool_result":
@@ -286,7 +282,6 @@ export async function createConversationRuntime(
         break;
       case "tool_waiting_user":
         rpc.waitingForUser(msg.id, msg.waiting);
-        // 侧栏据此写「第 N 步 · 等你操作」，或出发送确认卡。
         sendCurrent({ type: "agent_event", event: msg.guide ? { kind: "guide_wait", waiting: msg.waiting, guide: msg.guide } : { kind: "send_confirm_wait", waiting: msg.waiting, ...(msg.send ? { confirm: msg.send } : {}) } });
         break;
       default:

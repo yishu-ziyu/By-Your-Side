@@ -9,7 +9,6 @@ const MAX_LIMIT = 200;
 
 const DEFAULT_LIMIT = 60;
 
-/** 单次返回的安全上限；超过即报错，不返回部分内容。 */
 const MAX_OUTPUT_CHARS = 200_000;
 
 type ReadElementsResult = ToolContract["read_elements"]["data"];
@@ -20,10 +19,8 @@ type ElementsPage = Pick<ReadElementsResult, "total" | "truncated" | "elements">
 
 type ElementsReply = { ok: true; data: ElementsPage } | { ok: false; error: string };
 
-/** 一次批量读取的结果：页面返回的数据 + 本次读取到的文档身份。 */
 type ElementsRead = { data: ElementsPage; documentId?: string };
 
-/** Serialized unchanged into executeScript; no closure over outer imports or page-supplied code. */
 function readElementsInPage(selector: string, limit: number): ElementsReply {
   try {
     let matches: NodeListOf<Element>;
@@ -57,7 +54,6 @@ function readElementsInPage(selector: string, limit: number): ElementsReply {
         if (name?.trim()) scopeLabels.push(`${role}: ${name.trim().slice(0, 180)}`);
       }
 
-      // 只指向这一个元素的 CSS 路径：唯一 id 优先，否则逐层加 :nth-child，直到整页只匹配它一个；算不出来就不给。
       let target: string | undefined;
 
       try {
@@ -120,7 +116,6 @@ function parseLimit(raw: number | undefined): number {
   return raw;
 }
 
-/** 与 read_element 的 assertComplete 一致：超限即报错，绝不返回部分内容。 */
 function assertBounded(data: ElementsPage): ElementsPage {
   if (JSON.stringify(data.elements).length > MAX_OUTPUT_CHARS) {
     throw new Error(`read_elements 输出超过安全上限 ${MAX_OUTPUT_CHARS} 字符，未返回部分内容；请缩小 selector 匹配范围或降低 limit`);
@@ -158,7 +153,6 @@ async function readInDocument(tabId: number, member: string, css: string, limit:
   return read;
 }
 
-/** 宿主自己按选择器读取全部命中元素（有界），供任务核验取证；不改页面，只读。 */
 export async function readElements(
   params: ToolContract["read_elements"]["params"],
   executionKey: string = LEAD_SESSION_ID,

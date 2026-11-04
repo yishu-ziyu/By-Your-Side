@@ -1,10 +1,3 @@
-/**
- * 两个会话在回答之后自己接着做、占满执行名额时，用户另开会话发的新任务照常开始。
- * 只装扩展、隔离构建、本机脚本模型；目标核对请求经本机转发服务改写成脚本结论。
- *   npx tsx scripts/acceptance/real-path/slot-yields-to-new-task.mts --headless
- * A、B 各发一条任务，核对都判「没做完」，续做挂在一次 60 秒的模型请求上。
- * C 在新会话里发任务：侧栏要出现 C 的回答，不出现「执行名额已满」；A、B 的续做只停一个（让出一个名额就够）。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -24,7 +17,6 @@ const ANSWER_C = "标题是「三条要点的文章」。";
 
 const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished the user's goal";
 
-// 规则按数组顺序匹配：续做的提示里也带着任务原话，所以 [GOAL CHECK] 放在最前。
 const model = await startScriptedModel([
   { match: "[GOAL CHECK]", steps: [{ tool: { name: "tabs", args: { action: "list" } }, delayMs: 60_000 }, { text: "补上了。" }] },
   { match: TASKS.a, steps: [{ tool: { name: "tabs", args: { action: "list" } } }, { text: "要点：背景、方法。" }] },
@@ -33,7 +25,6 @@ const model = await startScriptedModel([
   { match: "GOAL-CHECK-CONTINUE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "补完剩下的部分" }) }] },
 ]);
 
-// 目标核对：A、B 判没做完。C 不调工具，不做核对。
 const proxy = createServer(async (req, res) => {
   let body = "";
 
@@ -43,12 +34,10 @@ const proxy = createServer(async (req, res) => {
   if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
     // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as { model?: string; stream?: boolean };
-    // 复核照首轮结论（继续）再判一次，带上复核读数里的原文。
     const again = reverifyContinue(body);
     forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: again ? recheckProbe("GOAL-CHECK-CONTINUE", again) : "GOAL-CHECK-CONTINUE" }] });
   }
 
-  // 产品取消请求（停掉续做）时，把取消传给脚本模型，它才记得下「没写完就关了」。
   const cancel = new AbortController();
   res.on("close", () => { if (!res.writableFinished) cancel.abort(); });
 
@@ -72,7 +61,6 @@ const rp = await launchRealPath();
 
 let error: string | null = null;
 
-/** 写进 result.json 的证据。 */
 const evidence: { continuationsStarted?: number; continuationsCancelled?: number; notices?: string[]; answers?: string[] } = {};
 
 try {

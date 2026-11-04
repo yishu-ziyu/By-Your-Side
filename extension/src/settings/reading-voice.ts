@@ -70,7 +70,6 @@ export async function mountReadingVoice(): Promise<void> {
   document.getElementById('settings-nav')?.addEventListener('click', () => { cancel(); action.disabled = false; action.textContent = '试说一句'; state.textContent = '试说已中止。'; });
 }
 
-/** 「改…」之后按下的下一个键就是新键；按 Esc 或点别处放弃。 */
 function mountPttKey(): void {
   const desc = document.querySelector<HTMLElement>('#ptt-key-desc')!;
   const change = document.querySelector<HTMLButtonElement>('#ptt-key-change')!;

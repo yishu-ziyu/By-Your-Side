@@ -1,7 +1,3 @@
-/**
- * CAP-02A：网页 JavaScript dialog（alert/confirm/prompt/beforeunload）。
- * 不处理浏览器自己的权限/设备提示。
- */
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { ensureAttached } from "../debugger.js";
 import { handleJsDialog, readDialogInfo } from "../page-events.js";

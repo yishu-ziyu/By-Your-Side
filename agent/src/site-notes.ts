@@ -18,7 +18,6 @@ function isSiteNote(value: unknown): value is SiteNote {
     && "runId" in value && typeof value.runId === "string" && "at" in value && typeof value.at === "number" && Number.isFinite(value.at);
 }
 
-/** Existing notes remain available for local management, without a learning or model-read API. */
 export class SiteNotesStore {
   constructor(private readonly doc: DocumentPersistence) {}
 
@@ -56,10 +55,8 @@ export class SiteNotesStore {
 
 const TYPED_ARGS: Record<string, readonly string[]> = { fill: ["value"], type_text: ["text"], select_option: ["value", "values"], accept_dialog: ["promptText"] };
 
-/** 代码里写进页面的值：`.value = '…'` 和 `value: '…'`。 */
 const CODE_VALUES = [/\.value\s*=\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1/g, /\bvalue\s*:\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1/g];
 
-/** 一个参数值里所有的字符串（嵌套的对象、数组也算）。 */
 function stringsIn(value: unknown): string[] {
   if (typeof value === "string") return [value];
 
@@ -68,7 +65,6 @@ function stringsIn(value: unknown): string[] {
   return value && typeof value === "object" ? Object.values(value).flatMap(stringsIn) : [];
 }
 
-/** 一次填写或输入的值（含 browser_run 子步骤、页面 JS 里的赋值）；网页上被填进去的具体内容。 */
 export function typedValuesOf(name: string, params: Record<string, unknown>): string[] {
   const direct = (TYPED_ARGS[name] ?? []).flatMap(key => stringsIn(params[key]));
   const code = (name === "js" || name === "browser_run") && typeof params.code === "string" ? CODE_VALUES.flatMap(re => [...(params.code as string).matchAll(re)].map(match => match[2]!)) : [];

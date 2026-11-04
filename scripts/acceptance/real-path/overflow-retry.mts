@@ -1,12 +1,3 @@
-/**
- * 对话超出模型的上下文窗口时，删掉这一轮之前的旧网页内容再问一次，回答照常出来。
- *   npx tsx scripts/acceptance/real-path/overflow-retry.mts --headless
- * 本机三个长页面 A、B、C 上各问一句；脚本模型在一个主任务请求同时带着三页正文时回超窗口错误。
- *   a) 第三问照样答完，侧栏不显示超窗口的错误。
- *   b) 第三问重试的请求里还有页 C 的正文，页 A、B 的正文没有了。
- *   c) 第二问的请求、第三问第一次请求都带着前面各页的全文（没超窗口时不删）。
- * 失败方式：去掉超窗口后的删除重试，a 失败。反例结果见验收文件。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -19,7 +10,6 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 
 await mkdir(out, { recursive: true });
 
-// 每页正文约 3000 字，带一个只在这页出现的标记词，用来判断请求里有没有这页的正文。
 const MARKS = { a: "ALPHAMARK", b: "BETAMARK", c: "GAMMAMARK" } as const;
 
 const page = (key: keyof typeof MARKS) => `<!doctype html><html lang="en"><meta charset="utf-8"><title>Page ${key}</title><body><main><h1>Page ${key}</h1>${
@@ -36,7 +26,6 @@ const ASKS = ["溢出一：这页讲什么？", "溢出二：这页讲什么？"
 
 const ANSWERS = ["第一页是发货记录。", "第二页也是发货记录。", "第三页还是发货记录。"];
 
-/** 第三问的每个主任务请求：原文，以及是否被回了超窗口。 */
 const third: Array<{ raw: string; overflow: boolean }> = [];
 
 const seen: string[][] = ASKS.map(() => []);

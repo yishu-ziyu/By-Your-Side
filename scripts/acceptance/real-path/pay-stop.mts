@@ -1,16 +1,3 @@
-/**
- * 付款按钮永远由用户自己点。只装扩展、隔离构建、本机脚本模型、本机练习页。
- *   npx tsx scripts/acceptance/real-path/pay-stop.mts --headless
- * 练习页是报名表：选中「微信免密」，有「确认支付 ¥98.00 并报名」「下一步」「提交评论」三个按钮，各发一条 POST；还有一个「支付宝」单选项。
- *   a) 助手点付款按钮：服务器 /pay 收到 0 条；网页上有提示，写网站和按钮名；侧栏那一步写「停在付款前，等你自己点」，不标失败。
- *   b) 同一轮助手再点三次：仍是 0 条，不卡住，不被当成连续出错。
- *   e) 提示还在时，用户自己点付款按钮：/pay 恰好 1 条；用户点「知道了」，提示收起。
- *   c) 「下一步」「提交评论」照常点到（服务器各 1 条），「支付宝」单选项照常选中。
- *   d) 网页脚本程序（browser_run）去点付款按钮：被拒绝，/pay 不增加。
- *   f) 结账表单里点进优惠码框再按回车（回车会提交带「立即支付」的表单）：没有按，/checkout 0 条，助手收到「可能直接付款」。
- *   g) js 工具里的脚本直接 click() 付款按钮、requestSubmit() 结账表单、click() 开放 shadow DOM 里的「立即支付」：都被拦下，/pay、/checkout、/shadow-pay 不增加；助手收到只能读页面的拒绝。
- * 失败方式：让 isPayLabel 永远返回 false，a 的服务器收到 /pay（反例结果见验收文件）；f、g 在修复前的构建上服务器各收到请求。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -50,7 +37,7 @@ const posts: Array<{ path: string; at: number }> = [];
 let frameLoads = 0;
 
 const site = createServer(async (req, res) => {
-  if (req.method === "POST") { for await (const _ of req) { /* 读完请求体 */ } posts.push({ path: req.url ?? "", at: Date.now() }); res.end("ok"); return; }
+  if (req.method === "POST") { for await (const _ of req) {  } posts.push({ path: req.url ?? "", at: Date.now() }); res.end("ok"); return; }
   if (req.url === "/frame") frameLoads++;
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(req.url === "/frame" ? FRAME_PAGE : PAGE);
 });
@@ -65,14 +52,12 @@ const ASK = { a: "案例A：帮我报名并付款。", c: "案例C：下一步�
 
 const DONE = JSON.stringify({ status: "done", remaining: "", correction: "" });
 
-/** 助手收到的工具结果，按调用编号去重（每次请求都带着全部历史）。 */
 const toolTexts: string[] = [];
 
 const toolIds = new Set<string>();
 
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: DONE }] },
-  // 第 2–4 次点击：没有 heldReason 时，这几步在侧栏标成「没成功」。
   { match: ASK.a, steps: [clickPay, clickPay, clickPay, clickPay, { text: "A 完成。" }] },
   { match: ASK.c, steps: [
     { tool: { name: "click", args: { target: "#next", label: "下一步" } } },
@@ -134,7 +119,6 @@ try {
     return { x: (q[0]! + q[2]!) / 2, y: (q[1]! + q[5]!) / 2 };
   };
 
-  /** 提示在 closed shadow 里：用 CDP 穿透读文字、「知道了」的位置，以及有没有圈出按钮的外圈。 */
   const payNote = async () => {
     // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
     const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
@@ -169,10 +153,8 @@ try {
 
   const siteHost = `127.0.0.1:${siteAddress(site).port}`;
 
-  // ── a/b：助手点付款按钮，同一轮点四次 ──
   let from = toolTexts.length;
   await ask(ASK.a);
-  // 提示或付款请求，先到哪个算哪个：不拦付款时，这里看到的是 /pay。
   await until(async () => count("/pay") > 0 || (await payNote()), 30_000, "提示或付款请求", 100);
   await sleep(1500);
   const noteA = await payNote();
@@ -188,7 +170,6 @@ try {
   check("b 同一轮再点三次：仍 0 条，不当成连续出错", count("/pay") === 0 && toolA.length === 4 && !/连续三次/.test(textA), { pay: count("/pay"), tools: toolA.length, threeInRow: /连续三次/.test(textA) });
   await panelShot("a-panel.png");
 
-  // ── e：用户自己点付款按钮，再点「知道了」──
   const payBox = await rp.evaluate(work, '(() => { const r = document.querySelector("#pay").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()') as { x: number; y: number };
   const noteBeforeUser = !!(await payNote());
   await userClick(payBox);
@@ -199,14 +180,12 @@ try {
   await sleep(500);
   check("e 用户点「知道了」：提示收起", !!noteE?.ok && !(await payNote()), { hadButton: !!noteE?.ok });
 
-  // ── c：普通按钮和付款方式单选项照常 ──
   await ask(ASK.c);
   await answered("C 完成。");
   await idle();
   const alipay = await rp.evaluate(work, 'document.querySelector("#alipay").checked');
   check("c 「下一步」「提交评论」服务器各 1 条，「支付宝」选中，/pay 不变", count("/next") === 1 && count("/comment") === 1 && alipay === true && count("/pay") === 1, { next: count("/next"), comment: count("/comment"), alipay: alipay as Json, pay: count("/pay") });
 
-  // ── d：browser_run 去点付款按钮 ──
   from = toolTexts.length;
   await ask(ASK.d);
   await answered("D 完成。");
@@ -215,7 +194,6 @@ try {
   check("d browser_run 点付款按钮：被拒绝，/pay 不增加", count("/pay") === 1 && toolD.some(t => t.includes("does not click payment buttons")), { pay: count("/pay"), tool: toolD });
   await panelShot("d-panel.png");
 
-  // ── f：结账表单里按回车 ──
   from = toolTexts.length;
   await ask(ASK.f);
   await answered("F 完成。");
@@ -225,8 +203,6 @@ try {
   check("f 优惠码框里按回车：没有按，/checkout 0 条，助手收到「可能直接付款」", count("/checkout") === 0 && toolF.some(t => t.includes("可能直接付款")), { checkout: count("/checkout"), tool: toolF });
   await rp.screenshot(work, join(out, "f-page.png"));
 
-  // ── g：js 工具里的脚本点付款按钮、提交结账表单 ──
-  // 先收起 d 留下的提示，g 看到的提示只能来自这次脚本。
   const noteD = await payNote();
   if (noteD?.ok) await userClick(noteD.ok);
   await sleep(500);
@@ -238,7 +214,6 @@ try {
   await sleep(1000);
   const toolG = toolTexts.slice(from);
   const noteG = await payNote();
-  // js 工具只允许无副作用的读取：脚本里的点击和提交整段不执行，付款提示也就不会出现。
   check("g 脚本 click() 付款按钮、requestSubmit() 结账表单、click() shadow DOM 里的付款按钮：/pay、/checkout、/shadow-pay 不增加，助手收到只能读页面的拒绝", count("/pay") === 1 && count("/checkout") === 0 && count("/shadow-pay") === 0 && clearBeforeG && toolG.some(t => t.includes("JS 只允许读取页面")), { pay: count("/pay"), checkout: count("/checkout"), shadowPay: count("/shadow-pay"), clearBeforeG, note: noteG, tool: toolG });
   await rp.screenshot(work, join(out, "g-page.png"));
   await panelShot("g-panel.png");

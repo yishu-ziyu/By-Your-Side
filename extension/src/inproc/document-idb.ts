@@ -1,7 +1,3 @@
-/**
- * 扩展里的记忆与过往任务：整份 JSON 存在 IndexedDB 的一条记录里，格式与本机宿主的文件相同。
- * 只在这台电脑的这个扩展里，不同步、不上传；卸载扩展即删除，所以每次写入后通知后台另存一份到下载文件夹（shared/memory-backup.ts）。
- */
 import { InProcessLock, type DocumentPersistence } from "@sideagent/agent/browser-core";
 import { MEMORY_BACKUP_DIRTY, MEMORY_CHANGED, MEMORY_RESTORE_JOURNAL, isBackupDocumentKey } from "../shared/memory-backup.js";
 
@@ -21,7 +17,6 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-/** 这一键里只存 JSON 文本；别的形状当作没有。 */
 function isStoredText(value: unknown): value is string {
   return typeof value === "string";
 }
@@ -36,7 +31,6 @@ function done(tx: IDBTransaction): Promise<void> {
 
 export class IdbDocument implements DocumentPersistence {
   private static db: Promise<IDBDatabase> | null = null;
-  /** 扩展里只有 offscreen 一个核心实例在写，进程内互斥就够；navigator.locks 另防同扩展的其他页面。 */
   private readonly lock = new InProcessLock();
 
   constructor(private readonly key: string) {}
@@ -80,7 +74,6 @@ export class IdbDocument implements DocumentPersistence {
       else { store.put(text, this.key); if (isBackupDocumentKey(this.key)) store.put(crypto.randomUUID(), MEMORY_BACKUP_DIRTY); }
     };
     await done(tx);
-    // Node 测试里没有 chrome；后台没醒或没装备份时只是少备份一次，不影响这次写入。
     if (isBackupDocumentKey(this.key)) void globalThis.chrome?.runtime?.sendMessage?.({ type: MEMORY_CHANGED })?.catch(() => {});
   }
 }

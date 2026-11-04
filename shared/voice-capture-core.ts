@@ -1,29 +1,18 @@
-/**
- * 语音日常记录的行格式：扩展内 agent 写 IndexedDB。
- * 一行一个观察到的事实；音频不内联，只在用户明确同意（诊断）时另存 WAV，并在行里记路径。
- * 所有公开方法自己吞掉失败、最多记一条 gap：这里的任何问题都不能影响语音链路。
- */
 import { base64Bytes } from "./bytes.js";
 import { VOICE_DIAG_SAMPLE_RATE, type VoiceCommand, type VoiceDiagRecord } from "./voice.js";
 
 export const VOICE_CAPTURE_MAX_AGE_DAYS = 14;
 
-/** A turn never leaves more than this buffered in memory while waiting for its commit. */
 const VOICE_CAPTURE_PENDING_MAX_BYTES = 8 * 1024 ** 2;
 
 type VoiceCaptureCommand = Extract<VoiceCommand, { kind: "capture" }>;
 
 type VoiceTimingCommand = Extract<VoiceCommand, { kind: "timing" }>;
 
-/**
- * 宿主诊断事件里记进日常记录的只有这些：分段计时要用的时间和编号。
- * 委派文字、原话、出错原文不在里面：日常记录不新存用户原话。
- */
 const HOST_TIMING_EVENTS = new Set(["gpt_live_delegation", "gpt_live_task_bound", "gpt_live_task_queued", "gpt_live_delegation_context", "gpt_live_host_gate", "gpt_live_host_gate_failed", "gpt_live_route_start", "gpt_live_progress", "voice_metric", "voice_route"]);
 
 const HOST_TIMING_FIELDS = new Set(["delegationId", "requestId", "kind", "source", "diverged", "delegatedChars", "userWordsChars", "runId", "conversationId", "channel", "chars", "viaSession", "turnId", "turn", "name", "ms", "waitMs", "routeMs", "path", "quietMs"]);
 
-/** Turn may be null for upstream ASR that cannot be attributed. */
 interface VoiceCaptureLine {
   at: number;
   voiceId: string;
@@ -33,7 +22,6 @@ interface VoiceCaptureLine {
   [field: string]: unknown;
 }
 
-/** 存储端：追加一行、写一段 WAV（返回相对路径，失败返回 null）、按保留规则清理。 */
 export interface VoiceCaptureSink {
   appendLine(day: string, text: string): void;
   writeAudio(day: string, name: string, wav: Uint8Array): string | null;
@@ -47,7 +35,6 @@ export const voiceCaptureDayKey = (at: number): string => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };
 
-/** 16-bit mono PCM WAV; the recorder writes the header itself so both takes stay auditionable. */
 function wavBytes(pcm: Uint8Array, sampleRate = VOICE_DIAG_SAMPLE_RATE): Uint8Array {
   const length = pcm.length - (pcm.length % 2);
   const out = new Uint8Array(44 + length);
@@ -72,7 +59,6 @@ const concat = (chunks: Uint8Array[]): Uint8Array => {
   return out;
 };
 
-/** 按住说话的一个时间点（后台记）：一次按住说话一个编号，放在 voiceId 位置。 */
 export function pttTimingLine(at: number, pttId: string, conversationId: string, point: string): string {
   const line: VoiceCaptureLine = { at, voiceId: pttId, conversationId, turn: null, type: "timing", src: "ptt", point };
 
@@ -82,12 +68,10 @@ export function pttTimingLine(at: number, pttId: string, conversationId: string,
 export class VoiceCaptureRecorder {
   private readonly pending = new Map<string, { turn: number; chunks: Uint8Array[]; bytes: number }>();
   private cleanedFor: string | null = null;
-  /** Voice sessions that explicitly consented to WAV persistence (diagnostic). */
   private readonly audioSessions = new Set<string>();
 
   constructor(private readonly sink: VoiceCaptureSink, private readonly log: (message: string) => void = () => {}, private readonly now: () => number = Date.now) {}
 
-  /** A new voice session starts here: retention runs once, and nothing else about the session changes. */
   begin(voiceId: string, _conversationId: string, opts?: { persistAudio?: boolean }): void {
     if (opts?.persistAudio) this.audioSessions.add(voiceId);
     else this.audioSessions.delete(voiceId);
@@ -99,7 +83,6 @@ export class VoiceCaptureRecorder {
     catch (error) { this.log(`[voice-capture] 清理失败：${this.text(error)}`); }
   }
 
-  /** Upstream evidence from the real send path (`ready`/`append`/`commit`/`item`/`asr`/`forward`/`gap`). */
   record(voiceId: string, conversationId: string, record: VoiceDiagRecord): void {
     try {
       const at = this.now();
@@ -169,7 +152,6 @@ export class VoiceCaptureRecorder {
     }
   }
 
-  /** Facts only the extension knows: continuous PCM (C0), rendered text, or a one-click mark. */
   command(voiceId: string, conversationId: string, command: VoiceCaptureCommand): void {
     try {
       const at = this.now();
@@ -198,7 +180,6 @@ export class VoiceCaptureRecorder {
     }
   }
 
-  /** 侧栏看到的一个时间点：at 是侧栏记下的本机时间，不是写入时间。 */
   timing(voiceId: string, conversationId: string, command: VoiceTimingCommand): void {
     const line: VoiceCaptureLine = { at: command.at, voiceId, conversationId, turn: command.turn ?? null, type: "timing", src: "panel", point: command.point };
 
@@ -208,7 +189,6 @@ export class VoiceCaptureRecorder {
     this.append(line);
   }
 
-  /** 宿主的诊断事件（如 gpt_live_delegation）：只留分段计时用的字段，别的事件不记。 */
   host(event: string, fields: Record<string, unknown>): void {
     if (!HOST_TIMING_EVENTS.has(event)) return;
 
@@ -243,7 +223,6 @@ export class VoiceCaptureRecorder {
     return (error instanceof Error ? error.message : String(error)).slice(0, 200);
   }
 
-  /** A failed write is recorded as one gap; if even that cannot be written, only the log knows. */
   private gap(voiceId: string, conversationId: string, turn: number | null, detail: string): void {
     this.append({ at: this.now(), voiceId, conversationId, turn, type: "gap", code: "write_failed", detail });
   }
@@ -256,7 +235,6 @@ export class VoiceCaptureRecorder {
     }
   }
 
-  /** Returns the path relative to the capture root, or null when the audio could not be written. */
   private writeAudio(at: number, voiceId: string, conversationId: string, turn: number, which: "c0" | "c1", pcm: Uint8Array): string | null {
     try {
       return this.sink.writeAudio(voiceCaptureDayKey(at), `${voiceId}-t${turn}-${which}.wav`, wavBytes(pcm));
