@@ -17,13 +17,13 @@ from PIL import Image
 from scipy.ndimage import gaussian_filter, map_coordinates
 
 OUT = sys.argv[1]
-N = 160              # 模拟网格
-SIZE = int(sys.argv[2]) if len(sys.argv) > 2 else 320  # 输出边长；侧栏最大 160px，2 倍屏够用
+N = 160
+SIZE = int(sys.argv[2]) if len(sys.argv) > 2 else 320
 FPS = 60
-LOOP = 12 * FPS      # 循环长度
-FADE = 3 * FPS       # 首尾交叉淡化
-WARM = 240           # 预热步数，让流场先成形
-DT = 0.5             # 每帧的模拟步长：60 帧下流动整体放慢一半，逐帧位移更小更顺
+LOOP = 12 * FPS
+FADE = 3 * FPS
+WARM = 240
+DT = 0.5
 rng = np.random.default_rng(7)
 
 yy, xx = np.mgrid[0:N, 0:N].astype(np.float64)
@@ -58,7 +58,6 @@ def project(u, v):
     return np.real(np.fft.ifft2(uh)), np.real(np.fft.ifft2(vh))
 
 
-# 几个缓慢绕行的涡源：大尺度、柔和，像风推着云。
 VORTS = [(0.32, 0.38, 0.26, 1.0, 0.0), (0.70, 0.64, 0.28, -0.8, 1.7)]
 
 
@@ -88,12 +87,10 @@ for step in range(total):
     u, v = advect(u, u, v, DT), advect(v, u, v, DT)
     u, v = project(u * 0.995 ** DT, v * 0.995 ** DT)
     dye = advect(dye, u, v, DT)
-    # 云不会耗尽：缓慢回到底层分布，同时保留被流场拉出的丝。
     dye = dye * (1 - 0.008 * DT) + base * 0.008 * DT
     if step >= WARM:
         frames.append(dye.copy())
 
-# 首尾交叉淡化：输出第 i 帧 = 模拟第 LOOP+i 帧与第 i 帧按权重混合（i < FADE），保证最后一帧接回第一帧。
 loop = []
 for i in range(LOOP):
     if i < FADE:
@@ -103,16 +100,13 @@ for i in range(LOOP):
         loop.append(frames[i])
 
 PALETTES = {
-    # 暖纸：墨灰褐 → 纸白，夹一点杏色
-    # 暮色：产品蓝（#2d4a86）→ 雾紫 → 杏色云
     "dusk": [(0.15, 0.23, 0.45), (0.45, 0.45, 0.66), (0.91, 0.75, 0.66), (1.0, 0.96, 0.92)],
-    # 晨光：淡杏 → 奶白
     "dawn": [(0.86, 0.55, 0.38), (0.95, 0.76, 0.60), (0.99, 0.90, 0.80), (1.0, 0.985, 0.96)],
 }
 
 Y, X = np.mgrid[0:SIZE, 0:SIZE] / SIZE
-diag = np.clip((X + (1 - Y)) * 0.55 - 0.1, 0, 1)             # 左上深、右下亮
-frost = np.stack([gaussian_filter(np.random.default_rng(3 + k).standard_normal((SIZE, SIZE)), 0.75 * SIZE / 512) for k in range(2)]) * 12 * SIZE / 512  # 磨砂：固定的细碎错位（像素），带一点结构像玻璃颗粒
+diag = np.clip((X + (1 - Y)) * 0.55 - 0.1, 0, 1)
+frost = np.stack([gaussian_filter(np.random.default_rng(3 + k).standard_normal((SIZE, SIZE)), 0.75 * SIZE / 512) for k in range(2)]) * 12 * SIZE / 512
 grain = np.random.default_rng(4).standard_normal((24, SIZE, SIZE)).astype(np.float32)
 
 
@@ -127,7 +121,7 @@ def ramp(c, pal):
 for name, pal in PALETTES.items():
     d = tempfile.mkdtemp(prefix=f"orb-{name}-")
     for i, field in enumerate(loop):
-        soft = gaussian_filter(field, 2.8, mode="wrap")              # 揉开细丝，云成团
+        soft = gaussian_filter(field, 2.8, mode="wrap")
         img = np.array(Image.fromarray((np.clip(soft, 0, 1) * 65535).astype(np.uint16)).resize((SIZE, SIZE), Image.BICUBIC), dtype=np.float64) / 65535
         img = map_coordinates(img, [Y * SIZE + frost[1], X * SIZE + frost[0]], order=1, mode="nearest")
         lo, hi = np.percentile(img, 35), np.percentile(img, 97)

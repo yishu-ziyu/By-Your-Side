@@ -18,7 +18,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TASKS = {json.loads(l)['id']: json.loads(l) for l in open(os.environ.get('BYS_TASKS') or os.path.join(HERE, '..', 'tasks', 'tasks.jsonl')) if l.strip()}
 PRICE_FILE = os.environ.get('BYS_PRICES') or os.path.join(HERE, 'prices.json')
 PRICE = json.load(open(PRICE_FILE)) if os.path.exists(PRICE_FILE) else None
-# 能力档位（docs/ROADMAP.md 第 11 条）与速度线（#264，按类别）。BYS_TIERS 可换一份阈值试判。
 TIERS_DOC = json.load(open(os.environ.get('BYS_TIERS') or os.path.join(HERE, '..', 'tasks', 'tiers.json')))
 TIERS, LATENCY = TIERS_DOC['tiers'], {k: v for k, v in (TIERS_DOC.get('latency') or {}).items() if not k.startswith('_')}
 METRIC_FIELD = {'first_text': 'seconds_to_first_answer_text', 'total': 'seconds_total'}
@@ -33,7 +32,6 @@ def phase_breakdown(paths):
     return json.loads(out)
 
 def phases_of(runs, prompt):
-    # 每条结果的配置是全新的，导出里通常只有这一题的一次运行；有几次时取原话对得上的那次。
     if not runs: return None
     r = next((r for r in runs if prompt and prompt[:30] in r['text']), runs[0])
     sec = lambda v: None if v is None else round(v / 1000, 1)
@@ -85,7 +83,7 @@ def result_files():
         yield jf, slug
 
 PHASES = phase_breakdown([jf[:-5] + '.trace.jsonl' for jf, _ in result_files() if os.path.exists(jf[:-5] + '.trace.jsonl')])
-rows = {}  # (model, task) -> row
+rows = {}
 for jf, slug in result_files():
     tr = json.load(open(jf))
     if tr.get('status') == 'setup_error' or any('额度用完' in e for e in tr.get('errors', [])): continue
@@ -95,7 +93,6 @@ for jf, slug in result_files():
     tp = jf[:-5] + '.trace.jsonl'
     uc = usage_cost(tp) if os.path.exists(tp) else usage_cost(os.devnull)
     ph = phases_of(PHASES.get(tp), tr.get('typed_prompt') or tr.get('prompt') or TASKS[tr['id']].get('prompt'))
-    # 三段由差值得出，「其他」明显为负说明重复计时（例如工具并行），口径要先修。
     if ph and ph['other_s'] < -1: sys.exit(f"phase overlap: {tr['model']} {tr['id']} other_s={ph['other_s']} ({tp})")
     speed, speed_value = speed_check(TASKS[tr['id']]['category'], tr, j.get('verdict'))
     rows[(tr['model'], tr['id'])] = dict(model=tr['model'], main_model=tr.get('main_model'), fast_model=tr.get('fast_model'), task=tr['id'], category=TASKS[tr['id']]['category'],
