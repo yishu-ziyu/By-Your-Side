@@ -21,7 +21,6 @@
     "accept:shard": "tsx scripts/acceptance/real-path/shard-run.mts",
     "nodes": "tsx scripts/acceptance/nodes-status.mts",
     "check:architecture": "node scripts/maintenance/check-boundaries.mjs",
-    "check:docs": "node scripts/maintenance/check-docs.mjs",
     "check:copy": "node scripts/maintenance/check-copy.mjs",
     "check:motion": "node scripts/maintenance/check-motion-tokens.mjs",
     "check:style": "node scripts/maintenance/check-style-tokens.mjs",
@@ -46,8 +45,7 @@
     "frames": "tsx scripts/acceptance/real-path/recording.mts",
     "gym": "tsx scripts/gym/run.mts",
     "gym:report": "node scripts/gym/report.mjs",
-    "gym:replay": "node scripts/gym/replay.mjs",
-    "product:build": "python3 scripts/maintenance/product-notes.py"
+    "gym:replay": "node scripts/gym/replay.mjs"
   },
   "devDependencies": {
     "marked": "18.0.11",
