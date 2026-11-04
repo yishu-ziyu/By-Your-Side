@@ -131,6 +131,9 @@ try {
   const staleLive = liveOk(stale);
   check("c 超过 10 秒标题改成「仍在处理」，秒数继续数", stale.title === "仍在处理" && staleLive.secs >= 15 && staleLive.noWaitWord && staleLive.noDot && staleLive.noShine && staleLive.noPct, { title: stale.title, time: stale.time, shine: stale.shine, secs: staleLive.secs });
 
+  const staleButtons = await rp.evaluate(panel, `[...document.querySelectorAll("#messages details.run-steps > summary button")].map((b) => b.textContent)`) as string[];
+  check("c2 等得久也不出现「跳过」「换个方法」", !staleButtons.includes("跳过") && !staleButtons.includes("换个方法"), staleButtons);
+
   await rp.click(panel, "#conversation-new");
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#input")?.value === "" && document.querySelector("#send-btn")?.disabled===false'), 15_000, "新会话");
   await send(ASK_STEP);

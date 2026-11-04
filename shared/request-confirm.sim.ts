@@ -83,9 +83,8 @@ test("超时原文收成带耗时的中文", () => {
 
 test("过程行 10 秒内写正在做，超过才升级", () => {
   const live = liveStatus({ step: "搜索论文标题", from: 0, now: LIVE_ESCALATE_MS });
-  assert.deepEqual(live, { title: "正在：搜索论文标题", time: "10 秒", escalated: false });
+  assert.deepEqual(live, { title: "正在：搜索论文标题", time: "10 秒" });
   const stuck = liveStatus({ step: "搜索论文标题", from: 0, now: LIVE_ESCALATE_MS + 1000 });
-  assert.equal(stuck?.escalated, true);
   assert.equal(stuck?.title, "仍在处理");
   assert.match(stuck?.time ?? "", /已 /);
   assert.equal(runMetaLine(21, 7), "已试了 21 步，其中 7 次没做成，已换别的方法");
