@@ -7,7 +7,6 @@ export const RUN_META_MIN_STEPS = 2;
 export interface LiveStatus {
   title: string;
   time: string;
-  escalated: boolean;
 }
 
 export function liveStatus(input: { step?: string; from?: number; now: number }): LiveStatus | null {
@@ -20,10 +19,10 @@ export function liveStatus(input: { step?: string; from?: number; now: number })
   const time = sec < 60 ? `${sec} 秒` : `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
 
   if (ms > LIVE_ESCALATE_MS) {
-    return { title: "仍在处理", time: `已 ${time}`, escalated: true };
+    return { title: "仍在处理", time: `已 ${time}` };
   }
 
-  return { title: `正在：${step}`, time, escalated: false };
+  return { title: `正在：${step}`, time };
 }
 
 export function runMetaLine(done: number, failed: number): string | null {
@@ -31,5 +30,4 @@ export function runMetaLine(done: number, failed: number): string | null {
   return `已试了 ${done} 步，其中 ${failed} 次没做成，已换别的方法`;
 }
 
-export const STEER_SKIP = "跳过这一步，继续后面的。";
 export const STEER_OTHER_WAY = "刚才这一步换个方法，不要再重复同样的做法。";

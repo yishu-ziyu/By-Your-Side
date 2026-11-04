@@ -78,7 +78,7 @@ import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
 import { isWriteTool } from "../../../shared/effect-policy.js";
 import { conversationDayGroup, conversationOutcome, conversationRelativeTime, otherTaskCopy, resultCardCopy } from "./selectors.js";
-import { liveStatus, runMetaLine, STEER_OTHER_WAY, STEER_SKIP } from "../../../shared/run-status.js";
+import { liveStatus, runMetaLine, STEER_OTHER_WAY } from "../../../shared/run-status.js";
 import { describeTimeout } from "../../../shared/timeouts.js";
 import { TaskBar, stateHeadline } from "./task-bar.js";
 import { mountComposerGlide } from "./composer-glide.js";
@@ -2702,43 +2702,15 @@ function runningTool(run: RunHost) {
 }
 
 function refreshLiveStatus(run: RunHost): string {
-  if (run.root.hasAttribute("data-wait-user") || applyingHistory) {
-    paintEscalate(run, false);
-    return "";
-  }
+  if (run.root.hasAttribute("data-wait-user") || applyingHistory) return "";
   const tool = runningTool(run);
   const from = Number.isFinite(run.thinkFrom) ? run.thinkFrom : tool && Number.isFinite(tool.start) ? tool.start : Number.NaN;
   const step = Number.isFinite(run.thinkFrom) ? "思考" : (tool?.chip.dataset.past || run.lastToolShort || "这一步");
   const status = liveStatus({ step: plainStep(step), from, now: Date.now() });
-  if (!status) {
-    paintEscalate(run, false);
-    return "";
-  }
+  if (!status) return "";
   const shown = run.titleEl.textContent ?? "";
   if (shown !== status.title && (shown === "" || shown.startsWith("正在：") || shown === "仍在处理")) setRunTitle(run, status.title, true, Number.isFinite(run.thinkFrom) ? "think" : undefined);
-  paintEscalate(run, status.escalated);
   return status.time;
-}
-
-function paintEscalate(run: RunHost, on: boolean): void {
-  const existing = run.root.querySelector<HTMLElement>(":scope > summary .run-escalate");
-  if (!on) {
-    existing?.remove();
-    return;
-  }
-  if (existing) return;
-  const acts = document.createElement("span");
-  acts.className = "run-escalate";
-  const skip = document.createElement("button");
-  skip.type = "button";
-  skip.textContent = "跳过";
-  skip.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_SKIP); };
-  const other = document.createElement("button");
-  other.type = "button";
-  other.textContent = "换个方法";
-  other.onclick = (event) => { event.preventDefault(); event.stopPropagation(); sendInput(STEER_OTHER_WAY); };
-  acts.append(skip, other);
-  run.metaEl.after(acts);
 }
 
 function maybeStaleWait(run: RunHost): void {

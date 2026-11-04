@@ -3177,8 +3177,6 @@ details.run-steps .run-body details.thinking.narration > pre, details.run-steps.
 }
 
 details.run-steps:not(.done) > summary { flex-wrap: wrap; row-gap: 0; }
-details.run-steps > summary > .run-escalate { display: inline-flex; gap: var(--s-2); flex-basis: 100%; margin-top: 2px; }
-details.run-steps > summary > .run-escalate button { border: 1px solid var(--content-border); border-radius: var(--r-pill); background: var(--content-bg); color: var(--text-secondary); font: inherit; font-size: var(--fs-meta); padding: 2px 10px; cursor: pointer; }
 .chip .run-escalate { display: inline-flex; gap: var(--s-1); margin-left: var(--s-2); }
 .chip .run-escalate button { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: var(--fs-meta); padding: 0; cursor: pointer; }
 details.run-steps > summary > .run-meta { flex-basis: 100%; overflow-wrap: anywhere; font-size: var(--fs-meta); line-height: 18px; color: var(--text-tertiary); }
