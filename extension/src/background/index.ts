@@ -136,6 +136,7 @@ const handlers: Record<ToolName, Handler> = {
   scroll: (p, sid) => scroll(p, sid),
   js: (p, sid) => evaluateJs(p, sid),
   observe_page: async()=>{throw new Error('观察只允许通过语音授权。');},
+  voice_page_op: p => chrome.tabs.sendMessage(p.tabId, { type: 'VOICE_PAGE_OP', op: p.op }, { frameId: 0 }),
   screenshot: (p, sid) => screenshot(p, sid),
   mark: (p, sid) => mark(p, sid),
   clear_marks: (p, sid) => clearMarks(sid, p.tabId),

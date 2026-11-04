@@ -48,6 +48,8 @@ import type {DeliveryStreamDecision} from './voice-turn.js';
 import type { AgentToolResult, ModelRuntime, SessionManager, PromptOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { isJsonObject, isParamRejection, lowestEffort, parseJsonReply, SideCallError, sideJudgment, type RejectedEfforts, type SideCallHost } from "./side-judgment.js";
 import { MainEffort, restingEffort, thinkingChoice } from "./main-effort.js";
+import { fastOpPageView, parseFastDecision, VOICE_FAST_OP_PROMPT, type VoiceFastDecision } from "./voice-fast-op.js";
+import type { VoicePageState } from "../../shared/voice-page-op.js";
 import { RunNotStarted, userWaiting, withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
@@ -233,6 +235,9 @@ const PAGE_CHANGE_TOOLS = new Set(["page_translation", "navigate", "open_tab", "
 
 /** 由多个浏览器步骤组成的工具：步骤作为子步骤上报，结果里带实际执行的步数。 */
 const PROGRAM_TOOLS = new Set(["browser_run", "learned_operation"]);
+
+/** 决定这一句怎么做的上限；超时就走原路径，不让用户多等。 */
+const VOICE_FAST_OP_TIMEOUT_MS = 4_000;
 
 export class BrowserAgentSession {
   private activeGoal:string|null=null;
@@ -635,7 +640,7 @@ if(required.includes(key))candidates.set(key,attachment);
    * 扣着等核对时这一轮也不收尾（finish）：任务仍在跑，侧栏过程行不结束、状态不回空闲；放出时才收尾，判继续时不收尾、直接接着做。
    */
   private answerHold: { events: AgentUiEvent[]; settled: boolean; finish?: () => void } = { events: [], settled: false };
-  /** 这一轮是用说的交代或改过：回答会被念出来，念出去就收不回，所以和说了好几件事一样扣到核对之后。 */
+  /** 这一轮是用说的交代或改过：做完就念，不扣到核对之后，核对也不回头重做。 */
   private spokenAsk = false;
   /** 判继续、回答已丢掉、接着做的那一轮还没开始时，扣着那一轮的收尾：接着做没开起来（模型请求失败）就用它收尾，开起来了就扔掉。 */
   private continueFinish: (() => void) | null = null;
@@ -654,7 +659,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
     if (!kind || kind === 'ack' || this.answerHold.settled || this.memberId) return false;
 
-    return this.spokenAsk || this.severalAsksNow();
+    return !this.spokenAsk && this.severalAsksNow();
   }
 
   /** 按原来的顺序放出扣着的回答，再给扣着的那一轮收尾（先标已放出：收尾时交付的正文不能又被扣住）。 */
@@ -1887,6 +1892,19 @@ return;}
     } else {
       this.sendUserMessage(text, context, attachments, spoken ? { spoken: true } : undefined);
     }
+  }
+
+  /** 语音即时操作的决定：只看原话和页面状态，一次调用，失败由调用方走原路径。 */
+  async decideVoiceFastOp(text: string, state: VoicePageState, signal?: AbortSignal): Promise<VoiceFastDecision> {
+    const call = this.voiceModelCall();
+
+    if (!call) throw new Error("模型不可用");
+
+    return sideJudgment({ models: { completeSimple: (model, context, options) => call.runtime.completeSimple(model, context, userWaiting(options ?? {})) }, rejected: call.rejected, record: call.record }, call.model, {
+      purpose: "voice_fast_op", systemPrompt: VOICE_FAST_OP_PROMPT, content: JSON.stringify({ text, page: JSON.parse(fastOpPageView(state)) }),
+      maxTokens: 200, temperature: 0, timeoutMs: VOICE_FAST_OP_TIMEOUT_MS, retry: "none", signal, sessionId: call.sessionId, headers: call.headers,
+      parse: reply => parseFastDecision(reply, state),
+    });
   }
 
   /** 组装本次语音调用所需的当前 model/runtime/sessionId/headers；每次现取，不缓存旧模型。 */
@@ -3377,7 +3395,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           {
             const checkGoal = this.goalCheckEligible(event.messages);
             // 用户说了不止一件事：回答扣到核对之后（最多等 GOAL_GATE_WAIT_MS），没做完就不出回答、接着做。只说一件事的照旧先交付。
-            const gate = checkGoal && !this.answerHold.settled && (this.spokenAsk || this.severalAsksNow());
+            const gate = checkGoal && !this.answerHold.settled && !this.spokenAsk && this.severalAsksNow();
 
             // 先说「要核对」，再交付：过往任务等核对结论再记（conversation-manager）。
             if (checkGoal) emit({ kind: "goal_check", status: "checking", ...(gate ? { gate: true } : {}) });
@@ -3781,7 +3799,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     const continuation = verdict ? this.continuePolicy.next(verdict, { runId, snapshot, goal: this.activeGoal ?? "", failed: this.goalLedger.failuresFor(runId), progress: this.noProgressPolicy?.progressVersion }) : null;
 
-    if (verdict && continuation && "prompt" in continuation && this.session && !movedTo) {
+    // 说话的用户已在结果上接着往下走：核对只留「还差」，不回头重做，免得推翻用户已接受的结果。
+    if (verdict && continuation && "prompt" in continuation && this.session && !movedTo && !this.spokenAsk) {
       const session = this.session;
 
       // agent_end 回调返回后会话才真正空闲；稍等再发下一轮，最多等 3 秒。等的期间用户另有动作就作罢。

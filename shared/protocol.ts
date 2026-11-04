@@ -1,3 +1,4 @@
+import { isVoicePageOp } from './voice-page-op.js';
 import { isReadingClientMessage, isReadingEvent, isReadingRouteResult, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingRouteResult, type ReadingTranscript } from "./reading.js";
 import { isNudgeClientMessage, isNudgeResult, type NudgeClientMessage, type NudgeResult } from "./nudge.js";
 import { isBrowseHabitClientMessage, isBrowseHabitResult, type BrowseHabitClientMessage, type BrowseHabitResult } from "./browse-habits.js";
@@ -587,6 +588,7 @@ export const TOOL_NAMES = [
   "press_key",
   "scroll",
   "js",
+  "voice_page_op",
   "screenshot",
   "observe_page",
   "mark",
@@ -901,6 +903,7 @@ export interface ToolContract {
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
+  voice_page_op: { params: { tabId: number; op: import('./voice-page-op.js').VoicePageOp }; data: import('./voice-page-op.js').VoicePageReply };
   screenshot: {
     params: {
       tabId?: number;
@@ -1562,6 +1565,7 @@ export type PageInteractionMessage =
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'consume'; token: string }
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'validate'; source: PageElementSource }
   | { type: 'GHOST_QUICK_ACTION'; action: GhostQuickAction | 'probe' }
+  | { type: 'VOICE_PAGE_OP'; op: import('./voice-page-op.js').VoicePageOp }
   /** 按记忆填的那一格画「记得的」（后台 → 页面）；token 是后台挂在那个元素上的一次性属性值。 */
   | { type: 'MEMORY_FIELD_MARK'; token: string; memory: { id: string; text: string; createdAt: number } }
   /** 「记得的」小卡点了「忘掉」（页面 → 侧栏）。 */
@@ -1643,6 +1647,8 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
     return Number.isSafeInteger(message.n) && (message.n ?? 0) > 0 && !!rect && typeof rect === 'object'
       && size(rect.x) && size(rect.y) && size(rect.width) && size(rect.height) && size(rect.viewportWidth) && size(rect.viewportHeight) && rect.viewportWidth > 0 && rect.viewportHeight > 0;
   }
+
+  if (message.type === 'VOICE_PAGE_OP') return isVoicePageOp(message.op);
 
   if (message.type === 'GHOST_QUICK_ACTION') return message.action === 'probe' || GHOST_QUICK_ACTIONS.includes(message.action as GhostQuickAction);
 
