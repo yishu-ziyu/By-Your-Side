@@ -85,11 +85,24 @@ function programMethods(offer: { saveFile: boolean }): string[] {
   ];
 }
 
+const TABS_METHODS: Record<string, string> = { list: "list_tabs", active: "get_active_tab", open: "open_tab", switch: "switch_tab", show: "switch_tab", close: "close_tab" };
+
+function tabsCall(raw: unknown): { name: string; params: Record<string, unknown> } {
+  const { action, ...params } = isFields(raw) ? raw : {};
+  const name = typeof action === "string" ? TABS_METHODS[action] : undefined;
+
+  if (!name) throw new Error(`browser.tabs takes action: ${Object.keys(TABS_METHODS).join(", ")}.`);
+  if (action === "list" || action === "active") return { name, params: {} };
+  if (action === "show") return typeof params.tabId === "number" ? { name, params: { ...params, show: true } } : { name: "open_tab", params };
+
+  return { name, params };
+}
+
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 const MAX_STEP_RESULT_CHARS = 2 * FETCH_MAX_BYTES + 16_384;
 
-const PAGE_GLOBALS = new Set(["window", "document", "Blob", "File", "FileReader", "fetch", "XMLHttpRequest", "location", "history", "localStorage", "sessionStorage", "navigator", "setTimeout", "setInterval", "console", "alert", "URL", "atob", "btoa", "DOMParser", "TextEncoder", "TextDecoder", "performance"]);
+const PAGE_GLOBALS = new Set(["window", "document", "Blob", "File", "FileReader", "fetch", "XMLHttpRequest", "location", "history", "localStorage", "sessionStorage", "navigator", "setTimeout", "setInterval", "alert", "URL", "atob", "btoa", "DOMParser", "TextEncoder", "TextDecoder", "performance"]);
 
 function explainProgramError(error: { name?: unknown; message: string; stack?: unknown }, code: string, methods: readonly string[]): string {
   const text = explainSandboxError(error.message, code, methods);
@@ -146,7 +159,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   const METHODS = programMethods({ saveFile: !!options.saveFile })
     .filter(name => !allowed || allowed.has(name) || allowed.has(RPC_ALIASES[name] ?? name));
   const SNAKE = Object.fromEntries(Object.entries(HELPER_SNAKE_ALIASES).filter(([, name]) => METHODS.includes(name)));
-  const FACADE = [...METHODS, ...Object.keys(SNAKE)];
+  const FACADE = [...METHODS, ...Object.keys(SNAKE), ...(METHODS.includes("list_tabs") ? ["tabs"] : [])];
   const notes = new Set<string>();
   const engine = await getQuickJS();
   const vm = engine.newContext();
@@ -639,11 +652,6 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
     if (pending.size >= 32) throw stop("Too many pending browser calls; await each operation");
     const written = vm.getString(nameHandle);
-    const name = SNAKE[written] ?? written;
-
-    if (!METHODS.includes(name)) throw new Error(`Unknown browser method: ${name}`);
-
-    if (written !== name) notes.add(`browser.${written} ran as browser.${name}; write browser.${name}.`);
     let raw: unknown;
 
     try {
@@ -651,6 +659,14 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     } catch (error) {
       throw new Error(`Browser call parameters must be JSON: ${message(error)}`);
     }
+
+    const tabs = written === "tabs" ? tabsCall(raw) : null;
+    const name = tabs?.name ?? SNAKE[written] ?? written;
+
+    if (!METHODS.includes(name)) throw new Error(`Unknown browser method: ${name}`);
+
+    if (written !== name) notes.add(`browser.${written} ran as browser.${name}; write browser.${name}.`);
+    if (tabs) raw = tabs.params;
 
     const target = RPC_ALIASES[name] ?? name;
 
@@ -771,10 +787,15 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
   vm.setProp(vm.global, "__browserCall", bridge);
   bridge.dispose();
+  const consoleUsed = vm.newFunction("consoleUsed", () => { notes.add("console output is not captured; return what you need from the program."); });
+  vm.setProp(vm.global, "__consoleUsed", consoleUsed);
+  consoleUsed.dispose();
 
   try {
     const bootstrap = vm.evalCode(`{
       const call=globalThis.__browserCall; delete globalThis.__browserCall;
+      const consoleUsed=globalThis.__consoleUsed; delete globalThis.__consoleUsed;
+      globalThis.console=Object.freeze(Object.fromEntries(["log","info","warn","error","debug"].map(name=>[name,()=>{consoleUsed();}])));
       globalThis.browser=Object.freeze(Object.fromEntries(${JSON.stringify(FACADE)}.map(name=>[name, async (params)=>{
         // 页面函数在这里序列化，避免模型把脚本嵌套成字符串时再次转义。
         if(name==='js' && params && typeof params.code==='function')params={...params,code:'('+params.code.toString()+')()'};
