@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describeModelError, plainError, plainToolError, toolEndForUi } from "../../../shared/user-facing.ts";
+import { toolStartForUi } from "../../../shared/tool-event-for-ui.ts";
 import { waitingCopy, resultStatusText } from "../../../shared/task-status-copy.ts";
 import { skillResultText } from "../../../extension/src/shared/skill-result.ts";
 import { launchRealPath, siteAddress, sleep, until } from "./harness.mts";
@@ -89,6 +90,9 @@ try {
   const body = await ev("document.body.innerText") as string;
   check("点开所有步骤也看不到内部字段", !INTERNAL.test(body), INTERNAL.exec(body)?.[0]);
   check("密码没有显示", !body.includes("hunter2"));
+  await sleep(600);
+  const history = await ev(`Promise.all([chrome.storage.local.get(null),chrome.storage.session.get(null)]).then(([a,b])=>JSON.stringify(Object.entries({...a,...b}).filter(([k])=>k.startsWith("history:"))))`) as string;
+  check("存下的面板记录有内容，但没有密码和工具原始数据", history.includes("市场部") && !history.includes("hunter2") && !history.includes("RootWebArea") && !history.includes("browser_run"), history.length);
 
   await fresh();
   await send(ASK.fail);
@@ -156,6 +160,24 @@ try {
   check("等待状态只有一份文案，内部原因被翻译", waitingCopy("restart_checkpoint", "host_restart").text === "任务中断了，说「继续」就接着做" && waitingCopy("restart_checkpoint", "host_restart").detail === "扩展后台重启了");
   check("状态原因不认识时不显示原值", waitingCopy("tool_failed", "some_internal_code value").detail === null && resultStatusText("internal_state") === "结果未知");
   check("技能结果不是 JSON", !/[{}"]/.test(skillResultText({ 标题: "周报", 条目: [{ 名字: "甲" }, "乙"] })), skillResultText({ 标题: "周报", 条目: [{ 名字: "甲" }, "乙"] }));
+  const started = toolStartForUi({ kind: "tool_start", name: "js", params: { code: "secret()", purpose: "读标题", tabId: 3 } });
+  check("脚本内容不发给界面", !JSON.stringify(started).includes("secret()") && started.params.purpose === "读标题", started);
+  const typed = toolStartForUi({ kind: "tool_start", name: "fill", params: { target: "#pwd", label: "登录密码", value: "hunter2" } });
+  check("密码不发给界面", !JSON.stringify(typed).includes("hunter2") && !typed.detail, typed);
+  const search = toolStartForUi({ kind: "tool_start", name: "fetch", params: { url: "https://a.b/search", method: "POST", body: JSON.stringify({ query: "差旅", token: "abc" }) } });
+  check("请求内容不发给界面", !JSON.stringify(search).includes("abc"), search);
+  const old = { updatedAt: 1, entries: [
+    { seq: 1, item: { kind: "server", msg: { type: "agent_event", conversationId: "old", event: { kind: "tool_start", toolCallId: "a", name: "fill", params: { target: "#pwd", label: "密码", value: "old-secret-pass" } } } } },
+    { seq: 2, item: { kind: "server", msg: { type: "agent_event", conversationId: "old", event: { kind: "tool_end", toolCallId: "a", name: "fill", isError: false, resultText: "RootWebArea old-raw-result" } } } },
+    { seq: 3, item: { kind: "server", msg: { type: "agent_event", conversationId: "old", event: { kind: "thinking_delta", delta: "old-thinking-text" } } } },
+  ] };
+  await ev(`chrome.storage.local.set({"history:old-conversation":${JSON.stringify(old)}}).then(()=>true)`);
+  await rp.restart();
+  await sleep(2_500);
+  const panel2 = await rp.attach(await rp.openSidePanel());
+  await sleep(1_500);
+  const migrated = await rp.evaluate(panel2, `chrome.storage.local.get("history:old-conversation").then(r=>JSON.stringify(r))`) as string;
+  check("重启后旧记录里的密码、原始结果和思考被清掉，其余保留", !/old-secret-pass|old-raw-result|old-thinking-text/.test(migrated) && migrated.includes("#pwd"), migrated.slice(0, 300));
   check("Agent 忙碌的英文报错不会原样显示", plainError("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.", "") === "");
   check("产品写好的中文提示照常显示", plainError("先在「模型与语音」里连接模型。", "") === "先在「模型与语音」里连接模型。");
   check("账号登录的报错提示重新登录", describeModelError("模型请求最终失败（openai-codex/gpt-6-luna）：401 unauthorized")?.title === "ChatGPT 登录已失效");

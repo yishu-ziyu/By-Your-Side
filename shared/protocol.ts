@@ -410,7 +410,7 @@ export type AgentUiEvent =
   | { kind: "fact_check"; status: "done"; answer: string; problems: string[]; replacement?: string }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
-  | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; valueHash?: string }
+  | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; detail?: { text: string; href?: string }; valueHash?: string }
   | { kind: "tool_end"; toolCallId: string; name: string; isError: boolean; resultText?: string; pageTitle?: string; timeout?: { copy: string; retry: boolean }; executionFact?: ToolExecutionFact;  reason?: string;  repeatRefused?: true;  heldReason?: HeldReason;  sendConfirmed?: true;  readback?: FieldReadback;  pageTarget?: { target: string; label: string; tabId: number; url: string };  skill?: { id: string; name: string; outcome: "saved" | "used" | "unused" } }
   | { kind: "tool_observation"; toolCallId: string; name: string; target: string | null; tabId: number | null; workingTab: boolean; text: string; truncated: boolean; tabIds?: number[]; url?:string; title?:string }
   | { kind: "send_confirm_wait"; waiting: boolean; confirm?: SendConfirmView }

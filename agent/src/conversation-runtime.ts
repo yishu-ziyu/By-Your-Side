@@ -1,3 +1,4 @@
+import { toolStartForUi } from "../../shared/tool-event-for-ui.js";
 import { toolEndForUi } from "../../shared/user-facing.js";
 import { LEAD_SESSION_ID, isLeadSession, type ClientMessage, type FileAttachment, type ServerMessage, type TeamView, type TeamMemberHandback } from "../../shared/protocol.js";
 import { fromTeamMemberHandback, type ActiveMemberInput } from "../../shared/control.js";
@@ -77,7 +78,7 @@ export async function createConversationRuntime(
   const session = await BrowserAgentSession.create(
     rpc,
     {
-      emit: (event) => sendCurrent({ type: "agent_event", event: event.kind === "tool_end" ? toolEndForUi(event) : event }),
+      emit: (event) => sendCurrent({ type: "agent_event", event: event.kind === "tool_end" ? toolEndForUi(event) : event.kind === "tool_start" ? toolStartForUi(event) : event }),
       setStatus: (state) => sendCurrent({ type: "status", state }),
     },
     {

@@ -1,4 +1,6 @@
 import type { PanelHistoryEntry, PanelHistoryItem } from "../relay.js";
+import { toolStartForUi } from "../../../shared/tool-event-for-ui.js";
+import { toolEndForUi } from "../../../shared/user-facing.js";
 
 const DEFAULT_PANEL_HISTORY_LIMIT = 5_000;
 
@@ -7,6 +9,30 @@ export const HISTORY_PERSIST_BUDGET_BYTES = 256 * 1024;
 export type StoredPanelHistory = { updatedAt: number; entries: PanelHistoryEntry[]; seqFloor?: number };
 
 const SEQ_RESERVE = 1_000;
+
+function cleanEntry(entry: PanelHistoryEntry): PanelHistoryEntry | null {
+  const item = entry?.item;
+
+  if (item?.kind !== "server" || item.msg.type !== "agent_event") return entry;
+  const event = item.msg.event;
+
+  if (event.kind === "thinking_delta") return null;
+
+  if (event.kind === "tool_start") return { ...entry, item: { ...item, msg: { ...item.msg, event: toolStartForUi(event) } } };
+
+  if (event.kind === "tool_end" && "resultText" in event) return { ...entry, item: { ...item, msg: { ...item.msg, event: toolEndForUi(event) } } };
+
+  return entry;
+}
+
+export function cleanStoredHistory(value: unknown): unknown {
+  const list = Array.isArray(value) ? value : (value as StoredPanelHistory | null)?.entries;
+
+  if (!Array.isArray(list)) return value;
+  const entries = (list as PanelHistoryEntry[]).flatMap((entry) => { const clean = cleanEntry(entry); return clean ? [clean] : []; });
+
+  return Array.isArray(value) ? entries : { ...(value as StoredPanelHistory), entries };
+}
 
 export function historyUpdatedAt(value: unknown): number {
   if (Array.isArray(value)) return 0;

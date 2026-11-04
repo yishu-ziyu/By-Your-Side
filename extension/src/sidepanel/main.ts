@@ -50,7 +50,8 @@ import {
   HELD_TEXT,
   type ActionKind,
   isLiveViewportPinned,
-  liveViewportOverflows, isStepName, stepDetail, type StepDetail } from "./steps.js";
+  liveViewportOverflows } from "./steps.js";
+import { isStepName, type StepDetail } from "../../../shared/tool-event-for-ui.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
 import { mountErrorCards, type KeyTarget, type KeyTestResult } from "./error-card.js";
@@ -3536,7 +3537,7 @@ function changesPage(name: string, tabsAction: string | undefined, method: unkno
   return isWriteTool(name) && !PAGE_VIEWING_TOOLS.has(name);
 }
 
-function onToolStart(ev: { toolCallId: string; name: string; params: Record<string, unknown> }): void {
+function onToolStart(ev: { toolCallId: string; name: string; params: Record<string, unknown>; detail?: StepDetail }): void {
   const action = describeTool(ev.name, ev.params);
   const run = ensureRun();
   closeBlocks();
@@ -3583,7 +3584,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
     setRunTitle(run, `正在：${actionCardLabel(ev.name, ev.params)}`, false, kind);
   }
 
-  const expandable = stepDetail(ev.name, ev.params);
+  const expandable = ev.detail ?? null;
   const chip = document.createElement(expandable ? "button" : "div");
   if (chip instanceof HTMLButtonElement) chip.type = "button";
   chip.className = prep ? "chip prep" : "chip";
