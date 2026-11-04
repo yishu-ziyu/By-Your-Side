@@ -181,7 +181,25 @@ export class AttachmentsManager {
     this.attachBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.toggleMenu();
+
+      if (e.detail === 0 && !this.menuEl.hidden) this.menuItems()[0]?.focus();
     });
+
+    this.attachBtn.addEventListener("keydown", (e) => {
+      if (e.isComposing) return;
+
+      if (e.key === "Escape" && !this.menuEl.hidden) {
+        e.preventDefault();
+        this.closeMenu();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+
+        if (this.menuEl.hidden) this.attachBtn.click();
+        else this.menuItems()[0]?.focus();
+      }
+    });
+
+    this.menuEl.addEventListener("keydown", (e) => this.moveInMenu(e));
 
     document.addEventListener("click", (e) => {
       if (
@@ -285,13 +303,43 @@ export class AttachmentsManager {
 
   public toggleMenu(open?: boolean): void {
     const willOpen = open !== undefined ? open : Boolean(this.menuEl.hidden);
-    this.menuEl.hidden = !willOpen;
-    this.attachBtn.classList.toggle("active", willOpen);
+
+    if (!willOpen) {
+      this.closeMenu();
+
+      return;
+    }
+
+    this.menuEl.hidden = false;
+    this.attachBtn.classList.add("active");
+    this.attachBtn.setAttribute("aria-expanded", "true");
   }
 
   public closeMenu(): void {
+    if (this.menuEl.contains(document.activeElement)) this.attachBtn.focus();
     this.menuEl.hidden = true;
     this.attachBtn.classList.remove("active");
+    this.attachBtn.setAttribute("aria-expanded", "false");
+  }
+
+  private menuItems(): HTMLElement[] {
+    return Array.from(this.menuEl.querySelectorAll<HTMLElement>('[role^="menuitem"]'));
+  }
+
+  private moveInMenu(e: KeyboardEvent): void {
+    if (e.isComposing) return;
+    const items = this.menuItems();
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const targets: Record<string, number> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 };
+    const target = targets[e.key];
+
+    if (target !== undefined) {
+      e.preventDefault();
+      items[(target + items.length) % items.length]?.focus();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      this.closeMenu();
+    } else if (e.key === "Tab") this.closeMenu();
   }
 
   public async captureActiveTab(): Promise<void> {
