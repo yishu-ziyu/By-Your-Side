@@ -12,7 +12,7 @@ const BANNED = [
   [/(?<![A-Za-z_.])(API )?[Kk]ey(?![A-Za-z_])/, '密钥'],
 ];
 
-const MODEL_FACING = /^extension\/src\/(background\/exec\/|content\/domops|inproc\/shims|background\/marginalia|background\/nudge)/;
+const MODEL_FACING = /^(extension\/src\/(background\/exec\/|content\/domops|inproc\/shims|background\/marginalia|background\/nudge)|shared\/task-next-step)/;
 
 const MODEL_TEXT = /操作未执行|worker|父 Agent|snapshot|^\s*用户/;
 
@@ -106,7 +106,7 @@ function check(file, line, text, sourceLine) {
   }
 }
 
-for (const full of await files(path.join(repo, 'extension/src'))) {
+for (const full of [...await files(path.join(repo, 'extension/src')), ...await files(path.join(repo, 'shared'))]) {
   const file = path.relative(repo, full);
 
   if (MODEL_FACING.test(file)) continue;

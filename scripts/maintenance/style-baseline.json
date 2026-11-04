@@ -13,7 +13,7 @@
   },
   "extension/src/sidepanel/styles.css": {
     "fontSize": 0,
-    "radius": 12,
+    "radius": 10,
     "color": 54,
     "emoji": 0
   },

@@ -102,14 +102,14 @@ export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): 
       ...base,
       channel: 'capsule',
       kind: unknown ? 'unknown' : 'failure',
-      text: unknown ? '结果待确认' : '没有执行',
+      text: unknown ? '结果未知' : '没有执行',
       bounce: false,
       capsuleCanCloseAction: false,
     };
   }
 
   if (input.failed) {
-    return { ...base, channel: 'capsule', kind: 'unknown', text: '结果待确认', bounce: false, capsuleCanCloseAction: false };
+    return { ...base, channel: 'capsule', kind: 'unknown', text: '结果未知', bounce: false, capsuleCanCloseAction: false };
   }
 
   const gate = successEvidence(key, input.args, receipt);
@@ -123,7 +123,7 @@ export function classifyDirectExecutionFeedback(input: ExecutionFeedbackInput): 
       ...base,
       channel: 'capsule',
       kind: 'unknown',
-      text: '结果待确认',
+      text: '结果未知',
       bounce: false,
       capsuleCanCloseAction: false,
       facts: gatedFacts,

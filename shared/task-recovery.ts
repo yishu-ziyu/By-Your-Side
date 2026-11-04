@@ -1,4 +1,4 @@
-export const TASK_CHECKPOINT_UNAVAILABLE = '原任务检查点无法恢复，本会话已停止执行；原记录未被覆盖。请先修复检查点，不要重新提交可能已执行的操作；其他独立任务可另开会话。';
+export const TASK_CHECKPOINT_UNAVAILABLE = '原任务无法接着做，本会话已中止；原来的记录还在。不要重新提交可能做过的操作；新任务请另开一个会话。';
 
 export interface TaskMaterialReference {
   key: string;

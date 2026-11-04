@@ -1399,7 +1399,7 @@ return;}
 
     if (inputOptions?.pageObservation === "on-demand") {
       const reply = `${finalText}\n\n[Conversation reply: respond to the user's message. The page is background context, not a request for a page summary or a new task. Use tools if needed to answer the actual question.]`;
-      void session.prompt(reply, images.length > 0 ? { images } : undefined).catch((err: unknown) => this.emitError(err));
+      void session.prompt(reply, { ...(images.length > 0 ? { images } : {}), streamingBehavior: "steer" }).catch((err: unknown) => this.emitError(err));
     } else {
       const work=this.promptWithFreshPageObservation(session, finalText, context, images, inputOptions?.pages);
 
@@ -1448,7 +1448,7 @@ return;}
     const promptText = observation ? `${withMentions}\n\n${observation}` : withMentions;
 
     try {
-      await session.prompt(promptText, images.length > 0 ? { images } : undefined);
+      await session.prompt(promptText, { ...(images.length > 0 ? { images } : {}), streamingBehavior: "steer" });
     } catch (error) {
       if (!session.isStreaming) this.callbacks.setStatus(this.hold.isHeld() ? "user" : "idle");
       throw error;

@@ -12,7 +12,7 @@ const TOOL_ACTIONS = new Map<string, string>(Object.entries({
   accept_dialog: "确认弹窗", dismiss_dialog: "关闭弹窗", download_url: "下载文件",
   js: "检查页面", cdp: "调用浏览器", mark: "标注页面", clear_marks: "清除标注", guide_step: "在网页上教你", ask_user_to_point: "等你在页面上点选", fetch: "读取网页数据",
   browser_request: "发送网络请求", artifacts: "生成文件", saveFile: "保存文件", remember_user_preference: "记住偏好", user_memory: "查看记忆",
-  spawn_worker: "安排助手", list_workers: "查看助手", stop_worker: "让助手停下", post: "发送消息", await_message: "等待助手结果", share_tab: "安排同页协作",
+  spawn_worker: "安排助手", list_workers: "查看助手", stop_worker: "让助手暂停", post: "发送消息", await_message: "等待助手结果", share_tab: "安排同页协作",
   take_tab: "接手页面", worker_tabs: "调整页面归属", task_goals: "核对目标", task_status: "核对进度", record_task_results: "整理剩余步骤",
   resolve_unknown_result: "核对结果", send_user_message: "整理回答",
 }));
@@ -44,13 +44,13 @@ export function isQuotaError(message: string | undefined): boolean {
   return !!message && /insufficient_quota|quota exceeded|exceeded your current quota|usage.?limit|out of budget|billing|available balance|余额不足|额度(不足|用尽|已用完)/i.test(message);
 }
 
-export type ModelErrorKind = "auth" | "busy" | "quota" | "missing" | "network" | "other";
+export type ModelErrorKind = "auth" | "busy" | "quota" | "missing" | "network" | "other" | "unknown";
 
 export function isModelTimeoutError(text: string): boolean {
   return /timeout|timed out|超时/i.test(text);
 }
 
-export interface ModelErrorCopy { kind: ModelErrorKind; title: string; copy: string; model?: string; modelConnection?: ModelConnectionIdentity; detail: string }
+export interface ModelErrorCopy { kind: ModelErrorKind; title: string; copy: string; model?: string; modelConnection?: ModelConnectionIdentity; detail: string; accountLogin?: true }
 
 export function describeModelError(raw: string): ModelErrorCopy | null {
   const head = /^模型请求最终失败(?:（([^）]+)）)?：/.exec(raw);
@@ -67,7 +67,7 @@ export function describeModelError(raw: string): ModelErrorCopy | null {
   return result;
 }
 
-function classifyModelError(text: string, model: string | undefined): Pick<ModelErrorCopy, "kind" | "title" | "copy"> {
+function classifyModelError(text: string, model: string | undefined): Pick<ModelErrorCopy, "kind" | "title" | "copy" | "accountLogin"> {
   const quota = { kind: "quota", title: "额度用完了", copy: "充值或等额度恢复后再试，或换个模型立刻继续。" } as const;
   const quotaWords = /quota|insufficient|余额|额度/i.test(text);
 
@@ -78,7 +78,9 @@ function classifyModelError(text: string, model: string | undefined): Pick<Model
   if (/concurrent request limit|too many concurrent/i.test(text) && !quotaWords) return busy;
 
   if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid.{0,20}(api.?key|token)/i.test(text)) {
-    return { kind: "auth", title: "模型拒绝了请求", copy: `key 无效，或这个 key 没有${model ? ` ${model} ` : "这个模型"}的权限。重试结果会一样，先换 key。` };
+    if (model?.startsWith("openai-codex/")) return { kind: "auth", title: "ChatGPT 登录已失效", copy: "重新登录后再试。你的问题还在。", accountLogin: true };
+
+    return { kind: "auth", title: "模型拒绝了请求", copy: "密钥无效，或这个密钥不能用当前模型。重试结果会一样，先换密钥。" };
   }
 
   if (isProviderBusyError(text) && !quotaWords) return busy;
@@ -120,18 +122,25 @@ export function plainDownloadError(code: string | null | undefined): string {
 }
 
 const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [
+  [/结果未知|量不到位置|是否送达无法确认/, "结果未知"],
   [/fetch 请求失败|Failed to fetch|ERR_(NAME_NOT_RESOLVED|CONNECTION_REFUSED|CONNECTION_TIMED_OUT|CONNECTION_RESET|ADDRESS_UNREACHABLE|INTERNET_DISCONNECTED|NETWORK_FAILED)/, "连不上这个地址"],
   [/timed out|超时/i, "这一步超时了"],
   [/已取消/, "已取消"],
   [/not connected|disconnected/i, "连接断开了"],
   [/ERR_(CERT|SSL)/, "页面证书有问题"],
-  [/fetch 请求已发出/, "结果未知"],
-  [/Download failed/i, "没下载成"],
+  [/Download failed|下载未完成/i, "没下载成"],
   [/目标被|被其他元素覆盖/, "被别的东西挡住"],
-  [/未找到目标|未找到元素|ref 已失效|节点无法解析|无法获取元素位置|无法获取操作坐标|无法确认目标位置/, "没找到目标"],
+  [/坐标处对象已替换|页面文档已变化|页面文档在读取期间|节点已离开文档|STALE_DOCUMENT|DECISION_STALE|TARGET_GONE|页面在读取期间变化|读取期间页面已刷新|内嵌页面.*变化|来源页面已导航|目标已失效/, "页面变了"],
+  [/未找到目标|未找到元素|ref 已失效|ref \S+ 已失效|已过期|节点无法解析|节点没有可见元素|无法获取元素位置|无法获取操作坐标|无法确认目标位置|坐标处没有可命中|目标处没有可命中/, "没找到目标"],
   [/目标不可用/, "目标现在不可用"],
   [/不可见/, "目标不可见"],
   [/控制轮次已失效|原任务已停止|worker 已停止/i, "任务已经变了"],
+  [/页面现在归你/, "页面现在归你"],
+  [/正在给另一个会话/, "页面正被另一个会话使用"],
+  [/标签页 \S+ 已关闭|没有可用的活动标签页|没有可读取的页面/, "页面已经关了"],
+  [/下拉框没有匹配选项/, "下拉框里没有这一项"],
+  [/没有可读的正文|读不到这个页面的正文|没有可读文字/, "这一页没有可读的文字"],
+  [/找不到文件/, "找不到这个文件"],
   [/未知工具/, "没有这个动作"],
 ];
 
@@ -150,18 +159,15 @@ export function plainToolError(errorText: string): string {
 
   for (const [pattern, reason] of TOOL_ERROR_REASONS) if (pattern.test(text)) return reason;
 
-  const clauses = text.split(/[\n，。；,;]/, 1)[0]!.split(/[：:]/);
-  const first = (clauses.find((clause) => /[一-鿿]/.test(clause)) ?? clauses[0]!)
-    .replace(/（[A-Za-z][^）]*）/g, "")
-    .replace(/<\/?(?:page-content|untrusted)[^>]*>/g, "")
-    .replace(/loc=\S+|@\d+|\bref\b/g, "")
-    .replace(/已停止/g, "已中止")
-    .replace(/\s+/g, " ")
-    .trim();
+  return "没做成";
+}
 
-  if (!/[一-鿿]/.test(first)) return "没做成";
+const INTERNAL_ERROR_TEXT = /[{}[\]<>]|\b[a-z]{2,}[ _.:][a-z]{2,}\b|\b[A-Z]+_[A-Z_]+\b|\b(?:snapshot|ref|worker|selector|tabId|undefined|null|Error)\b/;
 
-  return first.length <= 16 ? first : `${first.slice(0, 15)}…`;
+export function plainError(raw: unknown, fallback: string): string {
+  const text = (raw instanceof Error ? raw.message : String(raw ?? "")).trim();
+
+  return text && /[一-鿿]/.test(text) && !INTERNAL_ERROR_TEXT.test(text) ? text : fallback;
 }
 
 export const BLOCKED_CAUSES = ["unreachable", "missing", "refused", "unresponsive"] as const;

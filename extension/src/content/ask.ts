@@ -1,3 +1,4 @@
+import { plainError } from "../../../shared/user-facing.js";
 import { installDragFeed } from "./drag-feed.js";
 import { installGhostHud } from "./ghost-hud.js";
 import { installMarginaliaTracker } from "./marginalia-tracker.js";
@@ -712,7 +713,7 @@ function boot(): void {
     record = next;
 
     if (next.handoffError) {
-      report(next.handoffError);
+      report(plainError(next.handoffError, '没能转到侧栏，请再试一次。'));
     }
     else if (next.transferredConversationId) {
       report();
@@ -1248,7 +1249,7 @@ function boot(): void {
 
       render();
     }
-    else void voiceOpen().catch(err => report(err.message));
+    else void voiceOpen().catch(err => report(plainError(err, '这一步没有成功，请再试一次。')));
     pushPointer();
 
     return true;
@@ -1332,7 +1333,7 @@ function boot(): void {
       }
     }
     catch (err) {
-      report(String(err instanceof Error ? err.message : err));
+      report(plainError(err, '这一步没有成功，请再试一次。'));
     }
     finally {
       sending = false;
@@ -1526,7 +1527,7 @@ function boot(): void {
         }
       }
     })().catch(err => {
-      report(err.message);
+      report(plainError(err, '这一步没有成功，请再试一次。'));
 
       if (!visible) {
         expanded = true;
@@ -1540,7 +1541,7 @@ function boot(): void {
     event.preventDefault();
 
     if (readingBusy(record) && !input.value.trim()) {
-      void rpc('reading_stop').then(result => update(result.record)).catch(err => report(err.message));
+      void rpc('reading_stop').then(result => update(result.record)).catch(err => report(plainError(err, '这一步没有成功，请再试一次。')));
     }
     else {
       void typed(input.value);
@@ -1730,7 +1731,7 @@ function boot(): void {
     }
 
     event.stopPropagation();
-    void openReading(true).catch(err => report(err.message));
+    void openReading(true).catch(err => report(plainError(err, '这一步没有成功，请再试一次。')));
   }, { capture: true, signal });
   window.addEventListener('scroll', () => {
     if (retired()) {
@@ -1816,7 +1817,7 @@ function boot(): void {
 
       if (snapshot) {
         selectionVersion++;
-        void openReading(true).catch(err => report(err.message));
+        void openReading(true).catch(err => report(plainError(err, '这一步没有成功，请再试一次。')));
       }
       else if (record) {
         expanded = true;

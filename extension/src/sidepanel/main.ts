@@ -51,12 +51,11 @@ import {
   HELD_TEXT,
   type ActionKind,
   isLiveViewportPinned,
-  liveViewportOverflows,
-} from "./steps.js";
+  liveViewportOverflows, isStepName, stepDetail, type StepDetail } from "./steps.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
 import { mountErrorCards, type KeyTarget, type KeyTestResult } from "./error-card.js";
-import { describeModelError, plainToolError } from "../../../shared/user-facing.js";
+import { describeModelError, plainError, plainToolError } from "../../../shared/user-facing.js";
 import { INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
 import { CONNECTION_PREFIX, credentialFingerprint, modelConfig, withModelSettings } from "../settings/connections.js";
 import { mountModelMenu } from "./model-menu.js";
@@ -74,7 +73,7 @@ import type { AgentRunState, AgentUiEvent, Attachment, FieldReadback, ClientMess
 import { DEFAULT_STEP_VOICE, isStepVoice, parseVoicePersona, STEP_VOICE_STORAGE_KEY, VOICE_PERSONA_STORAGE_KEY, type UserDelivery, type VoiceInputContext } from "../../../shared/voice.js";
 import { normalizeMemoryHostname,} from "../../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../../shared/task-history.js";
-import { memberBoundPageLabel, memberStatusLabel, panelLive, shouldFinishRunOnDisconnect, shouldShowTeamCard, teamSummaryLabel } from "../../../shared/control.js";
+import { panelLive, shouldFinishRunOnDisconnect } from "../../../shared/control.js";
 import { isWriteTool } from "../../../shared/effect-policy.js";
 import { conversationDayGroup, conversationOutcome, conversationRelativeTime, otherTaskCopy, resultCardCopy } from "./selectors.js";
 import { liveStatus, runMetaLine, STEER_OTHER_WAY } from "../../../shared/run-status.js";
@@ -108,6 +107,7 @@ import { FLOAT_CARD_DEFAULT_RECT, FLOAT_CARD_KEY, readFloatCard } from "../share
 import { bindMotionIcon } from "./motion-icon.js";
 import { mountDottedGlow } from "./dotted-glow.js";
 import { skillResultText } from "../shared/skill-result.js";
+import { isVoiceDiagnosticsOn, VOICE_DIAGNOSTICS_KEY } from "../shared/voice-diagnostics.js";
 
 syncColorTone();
 
@@ -320,7 +320,6 @@ app.innerHTML = `
     <div class="scroll-fade" data-edge="top" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
     <div class="scroll-fade" data-edge="bottom" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
   </div>
-  <div id="team-card" hidden></div>
   <section id="starter" aria-label="开始方式">
     <canvas id="starter-glow" aria-hidden="true"></canvas>
     <p id="starter-brand"></p>
@@ -330,17 +329,6 @@ app.innerHTML = `
     <button type="button" id="starter-connect">连接模型</button>
   </section>
   <div class="composer-dock-wrap">
-    <div id="morph-sheet" class="page-morph-sheet" hidden>
-      <div class="morph-sheet-head">
-        <span>当前活动标签页检查器</span>
-        <button type="button" id="close-morph-sheet" class="sheet-close-btn" title="关闭">✕</button>
-      </div>
-      <div class="morph-sheet-body" id="morph-sheet-body">
-        <div id="morph-sheet-title">标题：检测中…</div>
-        <div id="morph-sheet-url">URL：-</div>
-        <div id="morph-sheet-status">状态：活跃连接已就绪</div>
-      </div>
-    </div>
     <div id="attach-menu" class="action-menu-popover" role="menu" aria-label="添加与设置" hidden>
       <button type="button" role="menuitem" tabindex="-1" class="action-menu-item pressable" id="menu-action-upload" title="PDF、Word、Excel、PPT、CSV、文本和代码文件，以及图片。文件在本机读成文字再交给助手，也可以直接拖进输入框。">
         <span class="action-menu-item-icon" data-icon="upload"></span>
@@ -369,11 +357,6 @@ app.innerHTML = `
     <div id="confirm-dock" hidden></div>
     <p id="confirm-announce" class="sr-only" role="status"></p>
     <div id="task-bar-root"></div>
-    <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
-      <span id="tab-icon-sq" class="tab-icon-sq"></span>
-      <span id="tab-title-text" class="tab-title-text">检测标签页…</span>
-      <i class="tab-live-dot"></i>
-    </div>
     <div id="composer" class="composer-glass-dock">
       <div id="materials-tray-root"></div>
       <div id="ask-cite" hidden>
@@ -453,8 +436,8 @@ const ghostBar = createGhostBar(document.getElementById("ghost-bar")!);
 installChromeQuiet({
   input: inputEl,
   messages: messagesEl,
-  faded: () => ["#conversation-switcher", "#conversation-new", "#memory-open", "#header-more", "#page-pill", "#attach-btn"].flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))),
-  hoverZone: "#topbar:hover, #composer-bar:hover, #page-pill:hover",
+  faded: () => ["#conversation-switcher", "#conversation-new", "#memory-open", "#header-more", "#attach-btn"].flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))),
+  hoverZone: "#topbar:hover, #composer-bar:hover",
   menuOpen: () => !!document.querySelector("#header-menu:popover-open") || ["conversation-menu", "attach-menu", "memory-drawer"].some(id => document.getElementById(id)?.hidden === false),
 });
 
@@ -479,10 +462,10 @@ const slashSkills = mountSlashSkills({
       if (!msg) body.textContent = "正在读取当前页面…";
       else if (!msg.ok) {
         card.dataset.state = "error";
-        body.textContent = `没有运行成功：${msg.error ?? "连接中断，请再试一次。"}`;
+        body.textContent = `没有运行成功：${plainError(msg.error, "连接中断，请再试一次。")}`;
       } else if (!msg.result || msg.result.status !== "observed" && msg.result.status !== "empty") {
         card.dataset.state = "error";
-        body.textContent = `没有运行成功：${msg.result && "reason" in msg.result ? msg.result.reason : "没有取得结果"}`;
+        body.textContent = `没有运行成功：${plainError(msg.result && "reason" in msg.result ? msg.result.reason : "", "没有取得结果")}`;
       } else {
         const result = msg.result;
         card.dataset.state = result.status;
@@ -571,8 +554,6 @@ const fileInput = document.getElementById("file-input") as HTMLInputElement;
 
 let attachments!: AttachmentsManager;
 let materialsTray: MaterialsTray | null = null;
-
-const pagePill = document.getElementById("page-pill") as HTMLElement | null;
 
 const askCiteEl = document.getElementById("ask-cite") as HTMLElement | null;
 
@@ -1122,7 +1103,6 @@ function resetConversationRender(): void {
   if (resumeRoot) messagesEl.appendChild(resumeRoot);
   resumeEntry.clear();
   modelMenu.usage(null);
-  renderTeamCard();
   setSessionState(LEAD_SESSION_ID, "idle");
 }
 
@@ -1330,20 +1310,6 @@ const {
   handlePastTasksResult,
 } = memoryDrawerCtrl;
 
-const morphSheet = document.getElementById("morph-sheet") as HTMLElement | null;
-
-const closeMorphSheetBtn = document.getElementById("close-morph-sheet") as HTMLButtonElement | null;
-
-const tabIconSq = document.getElementById("tab-icon-sq") as HTMLElement | null;
-
-const tabTitleText = document.getElementById("tab-title-text") as HTMLElement | null;
-
-const morphSheetTitle = document.getElementById("morph-sheet-title") as HTMLElement | null;
-
-const morphSheetUrl = document.getElementById("morph-sheet-url") as HTMLElement | null;
-
-const morphSheetStatus = document.getElementById("morph-sheet-status") as HTMLElement | null;
-
 const morphSend = sendBtn.querySelector(".morph-icon-send");
 
 const morphStop = sendBtn.querySelector(".morph-icon-stop");
@@ -1454,7 +1420,7 @@ async function rememberFloatConversation(id: string): Promise<void> {
 
 if (isPopout) {
   chrome.windows.onRemoved.addListener(() => {
-    void refreshActiveTabPill();
+    void refreshActiveTab();
     void targetWindowId().then(windowId => {
       if (windowId != null) port?.postMessage({ kind: "panel_window", windowId } satisfies PanelToBg);
     }).catch(() => {  });
@@ -1469,10 +1435,8 @@ function clipTitle(text: string, max = 16): string {
 
 let activeTabInfo: { id: number; title: string; url: string } | null = null;
 
-async function refreshActiveTabPill(): Promise<void> {
+async function refreshActiveTab(): Promise<void> {
   if (typeof chrome === "undefined" || !chrome.tabs?.query) {
-    if (tabTitleText) tabTitleText.textContent = "浏览器活动标签页";
-
     return;
   }
 
@@ -1487,86 +1451,34 @@ async function refreshActiveTabPill(): Promise<void> {
       marginalia.setPage(activeTabInfo);
     }
 
-    const title = tab.title || tab.url || "未知页面";
-    let host = "";
 
     try {
       if (tab.url) {
         const pageUrl = new URL(tab.url);
-        host = pageUrl.host;
         memoryDrawerCtrl.setCurrentHostname(normalizeMemoryHostname(pageUrl.hostname) ?? "");
       }
     } catch {
       memoryDrawerCtrl.setCurrentHostname("");
     }
 
-    const displayLabel = host ? `${host} · ${clipTitle(title, 14)}` : clipTitle(title, 20);
-
-    if (tabTitleText) tabTitleText.textContent = displayLabel;
-
-    if (tabIconSq) {
-      if (tab.favIconUrl && tab.favIconUrl.startsWith("http")) {
-        const img = document.createElement("img");
-        img.src = tab.favIconUrl;
-        img.alt = "";
-        img.style.cssText = "width:12px;height:12px;border-radius:2px;object-fit:cover;";
-        tabIconSq.replaceChildren(img);
-      } else {
-        const letter = (host || title || "W").replace(/^www\./, "").charAt(0).toUpperCase();
-        tabIconSq.textContent = letter;
-      }
-    }
-
-    if (morphSheetTitle) morphSheetTitle.textContent = `标题：${title}`;
-
-    if (morphSheetUrl) morphSheetUrl.textContent = `URL：${tab.url || "-"}`;
-
-    if (morphSheetStatus) morphSheetStatus.textContent = `状态：${tab.status === "complete" ? "已就绪 (complete)" : "加载中 (loading)"}`;
     materialsTray?.sync();
   } catch {
-    if (tabTitleText) tabTitleText.textContent = "活动标签页就绪";
     materialsTray?.sync();
   }
 }
 
-function toggleMorphSheet(open?: boolean): void {
-  if (!morphSheet) return;
-  const willOpen = open !== undefined ? open : morphSheet.hidden;
-  morphSheet.hidden = !willOpen;
-
-  if (willOpen) void refreshActiveTabPill();
-}
-
-pagePill?.addEventListener("click", () => toggleMorphSheet());
-
-closeMorphSheetBtn?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  toggleMorphSheet(false);
-});
-
-document.addEventListener("click", (e) => {
-  if (
-    morphSheet &&
-    !morphSheet.hidden &&
-    !morphSheet.contains(e.target as Node) &&
-    !pagePill?.contains(e.target as Node)
-  ) {
-    toggleMorphSheet(false);
-  }
-});
-
 if (typeof chrome !== "undefined" && chrome.tabs) {
-  chrome.tabs.onActivated?.addListener((info) => { dropShowTab(info.tabId); void refreshActiveTabPill(); taskBar.noteTabsChanged(); });
+  chrome.tabs.onActivated?.addListener((info) => { dropShowTab(info.tabId); void refreshActiveTab(); taskBar.noteTabsChanged(); });
   chrome.tabs.onUpdated?.addListener((_tabId, changeInfo) => {
     if (changeInfo.status || changeInfo.title || changeInfo.url) {
-      void refreshActiveTabPill();
+      void refreshActiveTab();
       taskBar.noteTabsChanged();
     }
   });
   chrome.tabs.onRemoved?.addListener((tabId) => { dropShowTab(tabId); taskBar.noteTabsChanged(); });
 }
 
-void refreshActiveTabPill();
+void refreshActiveTab();
 
 const modelMenu = mountModelMenu({
   composer: document.getElementById("composer")!,
@@ -1729,11 +1641,8 @@ let currentAssistant: HTMLElement | null = null;
 
 let currentAssistantText = "";
 
-let currentThinking: HTMLElement | null = null;
 
-let currentThinkingDetails: HTMLDetailsElement | null = null;
 
-let currentThinkingStart = 0;
 
 const ORB_BOX_THINKING = 18;
 
@@ -1868,23 +1777,22 @@ interface ChipGroup {
 }
 
 interface ToolChipEntry {
-  chip: HTMLButtonElement;
+  chip: HTMLElement;
   dot: HTMLElement;
   orb: OrbHandle;
   dur: HTMLElement;
   start: number;
   name: string;
-  paramsText: string;
-  resultText: string;
+  detail: StepDetail | null;
   group: ChipGroup;
 }
 
 const toolChips = new Map<string, ToolChipEntry>();
 
 let inspectTimer = 0;
-let inspectChip: HTMLButtonElement | null = null;
+let inspectChip: HTMLElement | null = null;
 
-function pageTargetOf(chip: HTMLButtonElement): { target: string; tabId?: number; url?: string; caption: string } | null {
+function pageTargetOf(chip: HTMLElement): { target: string; tabId?: number; url?: string; caption: string } | null {
   const target = chip.dataset.pageTarget;
 
   if (!target) return null;
@@ -1900,7 +1808,7 @@ function pageTargetOf(chip: HTMLButtonElement): { target: string; tabId?: number
   };
 }
 
-function sendInspect(chip: HTMLButtonElement | null): void {
+function sendInspect(chip: HTMLElement | null): void {
   inspectChip = chip;
   const found = chip ? pageTargetOf(chip) : null;
 
@@ -1919,19 +1827,19 @@ function sendInspect(chip: HTMLButtonElement | null): void {
   } satisfies PanelToBg);
 }
 
-function queueInspect(chip: HTMLButtonElement | null): void {
+function queueInspect(chip: HTMLElement | null): void {
   window.clearTimeout(inspectTimer);
   inspectTimer = window.setTimeout(() => sendInspect(chip), D_TAP);
 }
 
-function bindStepInspect(chip: HTMLButtonElement): void {
+function bindStepInspect(chip: HTMLElement): void {
   chip.addEventListener("pointerenter", () => queueInspect(chip));
   chip.addEventListener("pointerleave", () => queueInspect(null));
   chip.addEventListener("focus", () => queueInspect(chip));
   chip.addEventListener("blur", () => queueInspect(null));
 }
 
-function markChipPageGone(chip: HTMLButtonElement, gone: boolean): void {
+function markChipPageGone(chip: HTMLElement, gone: boolean): void {
   chip.classList.toggle("page-gone", gone);
   let note = chip.querySelector<HTMLElement>(".chip-gone");
 
@@ -2005,7 +1913,6 @@ let pinned = true;
 
 let runBodyPinned = true;
 
-let thinkPinned = true;
 
 let followingLive = false;
 
@@ -2138,7 +2045,6 @@ new MutationObserver(() => {
 
 function scrollToEnd(force = false): void {
   followLive(currentRun?.body ?? null, force || runBodyPinned);
-  followLive(currentThinking, force || thinkPinned);
 
   if (force || (pinned && !userScrolling())) followToEnd();
   else if (pinned && !followRetry) followRetry = window.setTimeout(() => { followRetry = 0; scrollToEnd(); }, USER_SCROLL_QUIET_MS);
@@ -2466,7 +2372,7 @@ function renderSiteNoteList(msg: Extract<ServerMessage, { type: "site_note_list_
   if (msg.requestId !== siteNoteListRequest) return;
   siteNoteListRequest = "";
   siteNoteBody.replaceChildren();
-  if (!msg.ok || !msg.notes) { siteNoteBody.textContent = `无法读取：${msg.error || "未知错误"}`; return; }
+  if (!msg.ok || !msg.notes) { siteNoteBody.textContent = `无法读取：${plainError(msg.error, "请再试一次")}`; return; }
   const paused = document.createElement("p");
   paused.textContent = "自动学习和使用已暂停。已有站点用法仍可查看或删除。";
   siteNoteBody.append(paused);
@@ -2491,7 +2397,7 @@ function renderSiteNoteList(msg: Extract<ServerMessage, { type: "site_note_list_
       pendingSiteNoteDeletes.set(requestId, (ok, error) => {
         clearTimeout(timer);
         if (ok) { row.remove(); void chrome.runtime.sendMessage({ type: "site_notes_changed" }).catch(() => {}); }
-        else { button.disabled = false; status.textContent = `删除失败：${error || "未知错误"}`; }
+        else { button.disabled = false; status.textContent = `删除失败：${plainError(error, "请再试一次")}`; }
       });
       if (!send({ type: "site_note_delete", requestId, ...note })) {
         pendingSiteNoteDeletes.delete(requestId); clearTimeout(timer); button.disabled = false; status.textContent = "未连接，删除失败。";
@@ -2729,16 +2635,8 @@ function closeThink(run: RunHost, at: number): void {
 
   if (!Number.isFinite(from) || !Number.isFinite(at) || at - from < THINK_MIN_MS) return;
   run.thinkSegments.push({ start: from, end: at });
-  const details = run.body.querySelector<HTMLElement>(`details.thinking[data-think-from="${from}"]`);
-
-  if (details) details.dataset.thinkTo = String(at);
 
   if (at - from < SHOW_SECS_MS) return;
-  const block = details?.querySelector<HTMLElement>(":scope > summary > span");
-
-  if (block) { block.textContent = `想了 ${spokenDuration(from, at)}`;
-
- return; }
   const row = document.createElement("div");
   row.className = "run-think";
   row.textContent = `想了 ${spokenDuration(from, at)}`;
@@ -2820,7 +2718,6 @@ function applyTeamRun(next: TeamRunState): void {
   if (next.team === teamView && next.runId === teamRunId) return;
   teamView = next.team;
   teamRunId = next.runId;
-  renderTeamCard();
   setSessionState(LEAD_SESSION_ID, sessionRun.get(LEAD_SESSION_ID) ?? (next.team ? "user" : "idle"));
 }
 
@@ -2833,60 +2730,6 @@ function applyTeamStatus(team: TeamView, runId: string | null | undefined): void
   const decision = acceptTeamStatus({ team: teamView, runId: teamRunId }, team, runId, applyingHistory);
 
   if (decision.accept) applyTeamRun(decision.state);
-}
-
-function renderTeamCard(): void {
-  const el = document.getElementById("team-card");
-
-  if (!el) return;
-  const view = teamView;
-
-  if (!shouldShowTeamCard(view?.phase) || (view?.members.length ?? 0) < 2) {
-    el.hidden = true;
-    el.replaceChildren();
-
-    return;
-  }
-
-  el.hidden = false;
-  const summary = document.createElement("div");
-  summary.className = "team-summary";
-  const title = document.createElement("strong");
-  title.textContent = teamSummaryLabel(view!);
-  const detail = document.createElement("button");
-  detail.type = "button";
-  detail.className = "team-detail";
-  detail.textContent = "详情";
-  summary.append(title, detail);
-  const roster = document.createElement("div");
-  roster.className = "team-roster";
-  roster.hidden = true;
-
-  for (const m of view!.members) {
-    const row = document.createElement("div");
-    row.className = "team-member";
-    const dot = document.createElement("i");
-    dot.className = "team-dot";
-    dot.style.background = m.role === "lead" ? LEAD_COLOR : displayColor(m.sessionId);
-    const name = document.createElement("span");
-    name.textContent = `${m.role === "lead" ? "Lead" : displayNameFor(m.sessionId)} · ${memberBoundPageLabel(m)}`;
-    const st = document.createElement("em");
-    st.textContent = memberStatusLabel(m);
-
-    if (m.phase === "paused_tab_closed" || m.phase === "paused_snapshot_failed" || m.phase === "aborted") {
-      st.classList.add("warn");
-    }
-
-    row.append(dot, name, st);
-    roster.appendChild(row);
-  }
-
-  detail.onclick = () => {
-    roster.hidden = !roster.hidden;
-    detail.textContent = roster.hidden ? "详情" : "收起";
-  };
-
-  el.replaceChildren(summary, roster);
 }
 
 function renderTaskStrip(): void {
@@ -2983,8 +2826,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
     closeBlocks();
     finishRun();
     sessionRun.clear();
-    renderTeamCard();
-  }
+    }
 }
 
 function addChainStep(label: string): void {
@@ -3412,33 +3254,8 @@ function closeBlocks(): void {
 
   document.querySelector(".msg.assistant.streaming")?.classList.remove("streaming");
 
-  if (currentThinkingDetails) {
-    orbByHost.get(currentThinkingDetails)?.setRunning(false);
-    currentThinkingDetails.classList.remove("streaming");
-    currentThinkingDetails.open = false;
-    const label = currentThinkingDetails.querySelector("summary span");
-
-    const thinkFrom = Number(currentThinkingDetails.dataset.thinkFrom);
-    const thinkTo = Number(currentThinkingDetails.dataset.thinkTo);
-
-    if (label && Number.isFinite(thinkTo)) {
-      if (thinkTo - thinkFrom < SHOW_SECS_MS) label.textContent = `思考过程${recordedDuration(thinkFrom, thinkTo) ? ` ${recordedDuration(thinkFrom, thinkTo)}` : ""}`;
-      label.classList.add("settle-once");
-      window.setTimeout(() => label.classList.remove("settle-once"), 400);
-    } else if (label) {
-      label.textContent = currentThinkingStart
-        ? `思考过程${recordedDuration(currentThinkingStart, eventTime()) ? ` ${recordedDuration(currentThinkingStart, eventTime())}` : ""}`
-        : "思考过程";
-      label.classList.add("settle-once");
-      window.setTimeout(() => label.classList.remove("settle-once"), 400);
-    }
-  }
-
   currentAssistant = null;
   currentAssistantText = "";
-  currentThinking = null;
-  currentThinkingDetails = null;
-  currentThinkingStart = 0;
 
   closeLeadDraft();
 
@@ -3602,58 +3419,14 @@ function appendTrace(pre: HTMLElement, delta: string): void {
   pre.replaceChildren(...parts);
 }
 
-function appendDelta(kind: "assistant" | "thinking", delta: string): void {
-  if (kind === "assistant") {
-    if (!currentAssistant) {
-      currentAssistant = addMsg("msg assistant markdown streaming", "");
-    }
-    currentAssistantText += delta;
-    revealText(currentAssistant, currentAssistantText, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });
-  } else {
-    if (!currentThinking) {
-      addChainStep("思考");
-      currentThinkingStart = eventTime();
-      const details = document.createElement("details");
-      details.className = "thinking streaming";
-      details.open = true;
-
-      if (currentRun && Number.isFinite(currentRun.thinkFrom)) details.dataset.thinkFrom = String(currentRun.thinkFrom);
-      const summary = document.createElement("summary");
-      const orb = createOrb("composing", ORB_BOX_THINKING);
-
-      if (!applyingHistory) orb.setRunning(true);
-      orbByHost.set(details, orb);
-      summary.appendChild(orb.el);
-      const label = document.createElement("span");
-      label.textContent = "正在思考…";
-      summary.appendChild(label);
-      const pre = document.createElement("pre");
-      thinkPinned = true;
-      bindLiveViewport(pre, (next) => {
-        thinkPinned = next;
-      });
-      details.append(summary, pre);
-      stepsContainer().appendChild(details);
-
-      if (currentRun) currentRun.chipGroup = null;
-      currentThinking = pre;
-      currentThinkingDetails = details;
-    }
-
-    appendTrace(currentThinking, delta);
+function appendDelta(delta: string): void {
+  if (!currentAssistant) {
+    currentAssistant = addMsg("msg assistant markdown streaming", "");
   }
+  currentAssistantText += delta;
+  revealText(currentAssistant, currentAssistantText, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });
 
   scrollToEnd();
-}
-
-function shortParams(params: Record<string, unknown>): string {
-  try {
-    const s = JSON.stringify(params);
-
-    return s.length > 200 ? `${s.slice(0, 197)}...` : s;
-  } catch {
-    return "";
-  }
 }
 
 function buildChipGroup(host: HTMLElement, before?: HTMLElement | null): ChipGroup {
@@ -3674,24 +3447,20 @@ function buildChipGroup(host: HTMLElement, before?: HTMLElement | null): ChipGro
 
 function renderChipDetail(entry: ToolChipEntry): void {
   const detail = entry.group.detail;
-  detail.replaceChildren();
-  const raw = document.createElement("div");
-  raw.className = "raw";
-  raw.textContent = entry.name;
-  detail.appendChild(raw);
+  const found = entry.detail;
 
-  if (entry.paramsText) {
-    const pre = document.createElement("pre");
-    pre.textContent = entry.paramsText;
-    detail.appendChild(pre);
+  if (!found) return;
+  const line = document.createElement(found.href ? "a" : "div");
+  line.className = "chip-detail-text";
+  line.textContent = found.text;
+
+  if (line instanceof HTMLAnchorElement && found.href) {
+    line.href = found.href;
+    line.target = "_blank";
+    line.rel = "noopener noreferrer";
   }
 
-  if (entry.resultText) {
-    const pre = document.createElement("pre");
-    pre.className = "result";
-    pre.textContent = entry.resultText;
-    detail.appendChild(pre);
-  }
+  detail.replaceChildren(line);
 }
 
 function toggleChipDetail(entry: ToolChipEntry): void {
@@ -3816,15 +3585,16 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
     setRunTitle(run, `正在：${actionCardLabel(ev.name, ev.params)}`, false, kind);
   }
 
-  const chip = document.createElement("button");
-  chip.type = "button";
+  const expandable = stepDetail(ev.name, ev.params);
+  const chip = document.createElement(expandable ? "button" : "div");
+  if (chip instanceof HTMLButtonElement) chip.type = "button";
   chip.className = prep ? "chip prep" : "chip";
   chip.dataset.kind = kind;
   chip.dataset.past = pastAction(ev.name, ev.params);
   chip.dataset.short = shortAction(ev.name, ev.params);
 
   if (ev.name === "learned_operation" && (ev.params.action === "save" || ev.params.action === "delete")) chip.dataset.skillWrite = "1";
-  chip.setAttribute("aria-expanded", "false");
+  if (expandable) chip.setAttribute("aria-expanded", "false");
 
   if (!applyingHistory) chip.classList.add("running");
   const dot = document.createElement("span");
@@ -3841,10 +3611,15 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   const dur = document.createElement("span");
   dur.className = "dur";
   dur.hidden = true;
-  const more = document.createElement("span");
-  more.className = "chip-more";
-  more.appendChild(icon(ChevronRight));
-  chip.append(dot, iconBox, label, dur, more);
+  chip.append(dot, iconBox, label, dur);
+
+  if (expandable) {
+    const more = document.createElement("span");
+    more.className = "chip-more";
+    more.appendChild(icon(ChevronRight));
+    chip.append(more);
+  }
+
   if (typeof ev.params.target === "string" && ev.params.target) chip.dataset.pageTarget = ev.params.target;
   chip.dataset.stepIndex = String(group.row.querySelectorAll(".chip").length + 1);
   bindStepInspect(chip);
@@ -3856,12 +3631,11 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
     dur,
     start: eventTime(),
     name: ev.name,
-    paramsText: shortParams(ev.params),
-    resultText: "",
+    detail: expandable,
     group,
   };
 
-  chip.onclick = () => toggleChipDetail(entry);
+  if (expandable) chip.onclick = () => toggleChipDetail(entry);
   group.row.appendChild(chip);
   toolChips.set(ev.toolCallId, entry);
   run.graph.start({
@@ -3923,7 +3697,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   const label = entry.chip.querySelector<HTMLElement>(".chip-label");
   const pageTitle = !failed && entry.chip.dataset.kind === "open" ? openedPageTitle(ev.resultText ?? "") : null;
 
-  if (ev.pageTarget?.label && label && !pageTitle && !ev.heldReason) {
+  if (ev.pageTarget?.label && isStepName(ev.pageTarget.label) && label && !pageTitle && !ev.heldReason) {
     const next = actionCardLabel(entry.name, {}, ev.pageTarget.label);
     entry.chip.dataset.past = next;
     entry.chip.dataset.short = next;
@@ -3993,12 +3767,6 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
     result: pageTitle ?? (failed ? undefined : entry.chip.dataset.short),
     label: entry.chip.dataset.short ?? undefined,
   });
-
-  const text = ev.resultText ?? "";
-
-  if (text) entry.resultText = text.length > 800 ? `${text.slice(0, 797)}...` : text;
-
-  if (entry.group.expanded === entry) renderChipDetail(entry);
 
   if (run && run === currentRun) renderRunMeta(run);
 
@@ -4107,12 +3875,11 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         if (leadToolUsed) appendLeadDelta(ev.delta);
         else appendLeadAnswer(ev.delta);
       } else {
-        appendDelta("assistant", ev.delta);
+        appendDelta(ev.delta);
       }
 
       break;
     case "thinking_delta":
-      appendDelta("thinking", ev.delta);
       break;
     case "tool_start":
       if (leadDeliveryMode === "explicit") {
@@ -4352,7 +4119,12 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
       const copy = describeModelError(ev.message);
 
       if (copy) errorCards.show({ ...copy, ...(ev.modelConnection ? { modelConnection: ev.modelConnection } : {}) }, !replayingHistory);
-      else if (!errorCards.recoveryFailed(ev.message)) addMsg("msg error", ev.message);
+      else if (!errorCards.recoveryFailed(plainError(ev.message, "重试没有成功。"))) {
+        const plain = plainError(ev.message, "");
+
+        if (plain) addMsg("msg error", plain);
+        else errorCards.show({ kind: "unknown", title: "这一步出错了", copy: "你的话还在，可以重试。", detail: ev.message }, !replayingHistory);
+      }
       break;
     }
   }
@@ -4712,6 +4484,21 @@ chrome.storage.onChanged.addListener((changes, area) => {
 const diagnosticRecord = composerEl.querySelector<HTMLElement>('.voice-record');
 
 if (diagnosticRecord) diagnosticRecord.hidden = true;
+
+const voiceDiagnosticsEntry = document.querySelector<HTMLElement>('#voice-diagnostics-open');
+
+function showVoiceDiagnosticsEntry(on: boolean): void {
+  if (voiceDiagnosticsEntry) voiceDiagnosticsEntry.hidden = !on;
+  voiceDiagnosticsEntry?.previousElementSibling?.toggleAttribute('hidden', !on);
+
+  if (!on && diagnosticRecord) diagnosticRecord.hidden = true;
+}
+
+showVoiceDiagnosticsEntry(false);
+void chrome.storage.local.get(VOICE_DIAGNOSTICS_KEY).then(stored => showVoiceDiagnosticsEntry(isVoiceDiagnosticsOn(stored[VOICE_DIAGNOSTICS_KEY])));
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && VOICE_DIAGNOSTICS_KEY in changes) showVoiceDiagnosticsEntry(isVoiceDiagnosticsOn(changes[VOICE_DIAGNOSTICS_KEY]!.newValue));
+});
 
 attachBtn.addEventListener('click', () => {
   const mode = document.querySelector<HTMLSelectElement>('#marginalia-mode')!.value;

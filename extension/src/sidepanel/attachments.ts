@@ -1,3 +1,4 @@
+import { plainError } from "../../../shared/user-facing.js";
 import { isAttachment, type Attachment, type FileAttachment, type FileFormat, type ImageAttachment } from "../../../shared/protocol.js";
 import { isCircling, removeCircle, startCircling } from "./circle-select.js";
 import { fileChip, fileMeta } from "./file-chip.js";
@@ -323,7 +324,7 @@ export class AttachmentsManager {
   }
 
   private menuItems(): HTMLElement[] {
-    return Array.from(this.menuEl.querySelectorAll<HTMLElement>('[role^="menuitem"]'));
+    return Array.from(this.menuEl.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([hidden])'));
   }
 
   private moveInMenu(e: KeyboardEvent): void {
@@ -367,9 +368,7 @@ export class AttachmentsManager {
       const name = `${(res.title || "页面截图").replace(/[/\\?%*:|"<>]/g, "_")}.png`;
       await this.addFromDataUrl(res.dataUrl, name, scope);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-
-      if (this.onError) this.onError(`截图失败：${msg}`);
+      if (this.onError) this.onError(`截图失败：${plainError(err, "请再试一次")}`);
       else console.error("[sideagent-attachments] captureActiveTab failed:", err);
     }
   }
@@ -386,9 +385,7 @@ export class AttachmentsManager {
         if (text) item.note = text;
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-
-      if (this.onError) this.onError(`圈不了：${msg}`);
+      if (this.onError) this.onError(`圈不了：${plainError(err, "这个页面不能圈")}`);
       else console.error("[sideagent-attachments] captureRegion failed:", err);
     }
   }
@@ -416,7 +413,7 @@ export class AttachmentsManager {
           const dataUrl = await readFileAsDataUrl(file);
           await this.addFromDataUrl(dataUrl, file.name, scope);
         } catch (err) {
-          rejected.push(`${file.name} 没读出来：${err instanceof Error ? err.message : String(err)}`);
+          rejected.push(`${file.name} 没读出来：${plainError(err, "文件内容读不了")}`);
         }
 
         continue;
@@ -456,7 +453,7 @@ export class AttachmentsManager {
         this.notifyDisplayChanged(scope);
       } catch (error) {
         this.removeItem(id, scope);
-        this.onError?.(error instanceof Error ? error.message : String(error));
+        this.onError?.(plainError(error, "这个文件没有加上，请再试一次。"));
       }
     })();
 

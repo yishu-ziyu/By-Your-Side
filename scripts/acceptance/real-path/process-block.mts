@@ -53,7 +53,7 @@ const READ = `(() => {
     time: d.querySelector(".run-time")?.textContent ?? "",
     meta: d.querySelector(".run-meta")?.hidden ? "" : d.querySelector(".run-meta")?.textContent ?? "",
     oneLine: title ? title.scrollWidth <= title.clientWidth + 1 && title.getBoundingClientRect().height < 30 : false,
-    record: [...d.querySelectorAll(".run-body .chip:not(.prep) .chip-label, .run-body .run-think, .run-body details.thinking:not(.narration) > summary > span, .run-body .run-total")].map(e => e.textContent.trim()),
+    record: [...d.querySelectorAll(".run-body .chip:not(.prep) .chip-label, .run-body .run-think, .run-body .run-total")].map(e => e.textContent.trim()),
     text: d.textContent,
     all: document.querySelector("#messages").textContent,
   };
@@ -132,7 +132,7 @@ try {
   const wall = (endedAt - sentAt) / 1000;
   check("d 记录只单列长思考（约 4 秒、8 秒，和最后一轮），末行合计和真实时长差 ≤1 秒", thinks.length === 3 && Math.abs(thinks[0]! - 4) <= 1 && Math.abs(thinks[1]! - 8) <= 1 && !!total && Math.abs(Number(total[1]) - wall) <= 1.5 && opened.record.some(t => t.includes("读出标题")), { record: opened.record, wall });
 
-  const finalLabel = await rp.evaluate(panel, '[...document.querySelectorAll("#messages details.run-steps")].at(-1).querySelectorAll("details.thinking:not(.narration) > summary > span")[0]?.textContent.trim() ?? ""') as string;
+  const finalLabel = await rp.evaluate(panel, '[...[...document.querySelectorAll("#messages details.run-steps")].at(-1).querySelectorAll(".run-body .run-think")].at(-1)?.textContent.trim() ?? ""') as string;
   const finalSecs = Number(/^想了 (\d+) 秒$/.exec(finalLabel)?.[1] ?? NaN);
   check("f 最后一轮的思考标题从上一步结束数到出第一个字（约 6 秒）", Math.abs(finalSecs - 6) <= 1, { finalLabel });
 

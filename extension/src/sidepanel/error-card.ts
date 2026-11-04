@@ -1,6 +1,7 @@
 import { createElement as icon, Check } from "lucide";
 import type { ModelConnectionIdentity, ModelConnectionTarget, ModelOption } from "../../../shared/protocol.js";
-import { isModelTimeoutError, type ModelErrorCopy } from "../../../shared/user-facing.js";
+import { isModelTimeoutError, plainError, type ModelErrorCopy } from "../../../shared/user-facing.js";
+import { redactCredentialText } from "../../../shared/untrusted.js";
 import { displayName } from "./models.js";
 
 const LATER_SECONDS = 8;
@@ -9,7 +10,7 @@ const AUTO_WAITS = [8, 16, 32];
 
 const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-export interface KeyTestResult { ok: boolean; ms?: number; reason?: string; detail?: string }
+export interface KeyTestResult { ok: boolean; ms?: number; reason?: string }
 export interface KeyTarget { saveRequestId?: string; config: ModelConnectionTarget; credential: unknown; conversationId: string | null; runId: string; roles: string; connection: string }
 
 interface ErrorCardHost {
@@ -187,11 +188,16 @@ export function mountErrorCards(host: ErrorCardHost) {
     root.append(head, text, row);
 
     if (copy.kind === "auth") {
-      const fix = button(copy.modelConnection ? "换密钥" : "去设置", "fix-key", true);
-      fix.addEventListener("click", () => { if (copy.modelConnection) openKeySheet(copy); else void chrome.runtime.openOptionsPage(); });
+      const usesKey = copy.modelConnection && !copy.accountLogin;
+      const fix = button(copy.accountLogin ? "重新登录" : usesKey ? "换密钥" : "去设置", "fix-key", true);
+      fix.addEventListener("click", () => { if (usesKey) openKeySheet(copy); else void chrome.runtime.openOptionsPage(); });
       const again = button("仍然重试", "retry-anyway");
       again.addEventListener("click", () => recover("已重试"));
       row.append(fix, again);
+    } else if (copy.kind === "unknown") {
+      const again = button("重试", "retry", true);
+      again.addEventListener("click", () => recover("已重试"));
+      row.append(again);
     } else if (copy.kind === "busy" && auto && autoUsed < AUTO_WAITS.length) {
       text.className = "error-card-countdown";
       const wait = document.createElement("div");
@@ -231,14 +237,14 @@ export function mountErrorCards(host: ErrorCardHost) {
       stopOnline = () => removeEventListener("online", online);
     }
 
-    const details = document.createElement("details");
-    details.className = "error-card-tech";
-    const summary = document.createElement("summary");
-    summary.textContent = "技术详情";
-    const pre = document.createElement("pre");
-    pre.textContent = copy.detail;
-    details.append(summary, pre);
-    root.append(details);
+    const copyError = button("复制错误信息", "copy-error");
+    copyError.addEventListener("click", () => {
+      void navigator.clipboard.writeText(redactCredentialText(copy.detail).replaceAll("[redacted]", "[已隐藏]")).then(() => {
+        copyError.textContent = "已复制";
+        setTimeout(() => { copyError.textContent = "复制错误信息"; }, 1500);
+      }, () => { copyError.textContent = "复制失败"; });
+    });
+    row.append(copyError);
 
     return root;
   }
@@ -314,15 +320,8 @@ export function mountErrorCards(host: ErrorCardHost) {
 
       tested = "";
       status.dataset.tone = "err";
-      status.textContent = `连接失败：${result.reason ?? "再试一次。"}`;
+      status.textContent = `连接失败：${plainError(result.reason, "再试一次。")}`;
 
-      if (result.detail) {
-        const details = document.createElement("details");
-        details.className = "error-card-tech";
-        details.innerHTML = "<summary>技术详情</summary><pre></pre>";
-        details.querySelector("pre")!.textContent = result.detail;
-        status.append(details);
-      }
     });
     save.addEventListener("click", async () => {
       const key = tested;

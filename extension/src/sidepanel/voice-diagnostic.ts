@@ -276,9 +276,9 @@ export class VoiceDiagnosticLog {
     if (!capture.upstream.length) reasons.push('未收到服务端发送记录');
     else if (capture.upstream.some(u => u.c0Match !== 'ok')) reasons.push('上行音频与本地连续收音不一致');
 
-    if (!capture.commit) reasons.push('未记录上行 commit');
+    if (!capture.commit) reasons.push('没有记录到提交音频');
 
-    if (!capture.itemId) reasons.push('上游未返回 item 标识');
+    if (!capture.itemId) reasons.push('语音服务没有返回本轮标识');
 
     if (!capture.rawAsr) reasons.push('未收到原始转写');
     else if (capture.rawAsr.outcome === 'filtered') reasons.push('本轮转写被旧轮过滤');
@@ -295,7 +295,7 @@ export class VoiceDiagnosticLog {
     if (capture.capped) reasons.push('已达时长上限，音频被截断');
     else if (capture.endReason === 'limit') reasons.push('已达时长上限而结束');
 
-    for (const note of capture.notes) if (note.code !== 'closed' && note.code !== 'audio_released') reasons.push(`异常: ${note.code}`);
+    for (const note of capture.notes) if (note.code !== 'closed' && note.code !== 'audio_released') reasons.push('出现过异常');
 
     return { complete: reasons.length === 0, reasons };
   }

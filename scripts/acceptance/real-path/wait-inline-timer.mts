@@ -154,13 +154,11 @@ try {
 
   await fresh("思考用的新会话");
   await send(ASK_THINK);
-  await until(async () => (await read()).thinking ? true : undefined, 10_000, "思考摘要流进来", 100);
+  await until(async () => (await read()).title === "正在：思考" ? true : undefined, 10_000, "开始思考", 100);
   await until(async () => shownSecs(await read()) >= 16 ? true : undefined, 20_000, "思考时等满 16 秒", 100);
   const thinkingLong = await read();
   await rp.screenshot(panel, join(out, "thinking-long.png"));
-  const spine = await rp.evaluate(panel, '(()=>{const t=[...document.querySelectorAll("#messages details.thinking")].at(-1);return t?getComputedStyle(t,"::before").content:null})()');
-  check("f 思考块左侧没有竖线", spine === "none", spine);
-  check("f 思考摘要在流、16 秒没出正文：标题是在做事的说法，不是没有回应", ["正在：思考", "仍在处理"].includes(thinkingLong.title) && thinkingLong.thinking && !thinkingLong.all.includes(ANSWER_THINK), { title: thinkingLong.title, time: thinkingLong.time, thinking: thinkingLong.thinking });
+  check("f 模型在思考、16 秒没出正文：标题是在做事的说法，不显示思考原文", ["正在：思考", "仍在处理"].includes(thinkingLong.title) && !thinkingLong.thinking && !thinkingLong.all.includes("先看看这一页") && !thinkingLong.all.includes(ANSWER_THINK), { title: thinkingLong.title, time: thinkingLong.time, thinking: thinkingLong.thinking });
   await until(async () => (await read()).all.includes(ANSWER_THINK) ? true : undefined, 15_000, "思考之后的回答", 100);
 
   await fresh("接着做用的新会话");
