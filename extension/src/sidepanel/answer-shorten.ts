@@ -89,11 +89,9 @@ function commit(answer: HTMLElement, next: Level): void {
   level.set(answer, next);
   answer.dataset.shortenLevel = String(next);
   const grip = answer.querySelector<HTMLElement>(".shorten-grip");
-  const label = answer.querySelector<HTMLElement>(".shorten-level");
 
   grip?.setAttribute("aria-valuenow", String(4 - next));
   grip?.setAttribute("aria-valuetext", LEVELS[next]);
-  if (label) label.textContent = LEVELS[next];
   answer.dispatchEvent(new CustomEvent("answer-shorten"));
 }
 
@@ -184,13 +182,10 @@ export function attachShorten(answer: HTMLElement): void {
   grip.setAttribute("aria-orientation", "vertical");
   grip.title = "上下拖动调长短";
   grip.append(document.createElement("i"));
-  const label = document.createElement("span");
-  label.className = "shorten-level";
-  label.setAttribute("aria-hidden", "true");
   actions.classList.add("has-grip");
-  actions.append(grip, label);
+  actions.append(grip);
 
-  bindGesture(answer, grip, label);
+  bindGesture(answer, grip);
   commit(answer, 3);
 }
 
@@ -202,7 +197,7 @@ const clamp = (v: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
 const INLINE = ["height", "marginTop", "marginBottom", "paddingTop", "paddingBottom", "opacity", "overflow"] as const;
 const clearInline = (el: HTMLElement) => { for (const k of INLINE) el.style[k] = ""; };
 
-function bindGesture(answer: HTMLElement, grip: HTMLElement, label: HTMLElement): void {
+function bindGesture(answer: HTMLElement, grip: HTMLElement): void {
   const messages = answer.closest<HTMLElement>("#messages");
   const first = answer.querySelector<HTMLElement>('[data-shorten="1"]')!;
   const rest = answer.querySelector<HTMLElement>(".shorten-rest");
@@ -321,7 +316,6 @@ function bindGesture(answer: HTMLElement, grip: HTMLElement, label: HTMLElement)
     }
     grip.setAttribute("aria-valuenow", String(4 - near));
     grip.setAttribute("aria-valuetext", LEVELS[near]);
-    label.textContent = LEVELS[near];
     holdScroll();
   };
 
