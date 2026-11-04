@@ -196,6 +196,8 @@ onFillUndoChange(refreshPrimaryAction);
 
 const SECTION_TITLES = { sources: "读过的网页" } as const;
 
+let answerPanelCount = 0;
+
 export function attachAnswerActions(answer: HTMLElement): void {
   if (answer.querySelector(".answer-actions") || !answer.textContent?.trim()) return;
   const actions = document.createElement("div");
@@ -226,14 +228,37 @@ export function attachAnswerActions(answer: HTMLElement): void {
   const panel = document.createElement("div");
   panel.className = "answer-panel";
   panel.hidden = true;
+  answerPanelCount += 1;
+  panel.id = `answer-panel-${answerPanelCount}`;
+  sources.setAttribute("aria-controls", panel.id);
+  const sourceRows = () => Array.from(panel.querySelectorAll<HTMLElement>(".answer-source"));
 
-  sources.onclick = () => {
+  sources.onclick = (event) => {
     panel.hidden = !panel.hidden;
     uiEvent("ui_answer_sources", { open: !panel.hidden });
     sources.setAttribute("aria-expanded", String(!panel.hidden));
 
-    if (!panel.hidden) panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (!panel.hidden) {
+      panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+
+      if (event.detail === 0) sourceRows()[0]?.focus();
+    }
   };
+
+  panel.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      sources.click();
+      sources.focus();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      const rows = sourceRows();
+      const at = rows.indexOf(document.activeElement as HTMLElement);
+
+      if (at < 0) return;
+      event.preventDefault();
+      rows[(at + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length]?.focus();
+    }
+  });
 
   actions.append(primary, more, sources, time, feedback);
   answer.addEventListener("answer-shorten", () => refreshPrimaryAction(answer));

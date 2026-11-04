@@ -341,30 +341,33 @@ app.innerHTML = `
         <div id="morph-sheet-status">状态：活跃连接已就绪</div>
       </div>
     </div>
-    <div id="attach-menu" class="action-menu-popover" hidden>
-      <div class="action-menu-item pressable" id="menu-action-upload" title="PDF、Word、Excel、PPT、CSV、文本和代码文件，以及图片。文件在本机读成文字再交给助手，也可以直接拖进输入框。">
+    <div id="attach-menu" class="action-menu-popover" role="menu" aria-label="添加与设置" hidden>
+      <button type="button" role="menuitem" tabindex="-1" class="action-menu-item pressable" id="menu-action-upload" title="PDF、Word、Excel、PPT、CSV、文本和代码文件，以及图片。文件在本机读成文字再交给助手，也可以直接拖进输入框。">
         <span class="action-menu-item-icon" data-icon="upload"></span>
         <span class="action-menu-item-text"><span class="action-menu-item-label">添加文件或图片</span><span class="action-menu-item-sub">PDF、Word、Excel 等</span></span>
-      </div>
-      <div class="action-menu-item pressable" id="menu-action-screenshot" title="只截当前网页中可见的部分。">
+      </button>
+      <button type="button" role="menuitem" tabindex="-1" class="action-menu-item pressable" id="menu-action-screenshot" title="只截当前网页中可见的部分。">
         <span class="action-menu-item-icon" data-icon="camera"></span>
         <span class="action-menu-item-label">页面截图</span>
-      </div>
-      <div class="action-menu-item pressable" id="menu-action-region" title="在网页上圈出想问的地方，可以圈好几处（Esc 退出）">
+      </button>
+      <button type="button" role="menuitem" tabindex="-1" class="action-menu-item pressable" id="menu-action-region" title="在网页上圈出想问的地方，可以圈好几处（Esc 退出）">
         <span class="action-menu-item-icon" data-icon="region"></span>
         <span class="action-menu-item-label">圈出来问 <span class="action-menu-item-key" id="region-key">⌘⇧S</span></span>
+      </button>
+      <hr />
+      <div role="group" aria-labelledby="marginalia-menu-label">
+      <p class="composer-menu-label" id="marginalia-menu-label" title="显示当前段落的原文或解释。">段落提示</p>
+      <button type="button" class="action-menu-radio" role="menuitemradio" tabindex="-1" data-marginalia="off">关闭</button>
+      <button type="button" class="action-menu-radio" role="menuitemradio" tabindex="-1" data-marginalia="source">原文摘录</button>
+      <button type="button" class="action-menu-radio" role="menuitemradio" tabindex="-1" data-marginalia="ai">解释段落<span>让助手解释正在读的段落。这会把段落发给模型</span></button>
       </div>
       <hr />
-      <p class="composer-menu-label" title="显示当前段落的原文或解释。">段落提示</p>
-      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="off">关闭</button>
-      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="source">原文摘录</button>
-      <button type="button" class="action-menu-radio" role="menuitemradio" data-marginalia="ai">解释段落<span>让助手解释正在读的段落。这会把段落发给模型</span></button>
-      <hr />
-      <button id="voice-diagnostics-open" class="action-menu-radio" type="button">语音诊断</button>
+      <button id="voice-diagnostics-open" class="action-menu-radio" type="button" role="menuitem" tabindex="-1">语音诊断</button>
     </div>
     <input type="file" id="file-input" multiple hidden />
     <select id="marginalia-mode" aria-label="段落提示模式" hidden><option value="off">关闭</option><option value="source">原文摘录</option><option value="ai">解释段落 · 会发给模型</option></select>
     <div id="confirm-dock" hidden></div>
+    <p id="confirm-announce" class="sr-only" role="status"></p>
     <div id="task-bar-root"></div>
     <div id="page-pill" class="morphing-page-pill pressable" hidden title="当前活动标签页（点击展开检查面板）">
       <span id="tab-icon-sq" class="tab-icon-sq"></span>
@@ -384,11 +387,11 @@ app.innerHTML = `
       <textarea id="input" rows="1" placeholder="${PLACEHOLDER_IDLE}"></textarea>
       <div id="composer-bar">
         <div id="composer-bar-inner">
-          <button id="attach-btn" class="composer-icon-btn" type="button" title="添加文件、截图或圈出来问" aria-haspopup="true">+</button>
+          <button id="attach-btn" class="composer-icon-btn" type="button" title="添加文件、截图或圈出来问" aria-label="添加文件、截图或圈出来问" aria-haspopup="menu" aria-expanded="false" aria-controls="attach-menu">+</button>
           <button id="translate-btn" class="composer-icon-btn" type="button" title="翻译这一页（⌥T），再点一次还原" aria-label="翻译这一页"></button>
+          <button id="takeover-btn" type="button" title="接管：助手暂停，由你操作页面。操作完，点「交还」。" hidden>接管</button>
           <span id="composer-spacer"></span>
         </div>
-        <button id="takeover-btn" type="button" title="接管：助手暂停，由你操作页面。操作完，点「交还」。" hidden>接管</button>
         <button id="steer-send-btn" type="button" title="发出插话（Enter）" aria-label="发出插话" hidden></button>
         <button id="send-btn" class="kinetic-morph-button" type="button" title="发送">
           <span class="morph-icon-send"></span>
@@ -1980,6 +1983,10 @@ toBottomBtn.type = "button";
 
 toBottomBtn.title = "回到底部";
 
+toBottomBtn.setAttribute("aria-label", "回到底部");
+
+toBottomBtn.setAttribute("aria-controls", "messages");
+
 toBottomBtn.hidden = true;
 
 toBottomBtn.appendChild(icon(ArrowDown));
@@ -1987,6 +1994,10 @@ const toBottomDot = document.createElement("span");
 toBottomDot.className = "to-bottom-dot";
 toBottomBtn.appendChild(toBottomDot);
 let heightWhenLeft = 0;
+const markToBottomNew = (fresh: boolean): void => {
+  toBottomBtn.classList.toggle("has-new", fresh);
+  toBottomBtn.setAttribute("aria-label", fresh ? "回到底部，有新内容" : "回到底部");
+};
 
 app.appendChild(toBottomBtn);
 
@@ -2106,7 +2117,7 @@ messagesEl.addEventListener("scroll", () => {
 
   if (pinned) {
     heightWhenLeft = 0;
-    toBottomBtn.classList.remove("has-new");
+    markToBottomNew(false);
   } else if (!heightWhenLeft) heightWhenLeft = messagesEl.scrollHeight;
   syncScrollFade();
 });
@@ -2122,7 +2133,7 @@ new MutationObserver(() => {
   syncScrollFade();
   followLive(currentRun?.body ?? null, false);
 
-  if (!pinned && !replayingHistory && !toBottomBtn.hidden && !toBottomBtn.classList.contains("has-new") && heightWhenLeft > 0 && messagesEl.scrollHeight > heightWhenLeft + 8) toBottomBtn.classList.add("has-new");
+  if (!pinned && !replayingHistory && !toBottomBtn.hidden && !toBottomBtn.classList.contains("has-new") && heightWhenLeft > 0 && messagesEl.scrollHeight > heightWhenLeft + 8) markToBottomNew(true);
 }).observe(messagesEl, { childList: true, subtree: true, characterData: true });
 
 function scrollToEnd(force = false): void {
@@ -2139,7 +2150,7 @@ toBottomBtn.onclick = () => {
   followToEnd();
   toBottomBtn.hidden = true;
   heightWhenLeft = 0;
-  toBottomBtn.classList.remove("has-new");
+  markToBottomNew(false);
 };
 
 const USER_MSG_FILES_SHOWN = 4;
@@ -2916,6 +2927,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   }
 
   takeoverBtn.hidden = !flags.takeoverVisible && !flags.userHasPage;
+  translateBtn.hidden = !takeoverBtn.hidden;
   takeoverBtn.dataset.mode = flags.userHasPage ? "handback" : "takeover";
   const handingOver = teamView?.phase === "draining" || teamView?.phase === "restoring";
   takeoverBtn.disabled = handingOver;

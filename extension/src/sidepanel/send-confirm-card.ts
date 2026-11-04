@@ -1,7 +1,7 @@
 import { createElement as icon, Send } from "lucide";
 import { SEND_ARM_MS, SEND_CONFIRM_PANEL_PORT } from "../relay.js";
 import { HELD_TEXT } from "./steps.js";
-import { confirmCopy, confirmCountdown } from "../../../shared/send-confirm-copy.js";
+import { confirmCopy, confirmCountdown, confirmSecondsLeft } from "../../../shared/send-confirm-copy.js";
 import type { SendConfirmOutcome, SendConfirmView } from "../../../shared/protocol.js";
 
 const OUTCOMES: readonly SendConfirmOutcome[] = ["send", "decline", "stopped", "left", "timeout"];
@@ -40,7 +40,7 @@ function isSendConfirmView(v: unknown): v is SendConfirmView {
     && OPTIONAL_NUM.every(key => o[key] === undefined || (typeof o[key] === "number" && Number.isFinite(o[key])));
 }
 
-interface Card { view: SendConfirmView; el: HTMLElement; answering: boolean; armedAt?: number; tick?: number }
+interface Card { view: SendConfirmView; el: HTMLElement; answering: boolean; announced?: boolean; warned?: boolean; armedAt?: number; tick?: number }
 
 const cards = new Map<string, Card>();
 
@@ -142,10 +142,17 @@ function resultLine(card: Card, text: string, state: string): void {
   place(card, false);
 }
 
+function announce(text: string): void {
+  const region = document.getElementById("confirm-announce");
+
+  if (region) region.textContent = text;
+}
+
 function paint(card: Card): void {
   const { view, el } = card;
 
   if (view.outcome) {
+    if (view.outcome === "timeout" && card.announced) announce(OUTCOME_TEXT.timeout);
     resultLine(card, view.outcome === "send" ? view.clicked ? SENT_TEXT[view.clicked] : "你确认了发送" : OUTCOME_TEXT[view.outcome], "done");
     return;
   }
@@ -202,8 +209,22 @@ function paint(card: Card): void {
     card.armedAt ??= performance.now() + SEND_ARM_MS;
     const wait = document.createElement("p");
     wait.className = "send-confirm-wait";
-    wait.setAttribute("aria-live", "polite");
-    const tick = () => { wait.textContent = confirmCountdown(Date.now(), view.startedAt, view.expiresAt); };
+
+    if (!card.announced) {
+      card.announced = true;
+      announce(`需要你确认：${copy.headline}`);
+    }
+
+    const tick = () => {
+      const now = Date.now();
+      wait.textContent = confirmCountdown(now, view.startedAt, view.expiresAt);
+      const left = confirmSecondsLeft(now, view.startedAt, view.expiresAt);
+
+      if (left > 0 && left <= 10 && !card.warned) {
+        card.warned = true;
+        announce("这次确认还剩 10 秒");
+      }
+    };
     tick();
     stopTick(card);
     card.tick = window.setInterval(tick, 1000);
