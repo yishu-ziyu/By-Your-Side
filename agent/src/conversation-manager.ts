@@ -7,7 +7,9 @@ import { ReadingRequests } from "./reading.js";
 import {join} from "node:path";
 import type {UserInputOptions} from "./session.js";
 import {VoicePlanStore,type VoicePlanStep,type VoiceProposal} from "./voice-plan-store.js";
-import {isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
+import {runFastOp,VOICE_FAST_OP_SITES,type VoiceFastDecision} from './voice-fast-op.js';
+import type {VoicePageOp,VoicePageReply,VoicePageState} from '../../shared/voice-page-op.js';
+import {delegatedVoiceAction,isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   DEFAULT_CONVERSATION_ID, isLeadSession, normalizeConversationId,
@@ -77,6 +79,8 @@ function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | n
 }
 
 const WARM_UP_INTERVAL_MS = 30_000;
+
+const VOICE_PAGE_OP_TIMEOUT_MS = 3_000;
 
 export class ConversationManager {
   continuationEnabled: () => boolean = () => false;
@@ -383,12 +387,17 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
       return {kind:'silent'};
     }
 
+    const fast=route?.nativeChat&&!route.resumeReadOnly&&['steer','start'].includes(delegatedVoiceAction(text,before.state))?await this.runVoiceFastOp(id,session,text,before,route):null;
+
+    if(fast&&'result' in fast)return fast.result;
     route?.reportStage?.('classifying');
 
     const prepared=route?.resumeReadOnly
       ?{plan:{steps:[{action:route.resumeReadOnly,target:null,text}]},replyText:null,protocol:'plan' as const}
       :before.state==='interrupted'&&isInterruptedResumeText(text)
         ?{plan:{steps:[{action:'resume' as const,target:null,text}]},replyText:null,protocol:'plan' as const}
+      :route?.delegated||(fast&&'task' in fast)
+        ?{plan:{steps:[{action:delegatedVoiceAction(text,before.state),target:null,text}]},replyText:null,protocol:'plan' as const}
       :await this.proposeVoiceTurn(id,session,text,before,catalog,route);
 
     const plan=prepared.plan;
@@ -676,6 +685,32 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
     this.releaseVoiceOutput(id,released);
 
     return {plan:prepared.plan,replyText:prepared.replyText,protocol:prepared.protocol};
+  }
+  private async runVoiceFastOp(id:string,session:Runtime['session'],text:string,before:TaskProgressSnapshot,route:VoiceRouteContext):Promise<{result:VoiceRouteResult}|{task:true}|null>{
+    const tabId=route.input?.context?.tabId,url=route.input?.context?.url,rpc=this.entries.get(id)?.runtime.rpc;
+
+    if(tabId===undefined||!url||!rpc||!VOICE_FAST_OP_SITES.test(url)||typeof session.decideVoiceFastOp!=='function')return null;
+    const send=(op:VoicePageOp)=>rpc.call('voice_page_op',{tabId,op},VOICE_PAGE_OP_TIMEOUT_MS) as Promise<VoicePageReply>;
+    const started=Date.now();
+    let state:VoicePageState,decision:VoiceFastDecision;
+
+    try{
+      state=(await send({kind:'state'})).state;
+      decision=await session.decideVoiceFastOp(text,state,(route.recentTurns??[]).filter(turn=>turn.role==='user').slice(-3).map(turn=>turn.text));
+    }catch{return null;}
+
+    if(decision.op==='chat')return {result:{kind:'none',nativeChat:true}};
+
+    if(decision.op==='listen'){route.onInputDecision?.(true,true);return {result:{kind:'listening'}};}
+
+    if(decision.op==='task')return {task:true};
+
+    if(decision.op==='open'&&before.state==='running')return {task:true};
+    route.onInputDecision?.(true);
+    const spokenText=await runFastOp(decision,state,send).catch(error=>`这个操作没有成功：${error instanceof Error?error.message:String(error)}`);
+    this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:`${spokenText} ${((Date.now()-started)/1000).toFixed(1)} 秒，没有开任务。`}});
+
+    return {result:{kind:'none',spokenText}};
   }
   private releaseVoiceOutput(id:string,released:{streams:UserDeliveryStream[];deliveries:UserDelivery[]}):void{
     for(const stream of released.streams)this.emit({type:'agent_event',conversationId:id,event:{kind:'user_delivery_stream',stream}});

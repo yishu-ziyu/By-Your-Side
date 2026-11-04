@@ -14,6 +14,7 @@
     "test": "tsx scripts/acceptance/real-path/run-all.mts --core",
     "sim": "tsx --test \"agent/src/**/*.sim.ts\" \"shared/**/*.sim.ts\"",
     "reload:ext": "node scripts/reload-ext.mjs",
+    "voice:replay": "node --conditions=import --import tsx scripts/probes/voice-decision-replay.mts",
     "capture:clear": "node scripts/clear-voice-capture.mjs",
     "accept:browser": "node scripts/acceptance/run.mjs",
     "smoke": "tsx scripts/acceptance/real-path/smoke.mts --headless",

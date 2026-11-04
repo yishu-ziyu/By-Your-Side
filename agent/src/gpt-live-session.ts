@@ -217,7 +217,7 @@ export class GptLiveSession {
       const snapshot = origin.snapshot;
       result = await this.deps.route(requestText, snapshot?.startedAt ?? null, () => !this.closed, {
         nativeChat: true, requestId, runId: snapshot?.runId ?? null, controlVersion: snapshot?.controlVersion,
-        voiceId: this.deps.voiceId ?? 'gpt-live', turn: origin.turn, input: origin.input, targets: origin.targets, recentTurns,
+        voiceId: this.deps.voiceId ?? 'gpt-live', turn: origin.turn, input: origin.input, targets: origin.targets, recentTurns, ...(record.viaSession ? {} : { delegated: true as const }),
       });
     } catch (error) {
       const message = error instanceof VoiceIntentError
