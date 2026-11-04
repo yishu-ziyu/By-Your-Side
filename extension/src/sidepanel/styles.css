@@ -3031,42 +3031,8 @@ details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data
   from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
   to { -webkit-mask-position: -50% 0; mask-position: -50% 0; }
 }
-.answer-skeleton {
-  --sk-base: var(--content-subtle);
-  --sk-hi: var(--content-bg);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transition: opacity var(--d-state) var(--e-exit);
-  pointer-events: none;
-}
-.answer-skeleton i {
-  display: block;
-  height: 12px;
-  border-radius: var(--r-tail);
-  background: linear-gradient(105deg, var(--sk-base) 0 40%, var(--sk-hi) 50%, var(--sk-base) 60% 100%) 100% 0 / 300% 100%;
-  animation: var(--sk-anim, skeletonSweep var(--m-sweep) var(--e-sweep) infinite);
-}
-details.run-steps:not(.done):is([data-phase="user"], [data-wait-user]) ~ .answer-skeleton { display: none; }
-.answer-skeleton i:nth-child(1) { width: 92%; margin-top: 7px; }
-.answer-skeleton i:nth-child(2) { width: 78%; }
-.answer-skeleton i:nth-child(3) { width: 60%; }
-.answer-skeleton:has(~ :not(.ai-task-card, #resume-entry-root)),
-.answer-skeleton:has(~ .ai-task-card #resume-entry-root:not([hidden]) > *, ~ #resume-entry-root:not([hidden]) > *),
-.answer-skeleton[data-state="gone"] {
-  --sk-anim: none;
-  height: 0;
-  margin-bottom: calc(-1 * var(--s-2));
-  opacity: 0;
-}
-@keyframes skeletonSweep { to { background-position: 0 0; } }
-@media (prefers-color-scheme: dark) {
-  .answer-skeleton { --sk-hi: color-mix(in oklch, var(--content-subtle), var(--text-primary) 12%); }
-}
 @media (prefers-reduced-motion: reduce) {
   details.run-steps:not(.done, [data-wait-user]):is([data-phase="thinking"], [data-phase="executing"], [data-phase="waiting"]) .run-title { animation: none; -webkit-mask-image: none; mask-image: none; }
-  .answer-skeleton { transition: none; }
-  .answer-skeleton i { animation: none; background: var(--sk-base); }
 }
 .run-live-graph { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; max-height: 176px; overflow: hidden; }
 .run-live-graph[hidden] { display: none; }
