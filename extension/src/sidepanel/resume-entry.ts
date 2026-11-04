@@ -2,53 +2,11 @@ import type { TaskView } from "../../../shared/task-view.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import type { PageContext } from "../../../shared/protocol.js";
 import { plainStep } from "../../../shared/user-facing.js";
-
-const STATUS_LABEL: Record<string, string> = { pending: "还没做", blocked: "没做成", unknown: "结果未知", satisfied: "做完了" };
-
+import { resultStatusText } from "../../../shared/task-status-copy.js";
 
 const RESUME_PENDING_TIMEOUT_MS = 15_000;
 
-function resultStatusLabel(status: string): string {
-  return STATUS_LABEL[status] ?? status;
-}
-
-const WAITING_TEXT: Record<string, string> = {
-  human_control: "页面现在归你，点「交还」后再接着做",
-  restart_checkpoint: "任务中断了，说「继续」就接着做",
-  cancelled: "你中止了任务，助手不会自己重新开始",
-  failure_limit: "连续几步没做成，助手在等你决定",
-  restricted_page: "浏览器不允许读取这一页，需要截图或文字",
-  unknown_with_baseline: "有 1 步结果未知，助手先核验再继续",
-  unknown_without_baseline: "有 1 步结果未知，助手没有改动前的记录，不会自己重做",
-  readback_required: "做了，但助手还没核验",
-  tool_failed: "上一步没做成，助手要换个做法",
-  runtime_error: "出错了，助手只给你已确认的结果",
-  condition_wait: '条件满足后自动继续',
-  condition_invalid: '关注已暂停，需要核实原页面',
-  deadline: '关注期限已到，已有结果保留',
-  budget: '关注预算已用完，已有结果保留',
-  continuation_stopped: '关注已中止，已有结果保留',
-};
-
 const CHECK_COVERS_WAITING = new Set(["tool_failed", "unknown_with_baseline", "unknown_without_baseline"]);
-
-const INTERRUPTION_DETAIL: Record<string, string> = {
-  host_restart: "扩展后台重启了",
-  connection_lost: "扩展后台断开了",
-  manual_continuation: "你中止了任务",
-};
-
-function waitingText(reason: string, detail: string | null): string {
-  const base = WAITING_TEXT[reason] ?? reason;
-
-  if (reason === "restart_checkpoint" && detail) {
-    const why = INTERRUPTION_DETAIL[detail] ?? detail;
-
-    return `${base}（${why}）`;
-  }
-
-  return base;
-}
 
 interface ResumeAvailability {
   available: boolean;
@@ -176,13 +134,13 @@ function buildResumeSummary(view: TaskView | null, checkpointUnavailable = false
   const checkedDone = checkedRemaining(view)?.length === 0;
 
   const remaining = view.outstanding.filter((r) => !(checkedDone && unverifiedGoal(view, r)))
-    .map((r) => ({ id: r.id, description: plainStep(r.description), status: r.status, statusLabel: unverifiedGoal(view, r) ? "还没核验" : resultStatusLabel(r.status) }));
+    .map((r) => ({ id: r.id, description: plainStep(r.description), status: r.status, statusLabel: unverifiedGoal(view, r) ? "还没核验" : resultStatusText(r.status) }));
 
   const tone = headlineFor(view, checkpointUnavailable, remaining.length);
   const unknown = remaining.filter((r) => r.status === "unknown").length;
   const blocked = remaining.filter((r) => r.status === "blocked").length;
-  const interruptionDetail = view.waiting?.reason === "restart_checkpoint" && view.waiting.detail ? (INTERRUPTION_DETAIL[view.waiting.detail] ?? view.waiting.detail) : null;
-  const blocking = view.waiting ? waitingText(view.waiting.reason, view.waiting.detail) : unknown ? "有 1 步结果未知，不会自己重做" : blocked ? "有 1 步没做成" : null;
+  const interruptionDetail = view.waiting?.reason === "restart_checkpoint" ? view.waiting.detail : null;
+  const blocking = view.waiting ? (interruptionDetail ? `${view.waiting.text}（${interruptionDetail}）` : view.waiting.text) : unknown ? "有 1 步结果未知，不会自己重做" : blocked ? "有 1 步没做成" : null;
   const resume = resumeAvailability(view, checkpointUnavailable);
 
   const nextStep = (() => {

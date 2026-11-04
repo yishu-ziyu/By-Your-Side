@@ -1,7 +1,9 @@
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describeModelError, plainError, plainToolError } from "../../../shared/user-facing.ts";
+import { describeModelError, plainError, plainToolError, toolEndForUi } from "../../../shared/user-facing.ts";
+import { waitingCopy, resultStatusText } from "../../../shared/task-status-copy.ts";
+import { skillResultText } from "../../../extension/src/shared/skill-result.ts";
 import { launchRealPath, siteAddress, sleep, until } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
@@ -112,6 +114,13 @@ try {
   const copied = await ev("window.__copied.join('')") as string;
   check("复制到的错误信息隐藏了密钥", copied.includes("Incorrect") && copied.includes("[已隐藏]") && !copied.includes("FAKEFAKE"), copied);
   await rp.screenshot(panel, join(out, "key-card.png"));
+  await ev(`[...document.querySelectorAll(".error-card [data-act=fix-key]")].at(-1).click()`);
+  await sleep(500);
+  const sheet = await ev(`document.querySelector("#key-sheet")?.innerText ?? ""`) as string;
+  check("换密钥抽屉不显示内部服务商标识", sheet.includes("自定义服务") && !/\bcustom\b/.test(sheet), sheet);
+  await rp.screenshot(panel, join(out, "key-sheet.png"));
+  await ev(`document.querySelector("#key-sheet-close")?.click()`);
+  await sleep(400);
 
   await fresh();
   await send(ASK.other);
@@ -141,6 +150,12 @@ try {
   await sleep(1_500);
   check("设置里有语音诊断开关且读到已打开", await rp.evaluate(settings, 'document.querySelector("#voice-diagnostics")?.checked') === true);
 
+  const ended = toolEndForUi({ kind: "tool_end", name: "snapshot", isError: true, resultText: "<page-content untrusted tab=1>[ref=1] 未找到元素: #x。请重新 snapshot" });
+  check("发给界面的步骤结束事件不带原始结果", !("resultText" in ended) && ended.reason === "没找到目标", ended);
+  check("打开页面的标题照常给界面", toolEndForUi({ kind: "tool_end", name: "navigate", isError: false, resultText: 'Navigation result: https://a.b — 差旅制度; document: x' }).pageTitle === "差旅制度");
+  check("等待状态只有一份文案，内部原因被翻译", waitingCopy("restart_checkpoint", "host_restart").text === "任务中断了，说「继续」就接着做" && waitingCopy("restart_checkpoint", "host_restart").detail === "扩展后台重启了");
+  check("状态原因不认识时不显示原值", waitingCopy("tool_failed", "some_internal_code value").detail === null && resultStatusText("internal_state") === "结果未知");
+  check("技能结果不是 JSON", !/[{}"]/.test(skillResultText({ 标题: "周报", 条目: [{ 名字: "甲" }, "乙"] })), skillResultText({ 标题: "周报", 条目: [{ 名字: "甲" }, "乙"] }));
   check("Agent 忙碌的英文报错不会原样显示", plainError("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.", "") === "");
   check("产品写好的中文提示照常显示", plainError("先在「模型与语音」里连接模型。", "") === "先在「模型与语音」里连接模型。");
   check("账号登录的报错提示重新登录", describeModelError("模型请求最终失败（openai-codex/gpt-6-luna）：401 unauthorized")?.title === "ChatGPT 登录已失效");

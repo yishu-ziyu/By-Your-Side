@@ -2,36 +2,6 @@ import type { TaskView } from "../../../shared/task-view.js";
 import { displayNameFor } from "../../../shared/cast.js";
 import { formatDuration } from "./steps.js";
 
-function waitingCopy(reason: string, detail: string | null): { text: string; detail: string | null } {
-  const map: Record<string, string> = {
-    human_control: "页面现在归你，助手在等你交还",
-    restart_checkpoint: "上次会话断开了，任务停在中途",
-    cancelled: "你中止了任务",
-    failure_limit: "连续几步没做成，助手在等你决定",
-    unknown_with_baseline: "有 1 步结果未知，助手要先核验",
-    unknown_without_baseline: "有 1 步结果未知，助手没有改动前的记录，不会自己重做",
-    readback_required: "助手还要核验页面",
-    tool_failed: "上一步没做成",
-    runtime_error: "出错了",
-    condition_wait: "条件满足后自动继续",
-    condition_invalid: "关注已暂停，需要核实原页面",
-    deadline: "关注期限已到，已有结果保留",
-    budget: "关注预算已用完，已有结果保留",
-    continuation_stopped: "关注已中止，已有结果保留",
-  };
-
-  const detailMap: Record<string, string> = {
-    host_restart: "扩展后台重启了",
-    connection_lost: "扩展后台断开了",
-    manual_continuation: "你中止了任务",
-  };
-
-  return {
-    text: map[reason] ?? reason,
-    detail: detail ? (detailMap[detail] ?? detail) : null,
-  };
-}
-
 export function stateHeadline(state: TaskView["state"], resumable?: boolean): string {
   switch (state) {
     case "running": return "正在做";
@@ -205,7 +175,7 @@ function buildTaskBarModel(input: TaskBarInputs): TaskBarModel {
     idleAge = `上一步在 ${formatDuration(now - view.lastAction.at)}前`;
   }
 
-  const waiting = view?.waiting ? waitingCopy(view.waiting.reason, view.waiting.detail) : null;
+  const waiting = view?.waiting ? { text: view.waiting.text, detail: view.waiting.detail } : null;
 
   return {
     visible: true,

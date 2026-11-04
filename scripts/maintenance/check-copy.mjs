@@ -122,6 +122,21 @@ for (const full of [...await files(path.join(repo, 'extension/src')), ...await f
   }
 }
 
+const AGENT_UI_LINE = /TaskActionRejected\(|kind: ?["'](?:notice|error)["']/;
+
+for (const full of await files(path.join(repo, 'agent/src'))) {
+  if (full.endsWith('.sim.ts')) continue;
+  const file = path.relative(repo, full);
+  const src = await readFile(full, 'utf8');
+  const lines = src.split('\n');
+
+  for (const [startLine, raw] of literals(src)) {
+    const sourceLine = lines[startLine - 1] ?? '';
+
+    if (AGENT_UI_LINE.test(sourceLine)) check(file, startLine, raw, sourceLine);
+  }
+}
+
 for (const name of await readdir(path.join(repo, 'extension'))) {
   if (!name.endsWith('.html')) continue;
   const lines = (await readFile(path.join(repo, 'extension', name), 'utf8')).split('\n');

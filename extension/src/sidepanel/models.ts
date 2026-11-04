@@ -25,6 +25,7 @@ export function groupModelsByProvider(models: readonly ModelOption[]): ModelGrou
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
+  custom: "自定义服务",
   cliproxy: "本机代理",
   "cli-proxy": "本机代理",
   "minimax-cn": "MiniMax",

@@ -1,3 +1,4 @@
+import { plainError } from "../../../shared/user-facing.js";
 import { targetWindowId } from "./target-window.js";
 import { siteGlyph } from "./answer-actions.js";
 import { reducedMotion } from "./branch-graph.js";
@@ -83,9 +84,10 @@ export function mountTabMentions(opts: {
     const chip = el("span", "tab-mention-chip");
     chip.dataset.tabId = String(item.tabId);
     chip.dataset.status = item.status;
-    chip.title = item.reason ? `${item.title}\n${item.reason}` : `${item.title}\n${item.url}`;
+    const reason = plainError(item.reason, "");
+    chip.title = reason ? `${item.title}\n${reason}` : `${item.title}\n${item.url}`;
     chip.setAttribute("aria-label", item.status === "unread"
-      ? `读不到：${item.title}${item.reason ? `，${item.reason}` : ""}`
+      ? `读不到：${item.title}${reason ? `，${reason}` : ""}`
       : item.status === "read" ? `已读：${item.title}` : `待读：${item.title}`);
     const glyph = siteGlyph(item.url, hostOf(item.url) || item.title);
     glyph.className = "tab-mention-glyph";
