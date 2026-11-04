@@ -124,7 +124,6 @@ textarea.d-input { height: auto; width: 100%; padding: 8px 10px; line-height: 1.
 .pv-letter, .pv-glyph { background: none; -webkit-mask: none; mask: none; }
 .pv-letter { border-radius: 5px; box-shadow: inset 0 0 0 1px var(--line); font-size: 10px; font-weight: 600; line-height: 1; }
 
-/* WHY: 点服务商会重绘整列；Chrome 的滚动锚定会把页面往上拽，表单跑出视野 */
 .plist { overflow: hidden; overflow-anchor: none; }
 .search { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 14px 0 16px; border-bottom: 1px solid var(--hair); color: var(--text-tertiary); }
 .search input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: var(--text-primary); outline: none; }

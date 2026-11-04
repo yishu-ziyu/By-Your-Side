@@ -55,7 +55,6 @@ function findNumberText(answer: HTMLElement, value: string): { node: Text; at: n
 
     if (at < 0) continue;
 
-    // SAFETY: SHOW_TEXT 的 walker 只返回文本节点。
     return { node: node as Text, at };
   }
 
@@ -70,7 +69,6 @@ export async function attachSourceCitations(answer: HTMLElement, context: Citati
   const generation = (generations.get(answer) ?? 0) + 1;
   generations.set(answer, generation);
   answer.querySelector('.citation-row')?.remove();
-  // SAFETY: cloneNode 保持原节点类型，answer 是 HTMLElement。
   const body = answer.cloneNode(true) as HTMLElement;
   body.querySelectorAll('.answer-sources,.source-fav,.answer-actions,.answer-panel,.memory-used-line').forEach(node => node.remove());
   const values = citationValues(body.textContent ?? '');

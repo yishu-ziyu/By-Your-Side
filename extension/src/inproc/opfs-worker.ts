@@ -15,7 +15,6 @@ async function open(path: string): Promise<SyncHandle> {
   const file = await dir.getFileHandle(name, { create: true });
   for (let waited = 0; ; waited += 50) {
     try {
-      // SAFETY: createSyncAccessHandle 只在 WebWorker 的类型库里，扩展按 DOM 库编译。
       return await (file as unknown as { createSyncAccessHandle(): Promise<SyncHandle> }).createSyncAccessHandle();
     } catch (error) {
       if ((error as { name?: string })?.name !== "NoModificationAllowedError" || waited >= 3000) throw error;
@@ -24,7 +23,6 @@ async function open(path: string): Promise<SyncHandle> {
   }
 }
 
-/** WHY: 规范允许 write 只写进一部分而不报错；没写完就当失败，pi-durable 不能把半条记录当成已保存。 */
 function writeAll(handle: SyncHandle, data: Uint8Array, at: number) {
   for (let done = 0; done < data.length;) {
     const n = handle.write(data.subarray(done), { at: at + done });

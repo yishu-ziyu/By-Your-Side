@@ -12,10 +12,6 @@ export const INPROC_BACKUP_CONFIG_KEY = "inproc_backup_model_config";
 
 export const INPROC_DOCUMENT = "inproc.html";
 
-/**
- * WHY: MV3 的 service worker 空闲约 30 秒就会被 Chrome 停掉，和扩展内 agent 的连接随之断开，停机期间发来的任务会丢。
- * 本机进程模式靠 Native Messaging 连接保活；扩展内 agent 改为定时发心跳（端口消息会重置空闲计时）。
- */
 export const INPROC_KEEPALIVE_MS = 20_000;
 
 export const INPROC_VOICE_KEY = "inproc_voice_key";
@@ -24,7 +20,6 @@ export const INPROC_VOICE_MODEL_KEY = "inproc_voice_model";
 
 export type InprocVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime" | typeof GPT_LIVE_MODEL;
 
-/** WHY: 只给缺项默认值；坏的持久值不能静默切到按量语音。 */
 export function resolveVoiceModel(value: unknown): InprocVoiceModel {
   if (value === undefined) return "stepaudio-3-realtime-preview";
 
@@ -37,10 +32,6 @@ const VOICE_HEADER_RULE_ID = 7101;
 
 const PLAN_VOICE_HEADER_RULE_ID = 7102;
 
-/**
- * WHY: 浏览器的 WebSocket 不能自己设请求头，StepFun 又只认 Authorization 头：
- * 用会话级 declarativeNetRequest 规则在握手时补上。返回语音是否已配置。
- */
 export async function installVoiceHeaderRule(key: string): Promise<boolean> {
   const configured = key.trim().length > 0;
 

@@ -72,7 +72,6 @@ const model = await startScriptedModel([
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
 
-    // SAFETY: OpenAI 兼容的 tool 消息带 tool_call_id。
     const id = String((m as { tool_call_id?: unknown }).tool_call_id ?? "");
 
     if (m.role === "tool" && !toolIds.has(id)) { toolIds.add(id); toolTexts.push(text); }

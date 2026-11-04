@@ -11,7 +11,6 @@ const AFTER = new Set(["goal_check", "memory_decision", "memory_ask_decision"]);
 
 const ms = (l: Line) => Date.parse(l.time);
 
-// SAFETY: 诊断记录一行一个 JSON 对象，字段见 shared/run-trace-core.ts。
 const parse = (text: string) => text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Line);
 
 function breakdown(lines: Line[]): Array<Row & { runId: string; text: string }> {
@@ -75,7 +74,6 @@ if (process.argv.includes("--json")) {
 
   for (const p of paths) all[p] = breakdown(parse(await readFile(p, "utf8")));
 
-  // WHY: 输出常超过管道缓冲；等写完再退出，否则 JSON 被截断。
   await new Promise((done) => process.stdout.write(JSON.stringify(all) + "\n", done));
   process.exit(0);
 }
@@ -92,7 +90,6 @@ async function guardrail(root: string): Promise<{ rows: Array<Row & { pass: bool
   const missing: string[] = [];
 
   for (const d of [root, ...subdirs]) {
-    // SAFETY: result-ext.json 由 compare-real.mts 写出，每条带 id 与 outcome。
     const results = await readFile(join(d, "result-ext.json"), "utf8").then((t) => JSON.parse(t) as Array<{ id: string; outcome: string }>, () => []);
 
     for (const r of results) {
@@ -156,7 +153,6 @@ if (!traceFile) throw new Error("产物里没有导出的诊断记录");
 
 const lines = parse(await readFile(single ? dir : join(dir, "downloads", traceFile), "utf8"));
 
-// SAFETY: summary.json 由 everyday-baseline.mts 写出，results 带 id 与 prompt。
 const summary = single
   ? { model: "日常导出", startedAt: lines[0]?.time ?? "", results: [] as Array<{ id: string; prompt: string }> }
   : JSON.parse(await readFile(join(dir, "summary.json"), "utf8")) as { model: string; startedAt: string; results: Array<{ id: string; prompt: string }> };

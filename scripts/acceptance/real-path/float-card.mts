@@ -60,7 +60,6 @@ try {
     frameDir = await mkdtemp(join(tmpdir(), "float-card-frames-"));
     recorder = (async () => {
       while (recording) {
-        // SAFETY: Page.captureScreenshot 回包的 data 是 base64 JPEG。
         const { data } = await rp.cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 85 }, shotOf).catch(() => ({ data: "" })) as { data: string };
         if (data) { const f = join(frameDir, `${String(frames.length).padStart(5, "0")}.jpg`); await writeFile(f, Buffer.from(data, "base64")); frames.push(f); }
         await sleep(80);

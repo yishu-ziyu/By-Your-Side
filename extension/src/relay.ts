@@ -67,7 +67,6 @@ export type PanelToBg =
   | { kind: "retry" }
   | { kind: "focus" }
   | { kind: "panel_window"; windowId: number }
-  /** WHY: 端口存活探测：service worker 被 Chrome 停掉后，面板手里的端口不一定会收到断开事件。 */
   | { kind: "ping" }
   | { kind: "inspect_step"; target?: string; tabId?: number; url?: string; caption?: string }
   | { kind: "page_refs_check"; id: string; names: string[] }

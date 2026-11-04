@@ -57,7 +57,6 @@ export function parseTurnReview(raw: string, userMessage: string): TurnReview {
   const rule = typeof value.rule === "string" ? value.rule.trim().slice(0, 120) : "";
   const evidence = typeof value.evidence === "string" ? value.evidence.trim() : "";
 
-  // WHY: 证据必须是用户原话：防止模型把上一条回答或网页里的话当成用户的评价。
   if (!evidence || !userMessage.includes(evidence) || !rule) return NONE;
 
   return { feedback, aspect, lasting: value.lasting === true, rule, evidence };

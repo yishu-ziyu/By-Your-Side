@@ -62,7 +62,6 @@ type Evidence = { before?: Json; waiting?: Json; after?: Json; final?: Json; reo
 const evidence: Evidence = {};
 let automaticWait = false;
 
-// SAFETY: 表达式返回的就是这两个字符串字段。
 const state = () => rp.evaluate(panel, `(() => { const r = document.querySelector("#resume-entry-root");
   return { resumeText: r?.hidden ? "" : r?.innerText.trim() ?? "", resumeButton: !r?.hidden && !!r?.querySelector(".resume-action"),
     messages: document.querySelector("#messages")?.innerText ?? "" }; })()`) as Promise<{ resumeText: string; resumeButton: boolean; messages: string }>;
@@ -88,7 +87,6 @@ try {
   await rp.typeText(panel, GOAL);
   await rp.pressEnter(panel);
 
-  // SAFETY: 表达式返回 5 个输入框的 value 字符串。
   const values = () => rp.evaluate(work, `[1,2,3,4,5].map((i) => document.querySelector("#f" + i).value)`) as Promise<string[]>;
   await until(async () => {
     const v = await values();

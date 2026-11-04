@@ -51,7 +51,6 @@ type LiveCall = {
   dc: RTCDataChannel;
   gain: GainNode;
   mic: AnalyserNode;
-  /** WHY: Chrome 要远端流挂在媒体元素上，Web Audio 才拿得到声音；元素本身静音。 */
   sink: HTMLAudioElement;
   remoteMeter: AnalyserNode;
   remoteTrack: MediaStreamTrack | null;
@@ -1100,7 +1099,6 @@ return;}
         this.sayAgainAfterRecovery=false;
         this.diagnostic?.('voice_recovered', { turn: this.turn, attempt: this.recoveryAttempts, at: performance.now() });
 
-        // WHY: An older backend never confirms diagnostic mode; refuse to send audio instead of guessing.
         if(this.diagSession&&!this.diagConfirmed&&!this.diagTimer)this.diagTimer=setTimeout(()=>{if(this.diagSession&&!this.diagConfirmed)this.failUnconfirmed();},8000);
       }
 
@@ -1132,7 +1130,6 @@ return;}
   stopSpeaking():void{
     if(!this.id||!this.ready)return;
 
-    // WHY: GPT-Live 协议里没有取消回答的事件：只把这一段回答在本地静音，任务照常。
     if(this.live){this.muteLive(this.live,{reason:'stop',turn:this.live.assistantTurn,userDone:false,at:Date.now(),userHeard:false});this.setPhase('listening','已停声，后台任务继续');
 
 return;}

@@ -30,7 +30,6 @@ interface EdgeTabHandlers {
   action(): void;
   other(other: EdgeTabOther): void;
   moved?(dy: number): void;
-  /** WHY: 进度卡：补一句交给正在跑的这一轮；停下整轮；打开侧栏（必须在这次点击里同步调用）。 */
   steer?(text: string): Promise<boolean>;
   abort?(): void;
   open?(): void;
@@ -395,7 +394,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
   function uncoverTarget(target: Element, x: number, y: number, token: string): boolean {
     if (!open || view?.tone === "hand" || !target.isConnected || target.ownerDocument !== document || target.contains(host)) return false;
-    // WHY: 目标必须属于网页；跨 closed shadow root 向上检查，不能通过“让位”点到自己的控件。
     for (let node: Element | null = target; node;) {
       if (node.closest(`[${OVERLAY_ATTR}]`)) return false;
       const parent = node.getRootNode();
@@ -452,7 +450,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   clip.addEventListener("pointerleave", () => { clearTimeout(cardTimer); if (card && !busy()) cardTimer = setTimeout(() => setCard(false), CARD_OUT_MS); });
   clip.addEventListener("focus", () => { if (canCard()) setCard(true); });
   more.addEventListener("click", ev => ev.stopPropagation());
-  // WHY: 网页自己的快捷键（按键在 document 上听）不能吃掉这里打的字。
   for (const type of ["keydown", "keyup", "keypress"] as const) input.addEventListener(type, ev => {
     ev.stopPropagation();
     if (type === "keydown" && ev.key === "Escape") { input.value = ""; sendBtn.disabled = true; input.blur(); setCard(false); }

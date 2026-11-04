@@ -84,7 +84,6 @@ const check = (name: string, pass: boolean, actual: Json) => {
   console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual));
 };
 
-// SAFETY: Tab 读数来自 CDP returnByValue，是可序列化的普通对象，可以直接写进证据。
 const asJson = (v: unknown) => v as Json;
 
 try {
@@ -105,7 +104,6 @@ try {
 
   const inExtension = async <T,>(session: string, expression: string): Promise<T | null> => {
     for (const contextId of [...(isolated.get(session) ?? [])]) {
-      // SAFETY: CDP Runtime.evaluate 返回 { result: { value } }；读数是可序列化的普通对象。
       const res = await rp.cdp.send("Runtime.evaluate", { expression: `(() => { const ns = globalThis.__sideagent; return ns?.cursor ? (${expression}) : undefined; })()`, contextId, returnByValue: true }, session).catch(() => null) as { result?: { value?: T } } | null;
 
       if (res?.result && res.result.value !== undefined) return res.result.value;
@@ -131,7 +129,6 @@ try {
     const end = Date.now() + ms;
 
     while (Date.now() < end) {
-      // SAFETY: Page.captureScreenshot 回包的 data 是 base64 JPEG。
       const { data } = await rp.cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 90, ...(clip ? { clip } : {}) }, session) as { data: string };
       const name = join(dir, `${String(shotsAt.length).padStart(5, "0")}.jpg`);
       await writeFile(name, Buffer.from(data, "base64"));
@@ -175,7 +172,6 @@ try {
   const frameDir = record ? await mkdtemp(join(tmpdir(), "edge-tab-frames-")) : "";
   const recorder = (async () => {
     while (recording) {
-      // SAFETY: Page.captureScreenshot 回包的 data 是 base64 JPEG。
       const { data } = await rp.cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 85 }, work) as { data: string };
       const file = join(frameDir, `${String(frames.length).padStart(5, "0")}.jpg`);
       await writeFile(file, Buffer.from(data, "base64"));
@@ -248,7 +244,6 @@ try {
   ];
 
   const crop = async (name: string) => {
-    // SAFETY: Page.captureScreenshot 回包的 data 是 base64 PNG。
     const { data } = await rp.cdp.send("Page.captureScreenshot", { format: "png", clip: { x: vw - 460, y: 30, width: 460, height: 200, scale: 2 } }, work) as { data: string };
     await writeFile(join(shots, `${name}.png`), Buffer.from(data, "base64"));
   };
@@ -359,7 +354,6 @@ try {
     for (const scheme of ["light", "dark"]) {
       await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, other);
       await sleep(250);
-      // SAFETY: Page.captureScreenshot 回包的 data 是 base64 PNG。
       const { data } = await rp.cdp.send("Page.captureScreenshot", { format: "png", clip: { x: Number(await rp.evaluate(other, "innerWidth")) - 460, y: 30, width: 460, height: 200, scale: 2 } }, other) as { data: string };
       await writeFile(join(shots, `${scheme}-${file}.png`), Buffer.from(data, "base64"));
     }
@@ -430,7 +424,6 @@ try {
   for (const scheme of ["light", "dark"]) {
     const page = await rp.attach((await rp.cdp.send("Target.createTarget", { url: `${origin}/sheet-${scheme}` })).targetId as string);
     await sleep(1200);
-    // SAFETY: 同上，Page.captureScreenshot 回包。
     const { data } = await rp.cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, clip: { x: 0, y: 0, width: 1048, height: Number(await rp.evaluate(page, "document.body.scrollHeight")), scale: 1 } }, page) as { data: string };
     await writeFile(join(out, `sheet-${scheme}.png`), Buffer.from(data, "base64"));
   }

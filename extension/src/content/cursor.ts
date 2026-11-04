@@ -1597,7 +1597,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     const el = guideElement(node);
     const labels = el && "labels" in el ? [...((el as HTMLInputElement).labels ?? [])] : [];
     const onPath = (!!el && path.includes(el)) || labels.some((label) => path.includes(label));
-    // WHY: 坐标只在没有事件路径、或目标被换掉又找不回时兜底：否则盖在目标上的东西（比如 cookie 横幅）也会被当成点中。
     const r = !node.isConnected || path.length === 0 ? nodeRect(node) ?? g.rect : null;
     const inside = !!r && ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 && ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4;
 
@@ -2321,12 +2320,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   const activeMembers = new Set<string>();
 
-  // WHY: 用户移动鼠标时，助手光标让位；停下后继续显示目标。
-  // 助手经调试协议发出的鼠标事件也是可信事件，但总落在光标刚飞到的点上，据此排除。
-  // 不移动光标就派发的鼠标事件（受保护的悬停）先经 expect() 登记落点。
-  // 手搭在触控板或鼠标上的抖动通常 1–3px；离上次算数的位置超过 6px 才算用户在用，
-  // 与上面排除助手光标的 6px 同一个量级。按下鼠标不设门槛。
-  // 指针停下约 1 秒，锚点移到停下的位置：之前挪的几像素不再和之后的抖动加在一起。
   const USER_MOVE_PX = 6;
   const USER_IDLE_MS = 1100;
   let userIdle: ReturnType<typeof setTimeout> | undefined;
@@ -2417,7 +2410,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   }
 
   function openPanel(): void {
-    // WHY: 必须在这次点击里发出：后台同步调用打开侧栏，浏览器才认是用户动作。
     try { void chrome.runtime.sendMessage({ type: EDGE_PILL_OPEN }).catch(() => {  }); } catch {  }
   }
 
@@ -2649,8 +2641,6 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       clearTimeout(inst.parkTimer);
       clearTimeout(inst.pressTimer);
       clearStatusTimers(inst);
-      // WHY: pagehide may freeze the page in BFCache; an old fade callback must
-      // never reach a newly restored cursor or a different action.
       inst.labelAnimation?.cancel();
       inst.labelAnimation = undefined;
     }

@@ -160,7 +160,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
         return new RealtimeVoiceSession({
           ...voiceDeps,
           model,
-          // SAFETY: BrowserSocket 实现了 RealtimeVoiceSession 实际用到的 ws 子集（readyState/on/send/close）。
           connect: () => new BrowserSocket(model) as never,
         });
       },

@@ -13,12 +13,8 @@ export interface ControlConfirmSnapshot {
   attachments?: Attachment[];
 }
 
-// WHY: 口语常把肯定短语连用，例如“是的，确认”；也常带一个语气收尾，例如“确认吧”“好的，可以啊”。
-// 只接受纯肯定组合（可带有限语气词），不能吞掉后面的修订/否定：“确认吧，但不要保存”必须整句不匹配。
-// 语气词不含“了”，否则“对了”（换个话题）会被误判成肯定。
 const AFFIRMATIVE = /^(?:(?:对的|是的|好的|可以|没错|就这个|就这样|确认|继续|照做|没问题|对|是|嗯|好|行)[吧啊呀啦嘛哦呗嘞]?)+$/;
 
-// WHY: “不是”仅接受独立回答，不能把“不是不行”这样的双重否定误当撤销。
 const NEGATIVE = /^(?:(?:不用了?|不要了?|不对|不|别动|别|先别|算了|取消|停下?|打住|撤销|作废)(?:吧|啦|呀|啊)?)+(?:谢谢|多谢)?$/;
 
 export function isControlConfirm(text: string): boolean {
@@ -40,22 +36,6 @@ const ASKS = /(?:吗|呢|么|没|没有)$|怎么|怎样|如何|能不能|能否|
 const CONDITIONAL = /之后|以后|然后|[完好]了?(?:再|就)|后(?:告诉|再|叫|通知|跟我|说|提醒)|的话|如果|要是|假如|万一/;
 
 const CLOSING = /^(?:掉|了|吧|啊|呀|丫|啦|哦|哈|呗|谢谢|多谢)*$/;
-
-const TASK_PAUSE = /^(?:先)?(?:暂停|接管)(?:一下)?(?:当前|这个|这项)?任务(?:吧|了)?$/;
-
-const TASK_RESUME = /^(?:继续|交还)(?:吧|任务|原任务)?$/;
-
-export function delegatedVoiceAction(text: string, state: string): 'abort' | 'pause' | 'resume' | 'start' | 'steer' {
-  const short = normalizeSpeech(text ?? "");
-
-  if (isExplicitTaskAbort(text)) return 'abort';
-
-  if (TASK_PAUSE.test(short)) return 'pause';
-
-  if (state === 'paused' && TASK_RESUME.test(short)) return 'resume';
-
-  return state === 'interrupted' ? 'start' : 'steer';
-}
 
 export function isExplicitTaskAbort(text: string): boolean {
   if (/[?？]/.test(text ?? "")) return false;

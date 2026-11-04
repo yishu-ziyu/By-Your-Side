@@ -71,7 +71,6 @@ export class ExtensionHost {
     };
 
     for (const factory of options.factories) {
-      // SAFETY: 我们的三个钩子只调用 api 上的 on / getActiveTools / getAllTools（见文件头与 extension-host.test.ts）。
       void factory(api as never);
     }
   }
@@ -136,7 +135,6 @@ export class ExtensionHost {
 
   async notify(event: { type: string }): Promise<void> {
     if (!OBSERVED_EVENTS.has(event.type)) return;
-    // SAFETY: 只读事件对象带 type 与 Pi 同名事件的字段；钩子只按需读取，不依赖 HookEvent 里未列出的键。
     await this.each(event.type, () => event as HookEvent, () => {});
   }
 

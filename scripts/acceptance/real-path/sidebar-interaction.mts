@@ -54,7 +54,6 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
 
-  // SAFETY: read() 的页面脚本返回的布局读数字段与下面的类型一一对应。
   const read = async () => await rp!.evaluate(panel, `(() => {
     const q = (s) => document.querySelector(s);
     const rect = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right }; };
@@ -135,7 +134,6 @@ try {
   await sleep(600);
 
   type ModelEntry = { inHeaderMenu: boolean; inComposer: boolean; visible: boolean; label: string };
-  // SAFETY: 页面脚本返回的对象字段与 ModelEntry 一一对应。
   const readEntry = async () => await rp!.evaluate(panel, `(() => { const b = document.querySelector('#think-chip'); return { inHeaderMenu: !!document.querySelector('#header-menu #think-chip'), inComposer: !!document.querySelector('#composer #think-chip'), visible: !!b && !b.hidden && b.getClientRects().length > 0 && getComputedStyle(b).visibility === 'visible', label: b?.innerText ?? '' }; })()`) as ModelEntry;
   await rp.click(panel, "#input");
   await until(async () => (await readEntry()).visible || undefined, 10_000, "模型芯片出现").catch(() => undefined);
@@ -146,7 +144,6 @@ try {
     await rp.click(panel, "#think-chip");
     await sleep(350);
 
-    // SAFETY: 页面脚本返回 null 或下面这个字段固定的对象。
     const modelMenu = await rp.evaluate(panel, `(() => {
       const m = document.querySelector('#think-menu'); const row = m?.querySelector('.mm-main .mm-row[data-model]');
       if (!m || !row) return null;
@@ -170,7 +167,6 @@ try {
 
     if (currentModel) {
       await rp.click(panel, '#think-menu .mm-main .mm-row[aria-checked="true"]');
-      // SAFETY: 页面表达式固定返回 closed 与 focus 两个字段。
       const selection = await rp.evaluate(panel, `({ closed: !document.querySelector('#think-menu').classList.contains('open'), focus: document.activeElement?.id ?? '' })`) as { closed: boolean; focus: string };
       check("点当前模型收起菜单后焦点回芯片", selection.closed && selection.focus === "think-chip", { model: currentModel, ...selection });
     }

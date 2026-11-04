@@ -22,7 +22,6 @@ const waiting = new Map();
 ws.addEventListener("message", ev => { const m = JSON.parse(String(ev.data)); if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); } });
 const send = (method, params = {}, sessionId) => new Promise(ok => { const n = ++seq; waiting.set(n, ok); ws.send(JSON.stringify({ id: n, method, params, ...(sessionId ? { sessionId } : {}) })); });
 
-// WHY: 扩展自己的页面里才有 chrome.storage：后台、offscreen 或侧栏，哪个醒着用哪个。
 const { result } = await send("Target.getTargets");
 const prefix = `chrome-extension://${id}/`;
 const target = ["service_worker", "other", "page"].flatMap(type => result.targetInfos.filter(t => t.type === type && t.url.startsWith(prefix)))[0];

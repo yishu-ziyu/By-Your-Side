@@ -32,8 +32,6 @@ import { overlayHostSelector } from "../shared/overlay.js";
     return nodes.length && nodes.every(node => node.nodeType === 3) && record.target.nodeType === 1 ? record.target as Element : null;
   };
 
-  // WHY: 一直开着、只记“哪里在跳字”：时钟、倒计时这类跳动不能算成动作带来的变化。
-  // 每个元素只留最近 NOISE_WINDOW_MS 加一次动作那么久里的时刻：跳得快的时钟，最近几次都落在动作期间，只留三次就看不出它动作前也在跳。
   const textTimes = new WeakMap<Element, number[]>();
   new MutationObserver(records => {
     const now = Date.now();
@@ -100,12 +98,6 @@ import { overlayHostSelector } from "../shared/overlay.js";
     return { el: field, field: editable };
   }
 
-  /**
-   * WHY: 变过的地方，只留最外层、还在页面上、看得见、不是助手自己浮层的几处。
-   * 先丢掉只改了属性、字的大元素（弹窗打开时网站常给 body 加 modal-open），再去重；不然它会把里面真正新出现的东西都盖住。
-   * 只改了字、动作前就在一直跳的地方（时钟、倒计时）不算。同一个父元素下加进来好几个（建议列表的一项项）合成父元素一处。
-   * field：这一处是输入框或编辑器，里面的字不报。
-   */
   function changedRoots(watch: Watch): Array<{ sel: string; field?: true }> | "many" {
     watch.take(watch.observer.takeRecords());
     const overlay = overlayHostSelector();
@@ -300,7 +292,6 @@ import { overlayHostSelector } from "../shared/overlay.js";
 
       const base: EffectBaseline = {
         ...stats(el, second),
-        // WHY: 页面自己在这 60ms 里就动过 DOM：后面的全局数字不可信，只认强证据。
         volatile: Math.abs(second.els - first.els) >= EFFECT_VOLATILE_DELTA,
       };
 

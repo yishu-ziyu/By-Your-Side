@@ -46,7 +46,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
   }
 
 
-  /** WHY: iframe 内 getBoundingClientRect 是 frame 视口坐标；CDP 鼠标要 top 视口坐标。 */
   function topViewportRect(el: Element): { x: number; y: number; width: number; height: number } {
     const r = el.getBoundingClientRect();
     let x = r.x;
@@ -125,8 +124,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
   }
 
   function scrollIntoView(el: Element): void {
-    // SAFETY: Element 只保证标准 DOM 接口；scrollIntoViewIfNeeded 是 Chromium 的可选扩展方法，
-    // typeof 在运行时确认存在后才调用，形状不符时回退标准 scrollIntoView。
     const anyEl = el as unknown as { scrollIntoViewIfNeeded?: (o?: Record<string, unknown>) => void };
 
     if (typeof anyEl.scrollIntoViewIfNeeded === "function") {
@@ -384,8 +381,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       el.dispatchEvent(new MouseEvent("mousedown", common));
       el.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse" }));
       el.dispatchEvent(new MouseEvent("mouseup", common));
-      // WHY: HTMLElement.click() 派发一次 click 并保留 <a> 跳转等默认行为。
-      // 不可再 dispatchEvent(click)，否则同一处理器会被触发两次。
       const html = el as HTMLElement;
 
       if (typeof html.click === "function") html.click();
@@ -474,7 +469,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
     },
   };
 
-  // WHY: chrome.scripting.executeScript 把页面里抛出的错误换成 null 结果：先把错误记在这里，callDom 拿到空结果时来取。
   for (const [name, fn] of Object.entries(ns.dom)) {
     (ns.dom as unknown as Record<string, unknown>)[name] = (...args: unknown[]) => {
       ns.lastDomError = undefined;

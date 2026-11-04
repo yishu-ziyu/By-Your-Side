@@ -74,7 +74,6 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
   const calls = new Map<string, { name: string; arguments: string }>();
   for (const m of payload.messages ?? []) for (const call of m.tool_calls ?? []) calls.set(call.id, call.function);
   for (const m of payload.messages ?? []) {
-    // SAFETY: OpenAI 兼容的 tool 消息带 tool_call_id。
     const id = String((m as { tool_call_id?: unknown }).tool_call_id ?? "");
     if (m.role !== "tool" || seenCalls.has(id)) continue;
     seenCalls.add(id);

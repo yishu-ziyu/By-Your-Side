@@ -35,10 +35,8 @@ const traceFile = single ? dir : (await readdir(join(dir, "downloads"))).find((n
 
 if (!traceFile) throw new Error("产物里没有导出的诊断记录");
 
-// SAFETY: 诊断记录一行一个 JSON 对象，字段见 shared/run-trace-core.ts。
 const lines = (await readFile(single ? dir : join(dir, "downloads", traceFile), "utf8")).split("\n").filter(Boolean).map((l) => JSON.parse(l) as Line);
 
-// SAFETY: summary.json 由 everyday-baseline.mts 写出，results 带 id 与 prompt。
 const summary = single
   ? { model: "日常导出", startedAt: lines[0]?.time ?? "", results: [] as Array<{ id: string; prompt: string }> }
   : JSON.parse(await readFile(join(dir, "summary.json"), "utf8")) as { model: string; startedAt: string; results: Array<{ id: string; prompt: string }> };

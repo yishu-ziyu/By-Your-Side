@@ -240,11 +240,6 @@ export const HOOK_EXPRESSION = `(() => {
   return { ok: true, already: false, team: typeof globalThis.__saTakeover === "function" };
 })()`;
 
-/**
- * WHY: 扩展热重载后 Chrome 偶尔会把旧 inspector domain 状态留在 SW target 上，
- * 直接 Runtime.enable / Debugger.enable 会一直等到超时。新 attach 先恢复并关闭
- * 这些 domain，后面的 hook 再按需要重新启用；不修改扩展或业务状态。
- */
 export async function normalizeServiceWorkerInspector(cdp, sessionId) {
   for (const method of ["Runtime.runIfWaitingForDebugger", "Debugger.resume", "Debugger.disable", "Runtime.disable"]) {
     try {

@@ -387,8 +387,6 @@ export class ToolRpc {
     entry.programId = programId;
     entry.startedAt = Date.now();
     entry.state = "sent";
-    // WHY: Only existing target-changing receipts need full params. Observation binding
-    // retains identity, never field values, scripts or other page content.
     entry.targetParams = targetSeq !== undefined ? targetParams : targetParams ? {tabId:targetParams.tabId,target:targetParams.target} : undefined;
 
     if (targetSeq !== undefined) entry.targetSeq = targetSeq;

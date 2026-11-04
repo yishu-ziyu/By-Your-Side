@@ -1,12 +1,3 @@
-/**
- * WHY: 页面内容进入模型上下文前的两道处理（纯函数）：
- * 1. 不可信边界：页面文本一律包进 <page-content untrusted ...>，并声明它是数据不是指令；
- * 2. 凭据隐去：高熵串（恢复码、API key、私钥）只留标记。
- *
- *取舍与同类实现（huashu-chrome）一致：
- * 误报的代价是模型少看到几行乱码，漏报的代价是凭据进了留痕的对话上下文。
- */
-
 const PAGE_CONTENT_TAG = "page-content";
 
 const MAX_META = 160;
@@ -17,9 +8,6 @@ function clipMeta(value: string): string {
   return clean.length > MAX_META ? `${clean.slice(0, MAX_META - 1)}…` : clean;
 }
 
-/**
- * WHY: 包一层不可信边界。载荷里出现的同名标签一律打断，防止页面文本伪造闭合标签逃逸边界。
- */
 export function wrapPageContent(text: string, meta: { tabId?: number; url?: string; title?: string } = {}): string {
   const attrs = [
     meta.tabId !== undefined ? `tab=${meta.tabId}` : "",
@@ -85,9 +73,6 @@ export function redactCredentialText(text: string): string {
   let body = kept.join("\n");
   const structured = /[\s\u4e00-\u9fff"'{}[\],:=]/.test(body);
 
-  // WHY: 型号只在独立成词时放行：凭据被 / . : \\ = 或夹入的字符切开后，每一段单独看都像型号（ABCD12-EFGH3454/IJKL56-MNOP7890）。
-  // 词按空白、HTML 标签边界、引号、括号、逗号和中文切；去掉开头的 `键名=`、`:` 和末尾标点后，整个词就是这一段才放行。
-  // 全角只算标点（，：；！？（）等），全角字母数字不算边界，否则能拿它们把凭据拆开。
   if (structured) body = body.replace(/[^\s<>"'`{}[\](),\u3000-\u303f\u4e00-\u9fff\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]+/g, (word) => {
     const head = word.replace(/^(?:[A-Za-z_]{1,24}|[a-z][A-Za-z0-9_.-]{0,24})[:=]|^[:=]+/, "");
     let end = head.length;

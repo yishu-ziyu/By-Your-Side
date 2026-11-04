@@ -55,7 +55,6 @@ void mountReadingVoice();
 
 const isText = (value: unknown): value is string => typeof value === "string";
 
-// SAFETY: 只用于上面模板里写死的 id，调用方给的元素类型与模板标签一致。
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const form = $("provider-form");
@@ -159,7 +158,6 @@ let selected: ProviderChoice | null = null;
 let openKey: string | null = null;
 
 let changingKey = false;
-/** WHY: 表单打开时自定义连接的地址；别的窗口之后改了地址，旧表单不能把新密钥带到旧地址。 */
 let openedBaseUrl = "";
 let openedConnection: InprocModelConfig | null = null;
 let openedCredential: StoredCredential | undefined;
@@ -1221,7 +1219,6 @@ async function runSpeedTest(): Promise<void> {
 const SPEED_TIMEOUT_MS = 60_000;
 
 async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: string }>, box: HTMLElement): Promise<void> {
-  // WHY: 用的是已保存的订阅令牌：测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
   await probe.credentials.load(credentials);
   await probe.applyCodexCatalog(codexCatalog);
@@ -1263,7 +1260,6 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
       const stream = probe.models.streamSimple(model, { messages: [{ role: "user", content: SPEED_QUESTION, timestamp: Date.now() }] }, {
         maxTokens: 2048, signal, fetch: omitCookies, headers: probe.headersFor(model), sessionId: probe.sessionId,
         reasoning: lowest === "off" ? undefined : lowest,
-        // WHY: 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型直接用 SSE，和任务里一样。
         ...(model.api === "openai-codex-responses" ? { transport: "sse" as const } : {}),
       });
 

@@ -294,7 +294,6 @@ export function mountDictation(opts: {
         opts.notice("麦克风还没授权，已打开授权页。");
       }
     };
-    // WHY: Chrome 一段静音后会自己停：还在说话输入就接着听，前一段认出的字记进 carried。
     r.onend = () => {
       if (!active || rec !== r) return;
       const had = finalText + interim;

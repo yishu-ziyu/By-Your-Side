@@ -61,7 +61,6 @@ function readbackNote(readback: ToolContract["fill"]["data"]["readback"], what: 
   return ` The ${what} now contains: ${value}${readback.match === "reformatted" ? " (the page changed spacing or letter case)" : ""}.`;
 }
 
-/** WHY: fill 的 from：说清搬了多少字、读回是否一致；首尾几个字是网页内容，按不可信页面数据包起来。 */
 function sourceNote(source: NonNullable<ToolContract["fill"]["data"]["source"]>, from: { tabId?: number; target: string } | undefined, readback: ToolContract["fill"]["data"]["readback"]): string {
   const where = from ? ` from ${from.target}${from.tabId !== undefined ? ` in tab ${from.tabId}` : ""}` : "";
   const ends = source.tail ? `starts «${source.head}» … ends «${source.tail}»` : `«${source.head}»`;
@@ -420,7 +419,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
     const preparedCopy = name === 'fill' && callParams.from !== undefined ? await execution?.beforeCopy?.() : undefined;
     if (name === 'fill') {
-      // WHY: Copy scope comes only from the user's request, never from generated program arguments.
       delete callParams.copyRange;
       if (callParams.from !== undefined && preparedCopy?.range) callParams.copyRange = preparedCopy.range;
     }
@@ -434,7 +432,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     }
     preparedCopy?.record(publicResult);
     try { execution?.observeCall?.(name, callParams, publicResult); } catch {  }
-    // WHY: Private integrity evidence never enters model programs, side-panel text or traces.
     if (name === 'fill' && publicResult && typeof publicResult === 'object' && 'copyProof' in publicResult) {
       const { copyProof: _copyProof, ...withoutProof } = publicResult;
       return withoutProof;
@@ -614,7 +611,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         const json = JSON.stringify({ ...(result.imageSources.length ? { imageSources: result.imageSources } : {}), value: result.value, steps: result.steps });
 
-        // WHY: 程序常带回网页正文：与 snapshot 一样标成不可信页面数据并遮掉凭据；超长时写明截了多少，别让模型以为拿全了。
         const shown = json.length > MAX_JS_RESULT_CHARS
           ? `${json.slice(0, MAX_JS_RESULT_CHARS)}… [truncated: showed ${MAX_JS_RESULT_CHARS} of ${json.length} chars; the rest is missing — return less (slice each page) or save it with browser.saveFile]`
           : json;
@@ -1091,7 +1087,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description: "Download an HTTP(S) file link, including PNG/JPEG images and PDFs, into Chrome's download folder. On safe completion, supported responses up to 50 MB also return attachment.name: use upload_file with that filename to upload these exact original bytes in the same task, without asking the user to attach them. attachmentError means the file was saved but no usable original was captured. Only completed=true confirms it was saved; if incomplete, report that state without repeating the download. Chrome decides safety; do not bypass danger holds.",
       parameters: Type.Object({ url: Type.String({ minLength: 1 }), filename: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })), timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 20000 })), tabId: Type.Optional(Type.Integer()) }),
       execute: async (_id, params) => {
-        // SAFETY: download_url RPC 的返回结构由 ToolContract 与扩展处理器一致定义。
         const data = await call("download_url", params, undefined, undefined, undefined, (params.timeoutMs ?? 20_000) + 10_000) as ToolContract["download_url"]["data"];
 
         return textResult(downloadReceipt(data), data);
@@ -1241,8 +1236,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         ...(files ? { saveAs: Type.Optional(Type.String({ description: 'Save the return value as this conversation file, e.g. "subtitles.txt"; you get only {filename, chars, lines, shown}' })), deliver: Type.Optional(Type.Boolean({ description: "With saveAs: true only when the user asked for this file; it then shows as a side-panel card" })) } : {}),
       }),
       execute: async (_id, params) => {
-        // SAFETY: saveAs、deliver 只在有文件区时进入参数 schema，类型是可选字符串与可选布尔，Pi 已按 schema 校验。
-        // purpose 只给侧栏当步骤名，不送进页面。
         const { saveAs, deliver, purpose: _purpose, ...pageParams } = params as typeof params & { saveAs?: string; deliver?: boolean };
 
         if (saveAs !== undefined) {

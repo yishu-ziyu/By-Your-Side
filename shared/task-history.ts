@@ -42,7 +42,6 @@ export function validTaskLabel(value: unknown): value is string {
 
 export function isTaskHistoryEntry(value: unknown): value is TaskHistoryEntry {
   if (!value || typeof value !== "object") return false;
-  // SAFETY: 只把它当成待核对的对象读字段，下面逐个检查类型后才返回 true。
   const e = value as TaskHistoryEntry;
 
   return typeof e.id === "string" && /^[a-zA-Z0-9_-]{1,96}$/.test(e.id)

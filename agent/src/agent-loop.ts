@@ -102,8 +102,6 @@ class FailoverLoop implements AgentLoop {
   get isStreaming() { return this.running || this.inner.isStreaming; }
 
   prompt(...args: Parameters<AgentLoop["prompt"]>): Promise<void> {
-    // WHY: The underlying Agent is briefly idle while credentials are checked and the
-    // backup model is selected. A new prompt must not overtake that continuation.
     if (this.running && !this.inner.isStreaming) return this.waitForIdle().then(() => this.prompt(...args));
 
     if (this.inner.isStreaming) return this.inner.prompt(...args);

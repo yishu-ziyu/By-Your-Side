@@ -192,7 +192,6 @@ export function installFloatCard(): void {
   ns.floatCard = {
     uncover(target, x, y, token) {
       if (!host || !target.isConnected || document.elementFromPoint(x, y) !== host) return false;
-      // WHY: 目标必须是网页自己的：跨 closed shadow 往上查，不能借让位点到我们自己的界面。
       for (let node: Element | null = target; node;) {
         if (node.closest(`[${OVERLAY_ATTR}]`)) return false;
         const parent = node.getRootNode();

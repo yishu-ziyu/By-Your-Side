@@ -41,7 +41,6 @@ try {
     await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel);
     await until(async () => (await rp.evaluate(panel, `document.body.innerText.includes(${JSON.stringify(answer)})`)) || null, 60000, `侧栏出现「${answer}」`);
     await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || null, 30000, "侧栏回到空闲");
-    // SAFETY: WATCH 写入的 window.__tr 只有这三个数字字段。
     return await rp.evaluate(work, "window.__tr") as Watch;
   };
   const since = (w: Watch, at: number | null) => at === null ? null : Math.round(at - w.t0);

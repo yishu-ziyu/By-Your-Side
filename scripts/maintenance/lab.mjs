@@ -165,7 +165,6 @@ function elapsedHours(etime) {
   return Number(days) * 24 + (parts[2] ?? 0) + (parts[1] ?? 0) / 60 + (parts[0] ?? 0) / 3600;
 }
 
-/** WHY: 有进程的命令行里带着这个目录：别的会话的测试还在用它，不能删。 */
 function inUse(dir, commands) {
   const real = resolveReal(dir);
 
@@ -489,8 +488,6 @@ console.log(JSON.stringify({ n }));`);
   if (!browsers.length) console.log("  没有");
 
   for (const item of browsers) {
-    // WHY: 只关确定没人在用的：无头的、启动它的脚本已经没了；或者开了超过 3 小时（最长的评测约半小时）。
-    // 有窗口的测试浏览器经 open -g 启动，上级进程本来就是 launchd，不能按“上级没了”判断。
     const line = spawnSync("ps", ["-o", "ppid=,etime=,command=", "-p", String(item.pid)], { encoding: "utf8" }).stdout.trim();
     const [ppid, etime] = line.split(/\s+/);
     const hours = elapsedHours(etime ?? "");

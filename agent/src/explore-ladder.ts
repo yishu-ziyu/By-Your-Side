@@ -29,7 +29,6 @@ function ladderHint(deadEnds:number, risky:boolean):string {
   return `[Next step] Not here. ${VISIBLE_SOURCE} Then read the whole page (scroll, hover to reveal, expand collapsed parts), then open at most the two or three most likely menus.`;
 }
 
-/** WHY: 只看工具自己写的第一行：后面跟着页面快照和新出现的页面文字，是不可信数据，不能让网页替模型数死路或冒充付款。 */
 function ownLine(text:string):string {
   return text.split('\n', 1)[0]!.slice(0, 300);
 }

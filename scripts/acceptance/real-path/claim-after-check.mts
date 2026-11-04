@@ -105,7 +105,6 @@ const proxy = createServer(async (req, res) => {
     lastFirst = next.probe;
     await sleep(next.holdMs);
 
-    // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as Record<string, unknown>;
     forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: next.probe }] });
     checks.push({ probe: next.probe, receivedAt, releasedAt: Date.now() });

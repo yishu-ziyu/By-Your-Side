@@ -25,18 +25,10 @@ export function sanitizeTrace(value: unknown): unknown {
   return scrubTrace(value, true, true);
 }
 
-/**
- * WHY: 导出已存的诊断记录时用：和 sanitizeTrace 一样遮住内容，但不再套长度限额。
- * 存储时已经限过长；再限一次会为存储时留下的截断外壳多扣额度，把读回值从中间截开，遮挡规则就认不出来了。
- */
 export function redactStoredTrace(value: unknown): unknown {
   return scrubTrace(value, true, false);
 }
 
-/**
- * WHY: 写进本机诊断记录时用：保留原文，只遮凭据（密码栏的值、密钥、令牌、Cookie、网址里的账号密码），并照样限长、去掉图片数据。
- * 导出时再对每行跑一遍 redactStoredTrace（extension/src/shared/trace-store.ts）。
- */
 export function sanitizeTraceForStore(value: unknown): unknown {
   return scrubTrace(value, false, true);
 }

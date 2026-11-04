@@ -483,8 +483,6 @@ export class RealtimeVoiceConnection {
 
 return asString(c?.text)??asString(c?.transcript)??'';}).join(''):'';
 
-        // WHY: Preview currently replaces client IDs and echoes input_text as audio/transcript.
-        // Match the exact sent content, never just 'the next user item'.
         if(pending&&(item?.id===pending.itemId||(item?.role==='user'&&content===pending.wireText))){
           this.clearTimer('notice-ack');this.pendingNotice=null;
 
@@ -547,8 +545,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
         this.emitMetric('vad_speech_stopped_since_ready', this.sinceReady());
 
         if (!this.options.diagnostic) {
-          // WHY: server_vad 多半会自动创建这一轮回复；created 抵达前不能抢发 response.create，
-          // 否则会和服务端自己的回复相撞
           this.autoResponsePending = this.speechSeq;
           this.armTimer('auto-response-watchdog', AUTO_RESPONSE_WATCHDOG_MS, () => {
             this.log({type: 'auto_response_watchdog', speechSeq: this.autoResponsePending});
@@ -694,8 +690,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
   private onUserCompleted(event: Record<string, unknown>): void {
     const text = (asString(event.transcript) ?? '').trim();
 
-    if (!text) return; // WHY: 只有噪声没有识别结果，不算一条请求
-    // 缺 item_id 时不能都叫 user-input，会和已消费的旧回合撞 id；按 speech 轮 + 序号给唯一 id。
+    if (!text) return;
     const itemId = asString(event.item_id) ?? `speech-${this.speechSeq}-${++this.asrSeq}`;
     const knownRequest = this.requests.get(itemId)?.input;
     const origin=this.speechItems.get(itemId) ?? (knownRequest ? {seq:knownRequest.turn-1,at:0} : undefined);
@@ -822,8 +817,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     if (!id) return this.log({type: 'response_done_without_id'});
     const status = asString(response?.status) ?? 'completed';
 
-    // WHY: The official API also delivers complete tool calls in response.done.output.
-    // Both paths share the same idempotent receiver; cancelled/incomplete output never executes.
     if(status==='completed'&&Array.isArray(response?.output))for(const raw of response.output){
       const item=asRecord(raw);
 
@@ -884,8 +877,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       this.clearTimer(`playback:${id}`);
       this.sendToClient({type: 'clear_audio'});
     } else if (bytes > 0 && !this.playedResponses.has(id)) {
-      // WHY: Tool continuations can arrive while earlier audio is still queued in
-      // VoicePlayer. Its deadline must include that queue, not only this reply.
       let queuedBytes = 0;
 
       for (const [responseId, count] of this.audioBytes) {
@@ -978,8 +969,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
         const args=call.arguments;
 
         if(!args||!['start','steer','pause','resume'].includes(String(args.action))||Object.keys(args).some(k=>!['action','targetId','includePending'].includes(k))||(args.includePending!==undefined&&typeof args.includePending!=='boolean')||(args.targetId!==undefined&&(typeof args.targetId!=='string'||!args.targetId)))throw new Error('任务动作参数无效，未执行');
-        // SAFETY: 上一行已校验 args.action 属于四个枚举值、键白名单、includePending 布尔、targetId 非空字符串，
-        // 运行时形状已满足 RealtimeTaskAction，这里只是让编译器接受已验证的 JSON 记录。
         result=await this.runBrowserRequest(call.speechSeq,args as unknown as RealtimeTaskAction);
       }
       else if (call.name === 'read_page') {

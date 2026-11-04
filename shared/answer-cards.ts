@@ -55,10 +55,6 @@ const FUNCS: Record<string, (...a: number[]) => number> = {
   round: (x, digits = 0) => Math.round(x * 10 ** digits) / 10 ** digits,
 };
 
-/**
- * WHY: 算式的小解析器：扩展页面的 CSP 不允许动态求值。认数字、+ − × ÷、^、括号、比较（结果 1 或 0）、条件 a ? b : c、FUNCS 里的函数。
- * 乘方和条件是给房贷月供、分档折扣这类算式用的：真模型想写，但写不出来就只能心算。
- */
 function calc(expression: string): number | undefined {
   const s = expression.replace(/[−–]/g, "-").replace(/×/g, "*").replace(/÷/g, "/").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/\s+/g, "");
   const t = /[a-z]\(/.test(s) ? s : s.replace(/,/g, "");
@@ -289,7 +285,6 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   const group = <K extends Block["kind"]>(kind: K, make: () => Extract<Block, { kind: K }>): Extract<Block, { kind: K }> => {
     const b = last();
 
-    // SAFETY: kind 相同即同一种块。
     if (b?.kind === kind) return b as Extract<Block, { kind: K }>;
     const fresh = make();
     card.blocks.push(fresh);
@@ -421,7 +416,6 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   const open = /^<(stat|step|option|table|tr|check|callout)\s((?:[^<>"]|"[^"]*")*(?:"[^"]*)?)$/.exec(tail) ?? /^<(callout)\b([^<>]*)>[^<]*(?:<\/?[a-z]*)?$/.exec(tail);
 
   if (diagramAt >= 0 && !closed) card.pending = { tag: "diagram", written: "" };
-  // SAFETY: 两个正则的第一组只会是 PendingComponent 列出的标签名。
   else if (open) card.pending = { tag: open[1] as PendingComponent["tag"], written: open[2] ?? "" };
 
   return card.title || card.blocks.length ? card : undefined;
@@ -481,7 +475,6 @@ export function cardSpans(text: string): CardSpan[] {
       spans.push({ tag: "card", ...span });
       continue;
     }
-    // SAFETY: 正则只认 card、app 两个名字。
     const tag = m[1] as "card" | "app";
     const close = text.indexOf(`</${tag}>`, m.index);
 

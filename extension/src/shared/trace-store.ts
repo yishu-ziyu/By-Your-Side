@@ -77,7 +77,6 @@ function deleteSessions(tx: IDBTransaction, names: readonly string[]): void {
 }
 
 async function sessionNames(db: IDBDatabase): Promise<string[]> {
-  // SAFETY: SESSIONS 的主键是 name 字符串（onupgradeneeded 里建的 keyPath）。
   const keys = await result(db.transaction(SESSIONS).objectStore(SESSIONS).getAllKeys()) as string[];
 
   return keys.sort();
@@ -156,7 +155,6 @@ function redactLine(line: string): string {
     return `${JSON.stringify(redactStoredTrace(line.trimEnd()))}\n`;
   }
 
-  // SAFETY: 本表的行都是 run-trace-core.ts 写的 JSON 对象；别的形状整行脱敏。
   const record = event as Record<string, unknown> | null;
 
   return `${JSON.stringify(record && typeof record === "object" && !Array.isArray(record) && "data" in record ? { ...record, data: redactStoredTrace(record.data) } : redactStoredTrace(event))}\n`;
@@ -166,7 +164,6 @@ export async function exportDiagnostics(): Promise<DiagnosticsExport> {
   const db = await openDb();
   const names = await sessionNames(db);
   const tx = db.transaction([LINES, VOICE]);
-  // SAFETY: 两张表里只写 LineRow / VoiceRow（见本文件的写入函数）。
   const [traceRows, voiceRows] = await Promise.all([result(tx.objectStore(LINES).getAll()) as Promise<LineRow[]>, result(tx.objectStore(VOICE).getAll()) as Promise<VoiceRow[]>]);
 
   return {

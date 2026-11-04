@@ -103,7 +103,6 @@ try {
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, work);
 
-  // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
   const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
   const find = (n: DomNode): DomNode | null => {
     if ((n.attributes ?? []).includes("data-sideagent-ask") && n.shadowRoots?.length) return n.shadowRoots[0]!;
@@ -117,7 +116,6 @@ try {
   if (!shadow) throw new Error("找不到阅读卡 shadow root");
   const shadowId = String((await rp.cdp.send("DOM.resolveNode", { backendNodeId: shadow.backendNodeId }, work)).object.objectId);
   const inCard = async <T,>(fn: string): Promise<T> => {
-    // SAFETY: callFunctionOn 以 returnByValue 返回函数结果。
     const reply = await rp.cdp.send("Runtime.callFunctionOn", { objectId: shadowId, functionDeclaration: fn, returnByValue: true }, work);
 
     if (reply.exceptionDetails) throw new Error(`阅读卡脚本出错：${reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text}`);
@@ -131,7 +129,6 @@ try {
   };
   const highlighted = async () => Boolean(await rp.evaluate(work, `CSS.highlights?.has(${JSON.stringify(HIGHLIGHT)}) ?? false`));
 
-  // SAFETY: 页面脚本返回段落文字首尾坐标。
   const span = await rp.evaluate(work, `(() => { document.querySelector("#para").scrollIntoView({block:"center"}); const r = document.querySelector("#para-text").getClientRects(); const a = r[0], b = r[r.length - 1]; return { x1: a.left + 1, y1: a.top + a.height / 2, x2: b.right - 1, y2: b.top + b.height / 2 }; })()`) as { x1: number; y1: number; x2: number; y2: number };
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: span.x1, y: span.y1 }, work);
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: span.x1, y: span.y1, button: "left", clickCount: 1 }, work);

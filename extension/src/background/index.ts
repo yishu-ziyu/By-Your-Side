@@ -128,7 +128,6 @@ const handlers: Record<ToolName, Handler> = {
   scroll: (p, sid) => scroll(p, sid),
   js: (p, sid) => evaluateJs(p, sid),
   observe_page: async()=>{throw new Error('观察只允许通过语音授权。');},
-  voice_page_op: p => chrome.tabs.sendMessage(p.tabId, { type: 'VOICE_PAGE_OP', op: p.op }, { frameId: 0 }),
   screenshot: (p, sid) => screenshot(p, sid),
   mark: (p, sid) => mark(p, sid),
   clear_marks: (p, sid) => clearMarks(sid, p.tabId),
@@ -222,8 +221,6 @@ const marginalia = installMarginalia({
 const nudge = installNudge({
   send: message => transport.sendClientMessage(message),
   selected: () => selectedConversationId,
-  // WHY: 侧栏可以按窗口开，也可以只给某个标签页开：只认这个标签页能看到的那一个。
-  // Chrome 不一定报出侧栏在哪个窗口（无头时为 -1）：报不出就按「有侧栏开着」算。
   panelOpen: async (windowId, tabId) => {
     const panels = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.SIDE_PANEL] }).catch(() => null);
 
@@ -451,7 +448,6 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
   const releasedAt = Date.now();
   if (raw.phase === "start") { pttVoice.prepare(); pttTurn++; reading.interrupt(tabId); pttCapsule.recording(tabId); }
   const turn = pttTurn;
-  // SAFETY: 离屏文档对 PttCommand 只回 PttReply；没有接收方时 sendMessage 会抛错。
   const reply = await (chrome.runtime.sendMessage(command) as Promise<PttReply | undefined>).catch(() => undefined);
   const conversationId = conversationForWindow(tab.windowId);
   const conversation = controller(conversationId);
@@ -1038,8 +1034,6 @@ async function hydrateControl(): Promise<void> {
 
       void showUserControlGuarded();
     } else {
-      // WHY: 扩展 reload 会遗留旧 isolated world 画出的 overlay host。
-      // 当前控制权不归用户时，启动即在活动页注入新版脚本并清掉旧条。
       try {
         const { tab } = await getActiveTab();
 
@@ -1709,7 +1703,6 @@ async function executeToolCall(
         executionFact = "unknown";
 
         try {
-          // SAFETY: 此三元只在 name==='read_element' 时进入 readElement 分支，params 已由工具分发契约保证是 read_element 的参数形状；unknown 收窄仅为满足 readElement 的类型签名，不改变运行行为。
           const r = name==='read_element'&&params.readback
             ? await readElement(params as unknown as import('../../../shared/protocol.js').ToolContract['read_element']['params'],key(sid),()=>{
               checkIdentity();

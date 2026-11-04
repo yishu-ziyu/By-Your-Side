@@ -65,7 +65,6 @@ export type LearnedOperationResult = LearnedOperationSuccess | LearnedOperationF
 export const isJsonObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** WHY: 做法按完整来源（协议 + 主机 + 端口）归属：同一注册域下的不同子域常属于不同的人，不能共用。 */
 export function operationOrigin(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -171,7 +170,6 @@ export function isLearnedOperationFile(value: unknown): value is LearnedOperatio
 
 export function schemaMatches(schema: JsonSchema, value: unknown): boolean {
   try {
-    // SAFETY: 所有 schema 先经过 isJsonSchema 的纯 JSON 与引用限制；TSchema 在这里只是 TypeBox 的校验入口。
     return Value.Check(schema as TSchema, value);
   } catch {
     return false;

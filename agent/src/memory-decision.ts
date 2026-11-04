@@ -108,7 +108,6 @@ export function validateMemoryDecision(value: unknown, userMessage: string, entr
   const writes = d.action === "save" || d.action === "update";
 
   if (writes || d.about !== undefined) {
-    // SAFETY: 未信任的模型对象；只在下面检查关键布尔值后使用分类。
     const a = (d.about ?? {}) as Partial<MemoryAbout>;
     const answered = (a.longTerm === true || a.longTerm === false) && (a.onlyThisTask === true || a.onlyThisTask === false);
 
