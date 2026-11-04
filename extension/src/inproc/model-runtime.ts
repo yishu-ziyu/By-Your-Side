@@ -70,7 +70,6 @@ export class MirroredCredentialStore extends InMemoryCredentialStore {
     }
 
     for (const [providerId, credential] of Object.entries(all)) {
-      // SAFETY: StoredCredential 按 pi-ai Credential 的形状声明（见 shared.ts），pickCredentials 已逐项核对。
       await super.modify(providerId, async () => credential as Credential);
     }
   }
@@ -295,7 +294,6 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     if (!codexProvider) return;
     const generation = ++codexCatalogGeneration;
     const credential = await credentials.read("openai-codex");
-    // SAFETY: credential is the checked pi-ai credential, matching StoredCredential's OAuth shape.
     const identity = await codexIdentity(credential as StoredCredentials[string] | undefined);
     if (generation !== codexCatalogGeneration) return;
     const catalog = readCodexCatalog(value, identity);
@@ -382,14 +380,11 @@ function createCoreModelPort(
 
   const withHeaders = (model: Model<Api>, options: Parameters<ModelPort["streamSimple"]>[2]) => {
     const headers = runtime.headersFor(model);
-    // WHY: 模型请求只靠我们自己的凭据。扩展有网站权限，fetch 默认会带上用户在这个网站的 cookie（比如 chatgpt.com 网页版的登录），
-    // 一律不带。提前建连接（conversation-manager 的 warmUp）也用 omit：Chrome 按凭据模式分连接池，两边不一致就复用不上。
     const merged = {
       ...options, fetch: omitCookies, ...(headers ? { headers: { ...options?.headers, ...headers } } : {}),
       ...(model.provider === COMMANDCODE_PROVIDER_ID && model.api === "anthropic-messages" ? { onPayload: withoutThinkingBlocks } : {}),
     };
 
-    // WHY: 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型默认先试 WebSocket，必失败再退回 SSE，每次都留一条假的连接失败。直接用 SSE。
     return { ...merged, ...(model.api === "openai-codex-responses" ? { transport: "sse" as const } : {}),
       onPayload: async (payload: unknown, selected: Model<Api>) => {
         const prepared = await merged.onPayload?.(payload, selected) ?? payload;

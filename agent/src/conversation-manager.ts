@@ -190,11 +190,6 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
 
   private warmedAt = new Map<string, number>();
 
-  /**
-   * WHY: 经代理新建一条到模型服务的加密连接要几秒，只有第一次请求要付。用户开始打字时先发一个 HEAD，
-   * 浏览器把连接留在池里，真正的请求就复用它；回什么都不影响请求，只记进诊断。
-   * 凭据模式必须和模型请求（extension/src/inproc/model-runtime.ts 的 omitCookies）一样是 omit：Chrome 按凭据模式分连接池，不一致就另开一条连接。
-   */
   private warmUp(id: string, context?: PageContext, connectionOnly = false): void {
     const session = (this.entries.get(id) ?? [...this.entries.values()][0])?.runtime.session;
     const origin = session?.modelOrigin();
@@ -866,9 +861,6 @@ return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)
 
     if(!history||!progress||!snap?.runId||!snap.goal||!['idle','aborted','error'].includes(snap.state))return;
 
-    // WHY: 只记做成了事的任务（提交、填写、点按钮这类会留下后果的执行记录），或还没做完、在等用户的任务。读页、查询、纯聊天（核对为「做完」）不记：
-    // 否则「我的手机号是 …」会记成一条过往任务，撤销记忆后号码仍留在过往任务里。
-    // 打开页面、滚动不算：只读查询记下后，回答里的旧结论会被下一次照抄。
     const acted=(snap.results??[]).some(item=>resultHasWriteEffect(item));
     const committed=(snap.results??[]).some(item=>resultLocksWhenUnknown(item));
     const view=projectTaskView(snap);
@@ -1376,8 +1368,6 @@ return receipt;
           }
         }
 
-        // WHY: “已接收”回执必须以真实可恢复存储为准：先把附件与检查点写盘，失败则回滚为未接收，
-        // 不启动模型或网页动作。
         const targetProgress=this.progress.get(request.conversationId)!;
         const beforeAccept=targetProgress.snapshot();
         targetProgress.request(request.text??'',request.context,request.attachments);
@@ -1526,7 +1516,6 @@ return receipt;
 
     for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults", "invalidatePage", "registerResults", "stopAfterFailures", "stopForRestrictedPage"] as const) {
       const original = progress[method].bind(progress) as (...args: unknown[]) => unknown;
-      // SAFETY: 同名方法按原签名包装，参数与返回值形状不变；动态按方法名赋值 TypeScript 无法表达。
       (progress as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
         const result = original(...args);
         this.queueTaskView(id);
@@ -1561,7 +1550,6 @@ return receipt;
       }
       const progressSnapshot=progress.snapshot();
 
-      // WHY: 只按任务进展起名：会话恢复时发的思考档位等事件不是新进展，否则侧栏一连上就给上百个旧会话同时起名，打爆快速模型。
       if(message.type==='agent_event'&&['agent_start','tool_end','agent_end'].includes(message.event.kind))this.nameTask(id,progressSnapshot,progress.visitedPages());
 
       if(progressSnapshot.state==='interrupted')summary.checkpoint='interrupted';

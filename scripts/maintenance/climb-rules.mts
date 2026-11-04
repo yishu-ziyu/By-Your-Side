@@ -34,7 +34,6 @@ export function registrationOf(value: unknown): Registration {
   if ((r.scenarios as number[]).length) need(guards.some(g => g.metric === "ok"), "有场景时必须登记「做成」守护");
   else need(!!t && typeof t.case === "string" && guards.length === 0, "没有场景时目标必须是验收用例，也不能登记守护（没有配对可量）");
 
-  // SAFETY: 上面逐项核过形状。
   return r as unknown as Registration;
 }
 

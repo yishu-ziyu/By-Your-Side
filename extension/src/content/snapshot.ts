@@ -193,7 +193,6 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
           if (aria) d += ` "${clean(aria, MAX_LABEL)}"`;
         }
 
-        // SAFETY: 本分支已核对 tag === "input"，运行时即 HTMLInputElement。
         const input = el as HTMLInputElement;
 
         if (RANGE_INPUT_TYPES.has(input.type)) {

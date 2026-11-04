@@ -311,7 +311,6 @@ export function installReading(deps: Dependencies) {
     if (!raw || typeof raw.type !== 'string' || !raw.type.startsWith('reading_') || !sender.tab?.id || sender.frameId !== 0) return;
     const tab = sender.tab;
 
-    // WHY: Chrome requires sidePanel.open in the originating user gesture, before storage awaits.
     if (raw.type === 'reading_handoff') opening = true;
     const opened = raw.type === 'reading_handoff' ? chrome.sidePanel.open({tabId: tab.id!}) : Promise.resolve();
     void (async () => {

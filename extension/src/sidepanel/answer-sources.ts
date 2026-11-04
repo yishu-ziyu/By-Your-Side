@@ -113,7 +113,6 @@ function hostOf(url: string): string {
 }
 
 function claimOf(link: HTMLElement): string {
-  // SAFETY: cloneNode 保持原节点类型；link 本身是 HTMLElement，closest 命中的也是元素。
   const block = (link.closest("p,li,td,th,blockquote") ?? link).cloneNode(true) as HTMLElement;
   block.querySelectorAll(".source-fav").forEach(node => node.remove());
 

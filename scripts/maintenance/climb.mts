@@ -75,7 +75,6 @@ if (!early && reg.scenarios.length) {
       const { out } = await child(args, { SIDEAGENT_ACCEPTANCE_DIST: dists[arm], SIDEAGENT_BUILD_ROLE: arm, SIDEAGENT_RECORD: "0" }, true);
       const report = /报告：(\S+\.md)/.exec(out)?.[1];
       if (!report) { notes.push(`第 ${pair + 1} 对 ${arm} 回放没有出报告`); continue; }
-      // SAFETY: self-use-replay 写的 json 是 { model, fastModel, rows: Row[] }。
       const json = JSON.parse(readFileSync(report.replace(/\.md$/, ".json"), "utf8")) as { model: { provider: string; modelId: string }; fastModel: string; rows: Row[] };
       passes.push({ arm, pair, report, model: `${json.model.provider}/${json.model.modelId}`, fastModel: json.fastModel, rows: json.rows });
     }

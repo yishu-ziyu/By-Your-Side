@@ -1353,7 +1353,6 @@ export type GhostQuickReply =
 
 export function isPageElementSource(value: unknown): value is PageElementSource {
   if (!value || typeof value !== 'object') return false;
-  // SAFETY: value is a non-null object; all required fields are validated below.
   const source = value as Partial<PageElementSource>;
 
   return typeof source.document === 'string' && source.document.length <= 80
@@ -1368,7 +1367,6 @@ interface PageDocumentIdentity { document: string; url: string }
 
 export function isPageDocumentIdentity(value: unknown): value is PageDocumentIdentity {
   if (!value || typeof value !== 'object') return false;
-  // SAFETY: object established above; both fields are checked before admission.
   const identity = value as Partial<PageDocumentIdentity>;
 
   return typeof identity.document === 'string' && identity.document.length > 0 && identity.document.length <= 80
@@ -1377,7 +1375,6 @@ export function isPageDocumentIdentity(value: unknown): value is PageDocumentIde
 
 export function isPageInteractionMessage(value: unknown): value is PageInteractionMessage {
   if (!value || typeof value !== 'object') return false;
-  // SAFETY: non-null object only; each union branch validates its complete payload.
   const message = value as Partial<PageInteractionMessage>;
   const token = (input: unknown): input is string => typeof input === 'string' && input.length > 0 && input.length <= 80;
   const tab = (input: number | undefined) => input !== undefined && Number.isSafeInteger(input) && input > 0;

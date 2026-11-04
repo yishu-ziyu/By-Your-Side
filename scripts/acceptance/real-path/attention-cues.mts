@@ -36,7 +36,6 @@ const proxy = createServer(async (req, res) => {
   if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
     checks += 1;
     const verdict = verdicts.shift() ?? "done";
-    // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as Record<string, unknown>;
     forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: verdict === "continue" ? "GOAL-CHECK-CONTINUE" : "GOAL-CHECK-DONE" }] });
   }

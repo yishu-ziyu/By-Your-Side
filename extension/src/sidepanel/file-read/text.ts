@@ -1,7 +1,3 @@
-/**
- * WHY: 字节转文字：有 BOM 按 BOM；否则先严格按 UTF-8，不合法再按 GB18030。
- * 国内 Windows 导出的 csv、txt 常是 GBK，按 UTF-8 硬读会整篇乱码。
- */
 export function decodeText(bytes: Uint8Array): string {
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return new TextDecoder("utf-8").decode(bytes.subarray(3));
 
@@ -16,11 +12,6 @@ export function decodeText(bytes: Uint8Array): string {
   }
 }
 
-/**
- * WHY: 统一换行，去掉 NUL 等控制字符（保留换行和制表）。
- * 康熙部首和兼容汉字换成标准汉字：Chrome、Word 导出的 PDF 常把「方」「日」映射成同形的部首字符，
- * 看着一样，用户拿原文去搜、模型去引用时都对不上。
- */
 export function cleanText(text: string): string {
   return text.replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").replace(/[\u2e80-\u2fdf\uf900-\ufaff]/g, ch => ch.normalize("NFKC"));
 }

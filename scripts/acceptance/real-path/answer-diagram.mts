@@ -114,7 +114,6 @@ try {
     await sleep(800);
   };
   const clickNode = async (id: string) => {
-    // SAFETY: nodePoint 返回坐标或 null。
     const p = await rp.evaluate(panel, nodePoint(id)) as { x: number; y: number } | null;
 
     if (!p) throw new Error(`图里找不到方块 ${id}`);
@@ -123,11 +122,9 @@ try {
     await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: p.x, y: p.y, button: "left", clickCount: 1 }, panel);
     await sleep(200);
   };
-  // SAFETY: STATE 返回 State 的形状。
   const state = async () => await rp.evaluate(panel, STATE) as State;
 
   await ask("这篇文章的论证结构是什么", 1);
-  // SAFETY: WATCH 记下的帧是这个形状。
   const frames = await rp.evaluate(panel, "window.__dg.frames") as Array<{ ph: boolean; nodes: number }>;
   const drawn = frames.filter((f) => f.nodes > 0);
   const phFrames = frames.filter((f) => f.ph);
@@ -148,7 +145,6 @@ try {
   const WIDE = `(() => { const c = [...document.querySelectorAll("#messages .gc-diagram-canvas")].at(-1); return { scrolls: c.scrollWidth > c.clientWidth + 1, box: c.clientWidth }; })()`;
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 640, height: 900, deviceScaleFactor: 1, mobile: false }, panel);
   await sleep(500);
-  // SAFETY: WIDE 返回这个形状。
   const widened = { ...(await rp.evaluate(panel, WIDE) as { scrolls: boolean; box: number }), font: (await state()).font };
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 300, height: 900, deviceScaleFactor: 1, mobile: false }, panel);
   await sleep(500);
@@ -179,7 +175,6 @@ try {
   const light = await rp.evaluate(panel, COLORS);
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, panel);
   await sleep(300);
-  // SAFETY: COLORS 返回这个形状。
   const dark = await rp.evaluate(panel, COLORS) as { key: string; text: string; same: boolean };
   evidence.colors = { light, dark };
   ok(JSON.stringify(light) !== JSON.stringify(dark) && dark.same, `4 深色下主结论和文字换色、图还是原来那张：${JSON.stringify({ light, dark })}`);
@@ -187,11 +182,9 @@ try {
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] }, panel);
 
   await ask("画一张带偏的图", 2);
-  // SAFETY: 表达式返回这个形状。
   const hostile = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); return { svg: !!fig?.querySelector("svg"), links: fig?.querySelectorAll("a").length, linkTargets: [...(fig?.querySelectorAll("a") ?? [])].map(a => a.outerHTML), imgs: fig?.querySelectorAll("img, image").length, handlers: [...(fig?.querySelectorAll("*") ?? [])].filter((el) => [...el.attributes].some((a) => a.name.startsWith("on") || /javascript:/i.test(a.value))).length, pwned: window.__pwned ?? null }; })()`) as Record<string, unknown>;
   evidence.hostile = hostile;
   ok(hostile.svg === true && hostile.links === 0 && hostile.imgs === 0 && hostile.handlers === 0 && hostile.pwned === null, `6 图里没有链接、图片、事件属性，也没执行：${JSON.stringify(hostile)}`);
-  // SAFETY: 表达式返回这个形状。
   const mixed = await rp.evaluate(panel, `(() => { const card = [...document.querySelectorAll("#messages .gen-card")].at(-1); return { buttons: card.querySelectorAll(".gc-btn").length, order: [...card.querySelector(".gc-body").children].map((el) => el.className.split(" ")[0]) }; })()`) as { buttons: number; order: string[] };
   evidence.mixed = mixed;
   ok(mixed.buttons === 0, `6 原文里的 <button> 没变成卡片按钮：${mixed.buttons}`);
@@ -200,7 +193,6 @@ try {
   ok((await state()).quote?.includes(HOSTILE_CITE) === true, `6 点方块时原文按字显示：${(await state()).quote}`);
 
   await ask("换个不是流程图的", 3);
-  // SAFETY: 表达式返回这个形状。
   const fallback = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); const pre = fig?.querySelector(".gc-diagram-source"); return { svg: !!fig?.querySelector("svg"), text: pre?.textContent ?? null, height: fig ? Math.round(fig.getBoundingClientRect().height) : 0 }; })()`) as { svg: boolean; text: string | null; height: number };
   evidence.fallback = fallback;
   ok(!fallback.svg && !!fallback.text?.includes("zenuml") && fallback.text.includes("分支一") && fallback.height > 40, `7 画不出的图原样显示文字：${JSON.stringify(fallback)}`);
@@ -208,7 +200,6 @@ try {
 
   await rp.cdp.send("Page.reload", {}, panel);
   const replay = await until(async () => {
-    // SAFETY: 表达式返回数字或 null。
     const n = await rp.evaluate(panel, `document.querySelector("#messages .gc-diagram svg") ? document.querySelectorAll("#messages .gc-diagram")[0].querySelectorAll("svg .pele-node").length : null`).catch(() => null) as number | null;
     return n ?? null;
   }, 30_000, "重开后图画出来").catch(() => null);
@@ -216,7 +207,6 @@ try {
   ok(replay === 5, `5 重开侧栏后第一张图又画出 5 个方块：${replay}`);
   await rp.evaluate(panel, `document.querySelector("#messages .gc-diagram")?.scrollIntoView({ block: "start" }), true`);
   await sleep(300);
-  // SAFETY: nodePoint 的第一张图版本，返回坐标或 null。
   const p = await rp.evaluate(panel, `(() => { const r = document.querySelector('#messages .gc-diagram svg [data-id="T"] :is(rect, polygon)')?.getBoundingClientRect(); return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; })()`) as { x: number; y: number } | null;
 
   if (p) {
@@ -254,7 +244,6 @@ async function live(): Promise<never> {
     await rp.pressEnter(panel);
     await until(async () => await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll("#messages .msg.assistant")].filter((m) => m.querySelector(".answer-actions")); return a.length >= ${n} && !document.querySelector("#messages .msg.assistant.streaming"); })()`) || undefined, 240_000, `第 ${n} 个回答`);
     await sleep(1_500);
-    // SAFETY: 表达式返回下面这个形状的对象。
     return await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll("#messages .msg.assistant")].filter((m) => m.querySelector(".answer-actions")).at(-1); const fig = a?.querySelector(".gc-diagram"); const svg = fig?.querySelector("svg"); const c = fig?.querySelector(".gc-diagram-canvas"); return { reachable: !!c && (c.scrollWidth <= c.clientWidth + 1 || getComputedStyle(c).overflowX === "auto"), width: svg ? Math.round(svg.getBoundingClientRect().width) : 0, font: svg ? Math.round(svg.getBoundingClientRect().width / svg.viewBox.baseVal.width * parseFloat(getComputedStyle(svg.querySelector(".pele-label")).fontSize) * 10) / 10 : 0, diagram: !!fig, nodes: fig?.querySelectorAll("svg .pele-node").length ?? 0, fallback: !!fig?.querySelector(".gc-diagram-source"), cites: [...(fig?.querySelectorAll(".gc-cites li") ?? [])].map((li) => li.textContent), text: a?.innerText.slice(0, 600) }; })()`) as { reachable: boolean; width: number; font: number; diagram: boolean; nodes: number; fallback: boolean; cites: string[]; text: string };
   };
 

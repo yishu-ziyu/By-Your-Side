@@ -2,7 +2,6 @@ import type { InputRangeReadout } from "../../../shared/page-readout.js";
 
 export function readInputRange(el: Element | null | undefined): InputRangeReadout | null {
   if (el?.tagName !== "INPUT") return null;
-  // SAFETY: tagName === "INPUT" means the runtime object is an HTMLInputElement.
   const input = el as HTMLInputElement;
 
   if (!["time", "date", "datetime-local", "month", "week", "number", "range"].includes(input.type)) return null;

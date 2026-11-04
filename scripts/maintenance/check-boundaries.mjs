@@ -3,7 +3,6 @@ import { createRequire, isBuiltin } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// WHY: esbuild is owned by the extension workspace; do not rely on npm hoisting.
 const { build } = createRequire(new URL('../../extension/package.json', import.meta.url))('esbuild');
 
 const sourceRoots = ['agent/src', 'extension/src', 'shared'];

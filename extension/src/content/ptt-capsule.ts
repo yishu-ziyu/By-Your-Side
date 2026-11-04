@@ -201,8 +201,6 @@ export function createPttCapsule() {
     scheduleClose();
   };
 
-  // WHY: 任务在跑时 Esc 中止（念着确认句也是：听出理解错了就叫停）；念结果时 Esc 只停声音；有结果时 Esc 收起。按住时的 Esc 由按键判定当作取消（ptt-keys.ts）。
-  // 只认用户真按的 Esc：网页脚本派发的 Esc 不能中止任务。
   addEventListener('keydown', event => {
     if (!event.isTrusted || event.key !== 'Escape' || !shown) return;
 
@@ -211,7 +209,6 @@ export function createPttCapsule() {
     else if (shown.phase !== 'listening' && shown.phase !== 'transcribing') hide();
   }, true);
 
-  // WHY: 光标脚本第一次注入时会清掉页面上所有扩展浮层：胶囊该显示时被清掉就挂回去。
   new MutationObserver(() => { if (shown && !host.isConnected) document.documentElement.append(host); }).observe(document.documentElement, { childList: true });
 
   chrome.runtime.onMessage.addListener((message: { type?: string; capsule?: PttCapsule | null; level?: number } | undefined, sender) => {

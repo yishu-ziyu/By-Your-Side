@@ -258,7 +258,6 @@ export class MemoryStore {
     return { entries, alreadySaved, methodRev };
   }
 
-  /** WHY: Retrying a background job never overwrites a user edit or resurrects a forgotten experience. */
   async createExperience(input: { runId: string; text: string; scope: MemoryScope; sourceConversationId: string; evidence: string[]; topic?: string }): Promise<MemoryEntry | null> {
     assertCreateInput(input);
 
@@ -493,11 +492,9 @@ export class MemoryStore {
       throw new Error("Memory store is corrupt");
     }
 
-    // SAFETY: 只读 format / rev / entries / forgottenExperiences，下面逐条核对后才使用。
     const file = parsed as { format?: unknown; rev?: unknown; entries?: unknown; forgottenExperiences?: unknown; methodRev?: unknown };
 
     if (!file || !Number.isSafeInteger(file.format) || !Array.isArray(file.entries)) throw new Error("Memory store is corrupt");
-    // SAFETY: 上一行已核对 format 是整数。
     const format = file.format as number;
     const rev = file.rev ?? 0;
 
@@ -524,7 +521,6 @@ export class MemoryStore {
 
     const entries = format < MEMORY_FORMAT_VERSION ? upgradeLegacyEntries(upgraded) : upgraded;
 
-    // SAFETY: 上面已核对 forgottenExperiences 缺省或是合法编号组成的数组。
     return { format: MEMORY_FORMAT_VERSION, rev, methodRev: typeof file.methodRev === "number" ? file.methodRev : 0, entries: cloneEntries(entries), forgottenExperiences: (file.forgottenExperiences as string[] | undefined) ?? [] };
   }
 
@@ -553,10 +549,6 @@ function isRev(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
-/**
- * WHY: 写入前必须成立，否则整次写入作废、原文件不动：
- * 一件事（factId）至多一个生效值；replacedBy 指向存在且属于同一件事的条目；replacedBy 不成环。
- */
 function checkInvariants(entries: MemoryEntry[]): void {
   const byId = new Map(entries.map(e => [e.id, e]));
   const activeFacts = new Set<string>();
@@ -763,7 +755,6 @@ function cloneEntries(entries: MemoryEntry[]): MemoryEntry[] {
 function cloneValue<T>(value: T): T {
   if (value && typeof value === "object" && isMemoryEntry(value)) return cloneEntries([value])[0] as T;
 
-  // SAFETY: 每个元素都已核对是记忆条目，克隆后形状不变。
   if (Array.isArray(value) && value.every(isMemoryEntry)) return cloneEntries(value) as T;
 
   return value;

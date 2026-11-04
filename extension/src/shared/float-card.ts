@@ -2,7 +2,6 @@ export const FLOAT_CARD_KEY = "float_card";
 
 export const FLOAT_CARD_WHERE = "float_card_where";
 
-/** WHY: 卡片上的「回到侧栏」：必须在点击的这条消息里同步打开侧栏。 */
 export const FLOAT_CARD_TO_PANEL = "float_card_to_panel";
 
 export interface FloatCardRect { right: number; top: number; width: number; height: number }

@@ -35,7 +35,6 @@ async function openMicrophone(onFrame: (frame: ArrayBuffer) => void, onLevel: (l
   const worklet = new AudioWorkletNode(context, "voice-capture");
   let peak = 0;
   let reportedAt = 0;
-  // SAFETY: voice-worklet.js 每帧只发 { pcm: ArrayBuffer, rms: number }。
   worklet.port.onmessage = ({ data }) => {
     const frame = data as { pcm: ArrayBuffer; rms: number };
     onFrame(frame.pcm);

@@ -4,7 +4,6 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// WHY: esbuild is owned by the extension workspace; do not rely on npm hoisting.
 const { transform } = createRequire(new URL('../../extension/package.json', import.meta.url))('esbuild');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -31,7 +30,6 @@ function regexEnd(source, start) {
   return -1;
 }
 
-// WHY: TypeScript 7 ships no JS compiler API, so this is a small lexer; a misread is caught by the compiled-output comparison in main.
 function scriptRanges(source) {
   const ranges = [];
   const templateDepths = [];
@@ -114,7 +112,6 @@ function styleRanges(source) {
   return ranges;
 }
 
-// WHY: a run of `//` lines is one comment, so a WHY: on its first line keeps the whole explanation.
 function groups(source, ranges) {
   const out = [];
   for (const range of ranges) {
@@ -197,7 +194,6 @@ async function main() {
       continue;
     }
     const next = strip(source, unwanted);
-    // WHY: esbuild refuses declaration-only files, and tsc checks them anyway.
     const declaration = /\.d\.[cm]?ts$/.test(file);
     if (!declaration && await compiled(file, source) !== await compiled(file, next)) {
       failures.push(`${file}: compiled output changed, not written`);

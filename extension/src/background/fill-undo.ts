@@ -26,11 +26,6 @@ const ledgers = new Map<string, Ledger>();
 const watchers = new Map<string, (view: FillUndoView | null) => void>();
 const runs = new Map<string, string>();
 
-/**
- * WHY: 页面里执行，保持自包含（经 CDP 按节点调用，或 executeScript）。this 是元素（CDP 按节点调用）；否则按 where 或记号找。
- * probe：动手前读这一栏，挂记号；read：按记号读现在的样子；restore：按记号核对后写回。
- * 敏感栏的分类同 exec/input.ts 的 readFieldInPage。
- */
 function undoInPage(this: unknown, op: "probe" | "read" | "restore", arg: {
   where?: { target?: string; point?: [number, number]; focused?: true };
   tokens?: string[]; sensitiveName?: string;
@@ -464,11 +459,6 @@ chrome.runtime.onMessage.addListener((raw: { type?: string; tokens?: unknown; na
 const MIN_SCRUB_CHARS = 2;
 const SCRUB_PREFIX_CHARS = 12;
 
-/**
- * WHY: 交给模型的一行页面内容里去掉这一轮还开着的记录的旧值（动作后“新出现了什么”的摘要用）：旧值只能留在这里。
- * 按读页的写法比较（空白合成一个、引号写成 \"）；旧值很长、行里只露出开头时整行换掉。
- * 敏感栏的旧值本来就只是摘要；记录关掉（提交、还原、换页）后值已丢掉，那时页面上的字和读页看到的一样。
- */
 export function undoScrubber(sessionKey: string): (body: string) => string {
   const ledger = ledgers.get(parseExecutionKey(sessionKey).conversationId);
   const values = ledger ? [...ledger.tabs.values()].flatMap(tab => [...tab.entries.values()])

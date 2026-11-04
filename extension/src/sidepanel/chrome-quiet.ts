@@ -43,6 +43,5 @@ export function installChromeQuiet(options: { input: HTMLTextAreaElement; messag
   document.addEventListener('pointermove', event => { if (event.movementX || event.movementY || event.pointerType !== 'mouse') settle(); });
   document.addEventListener('pointerdown', settle);
   document.addEventListener('focusin', () => { if (document.activeElement !== options.input) settle(); });
-  // SAFETY: toggle 事件只在 popover 元素上触发，target 一定是 Element。
   document.addEventListener('toggle', event => { if ((event.target as Element).matches('[popover]')) settle(); }, true);
 }

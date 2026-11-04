@@ -32,7 +32,6 @@ const proxy = createServer(async (req, res) => {
   let forward = body;
 
   if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
-    // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as { model?: string; stream?: boolean };
     const again = reverifyContinue(body);
     forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: again ? recheckProbe("GOAL-CHECK-CONTINUE", again) : "GOAL-CHECK-CONTINUE" }] });
@@ -100,7 +99,6 @@ try {
   await newConversation("C");
   await send(TASKS.c);
   const panelText = 'JSON.stringify({ answers: [...document.querySelectorAll("#messages .msg.assistant")].map(el => el.innerText.trim()), notices: [...document.querySelectorAll("#messages .msg.notice")].map(el => el.innerText.trim()) })';
-  // SAFETY: panelText 只返回两个字符串数组。
   const read = async () => JSON.parse(String(await rp.evaluate(panel, panelText))) as { answers: string[]; notices: string[] };
   await until(async () => { const s = await read(); return s.answers.some(t => t.includes(ANSWER_C)) || s.notices.length > 0 || undefined; }, 30_000, "C：有回答或提示");
   await sleep(1_000);

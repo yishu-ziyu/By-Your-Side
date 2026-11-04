@@ -4,7 +4,6 @@ interface MeasuredCapability {
   reasoning?: boolean;
   thinkingLevelMap?: ThinkingLevelMap;
   input?: ("text" | "image")[];
-  /** WHY: 系统提示词必须用 system 角色：开了 reasoning 后适配层默认改发 developer 角色，有的服务商会忽略它。 */
   systemRole?: true;
   template?: string;
   contextWindow?: number;
@@ -23,7 +22,6 @@ const MEASURED = new Map<string, MeasuredCapability>([
       thinkingLevelMap: id === "gpt-6.1-sol" ? { off: null, minimal: null, xhigh: "xhigh", max: "max" } : { xhigh: "xhigh", max: "max", minimal: "low" },
     },
   ]),
-  // WHY: 不发档位时适配层发「关闭思考」，服务端 400「requires adaptive thinking」；low 起可用，最高 max；能看图。
   ["minimax-cn/MiniMax-M3.1-Flash-Preview", {
     template: "MiniMax-M3", reasoning: true, input: ["text", "image"], hedgeMs: 12_000,
     thinkingLevelMap: { off: null, minimal: null, xhigh: "xhigh", max: "max" },
@@ -52,7 +50,6 @@ export function withMeasuredCapability<TApi extends Api>(model: Model<TApi>): Mo
   const resolved: Model<TApi> = { ...model, reasoning: measured.reasoning, thinkingLevelMap: measured.thinkingLevelMap, input: measured.input };
 
   if (measured.systemRole && model.api === "openai-completions") {
-    // SAFETY: supportsDeveloperRole 是 OpenAI 兼容协议的兼容项，上面已确认是该协议的模型。
     resolved.compat = { ...model.compat, supportsDeveloperRole: false } as Model<TApi>["compat"];
   }
 

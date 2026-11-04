@@ -36,7 +36,6 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** WHY: Inspector descriptors contain data values; never evaluate JSON.stringify in the page or invoke accessors. */
 async function readData(tabId: number, remote: unknown): Promise<unknown> {
   const ancestors = new Set<string>();
   let count = 0;

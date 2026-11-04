@@ -125,11 +125,6 @@ async function dropPill(entry: LivingStatus): Promise<void> {
   }
 }
 
-/**
- * WHY: 绘制中间有 await：这期间同一执行键可能被 clear/suppress 掉、或换成新状态的新登记。
- * 只有「仍是当前登记的那一份」才有资格改动页面上的胶囊，否则旧绘制会把已经收掉的
- * 跨页提示重新画回来、或把新状态/别的会话的胶囊盖掉。
- */
 function isCurrentEntry(entry: LivingStatus): boolean {
   return living.get(entry.key) === entry;
 }
@@ -268,7 +263,6 @@ function paintFeedback(tabId: number, view: FeedbackPillView): Promise<boolean> 
     try {
       await ensureCursor(tabId);
       await callDom(tabId, (pill: FeedbackPillView) => {
-        // SAFETY: content-cursor.js 由本扩展注入；showFeedback 是同一契约的可选方法，老版本注入脚本没有它也不影响结果判定。
         (window.__sideagent?.cursor as {showFeedback?: (view: FeedbackPillView) => void} | undefined)?.showFeedback?.(pill);
       }, [view]);
 

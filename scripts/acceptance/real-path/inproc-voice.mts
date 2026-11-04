@@ -191,7 +191,6 @@ try {
   const sharedVoiceKey = process.argv.includes("--shared-voice-key");
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(sharedVoiceKey ? modelStorageItems(plan) : { ...modelStorageItems(plan), inproc_voice_key: voiceKey, ...(planVoice ? { inproc_voice_model: 'stepaudio-2.5-realtime' } : {}) })}).then(() => true)`);
   await until(async () => {
-    // SAFETY: PANEL_STATE 是本文件写的页面脚本，返回 PanelState；下同。
     const state = await rp.evaluate(panel, PANEL_STATE) as PanelState;
 
     return state.connected && state.pill?.includes("订单备注") ? state : undefined;
@@ -200,7 +199,6 @@ try {
 
   if (voiceArg) {
     const origin = await rp.evaluate(panel, "location.origin");
-    // SAFETY: CDP 规范里 Target.createTarget 返回 { targetId }。
     const { targetId } = await rp.cdp.send("Target.createTarget", { url: `${String(origin)}/settings.html` }) as { targetId: string };
     const settings = await rp.attach(targetId);
     await rp.cdp.send("Page.bringToFront", {}, settings);
@@ -210,7 +208,6 @@ try {
     let pickState: PickState | null = null;
 
     const picked = await until(async () => {
-      // SAFETY: 这段页面脚本返回 PickState 形状。
       const state = await rp.evaluate(settings, `chrome.storage.local.get("${STEP_VOICE_STORAGE_KEY}").then(s => ({ stored: s["${STEP_VOICE_STORAGE_KEY}"] ?? null, checked: document.querySelector('.timbre-option[aria-checked="true"]')?.dataset.voice ?? null, all: [...document.querySelectorAll('.timbre-option')].map(b => b.dataset.voice + ":" + b.getAttribute("aria-checked")), lists: document.querySelectorAll('#timbre-list').length }))`) as PickState;
 
       pickState = state;
@@ -245,7 +242,6 @@ try {
 
   if (personaArg) {
     const origin = await rp.evaluate(panel, "location.origin");
-    // SAFETY: CDP 规范里 Target.createTarget 返回 { targetId }。
     const { targetId } = await rp.cdp.send("Target.createTarget", { url: `${String(origin)}/settings.html` }) as { targetId: string };
     const settings = await rp.attach(targetId);
     await rp.cdp.send("Page.bringToFront", {}, settings);
@@ -261,7 +257,6 @@ try {
     }
 
     const saved = await until(async () => {
-      // SAFETY: 这段页面脚本返回存储里的人设记录。
       const stored = await rp.evaluate(settings, `chrome.storage.local.get("${VOICE_PERSONA_STORAGE_KEY}").then(s => s["${VOICE_PERSONA_STORAGE_KEY}"] ?? null)`) as { id?: string; text?: string } | null;
 
       return stored?.id === personaArg ? stored : undefined;
@@ -292,7 +287,6 @@ try {
   const marks = new Map<number, number[]>();
 
   const readMarks = async () => {
-    // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
     const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, page) as { root: DomNode };
     const ids: number[] = [];
 
@@ -309,7 +303,6 @@ try {
 
     for (const id of ids) {
       if (marks.has(id)) continue;
-      // SAFETY: DOM.getBoxModel 返回 { model: { border: Quad } }；节点消失时 catch 成 null。
       const box = await rp.cdp.send("DOM.getBoxModel", { backendNodeId: id }, page).catch(() => null) as { model?: { border: number[] } } | null;
 
       if (box?.model?.border) marks.set(id, box.model.border);
@@ -331,7 +324,6 @@ try {
       const type = String(e.type ?? "");
 
       if (dir === "sent" && type === "input_audio_buffer.append") return;
-      // SAFETY: StepFun Realtime 事件是 JSON 对象，response/item 字段按其事件协议为对象或缺省；只读取可选字段。
       const responseId = (e.response_id ?? (e.response as JsonRecord | undefined)?.id) as string | undefined;
 
       if (type === "response.audio.delta") {
@@ -339,11 +331,9 @@ try {
         audioSeen.add(String(responseId));
       }
 
-      // SAFETY: StepFun Realtime 事件是 JSON 对象，response/item 字段按其事件协议为对象或缺省；只读取可选字段。
       const item = e.item as JsonRecord | undefined;
       const text = type.endsWith("transcription.completed") ? e.transcript : type.endsWith("transcript.done") ? e.transcript : type === "response.audio_transcript.delta" ? e.delta : undefined;
 
-      // SAFETY: session.update 的 session.tools 按 StepFun 协议是函数定义数组；只读名称字段。
       providerTimeline.push({ ms: Math.round((message.params?.timestamp ?? 0) * 1000), dir, type, responseId, itemId: e.item_id ?? item?.id, name: e.name ?? item?.name, text, itemType: item?.type, output: isText(item?.output) ? item.output.slice(0, 300) : undefined, tools: type === "session.update" ? ((e.session as JsonRecord | undefined)?.tools as Array<{ function?: { name?: string }; name?: string }> | undefined)?.map((t) => t.function?.name ?? t.name) : undefined });
     };
 
@@ -381,7 +371,6 @@ try {
       port.postMessage({ kind: "sync", conversationId: "default" });
       return true;
     })()`);
-    // SAFETY: 探针脚本返回 window.__stopProbe.frames，写入时即为 StopFrame 数组。
     const protocol = async () => rp.evaluate(panel, "window.__stopProbe.frames") as Promise<StopFrame[]>;
     const pendingText = caseName === "ask-status" ? ASK_STATUS_TASK : "我指一个按钮给你，把我指的那个圈出来，不要点它。";
 
@@ -391,7 +380,6 @@ try {
     if (caseName === "stop-task") await until(async () => rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')"), 120_000, "原任务等待用户点选", 500);
     const start = await until(async () => (await protocol()).find(frame => frame.kind === "receipt" && frame.action === "start" && frame.source === "text" && frame.status === "accepted" && frame.runId), 10_000, "原任务接收回执");
     const runId = start.runId!;
-    // SAFETY: PANEL_STATE/页面探针脚本返回的对象形状由同文件的表达式定义。
     const beforeVoice = await rp.evaluate(panel, PANEL_STATE) as PanelState;
 
     stopEvidence.originalRunId = runId;
@@ -400,7 +388,6 @@ try {
     verdicts.taskWaitingBeforeVoice = verdict(beforeVoice.taskBusy && !!runId, { runId, taskBusy: beforeVoice.taskBusy });
 
     const sample = async () => {
-      // SAFETY: PANEL_STATE/页面探针脚本返回的对象形状由同文件的表达式定义。
       const state = await rp.evaluate(panel, PANEL_STATE) as PanelState;
 
       last = state;
@@ -446,7 +433,6 @@ try {
       stopEvidence.protocol = frames.map(frame => ({ ...frame }));
       await rp.screenshot(panel, join(artifacts, "02-asked-status-panel.png"));
       await rp.screenshot(page, join(artifacts, "03-asked-status-page.png"));
-      // SAFETY: PANEL_STATE/页面探针脚本返回的对象形状由同文件的表达式定义。
       await writeFile(join(artifacts, "panel-transcript.txt"), (await rp.evaluate(panel, PANEL_STATE) as PanelState).transcript);
     }
 
@@ -462,7 +448,6 @@ try {
 
       stopEvidence.greeting = greeted;
       verdicts.chatPassesGate = verdict(greeted.taskBusy, { heard: greeted.heard, answer: greeted.answer, taskBusy: greeted.taskBusy });
-      // SAFETY: 表达式只返回布尔值。
       const muted = await rp.evaluate(panel, `(() => { const b = document.querySelector(".voice-stop-speech"); if (!b || b.hidden || b.disabled) return false; b.click(); return true; })()`) as boolean;
 
       const afterMute = await until(async () => {
@@ -471,7 +456,6 @@ try {
         return state.voiceState === "listening" ? state : undefined;
       }, 10_000, "停声后继续收音", 200);
 
-      // SAFETY: 表达式只返回布尔值。
       const pendingAfterMute = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
       const abortedByMute = (await protocol()).some(frame => frame.kind === "receipt" && frame.action === "abort" && frame.runId === runId);
 
@@ -498,7 +482,6 @@ try {
       verdicts.noClaimBeforeReceipt = verdict(!claims.some(v => v.at < receipt.at), { receiptAt: receipt.at, claims });
 
       const terminal = await until(async () => {
-        // SAFETY: 表达式只返回布尔值。
         const picker = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
         const frames = await protocol();
         const ended = frames.some(frame => frame.kind === "status" && ["aborted", "idle"].includes(frame.state ?? "") && frame.at >= confirmationWaitingAt) || frames.some(frame => frame.kind === "event" && frame.event === "run_stopped" && frame.at >= confirmationWaitingAt);
@@ -515,9 +498,7 @@ try {
       await new Promise(resolve => setTimeout(resolve, 2_000));
       await readMarks();
       const finalFrames = await protocol();
-      // SAFETY: 练习页把 window.receipts 维护为普通 JSON 对象。
       const pageReceipts = await rp.evaluate(page, "window.receipts") as JsonRecord;
-      // SAFETY: 表达式只返回布尔值。
       const pickerReturned = await rp.evaluate(page, "!!document.querySelector('[data-sideagent-point]')") as boolean;
       const revived = finalFrames.some(frame => frame.kind === "event" && frame.event === "agent_start" && frame.runId === runId && frame.at > abort.at);
 
@@ -526,7 +507,6 @@ try {
       stopEvidence.protocol = finalFrames.map(frame => ({ ...frame }));
       await rp.screenshot(panel, join(artifacts, "03-stopped-panel.png"));
       await rp.screenshot(page, join(artifacts, "04-stopped-page.png"));
-      // SAFETY: PANEL_STATE/页面探针脚本返回的对象形状由同文件的表达式定义。
       await writeFile(join(artifacts, "panel-transcript.txt"), (await rp.evaluate(panel, PANEL_STATE) as PanelState).transcript);
     }
   } else {
@@ -567,12 +547,10 @@ try {
     const type = String(e.type ?? "");
 
     if (dir === "received" && type === "session.created") {
-      // SAFETY: StepFun 的 session.created 按协议带 session 对象；只读 id，给供应商排查用。
       sessionIds.push(String((e.session as JsonRecord | undefined)?.id ?? ""));
     }
 
     if (dir === "received" && type === "session.updated") {
-      // SAFETY: StepFun 的 session.updated 按协议带 session 对象；只读 turn_detection 字段。
       turnDetection = (e.session as JsonRecord | undefined)?.turn_detection;
     }
 
@@ -610,9 +588,7 @@ try {
       opening.push({ at: Date.now(), event: `${dir}:${type}`, text: isText(e.transcript) ? e.transcript : undefined });
     }
 
-    // SAFETY: StepFun Realtime 事件是 JSON 对象，response/item 字段按其事件协议为对象或缺省；只读取可选字段。
     const item = e.item as JsonRecord | undefined;
-    // SAFETY: 同上。
     const responseId = String(e.response_id ?? (e.response as JsonRecord | undefined)?.id ?? "");
     const callName = isText(e.name) ? e.name : isText(item?.name) ? item.name : undefined;
 
@@ -701,9 +677,7 @@ try {
   const began = Date.now();
 
   if (caseName === "barge-in") recordBargeIn = async () => {
-    // SAFETY: 上面注入的音量计只写 [Date.now(), rms] 数对和 [开始, 结束] 毫秒数对。
     const out = await rp.evaluate(panel, "window.__out") as Array<[number, number]>;
-    // SAFETY: 同上。
     const segments = await rp.evaluate(panel, "window.__segments") as Array<[number, number]>;
     const LOUD = 0.005;
     const audibleMs = (from: number, to: number) => out.filter(([at, rms]) => at >= from && at < to && rms > LOUD).length * 20;
@@ -721,10 +695,8 @@ try {
   };
 
   recordOpening = async () => {
-    // SAFETY: 上面注入的包装只把 __micOpenedAt 设成 null 或 Date.now() 数值。
     const micOpenedAt = await rp.evaluate(panel, "window.__micOpenedAt") as number | null;
     const t0 = micOpenedAt ?? began;
-    // SAFETY: 同上，__voiceOnsetAt 只会是 null 或 Date.now() 数值。
     const voiceOnsetAt = await rp.evaluate(panel, "window.__voiceOnsetAt") as number | null;
     verdicts.speechDelivered = verdict(wire.spokenSentMs >= spokenMs * 0.8, { spokenMs, sentMs: wire.spokenSentMs });
     if (firstUtterance) {
@@ -750,7 +722,6 @@ try {
   let lastPanelStatus = "";
   await until(async () => {
     await readMarks().catch(() => {});
-    // SAFETY: PANEL_STATE 返回 PanelState。
     const state = await rp.evaluate(panel, PANEL_STATE) as PanelState;
     last = state;
     if (firstUtterance && /再说一遍|重说/.test(state.voiceStatus)) throw new Error(`第一句话没有自动处理，要求用户重说：${state.voiceStatus}`);
@@ -774,7 +745,6 @@ try {
   await rp.screenshot(panel, join(artifacts, "panel.png"));
   await rp.screenshot(page, join(artifacts, "page.png"));
 
-  // SAFETY: last 只从 PANEL_STATE 读数赋值。
   const final = last as PanelState | null;
   await writeFile(join(artifacts, "panel-transcript.txt"), final?.transcript ?? "");
   verdicts.voiceListening = verdict(states.includes("listening"), { states, status: final?.voiceStatus ?? "" });
@@ -790,7 +760,6 @@ try {
   if (voiceArg) verdicts.providerUsedPickedVoice = verdict(voiceFrames.requested === voiceArg && voiceFrames.confirmed === voiceArg, { picked: voiceArg, ...voiceFrames });
 
   {
-    // SAFETY: 这段页面脚本只返回下面四种字符串之一。
     const borrowed = await rp.evaluate(page, `new Promise((done) => {
       const socket = new WebSocket("wss://api.stepfun.com/v1/realtime?model=${MODEL}");
       const timer = setTimeout(() => { socket.close(); done("timeout"); }, 8000);
@@ -816,11 +785,8 @@ try {
     verdicts.answered = verdict(!!final?.answer.trim(), { answer: final?.answer ?? "" });
     result.answer = final?.answer ?? "";
   } else {
-    // SAFETY: DOM.getDocument/querySelector/getBoxModel 的返回形状见 CDP 规范。
     const { root } = await rp.cdp.send("DOM.getDocument", { depth: 1 }, page) as { root: { nodeId: number } };
-    // SAFETY: 同上。
     const { nodeId } = await rp.cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: "#save" }, page) as { nodeId: number };
-    // SAFETY: 同上。
     const saveBox = (await rp.cdp.send("DOM.getBoxModel", { nodeId }, page) as { model: { border: number[] } }).model.border;
     const rect = (q: number[]) => ({ x0: Math.min(q[0] ?? 0, q[6] ?? 0), y0: Math.min(q[1] ?? 0, q[3] ?? 0), x1: Math.max(q[2] ?? 0, q[4] ?? 0), y1: Math.max(q[5] ?? 0, q[7] ?? 0) });
     const s = rect(saveBox);
@@ -833,7 +799,6 @@ try {
   }
 } catch (error) {
   result.error = error instanceof Error ? error.stack ?? error.message : String(error);
-  // SAFETY: last 只从 PANEL_STATE 读数赋值。
   const seen = last as PanelState | null;
   result.lastPanel = { states, voiceState: seen?.voiceState ?? null, voiceStatus: seen?.voiceStatus ?? "", heard: seen?.heard ?? "", answer: seen?.answer ?? "" };
 

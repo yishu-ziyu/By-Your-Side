@@ -194,7 +194,6 @@ export function installNudge(deps: Deps) {
     const offer = offers.get(tabId);
     if (!offer || offer.card.id !== message?.id) return;
     if (type === NUDGE_ACT) {
-      // WHY: 必须在点击消息里同步打开，等异步校验以后 Chrome 就不认是用户动作。
       void chrome.sidePanel.open({ tabId }).catch(() => {});
       if (offer.card.preparation) {
         void onPanel(type, offer.card.id).then(respond, () => respond({ ok: false, reason: 'offline' }));

@@ -29,7 +29,6 @@ const SITE_NAMES: Record<string, string> = {
   "bilibili.com": "B站",
 };
 
-/** WHY: 页面脚本按源码注入这个函数；判断和正则必须都留在函数体内，不能引用模块作用域。 */
 export function requestShape(method: string, url: string, body: string | undefined, base = "https://invalid.invalid"): { intent: RequestIntent; host: string; path: string; search: string } {
   const verb = method.toUpperCase();
   let host = "", path = url.slice(0, 80), search = "";

@@ -27,7 +27,6 @@ function sendSentence(host: string, label: string, content?: string, recipient?:
   return content ? `把这段 ${[...content.replace(/…$/, "")].length} 字的内容${to}在 ${host} 上` : `点「${label.trim()}」${to}在 ${host} 上`;
 }
 
-/** WHY: 网页上读「发给谁」：同一表单/容器里的收件人栏，否则页面的主标题。序列化进页面，必须自包含。 */
 export function readRecipientInPage(x: number | null, y: number | null, maxLength = 40, target?: Element | null): string | null {
   const at = target ?? (x === null || y === null ? document.activeElement : document.elementFromPoint(x, y));
   const scope = at?.closest("form,[role=dialog],[role=form],main") ?? document;
@@ -158,7 +157,6 @@ function hostOf(url: string | undefined): string {
   try { return url ? new URL(url).host : ""; } catch { return ""; }
 }
 
-/** WHY: 在页面 ISOLATED world 里画确认框；序列化进页面，必须自包含。 */
 function showSendConfirm(attr: string, kind: string, portName: string, label: string, content: string | null, armMs: number, sentence: string, rect: { left: number; top: number; width: number; height: number } | null): void {
   document.querySelectorAll(`[${attr}="${kind}"]`).forEach(node => node.remove());
   const ring = document.createElement("div");

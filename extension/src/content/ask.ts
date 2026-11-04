@@ -169,10 +169,6 @@ function gutterBlank(host: HTMLElement, block: Element, region: { left: number; 
 
 const BOOTED = '__sideagentContentAlive';
 
-/**
- * WHY: 同一页面只装一份：网页在安装时正在加载，Chrome 按 manifest 装一份，background/reinject.ts 又补装一份，两份都连着扩展，
- * 胶囊、边缘光条、按键就都成了两份。旧的那份还连着就不再装；断开了（扩展重载、更新后）照常装，补装不受影响。
- */
 const WORDS = new Intl.Segmenter('zh', { granularity: 'word' });
 
 function fadeNewWords(root: HTMLElement, shown: number): number {
@@ -1659,9 +1655,6 @@ function boot(): void {
     show(keyboard);
   }
 
-  // WHY: 扩展更新或重载后，后台给已打开的网页再装一份阅读卡（background/reinject.ts）。新的一份给旧宿主打上记号再删掉。
-  // 旧的一份见到记号就撤掉自己的监听，不再接点击、选区和按键：否则用户点进新卡片时，旧卡片会收起并删掉两份共用的段落高亮。
-  // 只认记号，不认宿主断开：有的网页会删掉 <html> 下的外来节点，那时这一份仍是网页里唯一的阅读卡。
   const listening = new AbortController();
   const { signal } = listening;
   const resizes = new ResizeObserver(position);
@@ -1688,7 +1681,6 @@ function boot(): void {
     if (visible && expanded && record?.turns.length) dismissOnUp = true;
     else hide();
   }, { capture: true, signal });
-  // WHY: 选字、按键只认用户真实输入：网页脚本伪造的事件不能弹出工具条、抢焦点、停掉本页的回答。
   document.addEventListener('pointerup', event => {
     if (event.isTrusted && !retired() && !event.composedPath().includes(host)) {
       setTimeout(() => {

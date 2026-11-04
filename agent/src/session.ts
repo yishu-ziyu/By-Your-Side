@@ -154,10 +154,6 @@ const SETUP_GUIDANCE =
   "Agent 会话不可用：未找到可用的模型凭据。请运行 `npx @earendil-works/pi-coding-agent` 并执行 /login 完成登录，" +
   "或设置 ANTHROPIC_API_KEY / OPENAI_API_KEY 等环境变量后重启伴随进程。";
 
-/**
- * WHY: OpenCode Go 套餐要求每个请求带稳定会话 ID；pi 的 AgentSession 会自动注入，
- * 绕过会话层的直连调用（语音分类、页面观察、正式回答整理等）需要手动补。
- */
 function opencodeSessionHeaders(
   model: { provider?: string; baseUrl?: string } | null | undefined,
   sessionId: string | undefined,
@@ -480,7 +476,6 @@ if(required.includes(key))candidates.set(key,attachment);
 
       if (!entry) return null;
 
-      // WHY: Never fall back to an older snapshot: it may predate an unresolved write.
       if(entry.type!=="custom")throw new Error(TASK_CHECKPOINT_UNAVAILABLE);
       const data=entry.customType==='sideagent-task-acceptance-v1'?(entry.data as {snapshot?:unknown})?.snapshot:entry.data;
 
@@ -638,13 +633,6 @@ if(required.includes(key))candidates.set(key,attachment);
     if (this.modelName() === modelId) this.emitThinkingLevel();
   }
   private controlEpoch = 0;
-  /**
-   * WHY: 已交给 Pi、但还没被模型读到的插话。按记录跟踪而不是按文本集合：
-   * 用户连发两条一模一样的补充时，模型读到一条不能替另一条销账。
-   * input 为 null = 还在准备（预观察没回来，一个字都没进 Pi）；有值 = 已排队等 Pi 消费。
-   * 两者的结局不同：准备中的不算已接受，暂停/终止时直接取消，不写进交还 prompt；
-   * 已排队的补留在记录里，交还时连原附件一起带回。
-   */
   private readonly pendingCorrections: CorrectionRecord[] = [];
   private handbackDelivery: { text: string; ids: string[] } | null = null;
   canWriteCurrentInput(toolCallId?: string): boolean {
@@ -1204,7 +1192,6 @@ if(required.includes(key))candidates.set(key,attachment);
     let readbackAttempted=false;
     const executionFact = () => toolCallId ? this.rpc?.getExecutionFact(toolCallId) ?? 'unknown' : 'not_executed';
 
-    // WHY: Host feedback outlet: facts decide the channel; the model never authors a success state.
     const feedbackFor = (fact: 'executed' | 'not_executed' | 'unknown', data: unknown, failed: boolean): ExecutionFeedback | null => {
       const feedback = classifyDirectExecutionFeedback({tool:name,args,executionFact:fact,data,failed,
         ...(identity?.inputId?{inputId:identity.inputId}:{}), runId: identity?.runId ?? null, ...(toolCallId?{toolCallId}:{})});
@@ -1843,7 +1830,6 @@ return;}
         throw new Error(`第二组输入验证失败（${validation.status}）：${reason}`);
       }
       if (validation.status === "observed" && Value.Equal(validation.data, example.data)) throw new Error("两组不同输入读到了完全相同的数据，像是固定答案；没有保存。");
-      // WHY: 核对目标只用用户原话和宿主写的说明：模型写的 purpose 不能当成给核对模型的指令。
       const fresh = await this.confirmOperationResult([`用户原来的请求：${source.goal.join("；")}。这次把其中的查询条件换成 ${JSON.stringify(candidate.validationInput)}，结果应是按这组条件读出的当前内容。`], null, validation, validationSteps, site, runtime, commit);
       if (fresh) throw new Error(`第二组输入的结果没有通过页面核对（${fresh}）`);
       const saved = await store.add(draft, commit);
@@ -2452,10 +2438,6 @@ return;}
     this.deferredSteers.push({text,context,attachments,...(pages?.length?{pages}:{})});this.runTrace.record('steer_queued',{text,context,attachments});
   }
 
-  /**
-   * WHY: 插话登记：在把补充交给 Pi 之前就挡住同轮旧计划的写入；已开跑时推进控制轮次让扩展拒收在途调用，开工中不推进。
-   * 预观察最长几秒，登记必须排在 await 之前，否则那几秒里旧写入照跑。
-   */
   private reserveCorrection(text:string,attachments?:Attachment[]):CorrectionRecord{
     const record={id:randomUUID(),input:null,text,...(attachments?.length?{attachments}:{})};
     this.pendingCorrections.push(record);
@@ -2469,7 +2451,6 @@ return;}
 
     if(index>=0)this.pendingCorrections.splice(index,1);
   }
-  /** WHY: Pi 侧还压着我们自己的插话：放弃时必须一起清掉，否则下一次 prompt 会把旧要求当新输入复活。 */
   private clearPiSteeringQueue():boolean{
     if(!this.session)return true;
 
@@ -2480,11 +2461,6 @@ return true;}
 
 return false;}
   }
-  /**
-   * WHY: 销账只认精确文本：Pi 把我们交给它的插话原样作为 user 消息送回，重复文字一条只销一条。
-   * 交还 prompt 是我们自己拼的整段文本，按批次身份整体销账——不用子串包含当身份，
-   * 否则一段里恰好含有另一条补充时会让那条提前放行。
-   */
   private consumeCorrection(text:string):void{
     const exact=this.pendingCorrections.findIndex(record=>text===record.input);
 
@@ -2586,8 +2562,6 @@ return {kind:'model'};
       if (observation) this.goalLedger.record("page_at_steer", observation);
       const asked = withAttachments(withPageContext(text, context), attachments, this.modelSeesImages()) + mentioned;
       const base = observation ? `${asked}\n\n${observation}` : asked;
-      // WHY: 契约随整条载荷进 Pi（steeringMode "all" 的排队 drain 也走同一载荷）。销账只认 Pi 原样回显的
-      // 精确文本（见 consumeCorrection），所以 record.input 必须与实际载荷完全一致。
       const input = `${base}\n${STEER_CONTRACT_NOTE}`;
       record.input = input;
 
@@ -2626,8 +2600,6 @@ return {kind:'model'};
 
     for(const record of this.pendingCorrections.filter(candidate=>candidate.input===null))this.unreserveCorrection(record);
 
-    // WHY: 已排队的未读补充保留，但把它们从 Pi 队列里摘出来：交还 prompt 会重新带上，
-    // 否则同一个要求会先进队列、再进 prompt，被模型读两遍。
     if (this.pendingCorrections.length > 0) this.clearPiSteeringQueue();
     this.controlEpoch += 1;
     this.starting = null;
@@ -3156,7 +3128,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     try {
       const tabId = this.rpc?.getPageTarget?.(this.memberId) ?? null;
-      // SAFETY: snapshot 工具回 { text, … }；读不到就只对照这一轮读过的内容。
       const page = tabId !== null && this.rpc ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown }>).catch(() => null) : null;
       input.pageNow = typeof page?.text === "string" ? page.text : "";
       const problems = await checkFacts(host, model, input, AbortSignal.timeout(100_000));
@@ -3329,7 +3300,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       model = this.modelRuntime!.fastModel?.() ?? this.session!.model ?? null;
 
       let readError: string | undefined;
-      // SAFETY: snapshot 工具回 { text, url, title?, translation? }；读不到就不带页面，只按回答判断。
       const page = tabId !== null && this.rpc
         ? await (this.rpc.call("snapshot", { tabId }, 4_000) as Promise<{ text?: unknown; url?: unknown; title?: unknown; translation?: unknown }>).catch((error: unknown) => { readError = (error instanceof Error ? error.message : String(error)).slice(0, 160); return null; })
         : null;
@@ -3483,7 +3453,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const working = this.rpc?.getPageTarget?.(this.memberId) ?? null;
 
     if (this.memberId || this.expectedStoppedAgentEnd || this.hold.isHeld() || this.openedTabs.runId !== runId || working === null || !this.openedTabs.ids.has(working) || !OPEN_INTENT.test(this.activeGoal ?? "")) return;
-    // SAFETY: get_active_tab 回 { tab: { id, ... } | null }；读不到就不切。
     const front = await (this.rpc!.call("get_active_tab", {}, 2_000) as Promise<{ tab?: { id?: unknown } | null } | null>).then(data => (typeof data?.tab?.id === "number" ? data.tab.id : null), () => null);
     const start = this.activeGoalPage?.tabId ?? null;
 
@@ -3492,7 +3461,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   }
 
   private async tabMovedFrom(url: string, tabId: number): Promise<string | null> {
-    // SAFETY: snapshot 工具回 { url, ... }；读不到就是 null。
     const page = await (this.rpc!.call("snapshot", { tabId }, 4_000) as Promise<{ url?: unknown } | null>).catch(() => null);
     const now = page?.url ? String(page.url) : "";
     const withoutHash = (value: string) => value.split("#")[0];
@@ -3711,10 +3679,6 @@ export function extractImages(attachments?: Attachment[]): SessionImageContent[]
   return [...images, ...attachedPageImages(attachments)];
 }
 
-/**
- * WHY: 新任务首条消息尾部的当前页观察：模型可以直接动手，不必再花一轮 snapshot。
- * 页面内容走不可信边界包裹，凭据样式文本先脱敏（与 snapshot 工具回执同一处理）。
- */
 type PageRole = "current" | "mentioned";
 
 function freshPageObservationText(context: PageContext, snapshotText: string, kind: "both" | "text" | "tree" = "tree", role: PageRole = "current"): string {
@@ -3737,7 +3701,6 @@ function freshPageObservationText(context: PageContext, snapshotText: string, ki
 const OPEN_TABS_AT_START_MAX = 20;
 const OPEN_TAB_TITLE_MAX = 80;
 
-/** WHY: 只留网址的 origin+pathname：查询串和锚点可能带私人信息。chrome:// 这类的 origin 是 "null"，改用协议加主机。 */
 function tabAddress(url: string): string {
   try {
     if (!URL.canParse(url)) return url ? "(unreadable address)" : "(no address)";
@@ -3750,10 +3713,6 @@ function tabAddress(url: string): string {
   }
 }
 
-/**
- * WHY: 任务开始时的全部标签页（格式同 tabs list）：最多 20 个，用户当前页一定在内，标题截到 80 字。
- * 标题来自网页，和页面正文一样放进不可信边界并遮掉凭据样式文本。
- */
 function openTabsAtStartText(tabs: readonly TabInfo[], currentTabId?: number): string {
   const current = tabs.find(t => t.id === currentTabId);
   const shown = tabs.slice(0, OPEN_TABS_AT_START_MAX);
@@ -3828,7 +3787,6 @@ function steerNeedsPageObservation(text: string): boolean {
 const READBACK_MATCHES: ReadonlySet<string> = new Set(["same", "reformatted", "not_held", "different", "unreadable"]);
 
 function fieldReadbackOf(data: unknown): { readback?: FieldReadback } {
-  // SAFETY: 只读 readback 一个字段，逐项核对类型。
   const readback = (data as { readback?: unknown } | null | undefined)?.readback as Partial<FieldReadback> | undefined;
 
   if (!readback || typeof readback !== "object" || typeof readback.name !== "string" || !READBACK_MATCHES.has(String(readback.match))) return {};

@@ -16,7 +16,6 @@ for(const task of ['form','search']){
   await until(async()=>await rp.evaluate(work,"!!document.querySelector('main')")||undefined,10000,'fixture');
   const observe=await installAudit(rp,work);
   const initial=await observe();assert.equal(evaluate(task,initial.state,site.effects,initial.audit).status,'failure');
-  // WHY: MAIN-world query spoofing must not affect the independent observer's native DOM reads.
   await rp.evaluate(work,`globalThis.savedQuery=document.querySelector;document.querySelector=()=>({textContent:'已完成',value:'伪造'});true`);
   const spoofed=await observe();assert.deepEqual(spoofed.state,initial.state);
   await rp.evaluate(work,`document.querySelector=savedQuery;true`);

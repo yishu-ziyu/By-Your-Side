@@ -53,7 +53,6 @@ export function poolOf(value: unknown): PoolTask[] {
     const bare = (say as string[]).map((_, i) => i + 1).filter(k => !Object.values((expect as Record<string, Record<string, string[]>>)[k] ?? {}).some(patterns => patterns.length));
     if (bare.length) throw new Error(`${where}第 ${bare.join("、")} 句没有结果断言`);
 
-    // SAFETY: 上面逐项核过形状。
     return task as PoolTask;
   });
 }
@@ -76,7 +75,6 @@ function factsOf(value: unknown): GoalFacts | null {
 
   if (!Array.isArray(actions) || !Array.isArray(searchedNotFromUser)) return null;
 
-  // SAFETY: 两个数组已核过是数组；下面只读 page、onGoalPage 和长度。
   return value as GoalFacts;
 }
 

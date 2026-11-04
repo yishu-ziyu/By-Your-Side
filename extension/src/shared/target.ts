@@ -93,15 +93,6 @@ export function resolveArgs(parsed: Exclude<ParsedTarget, { kind: "ref" }>): { k
   return { kind: parsed.kind, selector: parsed.sel };
 }
 
-/**
- * WHY: 在页面里把非 ref 的 target 解析成唯一元素。
- * 自包含：本函数会被 toString 序列化进 ISOLATED world 和 CDP Runtime.evaluate，
- * 不得引用任何模块作用域；语义（唯一匹配、错误文案）由这里统一拥有，
- * domops.mustResolve 与 upload/read_element 的 CDP 路径共用。
- *
- * 同源 iframe：先 top document，零命中再搜 frame；任一作用域多命中 → 歧义失败。
- * 跨站 OOPIF 的 contentDocument 不可读，须走宿主 child session（不在本函数内）。
- */
 export function resolveTargetSelector(kind: string, selector: string): Element {
   const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
   const lower = (value: string) => normalize(value).toLowerCase();
@@ -154,7 +145,6 @@ export function resolveTargetSelector(kind: string, selector: string): Element {
             queue.push(child);
           }
         } catch {
-          /* WHY: 跨站 OOPIF：contentDocument 不可读 */
         }
       }
     }

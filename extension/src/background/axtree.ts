@@ -9,7 +9,6 @@ export interface AxNodeLite {
   frameId?: string;
   role?: { value?: string };
   name?: { value?: string };
-  /** WHY: Chrome puts title / aria-description here when it did not use them for the name. */
   description?: { value?: string };
   value?: { value?: unknown };
   properties?: { name: string; value?: { value?: unknown } }[];
@@ -163,8 +162,6 @@ export interface AxLine {
 const FIELD_ROLES = new Set(["textbox", "searchbox", "combobox"]);
 
 function renderBudgeted(entries: readonly AxLine[], budget: number): { text: string; truncated: boolean; keptRefs: number[]; kept: AxLine[]; droppedRefs: number; droppedText: number } {
-  // WHY: Expand paragraphs only from spare space after every original line fits.
-  // More detail must never evict an existing control, state, or source line.
   let spare = budget - entries.reduce((sum, entry) => sum + entry.text.length + 1, 0);
   if (spare > 0) entries = entries.map(entry => {
     if (!entry.expandedBody) return entry;

@@ -4,7 +4,6 @@ import { TASK_MATERIAL_MAX, type TaskMaterialReference, type TaskRecoveryInput }
 import { sanitizeTrace } from '../../shared/trace-sanitize.js';
 import { base64Bytes } from '../../shared/bytes.js';
 
-/** WHY: Match live tabs by the saved identity; never guess from a title or persist private URLs. */
 export function recoveryPage(expected: NonNullable<TaskRecoveryInput['page']>, current: PageContext | undefined, value: unknown): { page?: PageContext; ambiguous: boolean } {
   const rows = value && typeof value === 'object' && 'tabs' in value && Array.isArray(value.tabs) ? value.tabs : [];
   const matching: PageContext[] = [];

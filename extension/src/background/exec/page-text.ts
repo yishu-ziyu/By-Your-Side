@@ -16,7 +16,6 @@ export async function pageText(params: { tabId?: number; max?: number }, session
     return { text: text.slice(0, max), totalChars: text.length, tabId: tab.id, url: tab.url, title: tab.title };
   }
 
-  // WHY: 不等页面空闲：页面还在加载时默认注入会卡到加载完（见 snapshot.ts 的同一处说明）。
   const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, injectImmediately: true, world: "ISOLATED", func: readMainText, args: [params.max ?? 12_000] });
   const value = result?.result;
 
@@ -25,7 +24,6 @@ export async function pageText(params: { tabId?: number; max?: number }, session
   return { ...value, tabId: tab.id };
 }
 
-/** WHY: 在页面里执行：只能用页面环境，不能引用外面的变量。 */
 function readMainText(max: number): { text: string; totalChars: number; url: string; title: string } {
   const SKIP = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "CANVAS", "IFRAME", "BUTTON", "SELECT", "FORM"]);
   const visible = (el: Element) => el.checkVisibility();

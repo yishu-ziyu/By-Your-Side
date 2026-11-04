@@ -81,7 +81,6 @@ export class ArtifactCards {
   constructor(
     private readonly append: (el: HTMLElement) => void,
     private readonly conversation: () => string = () => "default",
-    /** WHY: 必须再次由用户点按钮，才把沙箱里的选择填进草稿；永不自动发送。 */
     private readonly onChoice: (text: string) => void = (text) => {
       const input = document.querySelector<HTMLTextAreaElement>("#input");
 

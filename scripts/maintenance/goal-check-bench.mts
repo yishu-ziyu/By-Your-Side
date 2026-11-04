@@ -23,7 +23,6 @@ const STATUSES: readonly string[] = ["done", "continue", "needs_user", "open", "
 const checkerRoot = resolve(arg("checker") ?? join(import.meta.dirname, "../.."));
 const bundle = join(MAIN, "out/goal-check-labels", `.checker-${createHash("sha256").update(checkerRoot).digest("hex").slice(0, 8)}.mjs`);
 await build({ entryPoints: [join(checkerRoot, "agent/src/goal-check.ts")], bundle: true, platform: "node", format: "esm", packages: "external", outfile: bundle, logLevel: "error" });
-// SAFETY: 各工作树里的 goal-check.ts 都导出同一签名的 checkGoal。
 const { checkGoal } = await import(`${pathToFileURL(bundle).href}?${Date.now()}`) as typeof import("../../agent/src/goal-check.ts");
 
 function labelsOf(value: unknown): Label[] {
@@ -35,13 +34,11 @@ function labelsOf(value: unknown): Label[] {
 
 const labels = labelsOf(JSON.parse(readFileSync(labelsFile, "utf8"))).filter(item => !only || only.includes(item.id));
 const PI = join(REPO, "node_modules/@earendil-works/pi-ai/dist");
-// SAFETY: 这两个文件就是 pi-ai 包导出的 "." 和 "./providers/all"。
 const { InMemoryCredentialStore } = await import(pathToFileURL(join(PI, "index.js")).href) as { InMemoryCredentialStore: typeof CredentialStore };
 const { builtinModels } = await import(pathToFileURL(join(PI, "providers/all.js")).href) as { builtinModels: typeof BuiltinModels };
 const plan = await loadModelPlan(DEFAULT_TEST_MODEL);
 if (plan.credential.type === "oauth") plan.credential.refresh = "";
 const credentials = new InMemoryCredentialStore();
-// SAFETY: loadModelPlan 按 pi-ai Credential 的形状组装（api_key 或 oauth）。
 await credentials.modify(plan.providerId, async () => plan.credential as unknown as Credential);
 const models = builtinModels({ credentials });
 const model: Model<Api> | undefined = models.getModel(plan.providerId, plan.modelId);

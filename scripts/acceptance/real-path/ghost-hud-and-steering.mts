@@ -128,7 +128,6 @@ try {
   await rp.screenshot(panel, join(out, 'steer-after.png'));
   const second = model.requests.find(r => r.rule === '改成对比表格');
   check('改方向后立刻按新要求写（不等长文写完）', !!second?.firstTextAt && second.firstTextAt - clickedAt < 1500, { afterClickMs: second?.firstTextAt ? second.firstTextAt - clickedAt : null });
-  // SAFETY: payloads 是本脚本的假模型收到的 OpenAI 风格请求体，messages 的 content 要么是字符串，要么是带 text 的分段数组。
   const steered = JSON.parse(payloads.find(p => p.includes('把正在写的回答改成对比表格')) ?? '[]') as Array<{ role: string; content?: string | Array<{ text?: string }> }>;
   const text = (m?: { content?: string | Array<{ text?: string }> }) => Array.isArray(m?.content) ? m.content.map(p => p.text ?? '').join('') : m?.content ?? '';
   const half = text(steered.filter(m => m.role === 'assistant').at(-1));

@@ -235,7 +235,6 @@ async function writeStatus(id: string, state: string, detail?: string) {
 <table><tr><th>任务</th>${arms.map((a) => `<th>${a === "ext" ? "我们的扩展" : "Codex + ego"}</th>`).join("")}</tr>${ids.map((id) => `<tr><td>${nameOf(id)}</td>${arms.map((a) => cell(id, all[a][id])).join("")}</tr>`).join("")}</table>`);
 }
 
-// WHY: Page.bringToFront 在 macOS 上会把测试 Chrome 推到最前、抢走用户的焦点；只在窗口内切到这个标签页。
 async function showUserTab(rp: any, user: string, sw: string) {
   const url = String(await rp.evaluate(user, "location.href"));
   await rp.evaluate(sw, `chrome.tabs.query({}).then(ts => { const t = ts.filter(t => (t.url || t.pendingUrl) === ${JSON.stringify(url)}).at(-1); return t ? chrome.tabs.update(t.id, { active: true }).then(() => true) : false; })`);

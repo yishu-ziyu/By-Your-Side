@@ -82,7 +82,6 @@ const proxy = createServer(async (req, res) => {
   for await (const c of req) body += c;
 
   if (req.method === "POST" && (req.url ?? "").endsWith("/chat/completions")) {
-    // SAFETY: OpenAI 兼容请求体。
     const payload = JSON.parse(body) as { messages?: ChatMessage[]; tools?: unknown[] };
     const system = (payload.messages ?? []).filter((m, i, all) => m.role === "system" || m.role === "developer" || (m.role === "user" && textOf(m.content).startsWith("本次运行的上下文") && !all.slice(i + 1).some(n => n.role === "user" && textOf(n.content).startsWith("本次运行的上下文")))).map((m) => textOf(m.content)).join("\n");
 
@@ -132,7 +131,6 @@ const PANEL = `(() => {
 
 type PanelState = { connected: boolean; ready: boolean; busy: boolean; userMessages: number; replies: number };
 
-// SAFETY: PANEL 返回的字段与 PanelState 一一对应。
 const read = async () => (await rp.evaluate(panel, PANEL)) as PanelState;
 
 const shot = async (name: string) => {
@@ -158,7 +156,6 @@ async function putDoc(key: "memories" | "tasks", value: string) {
 async function storedMemories(): Promise<JsonRecord[]> {
   const text = await rp.evaluate(ext, `(async () => { const db = await (${idbOpen})(); const v = await new Promise((res, rej) => { const r = db.transaction("kv").objectStore("kv").get("memories"); r.onsuccess = () => res(r.result ?? null); r.onerror = () => rej(r.error); }); db.close(); return v; })()`);
 
-  // SAFETY: 这个键里只有产品写入的记忆 JSON 文本 { format, rev, entries }。
   return text ? ((JSON.parse(String(text)) as { entries?: JsonRecord[] }).entries ?? []) : [];
 }
 
@@ -213,7 +210,6 @@ async function turn(ask = ASK_EMAIL): Promise<string> {
 
 type LineView = { count: number; text: string; inFirstSentence: boolean; listHidden: boolean; items: Array<{ id: string; kind: string; text: string; state: string; note: string; buttons: string[] }> } | null;
 
-// SAFETY: 页面脚本返回 null 或与 LineView 一一对应的字段。
 const lastLine = async (): Promise<LineView> => (await rp.evaluate(panel, `(() => {
   const all = [...document.querySelectorAll("#messages > *")];
   const lastUser = all.map((n) => n.matches(".msg.user")).lastIndexOf(true);

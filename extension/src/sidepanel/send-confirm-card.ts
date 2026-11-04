@@ -223,7 +223,6 @@ function button(choice: "send" | "decline", text: string, card: Card): HTMLButto
   b.textContent = text;
   b.disabled = card.answering;
 
-  // WHY: 键盘确认必须明确聚焦按钮；输入框里的回车不能批准发送。
   if (choice === "send") {
     b.tabIndex = 0;
     const wait = (card.armedAt ?? 0) - performance.now();

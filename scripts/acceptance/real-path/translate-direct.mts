@@ -39,7 +39,6 @@ try {
   const firstTranslation = async (): Promise<number | null> => {
     const end = Date.now() + 8000;
     for (; Date.now() < end; await sleep(100)) {
-      // SAFETY: WATCH 写入的 window.__tr 只有这两个数字字段。
       const w = await rp.evaluate(work, "window.__tr") as Watch;
       if (w.done !== null) return Math.round(w.done - w.t0);
     }

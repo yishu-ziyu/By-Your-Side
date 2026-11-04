@@ -21,7 +21,6 @@ export class TaskReceiptError extends Error {
   constructor(readonly receipt:TaskReceipt) { super(receipt.message); }
 }
 
-/** WHY: One private file per request. Never prune automatically: an old ID must not execute again. */
 class TaskReceiptStore {
   private readonly memory = new Map<string, RecordEntry>();
   private indexMem: Record<string, string[]> | null = null;
@@ -171,11 +170,6 @@ class TaskReceiptStore {
   }
 }
 
-/**
- * WHY: 控制（暂停/接管/终止）有自己的接收通道：它不等待慢的 start/steer（例如还在等页面预观察的那几秒），
- * 否则"页面已经归用户"的停止请求会被卡在普通输入后面。控制自身仍按会话串行。
- * 普通输入仍按会话串行，并且新入队的普通输入排在它之前已入队的控制之后，保持既有先后。
- */
 const CONTROL_ACTIONS = new Set<TaskActionRequest['action']>(['pause','abort','resume']);
 
 export class TaskDispatcher {

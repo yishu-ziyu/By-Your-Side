@@ -70,7 +70,6 @@ const waiters = new Map<string, Array<{ resolve: (arm: ArmedPageEvent) => void; 
 
 const heldArmTokens = new Set<string>();
 
-/** WHY: 原生对话框弹出时要立刻知道的调用（点击）：对话框挡住页面后，派发输入的 CDP 命令要等它关掉才返回。 */
 const dialogWatchers = new Map<number, Set<(dialog: OpenedDialog) => void>>();
 
 export interface OpenedDialog { type: JsDialogType; message: string; defaultPrompt?: string }
@@ -83,7 +82,6 @@ let downloadsListening = false;
 
 const DOWNLOAD_SETTLE_MS = 60_000;
 
-/** WHY: chrome.downloads 先于 Page.downloadWillBegin 到达时暂存，按 URL 等对方。 */
 const unboundChromeDownloads = new Map<number, { url: string; finalUrl?: string; at: number }>();
 
 const UNBOUND_TTL_MS = 30_000;
@@ -227,7 +225,6 @@ async function onDebuggerEvent(tabId: number, method: string, params: Record<str
     notifyWaiters(matched.arm);
   }
 
-  // WHY: Page.downloadProgress 故意不处理：CDP 把中断也报成 canceled，完成与否只认 chrome.downloads。
 }
 
 function listenDownloads(): void {
@@ -262,7 +259,6 @@ async function refreshChromeDownload(chromeId: number): Promise<void> {
 
   if (!item) return;
 
-  // SAFETY: chrome.downloads.State 只有 in_progress / interrupted / complete 三个值，与 ChromeDownloadState 相同。
   const download = applyChromeDownload(ledger, {
     chromeId,
     state: item.state as ChromeDownloadState,

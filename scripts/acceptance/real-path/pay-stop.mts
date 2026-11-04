@@ -84,7 +84,6 @@ const model = await startScriptedModel([
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
 
-    // SAFETY: OpenAI 兼容的 tool 消息带 tool_call_id。
     const id = String((m as { tool_call_id?: unknown }).tool_call_id ?? "");
 
     if (m.role === "tool" && !toolIds.has(id)) { toolIds.add(id); toolTexts.push(text); }
@@ -113,14 +112,12 @@ try {
   const textOf = (n: DomNode): string => n.nodeName === "STYLE" ? "" : (n.nodeValue ?? "") + [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(textOf).join("");
 
   const center = async (n: DomNode) => {
-    // SAFETY: DOM.getBoxModel 的 model.border 是 8 个数的四边形（x1,y1,…,x4,y4）。
     const q = (await rp.cdp.send("DOM.getBoxModel", { backendNodeId: n.backendNodeId }, work)).model.border as number[];
 
     return { x: (q[0]! + q[2]!) / 2, y: (q[1]! + q[5]!) / 2 };
   };
 
   const payNote = async () => {
-    // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
     const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
     const host = walk(root, n => n.nodeName === "DIV" && (n.attributes ?? []).join("\u0000").includes("data-sideagent-overlay\u0000pay-stop"));
 

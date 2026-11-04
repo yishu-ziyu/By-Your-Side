@@ -101,7 +101,6 @@ export async function closeIsolatedResources(
       const timer = setTimeout(() => {
         child.removeListener('close', stopped);
         child.kill('SIGKILL');
-        // WHY: Wait for the killed Chrome to exit so its profile is no longer written when it is removed.
         const fail = () => reject(new Error('Chrome graceful close timed out; SIGKILL fallback sent'));
         const guard = setTimeout(fail, 3000);
         child.once('close', () => { clearTimeout(guard); fail(); });
@@ -183,7 +182,6 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
 
     child = spawn(CHROME, [
       "--headless=new",
-      // WHY: macOS：不读钥匙串里的「Chrome Safe Storage」，否则每启动一次就弹一次钥匙串授权框。
       "--use-mock-keychain",
       "--mute-audio",
       ...(options.fakeMedia ? ['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream'] : []),
@@ -194,7 +192,6 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
       `--load-extension=${extDir}`,
       "--no-first-run",
       "--no-default-browser-check",
-      // WHY: Ubuntu 24.04 runners block unprivileged user namespaces, so Chrome's sandbox cannot start there.
       ...(process.platform === "linux" ? ["--no-sandbox"] : []),
       "--autoplay-policy=no-user-gesture-required",
       ...(options.hostResolverRules ? [`--host-resolver-rules=${options.hostResolverRules}`, "--no-proxy-server"] : []),

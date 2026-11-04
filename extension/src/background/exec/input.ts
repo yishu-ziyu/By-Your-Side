@@ -944,7 +944,6 @@ async function pageNamesOfClickTarget(
   return { plate: target ? fromTarget.plate : atPoint.plate, buttons: [...(fromTarget.buttons ?? []), ...(atPoint.buttons ?? [])], frame: atPoint.frame };
 }
 
-/** WHY: 在页面 ISOLATED world 里读目标（t）或坐标落点上按钮的名字；序列化进页面，必须自包含。 */
 function readNamesInPage(t: string | null, px: number, py: number): { plate: string; buttons: string[]; frame?: boolean } {
   let el: Element | null | undefined;
 
@@ -1218,11 +1217,6 @@ const TOP_AT_JS = `function(point) {
   return top;
 }`;
 
-/**
- * WHY: 「被覆盖」改写成「被 @N 角色 挡住」并带上名字：模型据此先处理挡住的元素。
- * 从页面里的命中元素出发；按坐标问 CDP（DOM.getNodeForLocation）会命中扩展自己画的状态层。
- * 读不到就保留原说明。
- */
 async function explainRefusal(tabId: number, backendNodeId: number, error: unknown, point?: [number, number]): Promise<string> {
   const message = oneLine(error).replace(/^Error:\s*/, "").split(/\s+at\s+\S+\s+\(/)[0]!.trim();
 
@@ -1239,7 +1233,6 @@ async function explainRefusal(tabId: number, backendNodeId: number, error: unkno
     const hit = (await sendCommand<{ node: { backendNodeId: number } }>(tabId, "DOM.describeNode", { objectId: top.result.objectId })).node.backendNodeId;
     const { nodes } = await sendCommand<{ nodes: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId: hit, fetchRelatives: true });
     const byId = new Map(nodes.map(n => [n.nodeId, n]));
-    // WHY: 目标自己的祖先（例如装着目标的对话框）不能算挡住它的东西：叫模型关掉它，等于关掉目标所在的弹窗。
     const targetTree = await sendCommand<{ nodes: AxNodeLite[] }>(tabId, "Accessibility.getPartialAXTree", { backendNodeId, fetchRelatives: true });
     const holdsTarget = new Set(targetTree.nodes.map(n => n.nodeId));
     const first = nodes.find(n => n.backendDOMNodeId === hit);
@@ -1256,7 +1249,6 @@ async function explainRefusal(tabId: number, backendNodeId: number, error: unkno
     const ownText = named.childIds?.map(c => byId.get(c)).find(c => c?.role?.value === "StaticText")?.name?.value;
     const name = String(named.name?.value || ownText || "").replace(/\s+/g, " ").trim().slice(0, 40);
 
-    // WHY: 等这几次 CDP 调用时页面可能已换（导航、DOM 快照）：目标编号仍登记着才登记新编号，不把旧编号带回来。
     if (isAxNode(tabId, backendNodeId)) addAxRefs(tabId, [id]);
 
     return `目标被 @${id} ${named.ignored ? "元素" : named.role?.value ?? "元素"} 挡住，操作未执行，挡住它的元素也没有被点。${name ? `挡住的元素名字：${wrapPageContent(name)}` : ""}先处理挡住的元素（例如关掉弹层），再重新 snapshot 确认目标。`;
@@ -1393,11 +1385,6 @@ async function hitTestPointerTarget(tabId: number, target: string, x: number, y:
   }
 }
 
-/**
- * WHY: 点击期间工作页自己打开的新窗口（CDP Page.windowOpen）和点击前该窗口的活动页。
- * 工作页在后台时，Chrome 把新页的打开者记成当时的活动页（多半是用户的页），不是工作页；
- * 所以只凭打开者认不出新页。
- */
 type OpenWatch = { workingTabId: number; windowId: number; activeBefore?: number; windowOpens: number; stop: () => void };
 
 async function watchOpenedTabs(tab: chrome.tabs.Tab & { id: number }): Promise<OpenWatch> {
@@ -1405,7 +1392,6 @@ async function watchOpenedTabs(tab: chrome.tabs.Tab & { id: number }): Promise<O
 
   try { watch.activeBefore = (await chrome.tabs.query({ active: true, windowId: tab.windowId }))[0]?.id; } catch {  }
   const onEvent = (source: chrome.debugger.Debuggee, method: string) => { if (source.tabId === tab.id && method === "Page.windowOpen") watch.windowOpens += 1; };
-  // WHY: Chrome 会把点开的新页设成活动页：一出现就把用户原来在看的页放回去，不等点击做完。
   const onCreated = (created: chrome.tabs.Tab) => { if (created.id !== undefined && openedByAssistant(created, watch, false)) void restoreForeground(created.id, watch); };
 
   try {
@@ -1463,11 +1449,6 @@ async function followOpenedTab(before: ReadonlySet<number>, watch: OpenWatch, se
   }
 }
 
-/**
- * WHY: 助手不能点我们自己画在页面上的界面（名牌上的「确认 / 提交」、控制条等）：那些是留给用户的。
- * 模型会去点名牌上自己起名为「提交订阅」的确认键：若没被别的检查挡住，就等于自己批准自己。
- * 看真正派发的落点：按编号、选择器、坐标点都一样。用户确认后由扩展重放的那一下不经过这里。
- */
 async function assertNotOwnOverlay(tabId: number, x: number, y: number): Promise<void> {
   const hit = await callDom(
     tabId,
@@ -1757,7 +1738,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
         );
       }
 
-      // SAFETY: guard failures are Errors marked before any mouse press; only inspect their execution fact.
       if (e instanceof FillRefused || (e as { executionFact?: string })?.executionFact === "not_executed") throw e;
 
       if (cdpMouseMoved) {
@@ -1771,7 +1751,6 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
         await ensureDomOps(tabId, beforeDispatch);
         let fallbackEffect: EffectReport | undefined;
         const fallbackToken = await beginEffect(tabId, { point: [x, y] });
-        // WHY: 与 CDP 点击同理：DOM click 弹出原生对话框会挡住页面，callDom 要等对话框关掉才返回。
         const fallbackWatch = watchDialog(tabId);
 
         try {
@@ -2036,7 +2015,6 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
         throw new Error(`双击可能已送达，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：双击没生效就再双击一次。`);
       }
 
-      // SAFETY: guard failures are Errors marked before any mouse press; only inspect their execution fact.
       if (e instanceof FillRefused || (e as { executionFact?: string })?.executionFact === "not_executed") throw e;
 
       if (dispatched) {
@@ -2161,7 +2139,6 @@ export async function fill(
 
   if (!params.submit) return data;
 
-  // WHY: 没写进去就不回车：不然会用空值或旧值把表单提交出去。
   if (data.typing === "failed" || data.readback?.match === "not_held" || data.readback?.match === "different") {
     return { ...data, submit: { refused: "这一栏没写进去，没有回车。" } };
   }
@@ -2183,10 +2160,6 @@ function withoutText(readback: FieldReadback): FieldReadback {
   return rest;
 }
 
-/**
- * WHY: 「填完回车」：只在搜索框和普通单行框上按一次真回车（规则见 fill-typing.ts 的 submitRefusalInPage），省一轮来回。
- * 回车可能就是“发送”的框不按，填好的字留着：回车发送不经过发送确认是已知缺口（docs/web-actions.md），不能扩大。
- */
 async function submitAfterFill(params: { target: string; tabId?: number }, sessionId: string, beforeDispatch?: DispatchGuard): Promise<NonNullable<ToolContract["fill"]["data"]["submit"]>> {
   try {
     const tab = await resolveWorkingTab(params.tabId, sessionId);
@@ -2366,7 +2339,6 @@ async function fillField(
 
         const el = dom.resolve(t);
 
-        // SAFETY: dom.resolve returns an Element; its INPUT tag identifies the native input contract.
         if (el?.tagName === "INPUT" && (el as HTMLInputElement).type === "time" && v !== "") {
           const probe = el.ownerDocument.createElement("input");
           probe.type = "time";
@@ -2646,10 +2618,6 @@ export async function typeText(
   return { typed: true, readback: await readBackField(tab.id, { target: null }, params.text, "insert") };
 }
 
-/**
- * WHY: 回车或空格落在付款上：焦点本身是付款按钮，或回车时焦点所在的表单、附近区域里有付款按钮（单行框回车会提交表单）。
- * 付款候选取自当前焦点所在的文档。序列化进页面，必须自包含。
- */
 function keyPayCandidatesInPage(enter: boolean): { focused: boolean; frame: boolean; names: string[] } {
   let el = document.activeElement as HTMLElement | null;
   while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
@@ -2685,7 +2653,6 @@ function isKeyPayCandidates(value: unknown): value is ReturnType<typeof keyPayCa
   return typeof candidate.focused === "boolean" && typeof candidate.frame === "boolean" && Array.isArray(candidate.names) && candidate.names.every(name => typeof name === "string");
 }
 
-/** WHY: 回车会不会把东西发出去：焦点在有字的多行输入框、可编辑区，或焦点所在表单里有「发送」按钮。序列化进页面，必须自包含。 */
 function enterWouldSendInPage(kindOf: (text: string) => "send" | "reply" | null): { label: string; content: string; rect: { left: number; top: number; width: number; height: number } | null; send: boolean } | null {
   let el = document.activeElement as HTMLElement | null;
   while (el && (el as HTMLIFrameElement).contentDocument === undefined && el.shadowRoot?.activeElement) el = el.shadowRoot.activeElement as HTMLElement;
@@ -2755,7 +2722,6 @@ export async function pressKeyGuarded(params: { key: string; tabId?: number }, s
   return Object.assign(result, confirmed ? { sendConfirmed: true as const } : {}) as typeof result & { sendConfirmed?: true };
 }
 
-/** WHY: 焦点是不是顶层文档里的单行文本框：多行框和可编辑区里回车只是换行，页面读数看不出来，只有单行文本框能说「回车没反应」。序列化进页面，必须自包含。 */
 function focusIsSingleLineInput(): boolean {
   const el = document.activeElement;
   return el instanceof HTMLInputElement && ["text", "search", "email", "url", "tel", "password", "number"].includes(el.type);
@@ -3042,7 +3008,6 @@ async function callCursorAt<T>(tabId: number, located: { backendNodeId?: number;
 export async function showGuide(tabId: number, target: string, say: string, portName: string, sessionId: string): Promise<{ name: string }> {
   const observedDocument = await assertObservedDocument(tabId, sessionId, [target]);
   const located = await locateTarget(tabId, target);
-  // WHY: @ref 走 CDP 时不会注入 domops；页面要靠它在网页重画后重新找到目标。
   await ensureDomOps(tabId);
   await ensureCursor(tabId);
   const motion = await getMarkMotion();
@@ -3166,10 +3131,6 @@ export async function clearMarks(sessionId: string = LEAD_SESSION_ID, tabId?: nu
   return { cleared: true };
 }
 
-/**
- * WHY: 读页拿到的控件在页面上看得见的那一块：本身看得见就是它；看不见的复选框/输入框（维基「119 languages」那种藏起来的 checkbox + label 按钮）换成它看得见的 label。
- * 序列化进页面，必须自包含。返回视口坐标，看不见返回 null。
- */
 const VISIBLE_RECT_OF_LOCATED = `function() {
   const el = this.nodeType === 3 ? this.parentElement : this;
   if (!el || !el.isConnected || typeof el.getBoundingClientRect !== "function") return null;

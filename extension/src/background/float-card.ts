@@ -8,7 +8,6 @@ export function installFloatCard(): void {
 
     if (type === FLOAT_CARD_WHERE) respond({ windowId: sender.tab.windowId });
 
-    // WHY: 必须在这次点击的消息里同步打开：等异步之后浏览器就不认是用户动作了。
     if (type === FLOAT_CARD_TO_PANEL) void chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {  });
   });
 }

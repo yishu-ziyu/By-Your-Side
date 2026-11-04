@@ -59,7 +59,6 @@ export class GoalLedger {
     this.trail.observe(name, params, result);
   }
 
-  /** WHY: Keep earlier page facts across follow-ups; recent tools must not evict the pages they act on. */
   record(tool: string, text: string): void {
     if (tool.startsWith("page_") && text.includes("is unchanged since your earlier observation")) return;
     if (tool === "page_at_start") this.trail.noteStartPage(text);
@@ -85,7 +84,6 @@ export class GoalLedger {
     program.reads.push({ url: result.url, text: result.text });
   }
 
-  /** WHY: Preserve URL provenance only for source text the program actually returned, never for computed results or write receipts. */
   recordProgramResult(id: string, text: string, result: unknown, failed: boolean): void {
     const program = this.programs.get(id);
     this.programs.delete(id);
@@ -121,7 +119,6 @@ export class GoalLedger {
       const content = message.content;
       const text = typeof content === "string" ? content : Array.isArray(content)
         ? content.map((part: unknown) => part && typeof part === "object" && "text" in part && typeof part.text === "string" ? part.text : "").join("\n") : "";
-      // WHY: A correction prompt can name unsupported people; replaying it must not turn those names into source evidence.
       if (text && !text.startsWith("[GOAL CHECK]")) readWords(redactCredentialText(text), this.words);
     }
   }

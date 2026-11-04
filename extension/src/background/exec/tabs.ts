@@ -55,8 +55,6 @@ export async function openTab(
   const previous = await getWorkingTabId(sessionId);
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
-  // WHY: 助手开的页留在后台，不换走用户正在看的标签页。
-  // 替用户页开的新页放在它旁边、同一个窗口：不写窗口时 Chrome 放进最后获得焦点的窗口，可能是另一个开着侧栏的窗口。
   const placement = beside?.id != null ? { windowId: beside.windowId, index: beside.index + 1, openerTabId: beside.id } : {};
   const tab = await chrome.tabs.create({ url: params.url, active: false, ...placement });
 
@@ -76,7 +74,6 @@ export async function openTab(
   try {
     after = await chrome.tabs.get(tab.id);
   } catch (error) {
-    // WHY: 地址变成下载时，Chrome 会关掉为它新开的标签页。如实说下载结果，工作标签页回到打开之前那一页，不留在已关的页上。
     if (!ready?.download) throw error;
     const working = await getWorkingTabId(sessionId);
 

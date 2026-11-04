@@ -9,7 +9,6 @@ const site=createServer((_req,res)=>res.writeHead(200,{'content-type':'text/html
 await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${siteAddress(site).port}/`;
 const toolResults:string[]=[];
 const model=await startScriptedModel([{match:'图标字形验收',steps:[{tool:{name:'browser_run',args:{label:'读取评分图标',code:`const s=await browser.navigate({url:${JSON.stringify(origin)}});if(/[\\uE000-\\uF8FF]/.test(s.text))throw new Error('icon glyph reached the model as text');if(!s.text.includes('[图标]'))throw new Error('icon placeholder missing');const match=s.text.match(/\\[ref=(\\d+)\\] button "Done"/);if(!match)throw new Error('Done control missing');await browser.click({target:'@'+match[1]});return 'icons read as icons';`}}},{text:'图标字形验收完成。'}]}],undefined,(payload)=>{
- // SAFETY: the scripted model hands over the product's OpenAI-compatible request body; only tool message texts are read.
  const msgs=(payload as {messages?:Array<{role:string;content?:unknown}>}).messages??[];
  for(const m of msgs)if(m.role==='tool')toolResults.push(typeof m.content==='string'?m.content.slice(0,400):JSON.stringify(m.content).slice(0,400));
 });

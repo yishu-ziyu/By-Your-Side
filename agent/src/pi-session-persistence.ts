@@ -55,7 +55,6 @@ export class PiSessionPersistence {
 function branchMessages(branch: SessionLogEntry[]): AgentMessage[] {
   return branch.flatMap(entry => {
     if (entry.type !== 'message') return [];
-    // SAFETY: message 条目的 message 字段就是 appendMessage 写下的 AgentMessage JSON。
     const message = entry.message as AgentMessage;
 
     return message.role === 'assistant' && message.stopReason === 'deferred' ? [] : [message];

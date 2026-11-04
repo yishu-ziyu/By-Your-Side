@@ -13,7 +13,6 @@ export class BrowserSocket {
   get readyState(): number { return this.socket.readyState; }
 
   on(event: "message" | "error" | "close", listener: (...args: never[]) => void): void {
-    // SAFETY: 下面三个分支分别按 ws 的 message/error/close 回调约定传参，调用方按事件名注册对应签名。
     const call = listener as (...args: unknown[]) => void;
 
     if (event === "message") this.socket.addEventListener("message", e => call(String(e.data)));

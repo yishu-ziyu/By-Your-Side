@@ -50,7 +50,6 @@ const proxy = createServer(async (req, res) => {
   for await (const c of req) body += c;
 
   if (req.method === "POST" && (req.url ?? "").endsWith("/chat/completions")) {
-    // SAFETY: OpenAI 兼容请求体。
     const payload = JSON.parse(body) as { messages?: ChatMessage[]; tools?: unknown[] };
     const sent = (payload.messages ?? []).filter((m) => m.role !== "assistant").map((m) => textOf(m.content)).join("\n");
 
@@ -98,7 +97,6 @@ const PANEL = `(() => {
 
 type PanelState = { connected: boolean; ready: boolean; busy: boolean; userMessages: number; replies: number };
 
-// SAFETY: PANEL 返回的字段与 PanelState 一一对应。
 const read = async () => (await rp.evaluate(panel, PANEL)) as PanelState;
 
 const shot = async (name: string) => {
@@ -124,7 +122,6 @@ async function putDoc(key: "memories" | "tasks", value: string) {
 async function storedIds(): Promise<string[]> {
   const text = await rp.evaluate(ext, `(async () => { const db = await (${idbOpen})(); const v = await new Promise((res, rej) => { const r = db.transaction("kv").objectStore("kv").get("memories"); r.onsuccess = () => res(r.result ?? null); r.onerror = () => rej(r.error); }); db.close(); return v; })()`);
 
-  // SAFETY: 这个键里只有产品写入的记忆 JSON 文本 { format, rev, entries }。
   return text ? ((JSON.parse(String(text)) as { entries?: JsonRecord[] }).entries ?? []).map((e) => String(e.id)) : [];
 }
 
