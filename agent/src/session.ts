@@ -402,7 +402,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
     for(const attachment of supplied??[])if(isAttachment(attachment))candidates.set(attachmentRecoveryKey(attachment),attachment);
 
-    if(required.some(key=>!candidates.has(key)))throw new TaskActionRejected('原任务需要的附件尚未恢复，请重新附上原图；检查点保留，没有用其他图片替代。');
+    if(required.some(key=>!candidates.has(key)))throw new TaskActionRejected('原任务需要的附件还没恢复，请重新附上原图；原任务还在，没有用其他图片替代。');
 
     return required.map(key=>candidates.get(key)!);
   }
@@ -1340,7 +1340,7 @@ if(required.includes(key))candidates.set(key,attachment);
 return;}
 
     if (this.hold.isHeld()) {
-      this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让 Agent 继续，请交还。" });
+      this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让助手继续，请交还。" });
 
       return;
     }
@@ -1633,7 +1633,7 @@ return;}
     if (spoken) this.spokenAsk = true;
 
     if (this.hold.isHeld()) {
-      this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让 Agent 继续，请交还。" });
+      this.callbacks.emit({ kind: "notice", message: "现在页面归你。要让助手继续，请交还。" });
 
       return;
     }
@@ -2297,7 +2297,7 @@ return;}
     const resumeEpoch=this.controlEpoch;
 
     if (snapshot.state !== "interrupted" || !snapshot.runId || !snapshot.goal) {
-      throw new TaskActionRejected("没有可从检查点继续的原任务。");
+      throw new TaskActionRejected("没有可以接着做的原任务。");
     }
 
     if (this.hold.isHeld()) throw new TaskActionRejected("页面现在归你，请先交还。");
@@ -2353,7 +2353,7 @@ return;}
 
     if(!page||page.tabId!==context.tabId||expectedPage&&(typeof page.url!=='string'||pageRecoveryKey(context.tabId,page.url)?.urlHash!==expectedPage.urlHash)){
       this.callbacks.emit({kind:'tool_end',toolCallId:observationId,name:'snapshot',isError:true,resultText:'当前页面身份已变化或无法核对，原检查点保留。',reason:'当前页面身份已变化或无法核对',executionFact:'not_executed'});
-      throw new TaskActionRejected('当前页面身份已变化或无法核对，原检查点保留，没有继续执行。');
+      throw new TaskActionRejected('当前页面变了或无法核对，原任务还在，没有继续。');
     }
 
     const pageText = typeof page.text === "string" ? page.text.trim() : "";
@@ -2367,14 +2367,14 @@ return;}
     const current = this.conversationSnapshot();
 
     if (this.controlEpoch!==resumeEpoch||this.hold.isHeld()||current && (current.runId !== snapshot.runId || current.state !== "interrupted" || (current.controlVersion??0)!==(snapshot.controlVersion??0))) {
-      throw new TaskActionRejected("原检查点已取消或发生变化，恢复任务未启动。");
+      throw new TaskActionRejected("原任务已取消或变了，没有恢复。");
     }
 
     const safePageText = redactCredentialText(pageText);
     this.callbacks.emit({ kind: "tool_end", toolCallId: observationId, name: "snapshot", isError: false, resultText: safePageText.slice(0, RESULT_TEXT_MAX), executionFact: "executed" });
     this.emitReadObservation(observationId,"snapshot",params,page,false);
 
-    if (session.isStreaming) throw new TaskActionRejected("当前已有任务开始执行，原检查点没有重复启动。");
+    if (session.isStreaming) throw new TaskActionRejected("已有任务在做，原任务没有重复启动。");
 
     const results = snapshot.results ?? [];
 
@@ -2556,7 +2556,7 @@ return {kind:'model'};
         this.mentionedPagesText(options?.pages, context),
       ]);
 
-      if(!current())throw new TaskActionRejected('原任务已停止或发生变化，修改未发送。');
+      if(!current())throw new TaskActionRejected('原任务已中止或变了，修改没有发送。');
       this.requestStartedAt = Date.now();
 
       if (observation) this.goalLedger.record("page_at_steer", observation);
@@ -2845,7 +2845,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             if (ev.delta.trim() && !this.explicitDelivery) this.deliveredResultThisRun = true;
             emit({ kind: "text_delta", delta: ev.delta });
           }
-          else if (ev.type === "thinking_delta") emit({ kind: "thinking_delta", delta: ev.delta });
           else if((ev.type==='toolcall_delta'||ev.type==='toolcall_end')&&this.explicitDelivery){
             const part=ev.partial.content[ev.contentIndex];
 

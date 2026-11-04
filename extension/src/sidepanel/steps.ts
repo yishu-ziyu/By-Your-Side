@@ -460,28 +460,6 @@ export function pastAction(name: string, params: Parameters<typeof describeTool>
   return describeTool(name, params).full;
 }
 
-export function openedPageTitle(resultText: string): string | null {
-  const json = /"title":"((?:[^"\\]|\\.)*)"/.exec(resultText);
-  const line = json ? null : /^Navigation result: (\S+) — (.+?); document:/m.exec(resultText);
-  let title = "";
-
-  if (json) {
-    try {
-      title = String(JSON.parse(`"${json[1]}"`));
-    } catch {
-      return null;
-    }
-  } else if (line) {
-    title = line[2] ?? "";
-  }
-
-  title = title.trim();
-
-  if (!title || /^https?:\/\//.test(title)) return null;
-
-  return title.length > 30 ? `${title.slice(0, 29)}…` : title;
-}
-
 export function shortAction(name: string, params: Parameters<typeof describeTool>[1], pageTitle?: string | null): string {
   const label = str(params.label);
   let text: string;

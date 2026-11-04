@@ -42,7 +42,6 @@ import {
   skillStepText,
   spokenDuration,
   loaderSubtitle,
-  openedPageTitle,
   shortAction,
   splitAction,
   isPrepTool,
@@ -55,7 +54,7 @@ import {
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
 import { ArtifactCards } from "./artifact-card.js";
 import { mountErrorCards, type KeyTarget, type KeyTestResult } from "./error-card.js";
-import { describeModelError, plainError, plainToolError } from "../../../shared/user-facing.js";
+import { describeModelError, plainError } from "../../../shared/user-facing.js";
 import { INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_VOICE_MODEL_KEY } from "../inproc/shared.js";
 import { CONNECTION_PREFIX, credentialFingerprint, modelConfig, withModelSettings } from "../settings/connections.js";
 import { mountModelMenu } from "./model-menu.js";
@@ -77,7 +76,6 @@ import { panelLive, shouldFinishRunOnDisconnect } from "../../../shared/control.
 import { isWriteTool } from "../../../shared/effect-policy.js";
 import { conversationDayGroup, conversationOutcome, conversationRelativeTime, otherTaskCopy, resultCardCopy } from "./selectors.js";
 import { liveStatus, runMetaLine, STEER_OTHER_WAY } from "../../../shared/run-status.js";
-import { describeTimeout } from "../../../shared/timeouts.js";
 import { TaskBar, stateHeadline } from "./task-bar.js";
 import { mountComposerGlide } from "./composer-glide.js";
 import type { TaskView } from "../../../shared/task-view.js";
@@ -3648,7 +3646,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   scrollToEnd();
 }
 
-function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: string; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true; pageTarget?: { target: string; label: string; tabId: number; url: string }; skill?: { id: string; name: string; outcome: "saved" | "used" | "unused" } }): void {
+function onToolEnd(ev: { toolCallId: string; isError: boolean; pageTitle?: string; timeout?: { copy: string; retry: boolean }; reason?: string; repeatRefused?: true; heldReason?: HeldReason; sendConfirmed?: true; pageTarget?: { target: string; label: string; tabId: number; url: string }; skill?: { id: string; name: string; outcome: "saved" | "used" | "unused" } }): void {
   if (!ev.heldReason && (ev as { sendDeclined?: unknown }).sendDeclined === true) ev = { ...ev, heldReason: "declined" };
   const run = currentRun ?? lastRun;
 
@@ -3695,7 +3693,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   }
 
   const label = entry.chip.querySelector<HTMLElement>(".chip-label");
-  const pageTitle = !failed && entry.chip.dataset.kind === "open" ? openedPageTitle(ev.resultText ?? "") : null;
+  const pageTitle = !failed && entry.chip.dataset.kind === "open" ? ev.pageTitle ?? null : null;
 
   if (ev.pageTarget?.label && isStepName(ev.pageTarget.label) && label && !pageTitle && !ev.heldReason) {
     const next = actionCardLabel(entry.name, {}, ev.pageTarget.label);
@@ -3735,7 +3733,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
   }
 
   if (failed && label) {
-    const timeout = describeTimeout(ev.resultText ?? ev.reason ?? "");
+    const timeout = ev.timeout ?? null;
     const note = document.createElement("span");
     note.className = "act-failed";
     note.textContent = ` · ${timeout?.copy ?? ev.reason ?? "没做成"}`;
@@ -3763,7 +3761,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; resultText: strin
 
   run?.graph.end(ev.toolCallId, {
     failed,
-    reason: ev.reason ?? (failed ? plainToolError(ev.resultText ?? "") : undefined),
+    reason: ev.reason ?? (failed ? "没做成" : undefined),
     result: pageTitle ?? (failed ? undefined : entry.chip.dataset.short),
     label: entry.chip.dataset.short ?? undefined,
   });
@@ -4816,7 +4814,8 @@ function handleBgMessage(envelope: BgToPanel): void {
         ok.textContent = "✓";
         chip.append(ok);
       }
-      if (envelope.reason) chip.title = `${chip.title}\n${envelope.reason}`;
+      const reason = plainError(envelope.reason, "");
+      if (reason) chip.title = `${chip.title}\n${reason}`;
     }
 
     return;

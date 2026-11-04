@@ -2,7 +2,7 @@ import { createElement as icon, Check } from "lucide";
 import type { ModelConnectionIdentity, ModelConnectionTarget, ModelOption } from "../../../shared/protocol.js";
 import { isModelTimeoutError, plainError, type ModelErrorCopy } from "../../../shared/user-facing.js";
 import { redactCredentialText } from "../../../shared/untrusted.js";
-import { displayName } from "./models.js";
+import { displayName, providerLabel } from "./models.js";
 
 const LATER_SECONDS = 8;
 
@@ -271,8 +271,8 @@ export function mountErrorCards(host: ErrorCardHost) {
       </div>
       <div id="key-sheet-status" role="status"></div>`;
     const [providerEl, modelEl] = sheet.querySelectorAll<HTMLElement>(".key-sheet-model span");
-    providerEl!.textContent = provider;
-    modelEl!.textContent = rest.join("/");
+    providerEl!.textContent = providerLabel(provider);
+    modelEl!.textContent = rest.join("/").split("/").at(-1) ?? "";
     const input = sheet.querySelector<HTMLInputElement>("#key-sheet-input")!;
     const test = sheet.querySelector<HTMLButtonElement>("#key-sheet-test")!;
     const save = sheet.querySelector<HTMLButtonElement>("#key-sheet-save")!;
