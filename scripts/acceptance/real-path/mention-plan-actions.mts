@@ -86,7 +86,7 @@ try {
   check("只读、同一个站的任务不出计划行", !(await goalLine()), null);
   await until(async () => (await answers()) > n && (await rp.evaluate(panel, `document.body.innerText.includes("姓名、城市")`)) || undefined, 60_000, "表格回答");
   await sleep(600);
-  const primary = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .answer-primary")].at(-1)?.textContent.trim() ?? ""`);
+  const primary = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .answer-primary")].at(-1)?.querySelector(".answer-face:not(.answer-face-done)")?.textContent.trim() ?? ""`);
   check("表格回答的主动作是复制为表格", String(primary).replace("↵", "").trim() === "复制为表格", primary);
   const tidy = await rp.evaluate(panel, `({ usedLines: [...document.querySelectorAll("#messages .memory-used-toggle")].filter(e => e.getClientRects().length).map(e => e.textContent.trim()), stale: document.querySelector("#messages").innerText.includes("恢复记录已失效") })`) as { usedLines: string[]; stale: boolean };
   check("同样的「本轮提供的过往任务」只挂一次，不留「恢复记录已失效」", tidy.usedLines.length === 1 && !tidy.stale, tidy);
