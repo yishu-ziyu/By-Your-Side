@@ -49,7 +49,7 @@ const rp = await launchRealPath();
 const evidence: Record<string, unknown> = {};
 let error: string | null = null;
 
-type Seen = { level: string | null; label: string; labelShown: boolean; text: string; grip: boolean };
+type Seen = { level: string | null; labelShown: boolean; text: string; grip: boolean };
 
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "初始标签页");
@@ -74,7 +74,7 @@ try {
   const ANSWER_JS = `[...document.querySelectorAll("#messages .msg.assistant")].filter(m => m.querySelector(".answer-actions"))`;
   const seen = async (n = 0): Promise<Seen> => await rp.evaluate(panel, `(() => { const a = ${ANSWER_JS}[${n}];
     const text = [...a.children].filter(c => !c.matches(".answer-actions,.answer-panel") && getComputedStyle(c).display !== "none").map(c => c.innerText).join("\\n").trim();
-    return { level: a.dataset.shortenLevel ?? null, label: a.querySelector(".shorten-level")?.textContent ?? "", labelShown: (() => { const l = a.querySelector(".shorten-level"); return !!l && getComputedStyle(l).opacity !== "0"; })(), text, grip: !!a.querySelector(".shorten-grip") }; })()`) as Seen;
+    return { level: a.dataset.shortenLevel ?? null, labelShown: [...a.querySelectorAll(":scope > .answer-actions")].some(x => /一句|要点|全文/.test(x.innerText)), text, grip: !!a.querySelector(".shorten-grip") }; })()`) as Seen;
   const gripAt = async () => await rp.evaluate(panel, `(() => { const r = ${ANSWER_JS}[0].querySelector(".shorten-grip").getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()`) as { x: number; y: number };
   const mouse = (type: string, x: number, y: number) => rp.cdp.send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 }, panel);
   const drag = async (dy: number) => {
@@ -95,7 +95,7 @@ try {
       await mouse("mouseMoved", at.x, at.y + dy);
       await sleep(16);
       const s = await rp.evaluate(panel, `(() => { const a = ${ANSWER_JS}[0], g = a.querySelector(".shorten-grip").getBoundingClientRect();
-        return { grip: g.y + g.height / 2, height: a.getBoundingClientRect().height, top: document.querySelector("#messages").scrollTop, label: a.querySelector(".shorten-level").textContent, shown: getComputedStyle(a.querySelector(".shorten-level")).opacity !== "0" }; })()`) as Omit<Step, "finger"> & { label: string };
+        return { grip: g.y + g.height / 2, height: a.getBoundingClientRect().height, top: document.querySelector("#messages").scrollTop, label: a.querySelector(".shorten-grip").getAttribute("aria-valuetext"), shown: [...a.querySelectorAll(":scope > .answer-actions")].some(x => /一句|要点|全文/.test(x.innerText)) }; })()`) as Omit<Step, "finger"> & { label: string };
       steps.push({ finger: at.y + dy, grip: Math.round(s.grip), height: Math.round(s.height), top: s.top, shown: s.shown });
       if (extra < 0 && s.label.startsWith(name)) await rp.screenshot(panel, join(artifacts, `dragging-${name}.png`));
       if (extra >= 0 || s.label.startsWith(name)) extra++;
@@ -141,7 +141,7 @@ try {
     await ask(TASK, 1);
     const full = await seen();
     await rp.screenshot(panel, join(artifacts, "level-3-full.png"));
-    assert.ok(full.grip && full.level === "3" && full.label === "全文" && !full.labelShown, `有把手，默认全文，不拖时不露层名: ${JSON.stringify(full)}`);
+    assert.ok(full.grip && full.level === "3" && !full.labelShown, `有把手，默认全文，不露层名: ${JSON.stringify(full)}`);
     const split = await rp.evaluate(panel, `(() => { const p = ${ANSWER_JS}[0].querySelector("p"); const rest = p.querySelector(".shorten-rest");
       return { restParent: rest?.parentElement?.tagName, bold: [...p.querySelectorAll("strong")].map(s => s.textContent) }; })()`) as { restParent?: string; bold: string[] };
     evidence.split = split;
@@ -164,7 +164,7 @@ try {
     assert.equal(one.text, FIRST, "一句层等于第一句");
     assert.ok(one.text.length < points.text.length && points.text.length < full.text.length, "层越短字越少");
     assert.ok(points.text.includes("拼多多百亿补贴") && !points.text.includes("京东自营") && points.text.includes("值不值得等双十一") && !points.text.includes("细节"), `要点层：卡片只留推荐项，留带列表的小标题，去掉细节: ${points.text}`);
-    assert.ok(one.label === "一句" && !one.labelShown && toPoints.labelShown && toOne.labelShown, `拖的时候露出层名并跟着变，松手后收起: ${JSON.stringify({ label: one.label, shown: one.labelShown, toPoints: toPoints.labelShown, toOne: toOne.labelShown })}`);
+    assert.ok(!one.labelShown && !toPoints.labelShown && !toOne.labelShown, `拖的时候和松手后都不露层名: ${JSON.stringify({ shown: one.labelShown, toPoints: toPoints.labelShown, toOne: toOne.labelShown })}`);
 
     await rp.click(panel, ".answer-primary");
     await sleep(200);
@@ -188,7 +188,7 @@ try {
     const down = await seen();
     evidence.keys = { up: up.level, down: down.level };
     assert.ok(up.level === "2" && down.level === "3", `上下键换层: ${JSON.stringify(evidence.keys)}`);
-    assert.ok(down.labelShown && down.label === "全文", `键盘选中把手时看得到层名: ${JSON.stringify({ label: down.label, shown: down.labelShown })}`);
+    assert.ok(!down.labelShown, `键盘选中把手时也不露层名: ${JSON.stringify({ shown: down.labelShown })}`);
     assert.equal(await rp.evaluate(panel, `${ANSWER_JS}[0].querySelector(".shorten-grip").getAttribute("aria-valuetext")`), "全文", "把手 aria 跟着层走");
 
     await drag(-40);
