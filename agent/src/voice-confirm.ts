@@ -45,10 +45,6 @@ const TASK_PAUSE = /^(?:先)?(?:暂停|接管)(?:一下)?(?:当前|这个|这项
 
 const TASK_RESUME = /^(?:继续|交还)(?:吧|任务|原任务)?$/;
 
-/**
- * 语音层已委派的一句怎么走：只有明确针对任务本身的终止、暂停、继续由宿主控制，
- * 其余都交给执行模型结合对话和页面理解（“暂停音乐”是页面操作，不是暂停任务）。
- */
 export function delegatedVoiceAction(text: string, state: string): 'abort' | 'pause' | 'resume' | 'start' | 'steer' {
   const short = normalizeSpeech(text ?? "");
 
@@ -61,10 +57,6 @@ export function delegatedVoiceAction(text: string, state: string): 'abort' | 'pa
   return state === 'interrupted' ? 'start' : 'steer';
 }
 
-/**
- * 明确要求终止当前任务的整句：宿主据此不经模型直接终止。只认短句里的"终止/取消…任务"，
- * 否定（"别终止任务"）、只停说话（"停一下""别说了"）、问句、条件句和先问后改口都不算；这些句子仍交给模型与分类器。
- */
 export function isExplicitTaskAbort(text: string): boolean {
   if (/[?？]/.test(text ?? "")) return false;
   const short = normalizeSpeech(text ?? "");

@@ -1342,7 +1342,6 @@ export type PageInteractionMessage =
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'validate'; source: PageElementSource }
   | { type: 'GHOST_QUICK_ACTION'; action: GhostQuickAction | 'probe' }
   | { type: 'VOICE_PAGE_OP'; op: import('./voice-page-op.js').VoicePageOp }
-  /** 按记忆填的那一格画「记得的」（后台 → 页面）；token 是后台挂在那个元素上的一次性属性值。 */
   | { type: 'MEMORY_FIELD_MARK'; token: string; memory: { id: string; text: string; createdAt: number } }
   | { type: 'MEMORY_FIELD_FORGET'; id: string; requestId: string }
   | { type: 'CIRCLE_DRAWN'; n: number; rect: { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number };  text?: string }

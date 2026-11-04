@@ -129,9 +129,7 @@ export type RealtimeVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5
 
 export interface VoiceRouteContext {
   nativeChat?: boolean;
-  /** 语音层已判定这句要动手：不再分类，直接交给执行模型。 */
   delegated?: true;
-  /** Keep pending delegation through conversational interjections, never through a new command. */
   awaitInputDecision?: () => Promise<void>;
   onInputDecision?: (readOnly: boolean, incomplete?:boolean) => void;
   pendingDelegation?: boolean;

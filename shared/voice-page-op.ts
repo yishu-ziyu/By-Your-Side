@@ -1,4 +1,3 @@
-/** 语音即时操作：页面脚本直接做，做完读回结果，不经任务循环。 */
 export type VoicePageOp =
   | { kind: 'state' }
   | { kind: 'pause' }
@@ -30,7 +29,6 @@ export function isVoicePageOp(value: unknown): value is VoicePageOp {
   return op.kind === 'state' || op.kind === 'pause' || op.kind === 'play' || op.kind === 'next';
 }
 
-/** 同一个视频的地址：跳转后常多出来源参数，只比路径和视频编号。 */
 export function videoKey(url: string): string {
   try {
     const parsed = new URL(url);

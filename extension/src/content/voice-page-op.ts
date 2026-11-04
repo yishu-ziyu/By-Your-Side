@@ -43,7 +43,6 @@ function cardTitle(link: HTMLAnchorElement): string {
   return title.replace(/\s+/g, ' ').trim().slice(0, 80);
 }
 
-/** 按屏幕位置排行列：DOM 顺序和用户看到的“第几行第几个”不一定一致。轮播图不算卡片。 */
 function visibleCards(): VoicePageCard[] {
   const seen = new Set<string>();
   const found: Array<{ top: number; left: number; height: number; url: string; title: string }> = [];
@@ -99,7 +98,7 @@ async function perform(op: VoicePageOp): Promise<VoicePageReply> {
   if (op.kind === 'state') return reply(true);
 
   if (op.kind === 'open') {
-    // 回复要先发出去：跳转后页面脚本就没了。
+    // WHY: 回复要先发出去：跳转后页面脚本就没了。
     setTimeout(() => location.assign(op.url), 0);
 
     return reply(true);

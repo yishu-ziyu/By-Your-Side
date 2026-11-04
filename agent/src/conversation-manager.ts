@@ -686,10 +686,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
     return {plan:prepared.plan,replyText:prepared.replyText,protocol:prepared.protocol};
   }
-  /**
-   * 语音即时操作：单次页面操作当场做完并读回结果，不开任务。
-   * 返回 result 表示这句话已处理；task 表示要交给执行模型；null 表示这里判断不了，走原路径。
-   */
   private async runVoiceFastOp(id:string,session:Runtime['session'],text:string,before:TaskProgressSnapshot,route:VoiceRouteContext):Promise<{result:VoiceRouteResult}|{task:true}|null>{
     const tabId=route.input?.context?.tabId,url=route.input?.context?.url,rpc=this.entries.get(id)?.runtime.rpc;
 
@@ -707,7 +703,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
     if(decision.op==='task')return {task:true};
 
-    // 任务还在跑时不抢着换页面；播放控制不影响任务。
     if(decision.op==='open'&&before.state==='running')return {task:true};
     route.onInputDecision?.(true);
     const spokenText=await runFastOp(decision,state,send).catch(error=>`这个操作没有成功：${error instanceof Error?error.message:String(error)}`);
@@ -715,7 +710,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
     return {result:{kind:'none',spokenText}};
   }
-  /** 把闸门放出的本轮输出按原顺序发出去（交付流先于正式交付，保持原有先后关系）。 */
   private releaseVoiceOutput(id:string,released:{streams:UserDeliveryStream[];deliveries:UserDelivery[]}):void{
     for(const stream of released.streams)this.emit({type:'agent_event',conversationId:id,event:{kind:'user_delivery_stream',stream}});
 

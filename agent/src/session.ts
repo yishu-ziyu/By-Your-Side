@@ -192,7 +192,6 @@ const PAGE_CHANGE_TOOLS = new Set(["page_translation", "navigate", "open_tab", "
 
 const PROGRAM_TOOLS = new Set(["browser_run", "learned_operation"]);
 
-/** 决定这一句怎么做的上限；超时就走原路径，不让用户多等。 */
 const VOICE_FAST_OP_TIMEOUT_MS = 4_000;
 
 export class BrowserAgentSession {
@@ -549,7 +548,6 @@ if(required.includes(key))candidates.set(key,attachment);
   }
 
   private answerHold: { events: AgentUiEvent[]; settled: boolean; finish?: () => void } = { events: [], settled: false };
-  /** 这一轮是用说的交代或改过：做完就念，不扣到核对之后，核对也不回头重做。 */
   private spokenAsk = false;
   private continueFinish: (() => void) | null = null;
   private keptAnswer: (() => void) | null = null;
@@ -1675,7 +1673,6 @@ return;}
     }
   }
 
-  /** 语音即时操作的决定：只看原话和页面状态，一次调用，失败由调用方走原路径。 */
   async decideVoiceFastOp(text: string, state: VoicePageState, signal?: AbortSignal): Promise<VoiceFastDecision> {
     const call = this.voiceModelCall();
 
@@ -1688,7 +1685,6 @@ return;}
     });
   }
 
-  /** 组装本次语音调用所需的当前 model/runtime/sessionId/headers；每次现取，不缓存旧模型。 */
   private voiceModelCall(): VoiceModelCall | null {
     const session = this.session;
 
@@ -3048,7 +3044,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           {
             const checkGoal = this.goalCheckEligible(event.messages);
-            // 用户说了不止一件事：回答扣到核对之后（最多等 GOAL_GATE_WAIT_MS），没做完就不出回答、接着做。只说一件事的照旧先交付。
             const gate = checkGoal && !this.answerHold.settled && !this.spokenAsk && this.severalAsksNow();
 
             if (checkGoal) emit({ kind: "goal_check", status: "checking", ...(gate ? { gate: true } : {}) });
@@ -3420,7 +3415,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     const continuation = verdict ? this.continuePolicy.next(verdict, { runId, snapshot, goal: this.activeGoal ?? "", failed: this.goalLedger.failuresFor(runId), progress: this.noProgressPolicy?.progressVersion }) : null;
 
-    // 说话的用户已在结果上接着往下走：核对只留「还差」，不回头重做，免得推翻用户已接受的结果。
     if (verdict && continuation && "prompt" in continuation && this.session && !movedTo && !this.spokenAsk) {
       const session = this.session;
 
