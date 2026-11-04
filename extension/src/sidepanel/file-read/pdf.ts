@@ -1,3 +1,4 @@
+import { plainError } from "../../../../shared/user-facing.js";
 import { getDocument, GlobalWorkerOptions, PasswordResponses, type PDFDocumentProxy } from "pdfjs-dist";
 import { FILE_PAGE_IMAGES_MAX } from "../../../../shared/protocol.js";
 
@@ -101,7 +102,7 @@ export async function readPdf(bytes: Uint8Array, onProgress: (fraction: number) 
 
     if (name === "PasswordException") throw new PdfError("PDF 加了密码，先在电脑上去掉密码再附上");
 
-    throw new PdfError(name === "InvalidPDFException" ? "这不是有效的 PDF 文件，或者文件已损坏" : `读不了这份 PDF：${error instanceof Error ? error.message : String(error)}`);
+    throw new PdfError(name === "InvalidPDFException" ? "这不是有效的 PDF 文件，或者文件已损坏" : `读不了这份 PDF：${plainError(error, "文件可能已损坏或被加密")}`);
   }
 
   try {

@@ -1,3 +1,4 @@
+import { plainError } from "../../../shared/user-facing.js";
 import { readVoiceDictationKey } from '../shared/dictation-config.js';
 import { openRealtimeDictation, type RealtimeDictation } from '../shared/dictation-realtime.js';
 import { INPROC_VOICE_KEY } from '../inproc/shared.js';
@@ -63,7 +64,7 @@ export async function mountReadingVoice(): Promise<void> {
       audio.createMediaStreamSource(stream).connect(capture);
       await audio.resume();
       state.textContent = '现在说一句话，说完点击结束。'; action.textContent = '结束试说';
-    } catch (error) { cancel(); state.textContent = error instanceof Error ? error.message : '试说失败，请重试。'; action.textContent = '重新试说'; }
+    } catch (error) { cancel(); state.textContent = plainError(error, '试说失败，请重试。'); action.textContent = '重新试说'; }
     finally { action.disabled = false; }
   });
   addEventListener('pagehide', cancel);

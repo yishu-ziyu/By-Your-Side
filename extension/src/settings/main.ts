@@ -16,6 +16,8 @@ import { SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloud
 import { NUDGE_KEY, isNudgeOn } from "../shared/nudge.js";
 import { BROWSE_ON_KEY, isBrowseOn } from "../shared/browse-habits.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
+import { isVoiceDiagnosticsOn, VOICE_DIAGNOSTICS_KEY } from "../shared/voice-diagnostics.js";
+import { plainError } from "../../../shared/user-facing.js";
 import { CONTINUATION_KEY } from '../../../shared/task-continuation.js';
 import { EDGE_ENTRY_KEY, isEdgeEntryOff } from "../shared/edge-entry.js";
 import { CUSTOM_TRANSLATION_STYLE_MAX_CHARS, parseTranslationStyle, TRANSLATION_STYLE_KEY, TRANSLATION_STYLES, type TranslationStyle } from "../../../shared/translation-style.js";
@@ -1010,7 +1012,7 @@ async function startLogin(): Promise<void> {
     const cancelled = attempt.signal.aborted;
     login = null;
     renderCredentialState();
-    oauthState.textContent = cancelled ? "已取消登录。" : `登录失败：${error instanceof Error ? error.message : String(error)}`;
+    oauthState.textContent = cancelled ? "已取消登录。" : `登录失败：${plainError(error, "请再试一次")}`;
   }
 }
 
@@ -1096,7 +1098,7 @@ async function saveSelection(save: () => Promise<void>, target: HTMLElement): Pr
   try { await save(); }
   catch (error) {
     await reload();
-    setStatus(target, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
+    setStatus(target, `没有保存：${plainError(error, "请再试一次")}`, "err");
   }
 }
 
@@ -1291,7 +1293,6 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
         return;
       }
       r.result.textContent = `不能用：${explainFailure(error instanceof Error ? error.message : String(error))}`;
-      r.result.title = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -1367,6 +1368,7 @@ async function reloadSettings(): Promise<void> {
   $<HTMLInputElement>("browse-habits").checked = isBrowseOn(stored[BROWSE_ON_KEY]);
   renderBrowseState(isBrowseOn(stored[BROWSE_ON_KEY]));
   $<HTMLInputElement>("mini-apps").checked = isMiniAppsOn(stored[MINI_APPS_KEY]);
+  $<HTMLInputElement>("voice-diagnostics").checked = isVoiceDiagnosticsOn(stored[VOICE_DIAGNOSTICS_KEY]);
   $<HTMLInputElement>("continuous-delegation").checked = stored[CONTINUATION_KEY] === true;
   openThreads.checked = stored[OPEN_THREADS_KEY] === true;
   attentionCues.checked = isCuesOn(stored[ATTENTION_CUES_KEY]);
@@ -1655,7 +1657,7 @@ function bindToggle(input: HTMLInputElement, key: string, status: HTMLElement, s
       () => setStatus(status, said(enabled), "ok"),
       (error) => {
         input.checked = !enabled;
-        setStatus(status, `没有保存：${error instanceof Error ? error.message : String(error)}`, "err");
+        setStatus(status, `没有保存：${plainError(error, "请再试一次")}`, "err");
       },
     );
   });
@@ -1693,6 +1695,7 @@ bindToggle($<HTMLInputElement>("browse-habits"), BROWSE_ON_KEY, $("habits-status
 });
 bindToggle($<HTMLInputElement>("edge-entry"), EDGE_ENTRY_KEY, $("translation-status"), (on) => (on ? "已打开，网页右边缘会停着翻译入口。" : "已关闭，⌥T 和侧栏按钮照常可用。"));
 bindToggle($<HTMLInputElement>("mini-apps"), MINI_APPS_KEY, $("labs-status"), (on) => (on ? "已打开，下一个问题起生效。" : "已关闭，已有的小程序不再显示。"));
+bindToggle($<HTMLInputElement>("voice-diagnostics"), VOICE_DIAGNOSTICS_KEY, $("labs-status"), (on) => (on ? "已打开，输入框“+”菜单里多了“语音诊断”。" : "已关闭。"));
 bindToggle($<HTMLInputElement>('continuous-delegation'), CONTINUATION_KEY, $('labs-status'), on => on ? '已打开，可在原页面限时关注结果。' : '已关闭，自动关注和续做将中止，原任务记录保留。');
 
 bindToggle(openThreads, OPEN_THREADS_KEY, $("open-threads-status"), (on) => (on ? "已开启，下次打开新对话时出现。" : "已关闭。"));
@@ -1799,7 +1802,7 @@ document.getElementById("trace-export")!.addEventListener("click", async () => {
     if (exported.voiceLines) download(exported.voice, `by-your-side-voice-${stamp}.jsonl`);
     traceStatus.textContent = `已导出 ${exported.sessions} 个会话、${exported.traceLines} 条任务记录，${exported.voiceLines} 条语音记录。`;
   } catch (error) {
-    traceStatus.textContent = `导出失败：${error instanceof Error ? error.message : String(error)}`;
+    traceStatus.textContent = `导出失败：${plainError(error, "请再试一次")}`;
   }
 });
 
@@ -1808,7 +1811,7 @@ document.getElementById("trace-clear")!.addEventListener("click", async () => {
     await clearDiagnostics();
     traceStatus.textContent = "已清空。";
   } catch (error) {
-    traceStatus.textContent = `清空失败：${error instanceof Error ? error.message : String(error)}`;
+    traceStatus.textContent = `清空失败：${plainError(error, "请再试一次")}`;
   }
 });
 
@@ -1887,7 +1890,7 @@ backupFile.addEventListener("change", async () => {
 
     await applyBackup(backup);
   } catch (error) {
-    setMemoryBackupStatus(`恢复失败：${error instanceof Error ? error.message : String(error)}`, "err");
+    setMemoryBackupStatus(`恢复失败：${plainError(error, "这份备份读不了")}`, "err");
   }
 });
 
@@ -1897,7 +1900,7 @@ backupConfirm.addEventListener("click", async () => {
   try {
     await applyBackup(backupPending);
   } catch (error) {
-    setMemoryBackupStatus(`恢复失败：${error instanceof Error ? error.message : String(error)}`, "err");
+    setMemoryBackupStatus(`恢复失败：${plainError(error, "这份备份读不了")}`, "err");
   }
 });
 

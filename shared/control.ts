@@ -783,39 +783,6 @@ function nextGroupId(): string {
   return `team-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function teamSummaryLabel(team: TeamView): string {
-  const n = team.members.length;
-  const restored = team.members.filter((m) => m.phase === "restored").length;
-
-  const paused = team.members.filter(
-    (m) => m.phase === "paused_tab_closed" || m.phase === "paused_snapshot_failed" || m.phase === "user" || m.phase === "restoring",
-  ).length;
-
-  const closed = team.members.filter((m) => m.phase === "paused_tab_closed").length;
-
-  if (team.phase === "draining") {
-    const stopped = team.members.filter((m) => m.phase === "user").length;
-
-    return `正在停住 ${stopped} / ${n}`;
-  }
-
-  if (team.phase === "user") return `${n} 个 Agent 已暂停`;
-
-  if (team.phase === "restoring") return "正在恢复";
-
-  if (team.phase === "partial") {
-    if (closed > 0) return `${restored} 个已恢复 · ${closed} 个未续跑`;
-
-    return `${restored} 个已恢复 · ${paused} 个仍暂停`;
-  }
-
-  if (team.phase === "restored") return TEAM_ALL_RESTORED;
-
-  if (team.phase === "aborted") return "已中止";
-
-  return `${n} 个 Agent`;
-}
-
 export function teamOwnerBanner(team: TeamView): {
   status: string;
   sub: string;
@@ -827,7 +794,7 @@ export function teamOwnerBanner(team: TeamView): {
   const paused = n - restored;
 
   if (team.phase === "draining") {
-    return { status: "正在停住全队", sub: `${n} 个`, action: "请稍候", actionEnabled: false };
+    return { status: "正在暂停全队", sub: `${n} 个`, action: "请稍候", actionEnabled: false };
   }
 
   if (team.phase === "user") {
@@ -855,59 +822,7 @@ export function teamOwnerBanner(team: TeamView): {
     return { status: TEAM_ALL_RESTORED, sub: `${n} 个`, action: "", actionEnabled: false };
   }
 
-  return { status: "Agent 在工作", sub: `${n}`, action: "接管", actionEnabled: true };
-}
-
-function memberPhaseLabel(phase: TeamMemberPhase): string {
-  switch (phase) {
-    case "running":
-    case "waiting_tool":
-      return "运行中";
-    case "waiting_message":
-      return "等待消息";
-    case "draining":
-      return "排空中";
-    case "user":
-      return "已暂停";
-    case "restoring":
-      return "恢复中";
-    case "restored":
-      return "已恢复";
-    case "paused_tab_closed":
-      return TEAM_TAB_CLOSED;
-    case "paused_snapshot_failed":
-      return TEAM_SNAPSHOT_FAILED;
-    case "aborted":
-      return "已中止";
-    default:
-      return "空闲";
-  }
-}
-
-export function memberStatusLabel(m: Pick<TeamMemberView, "phase" | "reason">): string {
-  if (
-    (m.phase === "paused_snapshot_failed" || m.phase === "paused_tab_closed") &&
-    typeof m.reason === "string" &&
-    m.reason.trim()
-  ) {
-    return m.reason;
-  }
-
-  return memberPhaseLabel(m.phase);
-}
-
-export function shouldShowTeamCard(phase: TeamPhase | undefined | null): boolean {
-  return phase != null && phase !== "idle";
-}
-
-export function memberBoundPageLabel(
-  m: Pick<TeamMemberView, "title" | "url" | "phase"> & { sessionId?: string; role?: TeamMemberView["role"] },
-): string {
-  if (m.phase === "paused_tab_closed") return (m.title || m.url || "已关闭页面").trim() || "已关闭页面";
-  const title = (m.title || "").trim();
-  const url = (m.url || "").trim();
-
-  return title || url || "绑定页";
+  return { status: "助手在工作", sub: `${n}`, action: "接管", actionEnabled: true };
 }
 
 export function applyMemberGates(gate: ControlGate, team: TeamView): { globalHandback: boolean } {

@@ -1,3 +1,4 @@
+import { plainError } from "../../../shared/user-facing.js";
 import { activeTargetTab } from "./target-window.js";
 import { isPageInteractionMessage, type PageInteractionMessage } from "../../../shared/protocol.js";
 import { MOTION_CSS_VARS } from "../shared/motion-tokens.js";
@@ -315,7 +316,7 @@ export async function startCircling(start: number, onCircle: (dataUrl: string, n
     await chrome.scripting.executeScript({ target: { tabId }, func: circleInPage, args: [GLOBAL_KEY, start, circleSet, MOTION_CSS_VARS] });
   } catch (err) {
     stop(false);
-    throw new Error(`这个页面不能圈（${err instanceof Error ? err.message : String(err)}）`);
+    throw new Error(plainError(err, "这个页面不能圈"));
   }
 }
 
