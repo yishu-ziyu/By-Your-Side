@@ -5,6 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { printGoals } from './log-goals.mjs';
+import { printSideCalls } from './log-side-calls.mjs';
 
 const REQUIREMENTS = [
   "ccl_chromium_reader @ git+https://github.com/cclgroupltd/ccl_chromium_reader.git@ef840de30221c4d65bc96d2f4d9057e9ef2f526d",
@@ -22,6 +23,7 @@ const sinceArg = option("--since");
 const runPrefix = option("--run");
 const readingOnly = args.includes("--reading");
 const goalsOnly = args.includes("--goals");
+const sideOnly = args.includes("--side");
 const matchText = option("--match");
 let since = null;
 if (sinceArg === "today") { since = new Date(); since.setHours(0, 0, 0, 0); }
@@ -31,9 +33,10 @@ function fail(message) { console.error(message); process.exit(1); }
 
 const voiceFile = option("--file");
 if (voiceFile) {
-  if (!args.includes("--voice") && !readingOnly && !goalsOnly) fail("--file 要和 --voice、--reading 或 --goals 一起用。");
+  if (!args.includes("--voice") && !readingOnly && !goalsOnly && !sideOnly) fail("--file 要和 --voice、--reading、--goals 或 --side 一起用。");
   const lines = readFileSync(voiceFile, "utf8").split("\n").filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return goalsOnly ? [{ unparsed: true }] : []; } });
   if (goalsOnly) { printGoals(lines, since); process.exit(0); }
+  if (sideOnly) { printSideCalls(lines); process.exit(0); }
   if (readingOnly) { printReading(lines); process.exit(0); }
   voiceTimings(lines.filter((e) => !since || new Date(e.at) >= since));
   process.exit(0);
@@ -293,6 +296,7 @@ function printReading(events) {
 if (readingOnly) { printReading(traces); process.exit(0); }
 
 if (goalsOnly) { printGoals(traces, since); process.exit(0); }
+if (sideOnly) { printSideCalls(traces); process.exit(0); }
 
 if (!runPrefix) {
   const seen = new Set();
