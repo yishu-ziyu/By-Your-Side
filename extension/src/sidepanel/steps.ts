@@ -1,7 +1,5 @@
 import { displayNameFor, personFor } from "../../../shared/cast.js";
-import { extractSearchQuery } from "../../../shared/request-confirm.js";
-import { redactUrlCredentials } from "../../../shared/network.js";
-import { redactCredentialText } from "../../../shared/untrusted.js";
+import { REF_ONLY } from "../../../shared/tool-event-for-ui.js";
 import { toolAction } from "../../../shared/user-facing.js";
 import type { HeldReason } from "../../../shared/protocol.js";
 
@@ -156,7 +154,7 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
     }
 
     case "fetch": {
-      const query = extractSearchQuery(str(params.body) ?? undefined, str(params.url) ?? undefined);
+      const query = str(params.searchQuery);
       if (query) return { short: `搜索「${clip(query, 16)}」`, full: `搜索「${clip(query, 24)}」` };
       if (/(search|query|graphql|gql)/i.test(str(params.url) ?? "")) return { short: "搜索", full: "搜索" };
       return { short: "读取网页数据", full: "读取网页数据" };
@@ -218,60 +216,12 @@ export function describeTool(name: string, params: Record<string, unknown>): Too
   }
 }
 
-const SECRET_FIELD = /密码|口令|验证码|安全码|卡号|身份证|密钥|password|passcode|passwd|pwd|otp|cvv|cvc|token|secret|api.?key|credit.?card/i;
-
-export interface StepDetail { text: string; href?: string }
-
-function typedValue(params: Parameters<typeof describeTool>[1], value: string | null): StepDetail | null {
-  const label = str(params.label)?.trim();
-
-  if (!value || !label || REF_ONLY.test(label) || SECRET_FIELD.test(label) || redactCredentialText(value) !== value) return null;
-
-  return { text: `填入：${clip(value, 200)}` };
-}
-
-export function stepDetail(name: string, params: Parameters<typeof describeTool>[1]): StepDetail | null {
-  switch (name) {
-    case "navigate":
-    case "open_tab": {
-      const url = str(params.url);
-
-      return url && /^https?:/i.test(url) ? { text: redactUrlCredentials(url), href: redactUrlCredentials(url) } : null;
-    }
-    case "fetch": {
-      const query = extractSearchQuery(str(params.body) ?? undefined, str(params.url) ?? undefined);
-
-      return query ? { text: `搜索词：${clip(query, 200)}` } : null;
-    }
-    case "download_url": {
-      const filename = str(params.filename);
-
-      return filename ? { text: filename } : null;
-    }
-    case "fill":
-      return typedValue(params, str(params.value));
-    case "type_text":
-      return typedValue(params, str(params.text));
-    case "select_option": {
-      const values = Array.isArray(params.values) ? params.values.filter((v): v is string => typeof v === "string") : [str(params.values)].filter((v): v is string => !!v);
-
-      return typedValue(params, values.join("、") || null);
-    }
-    default:
-      return null;
-  }
-}
-
 const CURSOR_VERBS = new Map([
   ["click", { verb: "点", unnamed: "点击" }],
   ["fill", { verb: "填", unnamed: "填写" }],
   ["select_option", { verb: "选", unnamed: "选择选项" }],
   ["hover", { verb: "看", unnamed: "查看" }],
 ]);
-
-const REF_ONLY = /^@?[a-z]?\d+$|^[#.][\w-]|^loc=|^\[[^\]]*\]$/i;
-
-export const isStepName = (label: string): boolean => !!label.trim() && !REF_ONLY.test(label.trim());
 
 export function actionCardLabel(name: string, params: Parameters<typeof describeTool>[1], plate?: string): string {
   const words = CURSOR_VERBS.get(name);
@@ -473,7 +423,7 @@ export function shortAction(name: string, params: Parameters<typeof describeTool
   else if (name === "type_text") text = label ? `填${label}` : "输入文字";
   else if (name === "js") text = str(params.purpose) ?? "运行代码";
   else if (name === "fetch") {
-    const query = extractSearchQuery(str(params.body) ?? undefined, str(params.url) ?? undefined);
+    const query = str(params.searchQuery);
     text = query ? `搜索「${clip(query, 12)}」` : /(search|query|graphql|gql)/i.test(str(params.url) ?? "") ? "搜索" : "读取网页数据";
   }
   else if (name === "browser_run") text = label ?? "连续操作";
