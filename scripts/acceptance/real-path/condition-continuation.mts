@@ -1,14 +1,3 @@
-/**
- * Real isolated extension: one user request waits without model polling, then reads,
- * marks and verifies the matching result on the original page. Only the model and
- * fixture website are scripted. --case=stop checks a late change after stopping;
- * --case=irrelevant adds unrelated mutations before the actual result.
- * --case=watch verifies two batches without repeating the first, then stops.
- * Control cases: pause, revise, navigate, reload, disable, restart, new-task (scripted model only).
- * Boundary cases: already, deadline, exists, disabled-default (scripted model only).
- * Add --live [--model=openai-codex/gpt-6-luna] for natural real-model planning and verification.
- * npx tsx scripts/acceptance/real-path/condition-continuation.mts --headless [--case=once|stop|irrelevant|watch] [--live]
- */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -79,7 +68,6 @@ const model = live ? null : await startScriptedModel([
   { match: '"task":', steps: [{ text: JSON.stringify({ title: '结果筛选' }) }] },
   { match: REVISION, steps: revisionSteps },
   { match: NEW_QUESTION, steps: [{ text: NEW_ANSWER }] },
-  // Each wake is a new user-shaped host prompt. The second one includes a committed processing position.
   { match: SECOND_WAKE, steps: secondBatch },
   { match: WAKE, steps: follow },
   { match: ASK, steps: initial },
@@ -139,7 +127,6 @@ try {
   });
   await runStage('等待侧栏可发送', () => until(() => browser.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false'), 60_000, 'sidebar ready'));
   if (live) network = await runStage('观察真实模型网络请求元数据', () => watchInproc(browser, browser.extensionId));
-  // A second read-only panel port records the same authoritative views consumed by the UI.
   await runStage('连接只读任务视图端口', () => browser.evaluate(panel, `(() => {
     globalThis.__conditionViews=[]; globalThis.__conditionMessages=[];
     const port=chrome.runtime.connect({name:'sideagent-panel'}); globalThis.__conditionPort=port;
@@ -447,7 +434,6 @@ try {
     await writeFile(join(artifacts, 'panel-messages.json'), JSON.stringify(await rp.evaluate(panel, 'globalThis.__conditionMessages ?? []').catch(() => []), null, 2));
     await rp.evaluate(panel, 'globalThis.__conditionPort?.disconnect(); true').catch(() => {});
     if (live) {
-      // Select timing and token facts inside the isolated extension; no request headers or bodies leave it.
       const metrics = await rp.evaluate(panel, `new Promise((resolve,reject)=>{
         const request=indexedDB.open('sideagent-diagnostics');request.onerror=()=>reject(request.error);
         request.onsuccess=()=>{const db=request.result;if(!db.objectStoreNames.contains('trace-lines')){db.close();resolve([]);return}

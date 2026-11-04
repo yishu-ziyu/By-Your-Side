@@ -3,11 +3,6 @@ import { acceptNudgeReply, type Nudge, type NudgeContext, type NudgeMemory } fro
 import { redactCredentialText } from "../../shared/untrusted.js";
 import { isJsonObject, parseJsonReply, sideJudgment, type SideCallHost } from "./side-judgment.js";
 
-/**
- * 主动建议的判断：一次无工具的后台判断，看用户正在读的页和这次会话最近看过的几页，
- * 决定要不要递一张建议卡。默认不建议；场景只在提示词里举例，不在代码里列。
- */
-
 const NUDGE_TIMEOUT_MS = 20_000;
 
 const NUDGE_PROMPT = `You sit beside the user while they read web pages and decide whether to offer ONE short, optional suggestion card with ONE action. Most of the time the right answer is no suggestion.
@@ -38,16 +33,11 @@ function payload(context: NudgeContext, memories: readonly NudgeMemory[]): strin
   return JSON.stringify({ page, confirmedMethods: memories.map(memory => ({ ...memory, text: redactCredentialText(memory.text) })), recent: context.recent.map(r => ({ ...r, excerpt: redactCredentialText(r.excerpt) })) });
 }
 
-/**
- * 一次判断的结论，给诊断记录用（日常试用时回看出了什么卡、为什么没出）。
- * no_offer：模型说不建议；rejected：模型想建议，但字段或出处没过核对，带上它的原话（截 400 字）。
- */
 export type NudgeVerdict =
   | { verdict: "offer"; actionLabel: string; sentence: string; party?: string; evidence: string; memoryId?: string }
   | { verdict: "no_offer" }
   | { verdict: "rejected"; reply: string };
 
-/** 不建议、回复不合格或出处对不上都回 null；调用失败抛 SideCallError，由调用方当作不建议。 */
 export function judgeNudge(host: SideCallHost, model: Model<Api>, context: NudgeContext, options: { memories?: readonly NudgeMemory[]; sessionId?: string; headers?: Record<string, string>; signal?: AbortSignal; onVerdict?: (verdict: NudgeVerdict) => void } = {}): Promise<Nudge | null> {
   const { onVerdict, memories = [], ...call } = options;
 

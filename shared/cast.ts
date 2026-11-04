@@ -1,9 +1,3 @@
-/**
- * 并行时侧栏/光标上的人。律师班 + 火线班都可以上场。
- * 新 worker 的角色编码进 id，旧记录沿用散列；面板和页面光标共用纯函数。
- * Lead（main）不是这张名册。
- */
-
 export const LEAD_COLOR = "#2d4a86";
 
 const LEAD_NAME = "By Your Side";
@@ -25,13 +19,10 @@ interface Person {
   pool: number[];
   mood: "idle" | "wait" | "play" | "work";
   waitLine: string;
-  /** 常驻 Kenney 脸（Omar 紫菱）。 */
   kenney?: KenneyFace;
-  /** 等待时换成 Kenney（Mike 黄球皱眉）。 */
   kenneyWait?: KenneyFace;
 }
 
-/** 律师班 + 火线班。Grok Bot 形色眼；Mike 等待 / Omar 常驻用 Kenney。 */
 const CAST: readonly Person[] = [
   {
     key: "kim",
@@ -137,7 +128,6 @@ function isLeadId(id: string | undefined | null): boolean {
   return !id || id === "main";
 }
 
-/** worker sessionId → 人。Lead 返回 null。 */
 export function personFor(id: string): Person | null {
   if (isLeadId(id)) return null;
   const key = /-cast-([a-z]+)-[a-f0-9]{8}$/.exec(id)?.[1];
@@ -146,12 +136,10 @@ export function personFor(id: string): Person | null {
   return person ?? CAST[0] ?? null;
 }
 
-/** 光标/色条颜色。Lead 墨蓝（AI 专属色，与侧栏 --accent 同色），人用自己的色。 */
 export function displayColor(id: string): string {
   return personFor(id)?.color ?? LEAD_COLOR;
 }
 
-/** 光标名牌 / 步骤行名字。 */
 export function displayNameFor(id: string): string {
   return personFor(id)?.name ?? LEAD_NAME;
 }

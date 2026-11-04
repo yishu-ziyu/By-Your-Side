@@ -1,9 +1,3 @@
-/**
- * 记忆入口有名字、抽屉能搜。
- * 只装扩展、隔离构建、本机脚本模型；记忆和过往任务直接写进扩展自己的 IndexedDB（库名、键与 memory-used-line.mts 相同）。
- *   npx tsx scripts/acceptance/real-path/memory-management.mts --headless
- * 失败方式：顶栏只有图标没有字；抽屉没有搜索框；搜索后组头还写过滤前的条数；没有匹配的组还占着位置；什么都搜不到时一片空白；抽屉里有小于 11px、读不清的字。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -38,7 +32,6 @@ const rp = await launchRealPath();
 
 let error: string | null = null;
 
-/** 写进 result.json 的证据。 */
 interface Evidence { stage?: string; entryText?: string; search?: unknown; nothing?: unknown; cleared?: unknown }
 
 const evidence: Evidence = {};
@@ -55,7 +48,6 @@ const idbOpen = `async () => {
 }`;
 
 try {
-  // 先写好记忆和过往任务，再配模型：助手核心启动时读到的就是这份。
   const ext = await rp.attach((await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/voice-permission.html` })).targetId);
   await until(async () => (await rp.evaluate(ext, `document.readyState === "complete"`)) || undefined, 10_000, "扩展页");
 
@@ -72,13 +64,11 @@ try {
   })}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
 
-  // R1：顶栏入口写着「记忆」，不只是一个图标。
   evidence.stage = "R1";
   evidence.entryText = String(await rp.evaluate(panel, 'document.querySelector("#memory-open")?.innerText.trim() ?? ""'));
   assert.equal(evidence.entryText, "记忆", "the top bar entry is labeled 记忆");
   await rp.screenshot(panel, join(artifacts, "R1-topbar.png"));
 
-  // R5：抽屉能搜，组头计数跟着搜索结果走，空组隐藏，搜不到时说清楚。
   evidence.stage = "R5";
   await rp.click(panel, "#memory-open");
   await until(async () => await rp.evaluate(panel, 'document.querySelectorAll("#memory-body .memory-row:not(.past-task)").length === 4 && document.querySelectorAll("#memory-body .past-task").length === 2') || undefined, 20_000, "drawer lists the seeded memories and tasks");

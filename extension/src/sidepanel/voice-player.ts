@@ -1,4 +1,3 @@
-/** Playback has its own generation and clock, independent of server response.done. */
 export class VoicePlayer {
   private turn = 0;
   private nextTime = 0;
@@ -13,7 +12,6 @@ export class VoicePlayer {
 
  return played;
   }
-  /** Full-duplex input advances without cutting existing playback. */
   follow(turn: number): void { this.turn=turn; }
   enqueue(event: { turn: number; itemId: string; responseId: string; data: string }): void {
     if (event.turn !== this.turn) return;
@@ -43,7 +41,6 @@ export class VoicePlayer {
 
     node.start(start);
   }
-  /** 还有排着或正在播的回答音频。 */
   get playing(): boolean { return this.sources.size > 0; }
   responseEnd(responseId: string): void { this.ended.add(responseId); this.checkDrained(responseId); }
   private checkDrained(id: string): void {
@@ -55,7 +52,7 @@ export class VoicePlayer {
     for (const s of this.sources) if (s.start <= this.context.currentTime) played = { itemId: s.itemId, ms: (s.offset + Math.min(s.duration, this.context.currentTime - s.start)) * 1000 };
     this.generation++;
 
-    for (const s of this.sources) { try { s.node.stop(); } catch { /* already ended */ }
+    for (const s of this.sources) { try { s.node.stop(); } catch {  }
 
  s.node.disconnect(); }
 

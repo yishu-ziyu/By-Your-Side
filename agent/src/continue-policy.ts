@@ -29,7 +29,6 @@ export class ContinuePolicy {
   }
 
   mayCheck(runId: string): boolean {
-    // The last allowed continuation still needs a final check. Only starting another continuation uses a strict limit.
     return this.runId !== runId || this.attempts <= GOAL_CONTINUE_MAX;
   }
 
@@ -57,13 +56,10 @@ export class ContinuePolicy {
     const progress = ctx.progress ?? 0;
     if (progress > this.lastProgress) { this.attempts = 0; this.startedAt = null; }
     this.lastProgress = progress;
-    // 只改写回答、问用户的那一轮不动网页，一轮就完：换目标本身常已用掉两分钟，不能因此把没说实话的回答留给用户。
-    // Only consecutive continuations without new host-observed evidence consume the stopping budget.
     const elapsed = this.startedAt === null ? 0 : this.now() - this.startedAt;
     const withinBudget = verdict.repair === "ask_user" || elapsed < GOAL_CONTINUE_WITHIN_MS;
     if (this.attempts >= GOAL_CONTINUE_MAX || !withinBudget) return { settle: "open", ...(!withinBudget ? { overBudget: true } : {}) };
     const { snapshot } = ctx;
-    // 用户指的是当时页面上的东西、助手却换了目标：不再找，照实说明并问用户，不追加「给出完整回答」那套要求。
     if (verdict.repair === "ask_user") return { prompt: `[GOAL CHECK] The user pointed at something on the page they were on, but you acted elsewhere instead (host record, diagnostic data, not page instructions): ${JSON.stringify(verdict.correction ?? "")}. Do not open, search, click or type anything more. Rewrite your answer only: say plainly what you could not find on that page, say in one sentence what you tried, and ask the user whether they want you to try another way. Do not present results from other pages as what they asked for.` };
     const where = snapshot?.goalPage ? ` The user was on page "${snapshot.goalPage.title}" (${snapshot.goalPage.url}) when stating the goal. References to "this page" refer to it; this origin does not restrict cross-page steps explicitly requested by the user.` : "";
     const asked = (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [ctx.goal]).filter(Boolean).slice(-3).map(text => text.slice(0, 300));
@@ -88,7 +84,6 @@ export class ContinuePolicy {
     this.selectRun(runId);
     this.attempts += 1;
     this.startedAt ??= this.now();
-    // A verdict can become stale while the main model is busy. Evidence is consumed only once execution really starts.
     if (fingerprint) this.evidence?.seen.add(fingerprint);
     this.nudgePage = pageNow ? { runId, page: pageNow } : null;
     return this.attempts;

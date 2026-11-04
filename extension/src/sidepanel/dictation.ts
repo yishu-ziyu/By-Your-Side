@@ -1,9 +1,4 @@
 import { openRealtimeDictation, type RealtimeDictation } from "../shared/dictation-realtime.js";
-/**
- * 输入框里边说边出字：点话筒开始，字和声波实时出现在输入框里；
- * 点 ✓ / 回车，字留在输入框，由用户自己发；点 × / Esc，输入框回到说之前。
- * 识别服务由独立的语音转文字设置决定。
- */
 import { DICTATION_PROVIDERS, readDictationSettings, type DictationProvider } from "../shared/dictation-config.js";
 import { recordDictation, transcribeDictation, type DictationRecording } from "../shared/dictation-service.js";
 import { microphonePermissionState } from "./voice-permission.js";
@@ -25,13 +20,10 @@ interface SpeechRecognitionLike {
 }
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
-/** Chrome 自带识别服务的连接错误。 */
 const UNREACHABLE = new Set(["network", "service-not-allowed", "language-not-supported"]);
 
-/** Chrome 一段静音后会自己停，接着重开；一直没有字还反复停，就是出了问题，别无限重开。 */
 const MAX_EMPTY_RESTARTS = 3;
 
-/** 声波每 60ms 推一根，画布从右往左滚。 */
 const STEP_MS = 60;
 const BAR = 3;
 const GAP = 2;
@@ -43,12 +35,9 @@ const CLOSE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 export function mountDictation(opts: {
   composer: HTMLElement;
   inputEl: HTMLTextAreaElement;
-  /** 话筒按钮放在这个元素前面。 */
   before: HTMLElement;
   notice: (text: string) => void;
-  /** 当前会话：说话期间换了会话，字不写进新会话。 */
   conversation: () => string;
-  /** 语音对话正在用麦克风时，不再开第二路。 */
   voiceBusy: () => boolean;
 }): { busy: () => boolean; cancel: () => void } {
   const { composer, inputEl } = opts;
@@ -95,12 +84,9 @@ export function mountDictation(opts: {
   composer.querySelector("#composer-bar")!.after(row);
 
   let active = false;
-  /** 每次开始加一：上一次的识别、麦克风、阶跃回复晚到时认得出自己已过期。 */
   let session = 0;
   let engine: Engine = "chrome";
-  /** 开始说话前输入框里的字；取消时原样放回。 */
   let before = "";
-  /** Chrome 自己停了又重开时，前几段已经认出的字。 */
   let carried = "";
   let finalText = "";
   let interim = "";
@@ -149,7 +135,6 @@ export function mountDictation(opts: {
     let sum = 0;
     for (const v of buf) sum += v * v;
 
-    // 和侧栏语音同样的换算（rms×5，封顶 1）。
     return Math.min(1, Math.sqrt(sum / buf.length) * 5);
   };
 
@@ -176,7 +161,6 @@ export function mountDictation(opts: {
         const x = w - (k + frac) * (BAR + GAP) - BAR;
         if (x < 0) break;
         const v = bars[bars.length - 1 - k]!;
-        // 没声音时不画柱子，只留基线：声波只说“我听到了”。
         if (v < 0.03) continue;
         const bh = Math.max(2, v * (h - 4));
         g.globalAlpha = Math.min(1, x / 40);
@@ -200,7 +184,6 @@ export function mountDictation(opts: {
     analyser = null;
   };
 
-  /** 只给声波用的麦克风；拿不到就只画基线，不影响识别。 */
   const openWaveMic = async (mine: number): Promise<void> => {
     try {
       const media = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -222,7 +205,7 @@ export function mountDictation(opts: {
     r.onresult = null;
     r.onerror = null;
     r.onend = null;
-    try { abort ? r.abort() : r.stop(); } catch { /* 已停 */ }
+    try { abort ? r.abort() : r.stop(); } catch {  }
   };
 
   const recognitionFailed = (): void => {
@@ -282,7 +265,6 @@ export function mountDictation(opts: {
     const ctor = ((window as unknown as { SpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition
       ?? (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition);
     if (!ctor) { recognitionFailed(); return; }
-    // 识别先开，声波的麦克风随后接上：别让开麦的几百毫秒挡住第一个字。
     void openWaveMic(mine);
     const r = new ctor();
     r.lang = "zh-CN";
@@ -312,7 +294,7 @@ export function mountDictation(opts: {
         opts.notice("麦克风还没授权，已打开授权页。");
       }
     };
-    // Chrome 一段静音后会自己停：还在说话输入就接着听，前一段认出的字记进 carried。
+    // WHY: Chrome 一段静音后会自己停：还在说话输入就接着听，前一段认出的字记进 carried。
     r.onend = () => {
       if (!active || rec !== r) return;
       const had = finalText + interim;
@@ -368,7 +350,6 @@ export function mountDictation(opts: {
     finally { starting = false; if (!active && !pending) unlock(); }
   };
 
-  /** keep：把说的字放进输入框（不发）；否则输入框回到说之前。 */
   const stop = (keep: boolean): void => {
     if (!active && !pending && !starting) return;
     if (!keep) { session += 1; cloudRequest?.abort(); realtime?.cancel(); }
@@ -447,11 +428,9 @@ export function mountDictation(opts: {
       return;
     }
     if (!active || event.isComposing) return;
-    // 焦点在 × 上按回车是“不要了”，交给按钮自己。
     if (event.key === "Enter" && document.activeElement !== cancelBtn) { event.preventDefault(); event.stopImmediatePropagation(); stop(true); }
     else if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); stop(false); }
   }, true);
-  // 侧栏关闭后，迟到的识别结果不能写入草稿。
   addEventListener("pagehide", () => stop(false));
 
   return { busy: () => active || pending || starting, cancel: () => stop(false) };

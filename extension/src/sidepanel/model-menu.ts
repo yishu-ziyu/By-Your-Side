@@ -2,7 +2,6 @@ import { isThinkingLevel, type ThinkingLevel, type ThinkingInfo, type ModelOptio
 import { displayName, filterModels, groupModelsByProvider, providerLabel } from "./models.js";
 import { bindMotionIcon } from "./motion-icon.js";
 
-/** 入口显示宿主实际档位；手动偏好与自动升档分开，重连不能把偏好误当成新选择。 */
 const LEVEL: Record<string, string> = { off: "关", minimal: "最低", low: "低", medium: "中", high: "高", xhigh: "更高", max: "最高" };
 
 const KEY = "sideagent.thinkingLevels";
@@ -18,10 +17,8 @@ function readEffortChoices(raw: string | null): Record<string, ThinkingLevel> {
 
 const RECENT_KEY = "sideagent.recentModels";
 
-/** 目录不超过这个数就全放第一层，不给「更多模型」。 */
 const FIRST_LEVEL_MAX = 5;
 
-/** 第一层至少放几个：最近用过的和精选不够时，用当前模型同一账号下的补上。 */
 const FIRST_LEVEL_MIN = 3;
 
 function readRecent(): string[] {
@@ -40,13 +37,10 @@ const CHEVRON = svg('<path d="m6 15 6-6 6 6"/>', 10, 2.6);
 
 const CHECK = svg('<path d="M20 6 9 17l-5-5"/>', 16, 2.2);
 
-/** 占到一半才在模型名旁画环：之前用户不用操心。 */
 const RING_FROM = 0.5;
 
-/** 这段对话最近一次请求送进模型的量和模型的窗口，单位 token；model 是当时选着的模型。 */
 interface ContextUsage { used: number; window: number; model: string }
 
-/** token 按「约 N 万字」说：用户不认识 token；token 和字不是一比一，所以写「约」，准的是百分比。 */
 const wan = (tokens: number) => { const v = tokens / 10_000; return String(v >= 100 ? Math.round(v) : Math.round(v * 10) / 10); };
 
 function usageText(usage: ContextUsage): { head: string; figures: string; line: string; fraction: number } {
@@ -58,18 +52,13 @@ function usageText(usage: ContextUsage): { head: string; figures: string; line: 
   return { head, figures, line: head + figures, fraction };
 }
 
-/** 宿主平时不删历史，只在模型报装不下时收起一次早先的大段内容（agent/src/pi-agent-loop.ts）；没有可收的或收完还超，就是出错。 */
 const FULL_NOTE = "对话太长时，会尝试精简网页内容；仍超限会提示。";
 
 interface ModelMenu {
-  /** hello_ok / model_info：缺省的字段保留现值。 */
   update(model: string | undefined, models: ModelOption[] | undefined): void;
   thinking(value: ThinkingInfo): void;
-  /** 会话切换或断线：回到不知道当前模型的状态。 */
   reset(): void;
-  /** 连上宿主后把选过的强度告诉它（新开的宿主不记得）。 */
   connected(): void;
-  /** 这段对话占了多少上下文；null 是还不知道（新对话、刚切换）。读数只在选着它的那个模型时显示。 */
   usage(value: ContextUsage | null): void;
 }
 
@@ -83,7 +72,6 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   chip.setAttribute("aria-expanded", "false");
   options.after.after(chip);
 
-  // 用量提示放在开关外面：开关的 innerText 只有模型名和档位。
   const pop = document.createElement("div");
   pop.id = "ctx-pop";
   pop.setAttribute("aria-hidden", "true");
@@ -117,8 +105,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     chosen = readEffortChoices(localStorage.getItem(KEY));
     const previous = localStorage.getItem(LEGACY_KEY);
     if (previous !== null) legacy = previous === '1';
-  } catch { /* 存储不可用时使用宿主默认档。 */ }
-  const saveChoices = () => { try { localStorage.setItem(KEY,JSON.stringify(chosen)); } catch { /* 本轮选择仍会发给宿主。 */ } };
+  } catch {  }
+  const saveChoices = () => { try { localStorage.setItem(KEY,JSON.stringify(chosen)); } catch {  } };
 
   let current: string | undefined;
   let models: ModelOption[] = [];
@@ -126,14 +114,12 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   let usage: ContextUsage | null = null;
 
   const currentOption = () => models.find((m) => m.id === current);
-  // 换了模型，旧读数既不是新模型的窗口、也不知道新模型怎么算，下一次回答前不显示。
   const shownUsage = () => usage && usage.model === current ? usage : null;
   const baseLevel = () => current ? chosen[current] ?? currentOption()?.thinking?.default : undefined;
   const shownLevel = () => actual && actual.model === current ? actual.actual : baseLevel();
 
   let recent = readRecent();
 
-  /** 第一层：当前模型、最近用过的、精选；不够就用同一账号下的补。目录小就全放第一层。 */
   const firstLevel = () => {
     if (models.length <= FIRST_LEVEL_MAX) return models;
     const byId = new Map(models.map((m) => [m.id, m]));
@@ -179,7 +165,6 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     chip.querySelector(".think-model")!.textContent = name;
 
     if (ring) chip.querySelector<HTMLElement>(".think-ring")!.style.setProperty("--ctx-fill", used.fraction.toFixed(3));
-    // 窄侧栏只露图标，全名靠悬停提示和读屏名字说出来。知道用量时悬停出用量卡片，不再叠一个系统提示。
     const label = `模型：${name}${level ? ` · ${level}` : ""}`;
     chip.setAttribute("aria-label", used ? `${label}。${used.line}` : label);
 
@@ -202,7 +187,6 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     const visible = on && Boolean(shownUsage()) && !chip.hidden && !isOpen();
 
     if (visible) {
-      // 跟着开关摆，窄侧栏里不出右边界。
       const box = options.composer.getBoundingClientRect();
       const at = chip.getBoundingClientRect().left - box.left;
       pop.style.left = `${Math.max(8, Math.min(at, box.width - pop.offsetWidth - 8))}px`;
@@ -337,10 +321,9 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     open(false);
 
     if (id === current) return;
-    // 刚换掉的那个也算最近用过：换过去试一下，第一层就能换回来。
     recent = [id, current, ...recent].filter((other, i, all): other is string => Boolean(other) && all.indexOf(other) === i).slice(0, FIRST_LEVEL_MAX - 1);
 
-    try { localStorage.setItem(RECENT_KEY, JSON.stringify(recent)); } catch { /* 记不住最近用过的，只影响第一层排序 */ }
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(recent)); } catch {  }
     options.setModel(id);
   };
 
@@ -357,7 +340,6 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   chip.addEventListener("pointerleave", () => showPop(false));
   chip.addEventListener("focus", () => { if (chip.matches(":focus-visible")) showPop(true); });
   chip.addEventListener("blur", () => showPop(false));
-  // 悬停出来的卡片也能用 Esc 收起（WCAG 1.4.13）；只在卡片开着时吃掉这次 Esc。
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || !pop.classList.contains("show")) return;
     event.preventDefault();
@@ -410,7 +392,6 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
       return;
     }
 
-    // 焦点在“深入”、返回这些按钮上时，回车按它们自己的；输入法确认候选词的回车也不算选模型。
     if (key === "Enter" && !event.isComposing && (document.activeElement === menu || document.activeElement === search) && highlighted() >= 0) {
       event.preventDefault();
       rows()[highlighted()]!.click();
@@ -422,7 +403,6 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
 
     if (key === "ArrowLeft" && view === "all" && !search.value) return show("main");
 
-    // 第一层直接打字就进「更多模型」搜索，和 Claude 的模型菜单一样不用先点搜索框。
     if (view === "main" && key.length === 1 && key !== " " && !event.metaKey && !event.ctrlKey && !event.altKey && models.length > firstLevel().length) {
       event.preventDefault();
       show("all", key);
@@ -475,7 +455,7 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
           chosen[option.id] = levels.filter(level => order.indexOf(level) <= order.indexOf(ceiling)).at(-1) ?? levels[0]!;
         }
         legacy = undefined; saveChoices();
-        try { localStorage.removeItem(LEGACY_KEY); } catch { /* 不影响已迁移的选择。 */ }
+        try { localStorage.removeItem(LEGACY_KEY); } catch {  }
       }
       repaint();
 

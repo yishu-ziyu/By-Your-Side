@@ -1,5 +1,5 @@
 /**
- * 离屏文档里念结果。
+ * WHY: 离屏文档里念结果。
  * MiniMax speech-2.8-hd 流式返回 24kHz 16 位小端 PCM（十六进制），收到一段就排进 AudioContext 接着放。
  * 只用订阅 Key：MiniMax 按 Key 扣费，订阅 Key 只扣套餐；Key 由后台随命令带来（离屏文档读不到 chrome.storage）。
  */
@@ -11,16 +11,12 @@ const SPEECH_MODEL = "speech-2.8-hd";
 
 const SAMPLE_RATE = 24_000;
 
-/** 第一段声音前留一点余量，免得开头被吞。 */
 const LEAD_S = 0.05;
 
-/** 连接半开、AudioContext 恢复不了时不能一直挂着「在说」：一句话（含留给你的）连收带放不超过这么久。 */
 const SPEECH_TIMEOUT_MS = 45_000;
 
-/** 流式返回的一行：status 1 是声音段，2 是收尾段（里面的声音是整段重复，不放）。 */
 interface SpeechChunk { data?: { audio?: string; status?: number } | null; base_resp?: { status_code?: number; status_msg?: string } }
 
-/** 十六进制的 16 位小端 PCM → [-1, 1] 的浮点样本。 */
 function pcmFromHex(hex: string): Float32Array<ArrayBuffer> {
   const samples = new Float32Array(hex.length >> 2);
 
@@ -99,11 +95,9 @@ export function installPttSpeech(): void {
     };
 
     void (async () => {
-      // 浏览器不许自动出声时 AudioContext 停在 suspended，时间不走：先试着恢复，最后按时间有没有走判断真放了没有。
       if (context.state === "suspended") await context.resume().catch(() => {});
       const response = await fetch(SPEECH_URL, {
         method: "POST",
-        // 与匿名预连接使用同一连接池；API key 仍由显式请求头发送。
         credentials: "omit",
         signal: abort.signal,
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
@@ -114,7 +108,6 @@ export function installPttSpeech(): void {
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
       let pending = "";
 
-      /** 一行：流式段是 data: 开头；Key 被拒等错误可能是一整段不带 data: 的 JSON，同样读出原因。 */
       const take = (line: string) => {
         const json = line.startsWith("data:") ? line.slice(5) : line.trim().startsWith("{") ? line : null;
 
@@ -141,7 +134,6 @@ export function installPttSpeech(): void {
       take(pending);
 
       if (!startedAt) throw new Error("没有收到声音");
-      // 最后一段排进去了，等它放完。
       await new Promise(wait => setTimeout(wait, Math.max(0, (nextAt - context.currentTime) * 1000)));
 
       if (context.currentTime < nextAt - 0.2) throw new Error(`浏览器没让声音放出来（${context.state}）`);
@@ -150,16 +142,13 @@ export function installPttSpeech(): void {
   });
 
   chrome.runtime.onMessage.addListener((command: Partial<PttSpeechCommand> | undefined, sender, sendResponse) => {
-    // 只认本扩展后台发来（不是网页里的脚本）、带 PTT_SPEECH_TARGET 的命令。
     if (sender.id !== chrome.runtime.id || sender.tab || command?.target !== PTT_SPEECH_TARGET) return;
 
     if (command.action === "prepare") { prepare(); sendResponse({ ok: true, playedMs: 0 }); return; }
     if (command.action === "hush") { hush(); sendResponse({ ok: true, playedMs: 0 }); return; }
 
-    // 只用订阅 Key：后台已经筛过，这里再守一道（MiniMax 按 Key 扣费）。
     if (command.action !== "speak" || !command.text || !command.key || !isSubscriptionKey(command.key)) return;
     void speak(command.text, command.key).then(reply => {
-      // 离屏文档没人看得见，网页也读不到；验收从这里读上一次念的结果。
       document.documentElement.dataset.pttSpeech = JSON.stringify(reply);
       sendResponse(reply);
     });

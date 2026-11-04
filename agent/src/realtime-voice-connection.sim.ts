@@ -1,15 +1,9 @@
-/**
- * 停声的规则：假时钟、假语音服务，只判连接发给服务端和侧栏的动作。
- * 被停的那一轮不再开口（含它在途工具回来后的续答），之后的任务通知照常念，通话不因停声断掉。
- * 真的停声、真的出声由 inproc-voice.mts --case=stop-task 验。
- */
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { MODEL, RealtimeVoiceConnection } from './realtime-voice-connection.js';
 
 type Event = Record<string, unknown>;
 
-/** 两秒的回答声音。 */
 const AUDIO = Buffer.alloc(2 * 24_000 * 2).toString('base64');
 
 function setup(t: TestContext) {
@@ -44,7 +38,6 @@ function setup(t: TestContext) {
   return {
     connection,
     server,
-    /** 从 from 起发给服务端的事件类型。 */
     sentSince: (from: number) => provider.slice(from).map(e => e.type === 'conversation.item.create' ? `item:${String((e.item as Event).type)}` : String(e.type)),
     providerCount: () => provider.length,
     noticeItem: (text: string) => provider.find(e => e.type === 'conversation.item.create' && JSON.stringify(e.item).includes(text))?.item as Event | undefined,
@@ -54,7 +47,6 @@ function setup(t: TestContext) {
   };
 }
 
-/** 用户问一句，服务端自动回复：先调 read_page，再说一句「我看看」的声音。 */
 function askAndReply(sim: ReturnType<typeof setup>, done: boolean) {
   sim.server({ type: 'input_audio_buffer.speech_started', item_id: 'u1' });
   sim.server({ type: 'input_audio_buffer.speech_stopped', item_id: 'u1' });
@@ -66,7 +58,6 @@ function askAndReply(sim: ReturnType<typeof setup>, done: boolean) {
   if (done) sim.server({ type: 'response.done', response: { id: 'r1', status: 'completed' } });
 }
 
-/** 任务完成通知交给连接，服务端确认收到这条通知。 */
 function notifyAndAccept(sim: ReturnType<typeof setup>, text: string) {
   sim.connection.notifyTask(text);
   const item = sim.noticeItem(text);

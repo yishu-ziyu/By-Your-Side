@@ -1,10 +1,3 @@
-/**
- * 光标状态层（background 侧）：把一轮任务的「在等 / 在读 / 完成 / 失败」画到对应标签页右边缘的胶囊上，
- * 并在它于别的标签页干活、用户看的是当前页时，让当前页右边缘的胶囊指向那一页。
- *
- * 分工：文案与呈现属于页面侧（content-cursor.js），这里只决定状态、目标标签页和生命周期。
- * 状态不是执行证据：画不上不改变任务判定，执行结果仍以 tool_result 为准。
- */
 import { activeTargetTabs } from "./target-window.js";
 import { callDom, ensureCursor } from "./exec/page-call.js";
 import { parseExecutionKey } from "./tab-bindings.js";
@@ -14,7 +7,6 @@ import type { ExecutionFeedback } from "../../../shared/execution-feedback.js";
 export type CursorStatusState = "waiting" | "reading" | "translating" | "done" | "failed";
 
 type LivingStatus = {
-  /** 执行键（会话 + 成员）：跨会话并行时同名成员各记各的 */
   key: string;
   sessionId: string;
   state: CursorStatusState;
@@ -24,7 +16,6 @@ type LivingStatus = {
 
 const living = new Map<string, LivingStatus>();
 
-/** 用户接管或主动停止期间不上状态；下一次 agent 开始工作时解除。 */
 const suppressed = new Set<string>();
 
 let watching = false;
@@ -45,13 +36,11 @@ function watchTabChanges(): void {
       void forgetTab(tabId);
     });
   } catch {
-    /* 测试环境没有标签页事件 */
   }
 }
 
 const statusPaints = new Map<string, Promise<void>>();
 
-/** A status and its clear share a queue, including the asynchronous injection step. */
 function renderStatus(tabId: number, key: string): Promise<void> {
   const id = `${tabId}:${key}`;
 
@@ -69,7 +58,7 @@ function renderStatus(tabId: number, key: string): Promise<void> {
           window.__sideagent?.cursor?.for(instanceId)?.clearStatus?.();
         }, [instanceIdFor(key)]);
       }
-    } catch { /* Closed or restricted page. */ }
+    } catch {  }
   });
 
   statusPaints.set(id, next);
@@ -88,7 +77,6 @@ function currentPill(tabId: number): PillView | undefined {
   return [...(pillOwners.get(tabId)?.values() ?? [])].reverse().find(({ entry }) => isCurrentEntry(entry));
 }
 
-/** Serialize writes per page, then re-read intent after injection: a late paint cannot undo a clear. */
 function renderPill(tabId: number): Promise<void> {
   const next = (pillPaints.get(tabId) ?? Promise.resolve()).then(async () => {
     try {
@@ -104,7 +92,7 @@ function renderPill(tabId: number): Promise<void> {
       } else {
         await callDom(tabId, () => { window.__sideagent?.cursor?.hideCrossPage?.(); }, []);
       }
-    } catch { /* A closed or restricted page cannot change task success. */ }
+    } catch {  }
   });
 
   pillPaints.set(tabId, next);
@@ -138,7 +126,7 @@ async function dropPill(entry: LivingStatus): Promise<void> {
 }
 
 /**
- * 绘制中间有 await：这期间同一执行键可能被 clear/suppress 掉、或换成新状态的新登记。
+ * WHY: 绘制中间有 await：这期间同一执行键可能被 clear/suppress 掉、或换成新状态的新登记。
  * 只有「仍是当前登记的那一份」才有资格改动页面上的胶囊，否则旧绘制会把已经收掉的
  * 跨页提示重新画回来、或把新状态/别的会话的胶囊盖掉。
  */
@@ -146,7 +134,6 @@ function isCurrentEntry(entry: LivingStatus): boolean {
   return living.get(entry.key) === entry;
 }
 
-/** 只在它真的在别的标签页干活时留胶囊；等待/读页面之外的阶段、和页面相同的情况都收起。 */
 async function syncPill(entry: LivingStatus): Promise<void> {
   const ambient = entry.state === "waiting" || entry.state === "reading" || entry.state === "translating";
 
@@ -171,7 +158,6 @@ async function syncPill(entry: LivingStatus): Promise<void> {
   try {
     title = (await chrome.tabs.get(entry.tabId)).title?.trim() || title;
   } catch {
-    /* 页面已被关掉，胶囊仍指向那个标签 */
   }
 
   const previous = entry.pillTabId;
@@ -181,7 +167,6 @@ async function syncPill(entry: LivingStatus): Promise<void> {
   if (previous != null && previous !== active) await dropPill(entry);
 
   if (!isCurrentEntry(entry)) return;
-  // 目标标签页随胶囊一起下发：点击时不必再查内存状态（service worker 可能已经重启过）
   entry.pillTabId = active;
   const owners = pillOwners.get(active) ?? new Map<string, PillView>();
   owners.delete(entry.key);
@@ -204,7 +189,6 @@ async function forgetTab(tabId: number): Promise<void> {
   }
 }
 
-/** 任务状态落到页面右边缘的胶囊；同时同步别页的跨页指向。key 是执行键（会话 + 成员）。 */
 export async function showCursorStatus(opts: {
   key: string;
   state: CursorStatusState;
@@ -215,7 +199,6 @@ export async function showCursorStatus(opts: {
   const tabId = opts.tabId ?? null;
   const previous = living.get(opts.key);
 
-  // Ending a failed run is not evidence of recovery. A new working state may replace it.
   if (previous?.state === "failed" && opts.state === "done") return;
 
   const entry: LivingStatus = {
@@ -252,7 +235,6 @@ export async function clearCursorStatus(key: string): Promise<void> {
   if (entry.tabId != null) await renderStatus(entry.tabId, entry.key);
 }
 
-/** 只清「暂时性」状态（等待/读页面）。完成由页面自己收，失败要留到下一轮或接管。 */
 export async function clearAmbientCursorStatus(key: string): Promise<void> {
   const entry = living.get(key);
 
@@ -260,7 +242,6 @@ export async function clearAmbientCursorStatus(key: string): Promise<void> {
   await clearCursorStatus(key);
 }
 
-/** 用户接管或主动停止：立刻收掉状态，并在恢复工作前不再上新状态。 */
 export async function suppressCursorStatus(key: string): Promise<void> {
   suppressed.add(key);
   await clearCursorStatus(key);
@@ -270,23 +251,16 @@ export function resumeCursorStatus(key: string): void {
   suppressed.delete(key);
 }
 
-/** 点胶囊：从发消息的标签页反查「它正在干活的那个页面」。 */
 export function workingTabBehindPill(senderTabId: number | null | undefined): number | null {
   if (senderTabId == null) return null;
 
   return currentPill(senderTabId)?.entry.tabId ?? null;
 }
 
-// ── 执行反馈胶囊（V2）───────────────────────────────────────────────
-// 简单成功/未知/等待确认的宿主事实：画到用户正在看的那一页；动作回执另有目标页时也画过去。
-// 查看/重绘、回避旧结果覆盖、受限页降级由这里的台账与调用方负责。
-
-/** 每个标签页最近一次反馈身份：同一结果不重发，时间更早的结果不得覆盖更新的。 */
 const feedbackSeen = new Map<number, { id: string; at: number }>();
 
 const feedbackPaints = new Map<number, Promise<boolean>>();
 
-/** 最近画过反馈的页面（含动作落点页）：新一轮工作开始时一并收掉，不留下旧回执。 */
 const feedbackTabs = new Set<number>();
 
 function paintFeedback(tabId: number, view: FeedbackPillView): Promise<boolean> {
@@ -310,11 +284,6 @@ function paintFeedback(tabId: number, view: FeedbackPillView): Promise<boolean> 
   return next;
 }
 
-/**
- * 对用户有意义的一次执行反馈：画到当前页与动作目标页。
- * 返回值只回答「用户当前看的那一页是否看到」：可见页受限而别的页画上时仍算没看到，
- * 由调用方用侧栏文字降级；受限页画不上不当作任务失败。
- */
 export async function showExecutionFeedback(feedback: ExecutionFeedback): Promise<boolean> {
   const view: FeedbackPillView = {
     id: feedback.id,
@@ -346,7 +315,6 @@ export async function showExecutionFeedback(feedback: ExecutionFeedback): Promis
   return active == null ? shownAny : shownOnActive;
 }
 
-/** 新的一轮真实工作开始：上一轮的旧回执失效，收掉可见胶囊（不等于失败）。 */
 export async function retireExecutionFeedback(explicitTabId?: number | null): Promise<void> {
   const tabIds = [...new Set([await activeTabId(), explicitTabId ?? null, ...feedbackTabs].filter((id): id is number => typeof id === "number"))];
   feedbackTabs.clear();
@@ -357,6 +325,6 @@ export async function retireExecutionFeedback(explicitTabId?: number | null): Pr
     try {
       await ensureCursor(tabId);
       await callDom(tabId, () => { (window.__sideagent?.cursor as {hideFeedback?: () => void} | undefined)?.hideFeedback?.(); }, []);
-    } catch { /* 受限页没有胶囊可收。 */ }
+    } catch {  }
   }
 }

@@ -1,16 +1,3 @@
-/**
- * 点不了时，回执说清是被谁挡住、还是按钮不可用。
- * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
- *   npx tsx scripts/acceptance/real-path/click-blocked-reason.mts --headless
- * 练习页有四个按钮，每次被点到都向服务器报一次：
- *   「保存设置」被「Cookie 设置」弹层盖住（弹层被点到也报）；「提交」带 disabled；「下一步」带 aria-disabled="true"；「普通按钮」正常。
- * 脚本模型先读页，再按读到的编号逐个点。判据只读回到模型的工具结果原文和服务器收到的点击。
- *   a 被挡：回执写出挡住它的 dialog 和名字「Cookie 设置」，名字包在网页内容标记里；服务器收不到保存，也收不到弹层。
- *   b 不可用：两次回执都写「不可用」，不写「页面没有变化」；服务器收不到「下一步」（aria-disabled 不拦事件，点到就会报）。
- *   c 普通按钮：照常点到，服务器恰好 1 次。
- *   d 「确认地址」在「编辑地址」对话框里，被对话框里一层无名遮罩盖住：回执不能叫模型关掉装着目标的对话框。
- * 失败方式：去掉写名字的代码，a 失败；去掉不可用检查，b 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -51,7 +38,6 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const ASK = "点不了验收：读页面，然后依次点保存设置、提交、下一步、确认地址、普通按钮。";
 const FINAL = "四个按钮都试过了。";
-// 编号在读页后才知道：onPayload 从读页结果里填进这些参数，模型服务在回复前才序列化它们。
 const clicks = { save: { target: "" }, submit: { target: "" }, next: { target: "" }, addr: { target: "" }, plain: { target: "" } };
 const NAMES = { save: "保存设置", submit: "提交", next: "下一步", addr: "确认地址", plain: "普通按钮" } as const;
 
@@ -76,7 +62,6 @@ type Receipt = { name: string; args: string; text: string };
 const receipts: Receipt[] = [];
 const seenCalls = new Set<string>();
 
-/** 回到模型的每个工具结果原文（每次请求带着全部历史，按调用编号去重）。 */
 function onPayload(payload: { messages?: Array<{ role: string; content?: unknown; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }>; tools?: unknown[] }) {
   if (!payload.tools?.length) return;
   const calls = new Map<string, { name: string; arguments: string }>();

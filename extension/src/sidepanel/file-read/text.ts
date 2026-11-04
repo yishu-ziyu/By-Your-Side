@@ -1,7 +1,5 @@
-/** 纯文本类文件（txt、md、csv、json、代码、日志、html）读成文字。 */
-
 /**
- * 字节转文字：有 BOM 按 BOM；否则先严格按 UTF-8，不合法再按 GB18030。
+ * WHY: 字节转文字：有 BOM 按 BOM；否则先严格按 UTF-8，不合法再按 GB18030。
  * 国内 Windows 导出的 csv、txt 常是 GBK，按 UTF-8 硬读会整篇乱码。
  */
 export function decodeText(bytes: Uint8Array): string {
@@ -19,7 +17,7 @@ export function decodeText(bytes: Uint8Array): string {
 }
 
 /**
- * 统一换行，去掉 NUL 等控制字符（保留换行和制表）。
+ * WHY: 统一换行，去掉 NUL 等控制字符（保留换行和制表）。
  * 康熙部首和兼容汉字换成标准汉字：Chrome、Word 导出的 PDF 常把「方」「日」映射成同形的部首字符，
  * 看着一样，用户拿原文去搜、模型去引用时都对不上。
  */
@@ -29,7 +27,6 @@ export function cleanText(text: string): string {
 
 const BLOCK_TAGS = new Set(["P", "DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "LI", "TR", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "PRE", "TABLE", "UL", "OL", "BR", "HR"]);
 
-/** HTML 文件只取正文文字：不执行脚本，标题加 #，块级元素之间换行，表格单元格之间用 | 隔开。 */
 export function htmlText(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
 

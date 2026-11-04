@@ -31,7 +31,6 @@ export function installBrowseHabits(deps: Deps) {
   const selfUse = watchSelfUse();
 
   const views = new Map<string, TaskView>();
-  /** 进行中的归纳：请求 id → 发起时的对话。归纳结果缓存在那个对话的运行时里，提问也得发回那里。 */
   const pending = new Map<string, string>();
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -50,7 +49,6 @@ export function installBrowseHabits(deps: Deps) {
     return next;
   };
 
-  // 助手在这个标签页做事时，页面上的点击和输入是助手的，不是用户的。助手经调试器操作页面，子任务在别的标签页也一样，所以先看调试器。
   const assistantOn = (tabId: number) => debuggerAttached(tabId) || [...views.values()].some(view => view.state === 'running' && (!view.page || view.page.tabId === tabId));
 
   const induce = async (log: Log) => {
@@ -90,7 +88,6 @@ export function installBrowseHabits(deps: Deps) {
   };
 
   const control = (message: { action?: unknown; key?: unknown }) => withLog(async log => {
-    // 删除前发出的归纳作废：它的结果晚到也不再写回、不再问。
     pending.clear();
 
     if (message.action === 'clear') {
@@ -118,7 +115,6 @@ export function installBrowseHabits(deps: Deps) {
     }
 
     if (message?.type !== BROWSE_EVENT || sender.id !== chrome.runtime.id || !sender.tab?.id || sender.tab.incognito || sender.frameId !== 0 || !nudgeableUrl(sender.url) || !isBrowseStep(message.step)) return;
-    // 模拟用户在试用时打开的网页不是用户自己的浏览，不进浏览记录。
     if (selfUse()) return;
     void record(message.step, sender.tab.id, sender.url!).catch(() => {});
   });
@@ -127,9 +123,7 @@ export function installBrowseHabits(deps: Deps) {
     view(view: TaskView) { views.set(view.conversationId, view); },
     disconnected() { views.clear(); pending.clear(); },
     async receive(result: BrowseHabitResult) {
-      // 模型没答或调用失败也是空列表：留着上一次的结果。
       if (!pending.has(result.requestId) || !result.habits.length) return;
-      // 和删除排在同一队列里：删除先到就作废这次结果。
       await withLog(async () => {
         const conversationId = pending.get(result.requestId);
 

@@ -4,7 +4,7 @@ import { TASK_MATERIAL_MAX, type TaskMaterialReference, type TaskRecoveryInput }
 import { sanitizeTrace } from '../../shared/trace-sanitize.js';
 import { base64Bytes } from '../../shared/bytes.js';
 
-/** Match live tabs by the saved identity; never guess from a title or persist private URLs. */
+/** WHY: Match live tabs by the saved identity; never guess from a title or persist private URLs. */
 export function recoveryPage(expected: NonNullable<TaskRecoveryInput['page']>, current: PageContext | undefined, value: unknown): { page?: PageContext; ambiguous: boolean } {
   const rows = value && typeof value === 'object' && 'tabs' in value && Array.isArray(value.tabs) ? value.tabs : [];
   const matching: PageContext[] = [];
@@ -19,7 +19,6 @@ export function recoveryPage(expected: NonNullable<TaskRecoveryInput['page']>, c
   return { page, ambiguous: !page && matching.length > 1 };
 }
 
-/** 记录接收事实，UI 不靠本地缓存恢复材料；同一来源去重，不将不同页面的选区混合。 */
 export function mergeTaskMaterials(prior: readonly TaskMaterialReference[], context?: PageContext, attachments?: Attachment[]): TaskMaterialReference[] {
   const materials = new Map(prior.map(item => [item.key, item]));
 
@@ -52,7 +51,6 @@ export function mergeTaskMaterials(prior: readonly TaskMaterialReference[], cont
   return [...materials.values()];
 }
 
-/** Check equality without persisting query-string tokens or private URLs. */
 export function pageRecoveryKey(tabId:number,url:string):NonNullable<TaskRecoveryInput['page']>|undefined {
   if(!Number.isSafeInteger(tabId)||tabId<=0||!url)return;
 

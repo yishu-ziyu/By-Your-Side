@@ -1,6 +1,3 @@
-/** Replay saved evidence only; never re-execute browser side effects.
- * node scripts/gym/replay.mjs <episode-directory> [--delay=100]
- */
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 if(!process.argv[2])throw new Error('Usage: node scripts/gym/replay.mjs <episode-directory> [--delay=100]');

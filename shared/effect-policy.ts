@@ -1,10 +1,5 @@
-/**
- * 这次操作有什么副作用：按具体请求判定，不只看工具名。
- * ControlGate 仍是最终执行闸门；本模块只回答要不要走闸门。
- */
 import type { ToolName } from "./protocol.js";
 
-/** 接管期间禁止落地的浏览器写操作。至少覆盖完成标准列出的那些。 */
 export const WRITE_TOOLS = [
   "worker_tabs",
   "page_translation",
@@ -144,11 +139,6 @@ export function requiresControlGate(name: string, params?: Record<string, unknow
   return classifyToolEffect(name, params).requiresControlGate;
 }
 
-/**
- * 宿主自己写死的只读页面探测（browser_run 的 waitForLoad / pageInfo 读文档状态），按代码全文精确匹配。
- * 它们只读属性、不调用页面函数，所以有页面脚本结果未知时也不算「重做页面脚本」。
- * 模型写的代码（包括 scrollToBottomUntil 的 condition）永远不在这里。
- */
 export const HOST_PAGE_PROBES = {
   documentState: "({readyState:document.readyState,href:location.href,timeOrigin:performance.timeOrigin})",
   pageInfo: "({href:location.href,title:document.title,readyState:document.readyState,viewport:{width:innerWidth,height:innerHeight},scroll:{x:Math.round(scrollX),y:Math.round(scrollY)},timeOrigin:performance.timeOrigin})",

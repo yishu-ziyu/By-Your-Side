@@ -15,13 +15,6 @@ import { installPageInteractions } from "./page-interactions.js";
 import { pageTranslation } from "./exec/page-translation.js";
 import { installReading } from "./reading.js";
 import type { ReadingRecord } from "../shared/reading-state.js";
-/**
- * background service worker 入口：
- * - 持有到扩展内任务核心（offscreen）的上行连接；ws 调试通道仅供检查脚本回退，见 uplink.ts
- * - tool_call 由本层直接执行并回 tool_result（不经过面板，关面板任务也不断）
- * - side panel 经 chrome.runtime Port 接入，只做渲染与用户输入转发
- * 任何异常都收敛为 {ok:false, error}，绝不允许不回。
- */
 import type { AgentRunState, ClientMessage, HostFeatures, ModelOption, PageContext, ServerMessage, TeamFrozenMember, TeamMemberPhase, TeamMemberView, ToolName } from "../../../shared/protocol.js";
 import { isPttPageMessage, PTT_LEVEL, PTT_TARGET, PTT_WARM, READING_VOICE, type ReadingVoiceMessage, type PttCapsuleAction, type PttCommand, type PttLevelMessage, type PttPageMessage, type PttReply } from "../shared/ptt.js";
 import { installPttCapsule } from "./ptt-capsule.js";
@@ -90,7 +83,6 @@ import {
   type CursorStatusState,
 } from "./cursor-status.js";
 
-// 已删除功能留下的旧存储：观察曾在后台悄悄记页面骨架，启动时一并清掉（幂等）。
 void Promise.resolve().then(() => chrome.storage.local.remove(["sideagent_observe", "sideagent_observed_patterns", "sideagent_teach_mode", "sideagent_companion_visible", "sideagent_token"])).catch(() => {});
 
 type Handler = (params: any, sessionId: string) => Promise<unknown>;
@@ -139,26 +131,21 @@ const handlers: Record<ToolName, Handler> = {
   screenshot: (p, sid) => screenshot(p, sid),
   mark: (p, sid) => mark(p, sid),
   clear_marks: (p, sid) => clearMarks(sid, p.tabId),
-  // 教学要在任务里等用户：只走下面 guardedHandlers 里带等待钩子的那一个。
   guide_step: async () => { throw notExecuted(new Error("guide_step 只能在任务里调用")); },
 };
 
-/** 最近操作过的那个侧栏看着的会话。提示卡、页边批注、前台跟它走；按住说话、右键提问、阅读转到侧栏先找动手的那个窗口里的侧栏（conversationForWindow）。 */
 let selectedConversationId = "default";
 
 const connectedPanels = new Set<chrome.runtime.Port>();
 
-/** 每个侧栏各看各的会话：在一个侧栏里切换，不动另一个侧栏。 */
 const panelSelection = new Map<chrome.runtime.Port, string>();
 
 let focusedPanel: chrome.runtime.Port | undefined;
 
 const panelWindow = new Map<chrome.runtime.Port, number>();
 
-/** 侧栏发起的新建：建好后只把发起的那个侧栏切过去，不动别的侧栏。 */
 const panelCreations = new Map<string, chrome.runtime.Port>();
 
-/** 还没定会话的侧栏（刚打开）先跟最近操作的那个侧栏。 */
 function panelConversation(port: chrome.runtime.Port): string { return panelSelection.get(port) ?? selectedConversationId; }
 
 function followFocused(id: string): void {
@@ -172,7 +159,6 @@ function selectInPanel(port: chrome.runtime.Port, id: string): void {
   voiceRelay.selectionChanged(port, id);
   panelSelection.set(port, id);
 
-  // 刷新的侧栏可能还记着已经删掉的会话：不为它建空控制器，侧栏自己会新建一个。
   if (controllers.has(id) || conversationSummaries.some(c => c.id === id)) controller(id);
 
   if (port === focusedPanel) followFocused(id);
@@ -185,10 +171,6 @@ function focusPanel(port: chrome.runtime.Port): void {
   if (id !== undefined && id !== selectedConversationId) followFocused(id);
 }
 
-/** 这个窗口里的侧栏；窗口里没有侧栏（或不知道窗口）就是最近操作的那个侧栏。 */
-/**
- * sidePanelOnly：这个动作会打开浏览器的侧栏（右键提问、选段转侧栏、阅读转侧栏），只交给真正的侧栏，不交给会话小窗口。
- */
 function panelForWindow(windowId: number | undefined, sidePanelOnly = false): chrome.runtime.Port | undefined {
   const usable = (port: chrome.runtime.Port | undefined) => !!port && !(sidePanelOnly && popoutSource(port.sender?.url) !== undefined);
   const fallback = usable(focusedPanel) ? focusedPanel : [...connectedPanels].reverse().find(usable);
@@ -206,7 +188,6 @@ function conversationForWindow(windowId: number | undefined, sidePanelOnly = fal
   return port ? panelConversation(port) : selectedConversationId;
 }
 
-/** 不是哪个侧栏自己切的（阅读转到侧栏）：换掉用户动手的那个窗口里的侧栏，并把它算作最近操作的。 */
 async function selectForTab(id: string, tabId: number): Promise<void> {
   const windowId = await chrome.tabs.get(tabId).then(tab => tab.windowId, () => undefined);
   const port = panelForWindow(windowId, true);
@@ -223,7 +204,6 @@ installReinject();
 
 installCursorSpots();
 
-// 按住说话的分段计时写进语音日常记录（与语音对话同一个库），npm run logs -- --voice 按次看。
 const pttTimingSink = createVoiceCaptureSink(message => console.debug("[sideagent]", message));
 const pttTiming = (pttId: string, conversationId: string, point: string, at = Date.now()) => pttTimingSink.appendLine(voiceCaptureDayKey(at), pttTimingLine(at, pttId, conversationId, point));
 const pttVoice = createPttVoice((conversationId, message) => controller(conversationId).notice(message, "error"));
@@ -235,13 +215,13 @@ installFloatCard();
 const marginalia = installMarginalia({
   send: message => transport.sendClientMessage(message),
   selected: () => selectedConversationId,
-  publish: message => { for (const panel of connectedPanels) { try { panel.postMessage(message); } catch { /* Disconnected panel. */ } } },
+  publish: message => { for (const panel of connectedPanels) { try { panel.postMessage(message); } catch {  } } },
 });
 
 const nudge = installNudge({
   send: message => transport.sendClientMessage(message),
   selected: () => selectedConversationId,
-  // 侧栏可以按窗口开，也可以只给某个标签页开：只认这个标签页能看到的那一个。
+  // WHY: 侧栏可以按窗口开，也可以只给某个标签页开：只认这个标签页能看到的那一个。
   // Chrome 不一定报出侧栏在哪个窗口（无头时为 -1）：报不出就按「有侧栏开着」算。
   panelOpen: async (windowId, tabId) => {
     const panels = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.SIDE_PANEL] }).catch(() => null);
@@ -258,7 +238,7 @@ const browseHabits = installBrowseHabits({ send: message => transport.sendClient
 
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
 
-function broadcastConversations() { for (const port of connectedPanels) { const selected = panelConversation(port); try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId:selected,resumeReading:reading.resumeOnOpen(selected)}); } catch { /* 面板端口已断开 */ } } }
+function broadcastConversations() { for (const port of connectedPanels) { const selected = panelConversation(port); try { port.postMessage({kind:"conversations",conversations:conversationSummaries,selectedConversationId:selected,resumeReading:reading.resumeOnOpen(selected)}); } catch {  } } }
 
 const controllers = new Map<string, ReturnType<typeof createConversationController>>();
 
@@ -302,7 +282,6 @@ const transport = new Uplink({
    pttCapsule.server(msg);
    reading.server(msg);
 
-   // 新会话只切发起的那个侧栏；阅读转来的，由阅读选给动手的那个窗口。随后的会话清单得带上新的选择，否则发起的侧栏会被切回旧会话。
    if (msg.type === "conversation_created") {
      const requester = msg.requestId ? panelCreations.get(msg.requestId) : undefined;
 
@@ -393,14 +372,12 @@ chrome.runtime.onConnect.addListener(port => {
 
   if (msg.kind === "select_conversation" && validConversationId(msg.conversationId)) selectInPanel(port, msg.conversationId);
 
-  // 侧栏重开、重连时带上它自己看着的会话：后台重启过也不会把它换成别的侧栏的会话。
   if (msg.kind === "sync" && validConversationId(msg.conversationId)) selectInPanel(port, msg.conversationId);
 
   if (msg.kind === "panel_window" && Number.isInteger(msg.windowId)) panelWindow.set(port, msg.windowId);
 
   if (msg.kind === "client" && msg.msg?.type === "conversation_create" && typeof msg.msg.requestId === "string") panelCreations.set(msg.msg.requestId, port);
 
-  // ping、sync、panel_window 是侧栏自动发的，不算用户在这个侧栏里操作。
   if ((msg.kind !== "ping" && msg.kind !== "sync" && msg.kind !== "panel_window") || !focusedPanel) focusPanel(port);
 
   if (msg.kind === "select_conversation") broadcastConversations();
@@ -427,7 +404,6 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  return true;
 });
 
-// 进度卡上补的一句和「停止」：交给正在操作这一页的会话；这一页没人在操作时交给侧栏选中的会话。
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  const msg = raw as { type?: unknown; text?: unknown } | null;
  if (sender.id !== chrome.runtime.id || (msg?.type !== EDGE_TASK_STEER && msg?.type !== EDGE_TASK_ABORT)) return;
@@ -445,7 +421,6 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  return true;
 });
 
-/** 按住说话没成的那一行说明。 */
 function pttFailureText(reply: Extract<PttReply, { ok: false }>): string {
  if (reply.reason === "empty") return "按住说话时，没有听到声音。再说一次。";
 
@@ -456,14 +431,8 @@ function pttFailureText(reply: Extract<PttReply, { ok: false }>): string {
  return `听写没成功：${reply.message ?? "未知原因"}`;
 }
 
-/**
- * 按住说话的轮次：每次按下加一。听写、问页面、分流都要等，等回来时用户可能已经又按下了：
- * 那时这一句作废，不再进卡、不交给助手、不动胶囊，免得旧话在新一次说话之后冒出来。
- */
 let pttTurn = 0;
 
-// 按住说话：网页脚本报按下/松开/取消，离屏文档录音并听写；听写出的一句交给当前会话。
-// 胶囊：松开以后的每个结局都显示在说话的那一页底部。
 chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, sender, sendResponse) => {
  if (!isPttPageMessage(raw) || sender.id !== chrome.runtime.id || sender.tab?.id == null) return;
  const tab = sender.tab;
@@ -486,7 +455,7 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
   const conversationId = conversationForWindow(tab.windowId);
   const conversation = controller(conversationId);
 
-  if (turn !== pttTurn) { /* 又按下了：这一次的结局作废 */ }
+  if (turn !== pttTurn) {  }
   else if (raw.phase === "cancel") pttCapsule.closed(tabId);
   else if (!reply) {
    const text = "按住说话没有接上：助手还没启动好，稍后再试。";
@@ -507,7 +476,6 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
    pttTiming(pttId, conversationId, "released", releasedAt);
    pttTiming(pttId, conversationId, reply.text ? "dictated" : "dictated_empty");
    if (reply.text) {
-    // 先把听到的话告诉页面：分流要等一两秒，阅读卡可以先写上这一问。
     void chrome.tabs.sendMessage(tabId, { type: READING_VOICE, phase: "heard", text: reply.text } satisfies ReadingVoiceMessage, { frameId: 0 }).catch(() => {});
     await routeSpoken(tab, conversationId, reply.text, pttId, turn);
    }
@@ -524,8 +492,6 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttPageMessage> | undefined, 
  return true;
 });
 
-// 一键翻译（⌥T、侧栏「文A」、右边缘入口都走这里）：不经主模型，这页没有译文就整页翻译，有就还原；侧栏开着与否都一样。
-// 到任务宿主的连接可能还在建立（快捷键刚唤醒扩展后台、侧栏刚打开）：等它连上再发，最多 5 秒，不悄悄丢掉。
 async function translateTab(tab: { id?: number; title?: string; url?: string; windowId?: number }): Promise<boolean> {
  if (tab.id == null) return false;
  const msg: ClientMessage = { type: "page_translate", context: { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }, conversationId: conversationForWindow(tab.windowId) };
@@ -540,7 +506,6 @@ chrome.commands?.onCommand.addListener((command) => {
  void activeTargetTabs().then(([tab]) => { if (tab) void translateTab(tab); });
 });
 
-// 网页右边缘停靠的胶囊上点「翻译 这一页」：和 ⌥T 同一条路，翻的是点它的那一页。
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "page_translate_click" || sender.id !== chrome.runtime.id || !sender.tab) return;
  void translateTab(sender.tab).then(ok => sendResponse({ ok }));
@@ -548,7 +513,6 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  return true;
 });
 
-// 选中文字以后常常接着问这段（打字或按住说话）：先连上模型服务；配了听写密钥再让离屏文档连好听写，不开麦、不送声音。
 chrome.runtime.onMessage.addListener((raw: { type?: unknown } | undefined, sender) => {
  if (raw?.type !== PTT_WARM || sender.id !== chrome.runtime.id || sender.tab?.id == null) return;
  transport.sendClientMessage({ type: "warm_up", connection: true, conversationId: conversationForWindow(sender.tab.windowId) });
@@ -560,10 +524,6 @@ chrome.runtime.onMessage.addListener((raw: { type?: unknown } | undefined, sende
  }).catch(() => {});
 });
 
-/**
- * 页面上选着文字或开着阅读卡时说的话，先按整句意思判断：问这段的交给阅读卡，在原处接着答；
- * 要做事的带着选中的文字交给助手。没有选中的文字时照旧直接交给助手。
- */
 async function routeSpoken(tab: chrome.tabs.Tab, conversationId: string, text: string, pttId: string, turn: number): Promise<void> {
  const probe: unknown = await chrome.tabs.sendMessage(tab.id!, { type: "reading_voice_probe" }, { frameId: 0 }).catch(() => null);
 
@@ -574,7 +534,6 @@ async function routeSpoken(tab: chrome.tabs.Tab, conversationId: string, text: s
 
  if (!selection) return handOffSpoken(tab, conversationId, text, pttId, undefined, turn);
  const startedAt = Date.now();
- // 阅读回答和单独的分流同时开始：预回答先给出明确去向就直接接上，否则仍等分流，避免回答已经写好却白等。
  const prefetched = reading.prefetch(tab.id!, text, source);
  const routed = reading.route(text, selection, asked);
  const early = await Promise.race([prefetched, routed]);
@@ -599,10 +558,6 @@ async function routeSpoken(tab: chrome.tabs.Tab, conversationId: string, text: s
  return handOffSpoken(tab, conversationId, text, pttId, selection, turn);
 }
 
-/**
- * 听写出的话交给会话；没送出去（助手没连上）就在胶囊上留着这句话，可以重发。
- * turn：按住说话的轮次；交出去以后用户又按下了，胶囊留给新的一次，不再显示这一句的进展。重发不带。
- */
 async function handOffSpoken(tab: chrome.tabs.Tab, conversationId: string, text: string, pttId?: string, selection?: string, turn?: number): Promise<void> {
  const context: PageContext = { tabId: tab.id!, title: tab.title ?? "", url: tab.url ?? "", ...(selection ? { selection: { text: selection.slice(0, 2000) } } : {}) };
  const handed = await controller(conversationId).spoken(text, context);
@@ -616,7 +571,6 @@ async function handOffSpoken(tab: chrome.tabs.Tab, conversationId: string, text:
  else pttCapsule.failed(tab.id!, "这句话没交给助手：助手没连上。", text);
 }
 
-// 离屏文档的音量转给正在录的那一页；胶囊上的「停」「重发」、念的时候按 Esc，和收起。
 chrome.runtime.onMessage.addListener((raw: Partial<PttCapsuleAction> | Partial<PttLevelMessage> | undefined, sender) => {
  if (sender.id !== chrome.runtime.id) return;
 
@@ -650,11 +604,6 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  return true;
 });
 
-/**
- * 点头上跨页胶囊：切到它正在干活的那个标签页。
- * 目标标签页跟着胶囊一起下发（msg.tabId），所以 service worker 重启过、内存状态表空了也照样能跳；
- * 兜底才回落到内存状态表。跳不过去时如实回报，让页面把胶囊收掉而不是点着没反应。
- */
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "cross_page_click") return;
  const asked = (raw as { tabId?: unknown }).tabId;
@@ -681,10 +630,6 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
 
 let historyPruneTimer: ReturnType<typeof setTimeout> | undefined;
 
-/**
- * 服务端给每个会话都推 status，一次 idle 就会落盘一个会话键——只在启动时清理不够。
- * 多次落盘合并成一次清理，避免每写一次就读一遍全量存储。
- */
 function scheduleHistoryPrune(): void {
  if (historyPruneTimer) return;
  historyPruneTimer = setTimeout(() => {
@@ -693,7 +638,6 @@ function scheduleHistoryPrune(): void {
  }, HISTORY_PRUNE_DELAY_MS);
 }
 
-/** 只保留最近若干个会话的 history 键；旧格式（裸数组）没有 updatedAt，按最旧处理。 */
 async function pruneStoredHistory(keep: number): Promise<void> {
  const all = await chrome.storage.local.get(null);
 
@@ -706,7 +650,6 @@ async function pruneStoredHistory(keep: number): Promise<void> {
  if (drop.length) await chrome.storage.local.remove(drop);
 }
 
-// transport.start() 曾写在 .then 里且无 catch：恢复链一旦 reject，扩展就永远不连、也不再重试。
 void (async () => {
  try {
   const [stored, local] = await Promise.all([chrome.storage.session.get(null), chrome.storage.local.get(null)]);
@@ -725,7 +668,6 @@ void (async () => {
  installContinuationWakeup(() => transport.wake());
 })();
 
-/** 在跑任务的对话、回答后核对目标还在读页的对话。两者都空时，调试器很快断开，不等满 15 秒。 */
 const busyConversations = new Set<string>();
 const checkingConversations = new Set<string>();
 
@@ -744,7 +686,6 @@ const getWorkingTabId = (sid: string = LEAD_SESSION_ID) => workingTabForKey(key(
 const pageRefTab = async (): Promise<number | undefined> => await getWorkingTabId() ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0]?.id;
 const setSessionClaimBlocked = (sid: string, blocked: boolean) => blockKey(key(sid), blocked);
 
-/** 状态挂到哪一页：显式 tabId → 已认领的工作页 → 用户当前看的页。 */
 async function statusTabId(sid: string, explicit?: unknown): Promise<number | null> {
   if (typeof explicit === "number") return explicit;
   const claimed = await getWorkingTabId(sid);
@@ -760,7 +701,6 @@ async function statusTabId(sid: string, explicit?: unknown): Promise<number | nu
   }
 }
 
-/** 接管、停止时光标与页面边缘光一起收起。接管走退场动画，停任务仍立刻藏起。 */
 async function hidePresence(keys: string[], animated = false): Promise<void> {
   await Promise.all([animated ? leaveCursorsForSessions(keys) : hideCursorsForSessions(keys), ...keys.map(dimPage)]);
 }
@@ -769,12 +709,9 @@ function emitHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): vo
   broadcast({ kind: "handoff_phase", phase } satisfies BgToPanel);
 }
 
-/** 读页面的工具：光标显示「正在读这个页面」。 */
 const READ_TOOLS = new Set(["snapshot", "page_text", "read_element", "read_elements", "screenshot", "observe_page", "network", "video_captions"]);
 
-/** 每个成员的注视区画在哪个标签页，读完变淡、一轮结束收起时要找回去。 */
 const gazeTabs = new Map<string, number>();
-/** 同一成员的注视指令排队：读得很快时，"读完变淡"不能跑到"开始读"前面。 */
 const gazeQueue = new Map<string, Promise<void>>();
 
 function queueGaze(k: string, step: () => Promise<void>): void {
@@ -819,16 +756,10 @@ function settleGaze(sid: string, kind: "rest" | "off"): void {
 async function setCursorStatus(sid: string, state: CursorStatusState, explicitTabId?: unknown): Promise<void> {
   const tabId = await statusTabId(sid, explicitTabId);
 
-  // 直接执行的工具（⌥T 翻译）结束时，工具结束和回到空闲几乎同时到：已经空闲就不再挂「正在思考」这类过程状态。
   if ((state === "waiting" || state === "reading" || state === "translating") && statusBySession.get(sid) === "idle") return;
   await showCursorStatus({ key: key(sid), state, tabId });
 }
 
-/**
- * 一轮任务的事件 → 光标状态。
- * 等待：任务开始到下一次动手之间；读页面：读类工具执行期间；完成：正常收尾后自动消失；
- * 失败：一轮以错误结束时留在原地。动作类工具（点击/填写/定位/标注）自己有名牌，这里先让位。
- */
 async function applyCursorStatusEvent(
   sid: string,
   event: Extract<ServerMessage, { type: "agent_event" }>["event"],
@@ -893,11 +824,8 @@ async function getWorkingTabMap() {
  return Object.fromEntries(Object.entries(map).filter(([k]) => parseExecutionKey(k).conversationId === conversationId).map(([k,v]) => [parseExecutionKey(k).sessionId,v]));
 }
 
-// ── 面板端口管理 ───────────────────────────────────────────────────
-
 const panels = new Set<chrome.runtime.Port>();
 const panelHistory = new PanelHistory();
-/** 「历史没了」的重试：同一条在这段时间里只让一个侧栏另发，别的侧栏回 resent。 */
 const goneRetries = new Map<string, number>();
 const historyKey = `${HISTORY_PREFIX}${conversationId}`;
 
@@ -907,7 +835,6 @@ const historyReady = chrome.storage.local.get(historyKey).then(async got => {
 
 let historyFlushTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** 只有 status 的历史不值得落盘：服务端给每个会话都推状态，一次 idle 就会写一个键、随后又被清理。 */
 function hasPersistableHistory(): boolean {
  return panelHistory.since().some(entry => !(entry.item.kind === "server" && entry.item.msg.type === "status"));
 }
@@ -922,7 +849,6 @@ function flushHistory() {
  scheduleHistoryPrune();
 }
 
-/** 缓存的连接上下文，用于面板重开后的状态同步。 */
 let lastConn: { state: ConnState; transport?: TransportKind; detail?: string } = { state: "connecting" };
 let lastHelloOk: { version: number; model?: string; models?: ModelOption[]; features?: HostFeatures } | null = null;
 let lastStatus: AgentRunState = "idle";
@@ -964,7 +890,6 @@ function cancelTakeover(pending: Extract<PendingControl, {action:"takeover"}>) {
  if (pending.pageTabId != null) {
   for (const member of team.view()?.members ?? []) { gate.releaseSession(member.sessionId); setSessionClaimBlocked(member.sessionId, false); }
  } else gate.cancelTakeover(pending.generation);
- // 接管没成：侧栏收掉「你在操作」。
  emitHandoffPhase("agent");
 }
 
@@ -982,11 +907,9 @@ function cancelHandbackCapture(): void {
 function persistControl(): void {
   const snap = {...snapshotControl(gate, lastStatus, team.view()), runId: epochRunId ?? null};
   void chrome.storage.session.set({ [CONTROL_STORE]: snap }).catch(() => {
-    /* 存储失败不放开闸门 */
   });
 }
 
-/** 助手调用 hand_to_user 时要用户做的事；边缘胶囊写在「现在归你」后面。下一次接管时重置。 */
 let handoffAsk: string | null = null;
 
 function teamBannerView() {
@@ -1007,7 +930,6 @@ function teamBannerView() {
   };
 }
 
-/** working tab 契约：只有 number 才算这个成员已绑定页面（chrome.tabs 的 id 契约）。 */
 const isWorkingTabId = (tabId: number | undefined): tabId is number => typeof tabId === "number";
 
 function emitTeam(): void {
@@ -1115,18 +1037,16 @@ async function hydrateControl(): Promise<void> {
 
       void showUserControlGuarded();
     } else {
-      // 扩展 reload 会遗留旧 isolated world 画出的 overlay host。
+      // WHY: 扩展 reload 会遗留旧 isolated world 画出的 overlay host。
       // 当前控制权不归用户时，启动即在活动页注入新版脚本并清掉旧条。
       try {
         const { tab } = await getActiveTab();
 
         if (conversationId === "default") await hideUserControlBanners(tab?.id);
       } catch {
-        /* 没有可注入的活动页时保持默认 agent */
       }
     }
   } catch {
-    /* 无 session storage 时保持默认 agent */
   }
 }
 
@@ -1217,7 +1137,6 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
   broadcast({ kind: "conn", state, transport, detail });
 }
 
-/** 最近一次模型信息（hello_ok 或 set_model 后的 model_info），面板重开后回放。 */
 let lastModelInfo: Extract<ServerMessage, { type: "model_info" }> | null = null;
 
 function broadcast(msg: BgToPanel): void {
@@ -1229,7 +1148,6 @@ function broadcast(msg: BgToPanel): void {
     try {
       panel.postMessage(msg);
     } catch {
-      /* 面板刚好断开 */
     }
   }
 }
@@ -1253,9 +1171,6 @@ function emitNotice(message: string, kind: "notice" | "error" = "notice"): void 
   broadcastVisibleServer({ type: "agent_event", event: { kind, message } });
 }
 
-// 提示条只在助手操作页面时出现：说明跟着这一轮走，结束后不再压在回答上方。
-
-/** 每会话最近一次任务视图（面板重开时原样回放；不是状态机、不参与权限判断）。 */
 const lastTaskViews = new Map<string, Extract<ServerMessage, { type: "task_view" }>["view"]>();
 
 function teamHeld(): boolean {
@@ -1301,10 +1216,8 @@ function failPendingControl(requestId: string, reason: string): void {
     cancelTakeover(pending);
     team.clear();
     emitLocalStatus(pending.fallbackStatus);
-    // 接管没成：收掉这次先画上的「现在归你」，页面里的圈随它一起清掉。
     void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
   } else {
-    // 交还没成：页面仍归你，侧栏回到「你在操作」，不停在「助手先重读页面」。
     emitLocalStatus("user");
     emitHandoffPhase("user");
     void showUserControlGuarded(pending.tabId);
@@ -1324,7 +1237,6 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       cancelTakeover(pending);
       team.clear();
       emitLocalStatus(msg.state === "running" ? "running" : "idle");
-      // 接管没成：收掉这次先画上的「现在归你」，页面里的圈随它一起清掉。
       void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
     } else {
       emitLocalStatus("user");
@@ -1359,7 +1271,6 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
       cancelTakeover(pending);
       team.clear();
       emitLocalStatus(pending.fallbackStatus);
-      // 接管没成：收掉这次先画上的「现在归你」，页面里的圈随它一起清掉。
       void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
       emitNotice("接管没有完成。页面控制没有改变。", "error");
 
@@ -1440,7 +1351,6 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
   emitTeam();
 }
 
-/** 新任务不能沿用上一轮的已中止控制视图；交还仍是同一个 run。 */
 function reconcileControlRun(): void {
   const current = conversationSummaries.find(c => c.id === conversationId);
   const nextRun = current?.runId;
@@ -1465,8 +1375,6 @@ function reconcileControlRun(): void {
   }
 }
 
-// ── 上行连接 ───────────────────────────────────────────────────────
-
 const callbacks: UplinkHandlers = {
   onServerMessage(msg) {
     reconcileControlRun();
@@ -1487,13 +1395,9 @@ return;}
 return;}
 
     if (msg.type === "hello_ok") {
-      // 目录（models）是全局事实，与会话归属无关：必须随 hello_ok 一起缓存，
-      // 否则面板重开/重连后回放只剩 model、拿不到可选列表，芯片会退化成死按钮
-      // （用户实测：点了模型芯片没反应）。model 仍按会话归属取，不回写别会话的默认值。
       lastHelloOk = { version: msg.version, model: conversationId === "default" ? msg.model : lastModelInfo?.model, models: msg.models, features: msg.features };
 
       if (msg.models && conversationId === "default" && !lastModelInfo) lastModelInfo = { type: "model_info", model: msg.model, models: msg.models };
-      // 会话模式由 runtime 的 conversation summary 恢复；握手不回写本地默认值。
     } else if (msg.type === "model_info") {
       lastModelInfo = msg;
     } else if (msg.type === "team_status") {
@@ -1530,7 +1434,6 @@ return;}
         lastStatus = aggregateRunState(statusBySession.values());
         persistControl();
 
-        // 恢复完成：收掉这个会话实际画过的全部条（含活动页），别动别的暂停会话。
         if (progress.hideBanners) void memberTabIds().then((ids) => hideControlBannersForOwner(conversationId, ids));
         else void showUserControlGuarded();
         emitTeam();
@@ -1575,7 +1478,6 @@ return;}
       else if (msg.state === "idle") activityBySession.delete(sid);
       lastStatus = aggregateRunState(statusBySession.values());
       persistControl();
-      // 新一轮开始时，上一轮没发结论就作废的核对也算结束。
       noteRunSettle(conversationId, msg.state === "running" ? { busy: true, checking: false } : { busy: lastStatus !== "idle" });
 
       if (msg.state === "idle") commitTrail(key(sid));
@@ -1588,7 +1490,6 @@ return;}
         void suppressCursorStatus(key(sid));
       } else if (msg.state === "idle") {
         void clearAmbientCursorStatus(key(sid));
-        // 直接执行的工具（⌥T 翻译、语音直接操作）没有一轮任务的结束事件：回到空闲时同样收掉页面光晕，不然胶囊一直写「正在思考」。
         void dimPage(key(sid));
       }
     } else if (msg.type === "agent_event") {
@@ -1608,7 +1509,6 @@ return;}
         }
       }
 
-      // 胶囊画不上（受限页等）时用侧栏文字降级；画不上不等于任务失败。
       if (msg.event.kind === "execution_feedback") {
         const feedback = msg.event.feedback;
         void showExecutionFeedback(feedback).then(shown => {
@@ -1621,12 +1521,11 @@ return;}
     }
 
     if (msg.type === "tool_call") {
-      // 还原填写：换了任务（含语音直接操作网页）就是新的一轮；工具在执行时不还原。
       noteFillUndoRun(conversationId, msg.runId);
       toolsInFlight += 1;
       void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId, msg.programId,msg.runId,msg.epochs?.[normalizeSessionId(msg.sessionId)],msg.programDeadline).finally(() => { toolsInFlight -= 1; });
 
-      return; // tool_call 不转发面板
+      return;
     }
 
     if (msg.type === "status" || msg.type === "agent_event" || msg.type === "team_status") {
@@ -1640,18 +1539,14 @@ return;}
   },
 };
 
-/** 用户在这段对话里说到第几句：「不发」只管到用户再说话为止。 */
 let userTurn = 0;
 
-/** 正在执行的工具调用数。语音直接操作网页时任务状态不一定是「在跑」，还原填写靠它判断忙不忙。 */
 let toolsInFlight = 0;
 
 const uplink = {
  sendClientMessage: (msg: ClientMessage) => {
-   // 新任务和运行中插话都从这里出去：插话不换任务身份，所以单独数。恢复、停这类控制不是用户说了新话，不算。
    if (msg.type === "user_message" || msg.type === "steer" || (msg.type === "task_action" && (msg.request.action === "start" || msg.request.action === "steer"))) userTurn += 1;
 
-   // 新任务开始：上一轮的「还原填写」作废。插话还是同一轮，不算。
    if (msg.type === "user_message" || (msg.type === "task_action" && msg.request.action === "start")) resetFillUndo(conversationId);
 
    return transport.sendClientMessage({ ...msg, conversationId });
@@ -1659,10 +1554,8 @@ const uplink = {
  retry: () => transport.retry(),
 };
 
-/** 不作用在某个页面上的工具：目标页关掉后它们照常可用，模型靠它们换页。 */
 const TABLESS_TOOLS: ReadonlySet<string> = new Set(["open_tab", "list_tabs", "get_active_tab", "worker_tabs", "fetch", "observe_page"]);
 
-/** 请求工具不在某一页上执行，确认卡画在助手正在用的那页；找不到能画的页就不发。 */
 async function requestConfirmTab(key: string): Promise<number> {
   const tab = await resolveReadableTab(undefined, key).catch(() => null);
 
@@ -1683,7 +1576,6 @@ async function executeToolCall(
 ): Promise<void> {
   await controlReady;
   params = structuredClone(params);
-  // 页面输入一旦派发，后面的“未执行”失败也只能算结果未知。
   let pageEffectStarted = false;
   const beforeDispatch = Object.assign(async () => { checkIdentity(); await checkContinuationPage(); checkIdentity(); }, { checkNow: () => checkIdentity(), noteEffect: () => { pageEffectStarted = true; } });
   const pointerGuard = Object.assign(async () => beforeDispatch(), { checkNow: beforeDispatch.checkNow, notePointerEffect: beforeDispatch.noteEffect });
@@ -1694,7 +1586,6 @@ async function executeToolCall(
   let operationGeneration: number | undefined;
 
   const checkIdentity=()=>{
-    // Removing our own translation placeholders changes no page content and is needed exactly when a run has stopped.
     if(name==='page_translation'&&params.action==='settle')return;
     if(programExpired())throw new Error('网页程序已超时，操作未执行。');
     const current=conversationSummaries.find(c=>c.id===conversationId)?.runId;
@@ -1735,7 +1626,7 @@ async function executeToolCall(
 
     if (existing === "not_executed" || existing === "unknown" || existing === "executed") return;
 
-    try { (error as { executionFact?: string }).executionFact = executionFact; } catch { /* 原始错误优先 */ }
+    try { (error as { executionFact?: string }).executionFact = executionFact; } catch {  }
   };
 
   try {
@@ -1749,7 +1640,6 @@ async function executeToolCall(
       mark:(p,s)=>mark(p,s,beforeDispatch),
       clear_marks:(p,s)=>clearMarks(s,p.tabId,beforeDispatch),
       switch_tab:(p,s)=>switchTab(p,s,beforeDispatch),
-      // 撞上一次性网络错误后的自动重试会再派发一次跳转：用和等用户确认发送同一个守卫，接管或停下就不再派发。
       navigate:(p,s)=>navigate(p,s,beforeDispatch,sendGuard.cancelled),
       open_tab:(p,s)=>openTab(p,s,beforeDispatch,sendGuard.cancelled),
       close_tab:(p,s)=>closeTab(p,s,beforeDispatch),
@@ -1762,13 +1652,9 @@ async function executeToolCall(
       accept_dialog:(p,s)=>acceptDialog(p,s,beforeDispatch),
       dismiss_dialog:(p,s)=>dismissDialog(p,s,beforeDispatch),
       page_translation:(p,s)=>pageTranslation(p,s,beforeDispatch),
-      // 带登录态的 POST 可能就是在发出或下单：先走和点「发送」同一张确认卡；GET 不问。
       fetch:(p,s)=>reportSendClick(sendGuard, fetchUrl(p,{beforeDispatch, confirmPost: async request => confirmRequest(await requestConfirmTab(s), request, sendGuard)})),
-      // 发送确认用自己的钩子，派发检查不关闭光标动画。
       click:(p,s)=>reportSendClick(sendGuard, click(p,s,pointerGuard,sendGuard,true)),
-      // 教学从不派发输入，停下、离开要记成「没执行」，不能变成结果未知。
       guide_step:(p,s)=>guideStep(p,s,sendGuard),
-      // 回车、脚本也可能把东西发出去：和点「发送」走同一个确认。
       press_key:(p,s)=>reportSendClick(sendGuard, pressKeyGuarded(p,s,sendGuard,beforeDispatch)),
       js:(p,s)=>evaluateJs(p,s),
     };
@@ -1783,7 +1669,6 @@ async function executeToolCall(
     setSessionClaimBlocked(sid, gate.isSessionBlocked(sid));
     operationGeneration = gate.gen;
 
-    // 等用户确认「发送」时：停、接管、控制轮次变了都马上结束等待，按「不发」处理。
     const sendGuard: SendGuard = {
       inProgram: !!programId,
       task: runId ? `${runId}\u0000${userTurn}` : undefined,
@@ -1820,7 +1705,6 @@ async function executeToolCall(
         checkIdentity();
 
         if(gate.gen!==operationGeneration||workerTabControl.isStopped(key(sid)))throw new Error('操作所属控制轮次已失效，操作未执行。');
-        // 进入具体动作执行，后续异常可能产生副作用
         executionFact = "unknown";
 
         try {
@@ -1852,11 +1736,9 @@ async function executeToolCall(
 
     if (e instanceof RestrictedPageError) result.data = { restrictedPage: { tabId: e.tabId, url: e.url } };
 
-    // 因为用户没执行（不让发、付款留给用户）：宿主据此不把它当成连续出错，侧栏据此写那句话。
     if (e && typeof e === "object" && "heldReason" in e) result.data = { heldReason: e.heldReason };
   }
 
-  // 已完成写操作的身份跨 SW 重启保留，重复投递不会二次落地。
   if (WRITE_TOOL_SET.has(name)) persistControl();
   uplink.sendClientMessage(result);
 }
@@ -1868,10 +1750,6 @@ function emitLocalStatus(state: AgentRunState): void {
   broadcastVisibleServer({ type: "status", state });
 }
 
-/**
- * 按页接管：这页成员已开始的写操作结束后才显示「现在归你」。
- * 卡住的那一步取消不了，只能不再等它；页面可能还会被它改，所以要如实告诉用户。它的结果由宿主的工具期限记成未知。
- */
 async function drainPage(sessionIds: string[]): Promise<{ generation: number; superseded: boolean }> {
   const generation = gate.gen;
 
@@ -1930,12 +1808,9 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
   team.beginDrain();
   emitTeam();
 
-  // 助手交给用户（hand_to_user 带 ask）：先把这页切到其窗口内前台，用户才看得到要做的事。侧栏「接管」不带 ask，不在这里切。
   if (ask && targetTabId != null) await bringForwardForUser(targetTabId, "hand_to_user");
   const shown = showUserControlGuarded();
 
-  // 「现在归你」画好后圈出要用户填的栏和按钮。不等、不报错：圈不上不挡交还。
-  // 按这页所属的成员找 @ref；「现在归你」收起时页面自己清圈。
   if (ask && targetTabId != null && targets?.length) {
     const owner = members.find(m => m.role === "lead") ?? members[0];
     const tabId = targetTabId;
@@ -1980,7 +1855,6 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
   }
 
   if (!uplink.sendClientMessage(takeover)) {
-    // 宿主没连上时仍关闭本地写入口；按钮到关闸不能等 Agent 往返。
     const pending = clearPendingControl(requestId);
 
     if (pending?.action === "takeover" && pending.pageTabId == null) gate.commitTakeover(result.generation);
@@ -2027,7 +1901,6 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
   emitHandoffPhase("rereading");
   const pages = [];
 
-  // 这次重读被取消（断线、中止）时，侧栏那一行按页面现在归谁改回去；之后又有一次交还开始过，就不动它。
   const settleCancelled = () => { if (handbackCaptureSeq === token + 1 || handbackCapture?.token === token) emitHandoffPhase(teamHeld() ? "user" : "agent"); };
 
   for (const member of frozen) {
@@ -2188,7 +2061,6 @@ if(!current)return;remoteControl=null;clearTimeout(current.timer);current.abortA
 }
 
 async function runRemoteControl(request:Extract<ServerMessage,{type:'task_control'}>):Promise<void>{
-  // 中止不跟正在收尾的接管、交还抢：交给用户的那一步要等光标退场、助手确认，用户恰好在这段时间按停止，等它落定再停，不拒绝。
   while(request.action==='abort'&&remoteControl)await remoteControl.settled;
 
   if(remoteControl){uplink.sendClientMessage({type:'task_control_result',requestId:request.requestId,action:request.action,runId:request.runId,ok:false,reason:'另一项页面控制还在进行，请稍后重试。'});
@@ -2240,13 +2112,8 @@ return;
   if(!uplink.sendClientMessage({type:'task_action',request:actionRequest}))emitNotice('连接已断开，控制请求没有发送。','error');
 }
 
-/**
- * user_message / steer 转发前附上发送那一刻用户正在看的标签页（"这页面"类指代的锚点）。
- * 查询失败或无活动标签时原样发送，不阻塞主流程。
- */
 async function readMentionedPages(entry: PanelHistoryEntry, pages: PageContext[], currentTabId?: number): Promise<void> {
   const owner = conversationId;
-  // 结果写回这一条历史再落盘：重开侧栏、后台重启后胶囊仍是已读或读不到，不会退回待读。
   const settle = (tabId: number, status: "read" | "unread", reason?: string): void => {
     if (conversationId !== owner || entry.item.kind !== "user") return;
     const page = entry.item.context?.pages?.find((p) => p.tabId === tabId);
@@ -2337,7 +2204,6 @@ chrome.contextMenus?.onClicked.addListener((info, tab) => {
 
   void chrome.tabs.sendMessage(tabId, { type: "ask-open", text }).catch(() => {
     void chrome.sidePanel.open({ tabId }).catch(() => {
-      /* 面板可能已经开着 */
     });
     void deliverAsk(ask);
   });
@@ -2351,17 +2217,12 @@ if (chrome.commands?.onCommand) {
 
       if (!tab?.id) return;
       void chrome.tabs.sendMessage(tab.id, { type: "ask-hotkey" }).catch(() => {
-        /* 无可注入页 */
       });
     });
   });
 }
 
-// 工具栏图标点击 = 打开侧栏。manifest 的 side_panel 只声明面板本身，未登记
-// setPanelBehavior 时图标点击没有任何行为；同时这也是 manifest _execute_action
-// 命令（Command+Shift+Y）能打开侧栏的前提。
 void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
-  /* 老版本 Chrome 无此 API：图标行为不变 */
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -2401,8 +2262,6 @@ function attachPanel(port: chrome.runtime.Port) {
       case "client": {
         const wireClient = msg.msg;
 
-        // 卡片上替另开那件发的继续：它属于另一个会话，不在当前会话里记一句用户没说过的话。
-        // 侧栏收不到别的会话的任务视图，这里按它自己保留的那页补上页面，不用你正看着的这页。
         if (wireClient?.type === "task_action" && wireClient.request.conversationId !== conversationId) {
           const { request } = wireClient;
           void (request.action === "resume" ? taskPageContext(request.conversationId, lastTaskViews.get(request.conversationId)) : Promise.resolve(null))
@@ -2416,7 +2275,6 @@ function attachPanel(port: chrome.runtime.Port) {
 
         if (!client || typeof client.type !== "string") break;
 
-        // user_message / steer 先附页面上下文再上行（异步，失败时原样发送）
         if (client.type === "abort") {
           requestPanelControl('abort');
           break;
@@ -2454,7 +2312,6 @@ function attachPanel(port: chrome.runtime.Port) {
 
           void attachPageContext(client).then((enriched) => {
             const mentioned = wireClient.type === "task_action" ? wireClient.request.pages : undefined;
-            // 页面要等查完活动标签页才知道：补进这一条历史，侧栏当场的 chip 和重开后的回放都用它。
             if (entry.item.kind === "user" && (enriched.context || mentioned?.length)) {
               const { title, url, selection } = enriched.context ?? { title: "", url: "", selection: undefined };
               const context: UserTurnContext = { title, url };
@@ -2469,8 +2326,6 @@ function attachPanel(port: chrome.runtime.Port) {
               if (mentioned?.length) void readMentionedPages(entry, mentioned, enriched.context?.tabId);
             }
 
-            // 上行传输不可用 = 确定未发给扩展内 agent：回执面板标记未送达，
-            // original 保留原始消息（含选区上下文）供用户明确重试。
             const original:ClientMessage = wireClient.type==='task_action'
               ? {...wireClient,conversationId,request:{...wireClient.request,context:enriched.context,attachments:enriched.attachments}}
               : { ...enriched, conversationId };
@@ -2484,7 +2339,6 @@ function attachPanel(port: chrome.runtime.Port) {
           break;
         }
 
-        // 侧栏的「翻译这一页」不知道标签页：这里补上活动标签页，再和 ⌥T 走同一条路。
         if (client.type === "page_translate" && !client.context) {
           void getActiveTab().then(({ tab }) => { if (tab) void translateTab(tab); });
           break;
@@ -2503,7 +2357,6 @@ function attachPanel(port: chrome.runtime.Port) {
 
       case "control":
         if (msg.action === "takeover") {
-          // 本地按钮先关写入口，不等宿主往返；pause 仍发给 Agent 排空任务。
           void handleTakeover(msg.tabId, undefined, msg.tabId == null);
           requestPanelControl("pause", msg.tabId);
         } else requestPanelControl("resume");
@@ -2513,8 +2366,6 @@ function attachPanel(port: chrome.runtime.Port) {
         break;
       }
 
-      // 重发记下的原文（已带当时的页面上下文），只更新原来那条历史：面板和重开后的回放都只有一个气泡。
-      // 总要回执，侧栏才不会停在「已重试」；没有这条时只回给点「重试」的这个侧栏。
       case "redeliver": {
         const request = parseRedeliver(msg);
 
@@ -2551,12 +2402,10 @@ function attachPanel(port: chrome.runtime.Port) {
       case "retry":
         uplink.retry();
         break;
-      // 还原填写只在任务空闲、没有工具在执行时做：助手还在填，写回去会和它抢。
       case "fill_undo":
         if (lastStatus !== "idle" || toolsInFlight > 0) broadcast({ kind: "fill_undo", undo: fillUndoView(conversationId), refused: "busy" });
         else void restoreFills(conversationId);
         break;
-      // 只看工作标签页（没有就看当前页）：虚线指的是助手读过的那一页。
       case "page_refs_check": {
         void (async () => {
           const tabId = await pageRefTab();
@@ -2569,7 +2418,6 @@ function attachPanel(port: chrome.runtime.Port) {
               if (ref !== undefined && await locatedStillThere(tabId, ref)) found.push(name);
             }
 
-            // 助手圈过的控件也报回：回答里常把它写成平铺文字，侧栏按原字找。
             for (const name of circledNames(tabId).slice(0, 10)) {
               const ref = locatedRef(tabId, name);
 
@@ -2641,7 +2489,6 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         if (lastHelloOk) {
           const helloReplay: Extract<ServerMessage, { type: "hello_ok" }> = { type: "hello_ok", version: lastHelloOk.version, model: lastHelloOk.model };
 
-          // 目录跟随 hello_ok 回放：否则面板重开只剩模型名、没有可选列表。
           if (lastHelloOk.models) helloReplay.models = lastHelloOk.models;
 
           if (lastHelloOk.features) helloReplay.features = lastHelloOk.features;
@@ -2652,7 +2499,6 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
           }
         }
 
-        // 没有记录也要回一条：侧栏收到 history 才算回放完，起点引导等它才出现。
         port.postMessage({ kind: "history", entries: panelHistory.since(afterSeq ?? 0), replay: true } satisfies BgToPanel);
         port.postMessage({ kind: "server", msg: { type: "status", state: lastStatus } } satisfies BgToPanel);
 
@@ -2663,9 +2509,6 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
           port.postMessage({ kind: "server", msg: status } satisfies BgToPanel);
         }
 
-        // 任务视图只在真实状态变化时下发、不进历史。面板重开时把这一会话最近一次
-        // 权威视图原样补上（缓存的就是收到的那一份，不重算、不改写），否则任务条会空着
-        // 直到下一次状态变化。
         const lastView = lastTaskViews.get(conversationId);
 
         if (lastView) port.postMessage({ kind: "server", msg: { type: "task_view", view: lastView } } satisfies BgToPanel);
@@ -2674,7 +2517,6 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
 
 installQuietTabs();
 
-/** 光标名牌上的确认/取消键：点删除/取消 → 与侧栏打「确认」「取消」同一条 user_message。 */
 chrome.tabs.onActivated.addListener((info) => {
   void controlReady.then(async () => {
     if (!(await memberTabIds()).includes(info.tabId)) return;
@@ -2697,7 +2539,6 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     if (!text) { sendResponse({ ok: false, error: "先选中一段文字。" });
 
       return; }
-    // Open synchronously in the originating gesture; trust sender metadata, not page payload.
 
     const opened = chrome.sidePanel.open({ tabId: sender.tab.id });
     void opened.then(() => deliverAsk({ text, tabId: sender.tab!.id!, title: sender.tab!.title ?? "", url: sender.url ?? sender.tab!.url ?? "" }))
@@ -2738,7 +2579,6 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (msg.type !== "mark_action" || !isMarkActionId(msg.action)) return;
   const action = msg.action;
   void (async () => {
-    // 名牌「取消」收起标注、松开停在目标上的手；清理失败不挡住把话送进对话。
     if (action === "cancel") await cancelMarkHold(key()).catch(() => {});
 
     const text = markActionUserText(action);
@@ -2767,22 +2607,15 @@ async function importReading(record: ReadingRecord): Promise<void> {
 }
 
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
-/**
- * 按住说话听写出的一句、按了主动卡的动词、阅读卡交给助手的一问（typed）：和侧栏打字发送一样记进对话；任务在跑就作为补充交给它，空闲就开新任务。返回是否送出。
- * card 只进侧栏历史，让这一轮画成那张卡。
- */
 spoken: async (text: string, context?: PageContext, card?: NudgeCard, typed = false) => {
   const sent = uplink.sendClientMessage(await attachPageContext({ type: lastStatus === "idle" ? "user_message" : "steer", text, context, ...(card || typed ? {} : { spoken: true as const }) }));
 
-  // 没送出去就不记：胶囊上留着这句话可以重发，重发成功才进对话。
   if (sent) recordAndBroadcastHistory(card ? { kind: "user", text, card } : { kind: "user", text, ...(context?.selection ? { context: { title: context.title, url: context.url, selection: context.selection.text } } : {}) });
 
   return sent;
 },
-/** 胶囊上的「停」：和侧栏「停止」同一条路。 */
 stop: () => requestPanelControl("abort"),
 notice: emitNotice,
-// 页面右边缘胶囊上的停止键：只认本会话正在操作的那一页；和侧栏「接管」走同一条路。
 worksOn: async (tabId: number) => !gate.isUser() && await getWorkingTabId() === tabId,
 pauseFromPage: (tabId: number) => { void handleTakeover(tabId); requestPanelControl("pause", tabId); },
 voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});

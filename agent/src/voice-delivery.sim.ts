@@ -1,7 +1,3 @@
-/**
- * 念进度的时间规则：假时钟每 100 ms 拨一次并交一次 tick，只判模块要念什么、什么时候念。
- * 时间都从委派绑定任务那一刻（0 ms）算起。真的出声由 gpt-live-voice.mts --case=queued-progress 验。
- */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createVoiceDelivery, type VoiceDeliveryEvent, type WaitingDelegation } from './voice-delivery.js';
@@ -15,9 +11,7 @@ function setup(...ids: string[]) {
   for (const id of ids) delivery.handle({ type: 'bound', delegationId: id, runId: `run-${id}` });
 
   return {
-    /** 拨到 ms 时刻送一个事件。 */
     send(ms: number, event: VoiceDeliveryEvent) { now = ms; return delivery.handle(event); },
-    /** 从 from 到 to（含）每 100 ms 交一次 tick；waiting(ms) 给出那一刻在等的委派。 */
     run(from: number, to: number, waiting: (ms: number) => WaitingDelegation[]): Said[] {
       const said: Said[] = [];
 

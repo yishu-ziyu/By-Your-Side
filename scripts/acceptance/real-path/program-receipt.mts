@@ -1,13 +1,3 @@
-/**
- * 程序结束时说清停在哪一页；选择器歧义时报错直接给候选。
- *   npx tsx scripts/acceptance/real-path/program-receipt.mts --headless
- * 本机页 A 有两个同 class 的链接，都通往页 B。脚本模型：
- *   第 1 个程序用 a.item 点击 → 歧义报错；第 2 个程序用报错里第 2 个候选的 loc=css 点击，再用 browser.pressKey；然后回答。
- *   a) 歧义报错里列出两个候选，第 2 个带只指向它的 loc=css 和它的文字 "Beta"。
- *   b) 第 2 个程序没有报错（pressKey 是 press_key 的别名），网站收到了 /b 的请求。
- *   c) 第 2 个程序的结果里写明工作标签页现在是 "Page B" — …/b。
- * 失败方式：报错只说「请 snapshot」时 a 失败；只认部分 camelCase 时 b 失败；不写结束页面时 c 失败。反例结果见验收文件。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -43,7 +33,6 @@ type Message = { role: string; content?: string | Array<{ text?: string }> | nul
 
 const textOf = (m: Message) => Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : m.content ?? "";
 
-/** 每次主任务请求里的工具结果（按出现顺序）。 */
 let toolResults: string[] = [];
 
 const model = await startScriptedModel([

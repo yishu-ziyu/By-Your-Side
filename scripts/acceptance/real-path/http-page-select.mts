@@ -1,11 +1,3 @@
-/**
- * 普通 http 网页上划词气泡照常出现：只装扩展的隔离无头 Chrome，
- * 本机网页经一个非本机的 http 主机名打开（页面不是安全上下文），CDP 鼠标拖选一段正文。不需要模型。
- *
- *   npx tsx scripts/acceptance/real-path/http-page-select.mts --headless --run=final
- *
- * --run= 只决定证据目录 out/acceptance/http-page-select/<run>/：不写时是 candidate。
- */
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -47,7 +39,6 @@ const findAll = (n: DomNode, test: (x: DomNode) => boolean, acc: DomNode[] = [])
 
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === 'about:blank')!.targetId);
-  // 内容脚本在页面 idle 时启动：先开监听再打开网页，启动时的报错才收得到。
   rp.cdp.onEvent('Runtime.exceptionThrown', (m: { sessionId?: string; params: { exceptionDetails: { text: string; url?: string; exception?: { description?: string } } } }) => {
     if (m.sessionId !== work) return;
     const d = m.params.exceptionDetails;
@@ -80,12 +71,10 @@ try {
   await rp.cdp.send('DOM.enable', {}, work);
   const explain = await until(async () => {
     const root = (await rp.cdp.send('DOM.getDocument', { depth: -1, pierce: true }, work)).root as DomNode;
-    // 工具条只有图标，按钮名在 aria-label 上。
     const button = findAll(root, n => n.nodeName === 'BUTTON' && (n.attributes ?? []).some((value, i, all) => i % 2 === 1 && all[i - 1] === 'aria-label' && value === '解释'))[0];
 
     if (!button) return undefined;
     const { object } = await rp.cdp.send('DOM.resolveNode', { backendNodeId: button.backendNodeId }, work);
-    // 气泡的影子根是 closed，页面脚本看不见；从按钮本身量它显没显示。
     const box = (await rp.cdp.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: 'function(){if(this.closest("[hidden]"))return null;const r=this.getBoundingClientRect();return r.width&&r.height?{x:r.x,y:r.y,w:r.width,h:r.height}:null}', returnByValue: true }, work)).result.value;
 
     return box ?? undefined;

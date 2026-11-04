@@ -1,10 +1,3 @@
-/**
- * 附上的文件交给真模型（MiniMax M3.1，收图）：看它能不能照文件内容答对。只装扩展、隔离构建、真模型。
- *   npx tsx scripts/acceptance/real-path/file-attachments-real.mts --headless
- * 一次附上扫描件 PDF、Excel、PPT、长文本，问四个只有读了文件才答得出的问题：
- *   扫描件上的收据编号（只在图里）、Excel 里的金额、PPT 第 3 页备注里的日期、长文本第 2401 行的暗号（不在消息里，要用 read_attachment 去找）。
- * 密钥在 ~/.pi/agent/auth.json（minimax-cn），只在运行时读，不打印、不落盘。
- */
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -26,7 +19,6 @@ const MODEL = { provider: "minimax-cn", modelId: "MiniMax-M3.1-Flash-Preview" };
 
 const ASK = "只根据我附上的文件回答，每题一行：1）扫描的收据上，收据编号和金额是多少？2）销售表里华东那一天的金额是多少？3）PPT 第 3 页的演讲者备注提醒合同哪天到期？4）long-notes.txt 里的暗号是什么？";
 
-/** 每题答案里必须出现的字（任一写法）。 */
 const EXPECT: Array<{ item: string; any: string[] }> = [
   { item: "1 扫描件（只在图里）的收据编号", any: ["A-1024"] },
   { item: "1 扫描件的金额", any: ["860"] },

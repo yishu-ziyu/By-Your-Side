@@ -1,4 +1,3 @@
-/** 两家隔离接收端：备用模型出错后，新密钥只能发给备用连接。 */
 import { createServer } from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";

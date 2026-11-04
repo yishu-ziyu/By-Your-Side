@@ -3,15 +3,10 @@ import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-a
 import { redactCredentialText } from "../../shared/untrusted.js";
 import { isJsonObject, parseJsonReply, sideJudgment, type SideCallHost } from "./side-judgment.js";
 
-/** 只核对回答里说自己来自已读材料的事实；与原文矛盾才在原回答下补一行更正，已交付的回答不收起、不重写。 */
 export interface FactCheckInput {
-  /** 用户这一轮的原话。 */
   request: string;
-  /** 交给用户的回答（不含出处标签）。 */
   answer: string;
-  /** 这一轮助手读到的页面内容：读页、工具结果、交付前附带的页面。只用来对照，不发回界面。 */
   seen: string;
-  /** 交付后当前标签页的快照（表单值在这里）。 */
   pageNow: string;
   images?: FactImageEvidence[];
 }
@@ -29,7 +24,6 @@ export interface FactCheckFlag {
   text: string;
 }
 
-/** 对照材料的上限：只取最后这么多字（最近读到的最接近交付时的页面）。 */
 export const FACT_CHECK_SEEN_CHARS = 60_000;
 const PAGE_NOW_CHARS = 12_000;
 
@@ -67,14 +61,12 @@ function isReply(value: unknown): value is { problems: FactCheckFlag[] } {
   return Array.isArray(value.problems) && value.problems.every(isFlag);
 }
 
-/** 回答里有没有值得核对的事实：数字、日期，或这一轮读过页面。纯闲聊、只问用户的回答不核对。 */
 export function worthChecking(input: Pick<FactCheckInput, "answer" | "seen" | "images">): boolean {
   return input.answer.trim().length >= 8 && (input.seen.trim().length > 0 || !!input.images?.length);
 }
 
 export async function checkFacts(host: SideCallHost, model: Model<Api>, input: FactCheckInput, signal: AbortSignal, headers?: Record<string, string>): Promise<FactCheckFlag[]> {
   const images = input.images ?? [];
-  // An incomplete checker must not retract claims supported by pixels it was never given.
   if (images.length && !model.input.includes("image")) throw new Error("事实核对模型无法读取本轮图片，未改写回答。");
   if (images.length > 24 || images.reduce((bytes, item) => bytes + item.image.data.length, 0) > 32 * 1024 * 1024) throw new Error("本轮图片超出单次事实核对容量，未截断图片或改写回答。");
   const content: string | (TextContent | ImageContent)[] = images.length
@@ -95,12 +87,10 @@ export async function checkFacts(host: SideCallHost, model: Model<Api>, input: F
   });
 
   const evidence = `${redactCredentialText(input.seen).slice(-FACT_CHECK_SEEN_CHARS)}\n${redactCredentialText(input.pageNow).slice(0, PAGE_NOW_CHARS)}`;
-  // 引文对不上已读材料的矛盾多是核对模型自己的推断，不打扰用户。
   return reply.problems.filter(flag => input.answer.includes(flag.claim)
     && !!flag.source && !!flag.quote && evidence.includes(flag.source) && evidence.includes(flag.quote)).slice(0, 4);
 }
 
-/** 原回答一字不动，更正接在末尾：用户读到一半的内容不会变。 */
 export function appendCorrections(answer: string, problems: FactCheckFlag[]): string {
   const plain = (text: string) => text.replace(/[<>`*_\[\]\\]/g, "");
   const lines = problems.map(problem => `更正：上面说「${plain(problem.claim)}」，${plain(problem.source ?? "")} 原文是「${plain(problem.quote ?? "")}」。`);
@@ -109,23 +99,16 @@ export function appendCorrections(answer: string, problems: FactCheckFlag[]): st
 
 type SeenMessage = { role?: string; content?: unknown };
 
-/** 目标核对判继续时宿主发给模型的那条消息的开头（session.ts）。 */
 const GOAL_CHECK_PREFIX = "[GOAL CHECK]";
 
-/** 宿主每轮插进对话的状态段（durable-loop.ts、product-context.ts）也带着用户原话，不是用户这一轮说的话。 */
 const HOST_DATA = ["本次运行的上下文，不是用户消息", "应用状态快照，不是新用户消息"];
 
 const textOf = (content: unknown): string => typeof content === "string" ? content
   : Array.isArray(content) ? content.map((part) => part && typeof part === "object" && (part as { type?: unknown }).type === "text" ? String((part as { text?: unknown }).text ?? "") : "").join("") : "";
 
-/**
- * 这一轮助手读到的页面：从用户这一轮的话开始往后的工具结果，和带 page-content 的页面观察。
- * roles 进诊断记录：核对材料不对时能看出是哪一类消息没取到。
- */
 export function seenThisRun(messages: readonly SeenMessage[], request: string): { text: string; roles: Record<string, number>; images: FactImageEvidence[] } {
   const key = request.trim().slice(0, 40);
   let start = 0;
-  // 目标核对判继续时补发的提示也引用用户原话；从用户自己说这句话的地方算起，续做各轮读到的页面都要算进来。
   for (let i = messages.length - 1; i >= 0; i--) {
     const text = textOf(messages[i]!.content);
     if (messages[i]!.role === "user" && key && text.includes(key) && !text.includes(GOAL_CHECK_PREFIX) && !HOST_DATA.some((head) => text.startsWith(head))) { start = i; break; }

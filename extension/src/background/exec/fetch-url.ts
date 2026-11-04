@@ -1,8 +1,3 @@
-/**
- * `fetch` 工具的执行：带浏览器登录态取接口。
- * 边界判定在 shared/fetch.ts（纯函数）；这里只负责发请求与流式读回。
- * 默认不跟随跨源重定向；响应按上限流式读取，不整份 arrayBuffer。
- */
 import {
   FETCH_MAX_BYTES,
   FETCH_MAX_REDIRECTS,
@@ -33,10 +28,7 @@ interface FetchResult {
 export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?: AbortSignal; beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}; confirmPost?: (request: { url: string; body?: string }) => Promise<void> }): Promise<FetchResult & { sendConfirmed?: true }> {
   const request = normalizeFetchRequest(params);
   const started = performance.now();
-  // 读取时限要从用户点「发送」之后算：等确认最长 2 分钟，先起计时会让确认过的请求直接超时。
-  // 搜索、查询类 POST 不拦；写入和拿不准的才问（判定见 shared/request-confirm.ts）。
   const confirmed = request.method !== "GET" && opts?.confirmPost && needsRequestConfirm(request) ? await opts.confirmPost({ url: request.url, body: request.body }).then(() => true, (error: unknown) => {
-    // 还没发出：确认这一步出什么错都是没执行，不能让宿主当成结果未知去重读。
     throw error && typeof error === "object" && "executionFact" in error ? error : Object.assign(new Error(`POST 请求没能先问用户，没有发出：${oneLine(error)}`), { executionFact: "not_executed" as const });
   }) : false;
   const confirmation = Math.round(performance.now() - started);
@@ -73,7 +65,6 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
         });
         responseTime += performance.now() - responseStart;
       } catch (error) {
-        // 用户取消和我们自己的时限分开说：侧栏据此写「已取消」或「超时」。
         if (controller.signal.aborted) throw new Error(opts?.signal?.aborted ? "fetch 已取消，请求结果未知。" : `fetch 超时（${FETCH_READ_DEADLINE_MS / 1000} 秒没有回应），请求结果未知。`);
         throw new Error(`fetch 请求失败（送达情况未知或网络错误）：${oneLine(error)}。不是页面结果，不要据此判断接口不存在。`);
       }
@@ -85,9 +76,8 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
 
         if (hops > FETCH_MAX_REDIRECTS) throw new FetchRefused("fetch 重定向次数过多，后续请求未执行。");
         assertRedirectAllowed(request.url, next);
-        // 307/308 原样带着方法和正文再发一次：放行的搜索请求不能借重定向落到没问过的写入地址。
+        // WHY: 307/308 原样带着方法和正文再发一次：放行的搜索请求不能借重定向落到没问过的写入地址。
         if (request.method !== "GET" && !confirmed && opts?.confirmPost && needsRequestConfirm({ ...request, url: next })) throw new FetchRefused("POST 请求被重定向到需要用户确认的地址，后续请求未执行。");
-        // 重定向累计在同一份 request 上原地改，避免每跳都复制一份对象。
         request.url = next;
 
         if (request.method === "GET") request.body = undefined;
@@ -116,7 +106,6 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
       };
     }
   } catch (error) {
-    // 还没发出就停了（任务停下、控制轮次变了）：是没执行，不是结果未知。
     if (!dispatched && error && typeof error === "object" && !("executionFact" in error)) throw Object.assign(error, { executionFact: "not_executed" as const });
 
     if (dispatched) {

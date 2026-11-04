@@ -1,14 +1,3 @@
-/**
- * 页面右边缘的状态胶囊：只装扩展的隔离无头 Chrome、真侧栏、本机演示页（加入购物车）与本机脚本模型。
- *
- *   npx tsx scripts/acceptance/real-path/edge-tab.mts --headless
- *
- * 真实路径走：没有任务不显示 → 助手连续点两下（不缩回，做成变绿圈）→ 任务结束收起 → 用户接管时「现在归你」压过其他状态、
- * 点「继续」交还 → 别的标签页看到「在 〈那页〉 ↗」并能切回去 → 侧栏关着时点胶囊打开侧栏。
- * 等页面响应、结果不确定、没做成三种结果直接调页面脚本的入口（后台画它们用的是同一个入口），用来截图、比深浅色和减少动态效果。
- * 读数来自扩展隔离环境里的 __sideagent.edgeTab()；点击一律用真鼠标事件点在它报出的位置上。
- * 证据在 out/edge-tab/：每种状态浅色、深色各一张，拼成 sheet-light.png、sheet-dark.png；--record 时另录 run.mp4。
- */
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -22,7 +11,6 @@ requireHeadless();
 const out = join(REPO, "out/edge-tab");
 const shots = join(out, "shots");
 const record = process.argv.includes("--record");
-/** 调试用：--from=others 跳过前面几段，直接从别的标签页那一段开始。 */
 const fromOthers = process.argv.includes("--from=others");
 
 await mkdir(shots, { recursive: true });
@@ -56,7 +44,6 @@ const CAPTIONS: Array<[string, string]> = [
   ["6-others", "6 · 别页还有助手：小圆泡 +N"], ["7-done", "做成：绿圈画满再打勾"], ["8-away", "只有别页助手：在 〈那页〉 ↗"], ["9-list", "点小圆泡：向下展开列表"],
 ];
 
-/** 把每种状态的截图拼成一页，再整页截图成 sheet-*.png。 */
 const sheet = (scheme: string) => `<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:24px;width:1000px;background:${scheme === "dark" ? "#141310" : "#ecebf0"};font:13px -apple-system,"PingFang SC",sans-serif;color:${scheme === "dark" ? "#eee9df" : "#1d1d1f"}}
 h1{font-size:18px;margin:0 0 14px}.g{display:grid;grid-template-columns:1fr 1fr;gap:14px}figure{margin:0;background:${scheme === "dark" ? "#1d1c18" : "#fff"};border-radius:10px;overflow:hidden}
 figcaption{padding:8px 12px;font-weight:600}img{display:block;width:100%}</style><h1>右边缘胶囊 · ${scheme === "dark" ? "深色" : "浅色"}（真扩展截图）</h1><div class="g">${CAPTIONS.map(([file, caption]) => `<figure><figcaption>${caption}</figcaption><img src="/shots/${scheme}-${file}.png"></figure>`).join("")}</div>`;
@@ -85,7 +72,6 @@ const add = (i: number, delayMs = 1200) => ({ tool: { name: "click", args: { tar
 
 const model = await startScriptedModel([
   { match: GOAL, steps: [...start, add(1, 900), { tool: { name: "click", args: { target: "#cart" } }, delayMs: 900 }, { text: "加好了，购物车里有 1 件。", delayMs: 600 }] },
-  // 助手在后台新开一页干活，用户留在自己看的页面：这才是「别的标签页还有助手」。
   { match: SLOW_GOAL, steps: [{ tool: { name: "tabs", args: { action: "open", url: `${origin}/?bg` } } }, add(1, 4000), add(2, 4000), add(3, 4000), add(1, 4000), add(2, 4000), add(3, 4000), { text: "都加好了。" }] },
   { match: PAUSE_GOAL, steps: [...start, add(1, 1500), add(2, 1500), add(3, 1500), { text: "加好了。" }] },
 ]);
@@ -105,7 +91,6 @@ try {
   const workTarget = (await rp.targets()).find(t => t.url === "about:blank")!.targetId;
   const work = await rp.attach(workTarget);
 
-  // 扩展内容脚本的读数在扩展的隔离环境里，网页自己的环境读不到：按会话记下隔离环境，逐个试。
   const isolated = new Map<string, Set<number>>();
 
   rp.cdp.onEvent("Runtime.executionContextCreated", (m: { sessionId?: string; params: { context: { id: number; origin: string; auxData?: { type?: string } } } }) => {
@@ -140,7 +125,6 @@ try {
     for (const type of ["mousePressed", "mouseReleased"]) await mouse(session, type, at);
   };
 
-  /** 逐帧截图录一段（浏览器自带的录屏帧在改过视口后会被放大裁切，截图的位置才是准的）。 */
   const recordClip = async (session: string, clip: Rect & { scale: number } | null, ms: number, file: string) => {
     const dir = await mkdtemp(join(tmpdir(), "edge-tab-clip-"));
     const shotsAt: Array<{ at: number; file: string }> = [];
@@ -166,7 +150,6 @@ try {
   const waitTab = (want: (t: Tab) => boolean, ms: number, label: string, session = work) => until(async () => { const t = await tab(session); return t && want(t) ? t : null; }, ms, label, 40);
 
   for (const session of [work]) { await rp.cdp.send("Runtime.enable", {}, session); await rp.cdp.send("Page.enable", {}, session); }
-  // 录屏按真实像素录（帧和视口一样大）；截图用两倍像素。
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", record ? { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false } : { width: 1100, height: 640, deviceScaleFactor: 2, mobile: false }, work);
   await rp.cdp.send("Page.navigate", { url: origin }, work);
   await until(async () => (await inExtension<boolean>(work, "true")) ?? null, 15000, "演示页加载、扩展脚本就位");
@@ -184,12 +167,9 @@ try {
   const vw = Number(await rp.evaluate(work, "innerWidth"));
 
   if (!fromOthers) {
-  // ── 没有任务：完全不显示 ──
   const idle = await tab();
   check("没有任务时不显示", !idle?.shown, asJson(idle));
 
-  // ── 一次真实任务：连续两步不缩回，做成变绿圈，结束收起 ──
-  // 逐帧截图拼视频：浏览器自带的录屏帧在改过视口后会被放大裁切，截图的位置才是准的。
   const frames: Array<{ at: number; file: string }> = [];
   let recording = record;
   const frameDir = record ? await mkdtemp(join(tmpdir(), "edge-tab-frames-")) : "";
@@ -209,7 +189,6 @@ try {
   const settled = (await tab())!;
   check("贴着视口右边、上边离顶部 64px", !!settled.rect && Math.abs(settled.rect.x + settled.rect.width + 1 - vw) <= 2 && Math.abs(settled.rect.y - 64) <= 1, asJson({ rect: settled.rect, vw }));
 
-  // 每 40ms 采一次，直到任务结束：中间换步时胶囊一直在，宽度不掉回一小截。
   const samples: Array<{ at: number; shown: boolean; w: number; tone: string | null; a: string; b: string }> = [];
   const t0 = Date.now();
   let sawOk: Tab | null = null;
@@ -245,19 +224,16 @@ try {
     check("录屏 run.mp4 小于 3MB", size < 3_000_000, { size, frames: frames.length });
   }
 
-  // ── 只有胶囊接鼠标：紧贴胶囊下方的网页按钮照常能点 ──
   await drive(work, "ns.cursor.showFeedback({ id: 'probe', text: '没有执行', kind: 'failure' })");
   await waitTab(t => t.shown && t.tone === "err", 3000, "胶囊伸出");
   const edgeBox = await rp.evaluate(work, '(()=>{const r=document.querySelector("#edge").getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}})()') as Rect;
   await mouseClick(work, edgeBox);
   check("胶囊下方的网页按钮照常能点", Number(await rp.evaluate(work, "window.edgeHits||0")) === 1, Number(await rp.evaluate(work, "window.edgeHits||0")));
-  // 没做成不自动收起：过 3 秒还在；点胶囊本身才算看过，收起。
   await sleep(3000);
   check("没做成过 3 秒仍显示", (await tab())?.tone === "err", asJson(await tab()));
   await mouseClick(work, (await tab())!.rect!);
   await waitTab(t => !t.shown, 3000, "点一下没做成后收起").then(() => check("没做成不自动收起，点一下才收起", true, null), () => check("没做成不自动收起，点一下才收起", false, null));
 
-  // ── 每种状态，浅色和深色各截一张；顺带比底色、量动画 ──
   const wallpaper = await readFile(join(REPO, "extension/src/sidepanel/styles.css"), "utf8");
   const panelColors = [...wallpaper.matchAll(/--wallpaper:\s*([^;]+);/g)].map(m => m[1]!.trim());
 
@@ -293,7 +269,6 @@ try {
 
       if (scheme === "light" && name === "5-handoff") await rp.screenshot(work, join(out, "latest.png"));
 
-      // 流光特写：在干活这一态录约 3 秒，只录胶囊附近、放大三倍。
       if (scheme === "light" && name === "1-work" && record) await recordClip(work, { x: vw - 230, y: 52, width: 230, height: 64, scale: 3 }, 3200, join(out, "shimmer.mp4"));
     }
 
@@ -311,7 +286,6 @@ try {
   check("现在归你压过「没做成」，带「继续」", r["light:5-handoff"]!.tone === "hand" && r["light:5-handoff"]!.a === "现在归你" && r["light:5-handoff"]!.end === "继续", r["light:5-handoff"]!);
   check("别页还有助手：主胶囊照常、下方小圆泡 +1", r["light:6-others"]!.tone === "work" && r["light:6-others"]!.bubble === 1, r["light:6-others"]!);
 
-  // ── 动画：伸出时宽度是长出来的；换内容时从当前形状接着变；减少动态效果时不伸缩 ──
   const sampleOpen = async (js: string) => {
     await drive(work, "(ns.cursor.hideUserControl(), ns.cursor.hideFeedback(), ns.cursor.clearStatus(), ns.cursor.hide())");
     await waitTab(t => !t.shown, 3000, "先收起");
@@ -326,7 +300,6 @@ try {
 
   const normal = await sampleOpen("ns.cursor.showFeedback({ id: 'm1', text: '没有执行', kind: 'failure' })");
   check("伸出：宽度从一小截长到整句", normal.widths[0]! < normal.final * 0.6 && Math.max(...normal.widths) >= normal.final * 0.9, asJson(normal));
-  // 打断：长句还在伸出，立刻换成短句，宽度从当时的位置接着变，不先缩回一小截。
   await drive(work, "(ns.cursor.hideFeedback(), ns.cursor.beginAction('m2', 'click', undefined, undefined, '加入购物车'))");
   await sleep(90);
   const midWidth = (await tab())!.rect!.width;
@@ -346,16 +319,13 @@ try {
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [] }, work);
   await drive(work, "(ns.cursor.hideFeedback(), ns.cursor.clearStatus(), ns.cursor.hide())");
 
-  // ── 现在归你：真实接管，优先级最高，点「继续」交还 ──
   await rp.click(panel, "#conversation-new"); await ready();
   await rp.cdp.send("Page.bringToFront", {}, work);
   const before = Number(await rp.evaluate(work, "window.added"));
   await send(PAUSE_GOAL);
   await until(async () => Number(await rp.evaluate(work, "window.added")) > before || null, 30000, "接管前点了第一下");
-  // 让页面上同时挂着一条「没做成」：接管后它必须让位，不叠两层。
   await drive(work, "ns.cursor.showFeedback({ id: 'under', text: '没有执行', kind: 'failure' })");
   await rp.click(panel, "#takeover-btn");
-  // 接管时先过约 0.1 秒「正在停住全队」，再到「现在归你」。
   const handed = await waitTab(t => t.tone === "hand" && t.a === "现在归你", 10000, "现在归你").catch(() => null);
   check("接管后胶囊是「现在归你」带「继续」，压过没做成", handed?.a === "现在归你" && handed.end === "继续" && handed.endEnabled, asJson(handed));
   const hosts = Number(await rp.evaluate(work, 'document.querySelectorAll("[data-sideagent-overlay=edge-tab]").length'));
@@ -369,7 +339,6 @@ try {
 
   }
 
-  // ── 别的标签页：主胶囊「在 〈那页〉 ↗」，点它切过去；本页也有动作时，下方小圆泡 +1、展开列表 ──
   const otherTarget = (await rp.cdp.send("Target.createTarget", { url: `${origin}/other` })).targetId as string;
   const other = await rp.attach(otherTarget);
   await rp.cdp.send("Runtime.enable", {}, other);
@@ -386,7 +355,6 @@ try {
   check("别的标签页显示「在 〈那页标题〉 ↗」", away?.a === "在" && away.b.includes("京东") && away.end === "arrow", asJson(away));
   await sleep(600);
 
-  /** 浅色、深色各截一张同样大小的图。 */
   const shotOther = async (file: string) => {
     for (const scheme of ["light", "dark"]) {
       await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, other);
@@ -409,7 +377,6 @@ try {
     await sleep(800);
     const closedPanel = (await tab(other))!.bubble!.panel;
     await mouseClick(other, withBubble.bubble.rect);
-    // 展开过程每 25ms 量一次整块：顶边不动、右边贴着视口，宽高是一点点长出来的。
     const growth: Rect[] = [];
 
     for (let i = 0; i < 14; i++) { const t = await tab(other); if (t?.bubble) growth.push(t.bubble.panel); await sleep(25); }
@@ -424,7 +391,6 @@ try {
       asJson({ closedPanel, final: final ?? null, growth: growth.map(g => [Math.round(g.width), Math.round(g.height)]) }));
     await sleep(400);
     await shotOther("9-list");
-    // 收起用同一套弹簧缩回小圆泡。
     await mouseClick(other, opened!.bubble!.rect);
     const shrunk = await waitTab(t => !t.list.open && !!t.bubble && Math.abs(t.bubble.panel.height - closedPanel.height) <= 1 && Math.abs(t.bubble.panel.width - closedPanel.width) <= 1, 3000, "面板缩回小圆泡", other).catch(() => null);
     check("再点一下，面板缩回小圆泡", !!shrunk, asJson(shrunk?.bubble ?? null));
@@ -437,7 +403,6 @@ try {
   const switched = await until(async () => String(await rp.evaluate(panel, "chrome.tabs.query({active:true,lastFocusedWindow:true}).then(t=>t[0]?.url??'')")).endsWith("/?bg") || null, 6000, "切到工作页").catch(() => null);
   check("点「在 〈那页〉 ↗」切到助手在干活的页面", !!switched, asJson(switched ?? { back, now: await tab(other), active: await rp.evaluate(panel, "chrome.tabs.query({active:true,lastFocusedWindow:true}).then(t=>t.map(x=>x.url))") }));
 
-  // ── 侧栏关着：胶囊贴在窗口右边，点它打开侧栏 ──
   const bgTarget = (await rp.targets()).find(t => t.url.endsWith("/?bg"))?.targetId;
 
   if (bgTarget) {
@@ -451,7 +416,6 @@ try {
     check("侧栏关着时胶囊贴在窗口右边", !!closedTab?.rect && Math.abs(closedTab.rect.x + closedTab.rect.width + 1 - bgWidth) <= 2, asJson({ rect: closedTab?.rect ?? null, bgWidth }));
 
     if (closedTab?.rect) {
-      // 点胶囊左半边（避开停止键）。
       await mouseClick(bg, { ...closedTab.rect, width: 40 });
       panelId = (await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url.includes("sidepanel.html")), 8000, "侧栏重开").catch(() => ({ targetId: "" }))).targetId;
       check("侧栏关着时点胶囊打开侧栏", !!panelId, panelId);

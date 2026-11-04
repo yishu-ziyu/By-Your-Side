@@ -1,20 +1,13 @@
-/**
- * 插话评测的读数（eval/tasks/duplex.md）：node eval/harness/duplex-metrics.mjs eval/runs/<run-id> [--tasks eval/tasks/duplex.jsonl]
- * 只读页面自己记的写入记录（result.page_log）和 harness 记的插话时刻（result.interjections），不读扩展的轨迹，
- * 所以量的是用户在页面上看到的，不是程序以为自己做了什么。写 runs/<run>/duplex.json 和 duplex.md。
- */
 import { readFileSync, readdirSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** 插话那一刻已经发出去的动作，晚一点落到页面上不算没听；这之后再写旧值才算。 */
 export const IN_FLIGHT_MS = 1500;
 const WRITES = new Set(["input", "change", "submit", "send", "cart_add", "cart_remove"]);
 
 const matches = (e, m) => (m.type ? e.type === m.type : e.type === "input" || e.type === "change")
   && e.name === m.name && (m.value == null || (m.includes ? String(e.value).includes(m.value) : e.value === m.value));
 
-/** 一题一个配置的读数。没有插话记录或插话没触发时返回 measured=false。 */
 export function measure(task, result) {
   const log = Array.isArray(result.page_log) ? result.page_log : [];
   const fired = (result.interjections ?? []).filter((x) => !x.missed);
@@ -25,10 +18,7 @@ export function measure(task, result) {
   fired.forEach((x, i) => {
     const spec = task.interject[i] ?? {}, at = x.at_ms, expect = spec.expect ?? {};
     const after = log.filter((e) => e.t >= at);
-    // 反映：每项要的值都出现过的那一刻；有一项始终没出现就是 null
     const hits = (expect.reflect ?? []).map((m) => after.find((e) => matches(e, m))?.t ?? null);
-    // 撤掉 / 改方向（expect.undo）：插话前或已发出时写上页面的旧东西，要等它被撤掉才算改过来——
-    // 加进清单的要移除，写进栏里的要改成别的值。没有要撤的，这一项不计。
     if (expect.undo) {
       const undoes = (w) => (e) => e.t > w.t && (w.type === "cart_add" ? e.type === "cart_remove" && e.name === w.name : (e.type === "input" || e.type === "change") && e.name === w.name && e.value !== w.value);
       const onPage = (expect.stale ?? []).flatMap((m) => log.filter((e) => e.t < at + IN_FLIGHT_MS && matches(e, m)));

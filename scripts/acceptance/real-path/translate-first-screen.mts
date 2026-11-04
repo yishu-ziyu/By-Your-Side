@@ -1,11 +1,3 @@
-/**
- * 整页翻译的第一屏：只装扩展的隔离无头 Chrome、真侧栏、本机练习页与本机脚本模型（主模型 2.5 秒后才调用翻译，每批翻译 1.5 秒才回）。
- * a 说「翻译这页」：模型调用翻译之前页面一点不变；调用之后 0.6 秒内出现第一段译文（不再等一批翻译请求）。
- * b 还原后再说「重新翻译」：这页的段落都翻过，一个翻译请求都不发，调用后 0.4 秒内出现译文。
- * c 只问一个词怎么翻、模型没调用翻译：页面始终不被改动。
- *   npx tsx scripts/acceptance/real-path/translate-first-screen.mts --headless
- * 证据在 out/acceptance/real-path/<时间>-translate-first-screen/：每步的网页截图和 result.json。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -31,7 +23,6 @@ const model = await startScriptedModel([
 const rp = await launchRealPath();
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
-// 网页自己记下第一次出现翻译占位（翻译开始动页面）和第一段译文的时刻，与按下回车同一个时钟。
 const WATCH = `(() => { const tr = window.__tr = { t0: performance.now(), mark: null, done: null }; new MutationObserver(() => { const now = performance.now(); if (tr.mark === null && document.querySelector('[data-bys-translation]')) tr.mark = now; if (tr.done === null && document.querySelector('[data-bys-translation="true"]')) tr.done = now; }).observe(document.documentElement, { subtree: true, childList: true }); return true; })()`;
 type Watch = { t0: number; mark: number | null; done: number | null };
 
@@ -72,7 +63,6 @@ try {
   check("b 重新翻译不再请求翻译", translateRequests() === afterA, { requestsBefore: afterA, requestsAfter: translateRequests() });
   check("b 调用后 0.4 秒内出现译文", bMark !== null && bDone !== null && bDone - bMark <= 400, { firstPageChangeMs: bMark, firstTranslationMs: bDone });
 
-  // 新载入这页再问：c 只看这一句有没有改动页面。
   await rp.cdp.send("Page.navigate", { url: origin }, work);
   await until(async () => (await rp.evaluate(work, "document.readyState === 'complete' && document.querySelectorAll('p').length === 20 && !document.querySelector('[data-bys-translation]')")) || null, 15000, "练习页重新载入");
   const c = await say("翻译一下 serendipity 这个词", "意外发现美好事物的运气");

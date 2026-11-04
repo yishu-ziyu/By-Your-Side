@@ -1,4 +1,3 @@
-/** Reading has its own request identity and never enters the active task's steer queue. */
 export const READING_SELECTION_LIMIT = 8000;
 
 export const READING_TRANSLATE_QUESTION = '把这段翻译成中文；本来就是中文就翻成英文。';
@@ -31,13 +30,9 @@ export interface ReadingTurn {
   answer: string;
   state: 'pending' | 'streaming' | 'done' | 'stopped' | 'error';
   error?: string;
-  /** 这一问是按住说话说出来的：回答会被念出来。 */
   spoken?: boolean;
-  /** 这一问换了一段原文：这一问和之后的问题针对它，前面的回答仍属于各自的原文。 */
   source?: ReadingTurnSource;
-  /** 这一问要动手（搜索、开网页、读全文、记录），交给了侧栏同一个助手去做，回答是助手的交付。 */
   agent?: true;
-  /** 助手正在做的那一步，只在做的过程中有。 */
   step?: string;
 }
 
@@ -48,7 +43,6 @@ export interface ReadingTurnSource {
   location?: string;
 }
 
-/** 阅读卡的回答档。旧记录没有这个字段，按快速处理。 */
 export type ReadingDepth = 'fast' | 'deep';
 
 export interface ReadingTranscript {
@@ -56,14 +50,11 @@ export interface ReadingTranscript {
   source: ReadingSource;
   turns: ReadingTurn[];
   depth?: ReadingDepth;
-  /** 提问的一方能把要动手的问题交给助手（阅读卡）；没有时回答模型只答文字。 */
   canAct?: true;
 }
 
-/** 回答模型判断最后一问要动手时只回这一串，阅读卡据此把这一问交给助手。 */
 export const READING_ACT_MARKER = '[[agent]]';
 
-/** 页面上选着文字或开着阅读卡时说的一句话：交给阅读卡回答（reading），还是当成任务交给助手（task）。 */
 export type ReadingRoute = 'reading' | 'task';
 
 export const READING_ROUTE_SELECTION_LIMIT = 600;
@@ -71,9 +62,7 @@ export const READING_ROUTE_SELECTION_LIMIT = 600;
 export type ReadingClientMessage =
   | { type: 'reading_request'; requestId: string; transcript: ReadingTranscript }
   | { type: 'reading_cancel'; requestId: string; threadId: string }
-  /** 阅读卡交给助手的会话还没看过的问答：只进助手的上下文，不开始任务。 */
   | { type: 'reading_import'; requestId: string; transcript: ReadingTranscript }
-  /** asked：阅读卡上最近一问；卡没开时不带。 */
   | { type: 'reading_route'; requestId: string; utterance: string; selection: string; asked?: string };
 
 export interface ReadingRouteResult { type: 'reading_route_result'; requestId: string; route: ReadingRoute }
@@ -81,7 +70,6 @@ export interface ReadingRouteResult { type: 'reading_route_result'; requestId: s
 export interface ReadingEvent {
   type: 'reading_event'; requestId: string; threadId: string;
   state: ReadingTurn['state']; text: string; error?: string;
-  /** 回答模型判断这一问要动手：state 为 done、text 为空，由阅读卡交给助手。 */
   act?: true;
 }
 
@@ -144,7 +132,6 @@ export function readingContext(transcript: ReadingTranscript, preserveHistory = 
     if (next) source = {...source, ...next, truncated: next.truncated ?? false};
     return {...(next || index === 0 ? {source: source.text, surrounding: source.surrounding} : {}), question, answer, state, ...(spoken ? {spoken} : {}), ...(agent ? {agent} : {})};
   });
-  // 翻译当前选区不需要旧译文；否则重复的提问容易让模型复述上一段回答。
   const translating = isReadingTranslation(transcript.turns.at(-1)?.question ?? '');
   return JSON.stringify({ ...(depth ? { depth } : {}), source, conversation: translating && !preserveHistory ? conversation.slice(-1) : conversation });
 }

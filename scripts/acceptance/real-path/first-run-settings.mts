@@ -1,6 +1,3 @@
-/** 首次进入真实设置页：能开始连接，服务商图标完整，主模型与语音密钥状态跟随存储。
- * npx tsx scripts/acceptance/real-path/first-run-settings.mts --headless
- */
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

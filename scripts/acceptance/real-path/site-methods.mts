@@ -1,4 +1,3 @@
-/** Real extension and sidebar, scripted model and intercepted site fixtures. Actual public-site evidence is separate. */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, until, type Json } from "./harness.mts";
@@ -10,20 +9,14 @@ const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().r
 await mkdir(out, { recursive: true });
 const cases = [
   { id: "yt-captions", url: "https://www.youtube.com/watch?v=video123", method: "youtube.captions", expected: "这段字幕属于当前视频。", also: ["that's right"], absent: "&#39;" },
-  // 方法成功后模型自己的代码出错：错误要指出哪一行，并带回已完成的方法结果，模型不必绕开方法重做。
   { id: "yt-program-bug", url: "https://www.youtube.com/watch?v=video123", method: "youtube.captions", code: 'const r = await browser.siteMethod({id:"youtube.captions"});\nreturn r.slice(0, 10);', expected: "这段字幕属于当前视频。", also: ["program line 2", "already finished: siteMethod"] },
-  // 用户要的语言不在第一条轨：按 language 取到对应轨，而不是交回第一条。
   { id: "yt-language", url: "https://www.youtube.com/watch?v=multi1", method: "youtube.captions", language: "zh", expected: "这段字幕属于当前视频。", also: ['"language":"zh-CN"'], absent: "ترجمة" },
   { id: "yt-no-captions", url: "https://www.youtube.com/watch?v=nocap1", method: "youtube.captions", expected: '"status":"no_captions"' },
   { id: "yt-stale", url: "https://www.youtube.com/watch?v=video456&stale=1", method: "youtube.captions", expected: "unavailable", absent: "这是上一条视频" },
   { id: "bili-captions", url: "https://www.bilibili.com/video/BV1TEST123", method: "bilibili.captions", expected: "当前分P的字幕。", also: ['"title":"练习合集"', '"part":{"index":1,"title":"第一讲","count":2}'], absent: "其他分P字幕" },
-  // 未登录时 B站把视频页转到带语言前缀的地址。
   { id: "bili-locale-path", url: "https://www.bilibili.com/zh-Hans/video/BV1TEST123", method: "bilibili.captions", expected: "当前分P的字幕。", absent: "其他分P字幕" },
-  // 未登录时 B站给空字幕清单并注明要登录：不能说成这个视频没有字幕。
   { id: "bili-login", url: "https://www.bilibili.com/video/BV1LOGIN00", method: "bilibili.captions", expected: '"status":"login_required"', absent: "no_captions" },
-  // 轨道很多时要的语言排在 30 条之后也要取得到。
   { id: "yt-many-tracks", url: "https://www.youtube.com/watch?v=many01", method: "youtube.captions", language: "zh", expected: "这段字幕属于当前视频。", also: ['"language":"zh-CN"'] },
-  // 轨道地址回空正文：改用播放器自己带令牌的那次请求；没有就明说要先开字幕，而不是交回空的「部分结果」。
   { id: "yt-empty-body", url: "https://www.youtube.com/watch?v=empty1", method: "youtube.captions", expected: "这段字幕属于当前视频。", also: ['"status":"observed"'] },
   { id: "yt-empty-no-token", url: "https://www.youtube.com/watch?v=empty2", method: "youtube.captions", expected: '"status":"unavailable"', also: ["turned on in the player"] },
   { id: "x-post", url: "https://x.com/example/status/1234567890", method: "x.read-post", expected: "这是指定的原帖正文。", absent: "这是推荐帖" },

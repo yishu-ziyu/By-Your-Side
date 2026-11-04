@@ -1,4 +1,3 @@
-/** User outcomes are separate from the execution ledger and its replay locks. */
 export interface TaskGoal {
   id: string;
   description: string;
@@ -6,7 +5,6 @@ export interface TaskGoal {
   requirements: string[];
   kind: 'material' | 'field' | 'condition' | 'answer';
   materialId?: string;
-  /** A copied field may append its observed source URL when the user requests it. */
   appendSourceUrl?: boolean;
   status: 'pending' | 'satisfied' | 'blocked';
   reason?: string;
@@ -17,7 +15,6 @@ export interface TaskGoalPlan {
   revision: string;
   coverage: 'unplanned' | 'verified';
   goals: TaskGoal[];
-  /** Audit trail for revising an already-fixed plan without dropping user requirements; code enforces the rules, this only records why. */
   amendments?: Array<{ at: number; reason: string; removed: string[]; added: string[] }>;
 }
 
@@ -56,7 +53,6 @@ export function goalsSatisfied(plan: TaskGoalPlan): boolean {
 
 export const taskRequirementId = (index:number):string => `requirement-${index+1}`;
 
-/** Pending answers are fulfilled by the final delivery itself; browser goals must already be verified. */
 export function goalsReadyForDelivery(plan:TaskGoalPlan):boolean {
   return plan.coverage==='verified'&&plan.goals.length>0&&plan.goals.every(g=>g.kind==='answer'||g.status==='satisfied');
 }

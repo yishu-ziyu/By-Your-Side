@@ -1,4 +1,3 @@
-/** 真实扩展：在设置页说继续、点继续；原页面关闭后重开，均保留原任务且不重复提交。 */
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 for (const mode of ['text', 'button', 'missing']) {

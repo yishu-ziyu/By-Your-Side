@@ -23,10 +23,6 @@ function redactString(value) {
   return out;
 }
 
-/**
- * 去掉 cookie / token / 浏览历史 / 整页内容。递归处理对象和数组。
- * 断言用的短字段（unique text 是否出现、计数器、填写值）会保留。
- */
 export function redactEvidence(value, key = "") {
   if (value == null) return value;
 

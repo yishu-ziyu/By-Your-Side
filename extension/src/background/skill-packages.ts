@@ -18,7 +18,6 @@ export function installSkillPackages({ conversationForWindow, send }: Options): 
   function receive(message: ServerMessage): boolean {
     if (message.type !== "skill_operation_run_result") return false;
     const run = pending.get(message.requestId);
-    // 侧栏自己发起的运行不在这里登记，仍要送回侧栏。
     if (!run) return false;
     pending.delete(message.requestId);
     clearTimeout(run.timer);

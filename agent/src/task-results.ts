@@ -23,7 +23,6 @@ import {
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 
 
-/** 协调、探针与位置类动作不产生用户可见结果，不自动建项；需要时模型仍可显式登记。 */
 const AUTO_RESULT_EXCLUDED_TOOLS: ReadonlySet<string> = new Set(["worker_tabs", "share_tab", "js", "scroll", "hover", "ask_user_to_point"]);
 
 export class TaskResultBook {
@@ -38,15 +37,10 @@ export class TaskResultBook {
     return `${AUTO_RESULT_ID_PREFIX}${this.autoSeq.toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   }
 
-  /** 收起过的项的编号：模型按原编号重新登记时，不能把做完的又变回没做。 */
   private foldedIds = new Set<string>();
 
   clear(): void { this.items = []; this.foldedIds.clear(); }
 
-  /**
-   * 收起已完成的结果：做完的项，连同被它们取代的「结果未知」项（单留下会被当成没做成）。
-   * 还没做、没做成、结果未知的项都留着。返回收起的项的说明。
-   */
   fold(): string[] {
     const settled = this.items.filter(item => item.status === "satisfied" || isSupersededUnknown(item, this.items));
     this.items = this.items.filter(item => !settled.includes(item));
@@ -56,10 +50,6 @@ export class TaskResultBook {
     return settled.filter(item => item.status === "satisfied").map(item => item.description);
   }
 
-  /**
-   * 用户接管后交还：接管期间页面归用户，接管前没确认的写入（未知，或执行到一半被打断）不再有意义。
-   * 从账上撤掉，交还时的页面就是新的起点；返回撤掉的项供诊断记录。
-   */
   releaseAfterHandback(): Array<{ id: string; description: string }> {
     const released = this.items.filter(item => item.status === "unknown" && !isSupersededUnknown(item, this.items) || item.status === "pending" && item.evidence !== null && item.tool !== undefined);
 
@@ -88,7 +78,6 @@ export class TaskResultBook {
       const existing = this.items.find(item => item.id === intent.id);
 
       if (!existing) {
-        // 吸收同工具同目标的自动项：模型补登记时账本里不留两条同名待办。
         const auto = this.items.find(item => item.id.startsWith(AUTO_RESULT_ID_PREFIX) && item.tool === intent.tool
           && (item.target === intent.target || (intent.target === null && item.status === "pending" && item.evidence === null)));
 
@@ -100,7 +89,7 @@ export class TaskResultBook {
 
       if (existing.status === "satisfied") continue;
 
-      if (existing.status === "pending" && existing.evidence) continue; // A running call owns its binding until its receipt.
+      if (existing.status === "pending" && existing.evidence) continue;
       Object.assign(existing, intent, { status: "pending", evidence: null });
       delete existing.reason;
     }
@@ -115,7 +104,6 @@ export class TaskResultBook {
       item.status = "pending";
       item.target = null;
       item.evidence = null;
-      // 换了做法重做：上一次失败的原因不再属于它。
       delete item.reason;
     }
   }
@@ -144,7 +132,6 @@ export class TaskResultBook {
 
       if (item.supersededBy) mapped.supersededBy = item.supersededBy;
 
-      // 后台重启后侧栏仍要说出没做成的原因。
       if (item.reason) mapped.reason = item.reason;
 
       return mapped;
@@ -167,11 +154,6 @@ export class TaskResultBook {
     item.evidence = evidence;
   }
 
-  /**
-   * 执行事实 → 账本项。先按实际调用复用已有待办（同工具唯一的未定位/无证据项直接改绑实际目标），
-   * 没有可复用的写操作才自动建项。只读工具不自动建项：观察不是用户可见待办。
-   * 复用规则见 selectResultBinding：结果未知的项被重做时，新回执落在原项上。
-   */
   private resolveStartItem(input: { name: string; target: string | null; description?: string; effectful?:boolean; recordResult?:boolean }): TaskResultItem | null {
     const binding = selectResultBinding(this.items, input.name, input.target, input.description);
 
@@ -187,8 +169,6 @@ export class TaskResultBook {
 
     if (binding.kind !== "create") return null;
 
-    // A browser control can be a user result without creating an irreversible
-    // page effect. Keep result registration separate from unknown-write policy.
     if ((!isWriteTool(input.name)&&!input.effectful&&!input.recordResult) || (AUTO_RESULT_EXCLUDED_TOOLS.has(input.name)&&!input.effectful) || this.items.length >= MAX_TASK_RESULTS) return null;
 
     const item: TaskResultItem = {
@@ -205,14 +185,11 @@ export class TaskResultBook {
     return item;
   }
 
-  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean; /** 失败的人话原因（≤16 字）：给侧栏「没做成」那行用，成功时清掉。 */ reason?: string }): void {
+  noteEnd(input: { toolCallId: string; name: string; target: string | null; member: string; runId: string | null; failed: boolean; executionFact?: import("../../shared/protocol.js").ToolExecutionFact; effectful?:boolean;  reason?: string }): void {
     if (!input.runId) return;
-    // 出错时记成「结果未知」还是「失败」：只看这一步可能已造成的后果（见 commitsHarm），不看它是不是改过页面。
     const write=resultLocksWhenUnknown({tool:input.name,evidence:{effectful:input.effectful}});
     let item = this.items.find(candidate => (candidate.status === "pending" || candidate.status === "unknown") && candidate.evidence?.toolCallId === input.toolCallId && candidate.evidence.member === input.member && candidate.evidence.tool === input.name && candidate.evidence.runId === input.runId && candidate.evidence.target === input.target);
 
-    // Auxiliary JS/scroll normally stays out of the visible obligations, but an
-    // uncertain effect must never disappear just because no item was registered.
     if(!item&&write&&(input.failed||input.executionFact==='unknown')&&input.executionFact!=='not_executed'&&this.items.length<MAX_TASK_RESULTS){
       const evidence: TaskResultEvidence = { toolCallId: input.toolCallId, tool: input.name, target: input.target, member: input.member, runId: input.runId };
 
@@ -229,7 +206,6 @@ export class TaskResultBook {
       delete item.reason;
 
       if (input.executionFact === "not_executed") {
-        // 工具成功返回却说没有派发：不是完成证据，退回待做。
         item.status = "pending";
         item.evidence = null;
 
@@ -238,12 +214,9 @@ export class TaskResultBook {
         item.status = write&&input.executionFact==='unknown'?'unknown':"satisfied";
       }
     } else {
-      // 每次失败都换成这一次的原因：没有原因时不留上一次的。
       if (input.reason) item.reason = input.reason;
       else delete item.reason;
       if (input.executionFact === "not_executed" || (input.name === "page_translation" && input.executionFact === "executed")) {
-        // Translation may fail while generating its next batch after acknowledged earlier batches.
-        // It resumes by collecting only untranslated paragraphs; an unknown RPC still stays unknown below.
         item.status = "blocked";
       } else if (write) {
         item.status = "unknown";

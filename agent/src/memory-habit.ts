@@ -1,9 +1,3 @@
-/**
- * 习惯计数：同一偏好出现在 3 个不同对话里，才提出「你好像每次都这样做：…。要我记住吗」。
- * 纯逻辑，不读时钟（时间由调用方的 `at` 给出），状态是纯 JSON，可直接存取。
- * 习惯不会自动保存；问过或被拒绝的 key 不再问。
- */
-
 interface HabitObservation {
   key: string;
   text: string;
@@ -13,11 +7,8 @@ interface HabitObservation {
 
 interface Habit {
   text: string;
-  /** 对话 id -> 该对话里最近一次出现的时间 */
   seen: Record<string, number>;
-  /** 已问过或已拒绝，不再问 */
   closed?: boolean;
-  /** 最近一次更新时间，用于超出上限时丢最旧的 */
   last: number;
 }
 
@@ -40,7 +31,6 @@ export function emptyHabitState(): HabitState {
   return { habits: {} };
 }
 
-/** 一次观察的结果：新状态，以及这次要不要问。 */
 interface HabitStep {
   state: HabitState;
   ask: HabitAsk | null;
@@ -50,7 +40,6 @@ export function observe(state: HabitState, obs: HabitObservation): HabitStep {
   const old = state.habits[obs.key];
   const seen: Record<string, number> = {};
 
-  // 过期的观察不再计数。
   for (const [id, at] of Object.entries(old?.seen ?? {})) if (obs.at - at <= EXPIRE_MS) seen[id] = at;
   seen[obs.conversationId] = obs.at;
   const ask = !old?.closed && Object.keys(seen).length >= DISTINCT_CONVERSATIONS;
@@ -61,7 +50,6 @@ export function observe(state: HabitState, obs: HabitObservation): HabitStep {
   return { state: trim({ habits: { ...state.habits, [obs.key]: habit } }), ask: ask ? { key: obs.key, text: obs.text } : null };
 }
 
-/** 用户回答「不要」：之后不再问这个 key。 */
 export function dismiss(state: HabitState, key: string, at = 0): HabitState {
   const old = state.habits[key];
   const habit: Habit = old ? { ...old, closed: true } : { text: "", seen: {}, closed: true, last: at };

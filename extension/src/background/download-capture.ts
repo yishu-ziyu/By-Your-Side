@@ -52,7 +52,6 @@ function eligible(params: Record<string, unknown>): { bytes: number; mimeType: s
     || /^image\/(png|jpeg|gif|webp|avif|bmp|x-icon)$/.test(mimeType)
     || mimeType.startsWith("text/") || /(?:wordprocessingml|spreadsheetml|presentationml)/.test(mimeType);
 
-  // The download attribute can turn an inline response into a download.
   if (!attachment && !readable) return null;
 
   return { bytes, mimeType };
@@ -73,7 +72,6 @@ async function continueResponse(tabId: number, requestId: string, responseHeader
   });
 }
 
-/** Optional capture must never make arming the real download fail. */
 export async function enableDownloadBodyCapture(tabId: number, token: string): Promise<void> {
   const tokens = activeTokens.get(tabId) ?? new Set<string>();
   tokens.add(token);
@@ -90,7 +88,6 @@ export async function enableDownloadBodyCapture(tabId: number, token: string): P
   }
 }
 
-/** Stop intercepting for this arm. Completed bodies remain available until wait_event consumes them. */
 export async function releaseDownloadBodyCapture(tabId: number, token: string): Promise<void> {
   directLinks.delete(token);
   const tokens = activeTokens.get(tabId);
@@ -129,7 +126,6 @@ export function takeDownloadBodyCapture(
   return { dataBase64: capture.dataBase64, mimeType: capture.mimeType };
 }
 
-/** Fetch response pauses are scoped to the current tab's armed download; every response is resumed, including capture failures. */
 export async function handleDownloadBodyCapture(
   tabId: number,
   params: Record<string, unknown>,
@@ -146,7 +142,6 @@ export async function handleDownloadBodyCapture(
     const location = header(params, "location");
     if (location) direct.url = new URL(location, direct.url).href;
   }
-  // Force only the requested response to download, so inline images and PDFs do not replace the working page.
   const responseHeaders = matchesDirect && status >= 200 && (status < 300 || status >= 400)
     ? [...(Array.isArray(params.responseHeaders) ? params.responseHeaders : []).filter(item =>
       String(item.name).toLowerCase() !== "content-disposition"),
@@ -179,7 +174,6 @@ export async function handleDownloadBodyCapture(
     captures.set(token, { tabId, token, url: requestUrl, bytes: actualBytes, dataBase64, mimeType: wanted.mimeType });
     capturedBytes += actualBytes;
   } catch {
-    // A missing auxiliary copy does not change the browser's real download.
   } finally {
     settled = true;
     await resume();

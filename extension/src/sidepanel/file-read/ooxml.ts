@@ -1,7 +1,3 @@
-/**
- * Word（docx）、Excel（xlsx）、PowerPoint（pptx）读成文字。三者都是 zip 里的 XML（Office Open XML）。
- * 按元素的 localName 认结构，不认前缀：Word、WPS、LibreOffice、Google 导出的文件前缀写法不同，含义相同。
- */
 import { ZipReader } from "./zip.js";
 
 export class OfficeError extends Error {}
@@ -32,7 +28,6 @@ function descendants(node: Element | Document, name: string): Element[] {
   return [...node.getElementsByTagNameNS("*", name)];
 }
 
-/** 属性按 localName 取（w:val、r:id 这类带前缀的属性）。 */
 function attr(node: Element | null | undefined, name: string): string | null {
   if (!node) return null;
 
@@ -42,7 +37,7 @@ function attr(node: Element | null | undefined, name: string): string | null {
 }
 
 /**
- * 关系编号 r:id。不能按 localName 取：幻灯片列表的 <p:sldId id="256" r:id="rId2"> 里两个属性的 localName 都是 id。
+ * WHY: 关系编号 r:id。不能按 localName 取：幻灯片列表的 <p:sldId id="256" r:id="rId2"> 里两个属性的 localName 都是 id。
  */
 function relId(node: Element | null | undefined): string | null {
   if (!node) return null;
@@ -52,7 +47,6 @@ function relId(node: Element | null | undefined): string | null {
   return null;
 }
 
-/** 关系文件：r:id → 目标路径（相对 base 所在目录解析成 zip 里的完整路径）。 */
 async function relations(zip: ZipReader, part: string): Promise<Map<string, string>> {
   const dir = part.slice(0, part.lastIndexOf("/") + 1);
   const rels = await xmlOf(zip, `${dir}_rels/${part.slice(dir.length)}.rels`);
@@ -85,14 +79,10 @@ function resolvePath(dir: string, target: string): string {
 
 const tidy = (text: string): string => text.replace(/[ \t ]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 
-/** 表格行：单元格里的换行压成空格、竖线转义，免得把一行拆散。 */
 const tableRow = (cells: string[]): string => `| ${cells.map(cell => cell.replace(/\s*\n\s*/g, " ").replace(/\|/g, "\\|").trim()).join(" | ")} |`;
-
-// ── Word ───────────────────────────────────────────────────────────
 
 interface WordStyles { headings: Map<string, number>; lists: Set<string> }
 
-/** 标题级别看样式名而不看样式 id：中文版 Word 的「标题 1」id 是 "1"，名字仍是 "heading 1"。 */
 async function wordStyles(zip: ZipReader): Promise<WordStyles> {
   const doc = await xmlOf(zip, "word/styles.xml");
   const headings = new Map<string, number>();
@@ -106,14 +96,12 @@ async function wordStyles(zip: ZipReader): Promise<WordStyles> {
 
     if (id && level) headings.set(id, Math.min(6, Number(level)));
 
-    // 「列表项目符号」这类样式自带编号：段落本身没有 numPr，也是列表项。
     if (id && (child(child(style, "pPr"), "numPr") || /^list (bullet|number)/.test(name))) lists.add(id);
   }
 
   return { headings, lists };
 }
 
-/** 一个段落里的文字：跳过已删除的修订（w:del）和域代码，保留插入的修订、超链接、内容控件里的字。 */
 function runText(node: Element): string {
   let out = "";
 
@@ -163,7 +151,6 @@ function wordBlocks(container: Element, styles: WordStyles): string[] {
   for (const el of children(container)) {
     if (el.localName === "p") out.push(wordParagraph(el, styles));
     else if (el.localName === "tbl") out.push(wordTable(el, styles));
-    // 内容控件、修订插入、自定义 XML 里还套着段落。
     else if (["sdt", "sdtContent", "customXml", "ins", "smartTag"].includes(el.localName)) out.push(...wordBlocks(el, styles));
   }
 
@@ -180,7 +167,6 @@ export async function readDocx(zip: ZipReader): Promise<string> {
 
   for (const [part, title] of [["word/footnotes.xml", "Footnotes"], ["word/endnotes.xml", "Endnotes"]] as const) {
     const notes = await xmlOf(zip, part);
-    // 编号 -1、0 是 Word 自带的分隔符脚注，没有正文。
     const texts = notes ? descendants(notes, part.includes("foot") ? "footnote" : "endnote").filter(note => Number(attr(note, "id")) > 0).map(note => wordBlocks(note, styles).join(" ")).filter(Boolean) : [];
 
     if (texts.length) sections.push(`## ${title}\n${texts.map((text, i) => `${i + 1}. ${text}`).join("\n")}`);
@@ -194,23 +180,17 @@ export async function readDocx(zip: ZipReader): Promise<string> {
   return tidy(sections.join("\n\n"));
 }
 
-// ── Excel ──────────────────────────────────────────────────────────
-
-/** 每张表最多读这么多行、这么多列；更大的表只取前面，并在文字里写明。 */
 const SHEET_ROWS_MAX = 5_000;
 const SHEET_COLS_MAX = 60;
 
-/** Excel 内置的日期时间格式编号。 */
 const DATE_FORMAT_IDS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 30, 36, 45, 46, 47, 50, 57]);
 
 function isDateFormat(code: string): boolean {
-  // 去掉引号里的字面量、方括号里的颜色和区域设置、转义字符，再看有没有日期时间占位符。
   const bare = code.replace(/"[^"]*"/g, "").replace(/\[[^\]]*\]/g, "").replace(/\\./g, "");
 
   return /[ymdhs]/i.test(bare) && !/^[#0.,%\s]*$/.test(bare);
 }
 
-/** 序列号 → 日期：1900 日期系统把 1900-02-29 也算了一天（Lotus 的历史错误），60 以后要减一天。 */
 function excelDate(serial: number, date1904: boolean): string {
   const days = date1904 ? serial + 1462 : serial < 60 ? serial + 1 : serial;
   const ms = Math.round((days - 25569) * 86_400_000);
@@ -222,7 +202,6 @@ function excelDate(serial: number, date1904: boolean): string {
   return time === "00:00:00" ? iso.slice(0, 10) : `${iso.slice(0, 10)} ${time}`;
 }
 
-/** 浮点误差（0.1+0.2 存成 0.30000000000000004）按 15 位有效数字收回。 */
 function excelNumber(raw: string): string {
   const n = Number(raw);
 
@@ -245,7 +224,6 @@ function columnName(index: number): string {
   return name;
 }
 
-/** 共享字符串里的富文本：每段 r 的 t 连起来；拼音注音（rPh）不算正文。 */
 function stringItem(si: Element): string {
   const direct = child(si, "t");
 
@@ -307,7 +285,6 @@ export async function readXlsx(zip: ZipReader): Promise<{ text: string; sheets: 
         else if (v && dateStyles[Number(attr(c, "s") ?? 0)]) value = excelDate(Number(v), date1904);
         else value = v ? excelNumber(v) : "";
 
-        // 程序生成、没被 Excel 打开算过的文件里，公式格没有缓存结果：写出公式本身。
         if (!value && child(c, "f")?.textContent) value = `=${child(c, "f")!.textContent}`;
 
         while (cells.length < col) cells.push("");
@@ -334,8 +311,6 @@ export async function readXlsx(zip: ZipReader): Promise<{ text: string; sheets: 
 
   return { text: sections.join("\n\n"), sheets: sections.length, ...(clipped.length ? { note: `${clipped.join("；")}。` } : {}) };
 }
-
-// ── PowerPoint ─────────────────────────────────────────────────────
 
 function drawingParagraphs(node: Element): string[] {
   return descendants(node, "p").map(p => descendants(p, "t").map(t => t.textContent ?? "").join("").trim()).filter(Boolean);
@@ -385,7 +360,6 @@ export async function readPptx(zip: ZipReader): Promise<{ text: string; slides: 
     const lines = [`[Slide ${index}]${hidden ? " (hidden)" : ""}`, slideText(doc)];
     const notesPath = [...(await relations(zip, path)).values()].find(target => /notesSlide\d*\.xml$/.test(target));
     const notes = notesPath ? await xmlOf(zip, notesPath) : null;
-    // 备注页里也有幻灯片编号占位符，只取正文占位符里的字。
     const notesText = notes ? descendants(notes, "sp").filter(sp => attr(descendants(sp, "ph")[0], "type") === "body").flatMap(sp => drawingParagraphs(sp)).join("\n") : "";
 
     if (notesText) lines.push(`Speaker notes: ${notesText}`);

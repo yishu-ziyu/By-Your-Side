@@ -1,12 +1,3 @@
-/**
- * Real extension, sidebar and page; scripted local model (the main answer and the delivery fact check are scripted replies).
- * The user is already reading the delivered answer, so a fact check must never take it away:
- * 甲 answers a wrong price → the original answer stays on screen the whole time, one 「更正：」 line with the page quote is appended,
- *   no second model turn starts and the panel never goes back to thinking;
- * 乙 answers right → nothing is shown;
- * 丙 the checker cites a quote the assistant never read → the answer is left untouched.
- * Failure: the answer disappears or is rewritten, a correction turn runs, a 「请核对」 note appears, or an ungrounded finding changes the answer.
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -27,10 +18,8 @@ const factPrompts:string[]=[];
 let correctionTurns=0;
 const flag = (kind: string, claim: string, text: string) => ({ kind, claim, text, source: kind === 'contradiction' ? 'Aura 降噪耳机' : null, quote: kind === 'contradiction' ? '限时价 ¥899' : null });
 const model=await startScriptedModel([
- // the delivery fact check carries the user's words after "USER REQUEST:"; the main conversation never does.
  {match:'USER REQUEST: 核对验收甲',steps:[{text:JSON.stringify({problems:[flag('contradiction','这副耳机现在卖 ¥999。',PROBLEM)]})}]},
  {match:'USER REQUEST: 核对验收乙',steps:[{text:JSON.stringify({problems:[]})}]},
- // 丙: a contradiction whose quote is not in anything the assistant read.
  {match:'USER REQUEST: 核对验收丙',steps:[{text:JSON.stringify({problems:[{kind:'contradiction',claim:'这副耳机有货，可以直接下单。',source:'Aura 降噪耳机',quote:'库存：缺货',text:STUCK}]})}]},
  {match:'USER REQUEST: 核对验收旧轮',steps:[{text:JSON.stringify({problems:[flag('contradiction','旧轮价格是 ¥999。',PROBLEM)]}),delayMs:4000}]},
  {match:'USER REQUEST: 核对验收新轮',steps:[{text:JSON.stringify({problems:[]})}]},
@@ -45,7 +34,6 @@ const model=await startScriptedModel([
  for(const message of payload.messages??[]){const text=typeof message.content==='string'?message.content:(message.content??[]).map(part=>part.text??'').join('');if(text.includes('PAGE NOW (snapshot, form values included):'))factPrompts.push(text);}});
 const rp=await launchRealPath();let error='';let panel='';const evidence:Record<string,unknown>={};
 const answers=`[...document.querySelectorAll('#messages .msg.assistant')].filter(a=>a.checkVisibility()).map(a=>({text:a.innerText.slice(0,80),checked:a.dataset.factChecked??null,note:a.querySelector('.fact-check')?.innerText??null}))`;
-// once 甲's answer is on screen it must stay there through every later DOM change (a scripted model answers in milliseconds, so watch every mutation)
 const watchAnswer=`(()=>{const m=document.querySelector('#messages');const shown=()=>[...m.querySelectorAll('.msg.assistant')].some(a=>a.checkVisibility()&&a.innerText.includes('这副耳机现在卖 ¥999。'));new MutationObserver(()=>{if(shown())window.sawWrong=true;else if(window.sawWrong)window.lostAnswer=true;if(m.textContent.includes('对照网页改正回答'))window.sawFix=true;}).observe(m,{subtree:true,childList:true,characterData:true,attributes:true});return true})()`;
 try{
  panel=await rp.attach(await rp.openSidePanel());await rp.evaluate(panel,`chrome.storage.local.set(${JSON.stringify({inproc_model_config:{provider:'custom',modelId:'fixture',baseUrl:model.baseUrl},'inproc_cred:custom':{type:'api_key',key:'local-fixture'}})}).then(()=>true)`);

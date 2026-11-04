@@ -1,17 +1,3 @@
-/**
- * 更新扩展前就打开的网页：不刷新网页，划词点「解释」，再点进阅读卡输入框打字追问，原文段落高亮一直在，卡片照常回答。
- * 修之前：扩展更新后后台给网页补装新阅读卡（background/reinject.ts），旧阅读卡的监听还活着，用户一点进新卡片，旧卡片就收起并删掉共用的段落高亮。
- *
- * 真扩展、隔离无头 Chrome、本机练习文章、本机脚本模型；只有模型回复是脚本。
- *   npx tsx scripts/acceptance/real-path/reading-card-after-reinject.mts --headless
- * 更新用 chrome.runtime.reload 让扩展自己重载（和 reinject.mts 一样，等同于扩展管理页点重载），走产品自己的补装路径。
- *
- * 判据：
- *   补装  网页没刷新；旧阅读卡宿主已不在网页里，网页里只有一个阅读卡宿主。
- *   高亮  点「解释」后、点进输入框后、打完字后、追问回答写完后，段落高亮都在。
- *   回答  解释和追问的回答都出现在卡片里。
- * 失败方式：旧阅读卡还接点击（修之前的 main），点进输入框后高亮消失。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -83,14 +69,11 @@ try {
   await rp.cdp.send("Page.navigate", { url: articleUrl }, work);
   await until(async () => (await rp.evaluate(work, `location.href === ${JSON.stringify(articleUrl)} && document.readyState === "complete" && !!document.querySelector("[data-sideagent-ask]")`)) || undefined, 15_000, "练习文章与阅读卡宿主");
   await sleep(1_000);
-  // 记下更新前的阅读卡宿主，更新后用它确认新阅读卡真的装进来了。
   await rp.evaluate(work, `document.querySelector("[data-sideagent-ask]").setAttribute("data-before-update", "1"), true`);
 
-  // ── 更新扩展：从同一目录再加载一次，后台在 onInstalled 里给这个已打开的网页补装网页脚本 ──
   const workerOf = async () => (await rp.targets()).find((t) => t.type === "service_worker" && t.url.includes(rp.extensionId))?.targetId;
   const oldWorker = await workerOf();
-  // 让扩展自己重载（等同于扩展管理页点重载）。10-12 起测试用的 Chrome for Testing 不再开放 CDP Extensions.loadUnpacked。
-  await rp.evaluate(await rp.attach(oldWorker!), "chrome.runtime.reload(), true").catch(() => { /* 后台随重载断开 */ });
+  await rp.evaluate(await rp.attach(oldWorker!), "chrome.runtime.reload(), true").catch(() => {  });
   await until(async () => { const now = await workerOf(); return now && now !== oldWorker ? now : undefined; }, 30_000, "扩展更新后的新后台");
   await until(async () => (await rp.evaluate(work, `!document.querySelector("[data-before-update]") && !!document.querySelector("[data-sideagent-ask]")`)) || undefined, 15_000, "补装的新阅读卡宿主");
 
@@ -102,7 +85,6 @@ try {
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, work);
 
-  // ── 阅读卡在封闭 shadow root 里：CDP 穿透拿到它，再在里面执行函数 ──
   // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
   const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
   const find = (n: DomNode): DomNode | null => {
@@ -132,7 +114,6 @@ try {
   const highlighted = async () => Boolean(await rp.evaluate(work, `CSS.highlights?.has(${JSON.stringify(HIGHLIGHT)}) ?? false`));
   const highlight: Record<string, boolean> = {};
 
-  // ── 划选这一段，点「解释」，等解释写完 ──
   // SAFETY: 页面脚本返回段落文字首尾坐标。
   const span = await rp.evaluate(work, `(() => { document.querySelector("#para").scrollIntoView({block:"center"}); const r = document.querySelector("#para-text").getClientRects(); const a = r[0], b = r[r.length - 1]; return { x1: a.left + 1, y1: a.top + a.height / 2, x2: b.right - 1, y2: b.top + b.height / 2 }; })()`) as { x1: number; y1: number; x2: number; y2: number };
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: span.x1, y: span.y1 }, work);
@@ -150,7 +131,6 @@ try {
   highlight.afterExplain = await highlighted();
   await rp.screenshot(work, join(out, "1-explained.png"));
 
-  // ── 点进输入框，打字追问 ──
   const inputPoint = await until(() => cardPoint("textarea"), 5_000, "阅读卡输入框可见");
   await mouseClick(inputPoint);
   await until(async () => (await card()).focused || undefined, 3_000, "阅读卡输入框获得焦点").catch(() => undefined);

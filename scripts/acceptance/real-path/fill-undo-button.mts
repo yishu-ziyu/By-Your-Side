@@ -1,8 +1,3 @@
-/**
- * 真实扩展中的恢复入口：用户后改保护、提交与刷新失效、新任务、历史重放和不支持字段。
- *   npx tsx scripts/acceptance/real-path/fill-undo-button.mts --headless [--record]
- * 只用脚本模型和本机表单；按页面值与侧栏结果判断，不代表真实模型质量。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -62,7 +57,6 @@ try {
 
   const settled = () => until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")') || undefined, 60_000, "turn settled", 100);
   const answerOf = (done: string) => `[...document.querySelectorAll("#messages .msg.assistant")].find(m => m.textContent.includes(${JSON.stringify(done)}))`;
-  // 这一轮有计划卡时，撤销在卡上（卡的回执行里的「撤销」），结果行在卡下面；没有计划卡（只改备注、历史回放）时还在回答下面。
   const cardOf = (a: string) => `(() => { for (let n = ${a}?.previousElementSibling; n && !n.matches(".msg.user"); n = n.previousElementSibling) if (n.matches("details.plan-card")) return n; return null; })()`;
   const seen = async (done: string): Promise<Seen> => await rp.evaluate(panel, `(() => { const a = ${answerOf(done)}; const card = ${cardOf("a")}; const u = card?.querySelector(".plan-undo"); const b = a?.querySelector(".answer-primary");
     const line = card?.nextElementSibling?.matches(".fill-undo-result") ? card.nextElementSibling : a?.querySelector(".fill-undo-result");
@@ -95,7 +89,6 @@ try {
 
   await run("chat", false);
 
-  // 1) 填错了，用户改过姓名，点侧栏的还原。
   const record = process.argv.includes("--record");
   const stops = record ? [await recordScreen(rp.cdp, panel, join(artifacts, "panel.mp4")), await recordScreen(rp.cdp, work, join(artifacts, "page.mp4"))] : [];
   await run("form");
@@ -105,7 +98,6 @@ try {
   await rp.screenshot(panel, join(artifacts, "1-ready.png"));
   if (record) await sleep(2000);
 
-  // 空输入框按回车：以前是复制；还原会改网页，只能点按钮。
   await rp.click(panel, "#input");
   await rp.pressEnter(panel);
   await sleep(600);
@@ -131,7 +123,6 @@ try {
     await sleep(2000);
     const [panelVideo, pageVideo] = await Promise.all(stops.map(stop => stop()));
 
-    // 两段同时开始录，左右并排成一段；高度对齐到侧栏。
     if (panelVideo && pageVideo) {
       execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", pageVideo, "-i", panelVideo, "-filter_complex",
         "[0:v][1:v]scale2ref=oh*mdar:ih[page][panel];[page][panel]hstack=inputs=2,scale=trunc(iw/2)*2:trunc(ih/2)*2", "-pix_fmt", "yuv420p", join(artifacts, "restore.mp4")]);
@@ -144,7 +135,6 @@ try {
   assert.ok(after.faded < 0.6, `1: 上面那段回答变淡 ${after.faded}`);
   assert.deepEqual(evidence.pageAfterRestore, { name: "13812345678先生", phone: "", size: "2 人" }, "1: 网页里只有用户没改过的栏回到原样");
 
-  // 还原后重开侧栏：后台先补发状态、再回放历史，只有这一轮的回答是“已还原”。
   await rp.cdp.send("Page.reload", {}, panel);
   await until(async () => await rp.evaluate(panel, `!!${answerOf(DONE.form)}?.querySelector(".answer-actions") && !!${answerOf(DONE.chat)}?.querySelector(".answer-actions")`) || undefined, 30_000, "history replayed", 100);
   await sleep(600);
@@ -153,7 +143,6 @@ try {
   assert.ok(reopened.form.button.includes("已恢复 2 处") && reopened.form.faded < 0.6 && reopened.chat.faded === 1 && !reopened.chat.button.includes("还原"),
     `1: 重开侧栏后只有这一轮的回答是已还原 ${JSON.stringify(reopened)}`);
 
-  // 2) 用户自己点了提交。
   await run("submit");
   const keep = await seen(DONE.form);
   evidence.firstAfterNextTurn = keep;
@@ -169,17 +158,14 @@ try {
   assert.ok(submitted.disabled && submitted.result.startsWith("表单已经交给网站") && submitted.faded === 1 && submitted.inView, `2: 已提交时灰掉并写原因（在视野里），回答不变淡 ${JSON.stringify(submitted)}`);
   await rp.screenshot(panel, join(artifacts, "2-submitted.png"));
 
-  // 3) 页面刷新。
   await run("reload");
   await waitButton(DONE.reload, "恢复这 1 处填写");
   await rp.cdp.send("Page.reload", {}, work);
-  // 撤不回了：卡上不留灰掉的「恢复记录已失效」，只在下面写原因。
   const changed = await until(async () => { const s = await seen(DONE.reload); return !s.hasUndo && s.result ? s : undefined; }, 15_000, "page changed", 100);
   evidence.pageChanged = changed;
   assert.ok(changed.result.startsWith("页面已经换了") && changed.inView, `3: 页面变了时拿掉恢复按钮并写原因（在视野里） ${JSON.stringify(changed)}`);
   await rp.screenshot(panel, join(artifacts, "3-page-changed.png"));
 
-  // 4) 填完没点还原就开始下一轮：可点的还原按钮换回复制；已定下来的状态留着。
   await run("left");
   await waitButton(DONE.left, "恢复这 1 处填写");
   await run("next", false);
@@ -189,7 +175,6 @@ try {
   assert.ok(!left.result && left.answerButton === "复制", `4: 没点过的撤销收掉，回答下是复制 ${JSON.stringify(left)}`);
   assert.deepEqual(kept, { submitted: "网站已收到，无法恢复", changed: false }, "4: 已提交、页面变了的计划卡保留原状态");
 
-  // 5) 只有说明、没有能还原的格子。
   await run("note");
   await until(async () => (await seen(DONE.note)).result || undefined, 15_000, "note line", 100);
   await sleep(400);

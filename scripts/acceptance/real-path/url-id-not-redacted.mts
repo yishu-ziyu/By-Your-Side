@@ -1,12 +1,3 @@
-/**
- * 读网页时，网址路径里的资源编号原样交给模型，像凭据的内容仍隐去（#782：Spotify 专辑页地址读回成 /album/[redacted]，模型拿不到链接）。
- * 只装扩展、隔离构建、模型请求转给本机脚本模型；页面是本机练习页，模型用 js 工具同时读正文和 HTML。
- *   npx tsx scripts/acceptance/real-path/url-id-not-redacted.mts --headless
- *   a) Spotify 专辑和 Google 文档地址里的编号完整出现在工具结果里。
- *   b) 页面上的 API key、网址 ?token= 参数、网址里的口令仍是 [redacted]。
- *   c) 侧栏显示模型的回答。
- * 失败方式：凭据隐去把网址路径里的长串当成密钥（a 失败）；放行范围过宽（b 失败）。
- */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";

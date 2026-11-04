@@ -1,8 +1,3 @@
-/**
- * 结论／依据连续切换与过程记录边缘渐隐。
- * npx tsx scripts/acceptance/real-path/continuous-motion.mts --headless [--break-motion]
- * 脚本模型在真实扩展中生成卡片和只读步骤；检查可见切换、滚动和记录重放。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -84,7 +79,6 @@ try {
   const readViewport = async () => await rp.evaluate(panel, `(()=>{const el=${body};return {top:el.dataset.fadeTop,bottom:el.dataset.fadeBottom,mask:getComputedStyle(el).maskImage,overflow:el.scrollHeight>el.clientHeight+1}})()`) as { top: string; bottom: string; mask: string; overflow: boolean };
   const state = async (fraction: number) => {
     const wheel = await rp.evaluate(panel, `(()=>{const el=${body},r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,deltaY:(el.scrollHeight-el.clientHeight)*${fraction}-el.scrollTop}})()`) as { x: number; y: number; deltaY: number };
-    // 向上滚轮先让自动跟随让开；直接改 scrollTop 不能代表用户往回读。
     await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseWheel", ...wheel, deltaX: 0 }, panel);
     await sleep(180);
     return await readViewport();

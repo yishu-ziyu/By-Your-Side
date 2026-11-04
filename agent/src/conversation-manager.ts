@@ -50,7 +50,6 @@ import { matchesHandoffChoice } from '../../shared/handoff-choice.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
-/** Recognize explicit control language, preserving any separately stated amendment. */
 function continuationInput(text:string):{amendment?:string}|null {
   const request=text.trim().replace(/^(?:请\s*|please\s+)/i,'');
   const compound=request.match(/^(继续原任务|继续刚才的任务|继续刚才任务|从中断处继续|接着完成原任务|resume previous task|continue the previous task)\s*[，,；;。:：]\s*(\S[\s\S]*)$/i);
@@ -68,8 +67,6 @@ function isInterruptedResumeText(text:string):boolean { return continuationInput
 
 interface ConversationEntry { summary: ConversationSummary; runtime: Runtime }
 
-/** Identity is captured by each runtime's emitter, never read from the selected panel. */
-/** 旧会话能否让出标签页：没有进行中/等待交还/中断的任务、没有在途浏览器调用。结果未知的写入不拦。 */
 function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | null }): boolean {
   if (input.busy) return false;
   const snapshot = input.snapshot;
@@ -79,7 +76,6 @@ function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | n
   return !(['running', 'paused', 'interrupted'].includes(snapshot.state) || snapshot.active.length);
 }
 
-/** 同一个模型服务多久内只建一次连接：浏览器会把空闲连接留一阵，用户一句话也打不了这么久。 */
 const WARM_UP_INTERVAL_MS = 30_000;
 
 export class ConversationManager {
@@ -112,12 +108,9 @@ export class ConversationManager {
   }
   private readonly taskQueue:TaskQueue;
   private readonly pendingStarts=new Set<string>();
-  /** 正在并回上一件的另开会话：并回要先送达再停，期间重复点击不再处理。 */
   private readonly merging=new Set<string>();
-  /** Narrow fence while an interrupted run re-reads the page before agent_start. */
   private readonly checkpointResumes=new Set<string>();
   private readonly taskPages=new Map<string,number>();
-  /** 任务起名：按「这一轮 + 碰过的网站」记起过的那一版，网站变了才重起，一轮最多起 4 次。 */
   private readonly taskNames=new Map<string,{key:string;busy:boolean;count:number}>();
   private readonly reading = new ReadingRequests();
   private readonly memoryForgetRequests = new Map<string, { id: string; version: number; result: Promise<MemoryEntry[]> }>();
@@ -126,17 +119,13 @@ export class ConversationManager {
   private readonly requests = new Map<string, Promise<ConversationEntry>>();
   private readonly progress = new Map<string, TaskProgress>();
   private readonly voiceConfirmations=new Map<string,VoiceProposal>();
-  /** 语音控制句的读回确认：等用户"对/不"再落动作（改正在跑的任务、终止）。 */
   private readonly controlConfirmations=new Map<string,ControlConfirmSnapshot>();
   private readonly controlVersions=new Map<string,number>();
   private readonly pendingHandoffChoices = new Map<string, { runId: string; version: number; choices: string[] }>();
   private readonly makeupRuns=new Set<string>();
   private readonly voicePlans:VoicePlanStore;
-  /** 语义轮次的输出闸门：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。 */
   private readonly voiceTurns=new VoiceTurnGate();
-  /** 每个会话当前在跑的提案请求：新一句话到来时先取消它，不让旧候选继续占模型预算。 */
   private readonly voiceTurnAborts=new Map<string,AbortController>();
-  /** 每个会话运行时的消息泵：宿主合成的事件（快捷通道交付/核对）从这里进，和真实事件同一套记账与下发。 */
   private readonly messagePumps=new Map<string,(message:ServerMessage)=>void>();
   voiceTargets(){return [...this.list().map(c=>({id:c.id,title:c.title,runId:this.getTaskProgress(c.id)?.runId??null,controlVersion:this.controlVersions.get(c.id)??0})),...this.taskQueue.list().filter(j=>['queued','suspended'].includes(j.state)&&!this.entries.has(j.request.conversationId)).map(j=>({id:j.request.conversationId,title:j.title,runId:null,controlVersion:0}))];}
   isVoiceTask(origin:string,target:string){const job=this.taskQueue.get(target);
@@ -169,7 +158,6 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
           const entry=await this.create(request.conversationId,request.text?.slice(0,36)||'独立任务');
 
           if(this.queueClosed){entry.runtime.dispose();throw new TaskActionRejected('连接已关闭，任务未启动。');}
-          // 轮到它时才取：排队那一刻上一件还没答完，它查到的东西要等这时才在发起会话的对话里。
           const earlier=request.originConversationId?this.getTaskProgress(request.originConversationId)?.conversationContext?.recentTurns:undefined;
 
           if(earlier?.length)this.progress.get(request.conversationId)?.inheritTurns(earlier);
@@ -186,7 +174,6 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
 
   async ensureDefault(): Promise<ConversationEntry> {
     const summaries = this.store?.load() ?? [];
-    // 每个会话的日志与检查点独立；限制同时恢复的数量，避免长记录一起占满内存。
     for (let at = 0; at < summaries.length; at += 4) {
       await Promise.all(summaries.slice(at, at + 4).map(async summary => {
         const restoring = !this.entries.has(summary.id) && !this.pending.has(summary.id);
@@ -204,7 +191,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
   private warmedAt = new Map<string, number>();
 
   /**
-   * 经代理新建一条到模型服务的加密连接要几秒，只有第一次请求要付。用户开始打字时先发一个 HEAD，
+   * WHY: 经代理新建一条到模型服务的加密连接要几秒，只有第一次请求要付。用户开始打字时先发一个 HEAD，
    * 浏览器把连接留在池里，真正的请求就复用它；回什么都不影响请求，只记进诊断。
    * 凭据模式必须和模型请求（extension/src/inproc/model-runtime.ts 的 omitCookies）一样是 omit：Chrome 按凭据模式分连接池，不一致就另开一条连接。
    */
@@ -233,11 +220,9 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
 
 return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:null; }
 
-  /** 投影当前真实状态为只读任务视图并下发；内容不变则不发（幂等）。 */
   private readonly lastTaskViews = new Map<string, string>();
   private readonly taskViewQueued = new Set<string>();
   private taskViewDisposed = false;
-  /** 微任务合并：同一同步块内的多次突变只发一次，且原始事件先到达。 */
   private queueTaskView(conversationId: string): void {
     if (this.taskViewDisposed || this.taskViewQueued.has(conversationId)) return;
     this.taskViewQueued.add(conversationId);
@@ -295,14 +280,12 @@ return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:nul
     if (!session || !text.trim() || text.length > 2000) throw new Error("这句话没有听清或过长，请重新说。");
     const before=this.getTaskProgress(id)!;
 
-    // SDK teardown/preparation can still own the run after a UI idle event.
     if (['none','idle'].includes(before.state) && session.isStreaming()) before.state='running';
 
     if(route?.recentTurns?.length)before.conversationContext={latestResult:null,...before.conversationContext,recentTurns:[...(before.conversationContext?.recentTurns??[]),...route.recentTurns].slice(-12)};
     const catalog=route?.targets??this.voiceTargets();
     const pending=route?.resumeReadOnly?undefined:this.voiceConfirmations.get(id)??(route?this.voicePlans.proposal(id,route.voiceId,route.turn-1):undefined);
     const short=normalizeSpeech(text);
-    // 语音控制句的读回确认：上一轮问过"你是说…吗"，这一轮的"对/不"直接决定动作落不落。
     const control=route?.resumeReadOnly?undefined:this.controlConfirmations.get(id);
 
     const consumeConfirmation=()=>{
@@ -334,7 +317,6 @@ return {kind:'clarify',message:'好，那我不动它。'};}
         if(!stillCurrent())throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
         consumeConfirmation();
 
-        // 确认轮可以看着另一页/另一份附件，但送达的必须是复述时那份原要求，且按原控制版本验证。
         const receipt=await this.dispatchTaskAction({
           requestId: route.requestId,
           conversationId: id,
@@ -375,13 +357,11 @@ return {kind:'clarify',message:'好，那我不动它。'};}
 return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};}
     }
 
-    // 失效身份不能留作下一次确认；只读系统恢复完全不触碰待办。
     if(route&&!route.resumeReadOnly&&(
       (control&&(control.voiceId!==route.voiceId||Date.now()>=control.expiresAt))||
       (pending&&(pending.voiceId!==route.voiceId||Date.now()>=pending.expiresAt))
     ))consumeConfirmation();
 
-    // 纯确认只回答已经提出的动作，不能重新交给分类器变成“确认这句确认”。
     if (route && !route.resumeReadOnly && isControlConfirm(text) && (control || pending || short.includes("确认"))) {
       consumeConfirmation();
       route.onInputDecision?.(false);
@@ -391,8 +371,6 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
         :'目前没有等待确认的操作，我没有执行新动作。'};
     }
 
-    // Real confirmation handling above keeps priority. Pure conversational
-    // feedback needs neither another model response nor a task action.
     if(!route?.resumeReadOnly&&isVoiceSilenceRequest(text)){
       route?.onInputDecision?.(true);
 
@@ -407,8 +385,6 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
 
     route?.reportStage?.('classifying');
 
-    // 准备阶段：一次提案推理同时给出意图计划与批准后要执行的那一件事。
-    // 没有提案入口的会话替身仍走原来的分类调用（行为不变）。
     const prepared=route?.resumeReadOnly
       ?{plan:{steps:[{action:route.resumeReadOnly,target:null,text}]},replyText:null,protocol:'plan' as const}
       :before.state==='interrupted'&&isInterruptedResumeText(text)
@@ -421,14 +397,8 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
     const willStart=!route?.resumeReadOnly&&!route?.pendingDelegation&&single?.target===null&&['none','idle'].includes(before.state)
       &&(['observe','chat'].includes(single.action)||single.action==='steer'&&!before.recoveryInput)&&!session.isHeld()&&!session.isStreaming();
 
-    // A capable reply may internally start a session, but that does not turn
-    // an old chat/page question into a durable user command. New speech can
-    // supersede that reply; only explicit task actions survive a later query.
     route?.onInputDecision?.(plan.steps.every(step=>['chat','status','observe','silence','listen'].includes(step.action)),single?.action==='listen');
 
-    // Waiting has no task effect. Return it while the following utterance is
-    // still being captured so the voice ledger can join the unfinished text.
-    // Waiting for that next utterance's decision here would lose the prefix.
     if(single?.action==='listen')return {kind:'listening'};
     await route?.awaitInputDecision?.();
 
@@ -453,7 +423,6 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
       throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
     }
 
-    // 进度/页面查询和空白轮不消耗待确认；新指令或新话题替换旧要求。系统只读恢复由 helper 排除。
     if(willStart||plan.steps.some(step=>!['status','observe','silence','clarify','listen'].includes(step.action)))consumeConfirmation();
     const receipts:TaskReceipt[]=[];
 
@@ -469,9 +438,6 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
 
     if(only?.action==='chat'&&route?.pendingDelegation)return {kind:'none',resumeReadOnly:'chat'};
 
-    // 提交分支 reply：白名单句子的正文已经由最小请求产出，直接走现有交付通道播出。
-    // 程序侧再守一道（失败关闭）：只有白名单类别允许直答；其余一律退回原路径，
-    // 由主 Agent 带上下文与工具回答。宁可慢，也不靠精简上下文编事实。
     if(prepared.replyText&&only?.action==='chat'&&isFactFreeClosedUtterance(text)){
       if(!stillCurrent())return {kind:'none',resumeReadOnly:'chat'};
 
@@ -482,18 +448,13 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
 
 return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,text,target,stillCurrent,this.entries.get(targetId)!.runtime.session,route.turn,'status') : {kind:'clarify',message:'原目标会话已不可用，请重新询问。'};}
 
-    // Idle conversational requests use the same capable session as typed input.
-    // Classification still resolves controls, but cannot strip tools from ordinary content.
     if (willStart) {
-      // 既有派发与页面预观察原样复用：observe/需要事实的追问交给主 Agent，由它读页面后回答；
-      // 不再给主 Agent 塞"已批准的工具意图"续跑文案（那会丢掉预观察并让它多绕一轮）。
       const inputOptions: UserInputOptions = {
         ...(single?.action==='chat'?{pageObservation:'on-demand' as const,conversationOnly:true}:{}),
         ...(route?.nativeChat && route.recentTurns?.length ? { voiceHistory: route.recentTurns } : {}),
       };
       const receipt=await this.dispatchTaskAction({requestId,conversationId:id,source:'voice',action:'start',expectedRunId:before.runId??null,expectedControlVersion:versions.get(id),text,...route?.input},stillCurrent,inputOptions);
 
-      // 隐式派发也是真实发生的一步 start：写进计划，让回执反映事实，而不是留下空计划假装零步已知。
       if(route&&!route.resumeReadOnly&&receipt.status==='accepted')this.voicePlans.update(id,route.requestId,{steps:[{action:'start',text,targetId:id,targetTitle:this.entries.get(id)?.summary.title,status:'complete',receipt}]});
 
       return {kind:'action',ok:receipt.status==='accepted',status:receipt.status,message:receipt.message,receipts:[receipt],awaitDelivery:receipt.status==='accepted',turn:{branch:'read_only',phase:'COMMITTED',protocol:prepared.protocol}};
@@ -535,7 +496,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
     if(only?.action==='listen')return {kind:'listening'};
 
     if(only?.action==='silence')return {kind:'silent',quiet:true};
-    // Resolve the entire plan before side effects; an ambiguous later target cannot cause a partial command.
     let previousTarget=id;
     const targetIds:string[]=[];
 
@@ -573,7 +533,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
       if(step.action==='start'&&targetId===id&&(['running','paused'].includes(before.state)||this.pendingStarts.has(id)||this.runningTasks()>=2)){
         if(!route||!stillCurrent())throw new TaskActionRejected('请求已变化，未登记新任务。');
         const target='voice-'+createHash('sha256').update(id+':'+requestId+':'+index).digest('hex').slice(0,32);
-        // Explicit new-tab work does not acquire the source page. Otherwise preserve it and wait for its owner.
         const newPage=/(新(的)?标签页|新(的)?窗口)/.test(step.text);
         const receipt=this.taskQueue.add({requestId:plan.steps.length===1?requestId:`${requestId}-${index}`,conversationId:target,originConversationId:id,source:'voice',action:'start',expectedRunId:null,text:step.text,...(!newPage&&route.input?.context?{context:route.input.context}:{}),...(route.input?.attachments?{attachments:route.input.attachments}:{})},step.text.slice(0,36));
         receipts.push(receipt);journal[index]!.targetId=target;journal[index]!.targetTitle=receipt.targetTitle;journal[index]!.status='complete';journal[index]!.receipt=receipt;save();
@@ -588,8 +547,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
       }
 
       const sharesInput=targetId===id||/(当前页面|当前页|所选资料|所选图片|所选内容|所选文字|选中的)/.test(step.text);
-
-      // 普通修改与终止都直接送达，不再读回给用户确认；具体危险网页动作仍由执行层确认。
 
       if(['pause','resume','abort'].includes(step.action))route?.reportStage?.('controlling');
       journal[index]!.status='pending';save();
@@ -662,7 +619,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
     const runId = expected && "runId" in expected ? expected.runId : snap.runId ?? null;
 
     try {
-      // 正式结果带上宿主事实链；补发路径与工具路径同一口径，自己写不进事实。
       const facts = kind === "finding" ? this.deliveryFactsOf(conversationId) : undefined;
       const delivery = createUserDelivery({ conversationId, runId, kind, text, replyTo, ...(deliveryId?{id:deliveryId}:{}), ...(facts ? { facts } : {}) });
       const message: ServerMessage = { type: "agent_event", conversationId, event: { kind: "user_delivery", delivery } };
@@ -674,7 +630,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
       return null;
     }
   }
-  /** 语音补发沿用正式工具的宿主事实投影，空账本不能证明完成。 */
   private deliveryFactsOf(conversationId: string): UserDeliveryFacts | undefined {
     const progress = this.progress.get(conversationId);
 
@@ -684,13 +639,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
     return projectDeliveryFacts(factsForDelivery(facts,snap?.nextStep), snap?.nextStep);
   }
-  /**
-   * 准备 → 校验 → 提交。一次提案推理同时给出意图计划与 next；
-   * 校验不通过或超时（VoiceIntentError）由调用方给确定的失败回执，轮次进入 DISCARDED，
-   * 候选输出全部丢弃，绝不自动放行。
-   *
-   * 没有提案入口的会话（测试替身、工人）仍走原来的分类调用，行为不变。
-   */
   private async proposeVoiceTurn(id:string,session:Runtime['session'],text:string,before:TaskProgressSnapshot,catalog:VoiceTarget[],route?:VoiceRouteContext):Promise<{plan:VoiceIntentPlan;replyText:string|null;protocol:'free_reply'|'plan'}>{
     const titles=catalog.flatMap(c=>text.includes(c.title) ? [c.title] : []);
 
@@ -699,8 +647,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
     }
 
     const turnId=route?.requestId??`${route?.voiceId??id}-${route?.turn??randomUUID()}`;
-    // 同一会话里上一轮还没拿到终态：已在准备的是被新一句话取代（INTERRUPTED，前缀丢弃）；
-    // 已经提交的是正常做完（COMPLETED）。取消顺序里"先失效"的一步：旧候选的模型请求先取消。
     this.voiceTurnAborts.get(id)?.abort();
     const abort=new AbortController();
     this.voiceTurnAborts.set(id,abort);
@@ -712,17 +658,12 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
     for(const previous of this.voiceTurns.committed?.(id)??[])this.voiceTurns.complete(previous);
     this.voiceTurns.begin(turnId,id);
-    // 失败关闭：默认这句话需要外部事实（页面/任务/记忆），走精简协议 + 原派发，由主 Agent 带上下文回答。
-    // 只有程序能确定"不需要任何外部事实"的封闭类别（问候/寒暄/致谢/告别/应答、纯算术）才走独立最小请求，
-    // 由模型直接给一两句正文。两条路径都不发计划 JSON：白名单句子不发计划提示词（模型会误读"不要编事实"而拒答），
-    // 其余句子走与旧分类逐字同形的精简协议，控制链/派发之前的固定成本不因合并而增加。
     const protocol=!route?.nativeChat&&isFactFreeClosedUtterance(text)?'free_reply' as const:'plan' as const;
     let prepared:VoiceTurnPreparation;
 
     try{
       prepared=await session.prepareVoiceTurn({text,state:before.state,conversationTitles:titles,task:{goal:before.goal,requestId:route?.requestId},conversation:before.conversationContext},{cancel:abort.signal,protocol});
     }catch(error){
-      // 校验不通过或超时：候选进入 DISCARDED，前缀丢弃；被扣住的真实交付仍然送达。
       if(this.voiceTurnAborts.get(id)===abort)this.voiceTurnAborts.delete(id);
       this.releaseVoiceOutput(id,this.voiceTurns.discard(turnId));
       throw error;
@@ -736,7 +677,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
     return {plan:prepared.plan,replyText:prepared.replyText,protocol:prepared.protocol};
   }
-  /** 把闸门放出的本轮输出按原顺序发出去（交付流先于正式交付，保持原有先后关系）。 */
   private releaseVoiceOutput(id:string,released:{streams:UserDeliveryStream[];deliveries:UserDelivery[]}):void{
     for(const stream of released.streams)this.emit({type:'agent_event',conversationId:id,event:{kind:'user_delivery_stream',stream}});
 
@@ -746,7 +686,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
       this.emit(message);
     }
   }
-  /** 提交分支 reply 的正式交付：正文已在同一次推理里产出，这里只发布，不再补模型请求。 */
   private deliverVoiceReply(id:string,text:string,before:TaskProgressSnapshot,stillCurrent:()=>boolean,voiceTurn?:number):VoiceRouteResult{
     const originRun=before.runId??null,originControl=this.controlVersions.get(id)??0;
     const streaming=this.beginDeliveryStream(id,'reply',before,stillCurrent,voiceTurn);
@@ -840,7 +779,6 @@ return { kind: "silent" };}
 
     return null;
   }
-  /** 模型调用 hand_to_user：与侧栏「接管」同一条暂停通道，扩展确认页面已归用户后才返回。targets 由扩展在页面上圈出。 */
   private async handToUser(id:string,ask:string,targets?:string[],choices?:string[]):Promise<void>{
     const runId=this.getTaskProgress(id)?.runId;
 
@@ -854,7 +792,6 @@ return { kind: "silent" };}
     if (choices && this.getTaskProgress(id)?.runId === runId && this.controlVersions.get(id) === version) this.pendingHandoffChoices.set(id, { runId, version, choices });
   }
 
-  /** 文字新消息是否接着做上一个没做完的任务：只在确有没做完的任务时按简单规则判断，不调模型。 */
   private async continuesOpenTask(request:TaskActionRequest,snapshot:TaskProgressSnapshot,entry:ConversationEntry):Promise<boolean>{
     if(request.source!=='text'||request.action!=='start'||request.forkedFrom||!request.text?.trim())return false;
 
@@ -868,33 +805,21 @@ return { kind: "silent" };}
     if(!session.available||session.isStreaming())return false;
     const lastReply=[...(snapshot.conversationContext?.recentTurns??[])].reverse().find(turn=>turn.role==='assistant')?.text??'';
 
-    // 不另调模型判断：任务正等用户回话（核对说「等用户」或助手最后在问用户），这句就按接着做，不然用户回的邮箱会被当成新任务。
     return view.goalStatus?.status==='waiting'||asksUser(lastReply);
   }
-  /** 过往任务：宿主在 host-core 里接上；没有就不记。 */
   taskHistory?: TaskHistoryStore;
-  /** 可直接运行的技能（存下的只读程序）：侧栏「/ 技能」和「管理技能」列出、删除。 */
   learnedOperations?: LearnedOperationStore;
   siteNotes?: SiteNotesStore;
-  /** 各模型的手动起始档；自动升档只属于各自正在执行的会话。 */
   private readonly thinkingPreferences = new Map<string, import('../../shared/protocol.js').ThinkingLevel | null>();
 
-  /**
-   * 任务一轮结束时留一条摘要。只记动手做过事的任务（列过目标或有执行记录），纯聊天和读页问答不记。
-   * 同一任务接着做（恢复同一 runId）时覆盖原条目。写失败只丢这条摘要，不影响任务。
-   */
-  /** 这一轮在等目标核对结论的会话：结论到之前不记过往任务。 */
   private readonly goalCheckPending = new Set<string>();
-  /** 回答已交付、目标核对判「没做完」后自己接着做的会话。用户另发新任务而名额已满时，先停这些（新任务优先）。 */
   private readonly goalContinuing = new Set<string>();
 
-  /** 名额已满时停掉其他会话里回答后的自动续做，一次停一个，直到让出一个名额给用户刚发的新任务。 */
   private async yieldGoalContinues(except: string, full: () => boolean): Promise<void> {
     for (const id of [...this.goalContinuing]) {
       if (!full()) return;
       const entry = this.entries.get(id);
 
-      // 续做已判定但还没开始跑（isStreaming 仍为假）时不占名额，留在名单里，下次还能让出。
       if (id === except || !entry?.runtime.session.isStreaming() || entry.runtime.session.isHeld()) continue;
       this.goalContinuing.delete(id);
       this.controlVersions.set(id, (this.controlVersions.get(id) ?? 0) + 1);
@@ -905,13 +830,11 @@ return { kind: "silent" };}
     }
   }
 
-  /** 按任务原话和碰过的网站起一个短名，替换「原话前 36 个字」的标题；扩展收到更新后改 Chrome 标签组名。 */
   private nameTask(id:string,snap:TaskProgressSnapshot,pages:Array<{url:string;title?:string}>):void{
     const session=this.entries.get(id)?.runtime.session;
 
     if(!session?.nameTask||!snap.runId||!snap.goal)return;
     const runId=snap.runId,goal=snap.goal;
-    // 导航先到地址、后补标题：网站集合没变但标题刚补上时也要重起，所以键里带上「这个网站有没有标题」。
     const hosts=[...new Set(pages.flatMap(page=>{const host=memoryHostOfUrl(page.url);
 
 return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)===host)?'+':''}`]:[];}))].sort();
@@ -926,7 +849,6 @@ return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)
     void session.nameTask({goal,pages}).then(title=>{
       const entry=this.entries.get(id),progress=this.progress.get(id);
 
-      // 起名期间换了任务：旧任务的名字不盖新任务。
       if(!title||!entry||!progress||progress.snapshot().runId!==runId||entry.summary.title===title)return;
       entry.summary.title=title;
       this.store?.save(this.list());
@@ -935,7 +857,6 @@ return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)
       const latest=this.taskNames.get(id),progress=this.progress.get(id);
 
       if(latest)latest.busy=false;
-      // 起名期间又碰到新网站：按最新的网页再起一次。
       if(progress)this.nameTask(id,progress.snapshot(),progress.visitedPages());
     });
   }
@@ -945,7 +866,7 @@ return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)
 
     if(!history||!progress||!snap?.runId||!snap.goal||!['idle','aborted','error'].includes(snap.state))return;
 
-    // 只记做成了事的任务（提交、填写、点按钮这类会留下后果的执行记录），或还没做完、在等用户的任务。读页、查询、纯聊天（核对为「做完」）不记：
+    // WHY: 只记做成了事的任务（提交、填写、点按钮这类会留下后果的执行记录），或还没做完、在等用户的任务。读页、查询、纯聊天（核对为「做完」）不记：
     // 否则「我的手机号是 …」会记成一条过往任务，撤销记忆后号码仍留在过往任务里。
     // 打开页面、滚动不算：只读查询记下后，回答里的旧结论会被下一次照抄。
     const acted=(snap.results??[]).some(item=>resultHasWriteEffect(item));
@@ -954,7 +875,6 @@ return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)
     const delivery=snap.conversationContext?.latestDelivery;
     const lastReply=[...(snap.conversationContext?.recentTurns??[])].reverse().find(turn=>turn.role==='assistant')?.text??'';
 
-    // 只有 http(s) 网页算网站：扩展页、浏览器页不记成网站。
     const hosts=[...new Set(progress.visitedUrls().flatMap(url=>{const host=memoryHostOfUrl(url);
 
 return host?[host]:[];}))].slice(0,16);
@@ -979,13 +899,9 @@ return host?[host]:[];}))].slice(0,16);
       if (hosts[0]) entrySummary.site = hosts[0];
       this.emit({ type: "conversation_updated", conversationId: id, conversation: { ...entrySummary } });
     }
-    // 像密码验证码的用户原话不进过往任务，也不交给判断日期的模型。
     const entry=redactTaskSecrets(raw);
-    // 决定点 A（任务结束）：结果关联哪一天（订的是哪天的票）→ 标上日期，有效期到那天结束。判断不了照样记，只是不带日期。
-    // 先立即写入（查「之前订了什么」不用等，也不会因等待被删后复活）；日期晚到时只补 date/validity。
     const session=this.entries.get(id)?.runtime.session;
 
-    // 改过页面的任务计入习惯（打开页面也算，不跟着上面收紧）：同一件事在 3 个对话里做过，就问一次要不要记住。
     if(acted)void session?.noticeHabit?.(entry).catch(()=>{});
 
     if(!committed&&(!snap.goalCheck||snap.goalCheck.status==='done'))return;
@@ -993,10 +909,8 @@ return host?[host]:[];}))].slice(0,16);
 
     const dating=(session?.datePastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
     void Promise.all([written,dating]).then(([,dated])=>dated?history.patchDate(entry.id,entry.endedAt,dated):undefined).catch(()=>{});
-    // 没做完的事：起短主题与下一步，给「继续上次的事」；晚到时只补这两个字段。
     const labeling=(session?.labelPastTask?.(entry)??Promise.resolve(null)).catch(()=>null);
     void Promise.all([written,labeling]).then(([,label])=>label?history.patchLabel(entry.id,entry.endedAt,label):undefined).catch(()=>{});
-    // 做成了什么：带给助手的只有这句，不是当时的回答；晚到时只补这一个字段。
     const describing=(session?.describePastTaskDone?.(entry)??Promise.resolve(null)).catch(()=>null);
     void Promise.all([written,describing]).then(([,done])=>done?history.patchDone(entry.id,entry.endedAt,done):undefined).catch(()=>{});
 
@@ -1015,14 +929,9 @@ return host?[host]:[];}))].slice(0,16);
     if(snap.nextStep?.delivery==='none')return;
 
     if(snap.nextStep?.delivery==='partial'){
-      // A fallback must not bypass the same decision that rejected a premature
-      // finding tool. No extra completion request or unsafe spoken prefix here.
-      // 账本满时插话收起的已完成结果也算做过的步骤。
       const count=(snap.results??[]).filter(item=>item.status==='satisfied').length+(snap.foldedResults?.count??0);
 
-      // 一步都没做成（常见于模型报错）：出错原因已在侧栏，单独一句「没做完」只是账本的话。
       if(!count)return;
-      // 账本只有「填写 @4」这类步骤名，说不出用户的话；只说发生了什么，请用户看页面。
       this.publishDelivery(id,'finding','助手没给出最后的回答就停了。页面上可能已经改了一部分，请看一下。',
         undefined,{runId:snap.runId,controlVersion:snap.controlVersion,states:['idle']});
 
@@ -1043,7 +952,6 @@ return host?[host]:[];}))].slice(0,16);
     const streaming=this.beginDeliveryStream(id,'finding',snap,()=>this.getTaskProgress(id)?.state==='idle');
 
     try {
-      // 模型正文通常已由会话在本轮结束时直接交付；走到这里的是没有正文或正文未能交付的兜底。
       const spoken=await session.composeUserDelivery({question:snap.goal,facts,
         recentTurns:snap.conversationContext?.recentTurns??[],latestDelivery:snap.conversationContext?.latestDelivery??null},streaming.onText);
 
@@ -1069,11 +977,6 @@ return;}
       }
     }
   }
-  /**
-   * 另开一件：放进独立要求队列，在自己的会话和后台标签页里做；做完的回答由 relaySeparateAnswer 带回这里。
-   * 只有说到「这页」时才带上当前页面，那时它排在占着这页的任务后面，不抢页面。
-   */
-  /** 返回 false：队列放不下，调用方照旧把这句插进当前任务。 */
   private async startSeparateAsk(id: string, request: TaskActionRequest): Promise<boolean> {
     const text=request.text??'';
     const target='text-'+createHash('sha256').update(id+':'+request.requestId).digest('hex').slice(0,32);
@@ -1087,27 +990,20 @@ return;}
     return true;
   }
 
-  /**
-   * 「改成补充上一件」：停掉另开的那件，原话插进发起它的会话（还在跑就是插话，已空闲就接着做）。
-   * 由宿主转发，不经侧栏再发一次，所以不会多出一个用户气泡。
-   */
   private async mergeSeparateAsk(id: string, here?: PageContext): Promise<void> {
     const job=this.taskQueue.get(id);
 
-    // 两个窗口同时点、或重复发来：只认第一次。
     if(!job?.request.originConversationId||job.request.source!=='text'||job.receipt.result||isMerged(job)||this.merging.has(id))return;
     this.merging.add(id);
 
     try{
       const origin=job.request.originConversationId,originSession=this.entries.get(origin)?.runtime.session;
-      // 上一件还在跑就插话；已经做完就在它的会话里接着做这一句。先送达，送不到就不停掉另开的那件。
       const running=!!originSession?.isStreaming()&&!originSession.isHeld();
       const sent=await this.dispatchTaskAction({requestId:`merge-${randomUUID()}`,conversationId:origin,source:'text',action:running?'steer':'start',
         expectedRunId:this.getTaskProgress(origin)?.runId??null,text:job.request.text,...(job.request.context??here?{context:job.request.context??here}:{}),...(job.request.pages?{pages:job.request.pages}:{}),...(job.request.attachments?{attachments:job.request.attachments}:{})}).catch((error:unknown)=>({status:'rejected' as const,message:error instanceof Error?error.message:String(error)}));
 
       if(!['accepted','applied','queued'].includes(sent.status)){
         this.emit({type:'agent_event',conversationId:origin,event:{kind:'notice',message:`没能并回上一件：${sent.message.replace(/[。.]+$/,'')}。另开的那件照常在做。`}});
-        // 卡片回到并回之前的样子，「改成补充上一件」可以再点。
         this.emitReceipt(job.receipt);
 
         return;
@@ -1119,7 +1015,6 @@ return;}
     }finally{this.merging.delete(id);}
   }
 
-  /** 另开的那件事结束后，回答或没做成的原因记进它的收条：发起的会话里显示「任务名 + 回答」，重开侧栏也在。 */
   private relaySeparateAnswer(id: string): void {
     const job=this.taskQueue.get(id),snapshot=this.getTaskProgress(id);
     const delivery=snapshot?.conversationContext?.latestDelivery;
@@ -1134,10 +1029,6 @@ return;}
     for(const id of new Set([receipt.conversationId,...(receipt.originConversationId?[receipt.originConversationId]:[])]))this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:receipt.message,
       ...(receipt.message.startsWith('同一请求编号')?{}:{receipt})}});
   }
-  /**
-   * 把当前 runId 立刻发布给扩展。扩展 executeToolCall 按 conversationSummaries.runId 校验每个工具帧，
-   * 新任务的首轮预观察会先发 snapshot 帧；身份若还没同步过去就会被判成"原任务已停止或发生变化"。
-   */
   private publishRunIdentity(conversationId: string): void {
     const entry = this.entries.get(conversationId);
     const snapshot = this.getTaskProgress(conversationId);
@@ -1175,7 +1066,6 @@ return;}
     if (previous?.inputId !== call.inputId) {
       const before = snapshot;
 
-      // An interrupted run waits for the user to resume it; a read-only voice look must not replace it.
       if (snapshot.state !== 'interrupted') progress.request(call.text,input.context,input.attachments);
       else progress.recordUserTurn(call.text,call.inputId);
 
@@ -1190,11 +1080,6 @@ return;}
     return entry.runtime.session.executeRealtimeBrowserTool(call.name,call.args,signal,{inputId:call.inputId,runId:progress.snapshot().runId ?? null});
   }
 
-  /**
-   * 「切到某标签」快捷通道：识别和匹配都不调模型；匹配不到返回 null，调用方走常规启动。
-   * 执行走正式 tabs 工具（回执、执行事实、工作标签页归属全保留），读回确认到了用户眼前
-   * 才交付一句话；没确认到如实拒绝，不假装完成。
-   */
   private async tryQuickNavSwitch(request: TaskActionRequest, entry: ConversationEntry): Promise<Pick<TaskReceipt, 'status' | 'message' | 'runId'> | null> {
     const intent = parseQuickNavIntent(request.text ?? '');
 
@@ -1211,7 +1096,6 @@ return;}
     const targetProgress = this.progress.get(request.conversationId)!;
     const beforeAccept = targetProgress.snapshot();
     targetProgress.request(request.text ?? '', request.context, request.attachments);
-    // 切换由宿主当场完成并交付，不留下「待完成的目标」：否则下一轮开头会被当成上一件的补充，走进智能体循环。
     targetProgress.goals.clear();
     const acceptedRunId = targetProgress.snapshot().runId ?? null;
 
@@ -1230,14 +1114,11 @@ return;}
     if (entry.summary.title === '新会话') entry.summary.title = (request.text ?? '').trim().slice(0, 36) || entry.summary.title;
     this.publishRunIdentity(request.conversationId);
     this.pendingStarts.add(request.conversationId);
-    // 先回「已接收」回执再执行：侧栏的用户气泡等回执落地才渲染，而运行的状态行以它为前提；
-    // 挤在回执前面发事件，过程行就永远出不来。执行排在回执之后一个宏任务（页面环境没有 setImmediate）。
     setTimeout(() => { void this.completeQuickNavSwitch(request.conversationId, entry, tab, acceptedRunId); }, 0);
 
     return { status: 'accepted', runId: acceptedRunId, message: `已接收新任务：${request.text ?? ''}` };
   }
 
-  /** 快捷通道的执行段：先回执后跑（见 tryQuickNavSwitch）。切换没生效就如实说，不补假完成。 */
   private async completeQuickNavSwitch(conversationId: string, entry: ConversationEntry, tab: { id: number; title: string; url: string }, runId: string | null): Promise<void> {
     try {
       const landed = await entry.runtime.session.runQuickNavSwitch(tab.id);
@@ -1245,11 +1126,9 @@ return;}
       if (!landed.shown) throw new Error('标签页存在，但没能确认它已切到你眼前。');
 
       const delivery = createUserDelivery({ conversationId, runId, kind: 'finding', text: `已切到「${tab.title}」（${tab.url}）。` });
-      // 交付和核对结论都过消息泵：记账、过往任务、下发和真实运行同一套。
       this.messagePumps.get(conversationId)?.({ type: 'agent_event', event: { kind: 'user_delivery', delivery } });
       this.messagePumps.get(conversationId)?.({ type: 'agent_event', event: { kind: 'goal_check', status: 'done' } });
     } catch (error) {
-      // 回执已出、这一轮真实发生过：不 rollback 登记，把失败摆出来（工具回执里已有红步骤）。
       this.messagePumps.get(conversationId)?.({ type: 'agent_event', event: { kind: 'notice', message: `快速切换没有完成：${error instanceof Error ? error.message : String(error)}` } });
     } finally {
       this.pendingStarts.delete(conversationId);
@@ -1261,7 +1140,6 @@ return;}
 
     if (request.action !== 'status') this.entries.get(request.conversationId)?.runtime.session.settleAnswerGate();
 
-    // 用户对这个会话发了新任务、插话或停止：这一轮归用户，不再当作可让出的续做。
     if (['start', 'steer', 'abort'].includes(request.action)) this.goalContinuing.delete(request.conversationId);
 
     const waiting=this.taskQueue.get(request.conversationId);
@@ -1306,8 +1184,6 @@ return receipt;
       if (!entry || !snapshot) throw new TaskActionRejected('目标会话不可用，操作未执行。');
 
       if (entry.summary.checkpoint === 'unavailable') throw new TaskActionRejected(TASK_CHECKPOINT_UNAVAILABLE);
-      // The panel sends ordinary typed input as start. Resolve continuation inside
-      // the acceptance boundary so retries retain the ORIGINAL request fingerprint.
       const continuation=originalRequest.source==='text'?continuationInput(originalRequest.text??''):null;
       const explicitAmendment=!!continuation?.amendment&&!!snapshot.runId&&!!snapshot.recoveryInput;
 
@@ -1322,8 +1198,6 @@ return receipt;
         else if (['暂停','暂停关注'].includes(command)) request = { ...originalRequest, action: 'pause' };
         else if (continuation) request = continuation.amendment ? { ...originalRequest, action: 'steer', text: continuation.amendment } : { ...originalRequest, action: 'resume' };
       }
-      // 任务不随一轮结束：上一个任务还没做完时，随口补的一句（不必说「继续」）由快速模型判断是不是接着做它；
-      // 是就按补充交给原任务（下面 steer 分支：登记为修订、从原任务接着做），目标不变。
       if (request===originalRequest&&await this.continuesOpenTask(originalRequest,snapshot,entry))request={...originalRequest,action:'steer' as const};
 
       if (request.expectedRunId !== (snapshot.runId??null))throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
@@ -1341,7 +1215,6 @@ return receipt;
           await this.saveContinuation(request.conversationId);
           return { status: 'applied', runId: snapshot.runId ?? null, message: request.action === 'abort' ? '关注已停止，已有结果保留。' : '关注已暂停，等待你继续。' };
         }
-        // Like a running task, a live watch keeps this conversation; a new question is offered a separate one.
         if (request.action === 'start') throw new TaskActionRejected('原来的网页关注还在进行。要另开会话处理这个新问题吗？', true);
         if (request.action === 'resume') {
           if (delegation.state === 'WAITING_CONDITION') return { status: 'applied', runId: snapshot.runId ?? null, message: `仍在关注：${delegation.condition.description}` };
@@ -1409,7 +1282,6 @@ return receipt;
         request={...request,action:'resume'};
       }
 
-      // 刚登记的修订本身就是待做的事：已结束的任务带修订继续时，不依赖未完成项才能接续。
       if(['idle','error'].includes(snapshot.state)&&(projectTaskView(snapshot).resumable||explicitAmendment)
         &&(request.action==='resume'||request.action==='start'&&isInterruptedResumeText(request.text??''))){
         if(request.action!=='resume')throw new TaskActionRejected('请继续原任务，不要将未完成事项重新登记为新任务。');
@@ -1485,15 +1357,12 @@ return receipt;
 
         if(!entry.runtime.session.available)throw new TaskActionRejected('当前执行模型不可用，任务未启动。');
 
-        // 确定性小意图快捷通道：纯「切到某标签」且能唯一匹配已开标签时，宿主直接执行，跳过模型循环。
-        // 识别、匹配全都不调模型；匹配不到在这里安静地继续常规启动。
         if (request.source === 'text' && !request.attachments?.length && !request.pages?.length) {
           const quickReceipt = await this.tryQuickNavSwitch(request, entry);
 
           if (quickReceipt) return quickReceipt;
         }
 
-        // A click that moves a rejected voice request consumes only that matching proposal.
         if (request.forkedFrom) {
           const source = request.forkedFrom;
           const original = this.dispatcher.get(source.conversationId, source.requestId);
@@ -1507,7 +1376,7 @@ return receipt;
           }
         }
 
-        // “已接收”回执必须以真实可恢复存储为准：先把附件与检查点写盘，失败则回滚为未接收，
+        // WHY: “已接收”回执必须以真实可恢复存储为准：先把附件与检查点写盘，失败则回滚为未接收，
         // 不启动模型或网页动作。
         const targetProgress=this.progress.get(request.conversationId)!;
         const beforeAccept=targetProgress.snapshot();
@@ -1519,7 +1388,6 @@ return receipt;
         try{
           if(entry.runtime.session.persistAcceptedTask)await entry.runtime.session.persistAcceptedTask(targetProgress.snapshot(),request.attachments);
           else{
-            // Test/legacy runtime fallback; production BrowserAgentSession uses the atomic envelope above.
             await entry.runtime.session.persistRecoveryAttachments?.(acceptedRunId,request.attachments);
             await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
           }
@@ -1656,7 +1524,6 @@ return receipt;
     const progress = new TaskProgress(id);
     this.progress.set(id, progress);
 
-    // 任何状态突变后投影并下发只读任务视图（微任务合并 + 去重，保证原始事件先到达）。包裹只加通知，不改原语义。
     for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults", "invalidatePage", "registerResults", "stopAfterFailures", "stopForRestrictedPage"] as const) {
       const original = progress[method].bind(progress) as (...args: unknown[]) => unknown;
       // SAFETY: 同名方法按原签名包装，参数与返回值形状不变；动态按方法名赋值 TypeScript 无法表达。
@@ -1669,19 +1536,16 @@ return receipt;
     }
 
     const pump = (message: ServerMessage) => {
-      // A rejected checkpoint must not be replaced by a late runtime event.
       if (summary.checkpoint === 'unavailable') return;
       const currentRun=progress.snapshot().runId;
       const stale=typeof message.runId==='string'&&currentRun!==null&&message.runId!==currentRun;
 
       if(stale){
-        // 显式旧 run 只按原身份转发诊断，不得改当前 summary/epochs/补交付。
         this.emit({...message,conversationId:id});
 
         return;
       }
 
-      // Stop tails from a disconnected runtime cannot resurrect or finish its checkpoint.
       if(progress.snapshot().state==='interrupted'&&!this.checkpointResumes.has(id)
         &&(message.type==='status'||message.type==='agent_event'&&['agent_start','agent_end','turn_start','turn_end','text_delta','thinking_delta','user_delivery','user_delivery_stream','tool_start','tool_end'].includes(message.event.kind)))return;
 
@@ -1697,13 +1561,12 @@ return receipt;
       }
       const progressSnapshot=progress.snapshot();
 
-      // 只按任务进展起名：会话恢复时发的思考档位等事件不是新进展，否则侧栏一连上就给上百个旧会话同时起名，打爆快速模型。
+      // WHY: 只按任务进展起名：会话恢复时发的思考档位等事件不是新进展，否则侧栏一连上就给上百个旧会话同时起名，打爆快速模型。
       if(message.type==='agent_event'&&['agent_start','tool_end','agent_end'].includes(message.event.kind))this.nameTask(id,progressSnapshot,progress.visitedPages());
 
       if(progressSnapshot.state==='interrupted')summary.checkpoint='interrupted';
       else delete summary.checkpoint;
 
-      // 页面读数只用于结果账本的前后对比，不下发侧栏。
       if (message.type === "agent_event" && message.event.kind === "tool_observation") {
         this.entries.get(id)?.runtime.session.persistTaskResults?.(progressSnapshot);
 
@@ -1715,19 +1578,15 @@ return receipt;
       const live=this.entries.get(id)?.runtime;
       const carriesIdentity=['tool_call','control_result','team_status','status'].includes(message.type)||(message.type==='agent_event'&&message.event.kind==='agent_start');
       const scoped:ServerMessage = { ...message, conversationId: id, ...(live&&carriesIdentity?{epochs:{...this.epochs(live),...message.epochs}}:{}) };
-      // 直连 display 帧（新用户请求）不继承任务 runId：旧任务已中止时不被扩展身份闸门连坐；
-      // 任务族帧保持原身份绑定，中止后的迟到任务帧仍按原身份被拒（原语义不变）。
       const freshDisplayCall = message.type === 'tool_call' && typeof message.sdkId === 'string' && message.sdkId.startsWith('display-');
 
       if(carriesIdentity&&scoped.type!=='task_control'&&!freshDisplayCall)scoped.runId=progressSnapshot.runId;
       this.emit(scoped);
 
-      // 宿主说这一轮要核对（goal_check checking，先于 agent_end）：过往任务等核对结论再记，判继续时不记那句没核对过的回答。
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_start') { this.goalCheckPending.delete(id); this.taskQueue.resumeSeparate(id); }
 
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check' && message.event.status === 'checking') this.goalCheckPending.add(id);
 
-      // 续做这一轮跑完就不再算续做；下一次核对再判继续时重新记上。
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check' && message.event.status === 'continue') this.goalContinuing.add(id);
 
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_end') this.goalContinuing.delete(id);
@@ -1746,7 +1605,6 @@ return receipt;
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && progressSnapshot.continuation) this.pumpTasks();
       if (message.type === 'agent_event' && message.event.kind === 'error' && progressSnapshot.continuation) void this.observers.get(id)?.settled('unavailable').catch(error => console.error('[continuation] failure checkpoint unavailable', error));
 
-      // 目标核对在交付之后才出结论：任务已空闲时按新结论重记这条过往任务（同一 runId 覆盖）。
       if (message.type === 'agent_event' && message.event.kind === 'goal_check' && message.event.status !== 'continue' && message.event.status !== 'checking' && isLeadSession(message.sessionId) && progress.snapshot().state === 'idle') { this.goalCheckPending.delete(id); this.recordTaskHistory(id); }
 
       if (message.type === 'agent_event' && message.event.kind === 'agent_start') this.emit({type:'conversation_updated',conversationId:id,conversation:{...summary}});
@@ -1755,7 +1613,6 @@ return receipt;
         states.set(message.sessionId ?? "main", message.state);
         summary.state = [...states.values()].includes("running") ? "running" : [...states.values()].includes("user") ? "user" : "idle";
         summary.updatedAt = Date.now();
-        // 页面归你只在那段时间里是结局；交还后回到运行或空闲就去掉，等这一轮结束再写真正的结局。
         if (summary.state === "user") summary.ending = "页面现在归你";
         else if (summary.ending === "页面现在归你") delete summary.ending;
         this.emit({ type: "conversation_updated", conversationId: id, conversation: { ...summary } });
@@ -1768,7 +1625,6 @@ return receipt;
 
       if (message.type === "status" || message.type === "model_info") this.store?.save(this.list());
     };
-    // 宿主合成的事件（快捷通道的交付、核对结论）也走这条泵，和会话真实事件同一套记账与下发。
     this.messagePumps.set(id, pump);
     const promise = this.factory(id, pump, summary).then((runtime) => {
       summary.model = runtime.session.modelName();
@@ -1776,11 +1632,9 @@ return receipt;
       runtime.control.setTabCoordinator?.(async (owner, members) => {
         const source = this.entries.get(owner)?.runtime;
 
-        if (!source) return; // 已结束的运行时：扩展仍会检查归属并排空旧操作。
+        if (!source) return;
 
         if (source.session.isHeld()) throw new Error("页面现在归你，操作未执行");
-        // 跨会话只停旧会话：这里再发旧 run 的 release 会被身份闸门拒收（错误盖掉新会话接手）。
-        // 页面归属由接手方的 claim 与排空动作收敛。
         await source.control.stopMembersForForeignTakeover(members);
       });
       runtime.control.setIdleOwnerCheck?.(owner => this.conversationIdle(owner));
@@ -1792,7 +1646,6 @@ return receipt;
 
         if (restoredResults && restoredResults.conversationId !== id) throw new Error(TASK_CHECKPOINT_UNAVAILABLE);
       } catch {
-        // Quarantine this conversation, not the entire host. Leave its Pi file intact.
         summary.state = 'idle';
         summary.runId = restored?.runId ?? null;
         summary.checkpoint = 'unavailable';
@@ -1834,10 +1687,8 @@ return receipt;
 
       for (const [model, level] of this.thinkingPreferences) runtime.session.setThinking(model, level, true);
       runtime.session.emitThinkingLevel();
-      // 语义轮次的输出闸门接进会话：PREPARING 的交付流前缀先扣住，COMMITTED 之后才对外发。
       runtime.session.bindVoiceTurnGate?.(this.voiceTurns);
       runtime.session.bindConversationContext?.(() => this.getTaskProgress(id));
-      // 纠正询问的网站：用户不在网页上时，取这个任务最近碰过的网页。
       runtime.session.bindVisitedUrls?.(() => this.progress.get(id)?.visitedUrls() ?? []);
       this.entries.set(id, entry);
       const observer = new TaskContinuationObserver({
@@ -1936,13 +1787,12 @@ return receipt;
         const id = normalizeConversationId(message.conversationId);
         const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
         await entry?.runtime.session.askBrowsing(message.key);
-      } catch { /* 后台发起的：失败不打扰会话。 */ }
+      } catch {  }
 
       return;
     }
 
     if (message.type === 'browse_habit_request') {
-      // 用户自己的浏览：后台发起，失败就回空列表，不在会话里报错。
       let habits: BrowseHabit[] = [];
 
       try {
@@ -1957,7 +1807,6 @@ return receipt;
     }
 
     if (message.type === 'nudge_request') {
-      // 主动建议：失败、超时、没有模型都当作不建议，只回 nudge:null，不打扰会话。
       let nudge = null;
 
       try {
@@ -2015,7 +1864,6 @@ return receipt;
 
       return;}
 
-    // 停下的另开那件点了「继续」：没接上就把原因写在它的卡片上发回去，按钮可以再点。
     const stopped=message.type==='task_action'&&message.request.action==='resume'?this.taskQueue.get(message.request.conversationId):undefined;
     if(message.type==='task_action'&&stopped?.state==='unknown'&&stopped.request.originConversationId){
       const receipt=await this.dispatchTaskAction(message.request);
@@ -2029,14 +1877,12 @@ return receipt;
 
 return;}
 
-    // 点进输入框是被动事件：放在会话查找和断点检查前面，找不到会话或断点不可用时也不往界面报错。
     if (message.type === "warm_up") {
       this.warmUp(id, message.context, message.connection === true);
 
       return;
     }
 
-    // 一键翻译不属于哪个任务：侧栏关着时这个会话可能还没载入，先载入存着的会话（找不到就交给默认会话）。
     if (message.type === "page_translate") {
       const fallback = this.entries.get(id) ? undefined : await this.ensureDefault();
       (this.entries.get(id) ?? fallback)?.runtime.handleMessage(message);
@@ -2058,7 +1904,6 @@ return;}
 
 return;}
 
-    // 交付前对清单还扣着回答时用户又有动作：先放出回答、给那一轮收尾，再照没扣时的路处理。
     if(message.type==='user_message'||message.type==='steer'||message.type==='abort'||message.type==='takeover')entry.runtime.session.settleAnswerGate();
 
     if((message.type==='takeover'||message.type==='handback'||message.type==='abort')&&!message.taskRequestId){
@@ -2093,8 +1938,6 @@ return;}
     if (message.type === 'task_action') {
       const request=message.request,session=entry.runtime.session;
 
-      // 运行中打的一句是另一件事：另开一条线去做，不插进当前任务；判断不了照旧当插话。
-      // 判断要一两秒：前后都核对还是原来那个任务（没被停下、没换成新任务），否则交给原有路径按过期请求处理。
       const runId=this.getTaskProgress(id)?.runId??null,control=this.controlVersions.get(id)??0;
       const same=()=>session.isStreaming()&&!session.isHeld()&&(this.getTaskProgress(id)?.runId??null)===runId&&(this.controlVersions.get(id)??0)===control;
       if(request.source==='text'&&request.action==='steer'&&request.text?.trim()&&request.expectedRunId===runId&&same()
@@ -2117,7 +1960,6 @@ return;}
       return;
     }
 
-    // 偏好只改指定模型；其他模型和会话的自动档位不受影响。
     if (message.type === "set_thinking") {
       const current = this.entries.get(id)?.runtime.session;
       if (!current) return;
@@ -2191,7 +2033,6 @@ return;}
           this.emit({ type: "skill_operation_run_result", conversationId: id, requestId: message.requestId, ok: true, result: { status: "invalid_input", operationId: message.id, reason: "这个技能已经删除。请在技能管理里移除它的入口。", steps: 0 } });
           return;
         }
-        // 网页按钮带着它所在标签页来；侧栏则带当前页。先认领这页，避免复用到同站的另一个工作标签页。
         if (message.tabId !== undefined) await entry.runtime.rpc.call("dialog_info", { tabId: message.tabId });
         const result = await runLearnedOperation(operation, message.input, { call: (name, params) => entry.runtime.rpc.call(name, params) });
         await this.learnedOperations.recordRun(operation.id, result).catch(() => {});
@@ -2253,20 +2094,16 @@ return;
 
       if(progress)await entry.runtime.session.persistTaskResults?.(progress.snapshot());
 
-      // 只有真正开了新任务才换身份：运行中的同一条消息会转成插话，沿用当前 runId。
       if (progress && (progress.snapshot().runId ?? null) !== before) this.publishRunIdentity(id);
     }
 
     if (message.type === "abort") {this.pendingStarts.delete(id);this.checkpointResumes.delete(id);this.progress.get(id)?.abort();}
 
-    // 用户在这个会话里补充或停止了：这一轮归用户，不再当作可让出的续做。
     if (message.type === 'user_message' || message.type === 'steer' || message.type === 'abort') this.goalContinuing.delete(id);
 
     if(message.type==='user_message'&&!entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld())this.pendingStarts.add(id);
 
     if(message.type==='steer'&&entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld()){
-      // 侧栏文字修改在运行中与语音走同一个调度入口：登记要求、真实回执与请求去重都保留。
-      // 空闲/接管仍由原 steer 路径处理（空闲转新任务，接管给提示）。
       await this.dispatchTaskAction({requestId:`steer-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:this.getTaskProgress(id)?.runId??null,text:message.text,context:message.context,attachments:message.attachments},undefined,message.spoken?{spoken:true}:undefined);
 
       return;
@@ -2291,7 +2128,6 @@ return;
     try {
       if (!this.memoryStore) throw new Error("记忆存储不可用");
 
-      // 回执带整份记忆的版本号 rev。列表先读 rev 再读条目：其间若有新写入，面板拿到的 rev 偏旧，下次会重读，不会漏。
       if (message.type === "memory_list") {
         const rev = await this.memoryStore.currentRev();
         const entries = await this.memoryStore.list();
@@ -2313,13 +2149,11 @@ return;
         return;
       }
 
-      // 回答「要我记住吗」：询问只在这个对话的后台内存里；对话不在或后台重启过就是已失效。
       if (message.type === "memory_ask_answer") {
         const session = this.entries.get(conversationId)?.runtime.session;
 
         if (!session?.answerMemoryAsk) throw new MemoryAskClosed(MEMORY_ASK_EXPIRED);
         const answered = await session.answerMemoryAsk(message.askId, message.answer, message.text);
-        // 版本号用运行时写入后取到的那个；取不到就不带（不再读一次，免得把已存下的说成失败）。
         const result: Extract<ServerMessage, { type: "memory_result" }> = { type: "memory_result", conversationId, requestId: message.requestId, action, ok: true };
 
         if (answered.rev !== undefined) result.rev = answered.rev;
@@ -2328,7 +2162,6 @@ return;
 
         if (answered.entries) result.entries = answered.entries;
 
-        // 早已记着同一条：这次没写入，面板说「已经记着了」、不给撤销。
         if (answered.alreadySaved) result.alreadySaved = true;
         this.emit(result);
 
@@ -2372,7 +2205,6 @@ return;
       const removed = await pending.result;
       this.emit({ type: "memory_result", conversationId, requestId: message.requestId, action, ok: true, deletedId: message.id, entries: removed, rev: await this.memoryStore.currentRev() });
     } catch (error) {
-      // 失败（如版本冲突）也带上当前 rev，面板据此重读；记忆读不出来时不带。
       const rev = await this.memoryStore?.currentRev().catch(() => undefined);
 
       const result: Extract<ServerMessage, { type: "memory_result" }> = {
@@ -2385,11 +2217,9 @@ return;
         ...(rev === undefined ? {} : { rev }),
       };
 
-      // 询问已不在后台（没问过、已回答、作废、重启过）：面板收起按钮。可再试的写入失败不带。
       if (error instanceof MemoryAskClosed) result.askClosed = true;
       this.emit(result);
 
-      // 这次才作废的询问：先让面板收到带原因的结果，再发结局事件（进对话历史）。
       if (error instanceof MemoryAskClosed) error.announce?.();
     }
   }
@@ -2433,7 +2263,6 @@ return;
       this.controlVersions.set(summary.id,(this.controlVersions.get(summary.id)??0)+1);
       this.voiceTurnAborts.get(summary.id)?.abort();
 
-      // 运行已经写进 pi-durable。面板断开不取消它：扩展重载或进程被杀掉之后，重开从存储接着做。
       if(!runtime.session.keepsRunAfterDisconnect && (['running','interrupted'].includes(before.state)||this.pendingStarts.has(summary.id))){
         progress.interrupt('connection_lost');
         summary.state='idle';summary.checkpoint='interrupted';

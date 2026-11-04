@@ -1,4 +1,3 @@
-/** Download -> read_attachment -> original image pixels and visible answer; no browser image tab or screenshot is needed. */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';

@@ -1,17 +1,3 @@
-/**
- * 填写要像真人敲键盘：只认真实键盘输入的网站也收得到，填完回车能提交。
- * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
- *   npx tsx scripts/acceptance/real-path/fill-typing.mts --headless
- * 练习页三个框，判据只看网站自己收到的内容（服务器记下的 /hit）：
- *   a 搜索框：只在可信的 input 事件里记下用户打的字，只在可信的回车 keydown 里按记下的字提交（仿搜索站）。
- *   b 编辑器：contenteditable，内容只按 beforeinput 更新自己的模型、再按模型重画（仿 ProseMirror、Lexical）；「保存正文」交模型里的字。
- *   c 受控输入框：仿 react-dom 的值跟踪，只认 input 事件里值和跟踪值不同的那次改动；「提交手机号」交状态里的值。
- *   d 回车即发送的框上要求「填完回车」都必须被拒绝：网站收不到，框里留着字。三个框：
- *     单行聊天框（仿插话评测的 /duplex-chat，名字是 chat）；名字看不出是聊天、「发送」是外面一层的 div 的单行框；多行框 textarea；
- *     名字只写在 <label for> 上的「回复」框（附近没有「发送」）。
- * 搜索框用「填完回车」（fill 带 submit）。读页之后练习页被放到后台（另一个标签页在前面），后面几步都在后台标签页里做。
- * 失败方式：强制只用旧写法（typeIntoField 直接返回 "skip"），a、b 失败；去掉 submit 的拒绝规则，d 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -92,7 +78,6 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const ASK = "填写练习：搜索明天杭州天气并回车，正文写周会纪要并保存，手机号填好并提交。";
 const FINAL = "三项都做完了。";
-// 编号在读页后才知道：onPayload 从读页结果里填进这些参数，模型服务在回复前才序列化它们。
 const t = { q: { target: "", value: QUERY, submit: true }, chat: { target: "", value: CHAT, submit: true }, quiet: { target: "", value: QUIET, submit: true }, note: { target: "", value: NOTE, submit: true }, reply: { target: "", value: REPLY, submit: true }, ed: { target: "", value: BODY }, save: { target: "" }, phone: { target: "", value: PHONE }, send: { target: "" } };
 
 const model = await startScriptedModel([
@@ -143,7 +128,6 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
     t.quiet.target = ref(/\[ref=(\d+)\] textbox "写点什么"/);
     t.note.target = ref(/\[ref=(\d+)\] textbox "备忘"/);
     t.reply.target = ref(/\[ref=(\d+)\] textbox "回复"/);
-    // 读完页就把练习页放到后台：后面几步都在用户没在看的标签页里做。
     if (front) void rp.cdp.send("Target.activateTarget", { targetId: front }).then(() => { backgrounded = true; });
   }
 }
@@ -184,7 +168,6 @@ try {
   check("b 按 beforeinput 更新的编辑器：保存时网站收到的正文就是要填的", got("editor").at(-1) === BODY, { editor: got("editor") });
   check("c 受控输入框：提交时网站收到的手机号就是要填的", got("phone").at(-1) === PHONE, { phone: got("phone") });
   const boxes = ["chat", "quiet", "note", "reply"] as const;
-  // 「回复」框的 id 是 r1：名字只能从 <label for> 上读到，id 里没有线索。
   const ids = { chat: "chat", quiet: "quiet", note: "note", reply: "r1" };
   const refusals = Object.fromEntries(boxes.map(k => [k, receiptOf(t[k].target)]));
   const left = await rp.evaluate(work, `JSON.stringify(${JSON.stringify(boxes.map(k => ids[k]))}.map(id => document.getElementById(id).value))`);

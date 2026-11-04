@@ -1,18 +1,6 @@
-/**
- * 执行面板里的光球。
- *
- * 几何来自 thinking-orbs（见 ../vendor/thinking-orbs.js，MIT），这里只负责：
- * 取帧、按产品色上色、以及"什么时候在动"。
- *
- * 三个约定，改动前先读：
- * 1. 只有正在跑的那几个球占 rAF；跑完定格成 STILL_T 一帧，不再耗电。
- * 2. 颜色跟着 --text-secondary 走，深色模式自动反相；主题切换会重画静止的球。
- * 3. 用户在系统里开了"减少动态"就一律定格——光球是状态提示，不是必须动的装饰。
- */
 import type { RunOrbState } from "./run-orb.js";
 import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
-/** 保留细节图标的三个预设，并提供主运行球的状态表现。 */
 export type OrbState = "composing" | "solving" | "connecting" | "reading" | RunOrbState;
 
 const STATE_PRESET: Partial<Record<OrbState, string>> = {
@@ -25,10 +13,8 @@ function presetFor(state: OrbState) {
   return resolvePreset(STATE_PRESET[state] ?? (TERMINAL_STATES.has(state) ? "solving" : state), GEOM);
 }
 
-/** 引擎的几何坐标系固定 20；显示尺寸靠 canvas 缩放，别改这里。 */
 const GEOM = 20;
 
-/** 定格帧。跑完停在它的一个相位上，形态仍然可辨（不是空帧）。 */
 const STILL_T = 0.6;
 
 type Rgb = [number, number, number];
@@ -66,10 +52,6 @@ function prefersDark(): boolean {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 }
 
-/**
- * 取色：解析 --orb-ink 成 RGB，解析不了就退回 --text-secondary，再不行返回 null（灰色兜底）。
- * 球是细线，上色时还要乘 alpha——用次要文字色会被稀释到几乎看不见，所以单独留了 token。
- */
 function readInk(token = "--orb-ink"): Rgb | null {
   const style = getComputedStyle(document.body);
 
@@ -96,7 +78,6 @@ function readInk(token = "--orb-ink"): Rgb | null {
 
 let cachedStrong: Rgb | null | undefined;
 
-/** 过程行的球只有 16px：用正文主色，--orb-ink 在这么小的尺寸下糊成一片浅灰。 */
 function strongInk(): Rgb | null {
   if (cachedStrong === undefined) cachedStrong = readInk("--text-primary");
 
@@ -112,7 +93,6 @@ function ink(): Rgb | null {
   return cachedInk;
 }
 
-/** 引擎把每个笔画/点标成"白度"，这里换算成当前主题下的 alpha。 */
 function shade(color: Rgb | null, white: number, alpha: number, dark: boolean, fade = 1): string {
   const v = (dark ? 1 - white : white) * fade;
 
@@ -125,7 +105,6 @@ function shade(color: Rgb | null, white: number, alpha: number, dark: boolean, f
   return `rgba(${color[0]},${color[1]},${color[2]},${(alpha * (1 - v)).toFixed(3)})`;
 }
 
-/** 浓墨：褪色压到一半以下（按主题换算后再压，深浅两种主题都变浓）、透明度和点线略加，16px 下每颗点仍分得清。 */
 const STRONG = { fade: 0.45, alpha: 1.3, line: 1.2, dot: 1.15 };
 
 function paint(o: OrbInstance, engineT: number): void {
@@ -200,16 +179,11 @@ function bindTheme(): void {
 
 export type OrbHandle = {
   el: HTMLCanvasElement;
-  /** 切到运行态就开始转，切回静止定格一帧并让出 rAF */
   setState(state: OrbState): void;
   setRunning(running: boolean): void;
   dispose(): void;
 };
 
-/**
- * 建一个球。state 决定形态，box 是 CSS 像素直径。
- * 返回的 canvas 直接塞进目标容器；不跑的时候它只是一张静止的画。
- */
 export function createOrb(state: OrbState, box = 20, strong = false): OrbHandle {
   bindTheme();
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -249,7 +223,6 @@ export function createOrb(state: OrbState, box = 20, strong = false): OrbHandle 
       instance.state = nextState;
       canvas.dataset.orbState = nextState;
 
-      // 上游没有完成/失败动画；终态暂停当前形态，不冒用 shaping/connecting。
       if (!TERMINAL_STATES.has(nextState)) {
         instance.preset = presetFor(nextState);
         canvas.dataset.orbMode = instance.preset.mode;
@@ -264,7 +237,6 @@ export function createOrb(state: OrbState, box = 20, strong = false): OrbHandle 
 
       if (next) {
         instance.running = true;
-        // 跑起来才呼吸（18→20px），历史回放不进入这个状态
         canvas.classList.remove("orb-settle");
         canvas.classList.add("orb-live");
         ensureLoop();
@@ -277,11 +249,9 @@ export function createOrb(state: OrbState, box = 20, strong = false): OrbHandle 
       if (prefersReduce() || !TERMINAL_STATES.has(instance.state)) paintStill(instance);
       canvas.classList.remove("orb-live");
 
-      // 完成是收束：从呼吸处的放大缩回原位，一次性，不排队
       if (!prefersReduce() && !["stopped", "user", "failed"].includes(instance.state)) {
         canvas.classList.remove("orb-settle");
         canvas.classList.add("orb-settle");
-        // 用定时器摘 class 而不是 animationend：折叠的 details 里动画不启动，事件不会来。
         window.setTimeout(() => canvas.classList.remove("orb-settle"), 400);
       }
     },

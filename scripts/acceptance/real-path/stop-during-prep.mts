@@ -1,14 +1,3 @@
-/**
- * 发出一句话后马上点停止：停在开工准备里（读记忆、站点笔记那一小段）时，这一轮不再交给模型；停完下一句照常回答。
- * 只装扩展的隔离无头 Chrome、真侧栏、本机页面与本机脚本模型。模型每次回答前停 1.5 秒：停止键按下时已经发出的请求来不及答完，会被取消。
- *
- *   npx tsx scripts/acceptance/real-path/stop-during-prep.mts --headless
- *
- * 准备阶段只有几十毫秒，从外面看不见它从哪开始。所以先量两次「停止键出现 → 模型收到请求」要多久（L），
- * 再把停止点在 0…L 之间均匀铺开，每次发一句新话、等停止键出现后隔 d 毫秒点停止。
- * 判据：每一次点停止之后，模型都没有再答完这一句、侧栏不出现它的回答；全程没有「还在执行」一类的拒绝；最后不停的一句照常有回答。
- * 哪几次真的停在了准备阶段，看扩展自己的诊断记录（RunNotStarted）：至少要有一次，否则这次没测到，不算通过；这几次模型一个请求都不该收到。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -38,7 +27,6 @@ const rules: Rule[] = [
   ...Array.from({ length: SWEEP }, (_, i) => ({ match: sentence(i), steps: [{ text: answer(i), delayMs: 1_500 }] })),
 ];
 
-// 脚本模型记的是相对它启动的毫秒数；在它之前取的时间最多早几毫秒，量出的等待只会偏长。
 const modelOrigin = Date.now();
 
 const model = await startScriptedModel(rules);
@@ -57,10 +45,8 @@ type Round = { i: number; delayMs: number; stopAt: number; answered: boolean; re
 
 const evidence: { latencyMs?: number[]; rounds?: Round[]; notices?: string[]; lastAnswered?: boolean; prepStops?: number; panelOnFailure?: string } = {};
 
-/** 失败时留下侧栏这一刻的样子：停止键没出现时，要分得清是慢还是新消息被拒了。 */
 let panelForFailure: string | undefined;
 
-/** 诊断记录里「这一轮没提交给模型就停下了」的时间（毫秒）；诊断库还没建时为空。 */
 const PREP_STOPS = `new Promise((ok, fail) => {
   const open = indexedDB.open("sideagent-diagnostics");
   open.onerror = () => fail(open.error);
@@ -104,7 +90,6 @@ try {
     await rp.pressEnter(panel);
   };
 
-  /** 停止键出现的本机时间：从这一刻起侧栏显示已开工。 */
   const waitStopping = async (label: string) => {
     const deadline = Date.now() + 20_000;
 
@@ -137,13 +122,11 @@ try {
     await sleep(delayMs);
     const stopAt = Date.now();
     await rp.click(panel, "#send-btn");
-    // 回答要 1.5 秒；等 3 秒还没出现就是真的没答。
     await sleep(3_000);
     const request = requestOf(sentence(i));
     const answered = (await read()).answers.some(t => t.includes(answer(i)));
     const finishedAt = request?.finished ? request.closedAt : undefined;
     const finishedAfterStop = finishedAt !== undefined && finishedAt > stopAt;
-    // 点停止之前就答完的不算：负载高时量出的等待偏长，最后几次可能比回答还晚点。
     const leaked = finishedAfterStop || (answered && !(finishedAt !== undefined && finishedAt <= stopAt));
     evidence.rounds.push({ i, delayMs, stopAt, answered, requested: !!request, finishedAfterStop, leaked });
     await until(async () => (await idle()) || undefined, 10_000, `${sentence(i)}：停下后回到空闲`);

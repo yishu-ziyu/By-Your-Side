@@ -5,10 +5,6 @@ import type { TaskReceipt } from '../../shared/task-actions.js';
 import { answerSpeech } from '../../shared/answer-cards.js';
 export const normalizeSpeech=(text:string)=>text.replace(/[\p{P}\p{Z}\s]/gu,'');
 
-/**
- * 通话所在会话以外的任务怎么称呼：用用户自己说的第一句，在逗号处截到 30 字以内。
- * 只说「任务」时，语音层会自己猜是哪一件；侧栏标题按网站起，同一页上几件任务的标题常常只差一两个字。
- */
 export function taskName(snapshot: Pick<TaskProgressSnapshot,'goal'>): string {
   const sentence=snapshot.goal?.trim().split(/[。！？!?\n]/)[0]?.trim()??'';
   let name='';
@@ -23,12 +19,6 @@ export function taskName(snapshot: Pick<TaskProgressSnapshot,'goal'>): string {
 
 export const aboutTask=(name:string,text:string)=>`关于${name}：${text}`;
 
-/**
- * 语音排的队没开工就结束了。取消的不再念：取消是用户自己说的，那一句已经有回话。
- * 开不了工的（存储写不进、名额满）要说清是哪件、为什么，否则用户一直以为它还在排；
- * 原因只取宿主说明的第一小句：后面常接浏览器的英文原始报错，整段送去语音层会连原因一起略掉。
- * 开工结果不明的照宿主原话说，不说成没开始。
- */
 export function queuedEndSpeech(receipt: Pick<TaskReceipt,'action'|'status'|'text'|'message'>): string | null {
   if(receipt.action==='abort')return null;
   const name=taskName({goal:receipt.text});
@@ -39,7 +29,6 @@ export function queuedEndSpeech(receipt: Pick<TaskReceipt,'action'|'status'|'tex
   return `${name}没能开始，原因是${reason}。`;
 }
 
-/** name：别的会话里的任务才给，状态句就以它为主语。 */
 export function progressSpeech(snapshot: TaskProgressSnapshot, name?: string): string {
   const view=projectTaskView(snapshot);
   const subject=name??'任务';
@@ -65,7 +54,6 @@ export function progressSpeech(snapshot: TaskProgressSnapshot, name?: string): s
 }
 
 function idleSpeech(snapshot: TaskProgressSnapshot, view: ReturnType<typeof projectTaskView>): string {
-  // 目标核对与执行历史是两件事；已恢复的失败步骤不能覆盖目标结论。
   const unknown = view.outstanding.filter(item => item.status === 'unknown');
   const verifiedDone = snapshot.goalCheck?.status === 'done';
   if (snapshot.unresolvedEffect || snapshot.untrackedWritePending) return '这一轮有操作的实际结果仍无法确认，请先核对页面；我不会自动重做。';
@@ -82,7 +70,6 @@ function idleSpeech(snapshot: TaskProgressSnapshot, view: ReturnType<typeof proj
       return `${actions}的执行结果还无法确认，我不会自动重做。${pending?`仍需处理：${pending}。`:''}`;
     }
 
-    // 这句会被语音照念：写成用户听得懂的整句，不留「执行遇到阻碍」这类让语音层自己补原因的空当。
     const steps = remaining.length > 1 ? '这几步' : '这一步';
 
     return `${names}${steps}${remaining.some(item => item.status === 'blocked') ? '没做成' : snapshot.goalPlan ? '还没确认做完' : '还没做完'}。`;
@@ -94,7 +81,6 @@ function idleSpeech(snapshot: TaskProgressSnapshot, view: ReturnType<typeof proj
   const delivery = snapshot.conversationContext?.latestDelivery;
 
   if (snapshot.runId && delivery && (delivery.kind === 'finding' || delivery.kind === 'reply') && delivery.runId === snapshot.runId && delivery.text.trim()) {
-    // 宿主补的一句：目标核对还没判做完时才念。
     return answerSpeech(snapshot.goalCheck?.status === 'done' ? delivery.text : deliveryTextWithNote(delivery)).trim();
   }
 

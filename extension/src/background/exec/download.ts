@@ -22,7 +22,6 @@ export async function downloadUrl(params: ToolContract["download_url"]["params"]
   const timeoutMs = Math.min(Math.max(params.timeoutMs ?? 20_000, 1000), 20_000);
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
-  // A private background tab keeps failed downloads and redirects away from the user's working document.
   const downloadTab = await chrome.tabs.create({ url: "about:blank", active: false, windowId: tab.windowId });
   if (downloadTab.id == null) throw new DownloadNotStarted("无法准备下载，操作未执行。");
   const release = beginTabTransfer(downloadTab.id, sessionId);
@@ -33,7 +32,6 @@ export async function downloadUrl(params: ToolContract["download_url"]["params"]
     token = arm.token;
     captureDirectLink(downloadTab.id, token, url.href, params.filename);
     beforeDispatch?.checkNow?.();
-    // Chrome still downloads the original response and decides its safety; no second GET or local-path access.
     const navigation = await withTimeout(chrome.debugger.sendCommand({ tabId: downloadTab.id }, "Page.navigate", { url: url.href }), timeoutMs + 10_000, "下载响应超时，请先在 Chrome 下载列表核查，不要重复下载。") as { errorText?: string; isDownload?: boolean };
     if (navigation.errorText && !navigation.isDownload && navigation.errorText !== "net::ERR_ABORTED") {
       return { downloadId: token, tabId: tab.id, url: url.href, suggestedFilename: params.filename ?? url.pathname.split("/").at(-1) ?? "download",

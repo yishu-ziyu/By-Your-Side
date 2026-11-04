@@ -1,13 +1,3 @@
-/**
- * 一次交代几件事，助手写好回答，核对判「接着做」：接着做以模型报错或用户点停止结束时，侧栏仍给出原来那份回答，不只剩报错。
- * 只装扩展、隔离构建、本机脚本模型（目标核对也由脚本回「接着做」）。约 2 分钟。
- *   npx tsx scripts/acceptance/real-path/continue-keeps-answer.mts --headless
- *   a) 接着做时模型报错：侧栏有原回答，也有报错卡。
- *   b) 接着做时用户点停止：侧栏有原回答，这一轮写「已中止」。
- *   c) 重开侧栏从记录重放：a 的原回答还在。
- *   d) 接着做交出新回答：侧栏只有新回答，原回答不再出现。
- * 失败方式：判继续时把扣着的回答直接扔掉，a、b、c 都看不到原回答。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -33,15 +23,12 @@ await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
 
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
-// 交付的回答气泡；执行过程里的草稿（details）不算用户看得到的回答。
 const answers = `[...document.querySelectorAll(".msg.assistant")].filter(m => !m.closest("details")).map(m => m.textContent).join("\\n")`;
 const running = `document.querySelector("#status-pill")?.classList.contains("running") || document.querySelector("#send-btn")?.classList.contains("stopping")`;
 
 async function runCase(name: "a" | "b" | "d", continueStep: Step): Promise<void> {
   const model = await startScriptedModel([
-    // 核对接着做交出的新回答时判做完。
     { match: NEW_ANSWER, steps: [{ text: DONE_JSON }] },
-    // 目标核对的输入带 lastReply；接着做的那一轮以 [GOAL CHECK] 开头，也带着原话，所以都排在原话前面。
     { match: `"lastReply"`, steps: [{ text: CONTINUE_JSON }] },
     { match: "[GOAL CHECK]", steps: [continueStep] },
     { match: TASK, steps: [{ tool: { name: "navigate", args: { url: `http://127.0.0.1:${siteAddress(site).port}/` } } }, { text: ANSWER }] },

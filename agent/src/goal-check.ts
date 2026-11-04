@@ -8,21 +8,10 @@ import { csvTotalMismatches } from "./csv-total.js";
 import type { GoalFacts } from "./goal-facts.js";
 import type { CitationEvidence } from './answer-sources.js';
 
-/**
- * 目标核对（也管用过工具的只读任务）：任务一轮结束时，由快速模型判断用户要的结果达成没有。
- * 不靠主模型自觉：实测智谱主模型提交订阅后回「去邮箱点一下确认链接就完成了」，提示词里写了「自己去」也没照做。
- * 判断标准放在宿主，换哪家主模型都一样。
- */
-/** 本任务文本文件的内容；图片只带元数据。 */
 export interface GoalCheckFile { filename: string; chars: number; lines: number; savedAt: number; content?: string }
 
-/**
- * blocked：做不成的原因在助手和用户之外（站点连不上、页面或数据不存在、服务端拒绝、换过做法后按钮仍没反应），且最后回答已说明。
- * 宿主不催续做、不升思考档，按部分完成收尾；remaining 是给用户看的原因（shared/user-facing.ts plainBlockedReason），cause 只进诊断记录。
- */
-export type GoalVerdict = { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining: string | null; cause?: string; correction?: string; /** 给用户看的一句诊断：只说哪里不对，不带指令（侧栏「核对发现」）。 */ finding?: string; /** 用户要的几件事和各自做完没有（按用户说的顺序）；交付前对清单用它写「第 N 件（共 M 件）」。 */ items?: GoalItem[]; verificationTargets?: GoalVerificationTarget[]; evidence?: string; verificationSubject?: 'page' | 'file' | 'answer'; verifiedByHost?: true; /** Evidence in an answer can prove unfinished work; its source must not force answer-only repair. */ repair?: "ask_user" | "complete_task" };
+export type GoalVerdict = { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining: string | null; cause?: string; correction?: string;  finding?: string;  items?: GoalItem[]; verificationTargets?: GoalVerificationTarget[]; evidence?: string; verificationSubject?: 'page' | 'file' | 'answer'; verifiedByHost?: true;  repair?: "ask_user" | "complete_task" };
 
-/** 清单上的一件事：短语只来自用户的话，不带页面原文。 */
 export interface GoalItem { text: string; done: boolean }
 
 export interface GoalVerificationTarget { target: string; tabId?: number }
@@ -40,24 +29,18 @@ export interface GoalCheckInput {
   page: { title: string; url: string; text: string; tabId?: number; translation?: unknown } | null;
   files?: GoalCheckFile[];
   observations?: Array<{ tool: string; text: string; earlier?: boolean }>;
-  /** 这次对话读到过的相邻词对（readWords 写入），不随读数条数淘汰：只给宿主查回答里的名字，不发给核对模型。 */
   readWords?: ReadIndex;
   userTookOver?: boolean;
-  /** 回答里带输入项的卡片（标题、输入项名）：宿主事实，画在侧栏回答里、可改可重算。 */
   replyCards?: Array<{ title: string; inputs: string[] }>;
   sourceCitations?: CitationEvidence;
   wholeSource?: { url: string; text: string };
-  /** 回答里有一张请用户填的小表单（侧栏里一键发回）：这就是在问用户，哪怕问句不在结尾。 */
   replyForm?: boolean;
   copies?: CopyCheck[];
   verification?: GoalVerification;
-  /** 宿主记下的动作落点和助手自己输入的文字（goal-facts.ts）。 */
   facts?: GoalFacts;
-  /** 已经算好的「回答里没读到的名字」：离线重放诊断记录时用，那时没有整段对话的读数索引。 */
   notInReads?: string[];
 }
 
-/** Only page values enter the recheck, not changing node IDs or layout metadata. */
 export function goalReadEvidence(value: unknown): string | null {
   if (!value || typeof value !== 'object') return null;
   const text = 'text' in value && typeof value.text === 'string' ? value.text : undefined;
@@ -68,35 +51,23 @@ export function goalReadEvidence(value: unknown): string | null {
     'note' in value && typeof value.note === 'string' ? `note: ${value.note}` : ''].filter(Boolean).join('\n');
 }
 
-/** 交付前等核对最多这么久；超时就先放出回答，核对在后台照旧跑完（用户不能干等核对自己的 18 秒）。 */
 export const GOAL_GATE_WAIT_MS = 6_000;
 
-/**
- * 用户这次说了不止一件事：任务进行中插过话，或原话是带编号的列表（1. 2. / 1、2、/ ①② / 一、二、）。
- * 不调模型，也不解析「然后」「，」：那样太脆，单件事会被误扣。一句话里两步、没编号的抓不到。
- */
 export function severalAsks(requirements: readonly string[], interjections: number): boolean {
   if (interjections > 0) return true;
   const first = requirements[0] ?? "";
-  // 编号要在行首或标点、空白之后，后面不是数字：「1.5 公斤」「第1、2页」不算。
   const marks = [...first.matchAll(/(?:^|[\s，。；;,:：])(?:(\d{1,2})[.、．)）](?!\d)|([一二三四五六七八九十])、)|([①-⑨])/gu)]
     .map(match => match[1] ? Number(match[1]) : match[2] ? "一二三四五六七八九十".indexOf(match[2]) + 1 : match[3]!.charCodeAt(0) - 0x2460 + 1);
 
   return marks.includes(1) && marks.includes(2);
 }
 
-/** 快速模型通道首字偶尔 5–8 秒，留足余量；只在一个任务收尾时等这一次。 */
 const GOAL_CHECK_TIMEOUT_MS = 18_000;
 
-/**
- * 不算「做过事」的工具：只交付回答、记个人记忆、记目标或执行账本，不读不改页面。
- * 一个任务只用过这些（或没用工具）就是纯聊天，不做目标核对；用过其他任何工具（读页、改页、跑程序、存文件、派助手）都核对。
- */
 export const GOAL_CHECK_BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set(["send_user_message", "user_memory", "task_goals", "record_task_results"]);
 
 const CN_DIGITS: Record<string, number> = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
 
-/** 「一千二百」「两千」「八百五十」这样的中文数，读不懂返回 null。 */
 function chineseNumber(text: string): number | null {
   let total = 0, digit = 0;
 
@@ -112,9 +83,6 @@ function chineseNumber(text: string): number | null {
   return total + digit || null;
 }
 
-/**
- * 用户写明的最少字数（「至少一千二百字」「不少于 800 字」）：快速模型数不准长回答的字数，给了数也会比错，宿主数好、直接给结论。
- */
 function replyLength(goal: readonly string[], reply: string): { askedAtLeast: number; chars: number; met: boolean } | undefined {
   const match = /(?:至少|不少于|不低于|最少|起码)\s*([0-9]+|[零一二两三四五六七八九十百千万]+)\s*个?(?:汉)?字/u.exec(goal.join("\n"));
   const asked = match ? /^[0-9]+$/.test(match[1]!) ? Number(match[1]) : chineseNumber(match[1]!) : null;
@@ -168,7 +136,6 @@ export type GoalCheckTrace = {
   effort: SideCallRecord["effort"];
   maxTokens?: number;
   input: string;
-  /** goalCheckRecord 的结果：标注集和离线尺子拿它交给当前的 checkGoal 重判（宿主规则也重跑）；input 是当时发给模型的原样文字，两者不能互相还原。 */
   replayInput: Record<string, unknown>;
   decidedBy: "model" | `host:${string}`;
   hostFacts?: Record<string, unknown>;
@@ -204,20 +171,14 @@ function parseGoalCheckReply(text: string, evidence?: CitationEvidence) {
   return {...reply,citationChecks};
 }
 
-/** 检测问话，不把这个语言信号本身当作必须停工的依据。 */
 export function asksUser(reply: string): boolean {
-  // 问句后面常跟一句说明（「回复"确认"我就提交。」），所以看结尾约 100 字里有没有问号；
-  // 也认不带问号的请求：「请把你想用来订阅的邮箱发我」、「请提供…」「告诉我…」「回复我…」。
-  // 网址里的「?」不是问句：回答结尾带搜索链接时，核对的「继续」会被误改成「等用户」。
   const tail = reply.replace(/https?:\/\/[^\s)）\]」"'<>]+/g, "").trimEnd().slice(-160);
-  // 书名、引文、代码和链接文字里的问号也不是在问用户：回答结尾列出《Are markets efficient?》这类标题时，会被当成等用户回话，下一句新任务被接成旧任务的补充。
   const asked = tail.replace(/《[^》]*》|“[^”]*”|"[^"\n]*"|「[^」]*」|`[^`]*`|\[[^\]]*\]/g, "");
 
   return /[?？]/u.test(asked.slice(-100))
     || /请(把|提供|告诉|确认|回复|选择|发给?我|输入|填写你)|告诉我|发(给)?我|回复(我|「|“|")|需要你(的|提供|确认|先)|等你(确认|回复|提供)|please (provide|tell|confirm|reply|send)|let me know/iu.test(tail);
 }
 
-/** 真实的输入或对外操作确认仍要等用户；普通“要不要接着做”不能推翻已核实的未完成项。 */
 function hasUserDependency(input: GoalCheckInput): boolean {
   if (input.replyForm) return true;
   if (!asksUser(input.lastReply)) return false;
@@ -229,10 +190,6 @@ function hasUserDependency(input: GoalCheckInput): boolean {
   return consequential.test(questions) || personal.test(questions) || explicitGate.test(input.goal.join('\n'));
 }
 
-/**
- * 助手没用工具就说「这页看不出、还不能判断」或「我会去查看」，然后停下：这一轮不交给核对，就没人叫它回去。
- * 只看结尾约 160 字，而且要提到页面或「逐一」：「我无法确定明天股市」「我会核对一下格式」这类普通聊天不算，免得触发用户没要求的续做。
- */
 export function defersWork(reply: string): boolean {
   const tail = reply.trimEnd().slice(-160);
   const defers = /(无法|还不能|不能|没法)(仅凭[^，。]{0,12})?(判断|确定|比较)|(我|接下来我?|让我)(会|再|先|去|这就|马上)*(逐一|逐个)?(去)?(查看|打开|查一?下|看一?下|核对)|\b(cannot|unable to) (determine|compare)|\bI('ll| will) (check|open)/i.test(tail);
@@ -240,27 +197,10 @@ export function defersWork(reply: string): boolean {
   return defers && (/页|列表|详情|网页|网站|\bpage|\blist|\bdetail/i.test(reply) || /逐一|逐个|one by one/i.test(tail));
 }
 
-/**
- * 助手停在「确认邮件已发出、请点邮件里的链接」这类页面上：下一步明确在邮箱里，助手自己能做。
- * 这种页面在注册、订阅、找回密码里很常见，不等模型判断（阶跃核对总判成「等用户」、或思考超时）。
- * 只看助手停下时所在的页面：去过邮箱之后页面变了，就交回模型判断，不会来回打转。
- * 页面文字必须说邮件已经发出、或叫人去邮箱：「发送验证码」「发送验证邮件」按钮还没发，「验证码已发送至手机」「发送后请确认」不是邮件，
- * 泛泛的「发送…验证/确认」会把手机号登录页当成去邮箱。「确认电子邮件（地址）」是表单栏。
- * 中间的空隙不跨标点：「邮箱登录！验证码已发送」「Code sent to your phone; Email login」是登录标签挨着短信状态，不是邮件。
- * 只认验证、激活这类邮件或发到「你的邮箱」：发信任务里的「邮件已发送」「Your email has been sent」是发出去的信，不是等你确认的邮件。
- * 漏判只是交回模型判断，误判会让助手丢下问话去翻邮箱，所以宁可少认。
- */
 export function pageAwaitsEmailStep(pageText: string): boolean {
   return /(确认|验证|激活|注册|重置|找回|登录)[^\s。，,：:；;！!？?、]{0,6}(邮件|链接)[^\s。，,：:；;！!？?、]{0,12}\s*已(经)?(成功)?(发送|发出|寄出|发至|发到)(?![^。，,；;！!\n]{0,6}(手机|短信|号码))|(邮件|邮箱)(确认|验证|激活)[^\s。，,：:；;！!？?、]{0,8}已(经)?(成功)?(发送|发出|寄出|发至|发到)(?![^。，,；;！!\n]{0,6}(手机|短信|号码))|已(经)?(成功)?(发送|发出|寄出|发)(了)?(至|到)?(你|您)的?(注册)?(电子)?(邮箱|邮件)|已(经)?(成功)?(发送|发出|寄出|发)(了)?(一封)?(确认|验证|激活|注册)[^\s。，,]{0,4}(邮件|链接)|已(经)?(向|给|往)[^。；;！!？?\n]{0,40}(邮箱|@)[^。；;！!？?\n]{0,30}(发送|发出|寄出|发)(了)?[^。；;\n]{0,6}(确认|验证|激活|注册)|(给|向)(你|您)(发|寄)(送)?了一封|查收[^\s。，,；;！!]{0,6}(邮件|邮箱)|(?<!(勿|别|不要|无法|不能|未能|没法|不用)[^。，,；;！!\s]{0,3})((去|前往|打开)邮箱|(登录|查看)(你|您)的邮箱|(点击?|打开)邮件(中|里)的?[^\s。，,；;！!]{0,4}(链接|按钮))|(sent|emailed)(?![^.;!?\n]{0,40}\b(phone|sms|mobile)\b)[^.;!?\n]{0,40}\b(e-?mail|inbox)\b|\bemailed you\b|\be-?mail (has been|was) sent to you\b|(confirmation|verification|activation) e-?mail (has been |was )?sent|(magic|sign-?in|confirmation|verification|activation) link (has been |was |is )?(sent|on its way)(?![^.;!?\n]{0,20}\b(phone|sms|text|mobile)\b)|check your (e-?mail|inbox|mail)\b|(?<!(do not|don't|never) )click (on )?the (link|button) in (that|the|your|this) e-?mail/i.test(pageText);
 }
 
-/**
- * 回答在问用户别的事（「要提交吗？」「要改用另一个邮箱重新注册吗？」）时，邮箱这一步交回模型判断，问话照常交给用户。
- * 用户已定：为目标去已登录的邮箱不问，所以回答里问的、请用户做的每一个分句都是去看邮件或点邮件里的链接时
- * （「要我打开邮箱吗？」「请确认邮件中的链接」），照样直接去；夹着别的问题、在邮箱和别的做法之间让用户选、或向用户要验证码这类输入时不去，免得那句问话被丢掉。
- * 按逗号分句：「接下来可以打开邮箱，要换个备注吗？」问的是备注。网址到中文标点为止，
- * 「说明见 https://x.com。要提交吗？」后面的问句不能跟网址一起被去掉；只在这里这样切，其他地方的 asksUser 不变。
- */
 export function emailStepIsNext(pageText: string, reply: string): boolean {
   if (!pageAwaitsEmailStep(pageText)) return false;
   const asks = reply.replace(/https?:\/\/[^\s)）\]」"'<>。，！？；、]+/g, "").trimEnd().slice(-160).split(/(?<=[。！？!?；;，,\n])|(?<=\.)\s+/).filter(clause => asksUser(clause));
@@ -268,11 +208,6 @@ export function emailStepIsNext(pageText: string, reply: string): boolean {
   return asks.every(clause => !/还是|或者|或是|\bor\b|提供|告诉|发给?我|输入|填写|验证码|密码|\bcode\b|password|provide|tell me|send me/i.test(clause) && /(打开|去|前往|查看|登录|进入|查收)[^，,。？?]{0,6}(邮箱|收件箱|邮件|gmail|outlook|mail)|(点击?|确认)[^，,。？?]{0,4}邮件(中|里)?的?[^，,。？?]{0,4}(链接|按钮)|open (your |the )?(gmail|outlook|inbox|mailbox|e-?mail)|check (your )?(inbox|e-?mail|mail)|click the (confirmation |verification )?link/i.test(clause));
 }
 
-/** 助手自己的回答说还有事没做成（「确认邮件还没送达」「没能点确认链接」）。 */
-/**
- * 回答自己说这件事没做成。「没能 / 未能 / couldn't」后面要跟着做成这件事的动词才算：
- * 「（另两个服务限流，未能交叉验证）」只是多核对一遍没做到，任务本身做完了，不能因此挂上「继续原任务」。
- */
 const UNFINISHED_VERB = "(?:完成|做完|做成|做到|成功|拿到|找到|打开|提交|送达|收到|保存|下载|登录|进入|获取|获得|读到|读出|发出|发送)";
 const UNFINISHED = new RegExp(`还没(?:能|有)?(?:完成|点|收到|送达|到|确认|提交)|(?:没能|未能|没有能)${UNFINISHED_VERB}|尚未(?:完成|收到|送达|确认)|没有(?:完成|收到|送达)|not (?:yet )?(?:done|finished|arrived|received|confirmed)|(?:couldn'?t|could not|was unable to|unable to) (?:complete|finish|find|get|open|submit|access|load|save|download|send)|has(?:n'?t| not) arrived`, "i");
 
@@ -280,13 +215,7 @@ function claimsUnfinished(reply: string): boolean {
   return UNFINISHED.test(reply);
 }
 
-/**
- * 宿主催过续做之后，助手又说做不成（交付标了部分完成，或回答自己说没做成），而且网页和催之前一样：不再催。
- * 否则会一直催，侧栏留下好几段几乎一样的「没能完成…」。
- * 网页变没变只看宿主前后两次读到的地址和网页文字，不听模型的说法；读不到网页、还没催过、在问用户时都不算。
- */
 export function gaveUpWithoutChange(input: { reply: string; partial: boolean; pageAtNudge: string | null; pageNow: string | null }): boolean {
-  // 读页结果里的元素编号（[ref=12]）不算网页内容：同一张网页两次读到的编号可能不同。
   const content = (page: string | null) => page?.replace(/\[ref=[^\]]*\]\s?/g, "") ?? null;
 
   if (!input.pageNow || content(input.pageAtNudge) !== content(input.pageNow) || asksUser(input.reply)) return false;
@@ -294,34 +223,22 @@ export function gaveUpWithoutChange(input: { reply: string; partial: boolean; pa
   return input.partial || claimsUnfinished(input.reply);
 }
 
-/** 助手的回答说页面上的按钮不起作用。 */
 function claimsDeadControl(reply: string): boolean {
   return /没(有)?反应|不起作用|没(能)?(存上|生效|保存成功|翻)|保存失败|翻不过去|无法翻页|(无法|不能|没能)确认|没有.{0,8}(成功|变化|迹象)|仍(然)?(显示|是|停在)|点了.{0,6}(没用|无效)|did(n'?t| not) (work|respond|do anything|change)|no effect|nothing happened|still (shows|on)/i.test(reply);
 }
 
-/** 宿主报告点击后页面没有可归因的变化：click 工具的文字回执（shared/effect.ts formatEffectReport），或程序步骤里点击结果的 changed:false。 */
 const NO_EFFECT = /nothing (on the page changed in a way )?(was )?attributable to this click|"effect":\{[^{}]*"changed":false/gi;
 
-/**
- * 会改页面的动作：点击、填写、按键、跳转、程序、翻译，以及用户照着引导或接管后自己动手。
- * 不在里面的（读页、截图、取网址、下载、存文件、标签页、标注、等事件）不改页面内容。
- */
 const PAGE_ACTIONS: ReadonlySet<string> = new Set(["click", "double_click", "fill", "type_text", "press_key", "select_option", "upload_file", "navigate", "browser_run", "js", "page_translation", "accept_dialog", "dismiss_dialog", "guide_step", "hand_to_user"]);
 
-/** 整页读数：读页工具、程序替助手读的页面，或回执里带整页快照（无障碍树以 RootWebArea 开头，如程序、跳转）。翻译的回执不是。 */
 function wholePageRead(item: { tool: string; text: string }): boolean {
   return item.tool === "snapshot" || item.tool === "page_at_start" || item.tool === "page_at_steer" || item.text.includes("RootWebArea");
 }
 
-/**
- * 有当前页面时，之后又动过页面的整页读数标「过时」：否则快速模型会把旧读数里的勾选、件数当成现状，叫助手回去重做已经做完的事。
- * 只看工具名，不看回执里有没有变化：没把握页面没变时，以刚读的当前页面为准。
- */
 function staleReads<T extends { tool: string; text: string }>(observations: readonly T[]): Set<T> {
   return new Set(observations.filter((item, index) => wholePageRead(item) && observations.slice(index + 1).some(later => PAGE_ACTIONS.has(later.tool))));
 }
 
-/** Unknown status values cannot authorize continuation. */
 function isGoalReply(value: unknown): value is { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining?: string; cause?: unknown; correction?: string; finding?: string; items?: unknown; verificationTargets?: unknown; evidence?: unknown; verificationSubject?: unknown; goalOnPage?: unknown; pointedFound?: unknown; citationChecks?: unknown; navigationRequirement?: unknown; repair?: unknown } {
   if (!value || typeof value !== "object") return false;
   // SAFETY: 只把它当成待核对的对象读这两个字段，下面逐个检查后才返回 true；cause 不认得时按笼统原因处理，不拒收。
@@ -335,12 +252,10 @@ function isGoalReply(value: unknown): value is { status: "done" | "needs_user" |
 
 const plainText = (text: string) => text.normalize("NFD").replace(/\p{M}|[\u200b-\u200d\u2060\ufeff]/gu, "").replace(/[’‘]/g, "'").toLowerCase();
 
-/** 读到过的相邻词对（两种顺序都记）；满了就标不完整，之后不再断言哪个名字没读到。 */
 export interface ReadIndex { pairs: Set<string>; complete: boolean }
 
 export const newReadIndex = (): ReadIndex => ({ pairs: new Set(), complete: true });
 
-/** 单个字母（中间名缩写）不进词对：「Storer, Kevin M.」和「Kevin M. Storer」都留下 kevin 与 storer 相邻。 */
 const nameWords = (text: string) => (plainText(text).match(/\p{L}[\p{L}'-]*/gu) ?? []).filter(word => word.length > 1);
 
 export function readWords(text: string, into: ReadIndex): void {
@@ -351,12 +266,6 @@ export function readWords(text: string, into: ReadIndex): void {
   }
 }
 
-/**
- * 回答里的西文名字，名和姓在这次对话读到的内容里一次也没相邻出现过的那些。只在至少 3 个名字、过半找不到时返回，交给核对模型当宿主事实：
- * 它只看得到截断后的读数，分辨不出名单是读来的还是编的（PDF 只读了前几页，作者在第 87 页，助手照样列出 25 个名字）。
- * 由模型而不是这里定输赢，因为产品名、地名同样是大写词组，用户要推荐时名字本来就不来自页面。
- * 名和姓前后顺序都认，因为名单常写成「DeBellis, Derek」或把名和姓断在两行；只认姓不行，good、west 这类普通词会冒充读到过。
- */
 function unreadNames(reply: string, seen: ReadIndex): string[] {
   if (!seen.complete) return [];
   const word = "\\p{Lu}(?:\\p{Ll}|['’-]|\\p{Lu}(?=\\p{Ll}))+";
@@ -369,12 +278,10 @@ function unreadNames(reply: string, seen: ReadIndex): string[] {
   return names.length >= 3 && missing.length * 2 > names.length ? missing.slice(0, 30) : [];
 }
 
-/** 核对的说法是不是在说这些名字：点到其中的姓，或说到作者、姓名、人名。 */
 function aboutNames(names: readonly string[], text: string): boolean {
   return names.length > 0 && (names.some(name => text.includes(name.split(" ").at(-1)!)) || /作者|姓名|人名|名字|名单|\b(authors?|names?|people)\b/i.test(text));
 }
 
-/** 用户原话里自己说了要去别处：打开、搜索、查找、访问，或给了网址。这时去别的页面就是照做。 */
 const ASKS_ELSEWHERE = /打开|搜|查|找|访问|去[^，。,.]{0,8}(网站|页面|主页|官网)|https?:\/\/|\b(open|search|find|look up|visit|go to)\b/i;
 
 function unmetNavigation(input: GoalCheckInput, requirement: unknown): GoalVerdict | null {
@@ -400,7 +307,6 @@ function unmetNavigation(input: GoalCheckInput, requirement: unknown): GoalVerdi
       : `已读到的资料和正确回答保留。用户要求在新标签页打开 ${wanted}，实际只改变了原标签页。用新标签页打开指定地址。` };
 }
 
-/** 宿主事实里离开了用户那一页：有动作落在助手自己打开的别的页（地址读到了的），或搜了用户原话和那一页上都没有的词。 */
 function strayedFrom(input: GoalCheckInput): { finding: string; correction: string } | null {
   const facts = input.facts;
   if (!facts || !input.goalPage || ASKS_ELSEWHERE.test(input.goal.join("\n"))) return null;
@@ -416,25 +322,16 @@ function strayedFrom(input: GoalCheckInput): { finding: string; correction: stri
   };
 }
 
-/** video_captions 在核对过视频身份、读到播放器字幕清单为空时写的那句。 */
 const NO_CAPTIONS = "the player's own caption list for this video is empty";
 
-/** 回答说这个视频没有字幕。 */
 const SAYS_NO_CAPTIONS = /没有(任何)?(可用的|可加载的|可读的)?字幕|无字幕|拿不到字幕|字幕(列表|清单|轨)?(是|为)?空|no (subtitles|captions)/i;
 
-/** 回答一开头就说要找的东西没有、没找到（只看开头：「这页没有，但在别处找到了」不算）。 */
 const NOT_FOUND = /(没有|不存在|没找到|未找到|找不到|查不到|没能找到)[^。！？\n]{0,16}(条目|词条|页面|结果|记录)|目前没有[^。！？\n]{0,24}(条目|词条)|\b(no (article|results?|entry|page)|does not exist|not found)\b/i;
 
-/**
- * 用户原话是在找、查、搜某个东西。只有这时「没有」才是在说没找到：
- * 「只读当前条目……不要打开其他网页」的回答写「我没有打开别的页面」，会被当成没找到，白白再找一轮。
- */
 const ASKS_TO_FIND = /找|查|搜|有没有|是否有|\b(find|search|look up|is there)\b/i;
 
-/** 工具落到的页面地址（打开、跳转、程序结束时所在的页），不是页面里列出的链接。 */
 const LANDED = /(?:Created tab \d+: [^\n]*? — |Navigation result: |working tab \d+ shows "[^"\n]*" — )(https?:\/\/[^\s;"'<>]+)/g;
 
-/** 这一轮找过的说法：落到的维基条目名，和落到的网址里的搜索词。 */
 function searchedWordings(observations: GoalCheckInput["observations"]): string[] {
   const terms = new Set<string>();
 
@@ -467,10 +364,6 @@ function namesNotRead(input: GoalCheckInput): string[] {
   return unreadNames(input.lastReply, seen);
 }
 
-/**
- * 写进本机诊断记录的核对输入：离线重放能照它重建一模一样的核对请求。
- * 读数索引换成算好的名字清单；各段文字只留核对会用到的长度，多留 1 字，「被截断」的标记照样成立。
- */
 export function goalCheckRecord(input: GoalCheckInput): Record<string, unknown> {
   const { readWords: _index, ...rest } = input;
   return {
@@ -508,7 +401,6 @@ function goalCheckContent(input: GoalCheckInput): { content: string; notInReads:
       return { filename: file.filename.slice(0, 120), chars: file.chars, lines: file.lines, savedAt: new Date(file.savedAt).toISOString(),
         content: text, truncated: text === undefined ? undefined : text.length < file.content!.length };
     }),
-    // 程序替助手读的页面先各留 4,000 字，余下的按新到旧分给工具结果：否则一轮里后面几次大读数会把开头读的页面挤成空文本。
     observations: (() => {
       const stale = input.page ? staleReads(input.observations ?? []) : new Set();
       const items = (input.observations ?? []).slice(-8).reverse();
@@ -534,7 +426,6 @@ function hostFacts(input: GoalCheckInput, facts?: Record<string, unknown>): Reco
   return Object.keys(value).length ? value : undefined;
 }
 
-/** 没进入 checkGoal 的宿主判定和复核保底也走同一份 content 拼法。 */
 export function recordHostGoalCheck(model: Model<Api>, input: GoalCheckInput, rule: string, verdict: GoalVerdict, trace: GoalCheckTraceContext, facts?: Record<string, unknown>): void {
   const { content } = goalCheckContent(input);
   trace.record({ v: 1, checkId: trace.checkId, ...(trace.parentCheckId ? { parentCheckId: trace.parentCheckId } : {}), promptSha: GOAL_CHECK_PROMPT_SHA,
@@ -549,7 +440,6 @@ export function recordUnavailableGoalCheck(model: Model<Api>, input: GoalCheckIn
     verdict: { status: "unavailable", ...(reason ? { reason } : {}) }, ms: Date.now() - (trace.startedAt ?? Date.now()) });
 }
 
-/** 判断不了（超时、出错、回复格式不对）时抛 SideCallError，由调用方按「核对不可用」处理。 */
 export async function checkGoal(host: SideCallHost, model: Model<Api>, input: GoalCheckInput, signal: AbortSignal, headers?: Record<string, string>, trace?: GoalCheckTraceContext): Promise<GoalVerdict> {
   const startedAt = Date.now();
   let side: SideCallRecord | undefined;
@@ -568,32 +458,23 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
   };
 
   try {
-    // 实测模型把多行 CSV 写成一行字面 \n；不自动解码文件，以免改变用户要求的转义示例。
     const wantsEscapedText = input.goal.some(text => /转义|escaped|literal/i.test(text));
     const escapedCsv = wantsEscapedText ? [] : (input.files ?? []).filter(file => file.filename.toLowerCase().endsWith(".csv")
       && file.content !== undefined && file.content.length <= 12_000 && !/[\r\n]/.test(file.content)
       && (file.content.match(/\\n/g)?.length ?? 0) >= 2);
 
     if (escapedCsv.length && !asksUser(input.lastReply)) return finish({ status: "continue", verifiedByHost: true, verificationSubject: 'file', remaining: "修正 CSV 的换行", correction: `${escapedCsv.slice(0, 4).map(file => file.filename).join("、")}把换行写成了字面转义，整个文件只有一行。用实际换行分隔 CSV 行，中文使用实际字符，修正文件后再交付。`.slice(0, 800) }, "host:csv_escaped_newlines", { files: escapedCsv.map(file => file.filename) });
-    // 明确数量表的加法错误由程序判定，不能被模型的 done 覆盖。
     const deduplicated = input.goal.some(text => /去重|去除重复|distinct|unique|deduplic/i.test(text));
     const totals = (deduplicated ? [] : input.files ?? []).flatMap(file => file.filename.toLowerCase().endsWith(".csv") && file.content !== undefined
       ? csvTotalMismatches(file.content).map(mismatch => `${file.filename}：${mismatch.column}列的分项之和为${mismatch.calculated}，合计却写成${mismatch.reported}`) : []);
 
     if (totals.length && !asksUser(input.lastReply)) return finish({ status: "continue", verifiedByHost: true, verificationSubject: 'file', remaining: "修正文件的合计", correction: `${totals.slice(0, 4).join("；")}。按原数据重新计算并修正文件，说明纠正。`.slice(0, 800) }, "host:csv_total_mismatch", { mismatches: totals });
-    // 按钮点了没反应：宿主至少两次报告点击后页面没有变化，回答也如实说了，就不再催重试。
-    // 次数是宿主的证据，不是模型的说法；不让模型判，因为它在这种情况下 8 次里 7 次催「继续」，把耗时拉到 2–3 倍。
-    // 只数这一轮的：前几轮点过没反应的按钮，不代表这一轮也卡住了。
     const deadClicks = (input.observations ?? []).filter(item => !item.earlier).reduce((count, item) => count + (item.text.match(NO_EFFECT)?.length ?? 0), 0);
 
     if (deadClicks >= 2 && claimsDeadControl(input.lastReply) && !asksUser(input.lastReply)) return finish({ status: "blocked", remaining: plainBlockedReason("unresponsive"), cause: "unresponsive" }, "host:dead_clicks", { deadClicks });
-    // 视频没有字幕：宿主核对过是这个视频、读到播放器自己的字幕清单为空（video_captions 只在这时写这句），回答也照实说了。
-    // 数据本来就不存在；不让模型判，因为它常催去公众号、搜索引擎找文字稿，多跑两三分钟也拿不到用户要的字幕。
     const captionsAbsent = (input.observations ?? []).some(item => !item.earlier && item.text.includes(NO_CAPTIONS));
 
     if (captionsAbsent && /字幕|captions?|subtitles?/i.test(input.goal.join(" ")) && SAYS_NO_CAPTIONS.test(input.lastReply) && !asksUser(input.lastReply)) return finish({ status: "blocked", remaining: plainBlockedReason("missing"), cause: "missing" }, "host:no_captions", { captionsAbsent });
-    // 只用一种说法找过就说「没有」：提示词里的同一条规则核对模型守得不稳，由宿主按这一轮落到的页面判继续；
-    // 换过说法之后不再拦，由模型判断是否真的没有。
     const wordings = input.verification ? [] : searchedWordings(input.observations);
 
     if (wordings.length === 1 && ASKS_TO_FIND.test(input.goal.join("\n")) && NOT_FOUND.test(input.lastReply.slice(0, 120)) && !asksUser(input.lastReply)) {
@@ -603,7 +484,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     parsed = await sideJudgment(host, model, {
       purpose: "goal_check", systemPrompt: PROMPT, content, signal, timeoutMs: GOAL_CHECK_TIMEOUT_MS, headers,
       effort: input.sourceCitations?.items.length ? 'low' : undefined,
-      // 阶跃这类始终开思考的模型，思考也占输出额度：留足，否则思考完之前就被截断，核对拿不到结论。
+      // WHY: 阶跃这类始终开思考的模型，思考也占输出额度：留足，否则思考完之前就被截断，核对拿不到结论。
       maxTokens: 1600 + (input.sourceCitations?.items.length ?? 0) * 60,
       onRecord: line => { side = line; },
       onRequest: request => {
@@ -636,27 +517,21 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     if (navigationMismatch && !input.verification && (parsed.status === "done" || parsed.status === "continue") && !asksUser(input.lastReply) && !input.replyForm) return finish(navigationMismatch, "model", undefined, "navigation_constraint");
 
 
-    // 用户指的是当时页面上的东西，助手却在别的页面上动手、或搜了用户没说过的词：不算完成，不管模型怎么判。
-    // 「指的是这一页上的东西」由模型判（只看用户原话），落点和搜索词是宿主记下的事实；用户自己说了要打开、搜索的，不在此列。
     const strayed = strayedFrom(input);
     if (strayed && parsed.goalOnPage === true && !input.verification) {
       if (asksUser(input.lastReply) || input.replyForm) return finish({ status: "needs_user", remaining: "等你决定要不要换个做法" }, "model", undefined, "strayed+asksUser");
       return finish({ status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: strayed.finding, correction: strayed.correction }, "model", undefined, "strayed");
     }
-    // 用户指的东西在那一页上根本没有（模型只看页面和读数判这一项），回答却算做完了：常见的是换个理解点下去再补一句「指的是别的就告诉我」。
-    // 这时在等用户定，不是完成；回答没问用户的，改写一轮去问，同样不再动网页。
     if (parsed.goalOnPage === true && parsed.pointedFound === false && !input.verification && parsed.status !== "blocked" && parsed.status !== "needs_user" && !ASKS_ELSEWHERE.test(input.goal.join("\n"))) {
       if (asksUser(input.lastReply) || input.replyForm) return finish({ status: "needs_user", remaining: "等你说指的是哪一个" }, "model", undefined, "pointed_missing+asksUser");
       return finish({ status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: "你指的东西在这一页上没有，助手换了个理解去做",
         correction: "用户指的是当时那一页上的东西，但那一页上没有它，助手换了个理解去做。不要再打开、搜索或点击。只改写回答：说清在那一页上没找到什么、按什么理解做了什么，问用户指的是哪一个、要不要换个做法。" }, "model", undefined, "pointed_missing");
     }
 
-    // 「还差什么」会进任务条和过往任务，以后再带进上下文：只留一句短话，防止把页面原文（含注入）搬进去。
+    // WHY: 「还差什么」会进任务条和过往任务，以后再带进上下文：只留一句短话，防止把页面原文（含注入）搬进去。
     const remaining = parsed.remaining?.trim() ? parsed.remaining.trim().replace(/\s+/g, " ").slice(0, 60) : null;
 
-    // 受阻：原因在外面，回答里顺口问「要我稍后再试吗？」也不改判（不等用户、不催续做）；给用户看的原因由宿主按类别写，不用模型原话。
     if (parsed.status === "blocked") {
-      // 只认三种类别；别的说法按笼统原因处理，不拒收这次结论。
       const rawCause: unknown = parsed.cause;
       const cause = BLOCKED_CAUSES.find(item => item === rawCause) ?? null;
       const verdict: GoalVerdict = { status: "blocked", remaining: plainBlockedReason(cause) };
@@ -666,7 +541,6 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
       return finish(verdict, "model", undefined, "blocked_reason");
     }
 
-    // A negated action may be a fulfilled constraint. Only unfinished goal items contradict done.
     const items = Array.isArray(parsed.items) ? parsed.items.flatMap(item => item && typeof item === "object" && typeof (item as GoalItem).text === "string" && typeof (item as GoalItem).done === "boolean"
       ? [{ text: (item as GoalItem).text.trim().replace(/\s+/g, " ").slice(0, 30), done: (item as GoalItem).done }] : []).filter(item => item.text).slice(0, 12) : [];
     const adjustments: string[] = [];
@@ -680,7 +554,6 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     const verdict: GoalVerdict = { status, remaining: status === "done" ? null : remaining };
 
     if (correction) verdict.correction = correction;
-    // 给用户看的一句话：只在判继续时要，压成一行并限长。
     const finding = status === "continue" ? parsed.finding?.trim().replace(/\s+/g, " ").replace(/[。.]$/, "").slice(0, 120) : undefined;
 
     if (finding) verdict.finding = finding;
@@ -698,9 +571,6 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
         && items.some(item => !item.done) && verdict.evidence && input.lastReply.includes(verdict.evidence)) {
         verdict.repair = "complete_task";
       }
-      // 名字没读到是宿主查过的事实，不再复核：复核要求证据引用回答原文，模型常引用页面上的目录，结论就被降成「未确认」。
-      // 纠正换成宿主自己的话、不带模型的清单，只为这件事背书；别的修改不借此跳过复核，下一次核对还会再看。
-      // 模型的纠正常不点名，只说「作者」「姓名」，所以这些词也算在说名字；说年份、价格这类别的错时走原来的复核。
       if (!input.verification && verdict.verificationSubject === 'answer' && aboutNames(notInReads, [correction, verdict.finding, remaining].join(" "))) {
         adjustments.push("notInReads");
         Object.assign(verdict, { verifiedByHost: true, items: undefined, repair: undefined, remaining: "读到名字所在的原文",

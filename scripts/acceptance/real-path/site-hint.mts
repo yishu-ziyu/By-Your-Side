@@ -1,11 +1,3 @@
-/**
- * 站点提示只在对应网站上交给模型。只装扩展、隔离构建、本机脚本模型；需要能上网打开 excalidraw.com。
- *   npx tsx scripts/acceptance/real-path/site-hint.mts --headless
- * 同一个标签页先开真实的 excalidraw.com 发一句话，再换到本机练习页、新开对话发一句话。脚本模型记下每次请求的内容。
- *   a) 在 excalidraw.com 上，这一轮第一次带工具的模型请求里有 Excalidraw 的做法（粘贴 excalidraw/clipboard）。
- *   b) 在本机练习页上，这一轮第一次带工具的模型请求里没有这段做法。
- * 失败方式：去掉注入（或把表里的网站改成别的），a 失败。反例结果见验收文件。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -26,7 +18,6 @@ const ON_SITE = "站点提示案例一：在这个画板上画两个方框。";
 
 const OFF_SITE = "站点提示案例二：这个页面讲了什么？";
 
-/** 提示里一定有的两句：标题和创建方法。 */
 const MARKS = ["# Site hint (excalidraw.com)", "excalidraw/clipboard"];
 
 type Part = { text?: string };
@@ -35,7 +26,6 @@ type Message = { role: string; content?: string | Part[] | null };
 
 const textOf = (content: Message["content"]) => Array.isArray(content) ? content.map(part => part.text ?? "").join("") : content ?? "";
 
-/** 每个任务第一次带工具的请求：系统提示词全文。 */
 const firstPrompt = new Map<string, string>();
 
 const model = await startScriptedModel([
@@ -46,7 +36,6 @@ const model = await startScriptedModel([
   const messages = (payload.messages ?? []) as Message[];
   const ask = [ON_SITE, OFF_SITE].find(text => messages.some(m => m.role === "user" && textOf(m.content).includes(text)));
 
-  // 只看本次运行的上下文（最后一段）；之前消息前的那些留在历史里（#271）。
   if (ask && !firstPrompt.has(ask)) firstPrompt.set(ask, messages.filter((m, i, all) => m.role === "system" || (m.role === "user" && textOf(m.content).startsWith("本次运行的上下文") && !all.slice(i + 1).some(n => n.role === "user" && textOf(n.content).startsWith("本次运行的上下文")))).map(m => textOf(m.content)).join("\n"));
 });
 
@@ -66,7 +55,6 @@ try {
   const ready = 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';
   await until(async () => await rp.evaluate(panel, ready), 60_000, "侧栏就绪");
 
-  /** 在当前页发一句话，等这一轮的模型请求到达、侧栏回到空闲。 */
   const ask = async (text: string) => {
     await rp.cdp.send("Page.bringToFront", {}, work);
     await rp.click(panel, "#input");

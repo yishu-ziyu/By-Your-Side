@@ -1,8 +1,3 @@
-/**
- * Overlay host 标识与几何：content script 使用。
- * 扩展 reload 后旧 isolated world 销毁，但 DOM host 留在页面上——启动时按属性清掉。
- */
-
 export const OVERLAY_ATTR = "data-sideagent-overlay";
 
 export const OVERLAY_KIND_CURSOR = "cursor";
@@ -27,7 +22,6 @@ export function overlayHostSelector(): string {
   return `[${OVERLAY_ATTR}]`;
 }
 
-/** 清掉页面上上一轮 content script 留下的 overlay host。返回移除数量。 */
 export function sweepStaleOverlayHosts(root: {
   querySelectorAll: (selectors: string) => ArrayLike<{ remove: () => void }>;
 }): number {
@@ -53,7 +47,6 @@ export function highlightBounds(
   };
 }
 
-/** 视口包围盒 → 文档坐标盒（absolute host 用）。resize/内部滚动后应拿元素最新 getBoundingClientRect 再算。 */
 export function viewportRectToDocumentBox(
   rect: { x: number; y: number; width: number; height: number },
   scrollX: number,

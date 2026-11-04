@@ -1,4 +1,3 @@
-/** 真实扩展：多余的“要不要继续”不截断已授权工作；真正的提交确认仍等待用户。 */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

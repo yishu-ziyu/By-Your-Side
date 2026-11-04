@@ -1,18 +1,12 @@
-/**
- * 付款按钮永远由用户自己点。
- * 助手要点付款按钮时不点，在网页上圈出这个按钮并留一条提示；提示只有「知道了」，没有「让助手付款」。
- * 提示画在网页的 closed shadow 里，带 overlay 标记：助手的点击落在提示上会被 assertNotOwnOverlay 拒绝。
- */
 import { OVERLAY_ATTR, OVERLAY_KIND_PAY_STOP } from "../shared/overlay.js";
 import { bringForwardForUser } from "./foreground.js";
 import type { HeldReason } from "../../../shared/protocol.js";
 
-/** 在页面 ISOLATED world 里画提示和按钮外圈；序列化进页面，必须自包含。页面文字只用 textContent 放进去。 */
+/** WHY: 在页面 ISOLATED world 里画提示和按钮外圈；序列化进页面，必须自包含。页面文字只用 textContent 放进去。 */
 function showPayStop(attr: string, kind: string, label: string, x: number, y: number): void {
   document.querySelectorAll(`[${attr}="${kind}"]`).forEach(node => node.remove());
   const host = document.createElement("div");
   host.setAttribute(attr, kind);
-  // 整层不接鼠标：用户照样能点到被圈出的付款按钮；只有提示本身接鼠标。
   host.style.cssText = "all:initial;display:block;position:fixed;inset:0;z-index:2147483647;pointer-events:none";
   const root = host.attachShadow({ mode: "closed" });
   root.innerHTML = `<style>
@@ -44,20 +38,14 @@ export const payStopText = (label: string) =>
   "The user must click this button themselves. Do not try another way: do not press Enter, do not click another button, do not use browser_run or a script. " +
   "If the page shows the amount, the merchant or the payment method, tell the user; then stop.";
 
-/** 在网页上圈出付款按钮、留「这一步要你自己点」的提示。 */
 export async function showPayStopOnPage(tabId: number, label: string, x: number, y: number): Promise<void> {
-  // 工作页可能在后台：先按平常的规矩切到前台（不抢别的窗口），用户才看得到圈出的按钮。
   await bringForwardForUser(tabId, "pay_stop");
 
   try {
     await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showPayStop, args: [OVERLAY_ATTR, OVERLAY_KIND_PAY_STOP, label, x, y] });
-  } catch { /* 页面不让注入：照样不点，只是网页上没有提示 */ }
+  } catch {  }
 }
 
-/**
- * 付款按钮：在网页上圈出按钮、留提示，然后抛「没执行」。
- * heldReason 沿用「用户没让发」那条路：宿主不把它当成出错、不连续计数、不算「页面没有变化」。
- */
 export async function stopBeforePay(tabId: number, label: string, x: number, y: number): Promise<never> {
   await showPayStopOnPage(tabId, label, x, y);
 

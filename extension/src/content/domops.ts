@@ -4,19 +4,12 @@ import type { InputRangeReadout } from "../../../shared/page-readout.js";
 import { parseTarget, resolveArgs, resolveTargetSelector } from "../shared/target.js";
 import { FILL_UNDO_SUBMIT } from "../relay.js";
 
-/**
- * DOM 操作 content script（ISOLATED world，重复注入幂等）。
- * 暴露 window.__sideagent.dom = { resolve, rectOf, confirmForClick, hitTestAt, rememberPoint, confirmPoint, click, fill, selectOption, scrollBy, scrollToBottom }。
- * 所有操作返回可序列化结果；失败抛带一行信息的 Error。
- */
 (function () {
   const ns = (window.__sideagent ??= {});
 
   if (ns.dom) return;
   ns.refs ??= new Map<number, Element>();
 
-  // 还原填写（background/fill-undo.ts）：表单真的提交了（浏览器发出的 submit，用户点的、按回车、网页 requestSubmit 都算；脚本伪造的不算），
-  // 把这张表单里格子的记号告诉后台，后台只关掉账本里还开着的那几格。
   document.addEventListener("submit", (event) => {
     const form = event.target;
 
@@ -24,12 +17,10 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
     const tokens = [...form.elements].flatMap((el) => el.getAttribute("data-sideagent-undo") ?? []);
 
     if (!tokens.length) return;
-    const report = (navigated?: true) => void chrome.runtime.sendMessage({ type: FILL_UNDO_SUBMIT, tokens, ...(navigated ? { navigated } : {}) }).catch(() => { /* 后台在重启 */ });
+    const report = (navigated?: true) => void chrome.runtime.sendMessage({ type: FILL_UNDO_SUBMIT, tokens, ...(navigated ? { navigated } : {}) }).catch(() => {  });
     const method = (event as SubmitEvent).submitter?.getAttribute("formmethod")?.toLowerCase() || form.method;
 
     if (method !== "get") { report(); return; }
-    // 网页没拦下的 GET 提交只是带着参数跳到新地址（搜索框最常见），网站上没有东西被改动：这几格不算「已提交」，也没有可还原的，后台直接忘掉。
-    // 网页拦下后自己发请求的（常见于不写 method 的单页应用表单）照旧算已提交。捕获阶段还看不到网页的处理，等这次派发结束再看。
     setTimeout(() => report(event.defaultPrevented ? undefined : true), 0);
   }, true);
 
@@ -43,7 +34,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       return el;
     }
 
-    // 统一 target 解析层：loc=css: / loc=role: / loc=href: / 原生 CSS / xpath= / text=。
     const parsed = parseTarget(target);
 
     if (!parsed || parsed.kind === "ref") {
@@ -56,7 +46,7 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
   }
 
 
-  /** iframe 内 getBoundingClientRect 是 frame 视口坐标；CDP 鼠标要 top 视口坐标。 */
+  /** WHY: iframe 内 getBoundingClientRect 是 frame 视口坐标；CDP 鼠标要 top 视口坐标。 */
   function topViewportRect(el: Element): { x: number; y: number; width: number; height: number } {
     const r = el.getBoundingClientRect();
     let x = r.x;
@@ -91,7 +81,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       throw new Error("非 multiple 的 select 不能一次选多项。操作未执行。");
     }
 
-    // 先全部找到再改：有一项找不到时下拉框保持原样，「操作未执行」才是真的。
     const matches: HTMLOptionElement[] = [];
 
     if (!clear) {
@@ -154,7 +143,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
     return window.innerHeight + window.scrollY >= total - 2;
   }
 
-  /** 从命中节点向上走到目标（含目标作 host 的 shadow 后代）。不把命中祖先/body 当成命中目标。 */
   function ownsUpward(el: Element, hit: Element | null): boolean {
     if (!el || !hit) return false;
 
@@ -186,10 +174,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
     return false;
   }
 
-  /**
-   * 同一对象、目标合法后代，或 document.elementFromPoint 落到目标所在 shadow 的 host
-   * 且该 shadowRoot.elementFromPoint 仍命中目标。不恢复任意祖先 contains。
-   */
   function targetOwnsHit(el: Element, top: Element, x: number, y: number): boolean {
     if (ownsUpward(el, top)) return true;
     let node: Node | null = el;
@@ -226,7 +210,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
   }
 
   function assertHits(el: Element, x: number, y: number): void {
-    // 同源 iframe：top 视口坐标命中的是 <iframe> 本身；在目标文档内换算局部坐标再核验。
     if (el.ownerDocument !== document) {
       let localX = x;
       let localY = y;
@@ -277,11 +260,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
 
   let pointLock: Element | null = null;
 
-  /**
-   * text= / loc=role: 目标定位（rectOf）那一刻解析到的元素；按下、填写前据此核对「文字还在不在、还是不是它」。
-   * 动作结束就清掉（hitTestAt 通过、fill 结束）：没经过本次定位的检查只核对文字，不拿上一次动作的元素比身份，
-   * 否则 click 带 point、force 点击、annotate 留下的旧锁会让重新渲染后的同名按钮误报。
-   */
   let nameLock: { target: string; el: Element } | null = null;
 
   function namedTargetLabel(target: string): string | null {
@@ -294,10 +272,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
     return null;
   }
 
-  /**
-   * 文字/名字型目标在动作那一刻再核对一次：文字不在了、或同样的文字跑到别的元素上，都报 TARGET_GONE 停下，
-   * 不点别的东西。CSS/xpath/href 目标照旧按字符串重解析，不改既有语义。
-   */
   function mustResolveNamed(target: string, verb: string): Element {
     const label = namedTargetLabel(target);
 
@@ -331,7 +305,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
 
     rectOf(target: string): SideAgentRect {
       const el = mustResolve(target);
-      // 每次定位都覆盖：上一次动作留下的旧锁不能让重新渲染后的同名按钮误报。
       nameLock = namedTargetLabel(target) === null ? null : { target, el };
       scrollIntoView(el);
       const r = topViewportRect(el);
@@ -352,7 +325,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     },
 
-    /** 在即将按下的视口坐标做命中检查，不滚动。mouseMoved 之后目标可能已离开该点。 */
     hitTestAt(target: string, x: number, y: number): { hit: true } {
       const el = mustResolveNamed(target, "点击");
 
@@ -361,7 +333,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       }
 
       assertHits(el, x, y);
-      // 按下前最后一道核对通过：这次定位的锁用完即清。
       nameLock = null;
 
       return { hit: true };
@@ -413,7 +384,7 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       el.dispatchEvent(new MouseEvent("mousedown", common));
       el.dispatchEvent(new PointerEvent("pointerup", { ...common, pointerType: "mouse" }));
       el.dispatchEvent(new MouseEvent("mouseup", common));
-      // HTMLElement.click() 派发一次 click 并保留 <a> 跳转等默认行为。
+      // WHY: HTMLElement.click() 派发一次 click 并保留 <a> 跳转等默认行为。
       // 不可再 dispatchEvent(click)，否则同一处理器会被触发两次。
       const html = el as HTMLElement;
 
@@ -431,7 +402,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
 
-        // 页面脚本抛错在背景侧拿不到原因；TARGET_GONE 走 refused 回去，背景侧按「没执行」上报。
         if (message.startsWith("TARGET_GONE:")) return { refused: message };
         throw err;
       } finally {
@@ -440,7 +410,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
 
       const tag = el.tagName.toLowerCase();
 
-      // 先核对能不能填，再聚焦写入：不能填时页面一点没动，背景侧按「没执行」上报。
       if (tag !== "select" && tag !== "input" && tag !== "textarea" && !el.isContentEditable) {
         return { refused: "元素不可填充（非 input/textarea/select/contenteditable），操作未执行" };
       }
@@ -448,14 +417,12 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       el.focus();
 
       if (tag === "select") {
-        // 单值 fill 保留既有模糊匹配；完整多选/index/清空请用 selectOption。
         applySelectOption(el as HTMLSelectElement, value);
 
         return { filled: true };
       }
 
       if (tag === "input" || tag === "textarea") {
-        // 用原生 value setter 写入，兼容 React 受控组件
         const proto = tag === "input" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
         const desc = Object.getOwnPropertyDescriptor(proto, "value");
 
@@ -464,7 +431,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
 
-        // 范围输入框写入后带回浏览器的越界判定，由 background 写进回执。
         return { filled: true, range: readInputRange(el) };
       }
 
@@ -473,7 +439,6 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
       return { filled: true };
     },
 
-    /** CAP-02C：按 value/label/index 选择；数组=多选；null/[]=清空。返回最终选中 value 集合。 */
     selectOption(
       target: string,
       values: SelectSpec | SelectSpec[],
@@ -509,7 +474,7 @@ import { FILL_UNDO_SUBMIT } from "../relay.js";
     },
   };
 
-  // chrome.scripting.executeScript 把页面里抛出的错误换成 null 结果：先把错误记在这里，callDom 拿到空结果时来取。
+  // WHY: chrome.scripting.executeScript 把页面里抛出的错误换成 null 结果：先把错误记在这里，callDom 拿到空结果时来取。
   for (const [name, fn] of Object.entries(ns.dom)) {
     (ns.dom as unknown as Record<string, unknown>)[name] = (...args: unknown[]) => {
       ns.lastDomError = undefined;

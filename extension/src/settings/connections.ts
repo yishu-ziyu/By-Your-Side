@@ -58,7 +58,7 @@ export function credentialContents(value: unknown, sameAccount = false): string 
   if (sameAccount && fields.type === 'oauth' && typeof fields.accountId === 'string' && fields.accountId) {
     return JSON.stringify({ type: fields.type, accountId: fields.accountId });
   }
-  // chrome.storage can return object properties in a different order from the saved credential.
+  // WHY: chrome.storage can return object properties in a different order from the saved credential.
   return JSON.stringify(fields, (_key, value: unknown) => value && typeof value === 'object' && !Array.isArray(value)
     ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
     : value);
@@ -74,7 +74,6 @@ export function withModelSettings<T>(write: () => Promise<T>): Promise<T> {
   return navigator.locks.request('settings-model-configuration', write);
 }
 
-/** Preserve manual models before changing a role; another settings window may have just saved one. */
 export async function rememberConnections(configs: Array<InprocModelConfig | null>, existing: Map<string, InprocModelConfig>): Promise<void> {
   const candidates = configs.filter((config): config is InprocModelConfig => !!config && !existing.has(config.provider));
   if (!candidates.length) return;
@@ -116,7 +115,6 @@ export async function saveConnection(config: InprocModelConfig, key: string, sta
         if (current?.provider === CUSTOM_PROVIDER_ID) update[role] = { ...current, baseUrl: config.baseUrl };
       }
     }
-    // One storage change publishes the endpoint and its key together.
     await chrome.storage.local.set(update);
     return true;
   });

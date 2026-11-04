@@ -1,14 +1,3 @@
-/**
- * text= 目标在点击那一刻再核对：定位之后、按下之前按钮文字变了，就不点、报 TARGET_GONE、记为没执行
- * 。只装扩展、隔离构建、本机脚本模型；只有模型回复是脚本。
- *   npx tsx scripts/acceptance/real-path/target-gone.mts --headless
- * 两轮同一条路：练习站的「已读」按钮在 pointerover 时改名成「已读中…」（真实点击流程先派发 CDP mouseMoved
- * 再做按下前核对，所以改名正好落在定位与按下之间）；对照轮不改名。
- * 判据：改名轮服务器 /ack 计数为 0、回执以 TARGET_GONE 开头、侧栏那一步标失败；
- * 紧接着的 CSS 点击照常送达（结果未知锁没上，说明这一步记成了「没执行」）。对照轮 text= 点击送达一次。
- * 失败方式：改名后仍点下去（acks=1）；回执是泛泛的「未找到元素」；记成结果未知、后一步被锁拦下。
- * 换元素轮：pointerover 时按钮被换成同名的另一个按钮（点了发 /wrong）。判据：/wrong 为 0、回执写明换到别的元素上。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -25,7 +14,6 @@ await mkdir(artifacts, { recursive: true });
 
 const MARK = "点已读";
 
-/** 产品发给模型的 OpenAI 兼容请求里本脚本要读的部分。 */
 type Payload = { tools?: Array<{ function?: { name?: string } }>; messages?: Array<{ role: string; content?: string | Array<{ text?: string }> | null }> };
 
 type Chip = { text: string; error: boolean; kind: string | null };
@@ -34,7 +22,6 @@ type CaseResult = {
   name: string;
   status: "PASS" | "FAIL";
   error: string | null;
-  /** 第 n 条工具回执送回模型那一刻服务器收到的 /ack 次数（独立于产品的计数）。 */
   acksAtReceipt: Record<number, number>;
   acksFinal: number;
   receipts: string[];
@@ -72,7 +59,6 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false, s
     { tool: { name: "snapshot", args: {} } },
     { tool: { name: rerender ? "mark" : "click", args: { target: "text=已读" } } },
     ...(rerender ? [{ tool: { name: "js", args: { code: "document.querySelector('#ack').textContent" } } }] : []),
-    // 紧接着用 CSS 再点一次：上一步若被记成「结果未知」，这一步会被锁拦下。
     { tool: { name: "click", args: rerender ? { target: "text=已读", point: [40, 70] } : { target: "#ack" } } },
     { text: `【${MARK}结束】` },
   ] }], undefined, async payload => {
@@ -118,19 +104,15 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false, s
     const buttonText = String(await rp.evaluate(work, 'document.querySelector("#ack")?.textContent ?? ""'));
 
     if (swapOnHover) {
-      // 同名按钮在定位与按下之间被换掉：不点新按钮，回执写明换到别的元素上。
       assert.equal(wrongAtReceipt[3], 0, "text= click did not reach the swapped-in button");
       assert.match(receipts[2] ?? "", /^TARGET_GONE: .*「已读」已换到别的元素上/, "receipt says the text moved to another element");
       assert.ok(chips.some(c => c.error), "sidebar marks the click step failed");
-      // 后一步 CSS 点击照常送达新按钮：没上结果未知锁。
       assert.equal(wrongAtReceipt[4], 1, "following CSS click went through (no unknown-result lock)");
     } else if (renameOnHover) {
-      // R3：改名发生在定位与按下之间；没点、回执是 TARGET_GONE、侧栏那一步标失败。
       assert.equal(buttonText, "已读中…", "the page renamed the button during the click flow");
       assert.equal(acksAtReceipt[3], 0, "text= click did not reach the site");
       assert.match(receipts[2] ?? "", /^TARGET_GONE: .*「已读」/, "receipt names the original text with the TARGET_GONE code");
       assert.ok(chips.some(c => c.error), "sidebar marks the click step failed");
-      // 记成「没执行」而不是「结果未知」：后一步 CSS 点击没被锁拦下，真的送达。
       assert.equal(acksAtReceipt[4], 1, "following CSS click went through (no unknown-result lock)");
       assert.doesNotMatch(receipts[3] ?? "", /结果未知|未再次|没有重复执行/, "following CSS click was not blocked by the unknown-result lock");
     } else {

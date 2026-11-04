@@ -1,20 +1,9 @@
-/**
- * 决定点 B：这一轮带哪些记忆给助手。纯代码规则，不问模型：
- *
- * - 总是带（always）：生效的「关于你」与到处适用的「做事的方法」；
- * - 有效期内（in-validity）：有效期没过的「做过的事」与过往任务，不论在哪个网站；
- * - 按网站带（site）：网站范围与当前网址主机名精确相同的记忆，以及这个网站最近几条和这句话对得上的过往任务；
- * - 问起过往（asked）：这句话在问「之前 / 上次」做过什么时，带最近几条过往任务（不限网站）。
- *
- * 每层各有上限，总字数不超过 MEMORY_CONTEXT_MAX_CHARS。被替换、失效、过期、别的网站的不带；用户在当前网站点过「这里别用」的也不带。
- */
 import { usableOnHost, withinValidity, type MemoryEntry } from "../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import { isRelevantExperience, isRelevantMemory, isRelevantPastTask } from "./memory-relevance.js";
 
 export type MemoryContextRule = "always" | "site" | "in-validity" | "asked";
 
-/** 每层上限：条数与字数。「关于你」沿用升级前的 40 条 / 4000 字。 */
 const MEMORY_CONTEXT_CAPS = {
   facts: { entries: 40, chars: 4000 },
   inValidity: { entries: 10, chars: 2000 },
@@ -22,17 +11,13 @@ const MEMORY_CONTEXT_CAPS = {
   askedTasks: { entries: 5, chars: 3000 },
 } as const;
 
-/** 每轮带的记忆总字数上限（各层上限之和再收紧），保证不挤占任务上下文。 */
 export const MEMORY_CONTEXT_MAX_CHARS = 9000;
 
 interface MemoryContextInput {
   entries: MemoryEntry[];
   tasks: TaskHistoryEntry[];
-  /** 当前网址的主机名；没有网页时为 null。 */
   hostname: string | null;
-  /** 用户这句原话：判断是否在问过往、自动总结的网站做法是否对得上这件事。 */
   text: string;
-  /** 已由 MemoryStore 按身份、版本与网站范围复核过的语义命中。 */
   semanticIds?: readonly string[];
   now: number;
 }
@@ -41,13 +26,11 @@ export interface MemoryContextSelection {
   entries: Array<{ entry: MemoryEntry; rule: MemoryContextRule }>;
   tasks: Array<{ task: TaskHistoryEntry; rule: MemoryContextRule }>;
   totalChars: number;
-  /** 没带的条数与原因，写进决定记录。 */
   skipped: { replacedOrInvalid: number; expired: number; otherSite: number; notHere: number; overCap: number; notRelevant: number };
 }
 
 const ASKED_ABOUT_PAST = /之前|上次|以前|前几天|昨天|做过|订阅过|买过|填过|earlier|last time|before|previously|did you/i;
 
-/** 过往任务给模型看的一行有多长：与 formatTaskHistory 的内容一致，只用来计字数上限。 */
 export function taskContextChars(task: TaskHistoryEntry): number {
   return [task.page ?? "", task.goal, ...task.revisions, ...task.hosts, task.done ?? "", ...task.unfinished].join(" ").length + 40;
 }
@@ -87,7 +70,6 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
     const rule: MemoryContextRule = entry.scope.kind === "site" ? "site" : "always";
 
     if (entry.kind === "past") {
-      // 做过的事只在有效期内主动带；没有有效期或已过期的留给「查过往」。
       if (!entry.validity || !withinValidity(entry.validity, input.now)) { skipped.expired++; continue; }
 
       if (take(entry.text.length, dated, MEMORY_CONTEXT_CAPS.inValidity)) pickedEntries.push({ entry, rule: "in-validity" });
@@ -96,7 +78,6 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
 
     if (!withinValidity(entry.validity, input.now)) { skipped.expired++; continue; }
 
-    // 语义命中只放宽未改过的自动总结；用户确认的做法、网站范围与有效期规则不变。
     if (entry.scope.kind === "site" && entry.experience) {
       const relevant = entry.version === 1
         ? semanticIds.has(entry.id) || isRelevantExperience(entry.experience.topic ?? entry.text, input.text)
@@ -113,7 +94,6 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
   const tasks = usable.sort((a, b) => b.endedAt - a.endedAt);
   const chosen = new Set<string>();
 
-  // 过期的带日期任务只在被问起时出现（asked 层），不走有效期层，也不走网站层。
   const expiredIds = new Set<string>();
 
   for (const task of tasks) {
@@ -142,7 +122,6 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
 
       if (chosen.has(task.id) || expiredIds.has(task.id) || !task.hosts.includes(input.hostname)) continue;
 
-      // 同一网站的过往任务要和这句话对得上（按用户原话比词，不比摘要：摘要会抄网页原文）。
       if (!isRelevantPastTask([task.goal, ...task.revisions].join("\n"), input.text)) { skipped.notRelevant++; continue; }
 
       if (take(taskContextChars(task), here, MEMORY_CONTEXT_CAPS.siteTasks)) { pickedTasks.push({ task, rule: "site" }); chosen.add(task.id); }

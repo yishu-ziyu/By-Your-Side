@@ -1,12 +1,3 @@
-/**
- * 回答里的卡片。
- *   npx tsx scripts/acceptance/real-path/answer-cards.mts --headless [--live] [--model=服务商/模型]
- * 脚本模型分段写出一张订阅卡：边写边看侧栏不露出标签原文；写完后看算式算出的数、正文 {total} 填数、
- * 心算的错金额换掉、不合格的组件不画；再点三个按钮：替我说一句、切到那一页、切到已关掉的页。
- * --live（R4）：主模型换成真实模型（默认 gpt-6-luna，本机 ChatGPT 登录；--model= 换别的），在练习页上问一道比价题（应画出带标记的卡片）
- * 和一道一句话题（不应画卡片）。只证明这一个模型在这两道题上的表现，不代表其他模型。
- * R5：侧栏 320px 宽时，商品全名、8 位数金额不把卡片撑坏，模型写的「¥2459」显示成「¥2,459」。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -49,7 +40,6 @@ const card = (tabId: number) => `一年共花 {=total}；心算的 ¥2,714 不�
 <button action="tab" target="987654">切到已关掉的页</button>
 </card>`;
 
-// R5：极端数据——商品全名、8 位数金额、模型没加千分位的价。
 const EXTREME = "三款降噪耳机怎么选";
 
 const LONG_NAME = "Sony WH-1000XM6 Wireless Noise Canceling Headphones (Midnight Blue)";
@@ -71,7 +61,6 @@ const rules: Rule[] = [
 const asked: string[] = [];
 
 const model = await startScriptedModel(rules, undefined, (payload) => {
-  // 主任务请求里所有用户角色的消息（产品会在用户原话后面附状态说明）。
   const users = (payload.messages ?? []).filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : (m.content ?? []).map(p => p.text ?? "").join(""));
 
   if (payload.tools?.length) asked.push(users.some(t => t.includes(FOLLOW)) ? FOLLOW : "（这次请求里没有按钮上的话）");
@@ -100,7 +89,6 @@ try {
   await rp.typeText(panel, TASK);
   await rp.pressEnter(panel);
 
-  // R1：写的过程中反复看，侧栏任何时候都不露出标签原文。
   const leaks: string[] = [];
   const end = Date.now() + 60_000;
 
@@ -150,26 +138,22 @@ try {
   assert.ok(seen.prose.includes("预算 ¥3000 以内"), `R2: the user's budget is not replaced: ${seen.prose}`);
   assert.ok(seen.prose.includes("{id}"), `R2: ordinary braces in prose are untouched: ${seen.prose}`);
   assert.equal(seen.stats[1]!.value, "¥398", "R2: currency unit goes before a plain value");
-  // 模型也会把算式写进选项的价和表格格子（10-14 真模型比价卡片露出「=1699-50」）：这些地方同样算出来。
   assert.equal(seen.options[0]!.price, "¥716", `R2: formula in an option value computed: ${JSON.stringify(seen.options)}`);
   assert.deepEqual(seen.cells, ["Notion", "816", "Duolingo", "398", "Calm", "¥144"], `R2: formula in a table cell computed: ${JSON.stringify(seen.cells)}`);
   assert.ok(!/=\s*\d/.test(seen.cardText), `R2: no raw formula shown anywhere in the card: ${seen.cardText}`);
   assert.deepEqual(seen.buttons, [FOLLOW, "切到订阅页看", "切到已关掉的页"], "R3: buttons drawn");
 
-  // R3：切到已关掉的页 → 回答底部写明关掉了、按钮变灰，不切页；过了以前轻提示消失的 2.4 秒仍看得见。
   await rp.evaluate(panel, `[...document.querySelectorAll(".gen-card .gc-btn")].find(b => b.textContent === "切到已关掉的页").click(), true`);
   await sleep(3_000);
   const closedNote = await rp.evaluate(panel, `(() => { const b = [...document.querySelectorAll(".gen-card .gc-btn")].find(b => b.textContent === "切到已关掉的页"); const f = b?.closest(".msg.assistant")?.querySelector(".answer-action-feedback"); const row = f?.closest(".answer-actions"); return { text: f?.textContent, shown: !!f && f.getClientRects().length > 0 && getComputedStyle(row).opacity === "1", disabled: b?.disabled }; })()`) as { text?: string; shown: boolean; disabled?: boolean };
   await rp.screenshot(panel, join(artifacts, "closed-tab-note.png"));
   assert.deepEqual(closedNote, { text: "那一页已经关掉了", shown: true, disabled: true }, `R3: closed tab stays explained under the answer: ${JSON.stringify(closedNote)}`);
 
-  // R3：先让另一页在前台，再点「切到订阅页看」→ 订阅页回到前台。
   await rp.evaluate(panel, `chrome.tabs.create({ url: "about:blank", active: true }).then(() => true)`);
   await until(async () => await rp.evaluate(panel, `chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t && t.id !== ${subsTab})`) || undefined, 5_000, "另一页在前台");
   await rp.evaluate(panel, `[...document.querySelectorAll(".gen-card .gc-btn")].find(b => b.textContent === "切到订阅页看").click(), true`);
   await until(async () => await rp.evaluate(panel, `chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t?.id === ${subsTab})`) || undefined, 5_000, "R3: switched to the subscriptions tab");
 
-  // R3：替我说一句 → 侧栏出现这句用户消息，模型收到它。
   await rp.evaluate(panel, `[...document.querySelectorAll(".gen-card .gc-btn")].find(b => b.textContent === ${JSON.stringify(FOLLOW)}).click(), true`);
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].some(m => m.textContent.includes(${JSON.stringify(FOLLOW)}))`) || undefined, 10_000, "R3: user message shown");
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].some(m => m.textContent.includes("好的，只看月付的"))`) || undefined, 60_000, "R3: follow-up answered");
@@ -177,7 +161,6 @@ try {
   assert.ok(asked.some(t => t.includes(FOLLOW)), `R3: model received the button text: ${JSON.stringify(asked)}`);
   await rp.screenshot(panel, join(artifacts, "after-say.png"));
 
-  // R5：侧栏收到最窄（320px）时，极端数据不把卡片撑坏：没有横向溢出，商品全名看得全，价格写法和算出来的数一致。
   await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 720, deviceScaleFactor: 2, mobile: false }, panel);
   await rp.click(panel, "#input");
   await rp.typeText(panel, EXTREME);
@@ -229,7 +212,6 @@ async function live(): Promise<never> {
     await rp.click(panel, "#input");
     await rp.typeText(panel, text);
     await rp.pressEnter(panel);
-    // 第 n 个回答写完（不再流式、出现文末一排）。
     await until(async () => await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll("#messages .msg.assistant")].filter(m => m.querySelector(".answer-actions")); return a.length >= ${n} && !document.querySelector("#messages .msg.assistant.streaming"); })()`) || undefined, 180_000, `第 ${n} 个回答`);
     await sleep(1_000);
     // SAFETY: 表达式返回下面这个形状的对象。

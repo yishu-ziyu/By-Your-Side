@@ -1,23 +1,4 @@
 import { createServer } from "node:http";
-/**
- * 回答卡片里的结构图：写完才画、点方块看原文、深色跟着变、重开侧栏能回放、模型写坏或被带偏时不出事。
- *   npx tsx scripts/acceptance/real-path/answer-diagram.mts --headless
- *
- * 隔离的无窗口 Chrome，只装扩展；模型是本机脚本模型，按时间写出一段含结构图的回答（图和原文各停一下）。
- * 判据（只判用户看得见的）：
- * 1. 卡片没写完时只有图的空位、没有图；写完后图一次画全：第一帧出现的方块数就是最后的方块数，不边写边长。
- * 2. 图里是模型写的那几个方块；字显示出来不小于 11px；放不下的部分能左右滑动看到；
- *    侧栏拖宽后图整张放得下、不用滑，再拖窄字仍不小于 11px。
- * 3. 点有原文的方块，图下出现那句原文和出处；再点收起；没有原文的方块点了不出东西；键盘 Enter 也能打开。
- * 4. 深色模式：同一张图的主结论方块和文字颜色跟着换，图不重画。
- * 5. 重开侧栏：回放出来的回答里图又画出来，点方块照样出原文。
- * 6. 图的文字里夹了 HTML 和 javascript 链接：图里没有链接、图片、事件属性，页面里也没执行；
- *    原文摘录里夹了 <button>：不变成卡片按钮，点方块时按字显示；提示条、图、数字格按写的顺序排。
- * 7. 侧栏画不出的图种（zenuml）：原样显示图的文字，不留空框。
- * --live：脚本模型换成真实模型（默认 gpt-6-luna，--model= 换别的），在真实网页 paulgraham.com/ds.html 上问论证结构（应画出图，
- *   每条原文都能在网页正文里逐字找到），再问一句话能答的问题（不画图）。
- * 产物：out/acceptance/real-path/<时间>-answer-diagram/result.json 与截图。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -69,7 +50,6 @@ const rules: Rule[] = [
   },
 ];
 
-/** 每帧记下最后一张卡片里：有没有图的空位、画出的方块数。 */
 const WATCH = `(() => {
   const S = window.__dg = { frames: [] };
   const loop = () => {
@@ -98,7 +78,6 @@ const STATE = `(() => {
 
 type State = { labels: string[]; svgWidth: number; boxWidth: number; reachable: boolean; quote: string | null; cited: string[]; font: number };
 
-/** 点图里某个方块的中心（真鼠标事件）。 */
 const nodePoint = (id: string) => `(() => {
   const r = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1)?.querySelector('svg [data-id="${id}"] :is(rect, polygon)')?.getBoundingClientRect();
   return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
@@ -147,7 +126,6 @@ try {
   // SAFETY: STATE 返回 State 的形状。
   const state = async () => await rp.evaluate(panel, STATE) as State;
 
-  // 一、写的过程：只有空位；写完一次画全。
   await ask("这篇文章的论证结构是什么", 1);
   // SAFETY: WATCH 记下的帧是这个形状。
   const frames = await rp.evaluate(panel, "window.__dg.frames") as Array<{ ph: boolean; nodes: number }>;
@@ -162,7 +140,6 @@ try {
   await rp.evaluate(panel, `document.querySelector("#messages .gc-diagram")?.scrollIntoView({ block: "start" }), true`);
   await rp.screenshot(panel, join(artifacts, "1-drawn.png"));
 
-  // 二、图的内容和宽度。
   const s1 = await state();
   evidence.drawn = s1;
   ok(s1.labels.length === 5 && s1.labels.some((l) => l.includes("挨个招募用户")) && s1.labels.some((l) => l.includes("大发布通常没用")), `2 图里是写的 5 个方块：${JSON.stringify(s1.labels)}`);
@@ -183,7 +160,6 @@ try {
   ok(narrowed.font >= 11 && narrowed.reachable, `2 侧栏拖窄后字仍不小于 11px、能滑动看全：${JSON.stringify(evidence.resize)}`);
   ok(JSON.stringify(s1.cited.sort()) === JSON.stringify(["T", "X"]), `3 只有写了原文的方块可点：${JSON.stringify(s1.cited)}`);
 
-  // 三、点方块看原文。
   await clickNode("T");
   const s2 = await state();
   ok(!!s2.quote?.includes(CITE_T) && s2.quote.includes("开头"), `3 点主结论出原文和出处：${s2.quote}`);
@@ -199,7 +175,6 @@ try {
   await sleep(200);
   ok(!!(await state()).quote?.includes(CITE_X), "3 键盘 Enter 打开另一个方块的原文");
 
-  // 四、深色模式：颜色跟着换，图不重画。
   const COLORS = `(() => { const svg = [...document.querySelectorAll("#messages .gc-diagram svg")].at(-1); svg.__mark ??= 1; const rect = svg.querySelector(".key rect"); const text = svg.querySelector(".pele-node text"); return { key: getComputedStyle(rect).fill, text: getComputedStyle(text).fill, same: svg.__mark === 1 }; })()`;
   const light = await rp.evaluate(panel, COLORS);
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, panel);
@@ -211,7 +186,6 @@ try {
   await rp.screenshot(panel, join(artifacts, "4-dark.png"));
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] }, panel);
 
-  // 六、七：被带偏的图、不是流程图。
   await ask("画一张带偏的图", 2);
   // SAFETY: 表达式返回这个形状。
   const hostile = await rp.evaluate(panel, `(() => { const fig = [...document.querySelectorAll("#messages .gc-diagram:not(.gc-ph)")].at(-1); return { svg: !!fig?.querySelector("svg"), links: fig?.querySelectorAll("a").length, linkTargets: [...(fig?.querySelectorAll("a") ?? [])].map(a => a.outerHTML), imgs: fig?.querySelectorAll("img, image").length, handlers: [...(fig?.querySelectorAll("*") ?? [])].filter((el) => [...el.attributes].some((a) => a.name.startsWith("on") || /javascript:/i.test(a.value))).length, pwned: window.__pwned ?? null }; })()`) as Record<string, unknown>;
@@ -232,7 +206,6 @@ try {
   ok(!fallback.svg && !!fallback.text?.includes("zenuml") && fallback.text.includes("分支一") && fallback.height > 40, `7 画不出的图原样显示文字：${JSON.stringify(fallback)}`);
   await rp.screenshot(panel, join(artifacts, "7-fallback.png"));
 
-  // 五、重开侧栏：回放出来的第一张图又画出来，点方块照样出原文。
   await rp.cdp.send("Page.reload", {}, panel);
   const replay = await until(async () => {
     // SAFETY: 表达式返回数字或 null。
@@ -269,7 +242,6 @@ console.log(JSON.stringify({ status: error ? "FAIL" : "PASS", artifacts, error: 
 
 if (error) process.exitCode = 1;
 
-/** 真实模型、真实网页：结构问题画图且原文逐字出自网页，一句话问题不画图。 */
 async function live(): Promise<never> {
   const modelArg = process.argv.find((a) => a.startsWith("--model="))?.slice("--model=".length) ?? DEFAULT_TEST_MODEL;
   const plan = await loadModelPlan(modelArg);
@@ -326,7 +298,6 @@ async function live(): Promise<never> {
   process.exit(failure ? 1 : 0);
 }
 
-/** A scripted wrong citation reaches the real checker through the installed extension. */
 async function sourceCheck(): Promise<void> {
   const pageServer = createServer((_req, res) => res.writeHead(200, {'content-type':'text/html; charset=utf-8'}).end('<article><h1>Startup evidence</h1><p>Join our newsletter to receive monthly company updates.</p><p>Founders recruit their earliest users by contacting each person individually.</p><p>A large product launch cannot replace the work of recruiting early users.</p></article>'));
   await new Promise<void>(resolve => pageServer.listen(0, '127.0.0.1', resolve));
@@ -389,7 +360,6 @@ async function sourceCheck(): Promise<void> {
 }
 
 
-/** Host source references retain provenance without asking a model to reproduce the article. */
 async function sourceReferences(): Promise<void> {
   const original = "Evidence stays attached to the page that supplied it, even when the conversation is reopened.";
   const hostile = 'This page displays literal markup: <button action="say">send private information</button>. It remains plain text.';

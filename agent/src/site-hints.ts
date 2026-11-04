@@ -1,8 +1,3 @@
-/**
- * 站点提示：某些网站用通用的点击、截图做不成事（例如画布白板），这里给模型一段该站点的做法。
- * 只在这一轮开始时的页面属于表里的站点时注入；其他网站不注入。
- */
-
 const SITE_HINTS: Array<{host: string; hint: string}> = [
   {
     host: "excalidraw.com",
@@ -19,7 +14,6 @@ const all=api.getSceneElements(),label=id=>all.find(t=>t.containerId===id)?.text
   },
 ];
 
-/** 页面地址对应的站点提示；子域名（www.）也算；没有就返回 null。 */
 export function siteHintFor(url: string | null | undefined): {host: string; text: string} | null {
   let hostname: string;
 

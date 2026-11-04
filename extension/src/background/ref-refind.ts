@@ -2,14 +2,6 @@ import { axBackendNodeFor, moveAxRef } from "./axstate.js";
 import { sendCommand } from "./debugger.js";
 import { isolatedReadContext } from "./isolated-read-context.js";
 
-/**
- * 填写、选择前核对 @N：节点还在文档里就什么都不做。页面重渲染把输入框换掉了（维基百科展开搜索框后立刻换成新的），
- * 就按旧节点自己身上的名字在同一文档里找替身；恰好一个在文档里、看得见的元素对得上才换过去，
- * 否则保持原样，动作照旧报「已失效」。
- * 只找输入框、文本框、下拉框：按钮和链接同名的常有好几个（每行一个「删除」），找错了就点在别的行上。
- * 只能在 assertObservedDocument 之后调用：文档换了，旧 ref 一律不找替身。
- * 返回 true 表示这个 ref 已指向新节点。
- */
 export async function refindDetachedRef(tabId: number, target: string | undefined): Promise<boolean> {
   const ref = target?.startsWith("@") ? Number(target.slice(1)) : NaN;
 
@@ -20,7 +12,6 @@ export async function refindDetachedRef(tabId: number, target: string | undefine
     const backendNodeId = axBackendNodeFor(tabId, ref);
 
     if (backendNodeId === undefined) return false;
-    // 页面自己的环境里内置方法可能被改写；比对放在隔离环境里做（同 read_element）。
     const executionContextId = await isolatedReadContext(tabId);
     const old = await sendCommand<{ object?: { objectId?: string } }>(tabId, "DOM.resolveNode", { backendNodeId, objectGroup, executionContextId });
 
@@ -40,7 +31,6 @@ export async function refindDetachedRef(tabId: number, target: string | undefine
 
     return true;
   } catch {
-    // 找不到替身就按原来的路径走，由动作自己报错。
     return false;
   } finally {
     void sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
@@ -48,7 +38,7 @@ export async function refindDetachedRef(tabId: number, target: string | undefine
 }
 
 /**
- * 在隔离环境里执行，保持自包含。旧节点还在文档里返回 null。
+ * WHY: 在隔离环境里执行，保持自包含。旧节点还在文档里返回 null。
  * 被换掉时用旧节点自己的标签、type 和名字（name、aria-label、placeholder、title）去对；
  * id、class、role 不对，框架重新挂载时常改它们（维基百科新输入框没有 id，role 变成 combobox）。
  * 只有一个在文档里、宽高都不为 0、CSS 上可见的元素对得上才返回它，否则返回 null。
@@ -63,7 +53,6 @@ function refindInPage(this: Node): Element | null {
   const wanted = names.map(key => old.getAttribute(key) ?? "");
   const wantedType = old.getAttribute("type") ?? "";
 
-  // 一个名字都没有时不找：同类输入框太多，对上了也说不上是同一个。
   if (wanted.every(value => !value)) return null;
 
   const visible = (el: Element) => {

@@ -1,7 +1,6 @@
 import {resultHasWriteEffect} from '../../shared/task-results.js';
 import type {TaskProgressSnapshot} from '../../shared/voice.js';
 
-/** Ordering and scope of post-action observations, not a semantic success verifier. */
 export class TaskReadback {
   private revision=0;
   private readonly pages=new Map<string,number>();
@@ -20,8 +19,6 @@ export class TaskReadback {
       if(item.status==='satisfied'&&resultHasWriteEffect(item))this.written(item.evidence?.member??'main',null);
     }
 
-    // Old hosts did not record auxiliary mutations as result items. Retain their
-    // pending review conservatively, but never reuse a saved observation as fresh.
     if(snapshot.nextStep?.reason==='readback_required'&&!this.required.size)this.written('main',null);
   }
   pageFor(member:string,tabId?:number):number|null { return tabId??this.pages.get(member)??null; }

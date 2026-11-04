@@ -1,11 +1,3 @@
-/**
- * 扩展内的诊断记录存储（IndexedDB，扩展源下 offscreen 与设置页共用）。
- * - 任务记录：行内容与本机 `~/.sideagent/traces/*.jsonl` 相同（shared/run-trace-core.ts），保留最近 TRACE_MAX_AGE_DAYS 天、且至少最近 TRACE_SESSIONS_KEPT 个会话。
- * - 语音记录：行内容与本机 `~/.sideagent/voice-capture/<日期>.jsonl` 相同（shared/voice-capture-core.ts），保留 VOICE_CAPTURE_MAX_AGE_DAYS 天；
- *   扩展不保存音频（本机也只在用户开启诊断时保存）。
- * 本机存的任务记录保留原文，只遮凭据（shared/trace-sanitize.ts sanitizeTraceForStore）；导出时每行再完整脱敏一次。
- * 设置页可以导出（任务、语音各一个 jsonl）或清空。
- */
 import { expiredSessions, type TraceSink } from "../../../shared/run-trace-core.js";
 import { redactStoredTrace } from "../../../shared/trace-sanitize.js";
 import { VOICE_CAPTURE_MAX_AGE_DAYS, voiceCaptureDayKey, type VoiceCaptureSink } from "../../../shared/voice-capture-core.js";
@@ -32,7 +24,6 @@ let opening: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   opening ??= new Promise<IDBDatabase>((resolve, reject) => {
-    // 按表名补建，旧库升级不丢任务记录。
     const request = indexedDB.open(DB_NAME, 3);
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -49,13 +40,11 @@ function openDb(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("诊断记录没能打开"));
   });
-  // 打开失败时清掉缓存，下一次写入重新尝试；失败照样交给调用方（诊断写入会吞掉它）。
   opening.catch(() => { opening = null; });
 
   return opening;
 }
 
-/** 一次事务里的全部请求完成（或失败）时结束。 */
 function done(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
@@ -71,7 +60,6 @@ function result<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-/** 删掉这些会话及其全部行。 */
 function deleteSessions(tx: IDBTransaction, names: readonly string[]): void {
   const lines = tx.objectStore(LINES).index("session");
 
@@ -88,7 +76,6 @@ function deleteSessions(tx: IDBTransaction, names: readonly string[]): void {
   }
 }
 
-/** 会话名以开始毫秒开头，按名字排序即按时间排序。 */
 async function sessionNames(db: IDBDatabase): Promise<string[]> {
   // SAFETY: SESSIONS 的主键是 name 字符串（onupgradeneeded 里建的 keyPath）。
   const keys = await result(db.transaction(SESSIONS).objectStore(SESSIONS).getAllKeys()) as string[];
@@ -122,10 +109,6 @@ export function createTraceSink(sessionName: string): TraceSink {
   };
 }
 
-/**
- * 语音记录的存储端。写入是异步的：appendLine 立即返回，失败只进日志，不影响语音链路。
- * 扩展不保存音频，writeAudio 抛错由记录器记成一条 gap（正常路径不会调用：会话开始时不开 persistAudio）。
- */
 export function createVoiceCaptureSink(log: (message: string) => void): VoiceCaptureSink {
   const fail = (error: Error) => log(`[voice-capture] 写入失败：${error.message}`);
 
@@ -164,7 +147,6 @@ export function createVoiceCaptureSink(log: (message: string) => void): VoiceCap
 
 interface DiagnosticsExport { traces: string; sessions: number; traceLines: number; voice: string; voiceLines: number }
 
-/** 导出的一行任务记录：填写的值、读回的值、browser_run 的代码等在这里遮住，本机存储保留原文。 */
 function redactLine(line: string): string {
   let event: unknown;
 
@@ -174,18 +156,15 @@ function redactLine(line: string): string {
     return `${JSON.stringify(redactStoredTrace(line.trimEnd()))}\n`;
   }
 
-  // 只重写 data：行首的时间、编号与存储时一致。
   // SAFETY: 本表的行都是 run-trace-core.ts 写的 JSON 对象；别的形状整行脱敏。
   const record = event as Record<string, unknown> | null;
 
   return `${JSON.stringify(record && typeof record === "object" && !Array.isArray(record) && "data" in record ? { ...record, data: redactStoredTrace(record.data) } : redactStoredTrace(event))}\n`;
 }
 
-/** 任务记录与语音记录各拼成一个 jsonl，按写入顺序；每行自带会话或语音编号，可再拆开。 */
 export async function exportDiagnostics(): Promise<DiagnosticsExport> {
   const db = await openDb();
   const names = await sessionNames(db);
-  // 一次事务、每张表一次请求读完：自增主键即写入顺序；分多次 await 会让只读事务中途失效。
   const tx = db.transaction([LINES, VOICE]);
   // SAFETY: 两张表里只写 LineRow / VoiceRow（见本文件的写入函数）。
   const [traceRows, voiceRows] = await Promise.all([result(tx.objectStore(LINES).getAll()) as Promise<LineRow[]>, result(tx.objectStore(VOICE).getAll()) as Promise<VoiceRow[]>]);

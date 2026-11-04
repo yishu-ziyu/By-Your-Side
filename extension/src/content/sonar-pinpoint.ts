@@ -5,7 +5,6 @@ import { sketchFrame } from '../shared/rough/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/** 圈在页面上停留多久（含画入），之后淡出移除。 */
 const SHOW_MS = 1800;
 
 const DRAW_MS = 380;
@@ -25,10 +24,6 @@ export function installSonarPinpoint(): void {
     host = null;
   };
 
-  /**
-   * 手绘圈画在 fixed host 里（视口坐标），smooth 滚动途中元素位置一直在变，
-   * 所以短暂生命周期内每帧按最新 getBoundingClientRect 重画。种子固定，重画不沸腾。
-   */
   function showCircle(element: HTMLElement): void {
     clear();
     host = document.createElement('div');

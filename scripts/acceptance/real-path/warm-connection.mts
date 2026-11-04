@@ -1,11 +1,3 @@
-/**
- * 提前建连接：用户点进输入框、想几秒再发，这几秒里后台先连上模型服务，发出去的第一个模型请求直接用这条连接，不再等建连接。
- * 真实模型，只装扩展，无头；在后台文档（inproc.html）上开网络记录，只记请求头的名字，不记值。
- *   SIDEAGENT_ACCEPTANCE_DIST=<dist> NODE_OPTIONS=--conditions=import npx tsx scripts/acceptance/real-path/warm-connection.mts --headless [--model=provider/id]
- * 失败方式：点进输入框后、按回车前没有发往模型服务的 HEAD；HEAD 带了 authorization、cookie 或 chatgpt-account-id；模型请求带上了用户在该网站的 cookie；
- * 第一个模型请求没复用连接，或浏览器计时里还有建连接、握手阶段；面板里没出现回答；30 秒内再点进输入框又发了一次 HEAD；
- * 扩展自己的诊断记录（设置页导出）里这次任务第一个 model_request 没记提前建连接结果为 ok、距它多少毫秒；或提前建连接另写了不属于任何运行的诊断行。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -26,14 +18,12 @@ const WINDOW_MS = 30_000;
 
 interface Seen {
   method: string; url: string; wallStartMs: number;
-  /** 只留名字：请求头的值可能是凭据。 */
   headerNames: Set<string>;
   connectionReused?: boolean; connectionId?: number; protocol?: string; status?: number; failed?: string;
   timing?: { connectStart: number; connectEnd: number; sslStart: number; sslEnd: number; dnsStart: number };
 }
 
 const rp = await launchRealPath();
-// 代表用户登录 chatgpt.com 网页版后浏览器里会有的 cookie：模型请求不应带上它（默认测试模型走 chatgpt.com）。
 await rp.cdp.send("Storage.setCookies", { cookies: [{ name: "probe_session", value: "fake", domain: ".chatgpt.com", path: "/", secure: true, httpOnly: true, sameSite: "Lax" }] });
 const requests = new Map<string, Seen>();
 const sessions = new Set<string>();
@@ -51,7 +41,6 @@ on<{ requestId: string; wallTime: number; request: { url: string; method: string
   const entry: Seen = { method: p.request.method, url: p.request.url, wallStartMs: p.wallTime * 1000, headerNames: new Set([...(seen?.headerNames ?? []), ...names(p.request.headers)]) };
   requests.set(p.requestId, entry);
 });
-// 浏览器真正发出去的请求头（含 cookie）只在这里出现，可能比 requestWillBeSent 早到。
 on<{ requestId: string; headers: Record<string, string> }>("Network.requestWillBeSentExtraInfo", (p) => {
   const entry = requests.get(p.requestId);
 
@@ -72,7 +61,6 @@ const attachInproc = async (target: TargetInfo) => {
   await rp.cdp.send("Network.enable", {}, session);
 };
 
-// 后台文档可能被重建，新的也要接上。
 rp.cdp.onEvent("Target.targetCreated", (m: { params: { targetInfo: TargetInfo } }) => {
   if (m.params.targetInfo.url === inprocUrl) attachInproc(m.params.targetInfo).catch(() => undefined);
 });
@@ -93,7 +81,6 @@ try {
   await rp.cdp.send("Target.activateTarget", { targetId: blank.targetId });
   await sleep(3000);
 
-  // 用户点进输入框，想 3 秒；中途移开再点回来一次（30 秒内不该再发 HEAD）。
   const focusMs = Date.now();
   await rp.click(panel, "#input");
   await sleep(3000);

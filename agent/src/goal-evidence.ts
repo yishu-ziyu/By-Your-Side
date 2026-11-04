@@ -1,6 +1,5 @@
 export const GOAL_PAGE_EVIDENCE_CHARS = 8_000;
 
-/** Keep source text verbatim; omitted ranges must not look like adjacent sentences. */
 export function goalEvidence(text: string, budget: number, query: string): string {
   if (text.length <= budget) return text;
   if (budget < 256) return text.slice(0, Math.max(0, budget));

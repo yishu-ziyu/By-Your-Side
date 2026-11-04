@@ -1,21 +1,3 @@
-/**
- * 助手在后台标签里做事，不换走用户正在看的标签页；只在需要用户时把自己的页切到前台。
- * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
- *   npx tsx scripts/acceptance/real-path/keep-foreground.mts --headless
- * 同一个窗口里两个标签页：助手的工作页「表单页」和用户自己的「我的页面」。助手读过表单页（认领为工作页）后，用户切回「我的页面」。
- *   a) 助手在表单页点「保存」、填名字、按回车、滚动，再用 tabs open 开一个新页：每个工具结果回到模型时、以及整段每 100 ms，
- *      浏览器里的活动标签都还是「我的页面」；同时网站收到保存和按键、名字读回一致、页面滚动了、新页存在且不是活动页。
- *   b) 助手切回表单页（tabs switch）再点「发送」：切换后活动页仍是「我的页面」；确认框出现时，表单页已是活动页；用户点「发送」后网站收到 1 条。
- *   d) 助手切回表单页再交给用户（hand_to_user）：切换后活动页仍是「我的页面」；侧栏出现「需要你来这一步」时，表单页已是活动页。
- *   c) 助手点 target=_blank 的链接：Chrome 会把新页设成活动页，打开者记成用户的页。扩展仍跟到新页（点击结果写明新页已是工作页），
- *      并把「我的页面」放回活动页：点击结果回到模型时，活动标签是「我的页面」。
- *   e) 助手切回表单页再点付款按钮：切换后活动页仍是「我的页面」；网页上出现付款提示时，表单页已是活动页，网站没收到付款。
- *   f) 用户在「我的页面」说「给我看表单页」，助手用 tabs show：结果回到模型时表单页已是活动页，结果写明用户已在这一页。
- *   无头 Chrome 只有一个窗口且一直聚焦，所以「不聚焦窗口」这一条本用例证伪不了，不设检查。
- * 判据只读 Chrome 自己的状态（扩展后台的 chrome.tabs.query）、网站收到的请求和页面读回。
- * 失败方式：恢复「每步把工作页切到前台」，a 的活动页采样变成表单页；不认「打开者是用户的页」的新页，c 跟不上新页；
- * 付款前停下或交给用户时不切前台，e 或 d 的活动页仍是「我的页面」（反例结果见验收文件）。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -56,14 +38,11 @@ const switchBack = { tool: { name: "tabs", args: { action: "switch", tabId: 0 } 
 const showForm = { tool: { name: "tabs", args: { action: "show", tabId: 0 } } };
 
 const model = await startScriptedModel([
-  // 目标核对的请求带着用户原话：先认它，直接判完成。
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
-  // 交还后的续跑：交还 prompt 带 [HANDOFF BOUNDARY]，步数从这里重新数。
   { match: "[HANDOFF BOUNDARY]", steps: [{ text: FINAL.d }] },
   { match: ASK.a, steps: [
     { tool: { name: "tabs", args: { action: "active" } } },
     { tool: { name: "snapshot", args: {} } },
-    // 第 2 个结果回来时用户切回「我的页面」；等它落定再点。
     { tool: { name: "click", args: { target: "#save", label: "保存" } }, delayMs: 1500 },
     { tool: { name: "fill", args: { target: "#name", value: "张三" } } },
     { tool: { name: "press_key", args: { key: "Enter" } } },
@@ -72,7 +51,6 @@ const model = await startScriptedModel([
     { text: FINAL.a },
   ] satisfies Step[] },
   { match: ASK.b, steps: [switchBack, { tool: { name: "snapshot", args: {} } }, { tool: { name: "click", args: { target: "#send", label: "发送" } } }, { text: FINAL.b }] },
-  // 用户在「我的页面」上发新消息，任务先指向那一页：助手先切回表单页。
   { match: ASK.d, steps: [switchBack, { tool: { name: "hand_to_user", args: { ask: HANDOFF_ASK } } }, { text: "（不该走到这一步）" }] },
   { match: ASK.c, steps: [switchBack, { tool: { name: "snapshot", args: {} } }, { tool: { name: "click", args: { target: "#pop", label: "打开说明页" } } }, { text: FINAL.c }] },
   { match: ASK.f, steps: [showForm, { text: FINAL.f }] },
@@ -93,7 +71,6 @@ const seenCalls = new Set<string>();
 const receipts: Array<{ name: string; text: string }> = [];
 let onReceipt: ((name: string, index: number) => void) | null = null;
 
-/** 浏览器自己的事实：这个窗口里哪个标签页是活动的。 */
 const activeTab = async () => (await rp.evaluate(sw, "chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t ? { id: t.id, title: t.title } : null)")) as { id: number; title: string } | null;
 const sample = async (after: string, receipt?: number): Promise<Sample> => {
   const at = part;
@@ -101,7 +78,6 @@ const sample = async (after: string, receipt?: number): Promise<Sample> => {
   return { part: at, after, ...(receipt ? { receipt } : {}), activeId: active?.id ?? null, activeTitle: active?.title ?? "", ...(userVisibility ? { userVisibility } : {}), atMs: Date.now() - started };
 };
 
-/** 每个新的工具结果回到模型时采样一次（每次请求带着全部历史，按调用编号去重）。 */
 function onPayload(payload: { messages?: Array<{ role: string; content?: unknown; tool_calls?: Array<{ id: string; function: { name: string } }> }>; tools?: unknown[] }) {
   if (!payload.tools?.length || !sw) return;
   const names = new Map<string, string>();
@@ -140,7 +116,6 @@ try {
   let polling = false;
   const poll = async () => { while (polling) { polls.push(await sample("每 100 ms")); await sleep(100); } };
 
-  // ── a：普通动作都在后台做 ──
   part = "a";
   const userFront = new Promise<void>(done => { onReceipt = (_name, index) => { if (index === 2) void rp.cdp.send("Page.bringToFront", {}, user).then(() => { polling = true; void poll(); done(); }); }; });
   await ask(ASK.a);
@@ -151,7 +126,6 @@ try {
   await sleep(300);
   await rp.screenshot(user, join(out, "a-user-tab.png"));
   await rp.screenshot(panel, join(out, "a-panel.png"));
-  // 第 1、2 个结果（tabs active、snapshot）回来时用户还没切回自己的页；从点击起判。
   const aReceipts = samples.filter(s => s.part === "a" && (s.receipt ?? 0) >= 3);
   check("a 每个动作的结果回到模型时，活动标签都是「我的页面」", aReceipts.length >= 5 && aReceipts.every(s => s.activeId === userId), aReceipts as unknown as Json);
   const aPolls = polls.filter(s => s.part === "a");
@@ -161,11 +135,9 @@ try {
   const opened = (await rp.evaluate(sw, `chrome.tabs.query({}).then(ts => ts.filter(t => t.url === ${JSON.stringify(`${origin}/opened`)}).map(t => ({ id: t.id, active: t.active })))`)) as Array<{ id: number; active: boolean }>;
   check("a 助手开的新页存在，且不是活动页", opened.length === 1 && opened[0]!.active === false, opened);
 
-  // ── b：切回表单页不切前台；要发送时把表单页切到前台 ──
   part = "b";
   type DomNode = { nodeName: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[]; nodeValue?: string; backendNodeId: number };
   const walk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => hit(n) ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(c => walk(c, hit)).find(Boolean);
-  /** 网页上圈出发送按钮并提示去侧栏确认，侧栏同时出现发送确认卡。 */
   const confirmReady = async () => {
     const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
     const host = walk(root, n => n.nodeName === "DIV" && (n.attributes ?? []).join("\u0000").includes("data-sideagent-overlay\u0000send-confirm"));
@@ -177,7 +149,6 @@ try {
   const atConfirm = await sample("确认卡出现");
   samples.push(atConfirm);
   await rp.screenshot(work, join(out, "b-confirm.png"));
-  // 「发送」刚出现的那一会儿不算点击（SEND_ARM_MS）。
   await sleep(1000);
   const afterSwitch = samples.find(s => s.part === "b" && s.after === "tabs 结果");
   check("b 助手切回表单页（tabs switch）后，活动标签仍是「我的页面」", afterSwitch?.activeId === userId, afterSwitch as unknown as Json);
@@ -186,7 +157,6 @@ try {
   await answered(FINAL.b);
   check("b 用户点「发送」后网站收到 1 条", count("/send") === 1, { sent: count("/send") });
 
-  // ── d：助手交给用户时，把表单页切到前台 ──
   part = "d";
   await rp.cdp.send("Page.bringToFront", {}, user);
   await ask(ASK.d);
@@ -202,7 +172,6 @@ try {
   await answered(FINAL.d);
   await rp.screenshot(panel, join(out, "d-handback-panel.png"));
 
-  // ── c：点 target=_blank 的链接：跟到新页，并把用户的页放回前台 ──
   part = "c";
   await rp.cdp.send("Page.bringToFront", {}, user);
   polling = true; void poll();
@@ -217,12 +186,10 @@ try {
   check("c 点 target=_blank：助手跟到新开的说明页，点击结果写明新页已是工作页", popup.length === 1 && clickReceipt.includes(`A new tab opened (tab ${popup[0]!.id}`) && clickReceipt.includes("now your working tab"), { popup, clickReceipt });
   check("c 点击结果回到模型时，活动标签已回到「我的页面」", afterClick?.activeId === userId, { afterClick: afterClick as unknown as Json, userId, popupActive: popup[0]?.active ?? null, activeTitles: [...new Set(cPolls.map(s => s.activeTitle))] });
 
-  // ── e：付款前停下时，把表单页切到前台 ──
   part = "e";
   await rp.cdp.send("Page.bringToFront", {}, user);
   await sleep(300);
   await ask(ASK.e);
-  /** 付款提示在 closed shadow 里：用 CDP 穿透找带付款标记的提示。 */
   const payNote = async () => {
     // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
     const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
@@ -238,7 +205,6 @@ try {
   const payReceipt = receipts.filter(r => r.name === "click").at(-1)?.text ?? "";
   check("e 助手切回表单页后活动页仍是「我的页面」；付款前停下时表单页已是活动标签，网站没收到付款", eSwitch?.activeId === userId && atPayStop.activeId === formId && count("/pay") === 0 && payReceipt.includes("Stopped before payment"), { afterSwitch: eSwitch as unknown as Json, atPayStop: atPayStop as unknown as Json, formId, paid: count("/pay"), payReceipt });
 
-  // ── f：用户要看表单页，助手用 tabs show 把它放到用户眼前 ──
   part = "f";
   await rp.cdp.send("Page.bringToFront", {}, user);
   await sleep(300);

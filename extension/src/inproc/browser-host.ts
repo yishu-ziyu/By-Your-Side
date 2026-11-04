@@ -1,4 +1,3 @@
-/** offscreen 入口：配置与端口留在扩展，任务和语音走同一份宿主核心。 */
 import { createConversationRuntime, GptLiveSession, LearnedOperationStore, MemoryStore, RealtimeVoiceSession, SiteNotesStore, TaskHistoryStore, startHostCore, useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useSemanticMemory, useStyleSignals, type ArtifactPersistence, type ClientConn, type DocumentPersistence, type HostCore } from "@sideagent/agent/browser-core";
 import type { SessionLogPort } from "@sideagent/agent/browser-core";
 import { BrowserSemanticMemory } from "./semantic-memory.js";
@@ -48,14 +47,11 @@ type Inbound = ClientMessage
 
 interface InprocHostDeps {
   createRuntime: typeof createModelRuntime;
-  /** Tests explicitly inject a session backend; production always uses IndexedDB. */
   sessionData?: (id: string) => Promise<{ session: SessionLogPort; files?: ArtifactPersistence }>;
-  /** Node entry-contract tests inject durable documents; production uses IndexedDB. */
   document?: (name: "memories" | "pending-memory" | "tasks" | "habits" | "site-notes" | "style-signals" | "learned-operations") => DocumentPersistence;
   onConnect: (listener: (port: chrome.runtime.Port) => void) => void;
 }
 
-/** 模拟用户模式下只读：每次写之前读一次开关，开着就不写（读照常）。 */
 function readOnlyWhileSelfUse(doc: DocumentPersistence): DocumentPersistence {
   return {
     read: () => doc.read(),
@@ -79,15 +75,13 @@ export function startInprocHost(deps: InprocHostDeps): void {
   const cancelledKeySaves = new Set<string>();
   const savedKeyTransactions = new Map<string, { requestId: string; runId: string; target: string; roles: string; connection: string; credential: string }>();
   const keySaveReplies = new Map<string, (ok: boolean) => void>();
-  const cancelKeySave = (id: string) => { cancelledKeySaves.add(id); try { port?.postMessage({ type: "inproc_key_cancel", requestId: id }); } catch { /* 端口断开时后台也会取消等待中的保存。 */ } };
+  const cancelKeySave = (id: string) => { cancelledKeySaves.add(id); try { port?.postMessage({ type: "inproc_key_cancel", requestId: id }); } catch {  } };
   let voiceConfigured = false;
   let voiceModel: unknown;
   let helloReceived = false;
-  /** 配置模型前收到的阅读转侧栏（带 reading 的新建会话）：核心启动后补处理。 */
   const deferredCreates: ClientMessage[] = [];
 
   const log = (message: string) => console.debug("[sideagent]", message);
-  // 语音日常记录：与本机同一套行，写进扩展的 IndexedDB；扩展不保存音频，所以会话一律不开 persistAudio。
   const voiceCapture = new VoiceCaptureRecorder(createVoiceCaptureSink(log), log);
 
   const models: ModelRuntime = deps.createRuntime((providerId, credential) => {
@@ -105,7 +99,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const modelPort = models.createCoreModels(() => selected, () => fastSelected, () => backupSelected);
     let pattern = "";
 
-    // 新对话按建立时的设置取模型；核心启动后设置页可能已经换过（恢复的对话沿用自己记下的模型）。
     const currentPattern = () => {
       if (selected) {
         const model = models.resolveModel(selected);
@@ -116,15 +109,10 @@ export function startInprocHost(deps: InprocHostDeps): void {
     };
 
     currentPattern();
-    // 会话目录先读进内存：核心启动时按它重建会话，offscreen 重启后侧栏的会话编号仍然有效。
-    // 个人记忆存在扩展本地（IndexedDB），和本机宿主同一套判断与读写规则。
-    // 「要不要记」判断失败的话排在另一条记录里，一轮结束后补判；判完即删原话。
     const document = deps.document ?? ((name: string) => new IdbDocument(name));
-    // 关于用户本人的几份记录：模拟用户模式下只读，写入在这里丢掉（记忆运行时另外不判断、不问）。
     const personal = (name: Parameters<typeof document>[0]) => readOnlyWhileSelfUse(document(name));
     const memoryStore = useSemanticMemory(usePausedMemory(useStyleSignals(useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(personal("memories")), personal("pending-memory")), personal("habits")), personal("style-signals")), pushedSelfUse), new BrowserSemanticMemory());
     const taskHistory = new TaskHistoryStore(personal("tasks"));
-    // 旧站点笔记只供用户查看和删除，不交给会话。
     const siteNotes = new SiteNotesStore(document("site-notes"));
     const learnedOperations = new LearnedOperationStore(document("learned-operations"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
@@ -140,7 +128,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
           files: {load:()=>listArtifacts(id),save:(item: Parameters<ArtifactPersistence["save"]>[0])=>writeArtifact(id,item),delete:(filename:string)=>deleteArtifact(id,filename)},
         };
 
-        // 主模型挂起或暂时出错时换设置里的备用模型（withModelFailover）；没选备用就不换。
         return createConversationRuntime(id, emit, summary?.model ?? currentPattern(), {
         loop: { models: modelPort, cwd: "/", session: data.session, openStorage: openDurableStorage },
         artifactPersistence: data.files,
@@ -159,8 +146,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
         });
       },
       voiceKey: async () => {
-        // GPT-Live 不用阶跃星辰的 key：每次开启都取一次 ChatGPT 登录令牌（快过期时 pi-ai 刷新并经 background 写回）。
-        // 没登录就报原因，不退回别的语音。
         if (resolveVoiceModel(voiceModel) === GPT_LIVE_MODEL) return chatgptAccess();
 
         if (!voiceConfigured) throw new Error("还没有语音密钥。打开「更多 → 模型与语音」，在「语音对话」里填阶跃星辰密钥。");
@@ -181,7 +166,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
       },
       observe: msg => { if (msg.type === "voice" && msg.event.kind === "diag") voiceCapture.record(msg.voiceId, msg.conversationId ?? "default", msg.event.record); },
       onVoiceCommand: (msg, conversationId) => {
-        // 只属于扩展的记录事实（capture）不送往上游语音会话。
         if (msg.command.kind === "capture") {
           voiceCapture.command(msg.voiceId, conversationId, msg.command);
 
@@ -211,7 +195,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
     return pendingCore;
   }
 
-  /** 只认 ChatGPT 登录（OAuth）凭据；存的是 key 或取令牌失败，都当没登录。 */
   async function chatgptAccess(): Promise<string> {
     const missing = "GPT-Live 要先在设置里用 ChatGPT 登录：打开右上角「更多 → 模型与语音」登录后再开启语音。";
 
@@ -237,8 +220,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
-    // 只补处理阅读转侧栏：它一直等回执。侧栏自己的新建请求 4 秒没回执就留在原会话，
-    // 配好模型后再补建会把侧栏切到一个空会话，用户刚发的第一句话和回答都被挤到后台。
     if (message.type === "conversation_create") {
       if (message.reading) deferredCreates.push(message);
 
@@ -260,10 +241,8 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
-    // 预热是点进输入框时侧栏自己发的，用户真发出的那句话有「还没有连接模型」卡片说明。
     if (message.type === "warm_up") return;
 
-    // 主动建议是后台自己发起的：没配模型就静静地不建议，不在会话里报错。
     if (message.type === "nudge_request") {
       connection?.send({ type: "nudge_result", requestId: message.requestId, nudge: null });
 
@@ -337,10 +316,8 @@ export function startInprocHost(deps: InprocHostDeps): void {
       try {
         resolveVoiceModel(voiceModel);
 
-        // 侧栏与宿主看到的设置不同（刚改过还没推到这里）：不开任何连接，免得选了 GPT-Live 却连上阶跃星辰。
         if ((message.command.model ?? null) !== (typeof voiceModel === "string" ? voiceModel : null)) throw new Error("语音模型设置刚改过，还没生效：请再开一次语音。");
 
-        // 诊断录音只走阶跃星辰的音频帧；GPT-Live 的声音不经过扩展，没有可录的东西。
         if (message.command.diagnostic && voiceModel === GPT_LIVE_MODEL) throw new Error("GPT-Live 不支持诊断录音：先在「模型与语音」换回阶跃星辰语音。");
       }
       catch (error) {
@@ -431,7 +408,6 @@ export function startInprocHost(deps: InprocHostDeps): void {
     finally { pendingKeySaves.delete(message.requestId); cancelledKeySaves.delete(message.requestId); }
   }
 
-  /** 换 key 面板的「测试连接」：用另一份运行时试新 key，不动正在用的凭据。 */
   async function testKey(message: Extract<ClientMessage, { type: "model_key_test" }>): Promise<void> {
     const reply = (result: { ok: boolean; ms?: number; reason?: string; detail?: string }) =>
       connection?.send({ type: "model_key_test_result", conversationId: message.conversationId, requestId: message.requestId, ...result });

@@ -1,4 +1,3 @@
-/** Real extension and sidebar, scripted model and local video/VTT pages. Only the two direct entries must add no model calls. */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -71,7 +70,6 @@ const send = async (text: string, expected: string, goalChecks: number) => {
   await until(() => rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m=>m.textContent.includes(${JSON.stringify(expected)})) && ${idle}`), 90_000, `交付 ${text}`);
   await until(() => model.requests.filter(request => request.rule === '"goalPage"' && request.finished).length >= before + goalChecks, 30_000, `目标核对 ${text}`);
 };
-// 保存和翻页会延迟触发上一轮的模型核对；等它们安静后，才单独计量这次直接运行。
 const settleModel = async () => {
   let count = model.requests.length;
   let since = Date.now();

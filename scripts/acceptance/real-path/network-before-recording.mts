@@ -1,12 +1,3 @@
-/**
- * 页面加载时就调了自己的数据接口（播放器拿字幕、列表拿数据），助手之后才来看网页请求：这条请求要看得到，
- * 否则模型只能自己拼一个没签名的接口地址，拿到错的数据（B 站字幕那次 9 分钟就耗在这）。
- * 只装扩展、隔离构建、本机脚本模型。
- *   npx tsx scripts/acceptance/real-path/network-before-recording.mts --headless
- *   a) 模型看网页请求时，结果里有页面加载时那条 /api/player 请求，并标明是记录开始前的。
- *   b) 模型清空记录再看：加载时那条不再补回来。
- * 失败方式：只读扩展自己记下的请求，a 失败。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";

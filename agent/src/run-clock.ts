@@ -1,9 +1,5 @@
 import type {ExtensionFactory} from '@earendil-works/pi-coding-agent';
 
-/**
- * 长任务定期提醒汇报进展。耗时本身不能证明没有进展；停滞由 NoProgressPolicy 判断，
- * 不能因为用户等得久就禁止剩余操作，让用户反复点击继续。
- */
 const CHECK_IN_AFTER_MS = 3 * 60_000;
 
 const checkIn = (minutes:number) => `[Time] ${minutes} minutes on this request. Give a brief progress update, then continue the remaining authorized work. Elapsed time is not a reason to stop or ask whether to continue. Do not repeat completed steps.`;

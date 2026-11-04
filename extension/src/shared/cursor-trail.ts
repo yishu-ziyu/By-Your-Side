@@ -1,13 +1,7 @@
-/**
- * 操作轨迹：记录点击/填写落点，供事后在页上按浅弧再飞一遍。
- * 回放不是回退。纯函数。
- */
-
 const TRAIL_CAP = 40;
 
 export type TrailPoint = {
   tabId: number;
-  /** 文档坐标（视口 + 当时的 scroll） */
   x: number;
   y: number;
   click: boolean;
@@ -36,7 +30,6 @@ export function pointsOnTab(trail: StoredTrail, tabId: number): TrailPoint[] {
   return trail.points.filter((p) => p.tabId === tabId);
 }
 
-/** 用户这句话是在请把刚才的操作再演一遍，而不是下一条新任务。 */
 export function isReplayRequest(text: string): boolean {
   const t = text.trim();
 

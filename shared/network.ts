@@ -1,8 +1,3 @@
-/**
- * `network` 的纯逻辑：CDP Network 事件 → 条目、环形缓冲、筛选、模型可见文本。
- * 被动观测，不注入页面；只记真实网络请求；展示前隐去 URL 里的凭据。
- */
-
 const NETWORK_CAPACITY = 300;
 
 const NETWORK_DEFAULT_LIMIT = 40;
@@ -17,7 +12,6 @@ export interface NetworkEntry {
   requestId: string;
   method: string;
   url: string;
-  /** CDP 的 resourceType，统一小写；未知为 "other"。 */
   resourceType: string;
   status?: number;
   mimeType?: string;
@@ -25,15 +19,11 @@ export interface NetworkEntry {
   fromCache?: boolean;
   failed?: string;
   canceled?: boolean;
-  /** 发生过重定向的次数（同一 requestId 的后续跳转）。 */
   redirects?: number;
-  /** CDP 单调时钟（秒）；同页面的事件才可相减。 */
   startedTs?: number;
   endedTs?: number;
   startedAt: number;
-  /** 记录开始前页面自己发的请求，取自页面的资源计时：不知道请求方法。 */
   beforeRecording?: boolean;
-  /** 资源计时给出的耗时；有 CDP 时间戳的条目不用它。 */
   durationMs?: number;
 }
 
@@ -66,18 +56,12 @@ function normalizeType(value: unknown): string {
   return raw.toLowerCase();
 }
 
-/** 只记录真实网络请求；data:/blob: 这类伪 URL 既不是接口，也会把 base64 拖进上下文。 */
 function isRecordableUrl(raw: string): boolean {
   return /^https?:\/\//i.test(raw);
 }
 
 const TIMING_TYPES: Record<string, string> = { xmlhttprequest: "xhr", fetch: "fetch", beacon: "ping", script: "script", img: "image", image: "image", link: "stylesheet", css: "stylesheet", iframe: "document", video: "media", audio: "media" };
 
-/**
- * 页面资源计时 → 条目。origin 是页面的 performance.timeOrigin，rows 每行 [url, initiatorType, status, bytes, durationMs, 发出时刻]。
- * 扩展多半在页面加载完之后才开始记录，播放器、列表这类加载时就发出的接口请求只留在页面自己的计时里。
- * 只收本页第一条已记录请求之前、notBefore（模型清空记录的时刻）之后发出的；记录里更早的条目属于之前的页面。
- */
 export function pageTimingEntries(raw: unknown, recorded: readonly NetworkEntry[], notBefore = 0, now: number = Date.now()): NetworkEntry[] {
   if (!raw || typeof raw !== "object") return [];
   const { origin, rows } = raw as { origin?: unknown; rows?: unknown };
@@ -111,7 +95,6 @@ export function pageTimingEntries(raw: unknown, recorded: readonly NetworkEntry[
   return entries;
 }
 
-/** 单条 CDP Network 事件 → 缓冲更新；与条目无关的事件返回 null。 */
 export function networkEventToUpdate(method: string, params: Record<string, unknown>, now: number = Date.now()): NetworkEventUpdate | null {
   const requestId = String(params.requestId ?? "");
 
@@ -181,7 +164,6 @@ export function networkEventToUpdate(method: string, params: Record<string, unkn
   return null;
 }
 
-/** 追加一条；超容量丢最旧，并累计 dropped。返回被挤出的最旧条目（供在途集合保留）。 */
 function appendNetworkEntry(
   ring: NetworkRing,
   entry: NetworkEntry,
@@ -201,7 +183,6 @@ function appendNetworkEntry(
   return evicted.length ? { entries, dropped, evicted } : { entries, dropped };
 }
 
-/** 应用一条 patch；条目不在缓冲里则原样返回。 */
 function patchNetworkEntry(ring: NetworkRing, requestId: string, patch: Partial<NetworkEntry>): NetworkRing {
   const index = ring.entries.findIndex((entry) => entry.requestId === requestId);
 
@@ -212,7 +193,6 @@ function patchNetworkEntry(ring: NetworkRing, requestId: string, patch: Partial<
   return { entries, dropped: ring.dropped };
 }
 
-/** 重定向：同一 requestId 再 start 时替换旧条目并记跳数。 */
 function restartNetworkEntry(ring: NetworkRing, entry: NetworkEntry): NetworkRing {
   const previous = ring.entries.find((candidate) => candidate.requestId === entry.requestId);
 
@@ -231,7 +211,6 @@ function typeSet(types: NetworkQuery["types"]): Set<string> | null {
   return new Set(list.map((type) => String(type).toLowerCase()));
 }
 
-/** 取最近 limit 条匹配项；返回结果保持时间顺序。 */
 export function selectNetworkEntries(entries: readonly NetworkEntry[], query: NetworkQuery = {}): { shown: NetworkEntry[]; matched: number } {
   const wanted = typeSet(query.types);
   const needle = query.urlContains?.trim().toLowerCase();
@@ -253,7 +232,6 @@ export function selectNetworkEntries(entries: readonly NetworkEntry[], query: Ne
 const SENSITIVE_PARAM =
   /^(access[_-]?token|refresh[_-]?token|token|auth|authorization|api[_-]?key|apikey|key|client[_-]?secret|secret|password|passwd|pwd|session([_-]?id)?|sid|signature|sign|nonce|ticket|credential)$/i;
 
-/** URL 展示前的凭据隐去：user:pass@ 与敏感查询参数只留结构。 */
 export function redactUrlCredentials(raw: string): string {
   let url = raw.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/i, "$1[redacted]@");
   url = url.replace(/([?&])([^=&#]+)=([^&#]*)/g, (whole, sep: string, key: string) => {
@@ -262,7 +240,6 @@ export function redactUrlCredentials(raw: string): string {
     try {
       decoded = decodeURIComponent(key);
     } catch {
-      /* 保留原样匹配 */
     }
 
     return SENSITIVE_PARAM.test(decoded) ? `${sep}${key}=[redacted]` : whole;
@@ -286,14 +263,12 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-/** 展示用 URL 长度上限：跟踪类 URL 会很长，截断避免撑上下文。 */
 const NETWORK_MAX_URL_CHARS = 240;
 
 function clipUrl(url: string): string {
   return url.length > NETWORK_MAX_URL_CHARS ? `${url.slice(0, NETWORK_MAX_URL_CHARS)}…` : url;
 }
 
-/** 一行：`3. failed POST https://… — xhr (net::ERR_FAILED) (canceled)`。 */
 function formatNetworkEntryLine(entry: NetworkEntry, index: number): string {
   const status = entry.failed ? "failed" : entry.status !== undefined ? String(entry.status) : entry.beforeRecording ? "done" : "pending";
   const parts = [`${index}.`, status, entry.method, clipUrl(redactUrlCredentials(entry.url)), `— ${entry.resourceType}`];
@@ -327,10 +302,6 @@ interface NetworkReportInfo {
   urlContains?: string;
 }
 
-/**
- * 模型可见回执。空结果也给出原因与下一步；不编造状态。
- * 调用方负责再过不可信边界（agent 侧 wrapPageContent）。
- */
 export function formatNetworkReport(shown: readonly NetworkEntry[], info: NetworkReportInfo): string {
   const filters: string[] = [];
 
@@ -357,11 +328,6 @@ export function formatNetworkReport(shown: readonly NetworkEntry[], info: Networ
   return `${header}\n${lines.join("\n")}${early}\nUse fetch with the browser's login state to read the data behind one of these URLs.`;
 }
 
-/**
- * network-idle 生命周期：展示 ring 与有界在途集合分离。
- * 长连接排除类别显式列出（可测）；慢 xhr/fetch 不得被偷偷忽略。
- * network-idle ≠ 页面业务完成。
- */
 const NETWORK_IDLE_EXCLUDED_TYPES = ["websocket", "eventsource"] as const;
 
 const NETWORK_IN_FLIGHT_CAPACITY = 200;
@@ -467,7 +433,6 @@ export function markCaptureGap(life: NetworkLifecycle, now: number = Date.now())
   };
 }
 
-/** 清空展示 ring；仍在途的请求保留在 inFlight。 */
 export function clearNetworkDisplay(life: NetworkLifecycle, now: number = Date.now()): NetworkLifecycle {
   return {
     ...life,
@@ -483,7 +448,6 @@ function promoteIntegrity(life: NetworkLifecycle, entry: NetworkEntry): NetworkC
   return life.integrity;
 }
 
-/** 将一条 CDP 更新写入 ring + 在途集合。patch 在 ring 已丢弃时仍结束在途项。 */
 export function applyNetworkLifecycle(life: NetworkLifecycle, update: NetworkEventUpdate, now: number = Date.now()): NetworkLifecycle {
   if (update.kind === "start") {
     const previous = life.ring.entries.find((candidate) => candidate.requestId === update.entry.requestId);
@@ -530,7 +494,6 @@ export interface IdleObservation {
   reason: "idle" | "in-flight" | "quiet" | "incomplete" | NetworkCaptureIntegrity;
 }
 
-/** 纳入范围的在途为 0 且持续 idleMs 静默，且捕获完整时才 idle。 */
 export function idleObservation(life: NetworkLifecycle, opts: { now: number; idleMs: number }): IdleObservation {
   let inFlight = 0;
   let excludedInFlight = 0;

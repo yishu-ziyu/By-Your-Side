@@ -45,26 +45,20 @@ iframe { flex: 1; width: 100%; border: 0; display: block; background: var(--fc-b
 .bubble:focus-visible { outline: 2px solid var(--fc-line); outline-offset: 2px; }
 `;
 
-/**
- * 浮在网页上的会话卡片。里面是扩展自己的会话页（iframe），和侧栏同一套界面、同一份会话记录。
- * 只在用户正看着的标签页里挂：换到别的标签页，那边按同一份状态重新挂上，这边拆掉，免得每个标签页各连一个会话页。
- */
 export function installFloatCard(): void {
   let state: FloatCardState | null = null;
   let host: HTMLElement | null = null;
   let card: HTMLElement | null = null;
   let bubble: HTMLButtonElement | null = null;
   let mounting: Promise<void> | null = null;
-  /** 助手正在点被卡片挡住的网页目标：这些点击做完前卡片藏起来。 */
   const yielding = new Set<string>();
 
   const save = (next: Partial<FloatCardState>) => {
     if (!state) return;
     state = { ...state, ...next };
-    void chrome.storage.local.set({ [FLOAT_CARD_KEY]: state }).catch(() => { /* 扩展刚重载 */ });
+    void chrome.storage.local.set({ [FLOAT_CARD_KEY]: state }).catch(() => {  });
   };
 
-  /** 视口变小时只在显示上收进来，不改存着的位置：窗口拉回原大小，卡片回原处。 */
   const fit = (r: FloatCardRect): FloatCardRect => {
     const width = Math.max(MIN.width, Math.min(r.width, innerWidth - 16));
     const height = Math.max(MIN.height, Math.min(r.height, innerHeight - 16));
@@ -80,7 +74,6 @@ export function installFloatCard(): void {
     if (!state || !card || !bubble) return;
     const r = fit(state.rect);
     Object.assign(card.style, { right: `${r.right}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
-    // 收起后贴到窗口右边，不压在正文上；高度跟卡片顶边走，用户还认得出是它。
     Object.assign(bubble.style, { right: "16px", top: `${r.top}px` });
   };
 
@@ -89,7 +82,6 @@ export function installFloatCard(): void {
     host = card = bubble = null;
   };
 
-  /** 拖动或拉边：pointer 抓在把手上，iframe 暂时不吃鼠标，不然一滑进去就丢了。 */
   const track = (handle: HTMLElement, onMove: (dx: number, dy: number, start: FloatCardRect) => FloatCardRect) => {
     handle.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || !state || (e.target as HTMLElement).closest("button")) return;
@@ -126,14 +118,12 @@ export function installFloatCard(): void {
   };
 
   const mount = async () => {
-    // 会话页要知道自己替哪个窗口看网页；内容脚本自己拿不到窗口号，问后台。
     const where = await chrome.runtime.sendMessage({ type: FLOAT_CARD_WHERE }).catch(() => null) as { windowId?: number } | null;
     if (typeof where?.windowId !== "number" || !state?.open || document.hidden) return;
 
     host = document.createElement("div");
     host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_FLOAT_CARD);
     syncColorTone(host);
-    // closed：网页脚本读不到会话页的地址，没法把它另嵌到自己页面里骗点击。
     const root = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = STYLES;
@@ -189,7 +179,6 @@ export function installFloatCard(): void {
   const render = () => {
     if (!state?.open || document.hidden) return teardown();
     if (!host) {
-      // 扩展重载后旧脚本问不到后台，挂不上就停在这里，不原地反复重试。
       mounting ??= mount().finally(() => { mounting = null; if (host) render(); });
       return;
     }
@@ -203,7 +192,7 @@ export function installFloatCard(): void {
   ns.floatCard = {
     uncover(target, x, y, token) {
       if (!host || !target.isConnected || document.elementFromPoint(x, y) !== host) return false;
-      // 目标必须是网页自己的：跨 closed shadow 往上查，不能借让位点到我们自己的界面。
+      // WHY: 目标必须是网页自己的：跨 closed shadow 往上查，不能借让位点到我们自己的界面。
       for (let node: Element | null = target; node;) {
         if (node.closest(`[${OVERLAY_ATTR}]`)) return false;
         const parent = node.getRootNode();

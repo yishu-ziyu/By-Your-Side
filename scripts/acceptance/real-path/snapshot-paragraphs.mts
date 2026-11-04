@@ -1,4 +1,3 @@
-/** Real extension and page: spare snapshot space expands paragraphs without evicting controls. */
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';

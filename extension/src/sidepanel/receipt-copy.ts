@@ -1,6 +1,5 @@
 import type { TaskReceipt, TaskReceiptDiff } from "../../../shared/task-actions.js";
 
-/** Host-verified field changes render as 旧值→新值; preserved only what was read back unchanged. */
 function diffLine(diff: TaskReceiptDiff): string {
   const changed = diff.changed.map((change) => `${change.attribute}：${change.from} → ${change.to}`).join("；");
   const preserved = diff.preserved.length ? `；${diff.preserved.join("、")}保持不变` : "";
@@ -8,10 +7,8 @@ function diffLine(diff: TaskReceiptDiff): string {
   return `${diff.target}：${changed}${preserved}`;
 }
 
-/** 侧栏回执的展示文案；inProcess 表示归入执行过程记录。 */
 type ReceiptCopy = { summary: string; detail: string; collapsed: boolean; inProcess?: boolean };
 
-/** 普通接收回执不复述整条输入；拒绝和不确定结果仍直接展示。阶段分层：accepted=送达，applied=已应用并核对。 */
 export function receiptCopy(receipt: TaskReceipt, selectedConversationId: string): ReceiptCopy {
   const diff = receipt.diff ? diffLine(receipt.diff) : "";
   const detail = `${receipt.targetTitle} · ${receipt.message}${diff ? `\n${diff}` : ""}${receipt.text && !receipt.message.includes(receipt.text) ? `\n原话：${receipt.text}` : ""}`;
@@ -32,7 +29,6 @@ export function receiptCopy(receipt: TaskReceipt, selectedConversationId: string
     return { summary: "修改已应用并核对", detail, collapsed: true };
   }
 
-  // 停下已由过程行「已停止」和接续那一行说过，不再另起一条「任务已终止」；停止失败照旧露出。
   if (local && receipt.action === "abort" && (receipt.status === "accepted" || receipt.status === "applied")) {
     return { summary: receipt.message, detail, collapsed: true };
   }

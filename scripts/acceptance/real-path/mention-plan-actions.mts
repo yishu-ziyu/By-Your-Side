@@ -1,9 +1,3 @@
-/**
- * 输入 @ 拉进别的标签页；改页面时任务条上放一行计划，随这一轮结束收掉；
- * 每个回答一个主动作，其余在 Ctrl/⌘+Shift+K 动作列表。
- * 改页面的任务不等确认就开始，计划行的「不会做」不和用户的授权打架；任务运行中 @ 的页面模型读得到。
- *   npx tsx scripts/acceptance/real-path/mention-plan-actions.mts --headless
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -29,7 +23,6 @@ const TABLE = "把这页的报名信息整理成表格";
 const SUBMIT = "把张三填进报名表并提交";
 const SLOW = "慢慢介绍一下这个活动";
 const STEER = "顺便核对一下我 @ 的笔记";
-// 只有笔记页的正文进了模型的请求，脚本模型才会写这一句。
 const NOTES_SEEN = "笔记要求周五前确认名单。";
 const model = await startScriptedModel([
   { match: "周五前确认报名名单", steps: [{ text: NOTES_SEEN }] },
@@ -63,7 +56,6 @@ try {
   };
   const answers = async () => Number(await rp.evaluate(panel, `document.querySelectorAll("#messages .msg.assistant").length`));
 
-  // (a) 写页任务：不停下来等确认，模型马上收到请求；放一行「会去 … · 不会做 …」（过程卡建好后挪进卡头）；这一轮结束后收掉。
   const goalLine = async () => await rp.evaluate(panel, `[...document.querySelectorAll(".task-plan-goal")].filter(e => e.getClientRects().length > 0 && e.closest("details")?.open !== false).at(-1)?.textContent ?? ""`) as string;
   const before = model.requests.length;
   await rp.click(panel, "#input");
@@ -77,7 +69,6 @@ try {
   const goalLeft = await until(async () => !(await goalLine()) || undefined, 3_000, "计划行收掉").catch(() => false);
   check("这一轮做完后计划行收掉", goalLeft === true, await goalLine());
 
-  // (d) 用户明说「并提交」：计划行不能写「不会做 提交」。
   const beforeSubmit = model.requests.length;
   await rp.click(panel, "#input");
   await rp.typeText(panel, SUBMIT);
@@ -87,7 +78,6 @@ try {
   check("用户说了提交，计划行的不会做只剩付款", /不会做 付款$/.test(submitPlan), submitPlan);
   await until(async () => (model.requests.length > beforeSubmit && !(await goalLine())) || undefined, 60_000, "提交任务结束").catch(() => null);
 
-  // (b) 只读的表格回答：没有计划行；主动作是「复制为表格」；Ctrl+K 不开动作列表，⌘/Ctrl+Shift+K 开，Esc 关。
   const n = await answers();
   await rp.click(panel, "#input");
   await rp.typeText(panel, TABLE);
@@ -98,7 +88,6 @@ try {
   await sleep(600);
   const primary = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .answer-primary")].at(-1)?.textContent.trim() ?? ""`);
   check("表格回答的主动作是复制为表格", String(primary).replace("↵", "").trim() === "复制为表格", primary);
-  // 三轮都带上同一条过往任务：「本轮提供的过往任务…」只在第一处挂出；上一轮撤不回的恢复按钮不留灰字。
   const tidy = await rp.evaluate(panel, `({ usedLines: [...document.querySelectorAll("#messages .memory-used-toggle")].filter(e => e.getClientRects().length).map(e => e.textContent.trim()), stale: document.querySelector("#messages").innerText.includes("恢复记录已失效") })`) as { usedLines: string[]; stale: boolean };
   check("同样的「本轮提供的过往任务」只挂一次，不留「恢复记录已失效」", tidy.usedLines.length === 1 && !tidy.stale, tidy);
   await rp.click(panel, "#messages");
@@ -118,7 +107,6 @@ try {
   const closed = await rp.evaluate(panel, `!document.querySelector("#answer-command-menu:not([hidden])")`);
   check("Ctrl+K 不开动作列表；Shift+K 组合键打开，有复制为 Markdown，Esc 关掉", !ctrlK && /复制为 Markdown/.test(list) && closed === true, { ctrlK, list, closed });
 
-  // (c) 输入 @ 列出打开的标签页，当前页排第一；回车后变成页面胶囊，@ 从输入框消失。
   await rp.click(panel, "#input");
   await rp.typeText(panel, "@");
   const menu = await until(async () => {
@@ -134,7 +122,6 @@ try {
   check("回车后输入区出现页面胶囊，@ 从输入框消失", chip.chip.includes("活动报名表") && !chip.input.includes("@"), chip);
   await rp.evaluate(panel, `document.querySelector(".tab-mention-remove")?.click() ?? true`);
 
-  // (e) 任务运行中 @ 另一页再插话：模型真的读到那一页（脚本模型看到笔记正文才写 NOTES_SEEN），胶囊打勾。
   await rp.click(panel, "#input");
   await rp.typeText(panel, SLOW);
   await rp.pressEnter(panel);

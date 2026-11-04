@@ -1,8 +1,3 @@
-/**
- * Judge: applies each task's success_rule to a trace -> {pass, reason}. Deterministic checks where
- * the rule is mechanical, otherwise an LLM judge via `codex exec` (default model/effort from ~/.codex).
- * Writes runs/<run>/judge/<model>/<task>.json — never modifies traces.
- */
 import { execFile } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
@@ -12,12 +7,10 @@ import { createHash } from "node:crypto";
 import { environmentFailure } from "./environment.mjs";
 import { TASKS_FILE } from "./paths.mjs";
 
-/** Bump when the prompt/rules change: older verdicts are then treated as stale. */
 export const JUDGE_VERSION = "v3-env4";
 
 export const resultSha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex").slice(0, 16);
 
-/** A verdict is fresh only if it was made by this judge version on exactly this result file (a judge_error is retried). */
 export function verdictFresh(resultPath, judgePath) {
   if (!existsSync(judgePath)) return false;
 
@@ -29,7 +22,6 @@ export function verdictFresh(resultPath, judgePath) {
  return (j.judge_version === JUDGE_VERSION || unchangedOutcome) && j.result_sha === resultSha(resultPath) && j.verdict !== "judge_error"; } catch { return false; }
 }
 
-/** What the agent's own tools read from the page (snapshot/read_element/js/fetch outputs), newest last. */
 function pageEvidence(tr, tracePath, maxChars = 12000) {
   const p = tracePath ?? (tr.screenshots?.[0] ?? "").replace(/\.png$/, ".trace.jsonl");
 
@@ -54,7 +46,6 @@ function pageEvidence(tr, tracePath, maxChars = 12000) {
 
  if (budget <= 0) break; out = chunk + "\n---\n" + out; budget -= chunk.length; }
 
-  // excerpts around numbers/years the answer states, so facts deep in long page reads are not truncated away
   const all = reads.join("\n");
   const toks = [...new Set(String(tr.final_answer_verbatim ?? "").match(/\d[\d,.:]*\d|\d{2,}/g) ?? [])].filter((t) => t.replace(/\D/g, "").length >= 2).slice(0, 30);
   const ex = [];
@@ -72,7 +63,6 @@ function csvRows(text) {
   return lines;
 }
 
-/** Deterministic judges keyed by task id; return null to fall through to the LLM. */
 const DETERMINISTIC = {
   "BYS-040": (tr) => {
     const u = tr.final_page?.url ?? "", ti = tr.final_page?.title ?? "";
@@ -82,7 +72,6 @@ const DETERMINISTIC = {
   },
 };
 
-// ChatGPT 账号的 Codex 不支持 gpt-6.1-sol（10-02 实测 400）；判分模型固定写在这里，不随本机 ~/.codex 默认变动。
 const JUDGE_MODEL = process.env.BYS_JUDGE_MODEL || "gpt-6-sol";
 
 function codexJudge(prompt, images = []) {
@@ -100,13 +89,11 @@ function codexJudge(prompt, images = []) {
         resolve({ verdict, pass: verdict === "pass" ? true : verdict === "fail" ? false : null, environment_cause: j.environment_cause === true, reason: String(j.reason ?? ""), method: images.length ? "codex+screenshots+text" : "codex+text", judgeModel: JUDGE_MODEL });
       }
       catch {
-        // codex 连不上服务时只在 stderr 里说，last.txt 为空：把最后一条 ERROR 带进原因，否则整批判分失败也看不出为什么
         const cause = String(stderr ?? "").split("\n").filter((l) => /ERROR|error:/.test(l)).at(-1)?.slice(0, 300) ?? "";
         resolve({ verdict: "judge_error", pass: null, reason: `judge failed: ${err?.message ?? "unparseable"} :: ${text.slice(0, 300)}${cause ? ` :: ${cause}` : ""}`, method: "codex" });
       }
     });
 
-    // prompt goes over stdin: long answers/CSVs overflowed argv (spawn E2BIG)
     child.stdin?.on("error", () => {});
     child.stdin?.end(prompt);
   });
@@ -203,7 +190,6 @@ export async function judgeRun(runDir, tasks, models, { concurrency = 4, onlyExi
   return results;
 }
 
-// CLI: node judge.mjs <runDir>  (re-judge an existing run)
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const runDir = process.argv[2];
   const meta = JSON.parse(readFileSync(join(runDir, "run.json"), "utf8"));

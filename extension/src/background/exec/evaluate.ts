@@ -36,7 +36,7 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** Inspector descriptors contain data values; never evaluate JSON.stringify in the page or invoke accessors. */
+/** WHY: Inspector descriptors contain data values; never evaluate JSON.stringify in the page or invoke accessors. */
 async function readData(tabId: number, remote: unknown): Promise<unknown> {
   const ancestors = new Set<string>();
   let count = 0;
@@ -91,7 +91,6 @@ async function readData(tabId: number, remote: unknown): Promise<unknown> {
   return read(remote, 0);
 }
 
-/** A fresh world isolates page-owned Error formatters; V8 checks model code and only data descriptors cross back. */
 export async function evaluateJs(
   params: { code: string; tabId?: number },
   sessionId: string = LEAD_SESSION_ID,

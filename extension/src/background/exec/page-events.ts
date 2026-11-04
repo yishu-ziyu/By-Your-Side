@@ -1,6 +1,3 @@
-/**
- * CAP-02A RPC：arm / wait / disarm / consume_events。
- */
 import { LEAD_SESSION_ID, type ToolContract } from "../../../../shared/protocol.js";
 import { resolveWorkingTab } from "../state.js";
 import { ensureAttached, holdAttach, releaseAttachHold } from "../debugger.js";
@@ -73,7 +70,6 @@ export async function waitEvent(
       completed: Boolean(payload.completed),
     };
 
-    // armPayload 只在 Chrome 报完成后填 path/bytes，有 danger 才填 danger；没有时键值为 undefined。
     if (payload.path !== undefined) download.path = String(payload.path);
 
     if (payload.bytes !== undefined) download.bytes = Number(payload.bytes);

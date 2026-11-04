@@ -1,22 +1,3 @@
-/**
- * 划词阅读卡：和侧栏同一套纸色；右边是空白时放在正文旁，有侧栏或窗口窄时浮在选区旁。
- * 回答窗顶上是动作名（解释、翻译…），底栏有复制、继续聊天；朗读默认不出现，用户主动开启后才出现。输入框里的芯片切快速/深度回答。
- * 工具条常驻提问、解释、更多、关闭，复制收在「更多」里；「更多」里的常用提问可以钉到工具条上。标题栏能拖动，右下角能缩放。
- *
- * 真扩展、隔离无头 Chrome、本机练习页、本机脚本模型。脚本模型只证明卡片位置、样子和请求去向，不证明真实回答写得好不好。
- *   npx tsx scripts/acceptance/real-path/reading-card-gloss.mts --headless
- *
- * 判据：
- *   右侧空白  卡片在正文右侧，不和选区所在段落重叠；滚动后仍贴着这段。
- *   回答窗    标题是「解释」，不再重复「解释这段文字」；回答上方常显选中的原文，点它回到原文；生成中不露底栏，写完才出现继续聊天、复制；点复制后显示已复制。
- *   纸色      卡片底色是浅色，和侧栏同一套色阶。
- *   快速/深度  默认请求是快速模型并带 fast；点芯片换成深度后，打字追问打到主模型并带 deep。
- *   钉到工具条 在「更多」里钉上「翻译」，再选中文字时工具条上有「翻译」，点它发出翻译提问、标题是「翻译」。
- *   关闭      工具条上的 × 收起工具条。
- *   拖动/缩放  拖标题栏后卡片停在新位置，滚动不跟走；拉右下角变大，再划一段仍记住大小；双击右下角回到默认大小。
- *   网页抢键  网页在 document 上监听按键、发现焦点不在输入框就聚焦自己的输入框（Claude 网页版就这样）：在卡片输入框里逐键打字，字仍落在卡片里，网页输入框是空的。
- *   有侧栏    卡片是浮卡，不盖住侧栏。窄窗口退回浮卡。
- */
 import { createServer } from "node:http";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -143,7 +124,6 @@ try {
   await rp.cdp.send("Target.activateTarget", { targetId: workTargetId }).catch(() => {});
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, work);
-  // 无头 Chrome 默认不给网页写剪贴板；日常 Chrome 里点击本身就够。
   await rp.cdp.send("Browser.grantPermissions", { origin: `http://127.0.0.1:${port}`, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] }).catch(() => {});
 
   const findShadow = (node: DomNode): DomNode | null => {
@@ -222,7 +202,6 @@ try {
     await copyFile(join(out, `${name}.png`), join(shots, `${name}.png`));
   };
 
-  /** 像用户一样拖选标记句，等工具条出来。 */
   const selectMarker = async (path: string, width: number) => {
     await rp.cdp.send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false }, work);
     await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${port}${path}` }, work);
@@ -248,7 +227,6 @@ try {
     await sleep(250);
   };
 
-  // 同词不同位置：检查第二次请求真正携带第二处上下文，而不是只看有回答。
   await selectMarker("/blank", 1280);
   const defaultBar = await inCard<string[]>(`function(){return [...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]')).map(b=>b.textContent.trim()||b.getAttribute('aria-label'))}`);
   check("工具条默认显示「问这段」，不出现朗读", defaultBar.includes("问这段") && !defaultBar.includes("朗读"), defaultBar);
@@ -308,7 +286,6 @@ try {
     const hit = await inCard<boolean>(`function(){const e=this.querySelector(${JSON.stringify(selector)});const hit=this.elementFromPoint(${point.x},${point.y});return !!e && (hit===e || e.contains(hit))}`);
     return hit ? point : undefined;
   };
-  // 回答区有限高：旧一轮的出处可能卷在上面，像用户一样先滚到它。
   await inCard<boolean>(`function(){this.querySelector('.turn:first-child > .source')?.scrollIntoView({block:'nearest'});return true}`);
   await sleep(200);
   await click(await until(() => clickable('.turn:first-child > .source'), 5_000, "旧出处可点击"));
@@ -388,7 +365,6 @@ try {
   const cardMoved = beforeScroll.card.top - afterScroll.card.top;
   check("滚动时卡片跟着这段走", moved > 80 && Math.abs(cardMoved - moved) < 16 && afterScroll.card.left >= afterScroll.block.right - 1, { moved, cardMoved });
 
-  // 钉「翻译」：工具条状态下打开「更多」，点「翻译」那行的图钉。
   await selectMarker("/blank", 1280);
   await click(await until(() => pointOf('[data-act="more"]'), 5_000, "更多"));
   const menuCopy = await inCard<string>(`function(){return this.querySelector('.menu [data-act="copy-selection"]')?.textContent?.trim()??''}`);

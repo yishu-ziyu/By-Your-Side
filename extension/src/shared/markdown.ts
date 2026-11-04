@@ -1,7 +1,7 @@
 import { Lexer, Marked, type Tokens, type TokenizerThis } from "marked";
 
 /**
- * assistant 消息 Markdown → HTML。
+ * WHY: assistant 消息 Markdown → HTML。
  *
  * 两处偏离 marked 默认行为。第一处：GFM 裸网址自动链接会在中文行文里吞掉后续正文。
  * 例如「已在新标签页打开 https://example.com，页面显示 …」会整段变成链接，
@@ -23,27 +23,15 @@ import { Lexer, Marked, type Tokens, type TokenizerThis } from "marked";
  * shared/answer-html.ts 的 sanitizeAnswerHtml 消毒（sidepanel/markdown.ts、content/ask.ts 都这样做）。
  */
 
-// marked 自己暴露的 inline 规则（与下面 Marked 实例的 gfm + breaks 配置一致），
-// 复用其 URL 与「尾部英文标点回退」正则，避免自己抄一份规则跑偏。
 const URL_RULE = Lexer.rules.inline.breaks.url;
 
 const BACKPEDAL_RULE = Lexer.rules.inline.breaks._backpedal;
 
-// 中文/全角标点：在中文行文里一定结束裸链接（，。；！？：、（）“”《》…——）
 const CJK_PUNCTUATION =
   /[\u3000-\u303f\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65\u2013\u2014\u2018\u2019\u201c\u201d\u2026\u30fb]/u;
 
-// 汉字/假名：跟在 ASCII 域名后面时按正文处理
 const CJK_IDEOGRAPH = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}]/u;
 
-/**
- * 截掉裸网址后面的中文正文，返回新的裸网址原文。
- *
- * - 中文标点处一律中止；
- * - 域名段（`scheme://` 之后到第一个 `/`、`?`、`#` 之前）若本身是纯 ASCII，
- *   紧跟其后的汉字/假名视为正文；
- * - 域名以非 ASCII 开头（IRI）或已进入路径/查询/片段时，中文照常保留。
- */
 function cutProseTail(raw: string): string {
   const scheme = /^[a-zA-Z][a-zA-Z0-9+.-]{1,31}:\/\//.exec(raw);
   const authorityStart = scheme ? scheme[0].length : 0;
@@ -70,7 +58,6 @@ function cutProseTail(raw: string): string {
   return raw;
 }
 
-/** marked 原生做法：反复剥掉结尾的英文标点（含不配对的右括号），保留 `Foo_(bar)`。 */
 function stripTrailingPunctuation(raw: string): string {
   let current = raw;
 
@@ -84,9 +71,7 @@ function stripTrailingPunctuation(raw: string): string {
   }
 }
 
-/** 覆盖 marked 的 GFM 裸网址 tokenizer：先按中文边界截断，再交给原生规则收尾。 */
 function bareUrlTokenizer(this: TokenizerThis, src: string): Tokens.Link | undefined {
-  // 与 marked 原生 url tokenizer 一致：链接文字里不再嵌套自动链接
   if (this.lexer.state.inLink) return undefined;
   const match = URL_RULE.exec(src);
 
@@ -103,7 +88,6 @@ function bareUrlTokenizer(this: TokenizerThis, src: string): Tokens.Link | undef
 }
 
 const CJK_PUNCT = CJK_PUNCTUATION.source.slice(1, -1);
-// 首或尾必须是中文标点；加粗里允许单个 * 的斜体。
 const cjkEmphasis = (marker: string, body: string) => new RegExp(`^${marker}(?![\\s*])((?:[${CJK_PUNCT}]${body}*|${body}*[${CJK_PUNCT}]))${marker}(?!\\*)`);
 const CJK_STRONG = cjkEmphasis("\\*\\*", "(?:[^\\n*]|\\*(?!\\*))");
 const CJK_EM = cjkEmphasis("\\*", "[^\\n*]");
@@ -126,7 +110,6 @@ marked.use({ extensions: [
   { name: "cjkEmphasis", level: "inline", tokenizer: cjkEmphasisTokenizer },
 ] });
 
-/** 渲染 assistant 的 Markdown 为 HTML；调用方仍需用 sanitizeAnswerHtml 消毒。 */
 export function renderMarkdownHtml(text: string): string {
   return marked.parse(text, { async: false });
 }

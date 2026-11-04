@@ -1,11 +1,3 @@
-/**
- * 页面快照 content script（ISOLATED world，重复注入幂等）。
- * 暴露 window.__sideagent.snapshot(scope?: "full_page" | "viewport") → 文本快照。
- * 输出形如：
- *   [ref=3] button "提交" loc=css:#submit
- *   text: 欢迎来到……
- * ref 存于 window.__sideagent.refs（每次快照重建，同一元素尽量保号）。
- */
 import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
 
 (function () {
@@ -54,7 +46,6 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
     "treeitem",
   ]);
 
-  // 元素 → 上一次快照分配的 ref 号（跨快照保号用）
   const prevRefs: WeakMap<Element, number> =
     (ns as unknown as { __prevRefs?: WeakMap<Element, number> }).__prevRefs ?? new WeakMap();
 
@@ -100,15 +91,12 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
     }
 
     function isVisible(el: Element): boolean {
-      // lib.dom 已把 checkVisibility 的参数契约声明为 CheckVisibilityOptions；这里仍保留结构声明，
-      // 因为运行时未必有这个方法（可选链 + typeof 走回退）。
       const anyEl = el as unknown as { checkVisibility?: (o?: CheckVisibilityOptions) => boolean };
 
       if (typeof anyEl.checkVisibility === "function") {
         try {
           if (!anyEl.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
         } catch {
-          /* 继续用尺寸判断 */
         }
       } else {
         const st = getComputedStyle(el);
@@ -129,7 +117,6 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
       return r.bottom > 0 && r.right > 0 && r.top < window.innerHeight && r.left < window.innerWidth;
     }
 
-    /** 生成 querySelector 可回查的稳定定位串：#id，或沿祖先的 tag:nth-of-type(n) 路径 */
     function cssLoc(el: Element): string {
       const elId = (el as HTMLElement).id;
 
@@ -174,7 +161,6 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
       return parts.join(" > ");
     }
 
-    /** 页面截成「…」显示、元素自带更完整的 title/aria 值时的 ` full="…"` 后缀（规则见 shared/page-readout.ts）。 */
     function fullPart(el: Element, shown: string): string {
       const full = fullerText(shown, [el.getAttribute("title"), el.getAttribute("aria-label"), el.getAttribute("aria-description")]);
 
@@ -188,7 +174,6 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
       return `[ref=${n}] ${text} loc=css:${cssLoc(el)}`;
     }
 
-    /** 语义/可交互元素 → 描述行；不感兴趣的元素返回 null */
     function describe(el: Element): string | null {
       const tag = el.tagName.toLowerCase();
       const he = el as HTMLElement;
@@ -212,7 +197,6 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
         const input = el as HTMLInputElement;
 
         if (RANGE_INPUT_TYPES.has(input.type)) {
-          // 范围输入框：给出页面写的 min/max/step、当前值与浏览器的越界判定。
           for (const key of ["min", "max", "step"] as const) {
             const limit = el.getAttribute(key);
 
@@ -281,7 +265,7 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
 
       if (!parent) return;
 
-      if (described.has(parent)) return; // 文本已包含在描述里
+      if (described.has(parent)) return;
       const s = (node.textContent ?? "").replace(/\s+/g, " ").trim();
 
       if (!s) return;
@@ -309,8 +293,6 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
         const src = clean(el.getAttribute("src") ?? "about:blank", 120);
 
         if (viewportOnly) {
-          // 视口快照不做子文档坐标换算：视口外整行丢弃；视口内仅占位、不递归。
-          // 不声称已覆盖 frame 内容。
           if (!inViewport(el)) return;
           lines.push(`${pad(depth)}[iframe src=${src} not-expanded]`);
 
@@ -323,10 +305,10 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
         try {
           doc = (el as HTMLIFrameElement).contentDocument;
         } catch {
-          doc = null; // 跨域：一行带过
+          doc = null;
         }
 
-        if (doc?.documentElement) walkChildren(doc, depth + 1); // 同源：递归并标注
+        if (doc?.documentElement) walkChildren(doc, depth + 1);
 
         return;
       }
@@ -337,7 +319,7 @@ import { fullerText, RANGE_INPUT_TYPES } from "../../../shared/page-readout.js";
         if (d) lines.push(pad(depth) + d);
       }
 
-      if (el.shadowRoot) walkChildren(el.shadowRoot, depth + 1); // open shadow root 递归
+      if (el.shadowRoot) walkChildren(el.shadowRoot, depth + 1);
       walkChildren(el, depth);
     }
 

@@ -1,12 +1,6 @@
 import type { PreparedCopy } from "../../shared/copied-field.js";
 import { runPageTranslation, type TranslateBatch } from "./page-translation.js";
 import type { TranslationReceipt, TranslationRequest } from "../../shared/page-translation.js";
-/**
- * 浏览器工具的 defineTool 封装。
- * 每个 execute 只做一件事：rpc.call 转发给扩展，再把结果转成模型友好的 content。
- * 工具名严格对齐 shared/protocol.ts 的 TOOL_NAMES / ToolContract。
- * 教学模式不裁剪工具能力（教学倾向由 prompt 层表达），全部工具始终可用。
- */
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
@@ -27,13 +21,8 @@ import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from 
 
 const MAX_JS_RESULT_CHARS = 20_000;
 
-/** upload_file 按扩展名给出的 MIME 类型；artifacts 能存的文字文件与截图。 */
 const UPLOAD_TYPES = new Map([["txt", "text/plain"], ["csv", "text/csv"], ["md", "text/markdown"], ["json", "application/json"], ["html", "text/html"], ["svg", "image/svg+xml"], ["js", "text/javascript"], ["css", "text/css"], ["png", "image/png"]]);
 
-/**
- * 视口坐标 [x, y]。不用 Type.Tuple：它生成的元组 schema（items 是数组）会让 MiMo V2.6 Flash 的网关
- * 把整条请求拒成 400「Invalid request parameters」，工具列表里只要有一个，所有浏览器任务都发不出去。
- */
 function viewportPoint(options: { description?: string } = {}) {
   return Type.Unsafe<[number, number]>({ type: "array", items: { type: "number" }, minItems: 2, maxItems: 2, ...options });
 }
@@ -42,10 +31,6 @@ function textResult(text: string, details: unknown) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
-/**
- * tabs 多带的参数指向另一个动作时，说明该用哪个；动作所需参数已给、只是多带了别的，就忽略多余的照常执行。
- * close 带 url 不带 tabId 也拒绝：照常执行会关掉当前工作页，而模型想关的是那个网址的标签页。空串的 url 当作没给。
- */
 function tabsMisuse(params: { action: string; url?: string; tabId?: number }): string | null {
   const hasUrl = typeof params.url === "string" && params.url !== "";
   const hasTab = typeof params.tabId === "number";
@@ -60,7 +45,6 @@ function tabsMisuse(params: { action: string; url?: string; tabId?: number }): s
   return null;
 }
 
-/** 写入后网页里这一栏的实际内容（扩展读回并与要写的比较，不是送去的参数）；敏感栏不带值。 */
 function readbackNote(readback: ToolContract["fill"]["data"]["readback"], what: string): string {
   if (!readback) return "";
 
@@ -77,7 +61,7 @@ function readbackNote(readback: ToolContract["fill"]["data"]["readback"], what: 
   return ` The ${what} now contains: ${value}${readback.match === "reformatted" ? " (the page changed spacing or letter case)" : ""}.`;
 }
 
-/** fill 的 from：说清搬了多少字、读回是否一致；首尾几个字是网页内容，按不可信页面数据包起来。 */
+/** WHY: fill 的 from：说清搬了多少字、读回是否一致；首尾几个字是网页内容，按不可信页面数据包起来。 */
 function sourceNote(source: NonNullable<ToolContract["fill"]["data"]["source"]>, from: { tabId?: number; target: string } | undefined, readback: ToolContract["fill"]["data"]["readback"]): string {
   const where = from ? ` from ${from.target}${from.tabId !== undefined ? ` in tab ${from.tabId}` : ""}` : "";
   const ends = source.tail ? `starts «${source.head}» … ends «${source.tail}»` : `«${source.head}»`;
@@ -93,8 +77,6 @@ function sourceNote(source: NonNullable<ToolContract["fill"]["data"]["source"]>,
   return ` Copied ${source.chars} characters${where} by the browser, not retyped; the text ${wrapPageContent(redactCredentialText(ends))}.${check}`;
 }
 
-/** 动作之后页面上新出现的行（扩展和模型上次读到的这一页比，见 extension/src/background/page-changes.ts）。是网页内容，按不可信页面数据包起来。 */
-/** unattributed：效果判断说这一步没引起变化。这时新出现的内容照给，但写明不一定是这一步带来的，“别盲目重复”的警告照旧。 */
 function appearedNote(appeared: import("../../shared/effect.js").PageAppeared | undefined, unattributed = false): string {
   if (!appeared) return "";
 
@@ -106,7 +88,6 @@ function appearedNote(appeared: import("../../shared/effect.js").PageAppeared | 
   return `\n${head} (refs are usable directly; no snapshot needed for these; lines you already saw that only moved are not listed):\n${wrapPageContent(redactCredentialText(appeared.text))}`;
 }
 
-/** fill 带 submit 时的回车结果：按了就同 press_key 的回执，没按就说为什么（理由是扩展写的，不是网页内容）。 */
 function submitNote(submit: ToolContract["fill"]["data"]["submit"]): string {
   if (!submit) return "";
 
@@ -119,10 +100,6 @@ function submitNote(submit: ToolContract["fill"]["data"]["submit"]): string {
   return `\nPressed Enter.${formatEffectReport(submit.pressed && submit.effect?.changed ? submit.effect : undefined, "key press")}${appearedNote(submit.pressed ? submit.appeared : undefined)}`;
 }
 
-/**
- * 页面下载的回执：只有 chrome.downloads 报 complete 才写「已保存」。
- * 中断直接报错，让这一步如实显示失败；还在下载就说还没下完。
- */
 function downloadReceipt(download: Omit<NonNullable<ToolContract["wait_event"]["data"]["download"]>, "path"> & { path?: string | null }): string {
   const name = download.suggestedFilename || download.url;
 
@@ -136,7 +113,6 @@ function downloadReceipt(download: Omit<NonNullable<ToolContract["wait_event"]["
   }
 
   if (download.failure) {
-    // Chrome 的错误码留在回执数据里供排查；给模型的是人话原因，它照着对用户说时不会念出错误码。
     throw new Error(`Download failed for "${name}": ${plainDownloadError(download.failure)}. No complete file was saved.`);
   }
 
@@ -151,26 +127,16 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}… [truncated]` : text;
 }
 
-/**
- * tabs 说明里只对文字任务成立的两句：任务首条消息带着标签页清单、回复带「切过去看」按钮。
- * 语音的工具清单（realtime-browser-tool-defs.ts）按这两个常量把它们去掉。
- */
 export const TABS_LIST_AT_START = "; the open tabs at task start are already in the task's first message, so call list only if tabs may have changed since";
 export const TABS_RESULT_IN_BACKGROUND = ' A result left in a background tab is expected: the reply automatically gives the user a "切过去看" button for the working tab, so never call show just to deliver a result.';
-/** 专用工具能力边界；语音工具表复用这两句说明。 */
 const TRANSLATION_JS_FALLBACK = " It covers the whole page. For only some paragraphs, return the translated text in the conversation; JS cannot change the page.";
 const MARK_JS_FALLBACK = " mark has one outline style and circles terms in the whole page; unsupported visual edits cannot be performed with read-only JS.";
 export const JS_FALLBACK = new RegExp([TRANSLATION_JS_FALLBACK, MARK_JS_FALLBACK].map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
 
-/** browser_run 结束时附上的新页快照的标题行（tool-failure-policy 按它和 "\n[After this program" 截掉尾巴再比较错误）。 */
 const PROGRAM_PAGE_LABEL = "Fresh snapshot of the page the program ended on (no separate snapshot needed):";
 
-/** 程序里不会换页的步骤：等待、核对和宿主组合的只读帮手。其余按 effect-policy 判断，未声明只读的都当作可能换页。 */
 const PROGRAM_QUIET_STEPS: ReadonlySet<string> = new Set(["sleep", "wait_for", "check", "assert", "pageInfo", "waitForLoad", "waitForNetworkIdle", "saveFile"]);
 
-/**
- * 工具结果里顺手附上的新页快照的标题行。就绪超时时导航可能还没换页：写明读到的是哪个地址、在确认就绪之前读的、可能不全。
- */
 function freshSnapshotLabel(page: ToolContract["snapshot"]["data"], readiness?: string): string {
   if (readiness !== "timeout") return "Fresh snapshot of the new page (no separate snapshot needed):";
   const what = page.url ? `tab ${page.tabId} as it is now (${page.url})` : `tab ${page.tabId} as it is now (its address was not confirmed)`;
@@ -198,11 +164,6 @@ function tabSiteHost(url: string): string | null {
   }
 }
 
-/**
- * 工作目标与可见结果分开表达：`Working tab is now N` 只是执行事实（工作目标已指向 N）；
- * 用户此刻是否看得到，只按执行后读回的核验事实说。未核验/核验不通过时明确说未确认或
- * 不在前台，不让模型把工作目标转述成「用户已经看到目标页」，也不声称页面已加载完成。
- */
 function switchResultText(data: ToolContract["switch_tab"]["data"]): string {
   const base = `Working tab is now ${data.tabId}.`;
   const verification = data.verification;
@@ -224,10 +185,6 @@ function switchResultText(data: ToolContract["switch_tab"]["data"]): string {
   return `${base} The current active tab could not be read back; visibility is unconfirmed.`;
 }
 
-/**
- * 合并工具：一个模型可见工具代理多个扩展 RPC 名。
- * 能力开关（canExecute / isToolActive）按模型可见名判定，执行事实与账本仍按 RPC 名。
- */
 const MODEL_TOOL_OF: Record<string, string> = {
   list_tabs: "tabs",
   get_active_tab: "tabs",
@@ -235,32 +192,24 @@ const MODEL_TOOL_OF: Record<string, string> = {
   switch_tab: "tabs",
   close_tab: "tabs",
   clear_marks: "mark",
-  // disarm_event 只在 browser_run 里组合使用，没有单独的模型工具；它和 arm_event 同属事件订阅，随 arm_event 启停。
-  // 缺这条映射时它永远算「未启用」，通用页面 JS 在所有模式下都被拒。
   disarm_event: "arm_event",
-  // worker_tabs 是扩展侧 RPC 名；模型可见的入口是常驻的 take_tab。
   worker_tabs: "take_tab",
 };
 
 const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
 
-/** 一次工具执行的身份：call 据此绑定轮次闸门、SDK 调用 ID 和停止信号。 */
 interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
 
-/** 用户插话后，旧计划里还没执行的一步被作废时的工具结果。宿主据此知道这一步没碰页面。 */
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
 interface BrowserToolExecution {
   epoch: () => number;
   canWrite: (toolCallId?: string) => boolean;
-  /** 占着这页的旧会话已空闲时接手它；返回是否已接手。 */
   releaseIdleTab?: (tabId?: number) => Promise<boolean>;
   assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void;
   onStep?: (step: ProgramStep) => void;
   beforeCopy?: () => Promise<PreparedCopy>;
-  /** 本会话文件区（与 artifacts 同一份），给 browser.saveFile。 */
   files?: () => ArtifactStore | undefined;
-  /** 用户附上或任务内下载的文件。 */
   attachments?: () => readonly Attachment[];
   downloadAttachment?: (input: { id: string; name: string; mimeType: string; dataBase64: string }) => Promise<FileAttachment>;
   downloadOriginal?: (attachment: Attachment) => string | undefined;
@@ -277,12 +226,10 @@ interface BrowserToolExecution {
 
 export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (tabId?: number) => Promise<unknown>, canExecute?: (name: ToolName) => boolean, execution?: BrowserToolExecution, translateBatch?: TranslateBatch): ToolDefinition[] {
   const sid = sessionId && !isLeadSession(sessionId) ? sessionId : undefined;
-  /** 站点笔记只给主会话；放在页面原文标记之外，取不到就不附。 */
   const siteNotesAfter = async (url: string): Promise<string> => (sid ? null : await execution?.siteNotesFor?.(url).catch(() => null)) ?? "";
   const files = execution?.files;
   const programHelpers = availableProgramHelpers({ saveFile: !!files });
 
-  /** upload_file 按文件名取本会话的文件：先找 artifacts / saveFile 存下的，再找用户附上或下载的；找不到就列出可用的名字。 */
   const uploadPayload = async (name: string): Promise<UploadFilePayload> => {
     const store = files?.();
     const saved = store?.get(name);
@@ -310,7 +257,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     throw new Error(`找不到文件 ${JSON.stringify(name)}，操作未执行。${available.length ? `可上传的文件：${available.join("、")}。` : "本会话还没有文件：先用 artifacts 创建，或请用户在侧栏附上。"}`);
   };
 
-  /** screenshot forUser：把这张图存进本会话文件区，侧栏显示成回答里的图片卡片；做不到时如实告诉模型用户没看到。 */
   const deliverScreenshot = async (base64: string): Promise<string> => {
     const store = files?.();
 
@@ -326,8 +272,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     }
   };
 
-  // 通用 page JS 能绕过任何单个写工具的禁用，因此在写能力不完整时整体拒绝。
-  // 依赖集合复用 WRITE_TOOLS（按模型可见名去重）；每次问真实 canExecute，不看 JS 内容或提示词。
   const unavailableWriteTools = (): ToolName[] =>
     canExecute ? [...new Set(WRITE_TOOLS.map((name) => modelToolOf(name)))].filter((name) =>
       !canExecute(name as ToolName)) as ToolName[] : [];
@@ -371,11 +315,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     return { ...data, download: publicDownload };
   };
 
-  // 每次工具执行的身份（轮次、调用 ID、停止信号）显式绑定到一个 call 上，不靠 AsyncLocalStorage：
-  // 浏览器里没有它，而工具可能并行执行，全局变量会串号。
   const makeCall = (scope: ExecutionScope | undefined) => {
   const call = async (name: ToolName, params: Record<string, unknown>, programId?: string, stepId?: string, origin?: "readonly-poll", rpcTimeoutMs?: number, programDeadline?: number): Promise<unknown> => {
-    // 填的值来自本轮带上的记忆：交给扩展在那一格画「记得的」（fill 工具和 browser_run 里的 fill 都走这里）。
     const memory = name === "fill" && typeof params.value === "string" ? execution?.memoryForValue?.(params.value) : undefined;
 
     if (memory) params = { ...params, memory };
@@ -385,7 +326,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       if (!Array.isArray(names) || names.length < 1 || names.length > 8 || !names.every((file): file is string => typeof file === "string" && file.trim().length > 0)) {
         throw new Error("上传需要 1–8 个当前会话中的文件名，操作未执行。");
       }
-      // Standalone tools and browser programs must resolve the same authorized originals before reaching the page.
       params = { ...params, files: await Promise.all(names.map(file => uploadPayload(file.trim()))) };
     }
     if ((name === "wait_event" || name === "disarm_event") && params.token && typeof params.token === "object" && "token" in params.token && typeof params.token.token === "string") {
@@ -394,7 +334,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
     const epoch = scope?.epoch;
     const signal = scope?.signal;
-    // SDK 调用身份（含 browser_run 子步骤）随 RPC 登记，执行事实才能沿真实事件回到任务账本。
     const sdkId = execution ? (stepId ?? scope?.toolCallId) : undefined;
 
     if (sdkId) rpc.ensureToolCall?.(sdkId, name, sid);
@@ -409,7 +348,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     };
 
     assertNotAborted();
-    // 进入这一步时的执行闸门状态。
     const staleStep = () => gated && (!execution!.canWrite(scope?.toolCallId) || epoch !== execution!.epoch());
 
     if (staleStep()) {
@@ -435,7 +373,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       catch (error) { if (sdkId) rpc.markCallRejected?.(sdkId); throw error; }
     }
 
-    // dialog_info、describe_target 没有模型可见工具（前者由 pageInfo 组合调用，后者给提交前核对认控件）；只读，不受工具开关限制。
     if (canExecute && name !== "dialog_info" && name !== "describe_target" && !canExecute(modelToolOf(name) as ToolName)) {
       if (sdkId) rpc.markCallRejected?.(sdkId);
       throw new Error(`工具 ${modelToolOf(name)} 当前未启用，操作未执行`);
@@ -445,7 +382,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       await takeTab(typeof callParams.tabId === "number" ? callParams.tabId : undefined);
     }
 
-    // 获准或页面移交的 await 返回后，取消信号仍可能先于 RPC 到达。
     assertNotAborted();
 
     const invoke = (executionEpoch?: number) => {
@@ -457,7 +393,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         return rpc.call(name,callParams,remaining,sid,programId,executionEpoch,sdkId,signal);
       }
 
-      // 未接线 SDK 身份时保持原有调用形状（兼容纯函数测试与外部调用）。
       if (sdkId === undefined) {
         if (executionEpoch !== undefined) return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, undefined, undefined, programDeadline);
 
@@ -467,8 +402,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId, undefined, programDeadline);
     };
 
-    // 页被另一会话占着且那边已空闲：直接接手并重试这一次，不让模型绕 take_tab。
-    // 只对执行前就被拦下的调用这样做；那边还在执行时照旧拦住，由用户决定。
     const invokeReleasingIdleOwner = async (executionEpoch?: number) => {
       try {
         return await invoke(executionEpoch);
@@ -487,7 +420,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
     const preparedCopy = name === 'fill' && callParams.from !== undefined ? await execution?.beforeCopy?.() : undefined;
     if (name === 'fill') {
-      // Copy scope comes only from the user's request, never from generated program arguments.
+      // WHY: Copy scope comes only from the user's request, never from generated program arguments.
       delete callParams.copyRange;
       if (callParams.from !== undefined && preparedCopy?.range) callParams.copyRange = preparedCopy.range;
     }
@@ -500,8 +433,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       if (registered && typeof registered === "object" && "download" in registered) publicResult = registered.download;
     }
     preparedCopy?.record(publicResult);
-    try { execution?.observeCall?.(name, callParams, publicResult); } catch { /* observation is not control */ }
-    // Private integrity evidence never enters model programs, side-panel text or traces.
+    try { execution?.observeCall?.(name, callParams, publicResult); } catch {  }
+    // WHY: Private integrity evidence never enters model programs, side-panel text or traces.
     if (name === 'fill' && publicResult && typeof publicResult === 'object' && 'copyProof' in publicResult) {
       const { copyProof: _copyProof, ...withoutProof } = publicResult;
       return withoutProof;
@@ -513,7 +446,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   };
 
   const call = makeCall(undefined);
-  /** 导航后的只读补读：不带调用身份，避免与导航本身的执行事实混在一起。 */
   const readAfterNavigate = call;
 
   const makeDefinitions = (call: ReturnType<typeof makeCall>, _scope: ExecutionScope | undefined) => [
@@ -530,11 +462,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         document: Type.Optional(Type.String({description:'Observed translation instance; reject if the page changed.'})),
       }),
       execute: async (_id, params, signal) => {
-        // 时限按进度判断（runPageTranslation 内的看门狗），不再固定 240 s 一刀切。
         const result = await runPageTranslation(params as TranslationRequest,
           async command => await call('page_translation', {...command}) as TranslationReceipt,
           translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), signal ?? new AbortController().signal,
-          // Only removes our own placeholders: outside the step gate and the task ledger, so it still runs after a stop.
           {settle: async command => { await rpc.call('page_translation', {...command}, 5_000, sid); }});
 
         return textResult(JSON.stringify(result), result);
@@ -559,9 +489,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("read_element", params)) as ToolContract["read_element"]["data"];
-        // A state query does not need the element's entire descendant text in the model context.
         const stateOnly = { tabId: data.tabId, target: data.target, tagName: data.tagName, properties: data.properties, note: data.note, check: data.check };
-        // A value check on a range input keeps the allowed range and the browser's verdict beside it.
         const projected = params.properties?.length || params.expect ? (data.inputRange ? { ...stateOnly, inputRange: data.inputRange } : stateOnly) : data;
 
         return textResult(wrapPageContent(redactCredentialText(JSON.stringify(projected)), { tabId: data.tabId }), data);
@@ -591,27 +519,22 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
       }),
       execute: async (id, params, signal, onUpdate) => {
-        // 组合调用一旦开始，整体结果就不再是“确定未执行”。
         rpc.noteToolFact?.(id, "unknown");
 
         let result: Awaited<ReturnType<typeof runBrowserProgram>>;
-        // 开始前记下各标签页的地址，结束时才知道程序有没有让工作页换了页。只读补读，不挂本次调用身份；读失败就不比较。
         const startUrls = sid ? null : await (readAfterNavigate("list_tabs", {}) as Promise<ToolContract["list_tabs"]["data"]>)
           .then(d => new Map(d.tabs.map(tab => [tab.id, tab.url])), () => null);
-        // 程序换了页（包括中途因文档变化失败）时顺手读一次新页，模型不用再专门花一轮 snapshot。
-        // 没有现成的「等文档就绪」宿主接口（waitForLoad 在程序内部），读失败就隔 500ms 再试，最多 3 次，都失败只退回原回执。
         const pageAfter = async (tabId: number): Promise<ToolContract["snapshot"]["data"] | null> => {
           for (let attempt = 0; attempt < 3 && !signal?.aborted; attempt++) {
             if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 500));
 
             try {
               return (await readAfterNavigate("snapshot", { tabId })) as ToolContract["snapshot"]["data"];
-            } catch { /* 页面还在换文档，稍后再读 */ }
+            } catch {  }
           }
 
           return null;
         };
-        // 已结束的步骤：程序自己在最后一次可能换页的步骤之后已经读过这一页，就不再附一份（一份快照可达数万字）。
         const endedSteps: ProgramStep[] = [];
 
         const programAlreadyRead = (finalUrl: string): boolean => {
@@ -622,7 +545,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
             if (!step.error && step.name === "snapshot" && data.url === finalUrl) return true;
             if (!step.error && step.name === "siteMethod" && data.url === finalUrl && typeof data.text === "string") return true;
 
-            // 程序里的 navigate 就绪后已经顺手读了新页（browser-program.ts）。
             if (!step.error && step.name === "navigate" && (data.readiness === "interactive" || data.readiness === "complete") && data.url === finalUrl) return true;
 
             if (!PROGRAM_QUIET_STEPS.has(step.name) && requiresControlGate(step.name, step.params)) return false;
@@ -630,8 +552,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
           return false;
         };
-        // 程序里点开、跳转后，模型只看得到程序自己 return 的东西，常不知道页面已经到了，再花几轮去「确认」。
-        // 结束时写明工作标签页停在哪一页：这就是这次程序的回执。page 放进 details，会话把它记成一次页面读数。
         const endedOn = async (): Promise<{ text: string; page?: ToolContract["snapshot"]["data"] }> => {
           try {
             const { tabs } = (await call("list_tabs", {})) as ToolContract["list_tabs"]["data"];
@@ -644,7 +564,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
             const page = moved ? await pageAfter(working.id) : null;
             const notes = changed ? await siteNotesAfter(working.url) : "";
 
-            // 和点击回执一样只给标题前 120 字和 origin+pathname（标题来自网页，网址的查询串可能带私人信息）。
             const text = `\n[After this program the working tab ${working.id} shows "${(working.title || "(untitled)").replace(/\s+/g, " ").slice(0, 120)}" — ${url ? `${url.origin}${url.pathname}` : "(no address)"}; that is the page now.]`;
 
             return page
@@ -653,7 +572,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           } catch { return { text: "" }; }
         };
 
-        // 程序自己的代码出错时，前面已经做完的调用结果别丢：模型不知道它们成功了，就会绕开内置方法重做一遍。
         const finishedBefore = (): string => {
           const done = endedSteps.filter(step => !step.error && step.result !== undefined && !PROGRAM_QUIET_STEPS.has(step.name));
 
@@ -677,7 +595,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
             return receipt;
           } : undefined,
-          // Preflight needs the substep binding now, not after Pi's async progress queue drains.
           onStep: programStep => {
             if (programStep.phase === "end") endedSteps.push(programStep);
 
@@ -685,10 +602,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           },
           });
         } catch (error) {
-          // 抛错的结果没有 details（Pi 只留错误文字），这里附的新页只进模型看到的文字，不进页面读数。
           if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${finishedBefore()}${(await endedOn()).text}`, { cause: error });
-          // assert 停下不是工具失败：前面的步骤已经做了，结果带结构交给模型。
-          // details.steps 保持是步数（侧栏按 Number(details.steps) 计数），步骤列表另放 programSteps。
           rpc.noteToolFact?.(id, "executed");
 
           const ended = await endedOn();
@@ -700,7 +614,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         const json = JSON.stringify({ ...(result.imageSources.length ? { imageSources: result.imageSources } : {}), value: result.value, steps: result.steps });
 
-        // 程序常带回网页正文：与 snapshot 一样标成不可信页面数据并遮掉凭据；超长时写明截了多少，别让模型以为拿全了。
+        // WHY: 程序常带回网页正文：与 snapshot 一样标成不可信页面数据并遮掉凭据；超长时写明截了多少，别让模型以为拿全了。
         const shown = json.length > MAX_JS_RESULT_CHARS
           ? `${json.slice(0, MAX_JS_RESULT_CHARS)}… [truncated: showed ${MAX_JS_RESULT_CHARS} of ${json.length} chars; the rest is missing — return less (slice each page) or save it with browser.saveFile]`
           : json;
@@ -788,7 +702,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         }, { description: 'Host-issued guard for a switch selected from a current browser observation.' })),
       }),
       execute: async (_id, params) => {
-        // 指向另一个动作的参数照常执行会悄悄丢掉模型的意图。
         const misuse = tabsMisuse(params);
 
         if (misuse) {
@@ -831,11 +744,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
           if (sid || data.tabClosed) return textResult(text, data);
 
-          // 用户这一句就是要打开网页来看：开出来就切到眼前，下面读回的「用户在看哪页」就是这一页，回答不会再说「在后台」。
           if (params.url && execution?.openForUser?.()) await call("switch_tab", { tabId: data.tabId, show: true }).catch(() => undefined);
 
-          // 新页开在后台：读回用户眼前是哪一页，模型和目标核对才知道用户其实没看到它。读失败就不写，不猜。
-          // 只读补读不挂本次调用身份（同 navigate）。
           const front = await (readAfterNavigate("get_active_tab", {}) as Promise<ToolContract["get_active_tab"]["data"]>).then((d) => d.tab, () => null);
           const notes: string[] = [];
 
@@ -850,7 +760,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           if (data.readiness === "download" || data.readiness === "error_page") return textResult(head, data);
           const siteNotes = await siteNotesAfter(data.url);
 
-          // 和 navigate 一样顺手读一次新页：不然 open 后模型多半专门花一轮 snapshot。读失败只退回原结果。
           try {
             const page = (await readAfterNavigate("snapshot", { tabId: data.tabId })) as ToolContract["snapshot"]["data"];
 
@@ -860,7 +769,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           }
         }
 
-        // 用户只是要打开一个网页来看：开新页并切到眼前（open 默认开在后台，是为了做事时不换走用户的页）。
         if (params.action === "show" && typeof params.tabId !== "number" && params.url) {
           const opened = (await call("open_tab", { url: params.url })) as ToolContract["open_tab"]["data"];
 
@@ -899,14 +807,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const data = (await call("navigate", params)) as ToolContract["navigate"]["data"];
         const head = `Navigation result: ${data.url} — ${data.title}; document: ${data.readiness ?? "not checked"}${data.retry ? `\n${data.retry}` : ""}${data.note && data.readiness !== "download" && data.readiness !== "error_page" && (data.workingTabId != null || data.readiness === "complete") ? `\n${data.note}` : ""}`;
 
-        // 地址变成了下载（页面没换）或 Chrome 显示错误页：不补读快照，只说 Chrome 报告的结果。
         if (data.readiness === "download" || data.readiness === "error_page") return textResult(data.note ? `${head}\n${data.note}` : head, data);
 
-        // 协作成员（sid）就绪超时照旧只给结果行。
         if (sid && data.readiness === "timeout") return textResult(head, data);
         const notes = await siteNotesAfter(data.url);
 
-        // 新页面就绪后顺手读一次，省掉模型专门再花一轮调 snapshot；就绪超时也读，但标明可能不全。读页不挂在本次导航的调用身份下（同预观察），失败只退回原结果。
         try {
           const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
 
@@ -993,18 +898,15 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         const dialog = "dialog" in data ? data.dialog : undefined;
 
-        // 点击弹出了原生对话框：点击已送达，页面在等对话框（读页会卡住），先接受或取消它。
         if (dialog) {
           return textResult(`Clicked ${what}. The page opened a native ${dialog.type} dialog; its text: ${wrapPageContent(dialog.message.slice(0, 500))}\nThe page is blocked until it is handled; use accept_dialog (promptText for a prompt) or dismiss_dialog as the user asked, then observe the page.`, data);
         }
 
-        // 警告看效果判断，不看摘要：有时钟、倒计时的页面上摘要几乎总不是空的。
         const effect = "effect" in data ? data.effect : undefined;
         const effectText = formatEffectReport(effect);
         const appeared = appearedNote("appeared" in data ? data.appeared : undefined, !!effect && !effect.changed);
         const opened = "newTab" in data ? data.newTab : undefined;
         const newTabText = opened ? ` A new tab opened (tab ${opened.tabId}${opened.url ? `, ${opened.url}` : ""}) and it is now your working tab; observe it before continuing.` : "";
-        // 用户点了「发送」后才点下去。
         const clicked = data.sendConfirmed ? `The user confirmed sending, then the extension clicked ${what}.` : `Clicked ${what}.`;
 
 
@@ -1215,12 +1117,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       }),
       execute: async (_id, params) => {
         const data = (await call("fill", params)) as ToolContract["fill"]["data"];
-        // 键盘输入和旧写法都没写进去：如实说，建议点进框里逐字输入。
         const failed = data.typing === "failed" ? " Keyboard input and the direct write both failed to put the value in; do not retry the same way — tell the user the field did not take it." : "";
         const copied = data.source ? sourceNote(data.source, params.from, data.readback) : readbackNote(data.readback, "field");
 
-        // The browser rejects the value for the field's min/max/step: say so, never plain success.
-        // 诊断记录只留搬运的字数，首尾几个字只给模型看。
         return textResult((data.rangeIssue ? `Filled ${params.target}, but the value is not accepted by the page. ${data.rangeIssue.message}` : `Filled ${params.target}.`) + copied + failed + appearedNote(data.appeared) + submitNote(data.submit), data.source ? { ...data, source: { chars: data.source.chars } } : data);
       },
     }),
@@ -1251,7 +1150,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         if (data.dialog) return textResult(`${data.pressed ? "Key input dispatched" : "Key input not dispatched"}; the page opened a native ${data.dialog.type}: ${data.dialog.message}. The remaining input sequence stopped. The dialog type and message are given here; use accept_dialog or dismiss_dialog as the user asked (browser.pageInfo() in browser_run also reports a pending dialog).`, data);
 
-        // 多行输入框里回车只是换行，页面读数看不出来：只有焦点在单行框时才报「没变化」。
         const effect = "effect" in data && (data.effect?.changed || data.singleLineInput) ? data.effect : undefined;
 
         return textResult(`Pressed ${params.key}.${formatEffectReport(effect, "key press")}${appearedNote("appeared" in data ? data.appeared : undefined)}`, data);
@@ -1288,7 +1186,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       execute: async (_id, params) => {
         const data = (await call("fetch", params)) as ToolContract["fetch"]["data"];
         const text = formatFetchReply(data as FetchReply);
-        // 对方答了非 2xx 这一步算失败（判定见 fetchFailureReason）：isError + 给侧栏的人话原因；给模型的文字不变。
         const reason = fetchFailureReason(data as FetchReply);
 
         return reason
@@ -1349,7 +1246,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         const { saveAs, deliver, purpose: _purpose, ...pageParams } = params as typeof params & { saveAs?: string; deliver?: boolean };
 
         if (saveAs !== undefined) {
-          // 文件区与文件名在跑脚本之前核对：存不了就不动页面。
           const store = files?.();
 
           if (!store) throw new Error("这个会话没有文件区，saveAs 不可用，脚本未运行。");
@@ -1429,10 +1325,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         step: Type.Integer({ minimum: 1, description: "1-based step number in this lesson" }),
       }),
       execute: async (_id, params) => {
-        // 扩展最多等用户 2 分钟；宿主收到 tool_waiting_user 才放宽期限，这里先按同一上限发出，免得等待开始前就被普通期限截断。
         const data = (await call("guide_step", { tabId: params.tabId, target: params.target, say: params.say, step: params.step }, undefined, undefined, undefined, USER_CONFIRM_TIMEOUT_MS)) as ToolContract["guide_step"]["data"];
-        // 只有 done 是结果；没变化、超时、停下、离开都由扩展按「没执行」结束，原因和下一步怎么做写在那条错误里。
-        // after 是点完以后从网页读出的目标状态（如开关已打开）：模型据此不再让用户把同一个开关点回去。它来自网页，按页面内容包起来。
         const now = data.after ? ` The target now reads: ${wrapPageContent(data.after)}` : "";
 
         return textResult(`Step ${params.step} done: the user clicked and the page changed (${data.changed ? `${data.changed}; ` : ""}misses=${data.misses}, noChangeClicks=${data.noChangeClicks}).${now} Snapshot the page, then give the next step or finish in one sentence; do not guide a step that is already done.`, data);
@@ -1458,7 +1351,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         scale: Type.Optional(Type.Union([Type.Literal("css"), Type.Literal("raw")])),
       }),
       execute: async (_id, input) => {
-        // forUser 是宿主自己的交付开关，不传给扩展的截图 RPC。
         const { forUser, clip, scale, ...rest } = input as typeof input & { forUser?: boolean; clip?: typeof input.clip & { scale?: unknown } };
         const nestedScale = clip?.scale === "css" || clip?.scale === "raw" ? clip.scale : undefined;
         const params = {
@@ -1491,7 +1383,6 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
   return execution ? definitions.map(tool => ({ ...tool, execute: async (...args: Parameters<ToolDefinition["execute"]>) => {
     rpc.ensureToolCall?.(args[0], tool.name as ToolName, sid);
-    // 本次执行用绑定了自己身份的一份工具定义；定义内部没有跨调用的状态。
     const scope: ExecutionScope = {epoch: execution.epoch(), toolCallId: args[0], signal: args[2]};
     const scoped = makeDefinitions(makeCall(scope), scope).find(candidate => candidate.name === tool.name) ?? tool;
 

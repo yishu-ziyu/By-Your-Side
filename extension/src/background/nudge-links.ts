@@ -26,7 +26,7 @@ export async function readNudgeLinks(tabId: number): Promise<{ url: string; link
           if (chars + title.length + url.href.length > 6000) continue;
           chars += title.length + url.href.length;
           links.push({ title, url: url.href });
-        } catch { /* Invalid page links are not entrances. */ }
+        } catch {  }
       }
       return { url: location.href, links };
     },

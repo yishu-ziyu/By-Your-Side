@@ -1,19 +1,3 @@
-/**
- * 「忘掉」之后，同一会话和别的旧会话里，发给模型的请求不再带被忘掉的那条记忆（#640）。
- * 只装扩展的隔离无头 Chrome、真侧栏、本机脚本模型。证据是「发给模型的请求原文」（代理在脚本模型前面记下整份请求，
- * 不只最后一段运行上下文）和扩展自己的 IndexedDB。
- *
- *   npx tsx scripts/acceptance/real-path/forget-scrubs-history.mts --headless
- *
- * 产物：out/acceptance/forget-scrubs-history/ 下截图与 result.json。
- *
- * 各条「假通过」与堵法：
- * F1 记忆根本没进历史，所以忘掉后自然没有 → 忘掉前两个会话的请求里都要有这条邮箱。
- * F2 只看最后一段运行上下文（旧检查的做法）→ 看整份请求里除助手回答外的全部文字；并要有占位，证明旧运行上下文还在、只是那一行换了。
- *    把别的记忆一起删了 → 「回复用中文」那条仍在请求里。
- * F3 只修了当前会话 → 切回另一个旧会话再发一句，同样核对。
- * F4 撤销忘掉后找不回 → 点「撤销」后下一轮请求里又有这条。
- */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -31,7 +15,6 @@ const EMAIL = `邮箱：${ADDRESS}`;
 
 const LANG = "回复用中文";
 
-/** 和邮箱那条共有「邮箱」，回答下会点名它，才有「忘记」按钮可点。 */
 const ASK = "帮我看看这页，注册要填哪个邮箱";
 
 const PLACEHOLDER = "A memory here was forgotten at the user's request.";
@@ -59,7 +42,6 @@ const NONE = { action: "none", text: "", evidence: "", scope: { kind: "all" }, t
 
 const upstream = await startScriptedModel([{ match: ASK, steps: [{ text: "好的，这页是一个普通商品页。" }] }, { match: "DECISION::none", steps: [{ text: JSON.stringify(NONE) }] }]);
 
-/** 主任务请求（带工具表）里除助手回答外的全部文字，按到达顺序。 */
 const mainRequests: string[] = [];
 
 const proxy = createServer(async (req, res) => {
@@ -125,7 +107,6 @@ const shot = async (name: string) => {
   await rp.screenshot(panel, join(artifacts, `${name}.png`));
 };
 
-// 库名、键与 memory-used-line.mts 相同。
 const idbOpen = `async () => {
   const exists = (await indexedDB.databases()).some((d) => d.name === "sideagent-memory");
   return await new Promise((res, rej) => {
@@ -157,7 +138,6 @@ async function newConversation() {
   await sleep(800);
 }
 
-/** 当前会话在会话菜单里的编号。 */
 async function currentConversation(): Promise<string> {
   await rp.click(panel, "#conversation-switcher");
   await sleep(300);
@@ -178,7 +158,6 @@ async function switchTo(id: string) {
   await sleep(1500);
 }
 
-/** 发一句话，等这一轮结束；返回这一轮第一条主任务请求的文字。 */
 async function turn(): Promise<string> {
   const mark = mainRequests.length;
   const before = await read();
@@ -201,7 +180,6 @@ async function turn(): Promise<string> {
   return mainRequests[mark] ?? "";
 }
 
-/** 真点最后一行「按你说过的…」里邮箱那条的某个按钮（先展开）。 */
 async function clickLine(label: string) {
   const open = await rp.evaluate(panel, `(() => { const line = [...document.querySelectorAll(".memory-used-line")].at(-1); return !!line && line.dataset.open === "true"; })()`);
 
@@ -242,7 +220,6 @@ try {
   await putDoc("memories", JSON.stringify({ format: 3, rev: 1, entries: [memory("seed-email", EMAIL), memory("seed-lang", LANG)] }) + "\n");
   await putDoc("tasks", JSON.stringify({ format: 1, tasks: [] }) + "\n");
 
-  // F1：两个会话各跑一轮，邮箱进了各自的历史。
   await newConversation();
   const a1 = has(await turn());
   const convA = await currentConversation();
@@ -250,19 +227,16 @@ try {
   const b1 = has(await turn());
   check("F1", "忘掉前：两个会话的请求里都带着这条邮箱", a1.email >= 1 && b1.email >= 1, { a1, b1 });
 
-  // F2：在会话 B 回答下点「忘记」，同一会话再发一句。
   await clickLine("忘记");
   await shot("1-forgotten");
   const inStore = (await storedIds()).includes("seed-email");
   const b2 = has(await turn());
   check("F2", "同一会话忘掉后：整份请求里没有这条邮箱，旧的那一行换成占位，另一条记忆照常带", !inStore && b2.chars > 0 && b2.email === 0 && b2.placeholder >= 1 && b2.lang, { inStore, b2 });
 
-  // F4：撤销后又带上（旧历史里那一行也回来）。
   await clickLine("撤销");
   const b3 = has(await turn());
   check("F4", "撤销忘掉后：下一轮请求里又有这条邮箱，没有占位", b3.email >= 2 && b3.placeholder === 0, { b3 });
 
-  // F3：再忘掉一次，切回会话 A 发一句。
   await clickLine("忘记");
   await switchTo(convA);
   const a2 = has(await turn());

@@ -17,7 +17,6 @@ function isScope(value: unknown): value is { scope: PageReadScope } {
   return !!value && typeof value === 'object' && 'scope' in value && ['whole', 'local', 'none'].includes(String(value.scope));
 }
 
-/** Classify only the user's request; a page cannot grant itself permission to skip complete reading. */
 export async function pageReadScope(host: SideCallHost, model: Model<Api>, requests: readonly string[]): Promise<PageReadScope> {
   return sideJudgment(host, model, {
     purpose: 'page_read_scope',

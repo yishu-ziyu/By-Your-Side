@@ -1,25 +1,3 @@
-/**
- * 改过网页的一轮：侧栏摆出填写后网页里的实际内容，核对判继续时说发现了什么。
- * 10-10 起回答不再扣到核对出结论，也不标「结果还没确认」。只装扩展、隔离构建、本机脚本模型。
- *   npx tsx scripts/acceptance/real-path/claim-after-check.mts --headless
- * 做法：模型地址指向本机转发服务；目标核对请求（系统提示词以核对说明开头）在这里按用例扣住，再换成脚本结论。
- * 每 50 毫秒读一次侧栏，记下什么时候出现了什么。
- *   a) 填错「Note」并说「已填入第一句」，核对扣 3 秒判继续：这句回答在核对结论前就显示；判继续后它收进第一轮的过程，
- *      续做那一轮过程行第二行写「核对发现：…」，屏幕上任何时候只有一份回答；
- *      读回显示「草稿现在是：「Note」」；续做填对后第二次核对判完成，回答出现。
- *   b) 网页在输入时改成大写：读回显示大写值。
- *   e) 填对、核对马上判完成：读回显示对的句子。
- *   f) 网页把输入清空：读回显示空值。
- *   g) browser_run 程序里的 browser.fill：读回同样显示在侧栏。
- *   h) 填完不写回答，宿主在整轮结束后补交「助手没给出最后的回答就停了…」：补交的回答出现，下一轮开始后仍在。
- *   j) a 续做之后的顺序：「Note」读回 < 第一轮过程（收着第一次的回答） < 续做过程（含第二次读回） < 最终回答。
- *   k) 第一次填写读回为空（网页第一次输入清空），模型读页后重填成功：读回显示重填的值。
- *   n) a 的核对结论带给用户的 finding 和带指令的 correction：过程行显示 finding，不含「请」「please」。
- *   o) 判继续的结论没有 finding：过程行第二行写「还差：…」（remaining）。
- *   p) 同一页两栏都叫「地址」：读回显示两行。
- *   r) 只读的一轮（只读页、不改页面，收尾不留过程块）答错、核对判继续：那份回答同样被拿掉，新旧两份从不同时出现。
- * 失败方式：恢复侧栏扣住回答，a 的回答要等到核对结论之后才出现（反例结果
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -65,7 +43,6 @@ const CASES = {
   e: { ask: "案例E：把蓝色 Note 框里的第一句英文复制到草稿框里，不要保存。", claim: "已把第一句填进草稿框 E。", path: "/note" },
   f: { ask: "案例F：在草稿框里写 keep me，不要保存。", claim: "草稿已写好 F。", path: "/strip" },
   g: { ask: "案例G：用一段程序在草稿框里写 from program，不要保存。", claim: "草稿已写好 G。", path: "/note" },
-  // h 的回答由宿主补交：模型没写回答，宿主说没给出最后的回答、请用户看页面（conversation-manager 的兜底交付）。
   h: { ask: "案例H：在草稿框里写 late answer，不要保存。", claim: "助手没给出最后的回答就停了。页面上可能已经改了一部分，请看一下。", path: "/note" },
   k: { ask: "案例K：在草稿框里写 second try K，不要保存。", claim: "草稿已写好 K。", path: "/once" },
   o: { ask: "案例O：把蓝色 Note 框里的第一句英文复制到草稿框里，不要保存。", claim: "已填入 O。", path: "/note" },
@@ -75,20 +52,15 @@ const CASES = {
 
 const FIXED = "已把第一句英文填入草稿框，没有保存。";
 
-/** 核对写给助手的话：诊断和指令连在一句里（10-09 实测的样子）。侧栏不该显示它。 */
 const CORRECTION = "草稿框当前内容是“Note”，不是第一句；请改为只保留第一句：“Jev currently accepts text input only.”，且不要点击保存。Please do not save.";
 
-/** 核对写给用户的一句诊断。 */
 const FINDING = "草稿框里现在是“Note”，不是 Note 框里的第一句英文";
 
 const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished the user's goal";
 
-/** 助手（脚本模型）收到的填写回执原文：R1 要求读回的实际内容和对不上的问题写在里面。 */
 const toolTexts = new Set<string>();
 
 const model = await startScriptedModel([
-  // 核对判继续后宿主发的续做消息：先看一眼页面（同一栏已有成功回执，产品要求重填前先读页），再填对、回答。
-  // 放在最前，续做消息里带着用户原话也先认它。
   { match: "[GOAL CHECK]", steps: [{ tool: { name: "snapshot", args: {} } }, fill(NOTE_FIRST), { text: FIXED }] },
   { match: CASES.a.ask, steps: [fill("Note"), { text: CASES.a.claim }] },
   { match: CASES.b.ask, steps: [fill("hello world"), { text: CASES.b.claim }] },
@@ -100,7 +72,6 @@ const model = await startScriptedModel([
   { match: CASES.o.ask, steps: [fill("Note O"), { text: CASES.o.claim }] },
   { match: CASES.r.ask, steps: [{ tool: { name: "snapshot", args: {} } }, { text: CASES.r.claim }] },
   { match: CASES.p.ask, steps: [fill("A road", "#addr1"), fill("B street", "#addr2"), { text: CASES.p.claim }] },
-  // 不带 finding 的放前面：脚本模型按包含匹配，「VERDICT-CONTINUE」也包含在它里面。
   { match: "VERDICT-CONTINUE-BARE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION }) }] },
   { match: "VERDICT-CONTINUE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION, finding: FINDING }) }] },
   { match: "VERDICT-DONE", steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
@@ -112,12 +83,10 @@ const model = await startScriptedModel([
   }
 });
 
-/** 接下来的目标核对依次怎么回：扣多久、什么结论。没排上的马上判完成。 */
 const verdicts: Array<{ holdMs: number; probe: "VERDICT-CONTINUE" | "VERDICT-CONTINUE-BARE" | "VERDICT-DONE" }> = [];
 
 const checks: Array<{ probe: string; receivedAt: number; releasedAt: number }> = [];
 
-/** 最近一次首轮核对给的结论：复核照它再判。 */
 let lastFirst: "VERDICT-CONTINUE" | "VERDICT-CONTINUE-BARE" | "VERDICT-DONE" = "VERDICT-DONE";
 
 const proxy = createServer(async (req, res) => {
@@ -129,7 +98,6 @@ const proxy = createServer(async (req, res) => {
   const again = req.method === "POST" && body.includes(GOAL_CHECK_PREFIX) ? reverifyContinue(body) : null;
 
   if (again) {
-    // 复核：照首轮结论再判一次，判继续时带上复核读数里的原文。
     forward = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), messages: [{ role: "user", content: recheckProbe(lastFirst, again) }] });
   } else if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
     const receivedAt = Date.now();
@@ -143,7 +111,6 @@ const proxy = createServer(async (req, res) => {
     checks.push({ probe: next.probe, receivedAt, releasedAt: Date.now() });
   }
 
-  // 收尾时脚本模型先关了，扣着的核对再转发会连不上：回 502，不让进程崩掉。
   try {
     const upstream = await fetch(`${model.baseUrl.replace(/\/$/, "")}${(req.url ?? "").replace(/^\/v1/, "")}`, { method: req.method, headers: { "content-type": "application/json" }, body: req.method === "POST" ? forward : undefined });
     res.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" }).end(Buffer.from(await upstream.arrayBuffer()));
@@ -156,10 +123,8 @@ await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
 
 const rp = await launchRealPath();
 
-/** 侧栏一次读数（毫秒相对发出那一刻）。 */
 type Sample = { t: number; claimOutsideProcess: boolean; fix: string[]; evidence: string[]; answers: string[] };
 
-/** 判继续后续做那一轮过程行第二行的开头（「核对发现：…」或「还差：…」），去掉后面的「已做 N 步」。 */
 const fixHead = (t: string) => t.split(" · ")[0]!;
 
 const SAMPLE_JS = (claim: string) => `(() => {
@@ -182,7 +147,6 @@ let error: string | null = null;
 
 const evidence: Record<string, unknown> = {};
 
-/** 失败时存下侧栏消息区的 HTML，便于复查。 */
 let panelForDump: string | null = null;
 
 try {
@@ -203,7 +167,6 @@ try {
 
   const settled = () => until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")') || undefined, 60_000, "previous turn settled", 100);
 
-  /** 发出一条，每 50 毫秒读一次侧栏，直到 done 返回 true 或超时。 */
   async function runCase(key: keyof typeof CASES, done: (s: Sample) => boolean, shots: Record<string, (s: Sample) => boolean> = {}, limitMs = 60_000) {
     const c = CASES[key];
     await settled();
@@ -239,7 +202,6 @@ try {
 
   const first = (samples: Sample[], pred: (s: Sample) => boolean) => samples.find(pred)?.t ?? null;
 
-  // a) 填错并说已填入；第一次核对扣 3 秒判继续，续做之后第二次核对判完成。
   verdicts.push({ holdMs: 3_000, probe: "VERDICT-CONTINUE" }, { holdMs: 0, probe: "VERDICT-DONE" });
   const checksBeforeA = checks.length;
   const a = await runCase("a", s => s.answers.some(t => t.includes(FIXED)) && s.evidence.some(t => t.includes(NOTE_FIRST)), {
@@ -266,16 +228,13 @@ try {
 
   assert.ok(caseA.claimFirstShownMs !== null && caseA.claimFirstShownMs < releaseMs, `a: the answer is shown before the verdict (${releaseMs} ms); first shown ${caseA.claimFirstShownMs} ms`);
   assert.ok(caseA.fixFirstMs !== null && caseA.fixFirstMs >= releaseMs, `a: 「核对发现」 visible on the process line after the verdict (${caseA.fixFirstMs} ms)`);
-  // 屏幕上同一件事只留一份回答：判继续后第一次的回答离开对话，收进第一轮的过程。
   assert.equal(caseA.twoAnswersMs, null, `a: the first and the fixed answer are never shown together (${caseA.twoAnswersMs} ms)`);
   assert.equal(caseA.claimAfterVerdictMs, null, `a: the first answer leaves the conversation after the verdict (${caseA.claimAfterVerdictMs} ms)`);
-  // n) 显示核对写给用户的 finding，不显示写给助手的 correction。
   assert.ok(caseA.fixText.map(fixHead).includes(`核对发现：${FINDING}`), `n: the process line shows the finding: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.fixText.every(t => !t.includes("请") && !/please/i.test(t)), `n: the fix line has no instruction to the assistant: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.noteEvidenceFirstMs !== null, "a: 「草稿现在是：「Note」」 visible");
   assert.ok(caseA.finalEvidence.includes(`草稿现在是：「${NOTE_FIRST}」`), `a: final evidence shows the right sentence: ${JSON.stringify(caseA.finalEvidence)}`);
 
-  // j) 续做之后的顺序：「核对发现」属于第一轮，排在续做的过程和读回之前。
   const orderA = await rp.evaluate(panel, `(() => {
     const nodes = [...document.querySelectorAll("#messages > *")];
     const at = pred => nodes.findIndex(pred);
@@ -294,30 +253,25 @@ try {
   assert.ok(orderA.firstProcess >= 0 && orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.secondProcess && orderA.firstProcess < orderA.secondProcess && orderA.secondProcess === orderA.secondEvidence && orderA.secondEvidence < orderA.finalAnswer,
     `j: order 「Note」 evidence and the first process (holding the first answer) < second process (holding the second evidence) < final answer: ${JSON.stringify(orderA)}`);
 
-  // b) 网页在输入时改成大写：读回的是网页里的值。
   const b = await runCase("b", s => s.answers.some(t => t.includes(CASES.b.claim)), { final: s => s.answers.some(t => t.includes(CASES.b.claim)) });
   evidence.b = { evidence: b.samples.at(-1)!.evidence, finalAnswerMs: b.samples.at(-1)!.t };
   assert.ok(b.samples.at(-1)!.evidence.includes("草稿现在是：「HELLO WORLD」"), `b: evidence shows the page's uppercased value: ${JSON.stringify(b.samples.at(-1)!.evidence)}`);
 
-  // e) 填对：读回显示对的句子。
   const e = await runCase("e", s => s.answers.some(t => t.includes(CASES.e.claim)), { final: s => s.answers.some(t => t.includes(CASES.e.claim)) });
   evidence.e = { finalAnswerMs: e.samples.at(-1)!.t, evidence: e.samples.at(-1)!.evidence };
   assert.ok(e.samples.at(-1)!.evidence.includes(`草稿现在是：「${NOTE_FIRST}」`), "e: evidence shows the right sentence");
 
-  // f) 网页留不住输入：读回显示空值。
   const f = await runCase("f", s => s.answers.some(t => t.includes(CASES.f.claim)), { final: s => s.answers.some(t => t.includes(CASES.f.claim)) });
   await sleep(500);
   const fEnd = await rp.evaluate(panel, SAMPLE_JS(CASES.f.claim)) as Omit<Sample, "t">;
   evidence.f = { evidence: fEnd.evidence, finalAnswerMs: f.samples.at(-1)!.t };
   assert.ok(fEnd.evidence.includes("草稿现在是：「」"), `f: evidence shows the empty field: ${JSON.stringify(fEnd.evidence)}`);
 
-  // R1：助手收到的回执写着网页里的实际内容；对不上时直接写成问题。
   evidence.modelReceipts = [...toolTexts];
   assert.ok(toolTexts.has("Filled #draft. The field now contains: «Note»."), `a: receipt carries the read-back value: ${JSON.stringify([...toolTexts])}`);
   assert.ok([...toolTexts].some(t => t.includes("«HELLO WORLD»") && t.includes("changed spacing or letter case")), "b: receipt says the page reformatted the value");
   assert.ok([...toolTexts].some(t => t.includes("Problem: the field is empty")), "f: receipt states the empty field as a problem");
 
-  /** 某条用户消息之后、下一条用户消息之前的回答（不含「收到」），以及它们是否排在下一条用户消息之前。 */
   const turnAnswers = (ask: string) => rp.evaluate(panel, `(() => {
     const users = [...document.querySelectorAll("#messages .msg.user")];
     const user = users.find(u => u.textContent.includes(${JSON.stringify(ask)}));
@@ -329,7 +283,6 @@ try {
     return out;
   })()`) as Promise<string[]>;
 
-  // h) 填完不写回答：宿主在整轮结束后补交回答。
   verdicts.push({ holdMs: 1_500, probe: "VERDICT-DONE" });
   const checksBeforeH = checks.length;
   const h = await runCase("h", s => s.answers.some(t => t.includes(CASES.h.claim)), { released: s => s.answers.some(t => t.includes(CASES.h.claim)) }, 20_000);
@@ -340,7 +293,6 @@ try {
     answers: await turnAnswers(CASES.h.ask),
   };
 
-  // h 的补交回答在下一轮（g）开始之后仍在。
   const g = await runCase("g", s => s.answers.some(t => t.includes(CASES.g.claim)), { final: s => s.answers.some(t => t.includes(CASES.g.claim)) });
   evidence.g = { evidence: g.samples.at(-1)!.evidence, finalAnswerMs: g.samples.at(-1)!.t };
   assert.ok(g.samples.at(-1)!.evidence.includes("草稿现在是：「from program」"), `g: program fill reaches the evidence line: ${JSON.stringify(g.samples.at(-1)!.evidence)}`);
@@ -348,7 +300,6 @@ try {
   (evidence.h as Record<string, unknown>).answersAfterNextRuns = hAfter;
   assert.ok(hAfter.some(text => text.includes(CASES.h.claim)), `h: the host's late answer survives the next run: ${JSON.stringify(hAfter)}`);
 
-  /** 跑一个用例到回答出现，等 0.5 秒后读侧栏。 */
   async function finalRead(key: "k" | "p") {
     await runCase(key, s => s.answers.some(t => t.includes(CASES[key].claim)), { final: s => s.answers.some(t => t.includes(CASES[key].claim)) }, 30_000);
     await sleep(500);
@@ -358,12 +309,10 @@ try {
     return end;
   }
 
-  // k) 第一次读回为空，模型读页后重填成功：读回显示最新一次的值。
   const k = await finalRead("k");
   evidence.k = { evidence: k.evidence, receipts: [...toolTexts].filter(t => t.includes("second try K")) };
   assert.ok(k.evidence.includes("草稿现在是：「second try K」"), `k: the latest readback is the refilled value: ${JSON.stringify(k.evidence)}`);
 
-  // o) 判继续的结论没有 finding：退回「还差：remaining」。续做照 a 的路填对，第二次核对判完成。
   verdicts.push({ holdMs: 0, probe: "VERDICT-CONTINUE-BARE" }, { holdMs: 0, probe: "VERDICT-DONE" });
   const fixedBefore = Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].filter(m => m.textContent.includes(${JSON.stringify(FIXED)})).length`));
   let sawFixO = false;
@@ -372,11 +321,9 @@ try {
   evidence.o = { fix: [...new Set(fixO)] };
   assert.deepEqual([...new Set(fixO)], ["还差：填入第一句"], `o: without a finding the process line says what is still missing: ${JSON.stringify(fixO)}`);
 
-  // r) 只读的一轮答错、判继续：收尾不留过程块，那份回答也要拿掉；续做照 a 的路填对，第二次核对判完成。
   verdicts.push({ holdMs: 0, probe: "VERDICT-CONTINUE" }, { holdMs: 0, probe: "VERDICT-DONE" });
   const fixedBeforeR = Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].filter(m => m.textContent.includes(${JSON.stringify(FIXED)})).length`));
   const fixedR = (s: Sample) => s.answers.filter(t => t.includes(FIXED)).length > fixedBeforeR;
-  // 回答逐字淡入（#358）：脚本模型的核对几乎立刻判继续，整句常常只放出头一个字就被续做顶替；放出了任意开头就算显示过。
   const claimR = (t: string) => t.includes(CASES.r.claim) || (!!t.trim() && CASES.r.claim.startsWith(t.trim()));
   const r = await runCase("r", s => fixedR(s) && !s.answers.some(claimR), {}, 30_000);
   evidence.r = {
@@ -387,7 +334,6 @@ try {
   assert.ok((evidence.r as { claimShownMs: number | null }).claimShownMs !== null, `r: the read-only answer was shown first: ${JSON.stringify(evidence.r)}`);
   assert.equal((evidence.r as { twoAnswersMs: number | null }).twoAnswersMs, null, `r: the read-only answer and the fixed one are never shown together: ${JSON.stringify(evidence.r)}`);
 
-  // p) 两栏同名：第一栏没留住，第二栏一致。两栏各有一行读回，第一栏不被第二栏盖掉。
   const p = await finalRead("p");
   evidence.p = { evidence: p.evidence };
   assert.deepEqual(p.evidence, ["地址现在是：「」", "地址现在是：「B street」"], `p: both same-named fields have their own evidence line: ${JSON.stringify(p.evidence)}`);

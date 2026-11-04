@@ -1,7 +1,3 @@
-/** 按住说话的键不只认 Mac 的右 ⌥：Windows/Linux 默认右 Ctrl；设置里改成别的键后，打开着的网页马上换成新键。
- * 只判网页报给后台的开始/松开（话不真送去听写），和设置页上用户看到的键名。
- * npx tsx scripts/acceptance/real-path/ptt-key-choice.mts --headless
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {resolve} from 'node:path';
@@ -19,7 +15,6 @@ const hold=async(page:string,code:string)=>{const k=KEYS[code];
  await new Promise(r=>setTimeout(r,400));
  await rp.cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key:k.key,code,windowsVirtualKeyCode:k.vk,location:k.location},page);
  await new Promise(r=>setTimeout(r,300));};
-// 打开一页，把网页脚本报给后台的按住说话消息记下来并回“好”，不碰麦克风。
 const openPage=async(userAgent?:string)=>{
  const contexts:any[]=[];
  const {targetId}=await rp.cdp.send('Target.createTarget',{url:'about:blank'});const page=await rp.attach(targetId);

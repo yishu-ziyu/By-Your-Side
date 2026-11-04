@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-/**
- * 热重载开发中的扩展（免重启 Chrome）：
- * 新开一个 chrome://extensions 后台标签 → 在页面 shadow DOM 里点本扩展的「重新加载」→ 关标签。
- * 需要 Chrome 以 --remote-debugging-port=9222 运行（可用 CDP_PORT 覆盖端口）。
- * 只适配 macOS。
- */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -14,7 +8,6 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const CDP = `http://127.0.0.1:${process.env.CDP_PORT ?? 9222}`;
 
-/** manifest key（base64 SPKI DER）→ 扩展 ID（与 Chrome 同算法）。 */
 function extensionIdFromKey(key) {
   const der = Buffer.from(key, "base64");
   const hash = createHash("sha256").update(der).digest();
@@ -65,10 +58,6 @@ function send(method, params = {}, sessionId) {
   return new Promise((res) => pending.set(id, res));
 }
 
-// 注意两点（2026-09 实测）：
-// - 外部直接开 chrome-extension:// 页面会被 Chrome 拦（ERR_BLOCKED_BY_CLIENT），不能靠临时扩展页调 chrome.runtime.reload()；
-// - 已开的旧 chrome://extensions 标签常被冻结，evaluate 会挂起——必须新建标签（新渲染进程）。
-// CDP 只认 background：写成 active:false 会被忽略，新标签页开在前台，把 Chrome 拉到最前面。
 const { result: t } = await send("Target.createTarget", { url: "chrome://extensions/", background: true });
 
 const { result: att } = await send("Target.attachToTarget", { targetId: t.targetId, flatten: true });
@@ -94,7 +83,6 @@ const click = () => send("Runtime.evaluate", {
   returnByValue: true,
 }, att.sessionId);
 
-// 机器忙时（负载 20 以上）扩展页要好几秒才画出来：等到列表就绪再点，最多 20 秒。
 let outcome = "";
 
 for (const until = Date.now() + 20_000; ;) {

@@ -2,7 +2,6 @@ import { parseCopyTextRange, type CopyTextRange } from "./copy-range.js";
 
 export interface PreparedCopy { record(result: unknown): void; range?: CopyTextRange }
 
-/** A native copy binds its text to one document and DOM node, not to a reusable selector. */
 export interface CopiedFieldProof {
   tabId: number;
   documentId: string;

@@ -1,28 +1,14 @@
-/**
- * Composer Attachments 管理模块：
- * - 56px squircle 瓷贴与顺时针 SVG Accent Ring 进度描边 (周长 194px)
- * - 右上角 9px 百分比数字与关闭按钮 ✕ 原位 Blur Cross-Fade (Zero Layout Shift)
- * - 交互源支持：
- *   1. 📸 截取当前网页视口 (向 background 请求 sidepanel_capture_tab)
- *   2. 📁 上传本地图片或文件（PDF、Word、Excel、PPT、CSV、文本）
- *   3. 剪贴板 Cmd+V / Ctrl+V 粘贴图片或文件
- *   4. 拖拽图片或文件至输入区域
- * 文件在侧栏本机读成文字（file-read.js 用到时才加载）；瓷贴的进度环跟着真实的读取进度走。
- */
-
 import { isAttachment, type Attachment, type FileAttachment, type FileFormat, type ImageAttachment } from "../../../shared/protocol.js";
 import { isCircling, removeCircle, startCircling } from "./circle-select.js";
 import { fileChip, fileMeta } from "./file-chip.js";
 import { readableFormat, unsupportedReason } from "./file-read/formats.js";
 
-/** 一条消息最多带这么多个附件（与任务核心接收的上限一致）。 */
 const ATTACHMENTS_MAX = 16;
 
 type FileReadModule = typeof import("./file-read/index.js");
 
 let fileReadModule: Promise<FileReadModule> | null = null;
 
-/** 解析代码单独打包成 file-read.js：第一次附上文件时才加载。 */
 function loadFileRead(): Promise<FileReadModule> {
   fileReadModule ??= import(chrome.runtime.getURL("file-read.js")) as Promise<FileReadModule>;
   fileReadModule.catch(() => { fileReadModule = null; });
@@ -32,11 +18,9 @@ function loadFileRead(): Promise<FileReadModule> {
 
 const TILE_PERIMETER = 194;
 
-/** 文件瓷贴更宽，放得下文件名；进度环的周长随之变。 */
 const FILE_TILE_WIDTH = 176;
 const FILE_TILE_PERIMETER = Math.round(2 * (FILE_TILE_WIDTH - 3 + 53) - (8 - 2 * Math.PI) * 11);
 
-/** 走图片附件的类型：模型直接看图。 */
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 type SupportedImageMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
@@ -49,7 +33,6 @@ interface AttachmentsManagerOptions {
   menuEl: HTMLElement;
   fileInputEl: HTMLInputElement;
   onChanged?: (count: number, scope?: string) => void;
-  /** 读取进度或完成状态变化；只刷新展示，不触发草稿重写。 */
   onDisplayChanged?: (scope?: string) => void;
   onError?: (errMessage: string) => void;
 }
@@ -59,11 +42,8 @@ export interface AttachmentSnapshot {
   name: string;
   detail: string;
   state: "reading" | "ready";
-  /** 读取进度 0–100，只在读取中有。 */
   progress?: number;
-  /** 图片附件的 data URL，标签缩略图和预览用。 */
   imageUrl?: string;
-  /** 文件读出来的文字，预览用。 */
   text?: string;
 }
 
@@ -72,7 +52,6 @@ interface FileItem {
   id: string;
   name: string;
   format: FileFormat;
-  /** 读好之前没有；发消息时只带读好的。 */
   attachment: FileAttachment | null;
   ready: Promise<void>;
   dom: AttachmentItem["dom"];
@@ -83,11 +62,9 @@ interface AttachmentItem {
   id: string;
   name: string;
   mimeType: SupportedImageMime;
-  dataBase64: string; // base64 without prefix
+  dataBase64: string;
   dataUrl: string;
-  /** 圈出来问的第几圈；去掉这张时页面上那一圈也去掉。 */
   circle?: number;
-  /** 圈内的网页文字，随图交给助手。 */
   note?: string;
   width?: number;
   height?: number;
@@ -201,13 +178,11 @@ export class AttachmentsManager {
   }
 
   private bindEvents(): void {
-    // 1. + 按钮呼出/收起动作菜单
     this.attachBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.toggleMenu();
     });
 
-    // 点击页面任意外部关闭菜单
     document.addEventListener("click", (e) => {
       if (
         !this.menuEl.hidden &&
@@ -218,7 +193,6 @@ export class AttachmentsManager {
       }
     });
 
-    // 2. 菜单内动作点击
     const screenshotBtn = this.menuEl.querySelector("#menu-action-screenshot");
     screenshotBtn?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -226,7 +200,6 @@ export class AttachmentsManager {
       void this.captureActiveTab();
     });
 
-    // 圈出来问：菜单项，或侧栏里按 ⌘/Ctrl+Shift+S。
     const regionBtn = this.menuEl.querySelector("#menu-action-region");
     regionBtn?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -248,7 +221,6 @@ export class AttachmentsManager {
       this.fileInputEl.click();
     });
 
-    // 3. 文件选择触发
     this.fileInputEl.addEventListener("change", () => {
       const files = Array.from(this.fileInputEl.files || []);
 
@@ -259,14 +231,12 @@ export class AttachmentsManager {
       this.fileInputEl.value = "";
     });
 
-    // 4. 输入框剪贴板粘贴
     this.inputEl.addEventListener("paste", (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
 
       if (!items || items.length === 0) return;
       const files: File[] = [];
 
-      // 复制的文件（访达里 ⌘C）和截图一样出现在剪贴板的文件项里；纯文字粘贴照常进输入框。
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
 
@@ -283,7 +253,6 @@ export class AttachmentsManager {
       }
     });
 
-    // 5. 拖拽到 composer 区域
     let dragCounter = 0;
     this.composerEl.addEventListener("dragenter", (e) => {
       e.preventDefault();
@@ -325,9 +294,6 @@ export class AttachmentsManager {
     this.attachBtn.classList.remove("active");
   }
 
-  /**
-   * 截取当前激活网页视口
-   */
   public async captureActiveTab(): Promise<void> {
     const scope = this.scopeId;
 
@@ -360,9 +326,6 @@ export class AttachmentsManager {
     }
   }
 
-  /**
-   * 圈出来问：进入圈画，每圈一处加一张带编号的附件；编号接着输入框上方已有的圈往下数。不发送。
-   */
   public async captureRegion(): Promise<void> {
     if (isCircling()) return;
     const scope = this.scopeId;
@@ -382,9 +345,6 @@ export class AttachmentsManager {
     }
   }
 
-  /**
-   * 批量加入文件对象（带入场错峰 stagger）
-   */
   public async addFiles(files: File[], staggerMs = 80): Promise<void> {
     const scope = this.scopeId;
     const rejected: string[] = [];
@@ -425,7 +385,6 @@ export class AttachmentsManager {
     if (rejected.length) this.onError?.(rejected.join("\n"));
   }
 
-  /** 先摆出瓷贴，后台读文件：进度环跟着读取进度走，读不出来就撤下瓷贴并说明原因。 */
   private addDocument(file: File, scope: string): void {
     const id = "att_" + Math.random().toString(36).slice(2, 9);
     const format = readableFormat(file)!;
@@ -472,7 +431,6 @@ export class AttachmentsManager {
     this.notifyDisplayChanged(scope);
   }
 
-  /** 还在读的文件：发送前要等它们读完。 */
   public reading(scope = this.scopeId): number {
     return this.scopeItems(scope).filter(item => item.kind === "file" && !item.attachment).length;
   }
@@ -481,9 +439,6 @@ export class AttachmentsManager {
     return Promise.all(this.scopeItems(scope).flatMap(item => (item.kind === "file" ? [item.ready] : []))).then(() => {});
   }
 
-  /**
-   * 从 dataUrl 加入单枚瓷贴
-   */
   public async addFromDataUrl(dataUrl: string, name?: string, scope = this.scopeId, circle?: number): Promise<AttachmentItem> {
     const { mimeType, dataBase64 } = parseDataUrl(dataUrl);
     const { width, height } = await getImageDimensions(dataUrl);
@@ -516,7 +471,6 @@ export class AttachmentsManager {
     this.updateVisibility(scope);
     this.notifyDisplayChanged(scope);
 
-    // 运行 0% -> 100% 顺时针 Ring 描边与数字动效 (380ms 顺畅感知)
     this.animateTileProgress(item, 380);
 
     return item;
@@ -527,14 +481,12 @@ export class AttachmentsManager {
     tile.className = "tile-56 tile-landing";
     tile.dataset.id = id;
 
-    // 1. 缩略图
     const img = document.createElement("img");
     img.className = "tile-img";
     img.src = dataUrl;
     img.alt = name;
     tile.appendChild(img);
 
-    // 圈出来问的附件：左上角是页面上那一圈的编号。
     if (circle) {
       const num = document.createElement("span");
       num.className = "tile-circle-num";
@@ -543,7 +495,6 @@ export class AttachmentsManager {
       tile.appendChild(num);
     }
 
-    // 2. 顺时针 Accent Ring 描边 SVG (56x56 容器，rx=11)
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "tile-ring-svg");
     svg.setAttribute("viewBox", "0 0 56 56");
@@ -557,13 +508,11 @@ export class AttachmentsManager {
     svg.appendChild(rect);
     tile.appendChild(svg);
 
-    // 3. 右上角 9px 百分比数字
     const pText = document.createElement("span");
     pText.className = "tile-progress-text";
     pText.textContent = "0%";
     tile.appendChild(pText);
 
-    // 4. 同坐标原位关闭按钮 ✕ (Zero Layout Shift)
     const dismissBtn = document.createElement("button");
     dismissBtn.type = "button";
     dismissBtn.className = "tile-dismiss-btn";
@@ -628,7 +577,6 @@ export class AttachmentsManager {
     const step = (timestamp: number) => {
       const elapsed = timestamp - start;
       const progress = Math.min(elapsed / durationMs, 1);
-      // 正弦缓动节奏
       const eased = Math.sin((progress * Math.PI) / 2);
       const percent = Math.round(eased * 100);
 
@@ -674,7 +622,6 @@ export class AttachmentsManager {
     this.notifyDisplayChanged();
   }
 
-  /** 发消息要带的附件：图片和已读好的文件（还在读的不带，发送前先 whenRead）。 */
   public getAttachments(scope = this.scopeId): Attachment[] {
     return this.scopeItems(scope).flatMap((item): Attachment[] => {
       if (item.kind === "file") return item.attachment ? [item.attachment] : [];

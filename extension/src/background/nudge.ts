@@ -113,7 +113,6 @@ export function installNudge(deps: Deps) {
       const panelOpen = await deps.panelOpen(tab.windowId, request.tabId);
       if (panelOpen || card.preparation) await chrome.storage.session.set({ [NUDGE_PANEL_KEY]: offer });
       if (!panelOpen) {
-        // 习惯原文只留在扩展里；页角连模型可能转述习惯的句子也不带。
         const { preparation: _privatePreparation, ...pageCard } = card;
         if (card.preparation) pageCard.sentence = '这个项目的阅读入口';
         const shown = await chrome.tabs.sendMessage(request.tabId, { type: NUDGE_SHOW, card: pageCard }, { frameId: 0 }).then(() => true, () => false);
@@ -195,7 +194,7 @@ export function installNudge(deps: Deps) {
     const offer = offers.get(tabId);
     if (!offer || offer.card.id !== message?.id) return;
     if (type === NUDGE_ACT) {
-      // 必须在点击消息里同步打开，等异步校验以后 Chrome 就不认是用户动作。
+      // WHY: 必须在点击消息里同步打开，等异步校验以后 Chrome 就不认是用户动作。
       void chrome.sidePanel.open({ tabId }).catch(() => {});
       if (offer.card.preparation) {
         void onPanel(type, offer.card.id).then(respond, () => respond({ ok: false, reason: 'offline' }));

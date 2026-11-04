@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 文档路径、篇幅与文件链接检查；语义正确性仍由维护者复核。 */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -43,7 +42,6 @@ function linksFrom(text) {
   marked.walkTokens(marked.lexer(text), token => {
     if (token.type === "link" || token.type === "image") links.add(token.href);
 
-    // 只读 HTML token 的引用，不执行 HTML；代码块不会进入这里。
     if (token.type === "html") {
       for (const match of token.text.matchAll(/\b(?:href|src)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) links.add(match[1] ?? match[2]);
     }
@@ -69,13 +67,11 @@ function run() {
 
     if (!file.startsWith("docs/") && !exception) errors.push(`LOCATION ${file}: 项目说明应放入 docs/`);
 
-    // 工具约定入口、vendor 来源和评测原件只核对位置，不重写其格式与规格。
     if (!file.startsWith("docs/") && !["README.md", "AGENTS.md"].includes(file)) continue;
     const old = historical(file);
 
     if (old) historyCount++;
 
-    // 日期命名代表验收创建日期；新格式即使提交后也不能被历史跳过规则豁免。
     const evalDate = file.match(/^docs\/evals\/(\d{8})-[^/]+\.md$/)?.[1];
     const needsEvalSections = evalDate != null && evalDate >= "20261004";
 
@@ -119,7 +115,6 @@ function run() {
         continue;
       }
 
-      // out 是可清理的本地证据，干净 clone 不保证拥有它；不能替代受版本控制的文档。
       if (inRepo.startsWith("out/")) {
         if (!existsSync(full)) warnings.push(`ARTIFACT ${file}: 本地证据未携带 ${href}`);
         continue;

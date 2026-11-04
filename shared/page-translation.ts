@@ -1,4 +1,3 @@
-/** Wire contract for document-bound translation. Model output is text, never HTML. */
 export type TranslationFont = 'original' | 'songti';
 
 export type TranslationPageResult = Omit<TranslationReceipt, 'tabId'> | {error: string; executionFact: 'not_executed' | 'unknown'};
@@ -21,13 +20,11 @@ export interface TranslationReceipt {
   unsupported: number;
   blocks: TranslationBlock[];
   applied?: number;
-  /** model-output: the model never returned matching text for some paragraphs; they stay untranslated (remaining). */
   incompleteReason?: 'page-changing' | 'batch-limit' | 'model-output';
 }
 
 export interface TranslationCommand {
   tabId?: number;
-  /** settle: the translation run ended (done, failed or stopped); remove every pending-paragraph mark. peek: read the paragraphs a fresh translate would collect first (or, when the page already has translations, their state), without touching the page. */
   action: 'begin' | 'collect' | 'apply' | 'display' | 'restore' | 'settle' | 'peek';
   document?: string;
   language?: string;
@@ -35,11 +32,8 @@ export interface TranslationCommand {
   fontSize?: number;
   fontFamily?: TranslationFont;
   translations?: TranslationSegment[];
-  /** settle only: remove the placeholders after this many ms unless another translation call starts first. */
   delayMs?: number;
-  /** collect only: block ids already being translated elsewhere; skip them so concurrent batches never overlap. */
   exclude?: string[];
-  /** collect: at most this many blocks (1–8); the first batches stay small so the visible paragraphs land first. peek: at most this many blocks (1–32). */
   maxBlocks?: number;
 }
 
@@ -50,7 +44,6 @@ export interface TranslationRequest {
   mode?: TranslationMode;
   fontSize?: number;
   fontFamily?: TranslationFont;
-  /** Bind a display request to a previously observed translation instance. */
   document?: string;
 }
 
@@ -76,7 +69,6 @@ export function validateTranslationCommand(p: TranslationCommand): void {
   if (p.action === 'apply' && (!p.document || !Array.isArray(p.translations) || p.translations.length > 64 || p.translations.some(s => !s || typeof s.id !== 'string' || s.id.length > 80 || typeof s.text !== 'string' || s.text.length > 24000))) throw new Error('无效的译文批次');
 }
 
-/** Read-only current translation identity and rendered display state. */
 export interface TranslationDisplayState {
   document: string;
   mode: TranslationMode;

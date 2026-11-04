@@ -28,10 +28,6 @@ function cloneEntry(entry: MemoryEntry): MemoryEntry {
   return cloned;
 }
 
-/**
- * Keeps the personal memory list coherent while requests from several conversations overlap.
- * The server remains authoritative; this class only accepts results for a request it issued.
- */
 export class MemoryManagementState {
   private readonly entries = new Map<string, MemoryEntry>();
   private readonly pending = new Map<string, PendingRequest>();
@@ -57,20 +53,14 @@ export class MemoryManagementState {
     return entry ? cloneEntry(entry) : undefined;
   }
 
-  /** 面板上一次读到的整份记忆版本号；还没读到、或服务端没给时为 undefined。 */
   get rev(): number | undefined {
     return this.listRev;
   }
 
-  /** 收到记忆事件或结果带来的版本号：与面板手里的不同（或没带版本号）就说明列表可能过期，应重读。 */
   isStale(rev: number | undefined): boolean {
     return rev === undefined || rev !== this.listRev;
   }
 
-  /**
-   * 收到记忆事件/结果的版本号。返回 true＝现在重读列表；
-   * 用户正在编辑或确认删除时（busy）不重读，免得重建输入框丢光标，记下来等关闭后再读一次。
-   */
   noteRev(rev: number | undefined, busy: boolean): boolean {
     if (!this.isStale(rev)) return false;
 
@@ -83,7 +73,6 @@ export class MemoryManagementState {
     return true;
   }
 
-  /** 编辑/确认关闭后调用：之前有被推迟的重读就返回 true（只一次）。 */
   takeDeferredRefresh(busy: boolean): boolean {
     if (busy || !this.refreshDeferred) return false;
     this.refreshDeferred = false;
@@ -156,7 +145,6 @@ export class MemoryManagementState {
     };
   }
 
-  /** 撤销：对被替换或已失效的旧条目发；结果带回恢复的条目和改为失效的当前值。面板随后重读全表。 */
   beginRestore(conversationId: string, entry: Pick<MemoryEntry, "id" | "version">): MemoryClientMessage {
     const requestId = this.requestId();
     const order = ++this.order;
@@ -166,7 +154,6 @@ export class MemoryManagementState {
     return { type: "memory_restore", requestId, conversationId, id: entry.id, expectedVersion: entry.version };
   }
 
-  /** 「这里别用」/ 恢复：结果带回改好的那条。 */
   beginSite(conversationId: string, entry: Pick<MemoryEntry, "id" | "version">, hostname: string, off: boolean): MemoryClientMessage {
     const requestId = this.requestId();
     const order = ++this.order;
@@ -176,7 +163,6 @@ export class MemoryManagementState {
     return { type: "memory_site", requestId, conversationId, id: entry.id, expectedVersion: entry.version, hostname, off };
   }
 
-  /** 撤销「忘掉」：把忘掉时删掉的条目放回。面板随后重读全表。 */
   beginUnforget(conversationId: string, entries: MemoryEntry[]): MemoryClientMessage {
     const requestId = this.requestId();
     this.pending.set(requestId, { requestId, action: "unforget", conversationId, order: ++this.order });
@@ -184,7 +170,6 @@ export class MemoryManagementState {
     return { type: "memory_unforget", requestId, conversationId, entries: entries.map(cloneEntry) };
   }
 
-  /** 回答纠正后的询问；结果里的新条目（及被替换的旧条目）原样交给询问卡片，面板随后重读全表。 */
   beginAskAnswer(conversationId: string, askId: string, answer: "remember" | "once", text?: string): MemoryClientMessage {
     const requestId = this.requestId();
     this.pending.set(requestId, { requestId, action: "ask", conversationId, order: ++this.order });
@@ -299,10 +284,8 @@ export class MemoryManagementState {
       this.listRev = result.rev;
     }
 
-    // 询问的保存不在本地补丁：版本号作废，下次面板打开或收到结果后重读。
     if (request.action === "ask" && result.entry && !result.alreadySaved) this.listRev = undefined;
 
-    // 自己的修改只补丁了一条；版本号恰好比手里的大 1 才说明没有别人的写入夹在中间。
     if (request.action === "update" && result.rev !== undefined) {
       this.listRev = this.listRev !== undefined && result.rev === this.listRev + 1 ? result.rev : undefined;
     }
@@ -353,7 +336,6 @@ export function memoryKindLabel(entry: Pick<MemoryEntry, "kind">): string {
   return MEMORY_KIND_LABEL[entry.kind];
 }
 
-/** 用在哪：有结束日的写「到 10 月 3 日为止」（已过写「10 月 3 日已过」），否则写范围。 */
 export function memoryUseLabel(entry: Pick<MemoryEntry, "scope" | "validity">, now = Date.now()): string {
   const end = entry.validity?.end;
 

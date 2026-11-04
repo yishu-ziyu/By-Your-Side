@@ -1,10 +1,3 @@
-/**
- * Real extension, real public page: a program that fetches a page larger than the extension's fetch cap gets the
- * part that was read (marked truncated, with a note saying the rest was not read) instead of failing with
- * "Browser result too large", which the program could not fix by extracting less.
- *   npx tsx scripts/acceptance/real-path/program-large-fetch.mts --headless
- * The model is scripted (its tool calls are fixed), so this proves the browser layer, not model behaviour.
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -17,7 +10,6 @@ await mkdir(out,{recursive:true});
 const site=createServer((_req,res)=>res.writeHead(200,{'content-type':'text/html; charset=utf-8'}).end('<!doctype html><title>Large Fetch Start</title><main>start</main>'));
 await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));
 const origin=`http://127.0.0.1:${siteAddress(site).port}/`;
-// 约 680 KB 的公开条目：正文前半段就有「Yongle」，整页超过扩展的 512 KiB 读取上限。
 const BIG='https://en.wikipedia.org/wiki/Forbidden_City';
 const code=`const r = await browser.fetch({url: ${JSON.stringify(BIG)}});
 return {status: r.status, truncated: r.truncated, chars: r.text.length, yongle: r.text.includes("Yongle")};`;

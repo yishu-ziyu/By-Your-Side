@@ -1,4 +1,3 @@
-/** 文件附件的小卡：类型图标、文件名、「PDF · 12 页」。输入框上方的附件条和已发出的消息里共用。 */
 import { createElement as icon, FileCode, FileSpreadsheet, FileText, Globe, Image, Presentation, Sheet } from "lucide";
 import type { FileAttachment, FileFormat } from "../../../shared/protocol.js";
 
@@ -18,7 +17,6 @@ export function fileMeta(file: Pick<FileAttachment, "format" | "parts" | "size">
   return [FORMAT_LABEL[file.format], file.parts ? `${file.parts.count} ${PART_UNIT[file.parts.kind]}` : sizeLabel(file.size)].join(" · ");
 }
 
-/** 卡片本体；meta 先写「正在读…」，读完再换成真实的页数。 */
 export function fileChip(name: string, format: FileFormat, meta: string): { el: HTMLElement; meta: HTMLElement } {
   const el = document.createElement("div");
   el.className = "file-chip";

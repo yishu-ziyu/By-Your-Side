@@ -4,7 +4,6 @@ type TaskControlAction='pause'|'resume'|'abort';
 
 type Result=Extract<ClientMessage,{type:'task_control_result'}>;
 
-/** Final acknowledgement comes from the extension after local page ownership is applied. */
 export class TaskControlBroker {
   private readonly pending=new Map<string,{conversationId:string;requestId:string;action:TaskControlAction;runId:string;resolve:(r:Result)=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
   constructor(private readonly emit:(m:ServerMessage)=>void,private readonly timeoutMs=45000){}

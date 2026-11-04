@@ -69,13 +69,10 @@ export interface ArmedPageEvent {
   createdAt: number;
   timeoutMs: number;
   status: ArmStatus;
-  /** Download-only: the ledger record lives in PageEventLedger.downloads. */
   downloadId?: string;
-  /** File-chooser-only */
   backendNodeId?: number;
   multiple?: boolean;
   chooserId?: string;
-  /** Popup-only */
   popupTabId?: number;
   popupUrl?: string;
   popupTargetId?: string;
@@ -93,16 +90,11 @@ interface DownloadRecord {
   guid: string;
   url: string;
   suggestedFilename: string;
-  /** chrome.downloads id; set once the CDP begin event and the chrome.downloads item are joined by URL. */
   chromeId?: number;
-  /** Absolute path Chrome wrote (chrome.downloads filename); only trusted once completed. */
   path?: string;
   bytes?: number;
-  /** chrome.downloads danger other than safe/accepted: Chrome holds the file until the user keeps it. */
   danger?: string;
-  /** chrome.downloads error code (e.g. NETWORK_FAILED, USER_CANCELED) once interrupted. */
   failure: string | null;
-  /** True only after chrome.downloads reported state "complete". */
   completed: boolean;
   cancelled: boolean;
   deleted: boolean;
@@ -112,9 +104,7 @@ interface DownloadRecord {
 interface PageEventLedger {
   arms: Map<string, ArmedPageEvent>;
   downloads: Map<string, DownloadRecord>;
-  /** tabId → pending JS dialog (webpage only; never OS permission prompts). */
   dialogs: Map<number, PendingJsDialog>;
-  /** Per-tab ring of recently observed protocol events. */
   buffers: Map<number, BufferedPageEvent[]>;
   seq: number;
 }
@@ -170,7 +160,6 @@ function pushBuffer(ledger: PageEventLedger, event: BufferedPageEvent): void {
   ledger.buffers.set(event.tabId, list);
 }
 
-/** Reject model-minted tokens: only host-issued `evt_*` shapes are valid. */
 function isHostEventToken(token: unknown): token is string {
   return typeof token === "string" && /^evt_(popup|download|filechooser)_\d+_\d+_[a-z0-9]+$/i.test(token);
 }
@@ -315,10 +304,6 @@ export function matchDownloadBegin(
   return undefined;
 }
 
-/**
- * Join a chrome.downloads item to the tab-attributed record with the same URL.
- * Only records that are not yet joined or finished qualify; the oldest wins.
- */
 export function bindChromeDownload(
   ledger: PageEventLedger,
   input: { chromeId: number; url: string; finalUrl?: string },
@@ -337,7 +322,6 @@ export function bindChromeDownload(
   return undefined;
 }
 
-/** Apply a chrome.downloads state. Completion needs state "complete"; nothing else counts. */
 export function applyChromeDownload(
   ledger: PageEventLedger,
   input: { chromeId: number; state?: ChromeDownloadState; error?: string; filename?: string; bytes?: number; danger?: string },

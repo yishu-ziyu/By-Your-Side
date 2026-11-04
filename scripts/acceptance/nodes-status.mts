@@ -1,17 +1,11 @@
-/**
- * npm run nodes：一次看清所有云电脑节点能不能用。在线、开机多久、负载、可用内存、Chrome 在不在、残留的测试 Chrome；
- * grokbox 另看 sun 的保活 sleep 还剩多久（没有就是随时会睡）。只读，不改任何节点。
- */
 import { spawn } from "node:child_process";
 import { NODES, SSH_OPTS, type Node } from "./nodes.mts";
 
-// 远端统一打印 key=value，本脚本只认这些行，避开登录横幅、Devin 的终端转义等杂讯。
 const PROBE = [
   `echo "up=$(uptime | sed -E 's/.*up +([^,]*),.*/\\1/')"`,
   `echo "load=$( (sysctl -n vm.loadavg 2>/dev/null || cat /proc/loadavg) | tr -d '{}' | awk '{print $1}')"`,
   `echo "cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu)"`,
   `echo "memfree=$(free -m 2>/dev/null | awk '/Mem/{print $7"M"}')"`,
-  // 验收用的隔离 Chrome（配置目录名带 sideagent-real-path）只数主进程；测试脚本异常退出时它们会留下来一直占资源。
   `echo "testchrome=$(ps -Ao args | grep -c '[s]ideagent-real-path.*/profile' )/$(ps -Ao args | grep '[s]ideagent-real-path.*/profile' | grep -vc -- '--type=')"`,
 ].join("; ");
 

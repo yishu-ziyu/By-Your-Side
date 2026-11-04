@@ -1,6 +1,5 @@
 import { CURSOR_SVG_SIZE } from "./cursor-visual.js";
 
-/** Layout data only: this helper never reads the page or changes the Agent action. */
 export type CursorLabelPlacement = "right-below" | "right-above" | "left-below" | "left-above";
 type Rect = { x: number; y: number; width: number; height: number };
 type Point = { x: number; y: number };
@@ -14,11 +13,6 @@ function intersect(a: Rect, b: Rect): number {
     * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
 }
 
-/**
- * The bubble belongs to the cursor, but should not hide its actual target.
- * Prefer one corner; flip only when the viewport or action target requires it.
- * Returning placement lets the renderer resist jitter when the cursor moves.
- */
 export function cursorLabelPosition(
   point: Point,
   size: { width: number; height: number },

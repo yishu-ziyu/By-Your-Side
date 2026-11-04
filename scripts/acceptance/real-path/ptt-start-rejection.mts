@@ -1,6 +1,3 @@
-/** Real extension and trusted keyboard events; controlled start rejection must stay failed after key release.
- * npx tsx scripts/acceptance/real-path/ptt-start-rejection.mts --headless
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {resolve} from 'node:path';

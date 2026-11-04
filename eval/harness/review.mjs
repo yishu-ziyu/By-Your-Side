@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-/**
- * Failure-review page for one eval run: node eval/harness/review.mjs <runDir> [--all] [--sample-pass=N] [--serve[=port]]
- * Writes <runDir>/review.html (one self-contained file; screenshots are relative <img> links into the run dir).
- * One card per task that did not pass (fail / undeterminable / judge_error) in some model spec, grouped by tier
- * then category, plus N passed results drawn with a fixed seed (default 5) so passes get spot-checked too;
- * --all shows every result. The reviewer marks each result 能接受 / 不能接受 / 判错了 (keys 1/2/3, N = next)
- * with a note and the first thing that went wrong.
- * Marks always go to the browser's localStorage. With --serve the page is served from 127.0.0.1 and every mark is
- * also appended to <runDir>/review-decisions.jsonl and read back on load, so marks survive a cleared browser (#241).
- *   --import=<review-<runId>.json>  convert an older browser export into review-decisions.jsonl
- *   --labels                        copy review-decisions.jsonl to eval/judge_validation/labels/<runId>.jsonl Reads only: <spec slug>/<task>.json, .trace.jsonl, -page.png, -panel.png, .png and
- * judge/<spec slug>/<task>.json (see job.mjs, judge.mjs); pass rates follow analyze.py.
- */
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { basename, extname, join, resolve, sep } from "node:path";
@@ -41,12 +28,10 @@ const CAP_MIN = meta.capMs ? Math.round(meta.capMs / 60000) : 4;
 
 const DECISIONS = join(RUN, "review-decisions.jsonl");
 
-/** 过程界面的三个问题（#239），各标过 / 不过；标的是等待时侧栏，不是答案。 */
 const PROCESS_QUESTIONS = { doing: "看得出它现在在干嘛吗？", done: "看得出已经做成了什么（有证据）吗？", todo: "看得出我需要做什么吗？" };
 
 const decisionLine = (d) => JSON.stringify({ runId: RUN_ID, task: d.task, spec: d.spec ?? d.config, mark: d.mark ?? null, note: d.note ?? "", first_failure: d.first_failure ?? "", process: d.process ?? {}, reviewer: d.reviewer ?? "owner", at: d.at ?? new Date().toISOString() });
 
-// One-shot commands: run and exit without writing the page.
 if (flag("import")) {
   const old = JSON.parse(readFileSync(resolve(flag("import")), "utf8"));
   appendFileSync(DECISIONS, (old.decisions ?? []).map((d) => decisionLine(d) + "\n").join(""));
@@ -65,7 +50,6 @@ if (args.includes("--labels")) {
 }
 
 
-// Same labels as scripts/maintenance/dashboard.mjs.
 const CATEGORY_LABELS = {
   page_understanding: "读懂网页", selection_ask: "划词提问", browser_action_single: "单步操作", other: "其他",
   browser_action_multistep: "多步操作", extraction_to_table: "提取成表格", form_fill_no_submit: "填表（不提交）",
@@ -90,7 +74,6 @@ const esc = (v) => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt
 
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
 
-// 速度判定只在 analyze.py 里算（#238）；复看页读它写的 report.json，没跑过 analyze 就不显示。
 const REPORT = readJson(join(RUN, "report.json"));
 
 const SPEED = new Map((REPORT?.per_task ?? []).map((p) => [`${p.model}|${p.task}`, p]));
@@ -116,13 +99,11 @@ const relUrl = (...parts) => parts.map(encodeURIComponent).join("/");
 
 const localTime = (d) => new Date(d).toLocaleString("zh-CN", { hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-// ---------- load results ----------
-
 const configs = (meta.models ?? []).length ? meta.models.slice() : [];
 
 const slugDirs = readdirSync(RUN, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name !== "judge" && !d.name.startsWith("_")).map((d) => d.name);
 
-const results = []; // one per (config, task)
+const results = [];
 
 for (const slug of slugDirs) {
   for (const f of readdirSync(join(RUN, slug)).filter((f) => /^BYS-D?\d+\.json$/.test(f))) {
@@ -145,8 +126,6 @@ const configLabel = (spec) => {
 
   return fast && fast !== main ? `${name(main)}（快速判断用 ${name(fast)}）` : name(main);
 };
-
-// ---------- data-only first guess at the cause ----------
 
 function traceEvents(r) {
   const p = join(RUN, r.slug, `${r.tr.id}.trace.jsonl`);
@@ -207,8 +186,6 @@ function guessCauses(r) {
 
 function e2name(e) { return e.data?.toolName ?? "操作"; }
 
-// ---------- speed (#238): numbers come from report.json ----------
-
 function speedSummaryHtml() {
   const sec = (v) => (v == null ? "—" : `${Number(v).toFixed(1)} 秒`);
   const verdict = { pass: "过", fail: "不过", unmeasured: "未量到" };
@@ -227,8 +204,6 @@ function speedSummaryHtml() {
   return `<details class="speed"><summary>速度（按 tiers.json 的速度线判）</summary>${stale ? `<p class="caveat">report.json 比结果旧：有判过分的结果不在里面。先跑 analyze.py 再看速度。</p>` : ""}${blocks.join("")}
 <p class="caveat">每条结果超过「最慢」线判不过；超时、一直没出回答都算不过；旧运行没记首字的判「未量到」，不进分母。中位和最慢 10% 只用有读数的结果。等模型、动手、其他按诊断记录拆，所以三段之和可能和「总耗时」差几秒（总耗时从按回车算到侧栏不再变化）。</p></details>`;
 }
-
-// ---------- summary: pass rate per config x tier (same rules as analyze.py) ----------
 
 function summaryHtml() {
   const tierIds = Object.keys(TIERS);
@@ -263,8 +238,6 @@ function summaryHtml() {
 <p class="caveat">通过率 = 判为做对 / 已判出结果的题（无法确定算没做对；站点不可用、判分程序出错和环境没跑起来的不计入）。绿色达到目标，红色未达。</p>
 ${speedSummaryHtml()}`;
 }
-
-// ---------- cards ----------
 
 function shotHtml(r) {
   const id = r.tr.id;
@@ -323,7 +296,6 @@ function cardHtml(task, rs, others) {
 </article>`;
 }
 
-/** Passed results to spot-check: a fixed-seed shuffle, so the same run always samples the same ones. */
 function samplePasses() {
   const passed = results.filter((r) => r.verdict === "pass").sort((a, b) => `${a.tr.id}|${a.model}`.localeCompare(`${b.tr.id}|${b.model}`));
   let seed = 241;
@@ -344,7 +316,7 @@ function cardsHtml() {
   for (const r of results) { if (!byTask.has(r.tr.id)) byTask.set(r.tr.id, []); byTask.get(r.tr.id).push(r); }
 
   const order = (r) => configs.indexOf(r.model);
-  const groups = new Map(); // tier -> category -> cards
+  const groups = new Map();
   let shown = 0;
 
   for (const [, rs] of [...byTask].sort(([a], [b]) => a.localeCompare(b))) {
@@ -368,8 +340,6 @@ function cardsHtml() {
   return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([t, cats]) => `<section><h2>${t === "-" ? "未分档" : `第 ${esc(t)} 档 · ${esc(TIERS[t].name)}`}</h2>
 ${[...cats].map(([c, cards]) => `<h3 class="sub">${esc(CATEGORY_LABELS[c] ?? c)} <span class="count">${cards.length} 题</span></h3>${cards.join("\n")}`).join("\n")}</section>`).join("\n");
 }
-
-// ---------- page ----------
 
 const CSS = `
 :root{--bg:#f7f7f4;--card:#fff;--ink:#1f2328;--muted:#6b7078;--line:#e6e4de;--accent:#2f6f8f;--accent-soft:#e7f0f4;--ok:#3d7a4f;--ok-soft:#e9f3ec;--bad:#a14a3b;--bad-soft:#f6e9e6;--warn:#8a6d2b;--warn-soft:#f5efdf}
@@ -540,7 +510,6 @@ if (SERVE) {
     const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
 
     if (path === "/decisions" && req.method === "GET") {
-      // Last line per (task, spec) wins.
       const rows = existsSync(DECISIONS) ? readFileSync(DECISIONS, "utf8").split("\n").filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }) : [];
       const latest = new Map(rows.map((r) => [`${r.task}|${r.spec}`, r]));
 

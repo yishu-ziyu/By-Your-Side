@@ -84,7 +84,6 @@ try {
   if (!live) assert.equal(requests.filter(r => !r.image).length, 1, '恢复不重拍截图');
   assert.ok(requests.some(r => r.image), '模型确实收到截图后读出画面中的码');
   assert.ok(requests.filter(r => r.image).every(r => r.mime === 'image/webp'), '大截图通过实际模型接口以紧凑图片发送');
-  // 「auto」下一条消息带多张大图时，ChatGPT 按低清读，九宫格里的小字读不出（#782）。
   assert.ok(requests.filter(r => r.image).every(r => r.detail === 'high'), '图片按高清发送');
   if (!live) assert.ok(requests.some(r => r.image && r.delivered && r.elapsed! >= 18000), '截图输入后真正接住晚到的响应');
   await rp.screenshot(panel, join(out, 'answer.png'));

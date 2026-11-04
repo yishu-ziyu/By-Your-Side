@@ -7,10 +7,8 @@ const FIXTURE_DIR = dirname(
   fileURLToPath(new URL("./fixtures/index.html", import.meta.url)),
 );
 
-/** 验收页白名单：默认仍是 index.html；新增能力对齐页按名放行，不开放任意路径。 */
 const FIXTURE_FILES = new Set(["index.html", "downloads.html"]);
 
-/** downloads.html 上的两个文件：一个完整下完；一个声明 64 KB、发 4 KB 后断开，Chrome 记为下载中断。 */
 export const DOWNLOAD_FIXTURES = {
   complete: { path: "/files/quarterly-report.csv", filename: "quarterly-report.csv", body: "quarter,revenue\nQ1,120\nQ2,135\nQ3,150\n" },
   broken: { path: "/files/project-archive.zip", filename: "project-archive.zip", declaredBytes: 65_536, sentBytes: 4096 },
@@ -93,7 +91,6 @@ export function startFixtureServer() {
             try {
               server.closeAllConnections?.();
             } catch {
-              /* Node 旧版本没有 closeAllConnections */
             }
 
             server.close(() => {

@@ -1,14 +1,3 @@
-/**
- * 用户问「获得当前视频的字幕」：助手从播放器自己那里读到这个视频有哪些字幕，没有就直说没有，
- * 不再自己拼接口（B 站对不带签名的请求回别的视频的字幕，那次绕了 4–9 分钟）。
- * 只装扩展、隔离构建、本机脚本模型、本机视频页：
- *   /none：页面加载时自己调了带签名的播放器接口，字幕清单为空；视频没有字幕轨道。
- *   /with：视频带一条中文字幕轨道。
- *   npx tsx scripts/acceptance/real-path/video-captions.mts --headless
- *   a) /none 上读字幕：结果写明播放器自己的字幕清单是 0 条、这个视频没有字幕，并说出是哪条播放器请求。
- *   b) /with 上读字幕：结果列出中文字幕轨道和它的地址。
- * 失败方式：没有 video_captions，模型只能自己拼接口，a、b 都拿不到结论。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";

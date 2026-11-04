@@ -1,6 +1,3 @@
-/**
- * 确认门禁、确认卡句子、超时中文、过程行用词：假数据、不调浏览器。
- */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classifyRequest, needsRequestConfirm } from "./request-confirm.js";

@@ -1,17 +1,8 @@
-/**
- * 按住说话在网页、后台、离屏文档之间传的消息。
- * 网页 → 后台：PttPageMessage；后台 → 离屏文档：PttCommand，回 PttReply。
- */
 import type { CardPreview } from "../../../shared/answer-cards.js";
 import type { DictationResult } from "../inproc/ptt-dictation.js";
 
-/** 按住说话用哪个键（KeyboardEvent.code，设置页写）；没存或存的不认识时按系统给默认。 */
 export const PTT_KEY = "ptt_key";
 
-/**
- * 能当按住说话键的：单独按住不打字、打字时也很少单独按住。
- * Shift、左 Ctrl、左 ⌘ 打字和快捷键里按住太久会误开麦，不收；右 Alt 在 AltGr 键盘上会打出字符，所以只在 Mac 上作默认。
- */
 export const PTT_KEY_CHOICES: readonly string[] = ["AltRight", "ControlRight", "MetaRight", "AltLeft", ...Array.from({ length: 19 }, (_, i) => `F${i + 1}`)];
 
 const onMac = () => /Mac/i.test(navigator.userAgent);
@@ -19,7 +10,6 @@ const onMac = () => /Mac/i.test(navigator.userAgent);
 export const pttKeyOf = (stored: unknown): string =>
   typeof stored === "string" && PTT_KEY_CHOICES.includes(stored) ? stored : onMac() ? "AltRight" : "ControlRight";
 
-/** 按键在这台电脑上的叫法：Mac 写符号，别的系统写字。 */
 export function pttKeyLabel(code: string): string {
   const side = code.endsWith("Right") ? "右" : code.endsWith("Left") ? "左" : "";
   const base = code.replace(/(Right|Left)$/, "");
@@ -27,30 +17,19 @@ export function pttKeyLabel(code: string): string {
   return name ? `${side} ${name}` : code;
 }
 
-/** 网页脚本发给后台：按住开始、松开、取消。 */
 export interface PttPageMessage { type: "ptt"; phase: "start" | "stop" | "cancel" }
 
-/** 后台发给离屏文档的命令；target 用来和别的扩展消息分开。warm：先连好听写，不开麦。 */
 export interface PttCommand { target: "inproc-ptt"; phase: "start" | "stop" | "cancel" | "warm" }
 
-/** 网页 → 后台：用户刚选中文字，接下来可能按住说话，先把听写连好。 */
 export const PTT_WARM = "ptt_warm";
 
 export const PTT_TARGET = "inproc-ptt";
 
-/** 开始：麦克风拿到了（ok）或拿不到；结束：听写结果。 */
 export type PttReply = { ok: true; text?: string } | Extract<DictationResult, { ok: false }> | { ok: false; reason: "permission" | "device"; message?: string };
 
-/** 扩展消息到了才知道是不是按住说话的：先当作可能缺字段的 PttPageMessage 来查。 */
 export const isPttPageMessage = (raw: Partial<PttPageMessage> | null | undefined): raw is PttPageMessage =>
   raw?.type === "ptt" && (raw.phase === "start" || raw.phase === "stop" || raw.phase === "cancel");
 
-/**
- * 网页底部胶囊现在显示什么。heard 是听写出的那句话。
- * failed 带 heard：话没交给助手，可以重发；不带：没听到或听写失败。speaking：正在念这一条。
- * done 的 card：回答里有卡片时，胶囊上方显示第一张的精简版（cardPreview）；没有就不显示。
- * doing 的 ack：松开后马上应的一句短确认（按原话本地取，不问模型；取消或犹豫的话为 null，不念），念的时候显示它，之后显示当前步骤。
- */
 export type PttCapsule =
   | { phase: "listening" }
   | { phase: "transcribing" }
@@ -60,35 +39,26 @@ export type PttCapsule =
   | { phase: "done"; heard: string; result: string; left: string | null; card?: CardPreview; speaking?: true }
   | { phase: "stopped"; heard: string };
 
-/** 后台 → 网页：换胶囊内容，capsule 为 null 时收起。 */
 export const PTT_CAPSULE = "ptt_capsule";
 
-/** 离屏文档 → 后台 → 网页：按住时的音量（0–1），画声波用。 */
 export const PTT_LEVEL = "ptt_level";
 
 export interface PttLevelMessage { type: typeof PTT_LEVEL; level: number }
 
-/** 网页 → 后台：胶囊上的「停」（含 Esc）、「重发」、念的时候按 Esc（hush），以及胶囊已收起。「在侧栏看」复用边缘胶囊的 EDGE_PILL_OPEN。 */
 export interface PttCapsuleAction { type: "ptt_capsule_action"; action: "stop" | "resend" | "closed" | "hush"; text?: string }
 
-/** 后台 → 离屏文档：念一句（带订阅 Key）或停下。 */
 export const PTT_SPEECH_TARGET = "inproc-speech";
 
 export type PttSpeechCommand = { target: typeof PTT_SPEECH_TARGET; action: "speak"; text: string; key: string } | { target: typeof PTT_SPEECH_TARGET; action: "hush" | "prepare" };
 
-/** 念完（放了多久）、被打断，或失败。startedAt：第一段声音排定开始放的本机时间（毫秒），只用于分段计时。 */
 export type PttSpeechReply = { ok: true; playedMs: number; startedAt?: number } | { ok: false; reason: "hushed"; startedAt?: number } | { ok: false; reason: "failed"; message: string };
 
-/** 念结果的 MiniMax 订阅 Key（设置页写）。 */
 export const PTT_SPEECH_KEY = "ptt_speech_key";
 
-/** 「做完念出来」开关：只有明确存了 false 才算关。 */
 export const PTT_SPEAK_RESULT = "ptt_speak_result";
 
-/** 订阅 Key 的样子：MiniMax 按 Key 决定扣套餐还是按量，只认订阅 Key（sk-cp-）。 */
 export const isSubscriptionKey = (key: string) => /^sk-cp-[\w-]{8,}$/.test(key.trim());
 
-/** 后台 → 网页：按住说话问阅读卡时的声音进展。heard：听写出的那句话（分流前就到）；speaking / quiet：这张卡的回答开始念、不再念。 */
 export const READING_VOICE = "reading_voice";
 
 export type ReadingVoiceMessage =

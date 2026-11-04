@@ -1,10 +1,3 @@
-/**
- * 记忆成绩单：从 out/daily-logs 的最近几份快照和累积存档 archive/（npm run logs 导出）里合并去重，按周统计记忆有没有让产品变好。
- * 只读诊断里的结论字段（种类、方面、动作），不读原话。
- *
- *   npm run memory:report                最近 4 周
- *   npm run memory:report -- --weeks 8
- */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -33,15 +26,12 @@ for (const dir of readdirSync(root)) {
   }
 }
 
-// 模拟用户（self-use）的运行不是用户自己的使用：整次运行都不计入。
 const selfUseRuns = new Set(rows.filter(event => event.type === "run_start" && event.data?.selfUse && event.runId).map(event => event.runId));
 const since = Date.now() - weeks * 7 * 864e5;
 const pad = (n) => String(n).padStart(2, "0");
-/** 本地时间那周的周一。 */
 const weekOf = (time) => { const d = new Date(time); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const table = new Map();
 const bump = (week, name, n = 1) => { const w = table.get(week) ?? {}; w[name] = (w[name] ?? 0) + n; table.set(week, w); };
-// 记住某方面的做法之后，同一方面又被抱怨：这个数应该降到 0。
 const learned = new Set();
 const askAspect = new Map();
 

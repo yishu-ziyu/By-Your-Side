@@ -1,23 +1,11 @@
-/**
- * 长会话的章节：会话空闲时发出的一句话，这一轮主任务动了页面（打开、跳转、点、填等写操作）才开一章，
- * 分隔线画在这句话上方。只读页面、只记东西、只回答的追问归进当前这一章；宿主在交还、续做时自己读一次页面，
- * 也不会把一件事切成两章。会话的第一句总是第一章。
- * 满 3 章时，对话区上方出现一排章节按钮，点了跳到那一章。
- *
- * 章节只从侧栏回放的历史推出来（实时和重新打开都走同一条回放、同样的顺序），不另存、不调模型，
- * 所以实时在第一步写操作出现时画的分隔线，重新打开时会画在同一处。编号和名字都从对话区里现有的分隔线读，
- * 换会话清空对话区时自然归零。
- */
 import { isWriteTool } from "../../../shared/effect-policy.js";
 import { isLeadSession } from "../../../shared/protocol.js";
 import type { PanelHistoryItem, PanelHistoryServerMessage } from "../relay.js";
 
-/** 「继续原任务」按钮发出的原话：它接着做原来那件事，不算新的一章。 */
 const RESUME_TEXT = "继续原任务";
 
 const NAME_MAX = 14;
 
-/** 名字取用户原话：去掉开头的 @ 页面和多余空白，超长截断。名字来自用户输入，只经 textContent 进入页面。 */
 function chapterName(text: string): string {
   const plain = text.replace(/\s+/g, " ").trim().replace(/^(@\S+\s*)+/, "").trim();
   const chars = Array.from(plain);
@@ -27,8 +15,6 @@ function chapterName(text: string): string {
   return chars.length > NAME_MAX ? `${chars.slice(0, NAME_MAX - 1).join("")}…` : plain;
 }
 
-/** onJump：点了章节按钮、跳走之前调用，让对话区不再跟随到底部。 */
-/** replaying：正在从记录重画对话，这时画出的分隔线不放展开动画。 */
 export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump: () => void, replaying: () => boolean) {
   const row = document.createElement("nav");
   row.className = "chapter-row";
@@ -36,11 +22,8 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
   row.hidden = true;
   frame.before(row);
   let shown = "";
-  /** 开了一轮、还没看到写操作的那句话：这一轮动了页面它就开一章，没动就归进当前章。 */
   let pending: { bubble: HTMLElement; text: string } | null = null;
-  /** 这一轮主任务里出过模型错误：出错停下的一轮还会被重试接着做，不算结束。 */
   let errored = false;
-  /** pending 那一轮已经正常结束：之后的写操作属于别的事，不再给它开章。 */
   let ended = false;
 
   let drag: { pointer: number; x: number; scroll: number; moved: boolean } | null = null;
@@ -77,14 +60,12 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
   row.addEventListener("lostpointercapture", endDrag);
   row.addEventListener("pointerleave", () => { if (!drag?.moved) endDrag(); });
   row.addEventListener("click", (event) => {
-    // 拖动松手后的 click 不应跳章；键盘激活仍照常通过。
     if (!suppressClick || event.detail === 0) return;
     suppressClick = false;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
 
-  // 按钮放不下时可以横着滑：哪一侧还有按钮，哪一侧就渐隐。
   const syncFade = () => {
     const max = row.scrollWidth - row.clientWidth;
     row.dataset.overflow = String(max > 1);
@@ -100,7 +81,6 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
   const sync = () => {
     if (pending && !pending.bubble.isConnected) pending = null;
     const all = dividers();
-    // 只有一章时第一条分隔线没有区分作用，不画。
     all.forEach((d, i) => { d.hidden = i === 0 && all.length < 2; });
     const key = all.map(d => `${d.dataset.chapter}\u0000${d.dataset.name}`).join("\u0001");
 
@@ -124,7 +104,6 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
     syncFade();
   };
 
-  // 换会话、清空对话区时分隔线跟着消失：按对话区现状重画按钮。
   new MutationObserver(sync).observe(messages, { childList: true });
 
   const open = (bubble: HTMLElement, text: string) => {
@@ -146,10 +125,6 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
   };
 
   return {
-    /**
-     * 一条用户消息的气泡画好之后调用。idle：这句话发出时会话里没有任务在跑、页面也不在用户手里，
-     * 即它开的是新一轮，而不是交给正在做的任务的补充。
-     */
     noteUserTurn(bubble: HTMLElement, item: Extract<PanelHistoryItem, { kind: "user" }>, idle: boolean): void {
       if (!idle || item.undelivered || item.text.trim() === RESUME_TEXT) return;
 
@@ -159,13 +134,11 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
       pending = { bubble, text: item.text };
     },
 
-    /** 回放到一条服务端消息时调用：这一轮主任务第一次动页面，就给开这一轮的那句话开章。 */
     noteServer(msg: PanelHistoryServerMessage): void {
       if (msg.type !== "agent_event" || !isLeadSession(msg.sessionId)) return;
       const event = msg.event;
 
       if (event.kind === "agent_start") errored = false;
-      // 出错的回复可能在结束之后才到：那一轮仍算没做完。
       else if (event.kind === "error") { errored = true; ended = false; }
       else if (event.kind === "agent_end") ended = !errored;
       else if (event.kind === "tool_start" && isWriteTool(event.name) && pending && !ended) {

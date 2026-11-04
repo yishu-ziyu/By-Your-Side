@@ -1,7 +1,3 @@
-/**
- * 侧栏动效只许走 token：token 文件以外不许出现裸的 cubic-bezier 和短时长（ms / 小于 1s）。
- *   node scripts/maintenance/check-motion-tokens.mjs
- */
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

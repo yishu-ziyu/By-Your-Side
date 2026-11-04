@@ -1,14 +1,3 @@
-/**
- * 网页右边缘停靠的翻译入口：只装扩展的隔离无头 Chrome、真维基页面、真设置页、本机脚本模型（只回翻译，每批 1.5 秒）。侧栏不开。
- * a 网页载入后右边缘停着一条窄条。
- * b 鼠标碰到窄条：展开成「翻译 这一页」。
- * c 点它：整页翻译，主模型请求 0 次；翻译中胶囊写「在翻译」。
- * d 译完再碰窄条：展开成「还原 原文」，点它还原。
- * e 深色、减少动态效果：窄条照样看得见、碰到照样展开。
- * f 设置页关掉「网页右边缘的翻译入口」：窄条消失。
- *   npx tsx scripts/acceptance/real-path/edge-translate-entry.mts --headless
- * 证据在 out/acceptance/real-path/<时间>-edge-translate-entry/：每一步右边缘的放大截图与整页截图、result.json。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { launchRealPath, requireHeadless, REPO, sleep, until, type Json } from "./harness.mts";
@@ -25,7 +14,6 @@ const check = (name: string, pass: boolean, actual: Json) => { checks.push({ nam
 type DomNode = { nodeValue?: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
 const kids = (node: DomNode) => [...(node.children ?? []), ...(node.shadowRoots ?? [])];
 const texts = (node: DomNode): string => [node.nodeValue ?? "", ...kids(node).map(texts)].join(" ");
-/** 边缘胶囊的宿主元素（data-sideagent-overlay="edge-tab"）；只读它里面的字，别处收起的浮层可能留着旧字。 */
 const edgeTab = (node: DomNode): DomNode | null => {
   const at = node.attributes?.indexOf("data-sideagent-overlay") ?? -1;
 
@@ -35,7 +23,6 @@ const edgeTab = (node: DomNode): DomNode | null => {
 
   return null;
 };
-/** 胶囊竖直中线（edge-tab.ts 的 TOP + H / 2）。 */
 const MID_Y = 84;
 
 try {
@@ -50,7 +37,6 @@ try {
     await sleep(2500);
   };
   await load();
-  // 胶囊贴着的是去掉滚动条后的右边缘。
   const width = await rp.evaluate(work, "document.documentElement.clientWidth") as number;
   const edge = async (name: string) => {
     // SAFETY: Page.captureScreenshot 回 { data: base64 }。

@@ -1,27 +1,3 @@
-/**
- * GPT-Live 免按键语音：真实隔离扩展 + 真实 GPT-Live + 真实主模型（ChatGPT 登录）。
- *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless                     # 闲聊、查维基、重复委派、插话
- *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=no-login     # 没用 ChatGPT 登录：说明原因、不连接
- *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=api-key      # 存的是 API key 而不是登录：同上
- *   npx tsx scripts/acceptance/real-path/gpt-live-voice.mts --headless --case=barge-result # 播报任务结果时插话
- *   加 --model=provider/model：选择执行任务的模型；语音仍独立使用 ChatGPT 登录。
- *   加 --fast-model=provider/model：在隔离配置里选择快速模型；NO_STALL=1 只跳过后台阻塞，保留完整六句与结果检查。
- *   --case=long-result：真实维基长回答、完整开头与侧栏提示、真实结果音频。
- *   --case=current-page：真实 wikipedia.org 标题与英语、日语、西班牙语入口。
- *   --case=handoff：先约定“那个技术”指逆向工程，再用真实语音请求维基查询。
- *   --case=host-gate：关掉 GPT-Live 的委派、让它只会口头答应（复现「嘴上说做了、页面没动」），用户要标出段落时宿主自己接下、真的标出来并念出结果。
- *   --case=reading：只用语音读中文维基文章：标出感兴趣的段落、去别的网站接着查、记下来、回到原文；每步只记用户看得到的结果，一步没过也走完，看清断在哪几处。
- *   --case=server-error：人工注入服务错误，只证明故障处理，不是真服务失败。
- *   --case=queued-stop：语音任务排队后开工，在另一会话点中止，原通话说出停的是哪件。
- *   --case=queued-stop-unvoiced：同上，但脚本吞掉第一次送出的中止结果、替服务回一个「已收到」（服务偶尔确认收到却不开口），侧栏要自己发现没出声、从会话层重送，而且只说一次。
- *   --case=queued-start-fail：语音任务排队后，轮到它开工时本机存储写满（只让它那一次开工记录写盘报 QuotaExceededError），宿主回滚、没有运行编号；原通话说出是哪件、为什么没能开始，只说一次。
- *   --case=queued-cancel：语音任务排队后，用户说「取消检查有哪些按钮那件」：这句的回话说已取消，原委派只悄悄收尾、不再念第二遍，那件也不会开工。
- *   --case=queued-progress：语音任务排队后开工，等待结果期间说出进度。两条用例的文字执行与新任务分流由脚本固定，语音仍是真实 GPT-Live。
- *   外语名称/音译和中文覆盖率只记录人工复核证据；数字仍自动核对。
- *   加 --extra-fact：回传时多加一个假事实，播报核对必须失败（反证）
- * 麦克风是设备静音与脚本放音混合的一路流：脚本何时放音就是「用户何时开口」，插话能放在播报中途。
- * 判据只看用户能观察到的：侧栏收到的远端声音、数据通道上的转写与委派、网络请求、导出的任务记录。
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
@@ -54,7 +30,6 @@ const VOICE_MODEL = "gpt-live-1-codex";
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-gpt-live-voice${caseName !== "main" ? `-${caseName}` : extraFact ? "-extra-fact" : ""}`);
 await mkdir(out, { recursive: true });
 
-/** 用 macOS say 合成一句话，返回 base64 WAV。 */
 const speech = async (text: string, file: string) => {
   const cache = join(REPO,'out/voice-audio-cache'); await mkdir(cache,{recursive:true});
   const key = createHash('sha256').update('Tingting/LEI16@48000/'+text).digest('hex');
@@ -69,7 +44,6 @@ const taskAsk = longResult ? "帮我去维基百科查一下全双工。请先�
 const topicAsk = "先不要查网页，我们先约定，接下来我说的那个技术是逆向工程，先记住这个话题。";
 const voices = { chat: await speech(CHAT, "chat.wav"), ask: await speech(taskAsk, "ask.wav"), barge: await speech(BARGE, "barge.wav"), topic: handoff ? await speech(topicAsk, "topic.wav") : "", pageName: pageContext ? await speech('我现在打开的网页叫什么？', 'page-name.wav') : '' };
 
-/** 数字自动核对；外语可能被转写为音译，不能用拼写差异判错。 */
 function spokenCheck(spoken: string, source: string) {
   const plain = (t: string) => t.replace(/[\s\p{P}]/gu, "").toLowerCase();
   const src = plain(source);
@@ -81,7 +55,6 @@ function spokenCheck(spoken: string, source: string) {
   return { missing, foreignNamesManualReview: { required: true, note: "外语名称和音译需人工核对；这里没有通用音译判定。" }, lowCoverage: sentences.filter((s) => s.coverage < 0.3) };
 }
 
-/** 远端轨道在本地静音前的音量；此结果不是用户实际听到停声的延迟。 */
 function stopAfter(g: { in: Ev[]; meter: Array<[number, number]> }, at: number) {
   const LOUD = 0.01, RUN = 40;
   const i = g.meter.findIndex(([t], k) => t >= at && g.meter.slice(k, k + RUN).length === RUN && g.meter.slice(k, k + RUN).every(([, r]) => r <= LOUD));
@@ -98,7 +71,6 @@ const HOLD_TASK = "把当前页面的文字逐段整理成摘要，先慢慢整�
 const QUEUED_TASK = "另外帮我检查当前页面有哪些按钮，整理一份按钮清单。这是独立的新任务，前面的摘要继续做，让按钮清单排队。";
 const slowAnswer: TextStep = { text: "正在整理。", pieces: Array.from({ length: 18 }, (_, i) => ({ text: `正在整理第 ${i + 1} 部分。`, delayMs: 5_000 })) };
 const queuedModel = queuedVoice ? await startScriptedModel([
-  // 分流由脚本固定：用户说「取消按钮清单…」时按真实格式给出取消那件。
   ...(queuedCancel ? [{ match: "取消检查", steps: [{ text: '{"steps":[{"action":"abort","target":"有哪些按钮"}]}' }] }] : []),
   { match: '"clauses":', steps: [{ text: '{"steps":[{"action":"start","target":null}]}' }] },
   { match: "按钮清单", steps: [slowAnswer] },
@@ -107,7 +79,6 @@ const queuedModel = queuedVoice ? await startScriptedModel([
 
 const site = createServer((_q, r) => r.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<!doctype html><title>语音练习页</title><h1>语音练习页</h1><p>这一页只用来放侧栏。</p>"));
 await new Promise<void>((r) => site.listen(0, "127.0.0.1", r));
-// 底下垫一路真实假麦克风设备（只有静音）：只用 AudioContext 造的流时，GPT-Live 收到结果后一直不播报（10-09 三次）；用设备流时正常。
 const silence = Buffer.alloc(44 + 48000 * 2 * 600);
 silence.write('RIFF',0);silence.writeUInt32LE(silence.length-8,4);silence.write('WAVEfmt ',8);
 silence.writeUInt32LE(16,16);silence.writeUInt16LE(1,20);silence.writeUInt16LE(1,22);
@@ -139,7 +110,6 @@ try {
   const blank = await until(async () => (await rp.targets()).find((t) => t.type === "page" && t.url === "about:blank"), 10_000, "空白页");
   const work = await rp.attach(blank.targetId);
   await rp.cdp.send("Page.navigate", { url: reading ? ARTICLE : currentPage || handoff || pageContext || followup ? "https://www.wikipedia.org/" : `http://127.0.0.1:${siteAddress(site).port}/` }, work);
-  // 用户正读到「相关法律」这一节：滚到它，让它在屏幕上。
   if (reading) evidence.article = await until(async () => await rp.evaluate(work, `(() => { const h = document.getElementById("相关法律"); if (!h) return null; h.scrollIntoView({ block: "start" }); return { url: location.href, title: document.title }; })()`) || undefined, 30_000, "逆向工程条目与「相关法律」一节");
   if (currentPage || handoff || pageContext || followup) {
     const source = await until(async () => await rp.evaluate(work, `(() => {
@@ -162,7 +132,6 @@ try {
   else if (noLogin) delete (items as Record<string, unknown>)["inproc_cred:openai-codex"];
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)})`);
   if (followup) { await rp.evaluate(panel, `localStorage.setItem('sideagent.thinkingDeep', '1')`); await rp.cdp.send('Page.reload', {}, panel); }
-  // 网络记录：侧栏向 chatgpt.com 建通话；任何页面（含离屏页）开出的语音 WebSocket 都记下，查是否退回别的语音。
   const worker=(await rp.targets()).find(t=>t.type==='service_worker'&&t.url.endsWith('/background.js'));
   const startupErrors: Array<{ text: string; url?: string; line?: number }> = [];
   evidence.startupErrors = startupErrors;
@@ -182,7 +151,6 @@ try {
   rp.cdp.onEvent("Network.responseReceived", (m: any) => { const c = calls.find((x) => x.url === m.params.response.url && x.status === undefined); if (c) c.status = m.params.response.status; });
   rp.cdp.onEvent("Network.webSocketCreated", (m: any) => sockets.push(m.params.url));
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "侧栏就绪");
-  // 麦克风换成「设备静音 + 脚本放的语音」混合的一路流；数据通道收发、远端声音音量都在侧栏里记下（只观察，不改产品消息，--extra-fact 除外）。
   await rp.evaluate(panel, `(() => {
     const gl = window.__gl = { in: [], out: [], meter: [], said: [] }, ctx = new AudioContext({ sampleRate: 48000 }), mic = ctx.createMediaStreamDestination();
     const device = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -199,7 +167,6 @@ try {
         setInterval(() => { an.getFloatTimeDomainData(b); gl.meter.push([Date.now(), +Math.sqrt(b.reduce((s, v) => s + v * v, 0) / b.length).toFixed(4)]); }, 20); });
       return dc; };
     return true; })()`);
-  // 语音层不委派：建通话时去掉委派能力，并让它对操作请求只口头答应，宿主得自己接住。
   if (hostGate) await rp.evaluate(panel, `(() => { const real = window.fetch.bind(window); window.fetch = (url, init) => {
     if (String(url).includes('/realtime') && typeof init?.body === 'string') { try { const body = JSON.parse(init.body); if (body.session) { delete body.session.delegation; body.session.instructions = '你是浏览器助手的语音层，不能委派，也没有任何工具。用户要你操作网页时，口头答应一句就好。一律用中文，简短。'; init = { ...init, body: JSON.stringify(body) }; } } catch {} }
     return real(url, init); }; return true; })()`);
@@ -208,7 +175,6 @@ try {
 
   if (noLogin) {
     await sleep(8000);
-    // 原因写在语音区状态下面一行，读整个侧栏文字。
     const status = String(await rp.evaluate(panel, "document.body.innerText"));
     Object.assign(evidence, { status, calls, sockets });
     assert.equal(calls.length, 0, "没用 ChatGPT 登录时不能向 chatgpt.com 建通话");
@@ -249,8 +215,6 @@ try {
       console.log("排队语音：已经排队，中止原摘要让下一项开工");
       await rp.screenshot(panel, join(out, "queued.png"));
       if (startFail) {
-        // 本机存储写满：会话记录存在宿主页面的 IndexedDB 里。只让排队这件写入开工记录的那一次报 QuotaExceededError，
-        // 其余写入（包括上一件）照常，宿主走真实的回滚路径。
         const offscreenTarget = (await rp.targets()).find(t => t.url.endsWith("/inproc.html"))!;
         const inproc = await rp.attach(offscreenTarget.targetId);
         const readInjection = async () => (await rp.cdp.send("Runtime.evaluate", { returnByValue: true, expression: "window.__inject ?? null" }, inproc) as { result?: { value?: unknown } }).result?.value;
@@ -271,7 +235,6 @@ try {
           return true;
         })()` }, inproc) as { result?: { value?: unknown }; exceptionDetails?: unknown };
         assert.ok(!armed.exceptionDetails && armed.result?.value === true, `存储故障注入没装上：${JSON.stringify(armed)}`);
-        // 开工失败发生在上一件结束时，远晚于排队确认：先等确认说完，免得两句并成一句。
         await until(async () => {
           const g = await read();
           const done = g.in.find(e => e.type === "turn.done" && e.turn?.role === "assistant" && e.at >= queued.at);
@@ -287,7 +250,6 @@ try {
         }
         assert.equal((evidence.injection as { fired?: number } | null)?.fired, 1, "存储故障只在这件的开工记录上触发一次");
         const sent = await until(async () => (await read()).out.find(e => e.at >= askedAt && e.channel === "speakable" && e.type === "delegation.context.append" && e.delegation_item_id === delegation.item?.id), 25_000, "原委派收到没能开始的口播");
-        // 按意思分三项判：说出是哪件、说出没开工、说出原因（存储写不进）。
         const notStarted = /没能开始|没法开始|无法开始|没开始|未启动|没启动|没能启动|没成功|没能创建|没建成|失败/;
         const spoken = await until(async () => {
           const g = await read();
@@ -299,15 +261,12 @@ try {
         assert.ok(said.split(/[，,。？?！!；;]/).some(clause => /按钮/.test(clause)), `要点出没开工的是按钮那件：${said}`);
         assert.match(said, /保存|存储|空间|存不|写不/, `要说出没开工的原因：${said}`);
         await sleep(8_000);
-        // 上一件被停下时它的结果也会念：只数说到这件的。
         const turns = (await read()).in.filter(e => e.at > sent.at && e.type === "turn.done" && e.turn?.role === "assistant" && (/按钮/.test(e.turn.transcript) || notStarted.test(e.turn.transcript))).map(e => e.turn!.transcript);
         evidence.turnsAfterResult = turns;
         assert.equal(turns.length, 1, `没能开始只说一次：${JSON.stringify(turns)}`);
         await rp.screenshot(panel, join(out, "queued-spoken.png"));
         assert.equal(calls.length, 1, "开工被拒没有挂断原通话");
       } else if (queuedCancel) {
-        // 用户改主意，用一句话取消排着的那件：这句自己的回话说已取消，原委派只悄悄收尾。
-        // 等排队那句整句说完、助手回过话再开口，免得两句被拼成一句。
         await until(async () => Date.now() > input.at + input.ms + 1_000 && (await read()).in.find(e => e.at > input.at + input.ms && e.type === "turn.done" && e.turn?.role === "assistant") || undefined, 30_000, "排队那句已说完并有回话");
         const cancelInput = await say(await speech("取消检查有哪些按钮那件。", "cancel.wav"));
         evidence.cancelled = await until(async () => (await frames()).find(f => f.kind === "receipt" && f.conversationId === queued.conversationId && f.action === "abort" && f.status === "applied"), 40_000, "排队那件已取消");
@@ -318,7 +277,6 @@ try {
         }, 30_000, "真实语音说出已取消");
         evidence.cancelSaid = spoken.turn?.transcript;
         evidence.originalClosed = await until(async () => (await read()).out.find(e => e.at > cancelInput.at && e.type === "delegation.context.append" && e.delegation_item_id === delegation.item?.id && e.channel === "commentary" && /取消/.test(e.content?.map(c => c.text ?? "").join("") ?? "")), 10_000, "原委派收到已取消的收尾，不再等结果");
-        // 上一件停下后，被取消的那件不开工，语音也不再替它念任何结果。
         await rp.click(panel, "#send-btn");
         await sleep(12_000);
         const g = await read();
@@ -335,7 +293,6 @@ try {
         console.log("排队语音：下一项已开工，检查用户能听到的结果");
         let heardAfter = started.at;
         if (queuedStop) {
-          // Separate the queue acknowledgement from the stop result so the audible result has an unambiguous cause.
           await until(async () => {
             const g = await read();
             const done = g.in.find(e => e.type === "turn.done" && e.turn?.role === "assistant" && e.at >= queued.at);
@@ -364,11 +321,9 @@ try {
           return done && g.meter.some(([at, rms]) => at >= sent.at && at <= done.at && rms > 0.01) ? done : undefined;
         }, 30_000, "真实语音已说出中止结果或进度");
         if (queuedStop) {
-          // 只说「任务已终止」时，语音层会自己猜停的是哪件，曾说成「现在可以继续处理按钮清单了」。
           const said = spoken.turn?.transcript ?? "";
           evidence.stopSaid = said;
           assert.ok(said.split(/[，,。？?！!；;]/).some(clause => /按钮/.test(clause) && expected.test(clause)), `说停了的那半句要点出是按钮那件：${said}`);
-          // 问用户「要继续做吗」可以；不能说成它还会继续。
           assert.ok(!said.split(/(?<=[。！？!?；;])/).some(sentence => !/[？?]$|吗/.test(sentence.trim()) && /继续/.test(sentence)), `中止口播不能说被停的任务还会继续：${said}`);
         }
         if (unvoiced) {
@@ -396,8 +351,6 @@ try {
         let replyAfter = userTurn.at;
         const delegated = (await read()).in.find(e => e.type === 'delegation.created' && e.item?.user_bidi_turn_id === userTurn.turn?.id);
         if (delegated) {
-          // 网页任务进行中让后台卡住 17 秒（机器满载时实测后台 13 秒不回消息；心跳 5 秒一次、10 秒没回才换端口，17 秒一定触发）：
-          // 侧栏会换端口，语音通话和任务结果都不能因此丢掉。
           if (index === 3 && !process.env.NO_STALL) {
             const sw = await rp.attach((await until(() => rp.serviceWorker(), 15_000, "service worker")).targetId);
             const stallAt = Date.now();
@@ -409,7 +362,6 @@ try {
           replyAfter = acknowledged.at;
           if (index === 3) evidence.taskDelivery = delivery;
         }
-        // 回答可能在结果送到前就开口、一口气说到结果之后：取送到之后才说完的第一轮，开场应答在那之前已说完。
         const completed = await until(async()=>(await read()).in.find(e=>e.type==='turn.done'&&e.turn?.role==='assistant'&&e.at>=replyAfter-100),150_000,'本轮回答完整结束');
         const assistant = (await read()).in.find(e=>e.type==='turn.created'&&e.turn?.id===completed.turn?.id)??completed;
         const spoken=completed.turn?.transcript??'';
@@ -422,7 +374,6 @@ try {
         if(index===1)assert.match(spoken,/维基|Wikipedia/i,'认出当前网站');
         if(index===3){
           assert.match(await answerText(),/逆向工程|reverse engineering/i,'前文主题交给真实网页任务');
-          // 选中的这一轮必须真把结果说出来：说出的话里至少三成两字词来自送回的结果，不能只是提前开口的闲聊。
           const pairs=(t:string)=>{const c=t.replace(/[\s\p{P}]/gu,'');return new Set([...c].slice(1).map((ch,i)=>c[i]+ch));};
           const said=pairs(spoken),result=pairs((evidence.taskDelivery as {content?:Array<{text?:string}>}|undefined)?.content?.map(p=>p.text??'').join('')??'');
           const overlap=said.size?[...said].filter(p=>result.has(p)).length/said.size:0;
@@ -524,7 +475,6 @@ try {
           const firstAudio = (await read()).meter.find(([at, rms]) => at > spokenEnd && rms > 0.01);
           step.waitMs = firstAudio ? firstAudio[0] - spokenEnd : null;
           step.doneMs = completed.at - spokenEnd;
-          // 用户说完到这一轮回答说完：最长一段听不到任何声音有多久（只看侧栏收到的远端声音）。
           let lastLoud = spokenEnd, longest = 0;
           for (const [at, rms] of (await read()).meter) if (at > spokenEnd && at <= completed.at && rms > 0.01) { longest = Math.max(longest, at - lastLoud); lastLoud = at; }
           step.maxSilenceMs = longest;
@@ -539,7 +489,6 @@ try {
         console.log(JSON.stringify({ ...step, tabs: step.tabs?.map(t => `${t.active ? '*' : ''}${t.url}`) }));
         await sleep(2500);
       }
-      // 每句照真人节奏在回答说完后就接着说；最后一句之后等任务真的停下（停止键消失 3 秒），再看浏览器停在哪。
       let idleSince = 0;
       const settledAt = await until(async () => {
         if (await rp.evaluate(panel, `document.querySelector("#send-btn")?.classList.contains("stopping")`)) { idleSince = 0; return undefined; }
@@ -554,7 +503,6 @@ try {
       const exported = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, 'downloads'));
       const traces = String((exported as { traces?: string }).traces ?? '').split('\n').filter(Boolean).map(l => JSON.parse(l)) as Array<{ time: string; type: string; runId?: string; data?: { toolName?: string; args?: unknown; isError?: boolean; text?: string } }>;
       await writeFile(join(out, 'trace.json'), JSON.stringify(traces, null, 2));
-      // 一句的窗口到下一句开口为止；排队的任务会落进后面的窗口，所以按任务原话另取。
       const during = (s: Step) => { const next = steps[steps.indexOf(s) + 1]?.at ?? settledAt ?? Date.now(); return traces.filter(t => Date.parse(t.time) >= s.at && Date.parse(t.time) < next); };
       const plain = (t: string) => t.replace(/[\s\p{P}]/gu, '');
       const runOf = (s: Step) => { const ids = new Set(traces.filter(t => t.type === 'run_start' && s.heard && plain(t.data?.text ?? '') === plain(s.heard)).map(t => t.runId)); return traces.filter(t => ids.has(t.runId)); };
@@ -637,12 +585,9 @@ try {
         assert.ok(pages.length > 0 && pages.every((url) => /^https:\/\/(www\.)?wikipedia\.org\/?$/.test(url)), "只约定话题时，浏览器保留维基首页、不打开查询页面");
       }
       if (!longResult && !currentPage && !handoff) {
-        // R2 闲聊
         await sleep(1500);
         const chatAt = (await say(voices.chat)).at;
-        // 助手这一轮的 turn.done 要等下一轮开始才到，所以看回答转写。
         await until(async () => (await read()).in.find((e) => e.type === "output_transcript.added" && e.at > chatAt), 30_000, "闲聊回答");
-        // 闲聊回答出声 1.2 秒后插话：对照 GPT-Live 自己的回答能不能被打断。
         const chatVoice = await until(async () => (await read()).meter.find(([at, rms]) => at > chatAt + 1000 && rms > 0.01), 30_000, "闲聊回答出声");
         await sleep(Math.max(0, chatVoice[0] + 1200 - Date.now()));
         const chatBargeAt = (await say(voices.barge)).at;
@@ -654,10 +599,8 @@ try {
         evidence.chat = { reply: afterChat.filter((e) => e.type === "output_transcript.added").map((e) => e.item?.text ?? "").join(""), delegations: afterChat.filter((e) => e.type === "delegation.created").length };
         assert.equal(evidence.chat && (evidence.chat as { delegations: number }).delegations, 0, "闲聊不委派");
       }
-      // R3 查维基：一次委派、重复送达也只开一个任务、回传的是任务回答
       const ask = await say(voices.ask);
       const askAt = ask.at;
-      // 长请求本身就要说约 30 秒：从说完起算等待，模型听完整句再委派才是对的。
       const delegation = await until(async () => (await read()).in.find((e) => e.type === "delegation.created" && e.at > askAt), ask.ms + 30_000, "委派");
       if (!handoff && !process.env.NO_DUP) await rp.evaluate(panel, `window.__dc.dispatchEvent(new MessageEvent("message", { data: ${JSON.stringify(JSON.stringify({ ...delegation, at: undefined }))} }))`);
       const appended = await until(async () => (await read()).out.find((e) => e.type === "delegation.context.append" && e.channel === "speakable" && e.at >= askAt), 180_000, "任务结果送回 GPT-Live");
@@ -692,7 +635,6 @@ try {
         evidence.currentPage = { answer, taskAsk, source: evidence.pageSource };
       }
       if (bargeResult) {
-        // R4 播报结果时插话：结果出声 1.2 秒后开口。
         await sleep(Math.max(0, playing[0] + 1200 - Date.now()));
         const bargeAt = (await say(voices.barge)).at;
         await sleep(6000);
@@ -701,7 +643,6 @@ try {
         Object.assign(evidence, { sent, answer, bargeIn });
         assert.ok(bargeIn.stopMs !== null && bargeIn.stopMs <= 500, `结果播报插话后，远端轨道0.5秒内静音（不代表本地听感）（实际 ${bargeIn.stopMs ?? "没停"} 毫秒）`);
       } else {
-        // R3 让结果完整播完（连续 1.5 秒静音），再核对整段播报。
         const done = await until(async () => { const g = await read(); const i = g.meter.findIndex(([t], k) => t > playing[0] && g.meter.slice(k, k + 75).length === 75 && g.meter.slice(k, k + 75).every(([, r]) => r <= LOUD)); return i < 0 ? undefined : g.meter[i]![0]; }, 60_000, "结果播完");
         const g = await read();
         const spoken = g.in.filter((e) => e.type === "output_transcript.added" && e.at > appended.at && e.at <= done + 500).map((e) => e.item?.text ?? "").join("");
@@ -733,7 +674,6 @@ try {
     }
   }
   await rp.screenshot(panel, join(out, "panel.png"));
-  // 语音记录（含分段计时）导出到 timing-downloads/，用 npm run logs -- --voice --file 看。
   await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "timing-downloads")).catch(() => {});
 } catch (e) {
   error = e instanceof Error ? e.stack ?? e.message : String(e);

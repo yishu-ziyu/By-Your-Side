@@ -1,7 +1,6 @@
 import { CURSOR_SPOT_SAVE, CURSOR_SPOT_TAKE, isCursorSpots, type CursorSpot } from "../shared/cursor-spot.js";
 import { litInstances } from "./page-glow.js";
 
-/** 标签页 → 旧网页离开时光标停的位置。只交给紧接着的下一个网页，取过就删。 */
 const spots = new Map<number, CursorSpot[]>();
 
 export function installCursorSpots(): void {
@@ -15,7 +14,6 @@ export function installCursorSpots(): void {
     if (raw?.type === CURSOR_SPOT_TAKE) {
       const saved = spots.get(tabId) ?? [];
       spots.delete(tabId);
-      // 这一轮已经结束（边缘光熄了）的成员不接力：失败后停在原处的光标，不跟着用户自己换的网页走。
       const working = litInstances(tabId);
       respond({ spots: saved.filter((spot) => working.has(spot.id)) });
     }

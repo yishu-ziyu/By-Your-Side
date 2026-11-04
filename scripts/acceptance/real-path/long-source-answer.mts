@@ -1,12 +1,3 @@
-/**
- * 这一轮读过一个地址很长的网页（B 站播放器接口那种带签名的长参数）：最后的回答照常交付成回答，不被收进折叠的过程里。
- * 回答的出处有长度规则（地址不超过 500 字、不含空白，标题不超过 160 字）；一条不合规的出处曾让整份回答格式校验失败、
- * 只在控制台留一句「最终正文交付失败」，用户只看到开场白。
- * 只装扩展、隔离构建、本机脚本模型。
- *   npx tsx scripts/acceptance/real-path/long-source-answer.mts --headless
- *   a) 打开一个地址 700 多字的页面后用普通正文作答：回答出现在回答位置（不在过程里）。
- * 失败方式：出处不过滤就整份校验，a 失败（回答只在折叠的过程里）。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";

@@ -1,14 +1,10 @@
-/** 浮在网页上的会话卡片：开没开、收没收起、看哪个会话、放在哪。存在 storage.local，所有标签页的内容脚本照着同一份显示。 */
-
 export const FLOAT_CARD_KEY = "float_card";
 
-/** 内容脚本问后台自己在哪个窗口（卡片里的会话页要知道去读哪个窗口的网页）。 */
 export const FLOAT_CARD_WHERE = "float_card_where";
 
-/** 卡片上的「回到侧栏」：必须在点击的这条消息里同步打开侧栏。 */
+/** WHY: 卡片上的「回到侧栏」：必须在点击的这条消息里同步打开侧栏。 */
 export const FLOAT_CARD_TO_PANEL = "float_card_to_panel";
 
-/** right / top 是卡片右上角离视口右边、上边的距离，换了窗口大小也贴着同一边。 */
 export interface FloatCardRect { right: number; top: number; width: number; height: number }
 
 export interface FloatCardState {

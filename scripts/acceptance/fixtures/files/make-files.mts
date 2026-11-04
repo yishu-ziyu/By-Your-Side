@@ -1,8 +1,3 @@
-/**
- * 生成附件验收用的 PDF（Chrome 打印，带真实中文文字层）、扫描件 PDF（整页是图片）、
- * 以及 macOS textutil 写出的 Word 文件（与 python-docx 不同的写法）。先跑 make_office.py。
- *   npx tsx scripts/acceptance/fixtures/files/make-files.mts
- */
 import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -26,7 +21,6 @@ await writeFile(join(dir, "contract.pdf"), await page.pdf({ format: "A4" }));
 const scan = (await readFile(join(dir, "scan-page.png"))).toString("base64");
 await page.setContent(`<html><body style="margin:0"><img src="data:image/png;base64,${scan}" style="display:block;width:100%;height:100vh;object-fit:contain"></body></html>`);
 await writeFile(join(dir, "receipt-scan.pdf"), await page.pdf({ format: "A4", printBackground: true }));
-// 扫描时多夹了一张白纸：第 2 页空白，不该当成扫描页发给模型。
 await page.setContent(`<html><body style="margin:0"><img src="data:image/png;base64,${scan}" style="display:block;width:100%;height:100vh;object-fit:contain"><div style="page-break-before:always;height:10px"></div></body></html>`);
 await writeFile(join(dir, "scan-with-blank.pdf"), await page.pdf({ format: "A4", printBackground: true }));
 await browser.close();

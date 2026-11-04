@@ -1,6 +1,5 @@
 import type { ExtensionFactory } from '@earendil-works/pi-coding-agent';
 
-/** The first restriction leaves the agent free to navigate; only a repeat on that page stops the run. */
 export class RestrictedPagePolicy {
   private readonly seen = new Set<string>();
   constructor(private readonly take: (id: string) => { tabId: number | null; url: string } | undefined, private readonly onRestricted: () => void) {}

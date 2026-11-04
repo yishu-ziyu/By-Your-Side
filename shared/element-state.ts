@@ -1,4 +1,3 @@
-/** Fixed, read-only element properties. No model-supplied code or getters. */
 export const ELEMENT_PROPERTIES = ['textContent', 'visibleText', 'value', 'displayValue', 'visible', 'enabled', 'checked', 'selected', 'expanded', 'pressed', 'paused', 'ended', 'currentTime', 'duration'] as const;
 
 export type ElementProperty = typeof ELEMENT_PROPERTIES[number];
@@ -13,17 +12,12 @@ export interface ElementReadOptions {
   timeoutMs?: number;
 }
 
-/**
- * 要读的属性，和去掉的不支持名字。一个写错的名字不作废整次读取：照读其余属性，结果里写明可用的名字。
- * expect / timeoutMs 仍严格：等一个读不到的条件只会白等。
- */
 export function validateElementRead(options: ElementReadOptions): { properties: ElementProperty[]; unsupported: string[] } {
   const requested: unknown = options.properties ?? [];
 
   if (!Array.isArray(requested)) throw new Error('properties须是属性名数组；请使用 read_element 的属性列表。');
   const isProperty = (p: unknown): p is ElementProperty => (ELEMENT_PROPERTIES as readonly unknown[]).includes(p);
   const properties = requested.filter(isProperty);
-  // 不支持的名字会原样写进页面内容包装之外的说明；程序里的名字可能取自网页，所以只回显像属性名的写法。
   const unsupported = [...new Set(requested.filter(p => !isProperty(p)).map(p => typeof p === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(p) ? p : '(非属性名)'))].slice(0, 10);
   const timeout = options.timeoutMs ?? 0;
 

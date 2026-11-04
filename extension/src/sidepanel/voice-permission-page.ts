@@ -23,7 +23,6 @@ enable.onclick=async()=>{
   }
 };
 
-// 系统设置的路径按系统写：只有 macOS 和 Windows 有固定的路径。
 const ua=navigator.userAgent;
 document.querySelector<HTMLElement>('#os-help')!.textContent=/Mac/i.test(ua)?'打开 macOS「系统设置 → 隐私与安全性 → 麦克风」，检查 Chrome 的权限':/Windows/i.test(ua)?'打开 Windows「设置 → 隐私和安全性 → 麦克风」，检查 Chrome 的权限':'在系统的声音设置里，检查输入设备和 Chrome 的权限';
 

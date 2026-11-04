@@ -1,7 +1,3 @@
-/**
- * 页面控制：用户接管/交还（冻结→交还→续跑的状态机在 shared/control.ts 的 TeamControl），
- * 以及 take_tab（从别的会话接手一个页）。并行助手已删除，成员只有主会话一个。
- */
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
@@ -106,7 +102,6 @@ export class TabControl {
     return this.team.abort();
   }
 
-  /** 其他会话要接手本会话正在用的页面：停下主会话并等它真的停下，页面归属留给接手方的 claim。 */
   async stopMembersForForeignTakeover(members: readonly string[]): Promise<string[]> {
     if (!members.includes(LEAD_SESSION_ID) || !this.lead) return [];
     await this.lead.yieldTab();
@@ -114,7 +109,6 @@ export class TabControl {
     return [LEAD_SESSION_ID];
   }
 
-  /** 先确认同会话归属，再接手；页在别的会话手里时由协调器先停下那边。 */
   async takeTab(tabId?: number): Promise<{ tabId: number }> {
     // SAFETY: worker_tabs inspect resolves with WorkerTabControl.manage's result shape.
     const info = await this.rpc.call("worker_tabs", tabId != null ? { action: "inspect", tabId } : { action: "inspect" }) as { tabId: number; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] };
@@ -131,9 +125,7 @@ export class TabControl {
     return { tabId: info.tabId };
   }
 
-  /** 另一会话已空闲（没有进行中的任务或在途调用）时接手它占着的页；否则不动，返回 false。 */
   async releaseIdleForeignTab(tabId?: number): Promise<boolean> {
-    // 并行的几个调用同时被拦时共用一次接手，不让后到的那个因「归属已变化」报错。
     const key = tabId ?? "working";
     const inflight = this.idleReleases.get(key);
 
@@ -165,7 +157,6 @@ export class TabControl {
     try {
       await this.rpc.call("worker_tabs", { action: "claim", tabId: info.tabId, expectedConversationId: info.conversationId });
     } catch {
-      // 期间别的调用已经接手：页面已归本会话就算成功，否则保持拦截。
       return inspect().then(now => now.foreign === false && !!now.conversationId, () => false);
     }
 

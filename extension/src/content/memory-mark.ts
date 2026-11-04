@@ -1,11 +1,6 @@
 import { isPageInteractionMessage, type PageInteractionMessage } from '../../../shared/protocol.js';
 import { OVERLAY_ATTR } from '../shared/overlay.js';
 
-/**
- * 按记忆填的那一格：淡蓝底、细边和「记得的」小标签（样子见 docs/previews/circle-and-memory）。
- * 画在页面上面的一层里，不改这一格的值和网页结构；你动手改了这一格，或这一格不在了，记号就消失。
- * 点标签弹出小卡：改一下（选中这一格让你改）/ 这次不用（清空，记忆还在）/ 忘记（清空，并交给侧栏忘记这条）。
- */
 const FIELD_ATTR = 'data-sideagent-memory-field';
 
 const STYLE = `
@@ -65,7 +60,6 @@ export function installMemoryMark(): void {
 
       Object.assign(tint.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, borderRadius: getComputedStyle(field).borderRadius });
 
-      // 标签贴在格子里靠右；格子太窄就挂在格子右上角外面。
       const inside = r.width >= 140;
       Object.assign(tag.style, inside ? { left: '', right: `${innerWidth - r.right + 6}px`, top: `${r.top + r.height / 2}px` } : { right: '', left: `${r.right + 6}px`, top: `${r.top + r.height / 2}px` });
 
@@ -78,7 +72,6 @@ export function installMemoryMark(): void {
 
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { closePop(); tag.focus(); } };
 
-    // 清空这一格：用原生 setter 再发 input/change，受控组件（React 等）也认。
     const clearField = () => {
       if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
         Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')?.set?.call(field, '');
@@ -102,7 +95,6 @@ export function installMemoryMark(): void {
  return; }
 
       button.disabled = true;
-      // 忘掉交给侧栏：它用回答下面那一行同一套「忘掉」，侧栏里写明已忘掉、可撤销。
       // SAFETY: 侧栏按 MEMORY_FIELD_FORGET 回 { ok }；没人接时是 undefined，出错时上面换成 null。
       const result = await chrome.runtime.sendMessage({ type: 'MEMORY_FIELD_FORGET', id: memory.id, requestId: crypto.randomUUID() }).catch(() => null) as { ok?: boolean } | null;
 
@@ -151,7 +143,6 @@ export function installMemoryMark(): void {
       acts.querySelector('button')?.focus();
     };
 
-    // 你自己改了这一格：以你的为准，记号消失。助手再填（脚本事件）不算。
     const onInput = (event: Event) => { if (event.isTrusted) remove(); };
 
     const observer = new ResizeObserver(place);

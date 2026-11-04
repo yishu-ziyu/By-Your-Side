@@ -1,8 +1,3 @@
-/**
- * 带登录态的 POST 要不要先问用户：搜索、查询、GraphQL query、保存草稿放行；写入、发信、付款要问。
- * fetch 工具和页面脚本拦截共用这一份。拿不准按写入拦。
- */
-
 export type RequestIntent = "search" | "save" | "write" | "unknown";
 
 export interface RequestClassifyInput {
@@ -13,7 +8,6 @@ export interface RequestClassifyInput {
 
 export interface RequestClassification {
   intent: RequestIntent;
-  /** 要问用户才是 true。 */
   confirm: boolean;
   method: string;
   host: string;
@@ -35,7 +29,7 @@ const SITE_NAMES: Record<string, string> = {
   "bilibili.com": "B站",
 };
 
-/** 页面脚本按源码注入这个函数；判断和正则必须都留在函数体内，不能引用模块作用域。 */
+/** WHY: 页面脚本按源码注入这个函数；判断和正则必须都留在函数体内，不能引用模块作用域。 */
 export function requestShape(method: string, url: string, body: string | undefined, base = "https://invalid.invalid"): { intent: RequestIntent; host: string; path: string; search: string } {
   const verb = method.toUpperCase();
   let host = "", path = url.slice(0, 80), search = "";
@@ -70,18 +64,15 @@ export function requestShape(method: string, url: string, body: string | undefin
   const write = /(send|message|msg|chat|comment|reply|tweet|mail|publish|share|submit|发送|pay|payment|checkout|purchase|order|delete|trash|buy|create|update)/i.test(path)
     || /(?:^|\/)(posts?|messages?|comments?|replies|tweets?|mails?|orders?|payments?)(?:\/|$)/i.test(path)
     || gql === "write";
-  // GraphQL 只看正文：认不出是 query 的（持久化查询、读不到正文）按拿不准处理。
   const graphql = /graphql|gql/i.test(path);
   const searchLike = (!graphql && /(search|query|suggest|autocomplete|lookup|find)/i.test(path))
     || gql === "search";
 
-  // 保存只留在自己这里，不发给别人，问了只会打断：路径就叫 save/draft 的照常发。
   const save = !write && /(?:^|\/)(save|draft|drafts|autosave)(?:\/|$)/i.test(path);
 
   return { intent: write ? "write" : searchLike ? "search" : save ? "save" : "unknown", host, path, search };
 }
 
-/** 从 JSON / 查询串里取出人能读的搜索词；认不出就不编。 */
 export function extractSearchQuery(body?: string, url?: string): string | undefined {
   const clip = (value: string) => {
     const text = value.replace(/\s+/g, " ").trim();
@@ -96,7 +87,7 @@ export function extractSearchQuery(body?: string, url?: string): string | undefi
         const value = q.get(key);
         if (value) return clip(value);
       }
-    } catch { /* 不是网址 */ }
+    } catch {  }
   }
 
   if (!body?.trim()) return undefined;

@@ -1,8 +1,3 @@
-/**
- * 隔离实例：headless Chrome for Testing 加载真实构建的扩展（复制 dist 后去掉 manifest key，
- * 随机扩展 ID，连不上用户正在运行的伴随进程），并用生产 onMessage → executeToolCall 钩子
- * 暴露 __saCall。供多个真实站点验收脚本共用；不碰用户的 ChromeMain 与扩展。
- */
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -13,7 +8,6 @@ import { createCdp, fetchJson } from "./cdp.mjs";
 import { installExecuteToolCallHook } from "./sw-hook.mjs";
 import { trackTempDir } from "./temp-profile.mjs";
 
-/** 本机 Chrome for Testing。缓存目录名带版本号，浏览器更新后旧目录会被清掉，因此按实际存在的最高版本解析。 */
 function resolveChrome(): string {
   const override = process.env.EGO_ACCEPTANCE_CHROME;
 
@@ -59,18 +53,15 @@ export interface IsolatedExtension {
   fixtureHits(): number;
   swEval(expression: string, timeoutMs?: number): Promise<unknown>;
   tool(name: string, params: Record<string, unknown>, sessionId?: string): Promise<any>;
-  /** 打开一个新页并返回它的 CDP target id；配 evalIn 用来驱动真实页面/面板。 */
   newTarget(url: string): Promise<string>;
   evalIn(targetId: string, expression: string, timeoutMs?: number): Promise<any>;
   closeTarget(targetId: string): Promise<void>;
   screenshot(targetId: string, filePath: string): Promise<void>;
-  /** Click an existing button, including closed shadow roots, through Chrome input. */
   clickButton(targetId: string, text: string): Promise<void>;
   diagnostics(): IsolationDiagnostics;
   close(): Promise<IsolationCleanup>;
 }
 
-/** 隔离启动器自记的诊断快照（准确反映实现返回的字段；CDP 细节保持不透明）。 */
 export interface IsolationDiagnostics {
   cdp: unknown;
   fixtureListening: boolean;
@@ -85,7 +76,6 @@ export interface IsolationCleanup {
   errors: string[];
 }
 
-// Also used when launch fails before an IsolatedExtension can be returned.
 export async function closeIsolatedResources(
   resources: { child?: ChildProcess; cdp?: ReturnType<typeof createCdp>; fixture?: Server },
 ): Promise<IsolationCleanup> {
@@ -111,7 +101,7 @@ export async function closeIsolatedResources(
       const timer = setTimeout(() => {
         child.removeListener('close', stopped);
         child.kill('SIGKILL');
-        // Wait for the killed Chrome to exit so its profile is no longer written when it is removed.
+        // WHY: Wait for the killed Chrome to exit so its profile is no longer written when it is removed.
         const fail = () => reject(new Error('Chrome graceful close timed out; SIGKILL fallback sent'));
         const guard = setTimeout(fail, 3000);
         child.once('close', () => { clearTimeout(guard); fail(); });
@@ -139,7 +129,6 @@ export async function closeIsolatedResources(
 
 export async function launchIsolatedExtension(options: {hostResolverRules?: string; fixtureHtml?: string; fixture?: (req: IncomingMessage, res: ServerResponse) => boolean; downloadDir?: string; fakeMedia?: boolean; localOnly?: boolean; diagnose?: (kind: string, data: unknown) => void} = {}): Promise<IsolatedExtension> {
   const outDir = await mkdtemp(join(tmpdir(), "sideagent-isolated-"));
-  // Profile, extension copy and default downloads live here; removed on close() and at process end.
   const tempDir = trackTempDir(outDir);
   const profile = join(outDir, "profile");
   const extDir = join(outDir, "extension");
@@ -168,15 +157,12 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     delete manifest.key;
 
-    // Test-only transport isolation, applied before the service worker starts.
-    // __saCall still enters the real executor; no network uplink can connect (the manifest no longer asks for nativeMessaging).
     if (options.localOnly) {
       manifest.content_security_policy = {extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self'"};
     }
 
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-    // 页面下载一律落到临时目录（可由调用方指定），不进用户真实的「下载」文件夹；不弹保存对话框。
     const downloadDir = options.downloadDir ?? join(outDir, "downloads");
     await mkdir(downloadDir, { recursive: true });
     await mkdir(join(profile, "Default"), { recursive: true });
@@ -185,7 +171,6 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
     fixture = createServer((req, res) => {
       hits += 1;
 
-      // 调用方自己应答的路径（下载文件、故意中断的响应等）；返回 false 时回落到默认页面。
       if (options.fixture?.(req, res)) return;
       res.setHeader("content-type", "text/html; charset=utf-8");
       res.end(options.fixtureHtml ?? "<!doctype html><meta charset='utf-8'><title>isolated probe</title><p>probe</p>");
@@ -198,7 +183,7 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
 
     child = spawn(CHROME, [
       "--headless=new",
-      // macOS：不读钥匙串里的「Chrome Safe Storage」，否则每启动一次就弹一次钥匙串授权框。
+      // WHY: macOS：不读钥匙串里的「Chrome Safe Storage」，否则每启动一次就弹一次钥匙串授权框。
       "--use-mock-keychain",
       "--mute-audio",
       ...(options.fakeMedia ? ['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream'] : []),
@@ -209,7 +194,7 @@ export async function launchIsolatedExtension(options: {hostResolverRules?: stri
       `--load-extension=${extDir}`,
       "--no-first-run",
       "--no-default-browser-check",
-      // Ubuntu 24.04 runners block unprivileged user namespaces, so Chrome's sandbox cannot start there.
+      // WHY: Ubuntu 24.04 runners block unprivileged user namespaces, so Chrome's sandbox cannot start there.
       ...(process.platform === "linux" ? ["--no-sandbox"] : []),
       "--autoplay-policy=no-user-gesture-required",
       ...(options.hostResolverRules ? [`--host-resolver-rules=${options.hostResolverRules}`, "--no-proxy-server"] : []),

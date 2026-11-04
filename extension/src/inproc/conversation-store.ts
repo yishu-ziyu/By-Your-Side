@@ -1,10 +1,3 @@
-/**
- * 扩展内 agent 的会话目录（IndexedDB）。offscreen 文档崩溃、被 Chrome 回收或扩展重载后，
- * 新起的核心按这里重建会话，侧栏手里的会话编号仍然有效，重发不再落到不存在的会话上。
- *
- * 这里只存会话摘要、阅读交接和另开一件的记录；模型上下文与检查点由pi-session-idb的原生Pi会话另存。
- * 核心的 load() 是同步的，所以先用 openConversationStore() 读进内存；写入是后台的，失败只记日志。
- */
 import type { ConversationPersistence, QueuedTask } from "@sideagent/agent/browser-core";
 import { isConversationSummary, validConversationId, type ConversationSummary } from "../../../shared/protocol.js";
 import { isReadingTranscript, type ReadingTranscript } from "../../../shared/reading.js";
@@ -15,12 +8,10 @@ const STORE = "kv";
 
 const INDEX_KEY = "index";
 
-/** 阅读交接按会话编号放在一条记录里，读的时候不用逐个枚举键。 */
 const READINGS_KEY = "readings";
 
 const QUEUE_KEY = "queue";
 
-/** 已结束的另开一件只为重放卡片；留最近这些，不让记录无限长。没结束的全留，重启后还要接着更新卡片。 */
 const QUEUE_LIMIT = 200;
 
 const ENDED: ReadonlyArray<QueuedTask["state"]> = ["completed", "cancelled", "failed"];
@@ -53,7 +44,6 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-/** 用协议的会话形状校验；重启后一律回到空闲，不续跑旧的外部动作（与本机 ConversationStore.load 相同）。 */
 function validSummaries(value: ConversationSummary[] | undefined): ConversationSummary[] {
   if (!Array.isArray(value)) return [];
 
@@ -72,14 +62,12 @@ export async function openConversationStore(log: (message: string) => void): Pro
     // SAFETY: 这几个键只由下面的 save / saveReading / taskQueue.save 写入，形状见 StoredValue；读出后仍逐条校验。
     const [index, stored, queued] = await Promise.all([request(store.get(INDEX_KEY)) as Promise<ConversationSummary[] | undefined>, request(store.get(READINGS_KEY)) as Promise<Record<string, ReadingTranscript> | undefined>, request(store.get(QUEUE_KEY)) as Promise<unknown>]);
     summaries = validSummaries(index);
-    // 逐条校验交给队列自己（TaskQueue 跳过坏记录）。
     if (Array.isArray(queued)) queue = queued;
 
     for (const [id, transcript] of Object.entries(stored ?? {})) {
       if (validConversationId(id) && isReadingTranscript(transcript)) readings.set(id, transcript);
     }
   } catch (error) {
-    // 打不开就退回只在内存里的会话（与改前相同），任务照常可用。
     log(`会话目录读取失败：${error instanceof Error ? error.message : String(error)}`);
   }
 

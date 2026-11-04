@@ -5,7 +5,7 @@ import type { MemoryEntry } from "../../../shared/memory.js";
 
 const MODEL_ID = "Xenova/multilingual-e5-small";
 const EMBED_TIMEOUT_MS = 1500;
-// 这个小模型给无关中文句子也可能打出 0.85，不能沿用通用向量库常见的 0.70 门槛。
+// WHY: 这个小模型给无关中文句子也可能打出 0.85，不能沿用通用向量库常见的 0.70 门槛。
 const MIN_SIMILARITY = 0.86;
 
 env.allowLocalModels = false;
@@ -30,7 +30,6 @@ function indexText(entry: MemoryEntry): string {
   return entry.experience?.topic ? `${entry.experience.topic}\n${entry.text}` : entry.text;
 }
 
-/** 派生索引可以随时清空重建；MemoryStore 仍是唯一事实来源。 */
 export class BrowserSemanticMemory implements SemanticMemoryIndex {
   private engine: Promise<Memory> | null = null;
   private extractor: Promise<FeatureExtractionPipeline> | null = null;
@@ -78,7 +77,6 @@ export class BrowserSemanticMemory implements SemanticMemoryIndex {
   sync(entries: MemoryEntry[]): Promise<void> {
     const revision = revisionOf(entries);
 
-    // 首次使用不等待模型下载：先走原来的关键词结果，模型在后台就绪后自然启用。
     if (!this.ready) {
       void this.model().catch(() => undefined);
       return Promise.resolve();
@@ -87,7 +85,6 @@ export class BrowserSemanticMemory implements SemanticMemoryIndex {
     this.syncing = this.syncing.catch(() => undefined).then(async () => {
       if (revision === this.revision) return;
       const engine = await this.open();
-      // 记忆写入远少于查询。内容版本变化时整份重建，避免映射损坏后旧记忆复活。
       await engine.prune({ olderThan: Date.now() + 1 });
 
       for (const entry of entries) {

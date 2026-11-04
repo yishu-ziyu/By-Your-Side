@@ -1,12 +1,5 @@
 import { mountReadingVoice } from './reading-voice.js';
 import { mountDictationSettings } from "./dictation.js";
-/**
- * 模型与语音设置页：扩展的独立页面，侧栏「更多 → 模型与语音」打开。
- *
- * 只写 chrome.storage：模型选择（INPROC_CONFIG_KEY）、各家凭据（INPROC_CREDENTIAL_PREFIX）、语音密钥（INPROC_VOICE_KEY）、音色（STEP_VOICE_STORAGE_KEY）。
- * background 监听存储变化，推给扩展内 agent；这里不直接和 agent 通信。
- * 订阅登录用 pi-ai 的设备码流程，登录结果经凭据库直接落盘。
- */
 import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earendil-works/pi-ai";
 import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, KeyRound, Link, Play, Search, X } from "lucide";
 import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, omitCookies, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
@@ -46,7 +39,6 @@ async function writeCredential(providerId: string, credential: Credential | Stor
   else await chrome.storage.local.remove(key);
 }
 
-/** 登录与保存用它：凭据一改就落盘。 */
 const runtime = createModelRuntime(writeCredential);
 
 const CUSTOM_CHOICE: ProviderChoice = { id: CUSTOM_PROVIDER_ID, name: "自定义地址", apiKey: true, models: [] };
@@ -164,12 +156,10 @@ let credentials: StoredCredentials = {};
 
 let selected: ProviderChoice | null = null;
 
-/** 正在编辑的服务商家族。 */
 let openKey: string | null = null;
 
-/** 已存 key 时，点了「更换」才露出输入框。 */
 let changingKey = false;
-/** 表单打开时自定义连接的地址；别的窗口之后改了地址，旧表单不能把新密钥带到旧地址。 */
+/** WHY: 表单打开时自定义连接的地址；别的窗口之后改了地址，旧表单不能把新密钥带到旧地址。 */
 let openedBaseUrl = "";
 let openedConnection: InprocModelConfig | null = null;
 let openedCredential: StoredCredential | undefined;
@@ -195,7 +185,6 @@ function renderConnectionDraftNotice(): void {
 
 let login: AbortController | null = null;
 
-/** 语音用的阶跃星辰 key 从哪来（resolveVoiceKey 的结果）：语音自己存的、借主模型的阶跃星辰 key、还没有。 */
 let voiceKeySource: "own" | "model" | "" = "";
 let speechKeyConfigured = false;
 
@@ -217,7 +206,6 @@ oauthOk.append(svg(CircleCheck, 15));
 
 keySaved.querySelector(".key-ic")!.append(svg(KeyRound));
 
-/** detail：服务商原文，收进「技术详情」，不和人话拼在一起。 */
 function setStatus(el: HTMLElement, text: string, tone: "ok" | "err" | "busy" | "" = "", detail?: string): void {
   el.textContent = text;
   el.dataset.tone = tone;
@@ -237,7 +225,6 @@ const choiceOf = (providerId: string) => choices.find((c) => c.id === providerId
 
 const entryOf = (providerId: string) => entries.find((e) => e.members.some((m) => m.id === providerId));
 
-/** 带地区的家族成员写成「MiniMax（中国）」。 */
 function labelOf(providerId: string): string {
   const entry = entryOf(providerId);
   const region = entry?.members.find((m) => m.id === providerId)?.region;
@@ -257,7 +244,6 @@ function credentialNote(providerId: string): "已登录" | "已存密钥" | "" {
 
 const connected = (entry: Entry) => entry.members.some((m) => credentialNote(m.id) || m.id === CUSTOM_PROVIDER_ID && savedConnections.has(m.id) || m.id === config?.provider);
 
-/** 一行的状态：使用中 > 已登录 > 已存密钥。 */
 interface EntryStatus { kind: "use" | "oauth" | "key" | "saved" | ""; text: string; region?: string }
 
 function entryStatus(entry: Entry): EntryStatus {
@@ -289,7 +275,6 @@ function statusEl(entry: Entry): HTMLElement {
   return el;
 }
 
-/** 家族里先打开正在用的、再是已连接的地区。 */
 const representative = (entry: Entry) => (entry.members.find((m) => m.id === config?.provider) ?? entry.members.find((m) => credentialNote(m.id)))?.id ?? entry.key;
 
 function providerRow(entry: Entry, hits: string[]): HTMLElement {
@@ -328,7 +313,6 @@ function groupLabel(text: string): HTMLElement {
   return Object.assign(document.createElement("div"), { className: "grp", textContent: text });
 }
 
-/** 已连接的在上（正在用的第一），自定义地址其次，其余折起；一家都没连时默认展开；搜索时只留命中的行，并展开其余。 */
 function renderProviders(): void {
   const query = search.value.trim();
   const matches = entries.filter((e) => e.key !== CUSTOM_PROVIDER_ID).map((e) => [e, matchEntry(e, choices, query)] as const).filter(([, m]) => m.hit);
@@ -545,16 +529,12 @@ async function refreshCodexCatalog(force = false): Promise<void> {
 
 codexRefreshButton.addEventListener("click", () => void refreshCodexCatalog(true));
 
-/** 服务商公开清单到了就换上全量模型；拉不到时保留内置的几个，用户仍可直接填模型名。 */
 void runtime.loadProviderModels().then(() => {
   syncModelChoices();
 }, (error: unknown) => console.debug("[sideagent]", "provider model list unavailable", error));
 
-/* 模型下拉：可搜索的列表，也能直接填目录外的名字（自定义地址必须能填）。 */
-
 let modelActive = -1;
 
-/** 打开时列出全部；输入后只留包含所输文字的。 */
 let modelFilter = "";
 
 function connectionModels(): string[] {
@@ -660,7 +640,6 @@ addEventListener("scroll", closeModelList, { passive: true });
 
 addEventListener("resize", closeModelList);
 
-/** 表单里的草稿：模型选择 + 新填的 key（没填则为空）。 */
 function draft(): { ok: true; config: InprocModelConfig; key: string } | { ok: false; error: string } {
   if (!selected) return { ok: false, error: "先选一个服务商。" };
   const modelId = modelInput.value.trim();
@@ -684,9 +663,7 @@ function draft(): { ok: true; config: InprocModelConfig; key: string } | { ok: f
   return { ok: true, config: next, key };
 }
 
-/** 把服务商和网络层的报错翻成用户能处理的话；原文只进「技术详情」。 */
 function explainFailure(raw: string): string {
-  // Kimi 套餐超过同时请求上限时回 403 permission_error，不是密钥问题。
   if (/concurrent request limit|too many concurrent/i.test(raw)) return "同时发的请求太多，服务商拒绝了这一个。等前面的请求做完再试。";
 
   return /\b(401|403)\b|unauthori[sz]ed|invalid.*(api.?key|token)|forbidden/i.test(raw) ? "服务商不接受这个密钥。如果密钥没错，就检查它能不能用这个模型。"
@@ -696,12 +673,10 @@ function explainFailure(raw: string): string {
           : "服务商返回了错误";
 }
 
-/** 试连超时的说法：「测试连接」和保存前的试连共用同一个开头和同一个时长。 */
 const probeTimeoutLead = (): string => `${PROBE_TIMEOUT_MS / 1000} 秒内没有收到服务商的回复`;
 const TEST_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}。服务商可能正忙。再试一次，或换一个模型。`;
 const SAVE_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}，密钥没有保存。原连接和输入都保留，可能是网络或服务繁忙，稍后重试。`;
 
-/** 测试的是表单快照；关闭详情可取消，测试期间不让修改这份快照。 */
 function setFormBusy(busy: boolean): void {
   formBusy = busy;
   if (busy) closeModelList();
@@ -711,7 +686,6 @@ function setFormBusy(busy: boolean): void {
 }
 
 let retryAction: (() => Promise<void>) | undefined;
-/** 中止正在进行的试连：换服务商时它属于上一家，不能再写进新表单，也不能让新表单的按钮一直灰着。 */
 let cancelProbe = (): void => {};
 
 function hideKeyReason(): void {
@@ -722,12 +696,10 @@ function hideKeyReason(): void {
 }
 
 function showKeyReason(reason: string, raw?: string, retry?: () => Promise<void>): void {
-  // 密钥框不在（订阅登录、已保存的密钥）：原因写在状态行，不挂在看不见的框下面。
   if (!keyInput.offsetParent) return setStatus(modelStatus, `没有保存：${reason}`, "err", raw);
   keyReason.hidden = false;
   retryAction = retry;
   keyRetry.hidden = !retry;
-  // 先显示区域再写字，读屏才会念出来。
   requestAnimationFrame(() => { keyReasonText.textContent = reason; });
   keyInput.classList.add("warn");
   setStatus(modelStatus, "", "", raw);
@@ -735,7 +707,6 @@ function showKeyReason(reason: string, raw?: string, retry?: () => Promise<void>
 }
 
 type ProbeOk = { ok: true; config: InprocModelConfig; key: string; elapsed: number; credential?: StoredCredential };
-/** definite：服务商明确不接受这份配置（密钥被拒、模型不存在）。超时、限流、网络、服务商自己出错都不算。 */
 type ProbeFail = { ok: false; cancelled?: boolean; local?: string; reason?: string; raw?: string; definite?: boolean; timedOut?: boolean; config?: InprocModelConfig; key?: string; credential?: StoredCredential };
 
 function rejectsConfig(raw: string): boolean {
@@ -759,7 +730,6 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
   const cancel = new AbortController();
-  // 只放开一次：被中止的试连稍后走到 finally 时，按钮和计时可能已经属于下一次试连。
   let live = true;
   const release = () => {
     if (!live) return;
@@ -814,7 +784,6 @@ async function testConnection(): Promise<void> {
 
     if (!result.ok) {
       if (result.local) return setStatus(modelStatus, result.local, "err");
-      // 只有服务商明确不接受时才挂在密钥框下；超时、限流、网络问题不是密钥的错。
       if (result.definite) return showKeyReason(result.reason ?? "服务商返回了错误", result.raw);
       return setStatus(modelStatus, `连接失败：${result.reason ?? "服务商返回了错误"}`, "err", result.raw);
     }
@@ -854,13 +823,11 @@ async function finishSave(result: ProbeOk | ProbeFail): Promise<void> {
     return setStatus(modelStatus, `新模型需要先通过连接测试：${result.reason ?? "服务商没有返回结果"}`, "err");
   }
 
-  // 服务商明确拒绝时保留草稿；暂时失败只允许新连接保存为未验证。
   if (!result.ok && (result.local || result.definite)) {
     if (result.local) return setStatus(modelStatus, result.local, "err");
     return showKeyReason(`没有保存。${result.reason ?? "服务商返回了错误"} 输入已保留，可检查后重试。`, result.raw);
   }
 
-  // 新填的密钥试连超时：不保存，说清是超时，并给「重试」。
   if (!result.ok && result.timedOut && result.key) {
     return showKeyReason(SAVE_TIMEOUT_REASON(), undefined, save);
   }
@@ -977,7 +944,6 @@ function onAuthEvent(event: AuthEvent): void {
   }
 }
 
-/** 登录流程向用户要输入（企业域名、登录方式、手动粘贴授权码）：就地显示一个输入框或几个选项。 */
 function onAuthPrompt(prompt: AuthPrompt): Promise<string> {
   oauthFlow.hidden = false;
   const box = document.createElement("div");
@@ -1071,7 +1037,6 @@ async function clearVoiceKey(): Promise<void> {
   setStatus(voiceStatus, "已清除。", "");
 }
 
-/** 已连接服务商的模型，按服务商分组；`current` 不在其中时单独补一项，免得下拉显示空白。 */
 function modelOptionGroups(current: InprocModelConfig | null): Array<HTMLOptGroupElement | HTMLOptionElement> {
   const groups: Array<HTMLOptGroupElement | HTMLOptionElement> = [];
   const seen = new Set<string>();
@@ -1096,7 +1061,6 @@ function modelOptionGroups(current: InprocModelConfig | null): Array<HTMLOptGrou
   return groups;
 }
 
-/** 念结果只用 MiniMax 订阅 Key：MiniMax 按 Key 决定扣套餐还是按量。 */
 async function saveSpeechKey(): Promise<void> {
   const key = speechInput.value.trim();
 
@@ -1116,10 +1080,8 @@ async function clearSpeechKey(): Promise<void> {
   setStatus(speechStatus, "已清除，做完不再念。", "");
 }
 
-/** 主模型：只列已连接的，选了就换，不用再进服务商详情。 */
 function renderMainModel(): void {
   const groups = modelOptionGroups(config);
-  // 一家都没连时下拉里只有「还没有选择」：换成一个按钮，直接带到服务商列表。
   const none = !config && !groups.length;
   document.getElementById("settings")!.classList.toggle("is-unconnected", none);
   mainSelect.hidden = none;
@@ -1160,18 +1122,15 @@ $("main-pick").addEventListener("click", () => {
   search.focus({ preventScroll: true });
 });
 
-/** 阶跃的三个文字模型每次都先思考，官方接口关不掉。 */
 const alwaysThinks = (c: InprocModelConfig | null) => c?.provider === STEPFUN_PROVIDER_ID;
 
 const THINKS_NOTE = "阶跃模型总会先想一下，解释和翻译因此会慢几秒。还嫌慢，可以选一个快速模型。";
 
-/** 只列已存密钥或已登录的服务商的模型，选了就能用；另保留当前已存的选择。 */
 function renderFastModels(): void {
   fastSelect.replaceChildren(new Option("和主模型相同", ""), ...modelOptionGroups(fastConfig));
   fastSelect.value = fastConfig ? JSON.stringify(fastConfig) : "";
   const slow = fastConfig ? alwaysThinks(fastConfig) : alwaysThinks(config);
 
-  // 保存会触发存储变化、重新渲染：只增减「会很慢」的提醒，不清掉刚显示的「已保存」。
   if (slow) setStatus(fastStatus, THINKS_NOTE);
   else if (fastStatus.textContent === THINKS_NOTE) setStatus(fastStatus, "");
 }
@@ -1189,7 +1148,6 @@ async function saveFastModel(): Promise<void> {
 
 fastSelect.addEventListener("change", () => void saveSelection(saveFastModel, fastStatus));
 
-/** 备用模型和快速模型一样只列已连接的服务商；默认不用备用。 */
 function renderBackupModels(): void {
   backupSelect.replaceChildren(new Option("不用备用", ""), ...modelOptionGroups(backupConfig));
   backupSelect.value = backupConfig ? JSON.stringify(backupConfig) : "";
@@ -1207,7 +1165,6 @@ async function saveBackupModel(): Promise<void> {
 
 backupSelect.addEventListener("change", () => void saveSelection(saveBackupModel, backupStatus));
 
-/** 每家服务商拿来比的模型：日常可选的主力和它的快速版本。不在表里的服务商只测已选作主、快速、备用的那个。 */
 const SPEED_MODELS: Record<string, readonly string[]> = {
   "kimi-coding": ["kimi-for-coding", "kimi-for-coding-highspeed", "k3"],
   "openai-codex": ["gpt-6-luna", "gpt-6.1-sol"],
@@ -1217,7 +1174,6 @@ const SPEED_MODELS: Record<string, readonly string[]> = {
 
 const SPEED_QUESTION = "网页上写着：『会议室金桂可容纳 9 人，带投影仪。』金桂能坐 8 个人开带投影的会吗？先答「能」或「不能」，再用一句话说明。";
 
-/** 正确答案是“能”：只看第一句，因为后面常补一句“但不能超过 9 人”。 */
 function speedAnswerRight(text: string): boolean {
   const head = text.trim().split(/[，,。.!！？?\n]/)[0] ?? "";
 
@@ -1262,11 +1218,10 @@ async function runSpeedTest(): Promise<void> {
   }
 }
 
-/** OpenCode Go 服务端排队时，一句短回复也可能要近 30 秒；测速要等得比试连久，才不会把排队当成没开口。 */
 const SPEED_TIMEOUT_MS = 60_000;
 
 async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: string }>, box: HTMLElement): Promise<void> {
-  // 用的是已保存的订阅令牌：测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
+  // WHY: 用的是已保存的订阅令牌：测试中刷新出的新令牌必须落盘，否则旧令牌已被轮换作废。
   const probe = createModelRuntime((id, credential) => (credential?.type === "oauth" ? writeCredential(id, credential) : undefined));
   await probe.credentials.load(credentials);
   await probe.applyCodexCatalog(codexCatalog);
@@ -1289,7 +1244,6 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
   const longest = () => Math.max(10, ...rows.map((r) => r.first ?? 0));
   const redraw = () => rows.forEach((r) => { if (r.first != null) r.bar.style.setProperty("--w", `${(r.first / longest()) * 100}%`); });
 
-  // 同一家的模型一个接一个测：有的套餐限制同时请求数（Kimi 回 403）；不同家之间同时测。
   const byProvider = new Map<string, typeof rows>();
   for (const r of rows) byProvider.set(r.c.provider, [...byProvider.get(r.c.provider) ?? [], r]);
 
@@ -1309,7 +1263,7 @@ async function measureSpeeds(list: Array<{ config: InprocModelConfig; role: stri
       const stream = probe.models.streamSimple(model, { messages: [{ role: "user", content: SPEED_QUESTION, timestamp: Date.now() }] }, {
         maxTokens: 2048, signal, fetch: omitCookies, headers: probe.headersFor(model), sessionId: probe.sessionId,
         reasoning: lowest === "off" ? undefined : lowest,
-        // 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型直接用 SSE，和任务里一样。
+        // WHY: 浏览器的 WebSocket 不能带请求头：ChatGPT 登录的模型直接用 SSE，和任务里一样。
         ...(model.api === "openai-codex-responses" ? { transport: "sse" as const } : {}),
       });
 
@@ -1446,7 +1400,6 @@ const timbreList = $("timbre-list");
 
 const sample = new Audio();
 
-/** 单选行：左边圆点 + 名字（+ 说明），整行可点。 */
 function radioRow(className: string, label: string, checked: boolean, meta = ""): HTMLButtonElement {
   const pick = document.createElement("button");
   pick.type = "button";
@@ -1460,13 +1413,12 @@ function radioRow(className: string, label: string, checked: boolean, meta = "")
   return pick;
 }
 
-/** 当前语音模型；音色和阶跃星辰密钥只对阶跃星辰的模型有意义。 */
 let voiceModel: string | null = null;
 
 function renderVoiceModels(raw: unknown): void {
   let current: string | null = null;
 
-  try { current = resolveVoiceModel(raw); } catch { /* 无效值保持未选；由用户明确纠正，不写回默认。 */ }
+  try { current = resolveVoiceModel(raw); } catch {  }
   voiceModel = current;
   $("voice-key-row").hidden = current === GPT_LIVE_MODEL;
   $("voice-key-note").hidden = current === GPT_LIVE_MODEL;
@@ -1498,7 +1450,6 @@ function renderVoiceModels(raw: unknown): void {
 }
 
 function renderTimbres(current: string): void {
-  // GPT-Live 的声音在建连时写死为 cove（voice-client.ts），没有可选项。
   if (voiceModel === GPT_LIVE_MODEL) {
     $("timbre-desc").textContent = "GPT-Live 只有一种声音。换成阶跃星辰的模型才能选音色。";
     const row = document.createElement("div");
@@ -1561,7 +1512,6 @@ function renderColorTones(current: ColorTone): void {
   }));
 }
 
-/** 光球样子：暮色、晨光带一个会动的小样（同一段视频），粒子用一个静态小圆示意。 */
 function renderOrbStyles(current: OrbStyle): void {
   orbList.replaceChildren(...ORB_STYLES.map((style) => {
     const row = document.createElement("div");
@@ -1597,7 +1547,6 @@ let personaDirty = false;
 
 const PERSONA_OPTIONS = [...VOICE_PERSONAS.map(({ id, label, summary }) => ({ id, label, summary })), { id: "custom", label: "自定义", summary: "用你自己的描述" }] as const;
 
-/** 预设点一下就保存；自定义先展开输入框，点保存才生效。 */
 function renderPersonas(saved: VoicePersona, picked: VoicePersona["id"] = saved.id): void {
   personaList.replaceChildren(...PERSONA_OPTIONS.map((option) => {
     const row = document.createElement("div");
@@ -1653,7 +1602,6 @@ let translationDirty = false;
 
 const TRANSLATION_STYLE_OPTIONS = [...TRANSLATION_STYLES.map(({ id, label, summary }) => ({ id, label, summary })), { id: "custom", label: "自定义", summary: "用你自己的话说想要的译文" }] as const;
 
-/** 预设点一下就保存；自定义先展开输入框，点保存才生效。 */
 function renderTranslationStyles(saved: TranslationStyle, picked: TranslationStyle["id"] = saved.id): void {
   translationStyleList.replaceChildren(...TRANSLATION_STYLE_OPTIONS.map((option) => {
     const row = document.createElement("div");
@@ -1703,7 +1651,6 @@ $("translation-style-save").addEventListener("click", () => {
   void saveTranslationStyle({ id: "custom", text });
 });
 
-/** 开关一改就存；存失败时拨回去并说明。 */
 function bindToggle(input: HTMLInputElement, key: string, status: HTMLElement, said: (on: boolean) => string): void {
   input.addEventListener("change", () => {
     const enabled = input.checked;
@@ -1735,7 +1682,6 @@ bindToggle(selectionBar, SELECTION_BAR_KEY, selectionStatus, (on) => (on ? "已�
 
 bindToggle(readingAloud, READING_ALOUD_KEY, selectionStatus, (on) => (on ? "已开启，划词工具条和回答卡会显示朗读。" : "已关闭，划词工具条和回答卡不再显示朗读。"));
 
-// 划词快捷键按用户实际设的写（可在 chrome://extensions/shortcuts 改）；getAll 给的已是本系统的写法，如 Ctrl+J、⌘J。
 void chrome.commands.getAll().then((commands) => {
   const shortcut = commands.find((c) => c.name === "ask-selection")?.shortcut;
   $("ask-shortcut-note").textContent = shortcut ? `关掉后按 ${shortcut} 或右键「问 By Your Side」仍然可用。`
@@ -1798,7 +1744,6 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => {
   return on ? speechKeyConfigured ? "已开启，密钥尚未验证。" : "已开启，但缺少 MiniMax 订阅密钥。" : "朗读已关闭。";
 });
 
-// agent 在后台刷新令牌、或另一个设置页改了配置：界面跟着变。
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === READING_ALOUD_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
@@ -1902,7 +1847,6 @@ async function showBackupState(): Promise<void> {
 
 async function applyBackup(backup: MemoryBackup): Promise<void> {
   await restoreBackup(backup);
-  // 恢复直接写库、不经宿主，这次安装的备份要另外排一次，否则恢复的内容要等下一次记忆变化才备份。
   void chrome.runtime.sendMessage({ type: MEMORY_CHANGED }).catch(() => {});
   void chrome.runtime.sendMessage({ type: MEMORY_RESTORED }).catch(() => {});
   backupPending = null;

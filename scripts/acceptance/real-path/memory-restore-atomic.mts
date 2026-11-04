@@ -1,4 +1,3 @@
-/** 隔离扩展：恢复中断不能留下混合记忆。 */
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";

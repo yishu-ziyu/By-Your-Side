@@ -1,16 +1,3 @@
-/**
- * 扩展内 agent 的模型配置：从本机套餐清单取凭据，两种方式交给扩展。
- *
- * - 快速路径：直接写扩展存储（与设置页写入的格式相同）。
- * - 设置页路径：像用户一样从侧栏「更多 → 模型与语音」打开设置页，点选服务商、输入 key 和模型、测试连接、保存。
- *
- * 套餐清单在 ~/.sideagent/providers.local.json。Kimi 是订阅登录：访问令牌只活约 15 分钟，刷新令牌用一次就作废，
- * 所以经 scripts/maintenance/kimi-login.mjs 在 Pi 的文件锁里续期后，只把访问令牌交给测试扩展、不带刷新令牌，
- * 免得测试扩展自己续期让 Pi 手里那份作废。登录失效时运行 npm run kimi:login；设置页路径不支持设备码登录。
- *
- * `--model=custom/<模型>` 走设置页里的「自定义 OpenAI 兼容」：地址与 key 从环境变量
- * SIDEAGENT_CUSTOM_BASE_URL、SIDEAGENT_CUSTOM_KEY 读（不进套餐清单，不落盘），例如 MiniMax token plan。
- */
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -19,15 +6,12 @@ import { REPO, until, type JsonRecord, type launchRealPath } from "./harness.mts
 type RealPath = Awaited<ReturnType<typeof launchRealPath>>;
 
 export interface ModelPlan {
-  /** 套餐清单里的服务商。 */
   providerId: string;
   modelId: string;
   credential: JsonRecord;
-  /** 只有自定义服务有：OpenAI 兼容地址。 */
   baseUrl?: string;
 }
 
-/** 真实模型验收的默认模型：用户的 ChatGPT 账号（10-06 起；各家套餐额度会陆续用完，换模型用 --model=）。 */
 export const DEFAULT_TEST_MODEL = "openai-codex/gpt-6-luna";
 
 export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
@@ -44,13 +28,11 @@ export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
 
   // SAFETY: 本机套餐清单由用户维护，形状见文件头注释。
   const plans = JSON.parse(await readFile(join(homedir(), ".sideagent/providers.local.json"), "utf8")) as Record<string, { key?: string; source?: string }>;
-  // 阶跃星辰的 key 就是语音用的那个，不在套餐清单里重复存一份。
   const plan = providerId === "stepfun" && !plans.stepfun ? { key: (await readFile(join(homedir(), ".sideagent/stepfun-api.key"), "utf8")).trim() } : providerId === "openai-codex" ? plans[providerId] ?? { source: "pi-auth" } : plans[providerId];
 
   if (plan?.key) return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key: plan.key } };
 
   if (providerId === "kimi-coding") {
-    // 留 10 分钟给一次验收；测试扩展拿不到刷新令牌，跑超过令牌寿命会报登录过期，而不是悄悄换掉 Pi 的登录。
     const { renewKimi } = await import("../../maintenance/kimi-login.mjs");
     const kimi = await renewKimi(10 * 60_000);
 
@@ -62,7 +44,6 @@ export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
   // SAFETY: Pi 的 auth.json 按服务商存订阅登录 { access, refresh, expires } 或填的 key { type: "api_key", key }。
   const login = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { type?: string; key?: string; access: string; refresh: string; expires: number; accountId?: string } | undefined>)[providerId];
 
-  // 套餐清单里没有、Pi 里存着 key 的服务商（如 minimax-cn）直接用 Pi 的 key。
   if (!plan && login?.type === "api_key" && login.key) return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key: login.key } };
 
   if (!plan) throw new Error(`providers.local.json 和 Pi 里都没有 ${providerId}`);
@@ -76,7 +57,6 @@ export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
   return { providerId, modelId: idParts.join("/"), credential };
 }
 
-/** 快速路径要写进扩展存储的内容。 */
 export function modelStorageItems(plan: ModelPlan): JsonRecord {
   const config: JsonRecord = { provider: plan.providerId, modelId: plan.modelId };
 
@@ -85,7 +65,6 @@ export function modelStorageItems(plan: ModelPlan): JsonRecord {
   return { inproc_model_config: config, [`inproc_cred:${plan.providerId}`]: plan.credential };
 }
 
-/** 服务商在 pi-ai 目录里的地址，用来把同一个服务当成「自定义地址」配置。 */
 async function catalogBaseUrl(plan: ModelPlan): Promise<string> {
   const pi = join(REPO, "node_modules/@earendil-works/pi-ai/dist/providers/all.js");
   // SAFETY: pi-ai 的公开入口，builtinModels 返回服务商目录。
@@ -98,21 +77,14 @@ async function catalogBaseUrl(plan: ModelPlan): Promise<string> {
 }
 
 export interface SettingsRun {
-  /** 设置页显示的测试结果。 */
   testStatus: string;
   saveStatus: string;
-  /** 保存后扩展存储里的模型选择（不含密钥）。 */
   stored: JsonRecord;
   settingsTargetId: string;
   menuClicks: number;
-  /** 「更多」菜单每次开关的时间与状态，用来查第一下没打开的原因。 */
   menuToggles: unknown;
 }
 
-/**
- * 从侧栏菜单打开设置页，用真实点击和输入完成配置。asCustom 时把该服务当成「自定义地址」填写。
- * 返回设置页上看到的测试与保存结果；任何一步卡住都会抛错。
- */
 export async function configureViaSettings(rp: RealPath, panel: string, plan: ModelPlan, { asCustom = false, asFast = false, baseUrl: customUrl }: { asCustom?: boolean; asFast?: boolean; baseUrl?: string } = {}): Promise<SettingsRun> {
   if (customUrl) asCustom = true;
 
@@ -121,7 +93,6 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   const baseUrl = customUrl ?? (asCustom ? await catalogBaseUrl(plan) : null);
 
   await until(async () => (await rp.evaluate(panel, `!!document.querySelector("#header-more")`)) || undefined, 15_000, "侧栏渲染");
-  // 侧栏刚渲染时第一下偶尔没打开菜单（未复现出原因）：像用户一样再点一次，次数记进结果。
   let menuClicks = 0;
   await rp.evaluate(panel, `window.__menuToggles = []; document.querySelector("#header-menu").addEventListener("toggle", (e) => __menuToggles.push([Math.round(performance.now()), e.newState])); true`);
 
@@ -138,19 +109,16 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".provider-option").length`)) > 3 || undefined, 15_000, "设置页渲染服务商");
 
   await rp.click(page, '[data-settings-page="models"]');
-  // 切到模型页后「更多服务商」稍后才渲染：先等它出现，直接读会偶尔读到 null。
   await until(async () => (await rp.evaluate(page, `!!document.querySelector('#provider-more')`)) || undefined, 5_000, "模型页渲染");
   const add = await rp.evaluate(page, `document.querySelector('#provider-more').hidden`);
   if (add) await rp.click(page, '#connection-add');
 
-  // 「自定义地址」和没连接的服务商都收在「更多服务商」里；先展开再找按钮。
   const directSelector = `.provider-option[data-provider="${asCustom ? "custom" : plan.providerId}"]`;
   const directVisible = await rp.evaluate(page, `!!document.querySelector('#provider-connected ${directSelector}')`);
   if (asCustom || !directVisible) await rp.evaluate(page, `(() => { const more = document.querySelector("#provider-more"); if (more) more.open = true; return true; })()`);
   if (asCustom || (await rp.evaluate(page, `!!document.querySelector(${JSON.stringify(directSelector)})`))) {
     await rp.click(page, directSelector);
   } else {
-    // 目标是家族的地区成员（如 minimax-cn）：行按钮挂的是家族代表 id，先搜索过滤到该行，再在地区行选成员。
     await rp.evaluate(page, `(() => { const s = document.querySelector("#provider-search"); s.value = ${JSON.stringify(plan.providerId)}; s.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
     await until(async () => (await rp.evaluate(page, `document.querySelectorAll(".provider-option").length === 1`)) || undefined, 5_000, `搜索出 ${plan.providerId}`);
     await rp.click(page, `.provider-option`);
@@ -167,7 +135,6 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   await rp.evaluate(page, `document.querySelector("#api-key").scrollIntoView({ block: "center" }); true`);
   await rp.click(page, "#api-key");
   await rp.typeText(page, key);
-  // 模型框预填了默认模型：全选后覆盖成要测的那个。
   await rp.evaluate(page, `document.querySelector("#model-id").scrollIntoView({ block: "center" }); true`);
   await rp.click(page, "#model-id");
   await rp.evaluate(page, `document.querySelector("#model-id").select()`);
@@ -185,7 +152,6 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
     return tone === "ok" || tone === "err" ? text : undefined;
   }, 45_000, "测试连接出结果", 300);
 
-  // 连接先保存，再从用途选择器选模型。
   const saveButton = "#model-save";
   await rp.evaluate(page, `document.querySelector(${JSON.stringify(saveButton)}).scrollIntoView({ block: "center" }); true`);
   await rp.click(page, saveButton);

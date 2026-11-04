@@ -1,13 +1,3 @@
-/**
- * 一步写入的结果未知之后，助手重读页面、对同一个目标再做一次：网站收到，侧栏给出最终回答，没有放弃或「没有重复执行」的话
- * 。只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
- *   npx tsx scripts/acceptance/real-path/retry-after-unknown.mts --headless
- * 路径：snapshot 拿到「保存」按钮的 @ref → 页面重渲染，按钮 3 秒内不可见（本脚本经调试协议模拟）→ click @ref：
- * 量不到元素位置，回执「结果未知」→ 等按钮回来再 snapshot → 对同一个 @ref 再 click → 回答。
- * 判据：第一次点击的回执写着结果未知且网站没收到；第二次点击送达（/save 计数 1）；侧栏有最终回答，
- * 没有「没有重复执行」「已暂停」「不能自动重做」「查不清」，也没有把这件事标成没做完。
- * 失败方式：恢复「结果未知就暂停写入、拒绝重做」的锁，第二次点击被拒，/save 停在 0（反例结果见验收文件）。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -25,7 +15,6 @@ await mkdir(artifacts, { recursive: true });
 const MARK = "重试保存";
 const FINAL = `【${MARK}结束】`;
 
-/** 产品发给模型的 OpenAI 兼容请求里本脚本要读的部分。 */
 type Payload = { tools?: unknown[]; messages?: Array<{ role: string; content?: string | Array<{ text?: string }> | null }> };
 
 const textOf = (content: string | Array<{ text?: string }> | null | undefined) => Array.isArray(content) ? content.map(part => part.text ?? "").join("") : content ?? "";
@@ -43,18 +32,14 @@ const site = createServer((req, res) => {
 await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${siteAddress(site).port}/`;
 
-// 两次点击的目标在拿到 snapshot 之后才知道：先占位，读到真实 @ref 后改写这两步。
 const firstClick = { tool: { name: "click", args: { target: "@0" } } };
 const retryClick = { tool: { name: "click", args: { target: "@0" } } };
 
 const steps: Step[] = [
   { tool: { name: "tabs", args: { action: "active" } } },
   { tool: { name: "snapshot", args: {} } },
-  // 页面重渲染：按钮 3 秒内不可见，同一个元素随后回来。js 工具只能读页面，藏按钮由本脚本经调试协议做（见 inspect 回调）；
-  // 这一步只读，留着让后面各步的回执序号不变，并给藏按钮留出时间。
   { tool: { name: "js", args: { code: "document.querySelector('#save') ? 'rerendering' : 'gone'" } }, delayMs: 500 },
   firstClick,
-  // 重读页面：等按钮回来再看。
   { tool: { name: "snapshot", args: {} }, delayMs: 3500 },
   retryClick,
   { text: FINAL },
@@ -74,7 +59,6 @@ const model = await startScriptedModel([{ match: MARK, steps }], undefined, payl
 
   if (p.tools?.length && tools.length > 0 && !(tools.length in savesAtReceipt)) savesAtReceipt[tools.length] = saves;
 
-  // 模型拿到 snapshot 的结果、要发下一步时，页面开始重渲染。
   if (tools.length === 2 && !hidden && workSession) {
     hidden = true;
     void rp.evaluate(workSession, "(() => { const b = document.querySelector('#save'); b.style.display = 'none'; setTimeout(() => { b.style.display = ''; }, 3000); return true; })()");
@@ -117,13 +101,10 @@ try {
   await rp.screenshot(panel, screenshot);
 
   assert.ok(ref, "snapshot exposed a @ref for the 保存 button");
-  // 前提：第一次点击确实记成结果未知，且网站没收到。
   assert.match(receipts[3] ?? "", /结果未知/, "first click came back with an unknown result");
   assert.equal(savesAtReceipt[4], 0, "first click did not reach the site");
-  // 第二次点击同一个目标：照常执行并送达。
   assert.doesNotMatch(receipts[5] ?? "", /结果未知|已暂停|不能自动重做|不重复执行|未执行/, "retry on the same target was not refused");
   assert.equal(saves, 1, "retry click reached the site once");
-  // 侧栏：有最终回答，没有放弃或「没重做」的话，也没有把任务标成没做完。
   assert.ok(panelText.includes(FINAL), "final answer shown in the side panel");
 
   for (const phrase of ["没有重复执行", "已暂停", "不能自动重做", "查不清", "没算作完成", "还没全部完成"]) {

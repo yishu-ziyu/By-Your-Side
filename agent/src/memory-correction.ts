@@ -1,12 +1,6 @@
-/**
- * 纠正后开口问（记忆模型规则 7，：
- * 模型只答一个窄问题（这句纠正能不能总结成下次照做的一条做法），代码按下面的规则决定问不问。
- * 运行时（MemoryRuntime）负责何时问、把询问留在内存里、按用户回答写入。
- */
 import { validMemoryText, type MemoryEntry, type MemoryScope } from "../../shared/memory.js";
 import { looksSecret, sameMemoryScope, type MemoryConversation } from "./memory-decision.js";
 
-/** 用户这句话是不是在纠正助手（规则判断，不调模型）；读页、翻译、转述网页原文不算。 */
 export function isUserCorrection(text: string): boolean {
   if (/^(?:请|帮我)?(?:总结|翻译|解释|复述|阅读)/u.test(text.trim())) return false;
 
@@ -16,7 +10,6 @@ export function isUserCorrection(text: string): boolean {
 
   if (/(?:这个|此|该)网站|这个站|本站/u.test(said) && /以后|今后|每次|总是|都要|都先/u.test(said)) return true;
 
-  // 「我要的是什么来着？」「其实是不是要先登录？」这类问句不是纠正，只对这三个开头把关。
   if (/^(?:我要的是|我说的是|其实是)[^？?]*[？?]$/u.test(said)) return false;
 
   return /^(?:不对|错了|刚才|你刚才|你只|你漏|实际|应该|纠正|更正|上次|下次|下回|今后|以后|这次.{0,12}(?:错|漏)|明明|其实不是|其实是|不是这个|不是这样|我说的是|我要的是|怎么又|no,? i meant|actually,? it(?:'s| is)|next time)|(?:漏了|漏掉|导错|填错|只导出了|没有导出全部|搞错了|弄错了|记错了|理解错了|又错了|不是让你|only exported|you missed|that(?:'s| is) wrong|not what i (?:asked|meant))/iu.test(said);
@@ -35,7 +28,6 @@ Reply with ONE JSON object only: {"correction":true|false,"reusable":true|false,
 - evidence: an exact contiguous substring copied from userMessage that shows the correction; "" when correction is false.
 - replaces: the id of the ONE item in methods that the new rule contradicts or supersedes for the same website or the same habit; null otherwise. Never invent an id.`;
 
-/** 模型的回答：只在下面逐项核对过后使用。 */
 export interface CorrectionVerdict {
   correction: boolean;
   reusable: boolean;
@@ -46,13 +38,10 @@ export interface CorrectionVerdict {
   personalEvidence?: string;
 }
 
-/** 规则最长这么多字：一句话的做法，不是长段说明。 */
 const CORRECTION_RULE_MAX = 200;
 
-/** 回答看不懂：与服务出错、超时分开记。 */
 export class CorrectionParseError extends Error {}
 
-/** 模型回答的形状：replaces 可缺省或为 null。 */
 type RawVerdict = Omit<CorrectionVerdict, "replaces"> & { replaces?: string | null };
 
 function isRawVerdict(value: unknown): value is RawVerdict {
@@ -74,24 +63,21 @@ export function parseCorrectionVerdict(raw: string): CorrectionVerdict {
   return { correction: value.correction, reusable: value.reusable, about: value.about, rule: value.rule.trim(), evidence: value.evidence, replaces: value.replaces || null, personalEvidence: value.personalEvidence ?? "" };
 }
 
-/** 发给模型的输入：用户这句、之前几轮、当前网站、已确认的做法（只给编号、文字、范围）。 */
 export function correctionAskInput(userMessage: string, recentTurns: MemoryConversation, currentHostname: string | null, methods: MemoryEntry[]): string {
   return JSON.stringify({ userMessage, recentTurns, currentHostname, methods: methods.map(entry => ({ id: entry.id, text: entry.text, scope: entry.scope })) });
 }
 
-/** 这次对话里「同一句纠正」的判据：用户原话（空白归一）。模型每次措辞不同，所以去重也按原话。 */
 export function correctionMessageKey(userMessage: string): string {
   return `message\n${userMessage.replace(/\s+/gu, " ").trim()}`;
 }
 
-/** 规则里出现的邮箱、网址、5 位以上数字：必须是用户原话里就有的，否则是模型编的或抄自别处。 */
+/** WHY: 规则里出现的邮箱、网址、5 位以上数字：必须是用户原话里就有的，否则是模型编的或抄自别处。 */
 const CONCRETE_VALUE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+|https?:\/\/[^\s，。；！？）)】]+|\d{5,}/giu;
 
 function ruleGrounded(rule: string, userMessage: string): boolean {
   return [...rule.matchAll(CONCRETE_VALUE)].every(([value]) => userMessage.includes(value));
 }
 
-/** 这次对话里「同一条做法」的判据：同范围、同文字。 */
 export function correctionRuleKey(rule: string, scope: MemoryScope): string {
   return `${scope.kind === "all" ? "*" : scope.hostname}\n${rule.replace(/\s+/gu, " ").trim()}`;
 }
@@ -100,22 +86,12 @@ type CorrectionAskDecision =
   | { ask: true; rule: string; scope: MemoryScope; replaces?: MemoryEntry }
   | { ask: false; reason: "not-correction" | "not-reusable" | "evidence-not-quoted" | "invalid-rule" | "rule-not-grounded" | "no-site" | "duplicate" | "dismissed" | "already-asked" };
 
-/**
- * 代码决定问不问（按顺序，先命中先停）：
- * 不是纠正 → 不可复用 → 依据不是原话里的连续一段 → 规则不合格（空、过长、像秘密）
- * → 规则里有原话没有的邮箱、网址、长数字 → 关于网站的做法却没有网站 → 同范围已有同样的生效做法
- * → 这次对话里回过「这次就行」→ 还有一条同样的询问没回答 → 问。
- * 范围：关于网站的为该网站（没有网站就不问，不扩大成所有网站），关于助手做事方式的为所有网站。replaces 只认同范围里生效的做法，别的一律当作没有替换。
- */
 export function decideCorrectionAsk(input: {
   verdict: CorrectionVerdict;
   userMessage: string;
   hostname: string | null;
-  /** 当前生效的「做事的方法」。 */
   methods: MemoryEntry[];
-  /** 这次对话里回过「这次就行」的做法与原话（correctionRuleKey、correctionMessageKey）。 */
   dismissed: ReadonlySet<string>;
-  /** 还没回答的询问（同上两种键）。 */
   open: ReadonlySet<string>;
 }): CorrectionAskDecision {
   const { verdict, userMessage, hostname } = input;

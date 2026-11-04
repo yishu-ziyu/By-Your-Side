@@ -1,12 +1,3 @@
-/**
- * 回答里不露标签页编号：模型把工具结果里的「tab 29979739」「新标签页 29979731」抄进正文和卡片出处时，用户看到的文字里没有这些数。
- * 只装扩展、隔离构建、本机脚本模型。
- *   npx tsx scripts/acceptance/real-path/tab-id-hidden.mts --headless
- *   a) 正文、卡片出处、表格格子里都看不到标签页编号（包括正开着的那一页的真实编号）。
- *   b) 卡片上「切到…看」按钮仍带着那一页的编号，点了真的切过去。
- *   c) 普通的大数（播放量 1234567）照常显示。
- * 失败方式：去掉 renderMarkdown 外面的 hideTabIdsInHtml，a 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, until, type Json } from "./harness.mts";
@@ -36,7 +27,6 @@ try {
   const work = (await rp.targets()).find(t => t.url === "about:blank")!;
   const panel = await rp.attach(await rp.openSidePanel());
   workTab = await rp.evaluate(panel, `chrome.tabs.query({}).then(tabs => tabs.find(t => t.url === "about:blank")?.id ?? 0)`) as number;
-  // 脚本模型的回复要带上这一页的真实编号：拿到编号后再起模型。
   const live = await startScriptedModel([{ match: ASK, steps: [{ text: answer() }] }]);
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: live.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } })}).then(() => true)`);
   const ready = 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';

@@ -1,6 +1,3 @@
-/** Real extension settings, using isolated storage and local scripted models only.
- * npx tsx scripts/acceptance/real-path/settings-panel.mts --headless
- */
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -122,7 +119,6 @@ try {
     assert.equal((await stored('inproc_model_config')).provider, 'stepfun', '其他服务商的用途保持');
     await click('#connection-close');
     assert.equal(await rp.evaluate(page, `document.activeElement?.dataset.provider`), 'custom', '关闭后焦点回到连接行');
-    // An in-flight task may retain an old model object; its newly resolved key must still target the new endpoint.
     const oldRequests = good.requests.length;
     await rp.evaluate(page, `chrome.storage.local.set({inproc_model_config:{provider:'custom',modelId:'settings-local-model',baseUrl:${JSON.stringify(good.baseUrl)}}})`);
     const panel = await rp.attach(await rp.openSidePanel());

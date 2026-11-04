@@ -1,22 +1,12 @@
-/**
- * 语音光球按用户所选的样子挂到 canvas 上。
- * 粒子：原来的粒子球（voice-orb.ts）。暮色、晨光：自己渲染的循环视频（scripts/orb/render_fluid.py），逐帧画进同一个 canvas。
- * 设置页改了样子，已挂的光球立即换，不用重开侧栏。
- */
 import { ORB_STYLE_STORAGE_KEY, parseOrbStyle, type OrbStyle } from '../../../shared/voice.js';
 import { mountOrb, type OrbState } from './voice-orb.js';
 
 interface VideoOrbLook { rate: number; brightness: number; scale: number }
 
-/** 起伏的上限；画圆时按它留边，放大时不出 canvas。 */
 const MAX_SCALE = 1.04;
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
-/**
- * 视频光球在各状态下的样子。不低于 1 倍速：30 帧素材降到 0.35 倍时肉眼明显发卡。
- * 在想稍快；在听随音量轻微放大；在说更亮并有节奏地起伏。
- */
 function videoOrbLook(state: OrbState, level: number, t: number): VideoOrbLook {
   if (state === 'thinking') return { rate: 1.45, brightness: 1, scale: 1 };
 
@@ -63,7 +53,6 @@ function mountVideoOrb(canvas: HTMLCanvasElement, size: number, style: Exclude<O
 
   canvas.dataset.orbStyle = style;
 
-  // 减少动态：只画第一帧，不播放。
   if (reduce) {
     canvas.dataset.orbPlaying = 'false';
     video.addEventListener('loadeddata', draw, { once: true });
@@ -82,7 +71,6 @@ function mountVideoOrb(canvas: HTMLCanvasElement, size: number, style: Exclude<O
   };
 }
 
-/** 按存储里的样子挂光球，并跟着设置页的修改换；返回卸载函数。 */
 export function mountVoiceOrb(canvas: HTMLCanvasElement, size: number, getState: () => OrbState, getLevel: () => number = () => 0): () => void {
   let style: OrbStyle | null = null;
   let dispose = () => {};

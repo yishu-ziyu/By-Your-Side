@@ -1,6 +1,5 @@
 import {VOICE_DIAG_MAX_SECONDS,VOICE_DIAG_SAMPLE_RATE,type VoiceDiagRecord} from '../../../shared/voice.js';
 
-/** Kept per session: at most a few takes with audio, more entries as metadata only. */
 const VOICE_DIAG_MAX_CAPTURES = 20;
 
 const VOICE_DIAG_AUDIO_KEEP = 3;
@@ -20,9 +19,7 @@ export interface VoiceDiagUpstream {
   frame: number | null;
   samples: number;
   bytes: number;
-  /** Exactly the base64 PCM the socket accepted upstream; this alone is C1's content. */
   audio: string;
-  /** Alignment check of those upstream bytes against the local continuous capture. */
   c0Match: 'ok' | 'mismatch' | 'unknown';
 }
 
@@ -36,27 +33,21 @@ export interface VoiceDiagCapture {
   endReason: string | null;
   sampleRate: number;
   track: VoiceDiagTrack | null;
-  /** Continuous 24k frames, copied before any classifier/worker transfer; bounded by maxSamples. */
   frames: Int16Array[];
   samples: number;
   capped: boolean;
   upstream: VoiceDiagUpstream[];
   commit: { eventId: string; at: number } | null;
   itemId: string | null;
-  /** Raw ASR from the session, before the old-turn filter. */
   rawAsr: { text: string; outcome: string; turn: number | null; at: number } | null;
-  /** Server record of the user text event it actually forwarded. */
   forwarded: { text: string; itemId: string; at: number } | null;
-  /** User text event actually received by this panel. */
   serverText: { text: string; at: number } | null;
-  /** Question text read from the panel DOM after it was assigned. */
   displayText: { text: string; at: number; final: boolean } | null;
   notes: VoiceDiagNote[];
 }
 
 interface VoiceDiagStatus { complete: boolean; reasons: string[] }
 
-/** 一次诊断里的备注：code 是事实，detail 只在有额外说明时才带上。 */
 export interface VoiceDiagNote {
   code: string;
   detail?: string;
@@ -82,7 +73,6 @@ const sameSamples = (a: Int16Array, b: Int16Array): boolean => {
   return true;
 };
 
-/** Local record of one diagnostic chain: continuous capture (C0), upstream sends (C1) and the three texts. */
 export class VoiceDiagnosticLog {
   private voiceId: string | null = null;
   private conversationId = '';
@@ -95,7 +85,7 @@ export class VoiceDiagnosticLog {
   private readonly looseNotes: Array<{ code: string; detail?: string; at: number }> = [];
   constructor(private readonly change: () => void = () => {}) {}
 
-  private notify(): void { try { this.change(); } catch { /* the panel must not break diagnostics */ } }
+  private notify(): void { try { this.change(); } catch {  } }
   get recording(): boolean { return this.open !== null; }
   get isDiagnostic(): boolean { return this.diagnostic; }
   get isConfirmed(): boolean { return this.confirmed; }
@@ -125,7 +115,6 @@ export class VoiceDiagnosticLog {
     if (this.open) this.open.notes.push(entry); else this.looseNotes.push(entry);
     this.notify();
   }
-  /** Notes a specific take even after it stopped being the open one. */
   noteCapture(turn: number, code: string, detail?: string): void {
     const capture = this.captureFor(turn) ?? this.items[this.items.length - 1];
 
@@ -173,7 +162,6 @@ export class VoiceDiagnosticLog {
 
     return capture;
   }
-  /** Returns 'full' when this frame hit the duration bound and the take must stop. */
   captureFrame(pcm: Int16Array): 'ok' | 'full' | 'ignored' {
     const capture = this.open;
 
@@ -203,7 +191,6 @@ export class VoiceDiagnosticLog {
     this.trim();
     this.notify();
   }
-  /** The user text event this panel actually received; recorded separately from raw ASR and from the DOM. */
   textEvent(role: 'user' | 'assistant', turn: number, text: string): void {
     if (role !== 'user') return;
     const capture = this.items.find(c => c.turn === turn && c.voiceId === this.voiceId);
@@ -212,7 +199,6 @@ export class VoiceDiagnosticLog {
     capture.serverText = { text, at: Date.now() };
     this.notify();
   }
-  /** Question text as assigned to the panel DOM. */
   displayText(text: string, final = false): void {
     const capture = this.open ?? [...this.items].reverse().find(c => c.voiceId === this.voiceId);
 
@@ -322,11 +308,9 @@ export class VoiceDiagnosticLog {
       displayMatchesServer: !capture.displayText || !capture.serverText ? null : normalizeDom(capture.displayText.text).trim() === capture.serverText.text.trim(),
     };
   }
-  /** Cheap availability check for the C1 row; never decodes audio. */
   c1Ready(capture: VoiceDiagCapture): boolean {
     return capture.upstream.length > 0 && capture.upstream.every(entry => entry.audio.length > 0);
   }
-  /** C1 is exactly the PCM the socket accepted upstream, decoded from those records only. */
   audio(id: string, which: 'c0' | 'c1'): { chunks: Int16Array[]; samples: number; sampleRate: number } | null {
     const capture = this.items.find(c => c.id === id);
 
@@ -401,7 +385,6 @@ export class VoiceDiagnosticLog {
   }
 }
 
-/** 16-bit mono PCM WAV container so both takes stay auditionable in the browser. */
 function encodeWav(chunks: Int16Array[], sampleRate: number): Blob {
   const samples = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const buffer = new ArrayBuffer(44 + samples * 2);

@@ -1,12 +1,11 @@
 /**
- * 生成网页的沙箱页（manifest 的 sandbox.pages）：独立的不透明来源，没有 chrome.* 接口、读不到扩展存储与查看页 DOM。
+ * WHY: 生成网页的沙箱页（manifest 的 sandbox.pages）：独立的不透明来源，没有 chrome.* 接口、读不到扩展存储与查看页 DOM。
  * 查看页把网页正文 postMessage 过来，这里整页写入，模型写的脚本在这里运行。
  * 本页 CSP 见 manifest 的 content_security_policy.sandbox：网页由模型写、内容常是用户资料，又可能受网页里藏的指令左右，
  * 所以不许联网、不许加载外部资源，否则一张外部图片就能把文件内容带走。
  */
 import { removeWebRtc } from "./sandbox-offline.js";
 
-/** 查看页发来的唯一一种消息。 */
 type SandboxMessage = { html: string };
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {

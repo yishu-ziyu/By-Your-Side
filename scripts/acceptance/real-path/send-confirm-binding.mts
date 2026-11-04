@@ -1,4 +1,3 @@
-/** 隔离扩展：确认后只允许发送仍与确认时一致的内容、收件人和目标。 */
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";

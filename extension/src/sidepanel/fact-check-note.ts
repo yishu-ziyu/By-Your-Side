@@ -1,7 +1,3 @@
-/**
- * 事实核对的诊断不显示为卡片。证据修订只更新同一份回答，历史事件仍可重放。
- * 按回答开头找那一条，找不到（回答已被续做换掉）就不画：挂到别的回答下会让人以为说的是那一条。
- */
 const squash = (text: string) => text.replace(/[\s*_`#>|]/g, "");
 
 function answerFor(start: string, messages: HTMLElement): HTMLElement | null {

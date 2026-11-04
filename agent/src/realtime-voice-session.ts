@@ -13,11 +13,8 @@ import { answerSpeech } from '../../shared/answer-cards.js';
 export type RealtimeVoiceDependencies = {
   model?: RealtimeVoiceModel;
   voiceId?: string;
-  /** Step timbre id chosen by the user. */
   voice?: string;
-  /** 用户所选人设的描述正文；空串表示默认，不附加人设。 */
   persona?: string;
-  /** Diagnostic sessions are requested explicitly, lock out routing and never answer on their own. */
   diagnosticMode?: boolean;
   diagnostic?: (event: string, fields: Record<string, string | number | boolean | null>) => void;
   getSnapshot: () => TaskProgressSnapshot | null;
@@ -43,10 +40,6 @@ type Input = {
   ready: boolean;
 };
 
-/**
- * 交付给用户的结果怎么念：还没确认完的结果可能带着过度自信的完成说法，
- * 这时只念宿主自己的未完成状态，详情留在侧栏；不丢事实，也不让另一个模型把这段话说得更满。
- */
 export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' | 'facts' | 'hostNote'>, owner: TaskProgressSnapshot | null | undefined, currentConversationId: string | undefined): string {
   const remaining = delivery.facts ? delivery.facts.remaining.length + (delivery.facts.omittedRemaining ?? 0) : 0;
   const task = owner && owner.conversationId !== currentConversationId ? taskName(owner) : '这项任务';
@@ -55,12 +48,9 @@ export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' 
     return remaining ? `${task}还有 ${remaining} 项结果没完成或还没确认，具体内容在侧栏。` : `${task}的结果还没确认，具体内容在侧栏。`;
   }
 
-  // 宿主补的一句（hostNote）：目标核对还没判做完时才接在正文后面念。
-  // 回答里的卡片不念标签：只念卡片外的结论句（shared/answer-cards.ts）。
   return answerSpeech(owner?.goalCheck?.status === 'done' ? delivery.text : deliveryTextWithNote(delivery));
 }
 
-/** Adapts native sidepanel protocol to the same continuous Realtime 3 connection used in the trial. */
 export class RealtimeVoiceSession {
   private connection: RealtimeVoiceConnection | null = null;
   private closed = false;
@@ -150,10 +140,6 @@ export class RealtimeVoiceSession {
     });
     this.connection.start();
   }
-  /**
-   * 明确的“终止任务”：按用户开口时看到的任务身份直接下发，不经模型或分类器。
-   * 成功时不在这里宣称，由语音服务按终止回执和真实状态播报；失败如实说没停。
-   */
   private async abortCurrent(text: string): Promise<string | null> {
     const origin = this.input;
     const snapshot = origin.snapshot;
@@ -191,7 +177,6 @@ export class RealtimeVoiceSession {
       throw new Error('未执行的前后两段来自不同页面或任务状态，不能拼接操作；请明确当前完整要求。');
     }
   }
-  /** 2.5 不调用任务工具；宿主对每条真实转写分类并派发，只有明确闲聊才返回原生语音。 */
   private async routePlanTranscript(text: string, connectionCurrent: () => boolean): Promise<{ native: boolean; spokenText?: string }> {
     const origin = this.input;
     const current = () => !this.closed && this.input === origin && connectionCurrent();
@@ -413,7 +398,6 @@ export class RealtimeVoiceSession {
         return;
       }
 
-      // 连接层的计时（如 first_audio_since_vad_stop）：按当前话轮记进诊断，分段计时靠它和侧栏的时间点对齐。
       case 'metric':
         if (typeof event.name === 'string' && typeof event.value === 'number') this.deps.diagnostic?.('voice_metric', { turn: this.turn, name: event.name, ms: event.value });
 
@@ -471,7 +455,6 @@ export class RealtimeVoiceSession {
     }
   }
   streamDelivery(stream: UserDeliveryStream): void {
-    // Final, verified delivery is the authority; partial prose never manufactures completion.
     if (stream.phase === 'cancelled') {
       this.cancelled.add(stream.id);
     }

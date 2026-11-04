@@ -13,13 +13,10 @@ export interface QueuedTask {
 
 const MERGED = '已并回上一件';
 
-/** 另开那件已经并回上一件：之后它停下的结局、重复的并回都不再改写它。 */
 export const isMerged = (job: QueuedTask): boolean => job.receipt.message === MERGED;
 
-/** 另开那件做到一半时扩展后台重启：它停在检查点，能安全接着做时由自动续做接上（见 resumeSeparate）。 */
 const STOPPED = '扩展后台重启，这件事停下了，还没做完。';
 
-/** 没有本机目录的宿主（扩展）用它存队列：启动前已读进内存，写入在后台。 */
 export interface TaskQueuePersistence {
   load(): readonly unknown[];
   save(jobs: QueuedTask[]): void;
@@ -31,12 +28,10 @@ function isQueuedTask(value: unknown): value is QueuedTask {
   if (typeof value !== 'object' || value === null) return false;
   const job = value as Partial<QueuedTask>;
 
-  // 请求校验遇到个别畸形字段（如 forkedFrom: null）会抛错，坏记录一律当不合格。
   try { return isTaskActionRequest(job.request) && isTaskReceipt(job.receipt) && typeof job.title === 'string' && QUEUE_STATES.includes(job.state as QueuedTask['state']); }
   catch { return false; }
 }
 
-/** Durable admission for independent requirements. Execution still belongs to TaskDispatcher. */
 export class TaskQueue {
   private readonly jobs = new Map<string, QueuedTask>();
   private pumping = false;
@@ -53,7 +48,6 @@ export class TaskQueue {
     changed: (job: QueuedTask) => void;
   }) {
     if (options.persist) {
-      // 存储里读出的是外部数据：坏的那条跳过，不让整个宿主起不来。
       for (const job of options.persist.load()) if (isQueuedTask(job)) this.restore(job);
 
       return;
@@ -83,7 +77,7 @@ export class TaskQueue {
     }
   }
   /**
-   * A restarted host must not repeat an external action or silently resume an old page request.
+   * WHY: A restarted host must not repeat an external action or silently resume an old page request.
    * 改写的收条带新的 updatedAt：后台按它去重，沿用旧时间会被当成旧消息丢掉，侧栏停在重启前的样子。
    */
   private restore(job: QueuedTask) {
@@ -248,11 +242,9 @@ export class TaskQueue {
 
     return job.receipt;
   }
-  /** 另开的那件事结束了：交出的回答或没做成的原因记进收条，发起它的会话据此显示（重放时也在）。 */
   settleSeparate(id: string, outcome: { text: string } | { failed: string } | { merged: true }): void {
     const job = this.get(id);
 
-    // 并回上一件以后，它停下时的结局不再改写这张卡。
     if (!job?.request.originConversationId || isMerged(job)) return;
     const receipt: TaskReceipt = 'text' in outcome
       ? { ...job.receipt, status: 'accepted', result: { text: outcome.text.slice(0, 14000), at: Date.now() }, updatedAt: Date.now() }
@@ -263,7 +255,6 @@ export class TaskQueue {
     this.options.changed(job);
   }
 
-  /** 重启后停下的另开那件又接着做了（自动续做或用户点了继续）：卡片回到「正在做」，做完照常带回回答。 */
   resumeSeparate(id: string): void {
     const job = this.get(id);
 
@@ -313,7 +304,6 @@ export class TaskQueue {
         try {
           job.receipt = await this.options.execute(job.request);
 
-          // Very short executions can finish synchronously in execute().
           if (this.get(job.request.conversationId)?.state === 'starting') {
             if (job.receipt.status === 'accepted') {
               job.state = 'running';

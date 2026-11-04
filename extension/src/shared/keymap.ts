@@ -1,11 +1,3 @@
-/**
- * press_key 键名 → CDP Input.dispatchKeyEvent 参数。
- * modifiers 位掩码：Alt=1, Ctrl=2, Meta=4, Shift=8。
- * 支持 "Control+A" / "Meta+A" / "Shift+Tab" 等组合（修饰键可用
- * Alt/Option、Control/Ctrl、Meta/Cmd/Command、Shift 别名）。
- * ControlOrMeta 按平台解析为 Meta（mac）或 Control（其它）。
- * 未知键返回 null。
- */
 import { controlOrMetaKey } from "../../../shared/pointer-input.js";
 
 export interface KeyInfo {
@@ -35,7 +27,6 @@ function hostPlatform(): string {
   }
 }
 
-/** 把 ControlOrMeta 展开成当前平台的 Meta/Control。 */
 function expandControlOrMeta(input: string, platform: string = hostPlatform()): string {
   return input.replace(/\bControlOrMeta\b/gi, controlOrMetaKey(platform));
 }
@@ -72,7 +63,6 @@ const NAMED_KEYS: Record<string, BaseKey> = {
   option: { key: "Alt", code: "AltLeft", vk: 18 },
 };
 
-/** Alt/Ctrl/Meta 按下时不生成文本（避免控制字符），仅 Shift 允许。 */
 function withText(info: KeyInfo, text: string | undefined): KeyInfo {
   if (text !== undefined && (info.modifiers & 7) === 0) info.text = text;
 

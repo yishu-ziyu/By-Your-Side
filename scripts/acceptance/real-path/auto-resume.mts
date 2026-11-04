@@ -1,8 +1,3 @@
-/**
- * 重启后等待用户检查页面并手动继续。脚本模型、隔离真实扩展与虚构表单。
- * npx tsx scripts/acceptance/real-path/auto-resume.mts --headless
- * 加 --stop 验证继续后停止；加 --changed-page 验证换页后拒绝继续。
- */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -18,7 +13,6 @@ const CHANGED_PAGE = process.argv.includes("--changed-page");
 
 const GOAL = "自动接续验收：把这页 5 个输入框依次填好。";
 
-/** 页面每收到一次 change 就报给本机服务：服务端按字段计数，判断有没有重复填写。 */
 const fills: Record<string, number> = {};
 const writes: Array<{ field: string; page: string; value: string }> = [];
 
@@ -43,7 +37,6 @@ await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
 
 const fill = (i: number, delayMs = 0) => ({ tool: { name: "fill", args: { target: `#f${i}`, value: `值${i}` } }, delayMs });
 
-// 第 4 步挂起几秒：关掉 offscreen 时模型这一步还没回。
 const rules = [{ match: "自动接续验收", steps: [fill(1), fill(2), fill(3), fill(4, 6000), fill(5), { text: "5 个都填好了。" }] }];
 const resumeInputs: string[] = [];
 const model = await startScriptedModel(rules, undefined, (payload) => {
@@ -64,7 +57,6 @@ let panel = "", failure: string | null = null;
 
 let logs: Awaited<ReturnType<typeof watchInproc>> | undefined, logsAfter: typeof logs;
 
-/** result.json 的内容。 */
 type Evidence = { before?: Json; waiting?: Json; after?: Json; final?: Json; reopenedTask?: boolean; pass?: boolean; failure?: string; modelRequests?: Json; writes?: Json; resumedAfterClick?: boolean; mode?: string };
 
 const evidence: Evidence = {};
@@ -75,7 +67,6 @@ const state = () => rp.evaluate(panel, `(() => { const r = document.querySelecto
   return { resumeText: r?.hidden ? "" : r?.innerText.trim() ?? "", resumeButton: !r?.hidden && !!r?.querySelector(".resume-action"),
     messages: document.querySelector("#messages")?.innerText ?? "" }; })()`) as Promise<{ resumeText: string; resumeButton: boolean; messages: string }>;
 
-/** 重启后侧栏有时落到新会话，原任务只剩顶部一条「… ↗」：点它回到原任务会话。返回是否点了。 */
 const showTask = async () => {
   const away = await rp.evaluate(panel, `(() => { const b = document.querySelector("#conversation-background");
     return !!b && !b.hidden && b.textContent.includes(${JSON.stringify(GOAL.slice(0, 6))}); })()`);
@@ -108,7 +99,6 @@ try {
   await rp.screenshot(panel, join(out, "before.png"));
   assert.deepEqual(await values(), ["值1", "值2", "值3", "", ""], "重启必须发生在第四项执行前");
 
-  // 只重启扩展内 agent：关掉 offscreen 文档，浏览器、标签页、侧栏都留着。
   const inproc = (await rp.targets()).find((t) => t.url === `chrome-extension://${rp.extensionId}/inproc.html`);
   assert.ok(inproc, "找不到 offscreen 文档");
 
@@ -164,7 +154,6 @@ try {
   assert.deepEqual([fills.f1, fills.f2, fills.f3, fills.f4, fills.f5], [1, 1, 1, 1, 1], `每个字段必须只真实填写一次：${JSON.stringify(fills)}`);
   assert.ok(resumeInputs[0]?.includes("[FRESH PAGE OBSERVATION"),"手动继续前必须重新读取当前页面");
   assert.ok(resumeInputs[0]?.includes("值1")&&resumeInputs[0]?.includes("值2")&&resumeInputs[0]?.includes("值3"),"继续模型必须看到页面已有填写值");
-  // 任务结束后（回答已出现），侧栏应当说做完了：不说「没做成」，不再给「继续原任务」。
   await until(async () => { evidence.reopenedTask ||= await showTask();
 
     return (await state()).messages.includes("5 个都填好了。") || undefined; }, 30_000, "原任务会话里出现回答");

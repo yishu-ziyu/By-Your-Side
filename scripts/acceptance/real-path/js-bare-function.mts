@@ -1,10 +1,3 @@
-/**
- * Real extension and page: a script handed over as a bare zero-argument function (`() => { ... }`) runs once and
- * returns its value, in the js tool and in browser.js inside a program; scripts that take arguments, or that are
- * more than one function expression, run exactly as before.
- *   npx tsx scripts/acceptance/real-path/js-bare-function.mts --headless [--only=A,G]
- * The model is scripted (its tool calls are fixed per case), so this proves the browser layer, not model behaviour.
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -25,9 +18,7 @@ const CASES:Case[]=[
  {id:'A',tool:'js',code:'() => document.title',expect:new RegExp(TITLE)},
  {id:'B',tool:'js',code:"async () => { await new Promise(r => setTimeout(r, 10)); return document.querySelector('#v').textContent; }; // read the value",expect:/value-42/},
  {id:'C',tool:'browser_run',code:'return await browser.js({code: "() => document.title"});',expect:new RegExp(TITLE)},
- // 函数体只跑一次：页面上的计数是 1。
  {id:'D',tool:'js',code:'() => { document.body.dataset.ran = String(Number(document.body.dataset.ran || 0) + 1); return "ran=" + document.body.dataset.ran; }',expect:/ran=1/,ran:'1'},
- // 以下照原样运行。
  {id:'E',tool:'js',code:'(() => document.title)()',expect:new RegExp(TITLE)},
  {id:'F',tool:'js',code:'(x) => x',expect:NOT_CALLED},
  {id:'G',tool:'js',code:'() => 1; document.title',expect:new RegExp(TITLE)},
@@ -41,7 +32,6 @@ for(const item of CASES.filter(c=>!only||only.includes(c.id))){
  const model=await startScriptedModel([
   {match:task,steps:[{tool:{name:'navigate',args:{url:origin}}},{tool:{name:item.tool,args:{code:item.code,...(item.tool==='js'?{purpose:'读页面',readonly:!item.ran}:{label:'读页面'})}}},{text:`函数验收${item.id}完成。`}]},
  ],undefined,payload=>{
-  // 消息内容可能是字符串，也可能是分段数组。
   const text=(content:unknown)=>typeof content==='string'?content:Array.isArray(content)?content.map(part=>typeof part?.text==='string'?part.text:'').join(''):'';
   const messages=payload.messages??[];
   const tool=messages.filter(m=>m.role==='tool').at(-1);

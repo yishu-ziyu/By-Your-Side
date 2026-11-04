@@ -1,4 +1,3 @@
-/** Real extension screenshot -> evidence checker -> visible answer; a text-only checker must fail this regression. */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';

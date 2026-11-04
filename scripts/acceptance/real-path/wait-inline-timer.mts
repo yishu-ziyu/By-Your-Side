@@ -1,17 +1,3 @@
-/**
- * 行内计时：秒数贴在动词后面，没有扫光，长步骤只报已过多久（方向 A）。
- *   npx tsx scripts/acceptance/real-path/wait-inline-timer.mts --headless
- * 脚本模型：空会话 → 首字前挂 16 秒 → 回答；新会话里一步之后再想 5 秒；先送思考摘要、19 秒后才出正文；
- * 核对判「没做完」后接着做的那一轮挂 20 秒；再一问一直回 500。
- *   a) 空会话看得到起点建议，没有过程行。
- *   b) 首字前 3 秒：第一行是「正在：思考」加「N 秒」，没有「已等」、没有间隔点、标题不扫光、没有百分号。
- *   c) 超过 10 秒还没出字：标题改成「仍在处理」，秒数写「已 N 秒」继续数，仍不扫光、不写百分号。
- *   d) 一步之后的长思考：只报这段秒数，不写百分号，标题不是「还没有回音」。
- *   e) 模型出错时错误卡看得到。
- *   f) 思考摘要已经流进来、16 秒还没出正文：标题是「正在：思考」或「仍在处理」，不是没有回应的说法。
- *   g) 核对后接着做、16 秒还没回音：标题仍是「还没做完，接着做」，不被「还没有回音」盖掉。
- * 失败方式：仍写「已等」、标题还在扫光、超时标题不变、长步骤出现 %、空会话或错误卡没了、思考或重试时标题被换掉。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -36,7 +22,6 @@ const ANSWER_WAIT = "回音到了。";
 const ANSWER_STEP = "已经点开作品。";
 const ANSWER_THINK = "想好了。";
 const port = siteAddress(site).port;
-// 规则按数组顺序匹配：接着做的提示里也带着任务原话，所以 [GOAL CHECK] 放在最前。
 const model = await startScriptedModel([
   { match: "[GOAL CHECK]", steps: [{ text: "补上了。", delayMs: 20_000 }] },
   { match: "GOAL-CHECK-CONTINUE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "再点一次作品", correction: "" }) }] },
@@ -52,7 +37,6 @@ const model = await startScriptedModel([
   { match: ASK_CONT, steps: [{ tool: { name: "click", args: { target: "#ok", label: "作品" } } }, { text: "点了作品。" }] },
 ]);
 
-// 目标核对经这里改写成脚本结论：只有 ASK_CONT 的第一次核对判「没做完」，其余都判做完。
 const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished the user's goal";
 let continued = false;
 let lastVerdict = "GOAL-CHECK-DONE";
@@ -63,7 +47,6 @@ const relay = createServer(async (req, res) => {
     for await (const part of req) parts.push(part as Buffer);
     let body = Buffer.concat(parts).toString("utf8");
     if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
-      // 复核照首轮结论再判一次，带上复核读数里的原文。
       const again = reverifyContinue(body);
       const verdict = again ? recheckProbe(lastVerdict, again) : !continued && body.includes(ASK_CONT) ? "GOAL-CHECK-CONTINUE" : "GOAL-CHECK-DONE";
       if (!again) lastVerdict = verdict;
@@ -136,7 +119,6 @@ try {
   };
 
   await send(ASK_WAIT);
-  // 等的是时刻，不是措辞：改前的写法也要能截到同一时刻，由下面的判定决定过不过。
   const shownSecs = (r: Read) => Number(/(\d+) 秒/.exec(r.time)?.[1] ?? 0);
   await until(async () => shownSecs(await read()) >= 3 ? true : undefined, 8_000, "首字前数到 3 秒", 100);
   const waiting = await read();
@@ -160,7 +142,6 @@ try {
   const elapsed = (Date.now() - thinkingSince) / 1000;
   await rp.screenshot(panel, join(out, "long-step.png"));
   const stepLive = liveOk(step);
-  // 秒数每秒刷新、对齐这段的整秒，所以只会比真实少不到 1 秒；按发送算的整轮读数会多出前一步的时间。
   check("d 长步骤只报这段已过多久，不写百分号，不是超时文案", step.title.startsWith("正在") && step.title !== "还没有回音" && stepLive.secs >= 3 && Math.abs(stepLive.secs - elapsed) <= 1 && stepLive.noWaitWord && stepLive.noShine && stepLive.noPct, { title: step.title, time: step.time, elapsed, shine: step.shine });
 
   await until(async () => { const r = await read(); return r.all.includes(ANSWER_STEP) ? true : undefined; }, 20_000, "长步骤回答", 100);

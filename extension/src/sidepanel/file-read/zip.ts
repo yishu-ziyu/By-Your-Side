@@ -1,8 +1,3 @@
-/**
- * 读 Office 文件（docx、xlsx、pptx 都是 zip）用的最小 zip 读取：只读中央目录，按名字取单个条目。
- * 解压用浏览器自带的 DecompressionStream("deflate-raw")，不打包第三方库；只支持 Office 实际会写的「存储」和「deflate」两种方式。
- */
-
 export class ZipError extends Error {}
 
 interface ZipEntry {
@@ -14,7 +9,6 @@ interface ZipEntry {
   encrypted: boolean;
 }
 
-/** 单个条目解压后的上限：防止「zip 炸弹」把侧栏内存撑爆。 */
 const ENTRY_MAX_BYTES = 200 * 1024 * 1024;
 
 export class ZipReader {
@@ -68,7 +62,6 @@ export class ZipReader {
   private readDirectory(): void {
     const { bytes } = this;
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    // 目录结尾记录在最后 22 字节起、往前最多再有 64KB 注释。
     let end = -1;
 
     for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
@@ -79,7 +72,6 @@ export class ZipReader {
     let count = view.getUint16(end + 10, true);
     let offset = view.getUint32(end + 16, true);
 
-    // zip64：条目数或目录位置放不下 16/32 位时，真实值在 zip64 目录结尾记录里。
     if (count === 0xffff || offset === 0xffffffff) {
       const locator = end - 20;
 
@@ -144,7 +136,6 @@ async function inflateRaw(raw: Uint8Array, expected: number): Promise<Uint8Array
     if (done) break;
     total += value.length;
 
-    // 中央目录写的大小可能是假的：实际解出来超过上限就停。
     if (total > ENTRY_MAX_BYTES) { await reader.cancel(); throw new ZipError("文件里有一部分大得不正常"); }
     chunks.push(value);
   }

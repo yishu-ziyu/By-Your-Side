@@ -21,7 +21,7 @@ export class TaskReceiptError extends Error {
   constructor(readonly receipt:TaskReceipt) { super(receipt.message); }
 }
 
-/** One private file per request. Never prune automatically: an old ID must not execute again. */
+/** WHY: One private file per request. Never prune automatically: an old ID must not execute again. */
 class TaskReceiptStore {
   private readonly memory = new Map<string, RecordEntry>();
   private indexMem: Record<string, string[]> | null = null;
@@ -81,7 +81,6 @@ class TaskReceiptStore {
     try { writeFileSync(staged,JSON.stringify(record),{mode:0o600});renameSync(staged,file); this.scheduleFlush(); }
     finally { rmSync(staged,{force:true}); }
   }
-  /** Durable index catch-up; list/read do not wait on this. */
   sync(): void {
     if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
 
@@ -144,7 +143,7 @@ class TaskReceiptStore {
           if (typeof record.fingerprint === "string" && typeof record.pending === "boolean" && isTaskReceipt(record.receipt)) {
             this.remember(`${record.receipt.conversationId}:${record.receipt.requestId}`, record);
           }
-        } catch { /* skip unreadable records; list must not throw */ }
+        } catch {  }
       }
 
       return;
@@ -153,7 +152,7 @@ class TaskReceiptStore {
     for (const key of keys.slice(-5000)) {
       if (this.memory.has(key)) continue;
 
-      try { this.read(key); } catch { /* skip unreadable records; list must not throw */ }
+      try { this.read(key); } catch {  }
     }
   }
   list(conversationId: string): TaskReceipt[] {
@@ -173,13 +172,12 @@ class TaskReceiptStore {
 }
 
 /**
- * 控制（暂停/接管/终止）有自己的接收通道：它不等待慢的 start/steer（例如还在等页面预观察的那几秒），
+ * WHY: 控制（暂停/接管/终止）有自己的接收通道：它不等待慢的 start/steer（例如还在等页面预观察的那几秒），
  * 否则"页面已经归用户"的停止请求会被卡在普通输入后面。控制自身仍按会话串行。
  * 普通输入仍按会话串行，并且新入队的普通输入排在它之前已入队的控制之后，保持既有先后。
  */
 const CONTROL_ACTIONS = new Set<TaskActionRequest['action']>(['pause','abort','resume']);
 
-/** Serialized acceptance boundary, not a queue for waiting until a task becomes runnable. */
 export class TaskDispatcher {
   private readonly active = new Map<string,{fingerprint:string;promise:Promise<TaskReceipt>}>();
   private readonly tails = new Map<string,Promise<unknown>>();
@@ -199,8 +197,6 @@ return value?this.store.receipt(value):undefined;
     const pending=this.active.get(key);
 
     if(pending)return pending.fingerprint===fingerprint?pending.promise:Promise.resolve(conflict());
-    // A checkpoint resume includes a slow page read. It belongs to the ordinary
-    // lane so pause/abort can invalidate it immediately, not wait behind the read.
     const conversationId=request.conversationId,control=CONTROL_ACTIONS.has(request.action)&&!(request.action==='resume'&&options?.deferredResume);
     const controlTail=this.controlTails.get(conversationId)??Promise.resolve();
     const prior=control?controlTail:Promise.all([this.tails.get(conversationId)??Promise.resolve(),controlTail]);

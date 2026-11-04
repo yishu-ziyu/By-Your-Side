@@ -1,4 +1,3 @@
-/** Isolated real extension + scripted model: model-visible screenshot schema and tab filtering. */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

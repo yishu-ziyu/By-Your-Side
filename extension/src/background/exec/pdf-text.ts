@@ -2,21 +2,15 @@ import { getDocument, type PDFDocumentLoadingTask, type PDFDocumentProxy } from 
 import * as pdfWorker from "pdfjs-dist/build/pdf.worker.mjs";
 
 /**
- * Chrome 的 PDF 阅读器是另一个扩展的页面：无障碍树里只有工具栏，没有正文，调试器也进不去。
+ * WHY: Chrome 的 PDF 阅读器是另一个扩展的页面：无障碍树里只有工具栏，没有正文，调试器也进不去。
  * 所以 PDF 正文由本扩展自己用 pdf.js 解析。服务工作线程里不能开 Worker，pdf.js 认 globalThis.pdfjsWorker 在本线程里跑。
  */
 (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = pdfWorker;
 
-/** 一次交给模型的正文上限；与普通页面的读页预算同一量级。 */
 const PDF_TEXT_BUDGET = 14_000;
 const OUTLINE_MAX = 40;
-/** pdf.js 按文件长度一次分配内存：超过这个大小不解析，免得拖垮整个扩展后台。 */
 const PDF_MAX_BYTES = 150 * 1024 * 1024;
 
-/**
- * 中文、日文 PDF 的字符映射表随扩展打包。pdf.js 自带的取法要读 document.baseURI，服务工作线程里没有，所以自己取。
- * 形状照 pdf.js 的 BinaryDataFactory：构造时收各类资源的地址前缀，fetch 按类别和文件名取字节。
- */
 class ExtensionBinaryDataFactory {
   private readonly bases: Record<string, string | null>;
 
@@ -36,13 +30,8 @@ class ExtensionBinaryDataFactory {
   }
 }
 
-/**
- * 翻页时不重下同一份 PDF。按标签页存：别的标签页读另一份 PDF 不会中断这一份；
- * 标签页重新加载（含换账号后刷新）或关闭就丢掉，不把一个登录身份读到的内容给下一次用。
- */
 const cache = new Map<number, { url: string; task: PDFDocumentLoadingTask; doc: Promise<PDFDocumentProxy> }>();
 
-/** 每个标签页的页面版本：刷新或关闭就加一，等大小检查回来时用它判断这次读取是否已经作废。 */
 const generation = new Map<number, number>();
 
 function forget(tabId: number) {
@@ -60,19 +49,15 @@ async function openPdf(tabId: number, url: string): Promise<PDFDocumentProxy> {
   if (hit?.url === url) return hit.doc;
   forget(tabId);
   const version = generation.get(tabId);
-  // 先问大小；对方不答大小或不支持 HEAD 时照常读（标签页里的阅读器已经下过这份文件），只挡住明确超大的。
   const head = await fetch(url, { method: "HEAD", credentials: "include", signal: AbortSignal.timeout(5_000) }).catch(() => null);
   const size = head?.ok ? Number(head.headers.get("content-length") ?? 0) : 0;
 
   if (generation.get(tabId) !== version) throw new Error("读取期间页面已刷新或关闭，请重新读取当前页面");
 
   if (size > PDF_MAX_BYTES) throw new Error(`这份 PDF 有 ${Math.round(size / 1024 / 1024)} MB，超过 ${PDF_MAX_BYTES / 1024 / 1024} MB，没有解析`);
-  // 对方不告诉大小：自己下载、边下边数，超过上限就停；这时没有按需取段，整份交给 pdf.js。
   const data = size > 0 ? undefined : await downloadCapped(url);
 
   if (generation.get(tabId) !== version) throw new Error("读取期间页面已刷新或关闭，请重新读取当前页面");
-  // 大报告动辄几十兆：只按需取用到的那几段，不整份下载。
-  // 传 URL 对象、关掉 useWorkerFetch：字符串地址和资源的默认取法都会去读 window / document，服务工作线程里没有。
   const task = getDocument({
     ...(data ? { data } : { url: new URL(url) }), disableAutoFetch: true, disableStream: true, withCredentials: true, useWorkerFetch: false,
     cMapUrl: chrome.runtime.getURL("pdfjs/cmaps/"), cMapPacked: true, BinaryDataFactory: ExtensionBinaryDataFactory,
@@ -112,7 +97,6 @@ async function downloadCapped(url: string): Promise<Uint8Array> {
   return data;
 }
 
-/** 这个标签页显示的是 PDF 吗：看文档类型，不看地址后缀（很多 PDF 地址不以 .pdf 结尾）。 */
 export async function tabShowsPdf(tabId: number): Promise<boolean> {
   try {
     const [result] = await chrome.scripting.executeScript({ target: { tabId }, injectImmediately: true, world: "ISOLATED", func: () => document.contentType });
@@ -137,7 +121,7 @@ async function outlineLines(doc: PDFDocumentProxy): Promise<string[]> {
 
       if (ref && typeof ref === "object") page = (await doc.getPageIndex(ref)) + 1;
       else if (typeof ref === "number") page = ref + 1;
-    } catch { /* 目录项没有可解析的页码时只列标题 */ }
+    } catch {  }
 
     lines.push(`- ${item.title.trim()}${page ? `（第 ${page} 页）` : ""}`);
   }
@@ -145,10 +129,6 @@ async function outlineLines(doc: PDFDocumentProxy): Promise<string[]> {
   return lines;
 }
 
-/**
- * 读 PDF 的正文：文档信息、目录（带页码）、从 #page=N 那页起的若干页文字。
- * 读不完时告诉模型怎么翻到后面：地址加 #page=N，这也是 Chrome 阅读器自己认的写法，用户看到的就是那一页。
- */
 export async function pdfText(tabId: number, url: string): Promise<string> {
   const file = url.replace(/#.*$/, "");
   const doc = await openPdf(tabId, file);

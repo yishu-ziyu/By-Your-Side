@@ -7,13 +7,8 @@ import { GOAL_CHECK_BOOKKEEPING_TOOLS, newReadIndex, readWords, type GoalCheckIn
 import { PageTrail } from "./goal-facts.js";
 import { citationEvidence } from './answer-sources.js';
 
-/**
- * 核对看到的回答和用户在侧栏看到的一样：{=名字} 换成卡片算出的数，卡片换成文字。
- * 原始标记里的 {=h30}、<input> 在核对模型眼里是「没算出来的占位符」「只描述了输入框」，会误判没做完、再跑几轮。
- */
 const replyAsShown = (text: string, sources?: AnswerSourceMap): string => answerMarkdown(text, sources);
 
-/** 回答里带输入项的卡片：画在侧栏的回答里，用户在那里改数、卡片即时重算。核对不知道这一点时会去网页上找这个工具，找不到就判没交付。 */
 function replyCards(text: string): NonNullable<GoalCheckInput["replyCards"]> {
   return splitAnswer(text).flatMap(part => ("card" in part && part.card ? [part.card] : []))
     .map(card => ({ title: card.title, inputs: card.blocks.flatMap(block => (block.kind === "inputs" ? block.items.map(item => item.label) : [])) }))
@@ -64,7 +59,7 @@ export class GoalLedger {
     this.trail.observe(name, params, result);
   }
 
-  /** Keep earlier page facts across follow-ups; recent tools must not evict the pages they act on. */
+  /** WHY: Keep earlier page facts across follow-ups; recent tools must not evict the pages they act on. */
   record(tool: string, text: string): void {
     if (tool.startsWith("page_") && text.includes("is unchanged since your earlier observation")) return;
     if (tool === "page_at_start") this.trail.noteStartPage(text);
@@ -90,7 +85,7 @@ export class GoalLedger {
     program.reads.push({ url: result.url, text: result.text });
   }
 
-  /** Preserve URL provenance only for source text the program actually returned, never for computed results or write receipts. */
+  /** WHY: Preserve URL provenance only for source text the program actually returned, never for computed results or write receipts. */
   recordProgramResult(id: string, text: string, result: unknown, failed: boolean): void {
     const program = this.programs.get(id);
     this.programs.delete(id);
@@ -126,7 +121,7 @@ export class GoalLedger {
       const content = message.content;
       const text = typeof content === "string" ? content : Array.isArray(content)
         ? content.map((part: unknown) => part && typeof part === "object" && "text" in part && typeof part.text === "string" ? part.text : "").join("\n") : "";
-      // A correction prompt can name unsupported people; replaying it must not turn those names into source evidence.
+      // WHY: A correction prompt can name unsupported people; replaying it must not turn those names into source evidence.
       if (text && !text.startsWith("[GOAL CHECK]")) readWords(redactCredentialText(text), this.words);
     }
   }
@@ -138,7 +133,6 @@ export class GoalLedger {
     const raw = isError ? firstFailureText(result) : readiness === "timeout" ? "page did not finish loading (document timeout)" : readiness === "error_page" ? "page did not open (Chrome error page)" : null;
 
     if (raw === null) return;
-    // Page text can carry instructions. Only the short error prefix belongs in the next attempt's guidance.
     const reason = (raw.split(/<page-content|<\/?untrusted/i)[0] ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "failed";
     if (this.failures.runId !== runId) this.failures = { runId, items: [] };
     const items = this.failures.items.filter(item => item.tool !== tool || item.reason !== reason);

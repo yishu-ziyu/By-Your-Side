@@ -2,10 +2,6 @@ import type { TaskView } from "../../../shared/task-view.js";
 
 const TASK_TABS_KEY = "taskTabs";
 
-/**
- * 记下每个任务保留的那页是哪个标签页。后台进程会被 Chrome 回收、内存里的任务视图跟着没了，
- * 而侧栏卡片上替另开那件点「继续」时要用它（见 taskPageContext）。
- */
 export function rememberTaskTab(view: TaskView): void {
   const page = view.page;
 
@@ -22,7 +18,6 @@ export function rememberTaskTab(view: TaskView): void {
   }).catch(() => undefined);
 }
 
-/** 任务自己保留的那页还开着时，按它现在的网址给出页面上下文；宿主再按 urlHash 核对是不是原页面。 */
 export async function taskPageContext(conversationId: string, view?: TaskView): Promise<{ tabId: number; title: string; url: string } | null> {
   let tabId = view?.page?.tabId;
 

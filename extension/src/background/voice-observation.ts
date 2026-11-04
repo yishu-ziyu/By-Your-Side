@@ -1,6 +1,5 @@
 import { activeTargetTabs } from "./target-window.js";
 
-/** Read-only grants are issued by a live voice lease, never by page content or task tools. */
 export class VoiceObservation {
   private grants = new Map<string, {
     tabId: number;
@@ -63,7 +62,6 @@ export class VoiceObservation {
             return range.getClientRects();
           };
 
-          // Field contents are what the user sees, but they are not text nodes (a textarea's own text is only its default).
           const fieldValue = (el: Element): string | undefined => {
             if (el instanceof HTMLTextAreaElement) return el.value;
 
@@ -122,8 +120,6 @@ export class VoiceObservation {
     await check();
 
     if (mode === 'text') {
-      // Text needs a current document, not pixel/text equality across a screenshot.
-      // Always read back once; if loading left it empty, allow one bounded reread.
       for (let attempt = 1; attempt <= 2; attempt++) {
         if (attempt > 1) {
           await new Promise(r => setTimeout(r, 150));

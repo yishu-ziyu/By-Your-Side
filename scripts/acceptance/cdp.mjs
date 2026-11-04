@@ -1,12 +1,9 @@
-/** Minimal browser CDP client; every pending operation belongs to this socket. */
 export function createCdp(webSocketDebuggerUrl) {
   const ws = new WebSocket(webSocketDebuggerUrl);
   let seq = 0, closedError, closing;
   const pending = new Map(), sessions = new Map(), eventHandlers = new Map();
   const operations = new Set();
 
-  // Attach a rejection observer immediately. Callers still receive the original
-  // rejecting promise, including waits created before an awaited trigger fails.
   function operation(label, timeoutMs, subscribe) {
     let resolve, reject, timer, unsubscribe;
     const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
@@ -29,7 +26,6 @@ export function createCdp(webSocketDebuggerUrl) {
       try { unsubscribe = subscribe(entry.finish); }
       catch (error) { entry.finish(error); }
 
-      // subscribe may settle synchronously (e.g. a ready socket or aborted wait).
       if (!operations.has(entry)) unsubscribe?.();
     }
 

@@ -1,15 +1,3 @@
-/**
- * 助手在自己新开的后台标签页里输入和点击，要一次生效（2026-10-13 用户在日常 Chrome 里让助手新开百度搜天气，
- * 两个模型都是点了「百度一下」页面不动，靠目标核对发现后再补，慢且先错后改）。
- *   npx tsx scripts/acceptance/real-path/background-tab-input.mts --headed
- * 只能在有窗口的 Chrome 里跑：从没显示过的后台标签页不渲染，CDP 的鼠标和键盘输入会丢；无头 Chrome 里不会丢，复现不了。
- * 运行时屏幕上会弹出一个测试 Chrome 窗口，约 30 秒后关掉。
- * 用户停在「我的页面」。脚本模型让助手 tabs open 一个搜索页（后台打开，从没到前台），在搜索框填「天气」，点「搜索」。
- * 判据：网站收到 /results?q=天气（搜索真的提交了）；点击结果没有说「页面没有变化」。
- * 前提：点击做完之前活动标签一直是「我的页面」；新页到过前台就渲染过了，那次运行不算数。
- * 运行时别点弹出的测试窗口：10-13 前 6 次运行里有 3 次新页中途到了前台；提醒用户别点窗口、并记下扩展的切页调用（activations.json）后连跑 3 次都没再出现，多半是人点了窗口（没证实）。
- * 失败方式：去掉附加调试器时的焦点模拟，网站收不到搜索，点击结果写「Nothing on the page changed」。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -107,10 +95,8 @@ try {
   check("点击结果没有说页面没有变化", !!click && !/Nothing on the page changed/i.test(click.text), click ?? null);
   const fill = receipts.find(r => r.name.startsWith("fill#"));
   check("填写读回是「天气」", !!fill && fill.text.includes("天气"), fill ?? null);
-  // 前提：搜索提交之前（没提交就是点击结果回来之前），新页一直在后台。新页一旦到过前台就渲染过了，这次运行证明不了什么。
   const clickDoneAt = Math.min(searchedAt, receiptAt.get("click") ?? Infinity);
   const beforeClick = activeSamples.filter(s => s.at <= clickDoneAt);
-  // 采样每 100 ms 一次会漏掉短暂切换；扩展后台的 onActivated 记录不会漏。
   const swActs = ((await rp.evaluate(sw, "globalThis.__acts")) ?? []) as Array<{ t: number; activated?: number }>;
   const userTabId = (await rp.evaluate(sw, `chrome.tabs.query({}).then(ts => ts.find(t => t.title === "我的页面")?.id ?? null)`)) as number | null;
   const flips = swActs.filter(a => a.activated != null && a.activated !== userTabId && a.t <= clickDoneAt);

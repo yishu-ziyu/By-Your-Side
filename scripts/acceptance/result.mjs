@@ -59,9 +59,6 @@ export function containsNeedle(haystack, needle) {
   return typeof haystack === "string" && haystack.includes(needle);
 }
 
-/**
- * 把 SW 驱动结果判成逐步 PASS/FAIL。不把整页快照写进返回值。
- */
 export function evaluateRun(driverResult, expected = {}) {
   const unique = expected.uniqueText ?? UNIQUE_TEXT;
   const counterBefore = expected.counterBefore ?? COUNTER_BEFORE;

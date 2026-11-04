@@ -1,4 +1,3 @@
-/** A real extension must finish >3 continuation rounds with new page evidence, and stop repeating identical reads. */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';

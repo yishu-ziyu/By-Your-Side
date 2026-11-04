@@ -1,4 +1,3 @@
-/** 扩展内 agent 实验：background 与 offscreen 文档共用的常量，单独成文件，避免把 agent 打进 background。 */
 import { GPT_LIVE_MODEL } from "../../../shared/voice.js";
 
 export const INPROC_PORT_NAME = "inproc-host";
@@ -7,29 +6,25 @@ export const INPROC_CONFIG_KEY = "inproc_model_config";
 
 export const CODEX_CATALOG_KEY = "inproc_codex_catalog";
 
-/** 即时动作（划词解释、网页翻译）用的快速模型，形状同 InprocModelConfig；不存在时沿用主模型。 */
 export const INPROC_FAST_CONFIG_KEY = "inproc_fast_model_config";
 
-/** 主任务的备用模型：主模型卡住或暂时出错时换它接着做，形状同 InprocModelConfig；不存在时不换。 */
 export const INPROC_BACKUP_CONFIG_KEY = "inproc_backup_model_config";
 
 export const INPROC_DOCUMENT = "inproc.html";
 
 /**
- * MV3 的 service worker 空闲约 30 秒就会被 Chrome 停掉，和扩展内 agent 的连接随之断开，停机期间发来的任务会丢。
+ * WHY: MV3 的 service worker 空闲约 30 秒就会被 Chrome 停掉，和扩展内 agent 的连接随之断开，停机期间发来的任务会丢。
  * 本机进程模式靠 Native Messaging 连接保活；扩展内 agent 改为定时发心跳（端口消息会重置空闲计时）。
  */
 export const INPROC_KEEPALIVE_MS = 20_000;
 
-/** StepFun 实时语音的 API Key：只由 background 读取，写进请求头规则，不发给 offscreen 文档。 */
 export const INPROC_VOICE_KEY = "inproc_voice_key";
 
-/** 下一次开启实时语音使用的模型；缺项沿用原有按量 Realtime 3。 */
 export const INPROC_VOICE_MODEL_KEY = "inproc_voice_model";
 
 export type InprocVoiceModel = "stepaudio-3-realtime-preview" | "stepaudio-2.5-realtime" | typeof GPT_LIVE_MODEL;
 
-/** 只给缺项默认值；坏的持久值不能静默切到按量语音。 */
+/** WHY: 只给缺项默认值；坏的持久值不能静默切到按量语音。 */
 export function resolveVoiceModel(value: unknown): InprocVoiceModel {
   if (value === undefined) return "stepaudio-3-realtime-preview";
 
@@ -43,17 +38,15 @@ const VOICE_HEADER_RULE_ID = 7101;
 const PLAN_VOICE_HEADER_RULE_ID = 7102;
 
 /**
- * 浏览器的 WebSocket 不能自己设请求头，StepFun 又只认 Authorization 头：
+ * WHY: 浏览器的 WebSocket 不能自己设请求头，StepFun 又只认 Authorization 头：
  * 用会话级 declarativeNetRequest 规则在握手时补上。返回语音是否已配置。
  */
 export async function installVoiceHeaderRule(key: string): Promise<boolean> {
   const configured = key.trim().length > 0;
 
-  // 两条规则：按量 Realtime 3 走 /v1/realtime；套餐 Realtime 2.5 与按住说话听写走 /step_plan/v1/realtime。
   const rule = (id: number, urlFilter: string): chrome.declarativeNetRequest.Rule => ({
     id, priority: 1,
     action: { type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS, requestHeaders: [{ header: "Authorization", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `Bearer ${key.trim()}` }] },
-    // 只给本扩展自己发起、且不属于任何标签页的连接（offscreen / 侧栏）补头；网页自己连 StepFun 拿不到用户的 key。
     condition: {
       urlFilter,
       resourceTypes: [chrome.declarativeNetRequest.ResourceType.WEBSOCKET],
@@ -70,47 +63,34 @@ export async function installVoiceHeaderRule(key: string): Promise<boolean> {
   return configured;
 }
 
-/** 用户在设置里选的模型。密钥与登录令牌不在这里，见 INPROC_CREDENTIAL_PREFIX。 */
 export interface InprocModelConfig {
   provider: string;
   modelId: string;
-  /** 只在 provider === CUSTOM_PROVIDER_ID 时使用。 */
   baseUrl?: string;
 }
 
-/** 自定义 OpenAI 兼容服务在凭据与配置里使用的服务商编号。 */
 export const CUSTOM_PROVIDER_ID = "custom";
 export const CUSTOM_ENDPOINT_ENV = "SIDEAGENT_CUSTOM_ENDPOINT";
 
-/** A custom key travels with its endpoint, including calls holding an older model object. */
 export function modelCredential(config: InprocModelConfig, key: string): StoredCredential {
   return config.provider === CUSTOM_PROVIDER_ID && config.baseUrl
     ? { type: "api_key", key, env: { [CUSTOM_ENDPOINT_ENV]: config.baseUrl } }
     : { type: "api_key", key };
 }
 
-/** 阶跃星辰：pi-ai 目录里没有，扩展自己注册；它的 key 同时可用于实时语音。 */
 export const STEPFUN_PROVIDER_ID = "stepfun";
 export const COMMANDCODE_PROVIDER_ID = "commandcode";
 
-/**
- * 每家服务商一条凭据，存在 `inproc_cred:<服务商>`：填的 key，或订阅登录拿到的令牌。
- * 分键存放，设置页登录与 agent 刷新令牌写不同的键时不会互相覆盖。
- */
 export const INPROC_CREDENTIAL_PREFIX = "inproc_cred:";
 
-/** 与 pi-ai 的 Credential 同形；这里单独声明，background 不必引入 pi-ai。 */
 export type StoredCredential =
   | { type: "api_key"; key?: string; env?: Record<string, string> }
   | { type: "oauth"; access: string; refresh: string; expires: number; [key: string]: string | number | boolean | null | undefined };
 
-/** 按服务商编号索引；要经 runtime 端口发给 offscreen 文档，所以是普通对象而不是 Map。 */
 export interface StoredCredentials { [providerId: string]: StoredCredential }
 
-/** chrome.storage.local.get 读出的整表，按 Object.entries 展开；值未经解析。 */
 type StorageEntries = ReadonlyArray<readonly [string, unknown]>;
 
-/** 凭据只由设置页和 background 写入；这里仍按形状核对，读到坏值就当没有。 */
 function isStoredCredential(value: unknown): value is StoredCredential {
   if (typeof value !== "object" || value === null || !("type" in value)) return false;
 
@@ -125,7 +105,6 @@ function isStoredCredential(value: unknown): value is StoredCredential {
 
 const isText = (value: unknown): value is string => typeof value === "string";
 
-/** 从 chrome.storage 的整表里挑出凭据。 */
 export function pickCredentials(entries: StorageEntries): StoredCredentials {
   const credentials: StoredCredentials = {};
 
@@ -136,7 +115,6 @@ export function pickCredentials(entries: StorageEntries): StoredCredentials {
   return credentials;
 }
 
-/** 实时语音用的 key：单独填的优先，否则沿用阶跃星辰模型的 key（同一个账号）。 */
 export function resolveVoiceKey(entries: StorageEntries): string {
   const own = entries.find(([key]) => key === INPROC_VOICE_KEY)?.[1];
 

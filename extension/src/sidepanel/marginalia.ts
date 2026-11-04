@@ -18,7 +18,7 @@ export function createMarginalia(select: HTMLSelectElement, rail: HTMLElement) {
     frame = requestAnimationFrame(() => {
       if (!update) return;
       const travel = Math.max(0, rail.clientHeight - card.offsetHeight);
-      // Native side-panel chrome takes the height difference; align to the page's visible point.
+      // WHY: Native side-panel chrome takes the height difference; align to the page's visible point.
       rail.dataset.pageY = String(update.position * update.viewportHeight);
       rail.dataset.pageHeight = String(update.viewportHeight);
       const nativeHeader = update.viewportHeight - innerHeight;

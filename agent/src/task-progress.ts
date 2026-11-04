@@ -18,17 +18,12 @@ import {RECOVERY_INPUT_MAX,type TaskRecoveryInput} from '../../shared/task-recov
 import {pageRecoveryKey,attachmentRecoveryKey,mergeTaskMaterials} from './task-recovery.js';
 import type { DeliveryFactInput } from './user-delivery.js';
 
-/** 效果无法从参数与回执看出的工具：页面 JS 与原始 CDP 命令。 */
 const OPAQUE_EFFECT_TOOLS: ReadonlySet<string> = new Set(["js", "cdp"]);
 
 const labels: Record<string, string> = { capture_page_material: "保存页面原文", task_goals: "核对用户目标", record_task_results: "整理剩余步骤", snapshot: "读取页面", screenshot: "查看页面截图", read_element: "读取页面内容", browser_run: "执行网页步骤", click: "点击页面", fill: "填写表单", type_text: "输入文字", navigate: "打开页面", open_tab: "打开标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", scroll: "滚动页面", mark: "标注页面", spawn: "分配协作任务", wait: "等待协作者", js: "检查页面" };
 
 const label = (name: string) => labels[name] ?? toolAction(name);
 
-/**
- * 正在做的这一步叫什么：侧栏任务栏、按住说话的胶囊和语音的过程播报都念它，
- * 所以「执行网页步骤」「打开页面」这种泛称尽量换成具体的事；网址只留站点名，不带路径。
- */
 function stepLabel(name: string, params: Record<string, unknown>): string {
   if (name === 'browser_run' && typeof params.label === 'string' && params.label.trim()) return params.label.trim().slice(0, 24);
   const host = typeof params.url === 'string' && URL.canParse(params.url) ? new URL(params.url).hostname.replace(/^www\./, '') : null;
@@ -40,7 +35,6 @@ function stepLabel(name: string, params: Record<string, unknown>): string {
   return label(name);
 }
 
-/** Runtime receipts drive progress; bounded target bindings are retained, page contents are excluded. */
 export class TaskProgress {
   private continuation: import('../../shared/task-continuation.js').TaskContinuation | undefined;
   private modelCallsThisRun = 0;
@@ -50,9 +44,7 @@ export class TaskProgress {
   private startedAt: number | null = null;
   private runId: string | null = null;
   private aborted = false;
-  /** A restored active run is a checkpoint, never a still-running task. */
   private interrupted = false;
-  /** Persists through the resumed original run so pre-restart writes cannot be replayed. */
   private restartRecovery = false;
   private interruptionReason:TaskProgressSnapshot['interruptionReason'];
   private lifecycleFrozen=false;
@@ -62,7 +54,6 @@ export class TaskProgress {
   private opaqueEffectRan=false;
   private lastAction: TaskProgressSnapshot["lastAction"] = null;
   private lastReadAt: number | null = null;
-  /** Lead-only conversation evidence: bounded turns, the current turn's streamed text, the run's final report. */
   private readonly turns: VoiceConversationContext["recentTurns"] = [];
   private readonly voicedRequests = new Set<string>();
   private turnText = "";
@@ -77,9 +68,7 @@ export class TaskProgress {
   private lastBrowserFailed=false;
   private readonly results: TaskResultBook;
   readonly goals = new TaskGoalBook();
-  /** 本 run 真实打开或读到的页面（去重、有界）。只在内存；恢复后不猜测补齐，交付时按实际有的说。 */
   private runSources: UserDeliverySourceRef[] = [];
-  /** 这一轮（用户说了新的话之后）读到或打开的页面：回答出处只用它，不把上一轮读过的页面算到这一轮的回答上。 */
   private turnSources: UserDeliverySourceRef[] = [];
   private readonly pendingNavUrls = new Map<string, string>();
   constructor(private readonly conversationId: string, private readonly clock = Date.now) {
@@ -89,7 +78,6 @@ export class TaskProgress {
 
   private foldCompletedResultsIfFull(): void {
     if (this.results.list().length < MAX_TASK_RESULTS) return;
-    // Only completed receipts are folded; unresolved and in-flight effects still occupy their slots.
     const folded = this.results.fold();
     if (folded.length) this.foldedResults = { count: this.foldedResults.count + folded.length, recent: [...this.foldedResults.recent, ...folded].slice(-8) };
   }
@@ -101,16 +89,13 @@ export class TaskProgress {
   releaseAfterHandback(): Array<{ id: string; description: string }> { this.failureLimit=false;
 
     return this.results.releaseAfterHandback(); }
-  /** 交付事实链：已满足项、仍未完成项、本 run 真实读到的页面。未完成项名称不升级状态、不删证据。 */
   deliveryFacts(): DeliveryFactInput {
-    // 描述超界时加省略号：事实链可以被界面折叠展示，但不能静默截断得看不出来。
     const shorten = (description: string): string => description.length > USER_DELIVERY_FACT_DESCRIPTION_MAX
       ? `${description.slice(0, USER_DELIVERY_FACT_DESCRIPTION_MAX - 1)}…`
       : description;
 
     const executionItems = this.results.list();
     const plan = this.goals.snapshot();
-    // Unknown effects remain visible even when they are not user outcomes.
     const items = plan ? [...plan.goals, ...executionItems.filter(item => item.status === 'unknown' && !isSupersededUnknown(item, executionItems))] : executionItems;
     const allDelivered = items.filter((item) => item.status === "satisfied").map((item) => shorten(item.description));
     const delivered: string[] = [];
@@ -148,11 +133,8 @@ export class TaskProgress {
   private goalPage: { title: string; url: string } | null = null;
   private interjections = 0;
   private foldedResults: { count: number; recent: string[] } = { count: 0, recent: [] };
-  /** 最近一次目标核对；新任务开始、助手重新开跑时清掉，等这一轮结束的核对。 */
   private goalCheck: NonNullable<TaskProgressSnapshot["goalCheck"]> | null = null;
-  /** 核对刚判「接着做」、宿主马上发起续做：下一次 agent_start 是它，保留核对的「还差」；用户的话或别的开始不保留。 */
   private hostContinuation = false;
-  /** 这一轮的回答出处（副本）。 */
   answerSources(): UserDeliverySourceRef[] { return this.turnSources.map((source) => ({ ...source })); }
   private noteRunSource(url: string, title?: string): void {
     const inTurn = this.turnSources.find((source) => source.url === url);
@@ -162,7 +144,6 @@ export class TaskProgress {
 
     const known = this.runSources.find((source) => source.url === url);
 
-    // 先只记到地址（导航）、后读到标题时补上标题。
     if (known) { if (title && !known.title) known.title = title;
 
  return; }
@@ -170,7 +151,6 @@ export class TaskProgress {
     if (!/^https?:\/\//.test(url) || this.runSources.length >= USER_DELIVERY_SOURCE_MAX) return;
     this.runSources.push(title ? { url, title } : { url });
   }
-  /** Stop the live run without discarding obligations or guessing external effects. */
   interrupt(reason:NonNullable<TaskProgressSnapshot['interruptionReason']>):boolean {
     if(!this.runId||!this.goal||this.aborted)return false;
     const snapshot=this.snapshot();
@@ -182,12 +162,9 @@ export class TaskProgress {
   prepareResume():void {
     this.lifecycleFrozen=false;this.failureLimit=false;this.restrictedPage=false;
 
-    // Upgrade only on explicit continuation, using complete task inputs, not a historical summary.
     if(!this.goals.snapshot()&&this.recoveryInput?.requirements.length)this.goals.require(this.recoveryInput.requirements);
   }
-  /** Conversational turns are not new task requirements. Call only for actual task input. */
   recordRequirement(text:string,context?:PageContext,attachments?:Attachment[]):()=>void {
-    // 用户说了新的话：接下来的开始不再是宿主催的续做。
     this.restrictedPage=false;
     this.hostContinuation=false;
     const prior=this.recoveryInput??{requirements:this.goal?[this.goal]:[],attachmentKeys:[]};
@@ -213,8 +190,6 @@ export class TaskProgress {
       this.foldCompletedResultsIfFull();
     }
 
-    // Only the caller that just registered this input can revoke it before acceptance.
-    // Preserve a fresh page observation, and never roll back a later requirement or another run.
     return ()=>{
       if(this.runId!==runId||this.recoveryInput!==recorded)return;
 
@@ -256,7 +231,6 @@ export class TaskProgress {
     this.tools.clear();
     this.lastAction = snapshot.lastAction ? { ...snapshot.lastAction } : null;
     this.turnText = "";
-    // A pre-restart read does not prove the state of the page after reconnecting.
     this.lastReadAt = this.restartRecovery ? null : snapshot.lastReadAt ?? null;
     this.results.restore(snapshot);
     this.goals.restore(snapshot.goalPlan,this.interrupted);
@@ -289,14 +263,12 @@ export class TaskProgress {
     if (this.turns.length > 12) this.turns.splice(0, this.turns.length - 12);
   }
 
-  /** 另开的那件还没有自己的对话：先接上发起它的会话里已经说过的，「刚才那段」「这个例子」指的就是这些。 */
   inheritTurns(turns: VoiceConversationContext["recentTurns"]): void {
     if (this.turns.length) return;
 
     for (const turn of turns) this.pushTurn(turn.role, turn.text);
   }
 
-  /** 记录被处理过的语音原话（含 chat/steer），按请求编号去重；仅作后续分类的数据，不产生新授权。 */
   recordUserTurn(text: string, requestId?: string): void {
     if (requestId) {
       if (this.voicedRequests.has(requestId)) return;
@@ -353,9 +325,7 @@ return;}
     this.goalCheck = null;
     this.ledger.beginRun(this.runId);
   }
-  /** 这个任务碰过的网页：发起时所在的页面，加上读过、打开过的页面（过往任务按它记网站）。 */
   visitedUrls(): string[] { return [...(this.startUrl ? [this.startUrl] : []), ...this.runSources.map(source => source.url)]; }
-  /** 同上，带网页标题：给任务起名用。 */
   visitedPages(): Array<{ url: string; title?: string }> { return [...(this.goalPage ? [this.goalPage] : []), ...this.runSources].map(({ url, title }) => (title ? { url, title } : { url })); }
   abort(): void { this.aborted = true; this.interrupted = false; this.restartRecovery = false;
     if (this.continuation && !['COMPLETED','STOPPED','FAILED'].includes(this.continuation.state)) this.continuation = {
@@ -369,7 +339,6 @@ return;}
   markPlayback(id: string, status: "speaking" | "played"): UserDelivery | null { return this.ledger.markPlayback(id, status); }
   observe(message: ServerMessage): void {
     const member = "sessionId" in message ? message.sessionId ?? "main" : "main";
-    // 显式旧 run 的状态/工具/结束事件不属于当前 run，不得改写当前进度。
     const staleRun = "runId" in message && typeof message.runId === "string" && this.runId !== null && message.runId !== this.runId;
 
     if (staleRun) return;
@@ -386,7 +355,6 @@ return;}
 
     if (message.type === "status") {
       if (message.state === "running") {
-        // Direct tools have no Pi agent_start/agent_end lifecycle.
         if (this.runId) this.startedAt ??= this.clock();
 
         if(this.interrupted&&lead){this.ledger.beginRun(this.runId);this.latestResult=null;}
@@ -417,8 +385,6 @@ return;}
       this.runId ??= randomUUID();
       this.members.set(member, "running");
 
-      // A (re)start means any earlier capture of this run was not final.
-      // 宿主自己催的续做例外：核对说的「还差」在下一次核对前仍是最新判断，停下时要用它（标准 8）。
       if (lead) {
         this.turnText = "";
         this.latestResult = null;
@@ -428,14 +394,11 @@ return;}
         this.hostContinuation = false;
       }
     } else if (e.kind === "goal_check") {
-      // checking / unavailable 不是结论：不改「还差」。
       if (lead && e.status !== "checking" && e.status !== "unavailable") { this.goalCheck = { status: e.status, remaining: e.remaining ?? null, at: this.clock() }; this.hostContinuation = e.status === "continue"; }
     } else if (e.kind === "artifact") {
-      // 核对之后又存了文件：旧的「还差」可能已经做到，不再当现状。
       if (lead && e.action === "saved" && this.goalCheck && this.goalCheck.status !== "done") this.goalCheck = null;
     } else if (e.kind === "user_delivery") {
       if (lead && this.ledger.record(e.delivery)) {
-        // 旁路模型看到的对话原文仍带宿主补的一句。
         this.pushTurn("assistant", deliveryTextWithNote(e.delivery));
 
         if(!this.aborted&&e.delivery.runId===this.runId&&e.delivery.kind==='finding'&&e.delivery.facts?.outcome==='complete')this.goals.recordAnswerDelivery(e.delivery.id,e.delivery.composedAt);
@@ -455,8 +418,6 @@ return;}
         this.turnText = "";
       }
     } else if (e.kind === "error") {
-      // A resume request that fails before a new agent run starts leaves the durable
-      // checkpoint intact so the user can retry; once agent_start arrived, errors are real run errors.
       if (this.interrupted) { this.turnText = "";
 
  if (lead) this.latestResult = null;
@@ -465,7 +426,6 @@ return;}
 
       end("error");
 
-      // 生产中最终错误可在 agent_end 之后报告；同 runId 的已采结果作废。
       if (lead) { this.turnText = "";
 
  if (this.latestResult?.runId === this.runId) this.latestResult = null; }
@@ -476,7 +436,6 @@ return;}
     } else if (e.kind === "tool_start") {
       const target = extractResultTarget(e.params, e.name);
 
-      // 导航意图先暂存，成功 tool_end 才记为来源；正文里的链接不算。
       if ((e.name === "navigate" || e.name === "open_tab" || e.name === "tabs" && e.params?.action === "open") && typeof e.params?.url === "string") this.pendingNavUrls.set(`${member}:${e.toolCallId}`, e.params.url);
       let tabAction: string | undefined;
 
@@ -492,9 +451,6 @@ return;}
 
       const browserControl=e.name==='tabs'&&['open','switch','close'].includes(tabAction??'');
       const write=isWriteTool(e.name)||(e.name==='fetch'&&classifyToolEffect(e.name,e.params).class==='write')||browserControl;
-      // A tabs/switch call changes which page is controlled, not remote/page
-      // business state. An uncertain switch must be re-observed, but it must not
-      // permanently lock unrelated form writes like an uncertain fill/click does.
       const durableEffect=resultToolHasWriteEffect(e.name)||(browserControl&&tabAction!=='switch')||(e.name==='fetch'&&classifyToolEffect(e.name,e.params).class==='write');
 
       if(!this.aborted&&this.tools.size>=100&&(durableEffect||e.name==='fetch'))this.executionAuditComplete=false;
@@ -513,7 +469,6 @@ return;}
       }
     } else if (e.kind === "tool_observation") {
       if (!this.aborted && this.runId) {
-        // 只记真实读到的页面地址；模型正文里的链接不算来源。
         if (typeof e.url === "string") this.noteRunSource(e.url, e.title);
         const key=`${member}:${e.toolCallId}`,read=this.completedReads.get(key);
 
@@ -543,7 +498,6 @@ if(page)this.recoveryInput.page=page;
         if (!e.isError && e.executionFact === "executed") this.noteRunSource(pendingNav);
       }
 
-      // 执行事实只认宿主报告，不从模型参数推断。
       const fact = e.executionFact;
 
       if (!this.aborted) {
@@ -567,28 +521,23 @@ if(page)this.recoveryInput.page=page;
         }
 
         if (!e.isError && (RESULT_VERIFY_READ_TOOLS as readonly string[]).includes(e.name)) this.lastReadAt = this.lastAction.at;
-        // 执行事实只来自执行器/RPC 的结构化回传；不从错误文案猜测副作用状态。
-        // 出错时记成结果未知还是失败由账本按 commitsHarm 判定：GET fetch 出错或超时只是取数失败，POST 记成结果未知。
         this.results.noteEnd({ toolCallId: e.toolCallId, name: e.name, target: started.target, member, runId: this.runId, failed: e.isError, executionFact: fact,
           effectful:started.durableEffect, reason:e.reason });
 
         if((started.durableEffect||e.name==='fetch')&&fact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.executionAuditComplete=false;
 
-        // 页面 JS、原始 CDP 即使记了账，也只写着「执行过一段脚本」，看不出改了什么（见 executionEffectsFullyKnown）。
         if(started.durableEffect&&OPAQUE_EFFECT_TOOLS.has(e.name)&&fact!=='not_executed')this.opaqueEffectRan=true;
 
         if(resultLocksWhenUnknown({tool:e.name,evidence:{effectful:started.durableEffect}})&&e.isError&&fact!=='not_executed'&&!this.results.list().some(item=>item.evidence?.toolCallId===e.toolCallId&&item.evidence.member===member))this.unresolvedEffect=true;
         this.foldCompletedResultsIfFull();
       }
     } else if (e.kind === "tool_late_result") {
-      // 晚到/重复回执只按原 SDK 调用身份关联当前 run 的未决结果。
       if (!this.aborted) this.results.resolveLateResult({ toolCallId: e.toolCallId, runId: this.runId ?? "", ok: e.ok, executionFact:e.executionFact });
     }
   }
   handleLateResult(toolCallId: string, ok: boolean, data?: unknown): boolean {
     return this.results.resolveLateResult({ toolCallId, runId: this.runId ?? "", ok, data });
   }
-  /** 用户确认后的受支持恢复：旧未知保留，新建（或复用）一条独立结果项并标记取代。 */
   snapshot(): TaskProgressSnapshot {
     const phases = [...this.members.values()];
     let state: TaskProgressSnapshot['state'];

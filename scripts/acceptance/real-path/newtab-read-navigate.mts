@@ -1,4 +1,3 @@
-/** Real isolated extension: one restricted new-tab read must not prevent navigating to a real page. */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';

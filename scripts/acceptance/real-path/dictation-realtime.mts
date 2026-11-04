@@ -1,7 +1,3 @@
-/** Real Realtime 3 dictation in an isolated extension; no ASR mocks.
- * npx tsx scripts/acceptance/real-path/dictation-realtime.mts --headless
- * --headed keeps the isolated browser in the background.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";

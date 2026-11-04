@@ -1,14 +1,3 @@
-/**
- * 用户只是要打开一个网页来看（「打开练习页」）：助手用 tabs show 带 url，新页直接出现在用户眼前，不用再点「切过去看」。
- * 做事时开的页（tabs open）照旧开在后台，不换走用户正在看的页。
- * 只装扩展、隔离构建、本机脚本模型、本机练习页。
- *   npx tsx scripts/acceptance/real-path/open-in-front.mts --headless
- *   a) 「打开练习页」：模型调 tabs show + url 后，活动标签页就是练习页；工具结果写明用户正在看它。
- *   b) 「去练习页读一下标题」：模型调 tabs open，活动标签页仍是用户原来的页。
- *   c) 「打开练习页二」但模型选了 tabs open：开出来就在眼前，工具结果写明用户正在看它（回答就不会说「在后台」）。
- *   d) 「打开首页再打开条目」：开了新页、在那一页里接着走到条目：结束时条目页在眼前。
- * 失败方式：tabs show 不接受 url（旧行为，要求 tabId），a 失败；只靠模型选 show，c、d 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";

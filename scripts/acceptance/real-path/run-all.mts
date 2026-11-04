@@ -1,16 +1,3 @@
-/**
- * 真实路径用例一次跑完：串行执行本目录下每个用例（harness 与本文件除外），全部无头。
- * 每个用例仍各自留证在 out/acceptance/real-path/<时间>-<用例>/；这里只汇总退出码与耗时。
- *
- *   npm run accept:real-path
- *   npm run accept:real-path -- --only=codename-no-save,data-to-file
- *   npm test                      # 只跑 CORE：一批改动跑一遍（更新日常扩展前），不要凭据
- *   --jobs=N                      # 同时跑几个用例，默认见 JOBS
- *
- * 任一用例失败则整体退出码为 1。被 --only 过滤掉的用例记为未跑，不算通过。
- * 每个用例本来就用自己的临时浏览器配置和随机端口，所以能同时跑；扩展只在开头构建一次，各用例拷一份。
- * 同时跑时各用例的输出写进日志文件，失败的才把日志末尾打出来。
- */
 import { execFileSync, spawn } from "node:child_process";
 import { mkdir, mkdtemp, open, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,7 +21,6 @@ const cases = (await readdir(HERE))
 const missing = core ? CORE.filter((name) => !cases.includes(name)) : [];
 
 const jobsArg = process.argv.find((arg) => arg.startsWith("--jobs="));
-// 2 路：10-14 实测核心 33 例 891s → 464s，只多出 session-durability 一处超时；4 路在机器忙时扩展启动超时成片。
 const JOBS = 2;
 const jobs = Math.max(1, Number(jobsArg?.slice("--jobs=".length)) || JOBS);
 
@@ -51,7 +37,6 @@ const logDir = join(outDir, `logs-${stamp}`);
 
 await mkdir(logDir, { recursive: true });
 
-// 扩展构建一次：几十个用例各构建一遍既慢，又可能各自构建到改了一半的代码（AGENTS.md 测试与等待）。
 let dist = process.env.SIDEAGENT_ACCEPTANCE_DIST;
 
 if (!dist) {

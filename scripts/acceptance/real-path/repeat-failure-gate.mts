@@ -1,5 +1,3 @@
-/** Real extension and local scripted model: refuse a known parameter mistake, allow repair,
- * reset on user input, and keep refusals inside the existing no-progress budget. */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {cp,mkdir,readFile,writeFile} from 'node:fs/promises';
@@ -26,8 +24,6 @@ const model=await startScriptedModel([
  {match:GENERIC,steps:[...['#tagged-fixture','#tagged-fixture','#tagged-fixture','#untagged-fixture','#untagged-fixture','#untagged-fixture'].map(target=>({tool:{name:'read_element',args:{target}}})),{text:'另一种工具也能改法，未标注错误仍可重试。'}]},
  {match:BUDGET,steps:[...Array.from({length:30},()=>bad(a)),{text:'不该走到这份最终回答。'}]},
 ],undefined,p=>payloads.push(p as Payload));
-// Inject only the error-producing tool into a private copy of the frozen extension.
-// The policies, durable loop, sidebar and browser remain the actual product implementation.
 const prepared=process.env.SIDEAGENT_ACCEPTANCE_DIST;
 assert.ok(prepared,'run with npm run lab -- case repeat-failure-gate');
 const fixtureDist=join(out,'fixture-extension');

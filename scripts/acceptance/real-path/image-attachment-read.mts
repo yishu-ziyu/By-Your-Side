@@ -1,12 +1,3 @@
-/**
- * 侧栏附上的图片，模型能按名字用 read_attachment 重读原图（#782：附件组里模型 9 次猜名字、9 次被告知「用户没有附上文件」）。
- * 只装扩展、隔离构建、收图的模型请求转给本机脚本模型；图片走侧栏真实的文件选择框（DOM.setFileInputFiles）。
- *   npx tsx scripts/acceptance/real-path/image-attachment-read.mts --headless
- *   a) 模型收到的用户消息里写明了图片的名字。
- *   b) read_attachment 按这个名字拿回原图，不报错。
- *   c) 侧栏显示模型的回答。
- * 失败方式：read_attachment 只找 type=file 的附件（b 失败）；提示里不写图片名（a 失败）。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -43,7 +34,6 @@ const rp = await launchRealPath();
 let panel = "", error = "";
 try {
   panel = await rp.attach(await rp.openSidePanel());
-  // 登记为收图的模型（StepFun），请求在后台宿主里拦下转给脚本模型。
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "stepfun", modelId: "step-3.7-flash" }, inproc_fast_model_config: { provider: "stepfun", modelId: "step-3.7-flash" }, "inproc_cred:stepfun": { type: "api_key", key: "local-fixture" } })}).then(() => true)`);
   await until(() => rp.evaluate(panel, `document.querySelector("#send-btn")?.disabled===false`), 60_000, "侧栏就绪");
   const host = await until(async () => (await rp.targets()).find(t => t.url.endsWith("/inproc.html")), 30_000, "后台宿主");

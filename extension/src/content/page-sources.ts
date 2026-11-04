@@ -1,6 +1,6 @@
 import type { PageElementSource } from '../../../shared/protocol.js';
 
-/** 编号（UUID v4 格式）。普通 http 网页不是安全上下文，没有 crypto.randomUUID；crypto.getRandomValues 在那里也可用。 */
+/** WHY: 编号（UUID v4 格式）。普通 http 网页不是安全上下文，没有 crypto.randomUUID；crypto.getRandomValues 在那里也可用。 */
 export function newId(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   const b = crypto.getRandomValues(new Uint8Array(16));
@@ -21,7 +21,6 @@ const ids = new WeakMap<HTMLElement, string>();
 
 const normalizeSourceText = (text: string) => text.replace(/\s+/g, ' ').trim();
 
-/** Read original nodes, not our translation sheet or editable fields. */
 function sourceText(element: HTMLElement): string {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   const pieces: string[] = [];
@@ -73,7 +72,6 @@ export function resolveSource(source: PageElementSource): HTMLElement | null {
   if (source.document !== documentToken || source.url !== location.href) return null;
 
   if (source.kind === 'selection') {
-    // 选段跨几段时没有一个够小的块可比：留住当时的选区本身（DOM 改动会随之更新），文字没变才认。
     const range = selections.get(source.id);
     const start = range?.startContainer;
     const element = start instanceof HTMLElement ? start : start?.parentElement;
@@ -88,7 +86,6 @@ export function resolveSource(source: PageElementSource): HTMLElement | null {
 
 const selections = new Map<string, Range>();
 
-/** 用户选中的一段文字：材料只是这段文字，标题取所在段落的标题或页面标题。 */
 export function registerSelection(range: Range): PageElementSource | null {
   const text = normalizeSourceText(range.toString());
   const start = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
@@ -115,26 +112,19 @@ export function findUniqueSource(query: string): PageElementSource | null {
   const matches = elements.filter(element => comparable(element.textContent ?? '').includes(needle) && element.checkVisibility() && numbers(sourceText(element)).includes(needle));
   const leaves = matches.filter(element => !matches.some(other => other !== element && element.contains(other)));
 
-  // 同一段里写了两遍（“原价 2599，到手价 2599”）也不止一处。
   if (leaves.length) return leaves.length === 1 && numbers(sourceText(leaves[0]!)).filter(n => n === needle).length === 1 ? registerSource(leaves[0]!) : null;
 
   return uniqueNumberText(needle, numbers);
 }
 
-/** 文字节点最多看这么多个：大页面上找不到就算了，不卡住页面。 */
 const MAX_TEXT_NODES = 20_000;
 
-/**
- * 段落、列表、表格里没有时，看整页的文字：购物站的价格多半写在普通的 div、span 里。
- * 仍然要整页只有一处写着这个数（含不可见的不算），有两处就不认，不猜是哪一处。
- */
 function uniqueNumberText(needle: string, numbers: (text: string) => string[]): PageElementSource | null {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let found: HTMLElement | null = null;
   let seen = 0;
 
   for (let node = walker.nextNode(); node; node = walker.nextNode(), seen += 1) {
-    // 没看完整页就不能说只有一处。
     if (seen >= MAX_TEXT_NODES) return null;
     const parent = node.parentElement;
 
@@ -143,7 +133,6 @@ function uniqueNumberText(needle: string, numbers: (text: string) => string[]): 
 
     if (!hits || !parent.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
 
-    // 同一段字里写了两遍、或已经在别处见过，都不止一处。
     if (found || hits > 1) return null;
     found = parent;
   }

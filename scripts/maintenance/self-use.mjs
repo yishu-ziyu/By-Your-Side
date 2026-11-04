@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-/**
- * 模拟用户模式开关（日常 Chrome，经 CDP 9222 写扩展存储）：代理用 LCU 替用户试用时打开。
- *   npm run self-use -- on [小时，默认 6]   npm run self-use -- off   npm run self-use -- status
- * 打开期间扩展不写记忆、不记过往任务和浏览习惯，诊断里标 self-use；到点自动失效，忘了关也不会一直挡着用户自己的记忆。
- */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -27,7 +22,7 @@ const waiting = new Map();
 ws.addEventListener("message", ev => { const m = JSON.parse(String(ev.data)); if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); } });
 const send = (method, params = {}, sessionId) => new Promise(ok => { const n = ++seq; waiting.set(n, ok); ws.send(JSON.stringify({ id: n, method, params, ...(sessionId ? { sessionId } : {}) })); });
 
-// 扩展自己的页面里才有 chrome.storage：后台、offscreen 或侧栏，哪个醒着用哪个。
+// WHY: 扩展自己的页面里才有 chrome.storage：后台、offscreen 或侧栏，哪个醒着用哪个。
 const { result } = await send("Target.getTargets");
 const prefix = `chrome-extension://${id}/`;
 const target = ["service_worker", "other", "page"].flatMap(type => result.targetInfos.filter(t => t.type === type && t.url.startsWith(prefix)))[0];

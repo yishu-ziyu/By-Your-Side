@@ -1,12 +1,3 @@
-/**
- * 模型把 <diagram> 和它的 <cite> 直接写在正文里、没包进 <card> 时，侧栏照样画成结构图、点方块看原文，不把图的代码和原文当正文堆出来。
- * 回答原文取自一次真模型回放（用户说「在mermaid中呈现」），逐段流式输出。只装扩展、隔离构建、本机脚本模型。
- *   npx tsx scripts/acceptance/real-path/diagram-outside-card.mts --headless
- *   a) 结构图画成了图，图里有节点文字。
- *   b) 图下有「点方块看原文」，原文不显示在正文里。
- *   c) 正文里没有 flowchart 代码。
- * 失败方式：splitAnswer 只认卡片里的 <diagram>，a、b、c 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, until, type Json } from "./harness.mts";

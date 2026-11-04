@@ -1,4 +1,3 @@
-/** Real extension: admitting unfinished work must permit the remaining authorized write, while answer repairs and confirmation dependencies stay read-only. */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';

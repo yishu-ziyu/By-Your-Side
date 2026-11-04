@@ -4,7 +4,6 @@ import { expiredSessions, TraceRecorder } from "../../shared/run-trace-core.js";
 import { dataDir } from "./config.js";
 
 
-/** 本机 node 脚本的诊断记录：每个会话一个 `<数据目录>/traces/<开始毫秒>-<sessionId>.jsonl`。扩展构建换成 IndexedDB 版。 */
 export class RunTrace extends TraceRecorder {
   readonly path: string;
 

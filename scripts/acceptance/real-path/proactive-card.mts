@@ -1,11 +1,3 @@
-/**
- * 主动卡「动词即按钮」验收：只装扩展的无头 Chrome、真侧栏开着，全程录侧栏。
- * 一、真页面停留并滚动，脚本模型给出建议；卡出在侧栏对话流里而不是页角。截初始、悬停出 ×、点句子进输入框；再点 × 收起。
- * 二、第二页出卡，按动词：不再问，卡原位变成这一轮的开头，下面步骤 chip 从进行中到完成，再接三句话。
- * 三、第三页出卡，按动词，步骤失败、对方没同意：原位说清，chip 不停在进行中。
- *
- *   npx tsx scripts/acceptance/real-path/proactive-card.mts --headless
- */
 import { createServer } from "node:http";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -42,7 +34,6 @@ const DONE = "正在给全季酒店前台发邮件申请明天晚退房到 14:00
 
 const REFUSED = "酒店没同意晚退房，最晚 12:00。\n\n前台说明天满房，延到 15:00 排不开。\n\n要我找附近能寄存行李的地方吗？";
 
-// 目标核对的请求内容是 JSON，带 "lastReply":"<回答>"，排最前；判断请求里带着最近看过的页，所以后看的页的规则放前面；任务规则按交给助手的那句话认。
 const model = await startScriptedModel([
   { match: `"lastReply":"正在给全季`, steps: [{ text: JSON.stringify({ status: "done" }) }] },
   { match: `"lastReply":"酒店没同意`, steps: [{ text: JSON.stringify({ status: "done" }) }] },
@@ -71,7 +62,6 @@ const CARD = `(() => {
 
 const STATE = "({ input: document.querySelector('#input').value, users: document.querySelectorAll('#messages .msg.user').length, focused: document.activeElement?.id })";
 
-// 这一轮的样子：按下的卡后面依次是什么、步骤 chip 的状态、回答文字。
 const TURN = `(() => {
   const turns = [...document.querySelectorAll("#messages .msg.user.card-turn")];
   const header = document.querySelector("#conversation-switcher")?.textContent?.trim();
@@ -99,7 +89,6 @@ try {
   const stopRecording = await recordScreen(rp.cdp, panel, join(out, "panel.mp4"));
 
   const work = await rp.attach((await rp.targets()).find((t) => t.url === "about:blank")!.targetId);
-  // 换一页读：冷却清零（只为验收少等 3 分钟），打开、停留、滚动。
   const read = async (path: string) => {
     await rp.evaluate(panel, "chrome.storage.session.get('nudgeState').then(r => chrome.storage.session.set({ nudgeState: { ...r.nudgeState, lastShownAt: 0 } })).then(() => true)");
     await rp.cdp.send("Page.navigate", { url: origin + path }, work);
@@ -109,13 +98,11 @@ try {
   };
   await read("/a");
 
-  // R1：停留够久后卡出在侧栏对话流最新处，一句话、动词是按钮、出处一行；页角不出卡。
   const card = await until(async () => await rp.evaluate(panel, CARD), 60_000, "侧栏出卡", 500).catch(() => null);
   const corner = await rp.evaluate(work, "!!document.querySelector('[data-sideagent-overlay=\"nudge\"]')");
   check("R1 卡出在侧栏：动词「申请」是按钮，句子带对象和图标，出处一行，页角没卡", !!card && card.verb === "申请" && String(card.obj).includes("晚退房到 14:00") && String(card.obj).includes("全季酒店 北京国贸店") && card.icon && String(card.src).startsWith("来自：订单确认邮件 · ") && card.lastInThread && corner === false, { card, corner });
   await rp.screenshot(panel, join(out, "1-initial.png"));
 
-  // R3：悬停出 ×。
   const box = await rp.evaluate(panel, "(() => { const r = document.querySelector('#messages .pc').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + 8 }; })()");
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y }, panel);
   await sleep(300);
@@ -123,24 +110,20 @@ try {
   check("R3 悬停出 ×", hovered?.xOpacity === "1", hovered);
   await rp.screenshot(panel, join(out, "2-hover.png"));
 
-  // R3：点句子其余部分，这件事进输入框当草稿，不发出。
   await rp.click(panel, "#messages .pc-obj");
   await sleep(800);
   const asked = await rp.evaluate(panel, STATE);
   check("R3 点句子：输入框出现「关于「申请晚退房到 14:00」：」，没有发出，卡还在", asked.input === "关于「申请晚退房到 14:00」：" && asked.users === 0 && asked.focused === "input" && !!(await rp.evaluate(panel, CARD)), asked);
   await rp.screenshot(panel, join(out, "3-ask.png"));
 
-  // R3：点 × 收起，后台记下这张卡已收。
   await rp.click(panel, "#messages .pc-x");
   const gone = await until(async () => (await rp.evaluate(panel, "!document.querySelector('#messages .pc')")) || undefined, 3_000, "卡收起").catch(() => false);
   const stored = await rp.evaluate(panel, "chrome.storage.session.get('sideagent_nudge_panel').then(r => r.sideagent_nudge_panel ?? null)");
   check("R3 点 × 收起，存储里的卡也删了，没有发出", gone === true && stored === null && (await rp.evaluate(panel, STATE)).users === 0, { gone, stored });
   await rp.screenshot(panel, join(out, "4-dismissed.png"));
 
-  // R2：按动词就做。卡先淡成壳，再原位变成这一轮的开头；下面步骤从进行中到完成，再接三句话。
   await read("/b");
   await until(async () => await rp.evaluate(panel, CARD), 60_000, "第二张卡", 500);
-  // 卡出来后先发一句别的、等回答（输入框里还留着上面那句草稿；回答内容不管）：再按卡，这一轮要排在最后。
   await rp.click(panel, "#input");
   await rp.pressEnter(panel);
   await until(async () => (await rp.evaluate(panel, "document.querySelectorAll('#messages .msg.assistant').length > 0 && !document.querySelector('#send-btn').classList.contains('stopping')")) || undefined, 20_000, "先聊一句");
@@ -158,7 +141,6 @@ try {
   await rp.screenshot(panel, join(out, "6-done.png"));
   check("R2 做完：步骤留着且完成，三句话接在步骤下面", !!done && done.after.slice(0, 2).join(",") === "steps,answer" && done.chips.every(c => !c.error) && done.answer.includes("国贸三期") && done.bubbles === 1, done);
 
-  // R4：对方没同意、步骤失败：原位说清，chip 变失败，不停在进行中。
   await read("/c");
   await until(async () => await rp.evaluate(panel, CARD), 60_000, "第三张卡", 500);
   await sleep(600);
@@ -169,14 +151,11 @@ try {
   check("R4 没成：同一位置说清原因和下一步，失败的步骤标成失败", !!failed && failed.after.slice(0, 2).join(",") === "steps,answer" && failed.chips.some(c => c.error) && failed.answer.startsWith("酒店没同意"), failed);
   console.log("video", await stopRecording());
 
-  // 重开侧栏：这两轮从历史回放，仍画成按下的卡，不变回给助手的长指令。
   await rp.cdp.send("Page.reload", {}, panel);
   const replayed = await until(async () => { const t = await rp.evaluate(panel, TURN); return t.turns === 2 ? t : undefined; }, 20_000, "回放").catch(() => null);
   check("重开侧栏：两轮仍是卡，没有长指令气泡", !!replayed && replayed.bubbles === 1 && replayed.verb === "申请", replayed);
   await rp.screenshot(panel, join(out, "8-replayed.png"));
 
-  // 日常试用回看：设置页导出的诊断记录里，每次判断一行 nudge_verdict，写明哪一页、出了什么卡。
-  // 先清掉上一次运行导出的文件，免得读到旧记录。
   await rm(join(out, "downloads"), { recursive: true, force: true });
   const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "downloads"));
   const verdicts = traces.split("\n").filter(Boolean).map(line => JSON.parse(line)).filter(line => line.type === "nudge_verdict").map(line => line.data);

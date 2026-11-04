@@ -1,4 +1,3 @@
-/** 在隔离 Chrome 卸载扩展、重装，再从真实备份文件恢复。 */
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";

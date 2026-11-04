@@ -1,25 +1,15 @@
 import type { EdgeTask } from "../shared/edge-pill.js";
 import { OVERLAY_ATTR, OVERLAY_KIND_EDGE_TAB } from "../shared/overlay.js";
 
-/**
- * 页面右边缘的状态胶囊：侧栏开着时从侧栏边长出来，关着时贴在窗口右边。
- * 只管画：显示什么由 cursor.ts 汇总后交给 render；同一时刻只有一个主胶囊，别页的助手挂在下方小圆泡里。
- * 形状和内容用弹簧积分驱动（不是按时间算的闭式曲线），新状态随时打断，从当前形状接着变。
- */
-
-/** idle：没有任务时停靠在右边缘，鼠标碰到才展开的翻译入口。 */
 export type EdgeTabTone = "work" | "wait" | "ok" | "unk" | "err" | "hand" | "away" | "idle";
 
 export type EdgeTabEnd = "stop" | "arrow" | { label: string; enabled: boolean };
 
 export interface EdgeTabView {
   tone: EdgeTabTone;
-  /** 左段，默认灰（动词）；lead 时加粗（「现在归你」在前）。 */
   a: string;
-  /** 右段，默认正文色（对象）；lead 时变灰。 */
   b: string;
   lead?: boolean;
-  /** 「已」和对象之间不留空。 */
   tight?: boolean;
   end?: EdgeTabEnd;
   hint?: string;
@@ -35,25 +25,21 @@ export interface EdgeTabOther {
 
 interface EdgeTabHandlers {
   capsule(): void;
-  /** 停靠时鼠标碰到窄条（true）或离开展开后的胶囊（false）。 */
   peek?(on: boolean): void;
   stop(): Promise<boolean>;
   action(): void;
   other(other: EdgeTabOther): void;
-  /** 用户拖完松手：新的高度（相对默认位置的像素）。 */
   moved?(dy: number): void;
-  /** 进度卡：补一句交给正在跑的这一轮；停下整轮；打开侧栏（必须在这次点击里同步调用）。 */
+  /** WHY: 进度卡：补一句交给正在跑的这一轮；停下整轮；打开侧栏（必须在这次点击里同步调用）。 */
   steer?(text: string): Promise<boolean>;
   abort?(): void;
   open?(): void;
 }
 
-/** 胶囊上边离视口顶部的距离。 */
 const TOP = 64;
 const H = 40;
 const MID = TOP + H / 2;
 const CLOSED = { w: 10, h: 30 };
-/** 停靠时露在右边缘的窄条。 */
 const REST = { w: 14, h: 36 };
 const PADL = 14;
 const GAP = 8;
@@ -62,32 +48,24 @@ const ICON = 18;
 const STOP = 26;
 const BUBBLE_H = 30;
 const BUBBLE_GAP = 10;
-/** 小圆泡点开后长成的面板：宽度、圆角（和小圆泡同一个半径，长大时形状连续）、列表最高多少。 */
 const PANEL_W = 280;
 const BUBBLE_R = BUBBLE_H / 2;
 const ROWS_MAX_H = 260;
-/** SVG 画布比胶囊大：上下留给凹弧和阴影，宽度留给最长的一句。 */
 const CANVAS_W = 520;
 const CANVAS_H = 560;
 
-/** 伸出、换内容、收回各一组弹簧（response 秒，damping）。 */
 const OPEN = [0.42, 0.82] as const;
 const MORPH = [0.36, 0.86] as const;
 const CLOSE = [0.32, 0.94] as const;
-/** 进行中的字上扫过一道光的周期。 */
 const SHIMMER_S = 1.6;
-/** 收回前先让内容淡出。 */
 const CONTENT_OUT_MS = 120;
 const CONTENT_IN_MS = 240;
 const CONTENT_IN_DELAY_MS = 60;
 const FADE_MS = 200;
-/** 进度卡的宽度；鼠标停多久才展开、离开多久才收起（划过去不展开，移到卡上不闪）。 */
 const CARD_W = 300;
 const CARD_IN_MS = 220;
 const CARD_OUT_MS = 380;
-/** 按下后移动超过这么多才算拖，不到就还是点。 */
 const DRAG_SLOP = 4;
-/** 拖到窗口上下边时留的空。 */
 const EDGE_MARGIN = 8;
 
 const FONT = `-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC","Helvetica Neue",sans-serif`;
@@ -173,7 +151,6 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
-/** 欠阻尼弹簧，按帧积分：目标中途改了，从当前位置和速度接着走。 */
 class Spring {
   x: number;
   v = 0;
@@ -230,7 +207,6 @@ function hairPath(X: number, w: number, h: number, mid: number, rMax = Infinity)
   return `M${X},${top} L${L + R},${top} Q${L},${top} ${L},${top + R} L${L},${b - R} Q${L},${b} ${L + R},${b} L${X},${b}`;
 }
 
-/** 进行中（在干活、在等、在别页）没有图标，只有扫光的字；有了结果才出图标。 */
 const IN_PROGRESS = new Set<EdgeTabTone>(["work", "wait", "away"]);
 
 function iconFor(tone: EdgeTabTone): string {
@@ -243,9 +219,6 @@ function iconFor(tone: EdgeTabTone): string {
   }
 }
 
-/**
- * 头像用那一页标题的首字，不用站点图标：图标地址放进这一页，这一页的网站就能看到用户还开着哪一页。
- */
 function avatar(other: EdgeTabOther): HTMLElement {
   const av = document.createElement("span");
   av.className = "av";
@@ -262,22 +235,15 @@ interface EdgeTabState {
   b: string;
   end: string | null;
   endEnabled: boolean;
-  /** 弹簧停稳后的目标尺寸；rect 是这一帧实际画出来的位置。 */
   width: number;
-  /** 用户拖到的高度；没拖过是 null。 */
   offset: number | null;
-  /** 后台给了这一轮的进度（能展开）。 */
   task: boolean;
-  /** 展开着的进度卡。 */
   card: { rect: { x: number; y: number; width: number; height: number }; input: { x: number; y: number; width: number; height: number }; goal: string; steps: number; placeholder: string } | null;
   rect: { x: number; y: number; width: number; height: number } | null;
   panel: string;
-  /** rect 是小圆泡顶上可点的那一行；panel 是整块（点开后长成的面板）。 */
   bubble: { count: number; letter: string; rect: { x: number; y: number; width: number; height: number }; panel: { x: number; y: number; width: number; height: number } } | null;
   list: { open: boolean; rows: Array<{ name: string; title: string; local: boolean; rect: { x: number; y: number; width: number; height: number } }> };
-  /** 停止键或「继续」此刻的位置，验收用真鼠标点它。 */
   button: { x: number; y: number; width: number; height: number } | null;
-  /** 胶囊上有没有图标；动词上的扫光此刻在不在动。 */
   icon: boolean;
   shimmer: boolean;
 }
@@ -313,9 +279,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   const say = more.querySelector<HTMLFormElement>("form.say")!;
   const input = say.querySelector<HTMLInputElement>("input")!;
   const sendBtn = say.querySelector<HTMLButtonElement>("button.send")!;
-  // 进度卡跟着胶囊一起被裁：放进 clip，宽高随形状长出来。
   clip.append(more);
-  /** 没有任务要显示时停靠在右边缘（只露窄条），而不是整个收起。 */
   let resting = false;
   const X = CANVAS_W;
 
@@ -328,7 +292,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   let others: EdgeTabOther[] = [];
   let open = false;
   let closeAt = 0;
-  /** 整体可见度：减少动态效果时靠它淡入淡出，否则随形状宽度算出来。 */
   let fade = 0;
   let raf: number | undefined;
   let last = 0;
@@ -337,20 +300,16 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   let bubbleKey = "";
   let listRows = "";
   const avoidedTargets = new Map<string, Element>();
-  /** 用户拖到的高度；拖过之后自动让位不再生效，免得它从用户放的地方跳走。 */
   let userDy: number | null = null;
-  /** 此刻实际画出的上下偏移（用户拖的，或自动让位算出的）。 */
   let shownDy = 0;
   let task: EdgeTask = null;
   let taskKey = "";
-  /** 进度卡展开着；rowW 是只有一行时胶囊该有的宽度。 */
   let card = false;
   let rowW = CLOSED.w;
   let cardTimer: ReturnType<typeof setTimeout> | undefined;
   let tick: ReturnType<typeof setInterval> | undefined;
   let sending = false;
 
-  /** 这一轮还在跑就能展开，胶囊此刻写的是动作还是刚出的结果都行；交给你、别页助手、翻译入口不展开。 */
   const canCard = () => open && Boolean(task) && view !== null && !["hand", "away", "idle"].includes(view.tone);
 
   function ago(ms: number): string {
@@ -384,7 +343,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     more.querySelector(".meta")!.textContent = `已用 ${ago(Date.now() - task.startedAt)}`;
   }
 
-  /** 胶囊的目标尺寸：一行，或一行加进度卡。 */
   function reshape(spring: readonly [number, number]): void {
     const w = card ? Math.max(rowW, CARD_W) : rowW;
     const h = card ? H + more.offsetHeight : H;
@@ -400,7 +358,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     if (next === card) return;
     card = next;
 
-    // 下面放不下就往上长：那一行留在鼠标底下不动，不让卡上的按钮挪到鼠标下面被误点。
     if (card) {
       clip.classList.remove("up");
       clip.classList.toggle("up", TOP + shownDy + H + more.offsetHeight + EDGE_MARGIN > innerHeight);
@@ -414,7 +371,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     reshape(MORPH);
   }
 
-  /** 输入框里有字或正拿着焦点时不收：用户在打字。 */
   const busy = () => sending || input.value.trim() !== "" || shadow.activeElement === input;
 
   function clampDy(dy: number): number {
@@ -439,7 +395,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
   function uncoverTarget(target: Element, x: number, y: number, token: string): boolean {
     if (!open || view?.tone === "hand" || !target.isConnected || target.ownerDocument !== document || target.contains(host)) return false;
-    // 目标必须属于网页；跨 closed shadow root 向上检查，不能通过“让位”点到自己的控件。
+    // WHY: 目标必须属于网页；跨 closed shadow root 向上检查，不能通过“让位”点到自己的控件。
     for (let node: Element | null = target; node;) {
       if (node.closest(`[${OVERLAY_ATTR}]`)) return false;
       const parent = node.getRootNode();
@@ -456,7 +412,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   const clickedButton = (ev: Event) => ev.composedPath().some(n => n instanceof HTMLButtonElement);
 
   let press: { id: number; y: number; from: number } | null = null;
-  /** 刚拖完：紧跟着的那次点击不算点。 */
   let dragged = false;
 
   clip.addEventListener("pointerdown", ev => {
@@ -464,7 +419,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     press = { id: ev.pointerId, y: ev.clientY, from: shownDy };
     dragged = false;
   });
-  // 按下后在整个窗口上跟踪（捕获阶段，网页拦不住）：手快时第一下就移出了胶囊，只听胶囊会漏掉。不在按下时就捕获，那样松手的点击到不了停止键。
   addEventListener("pointermove", ev => {
     if (!press || ev.pointerId !== press.id) return;
     const d = ev.clientY - press.y;
@@ -472,7 +426,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     if (!dragged) {
       if (Math.abs(d) < DRAG_SLOP) return;
       dragged = true;
-      // 捕获后松手的点击落在胶囊本身，不会再点到停止键上。
       clip.setPointerCapture(ev.pointerId);
       clip.classList.add("dragging");
       if (!busy()) setCard(false);
@@ -489,19 +442,17 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     if (!dragged) return;
     clip.classList.remove("dragging");
     handlers.moved?.(userDy ?? 0);
-    // 按下时胶囊拿到了焦点，焦点在时移开不收起（照顾键盘）；拖完把焦点放掉。指针被捕获时松手已在外面也收不到离开事件，这里补一次。
     clip.blur();
     const r = clip.getBoundingClientRect();
     if (view?.tone === "idle" && (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom)) handlers.peek?.(false);
   }, true);
   addEventListener("resize", () => { if (userDy !== null) { userDy = clampDy(userDy); avoidTargets(); } });
 
-  // 鼠标停在胶囊上一会儿才展开，移开稍等再收；拖动中不展开。
   clip.addEventListener("pointerenter", () => { clearTimeout(cardTimer); if (!card && canCard()) cardTimer = setTimeout(() => { if (!press || !dragged) setCard(true); }, CARD_IN_MS); });
   clip.addEventListener("pointerleave", () => { clearTimeout(cardTimer); if (card && !busy()) cardTimer = setTimeout(() => setCard(false), CARD_OUT_MS); });
   clip.addEventListener("focus", () => { if (canCard()) setCard(true); });
   more.addEventListener("click", ev => ev.stopPropagation());
-  // 网页自己的快捷键（按键在 document 上听）不能吃掉这里打的字。
+  // WHY: 网页自己的快捷键（按键在 document 上听）不能吃掉这里打的字。
   for (const type of ["keydown", "keyup", "keypress"] as const) input.addEventListener(type, ev => {
     ev.stopPropagation();
     if (type === "keydown" && ev.key === "Escape") { input.value = ""; sendBtn.disabled = true; input.blur(); setCard(false); }
@@ -534,7 +485,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     if (dragged) { dragged = false; return; }
     if (!clickedButton(ev)) handlers.capsule();
   });
-  // 键盘也一样：Tab 到窄条上就展开，离开就收回。
   for (const enter of ["pointerenter", "focus"] as const) clip.addEventListener(enter, () => { if (resting && (!open || view?.tone === "idle")) handlers.peek?.(true); });
   for (const leave of ["pointerleave", "blur"] as const) clip.addEventListener(leave, () => { if (view?.tone === "idle" && !(leave === "pointerleave" && shadow.activeElement === clip)) handlers.peek?.(false); });
   clip.addEventListener("keydown", ev => {
@@ -553,7 +503,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     else if (ev.key === "Escape" && card) { setCard(false); clip.focus(); ev.stopPropagation(); }
   });
 
-  /** 列表不是另起一张卡：小圆泡原地向下、向左长成贴边面板，收起时按同一套弹簧缩回小圆泡。 */
   function setList(on: boolean): void {
     const next = on && others.length > 0;
     bhead.setAttribute("aria-expanded", String(next));
@@ -613,9 +562,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
   let attached = false;
 
-  /**
-   * 只挂一次。扩展重载后新脚本会清掉旧胶囊；旧脚本的计时器还可能再画一次，被清掉后不再挂回，免得留下一个点不动的死胶囊。
-   */
   function attach(): boolean {
     if (host.isConnected) return true;
 
@@ -712,7 +658,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     anim.onfinish = () => { item.el.remove(); items = items.filter(i => i !== item); };
   }
 
-  /** 从右往左排：结尾按钮、右段、左段、图标；最左边留白，图标那侧少留一点。 */
   function layout(v: EdgeTabView, next: Item[]): number {
     const bySlot = new Map(next.map(i => [i.slot, i]));
     const order = (["end", "b", "a", "icon"] as const).flatMap(slot => bySlot.get(slot) ?? []);
@@ -779,7 +724,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       kept.push(makeItem(slot, key, next));
     }
 
-    // 读屏和复制按看到的顺序读：新字插到它后面那个字之前，不排在末尾。
     let after: Element | null = null;
 
     for (const it of [...kept].reverse()) {
@@ -792,7 +736,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     for (const it of kept) {
       const fresh = !items.includes(it);
 
-      // 新出现的字直接落在它的位置上淡入；没变的字跟着形状平移过去。
       if (fresh || reduced.matches) it.x.snap(it.x.to);
       else it.x.aim(it.x.to, MORPH);
     }
@@ -800,7 +743,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     items = [...items.filter(i => i.leaving), ...kept];
 
     rowW = width;
-    // 不能再展开（交给你、任务停了）时收起，用户正在打字的那句留着；鼠标一直停着、刚变得能展开时直接展开。
     if (card && !canCard() && !busy()) setCard(false);
     else if (!card && canCard() && !press && clip.matches(":hover")) setCard(true);
     reshape(opening ? OPEN : MORPH);
@@ -840,7 +782,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       bhead.setAttribute("aria-label", `另外 ${count} 位助手，展开列表`);
     }
 
-    // 列表开着时只在内容变了才重画，保住键盘焦点和展开的详情。
     const rows = others.map(o => `${o.id}|${o.title}|${o.detail ?? ""}`).join("\n");
 
     if (listOpen && rows !== listRows) renderList();
@@ -871,7 +812,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
     for (const it of items) it.x.step(dt);
 
-    // 减少动态效果：形状不伸缩，只整体淡入淡出。
     if (reduced.matches) {
       const step = dt / (FADE_MS / 1000);
       fade = open || resting ? Math.min(1, fade + step) : Math.max(0, fade - step);
@@ -906,7 +846,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     const h = Hs.x;
     const isDark = dark.matches;
     const k = !open && resting ? 0.5 : clamp01((w - 20) / 120);
-    // 比一行高时（进度卡）那一行钉住，往下或往上长；一行以内仍以中线为准。
     const up = clip.classList.contains("up");
     const mid = h <= H ? MID : up ? TOP + H - h / 2 : TOP + h / 2;
     mainShape!.setAttribute("d", shapePath(X, w, h, mid, 9, H / 2));
@@ -937,7 +876,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     avoidTargets();
   }
 
-  // 窗口宽度变了，画布仍贴右边；只需要重画一帧。系统深浅色切换时阴影和细边跟着换。
   dark.addEventListener("change", () => { if (open) paint(); });
 
   function rectOf(el: Element): { x: number; y: number; width: number; height: number } {
@@ -946,7 +884,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     return { x: r.x, y: r.y, width: r.width, height: r.height };
   }
 
-  /** 停靠：没有任务时缩成右边缘的窄条留着；关掉时和原来一样整个收起。 */
   function rest(on: boolean): void {
     if (resting === on) return;
     resting = on;
@@ -970,7 +907,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   return {
     render,
     rest,
-    /** 后台给的这一轮进度；展开着就原地换内容和高度。 */
     setTask(next: EdgeTask): void {
       task = next;
 
@@ -980,7 +916,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
       if (card) { fillCard(); reshape(MORPH); }
     },
-    /** 别的网页拖过、或载入时读到存过的高度。 */
     setOffset(dy: number | null): void {
       if (press) return;
       userDy = dy === null ? null : clampDy(dy);
@@ -991,7 +926,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
       avoidedTargets.delete(token);
       avoidTargets();
     },
-    /** 页面卸载或换世界：动画停掉、节点拿走。 */
     destroy(): void {
       if (raf !== undefined) cancelAnimationFrame(raf);
       raf = undefined;
@@ -1022,7 +956,6 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
         shimmer: open && (t => Boolean(t) && getComputedStyle(t!).animationName === "shim" && t!.getAnimations().some(a => a.playState === "running"))(clip.querySelector<HTMLElement>(".el:not([data-leaving]) .shim")),
       };
     },
-    /** 验收脚本用：按部位点一下（和真人点同一个处理函数）。 */
     click(part: "capsule" | "stop" | "action" | "bubble" | number): boolean {
       if (!open) return false;
 

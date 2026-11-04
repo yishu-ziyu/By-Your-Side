@@ -14,7 +14,6 @@ export function validateRealtimeBrowserTool(name: string, args: Record<string, u
   if (Object.keys(args).some(key => !(key in properties))) throw realtimeBrowserError(`浏览器工具 ${name} 含未知参数，未执行。`, 'not_executed');
 }
 
-/** Host execution metadata, separate from the provider's function call_id. */
 interface RealtimeBrowserExecution {
   toolCallId?: string;
   transportId?: string;
@@ -35,7 +34,6 @@ export interface RealtimeFillReadback {
   truncated?: boolean;
 }
 
-/** Keep rejection and its cause; never attach per-call IDs to a potentially shared RPC error. */
 export function realtimeBrowserError(error: unknown, executionFact: ToolExecutionFact, toolCallId?: string): Error & RealtimeBrowserExecution {
   const result: Error & RealtimeBrowserExecution = Object.assign(new Error(error instanceof Error ? error.message : String(error), {cause:error}), { executionFact });
 

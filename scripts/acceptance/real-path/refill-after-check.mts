@@ -1,16 +1,3 @@
-/**
- * 核对发现填错之后，重填与重点都能执行；下拉框按选项 value 填写不被报成问题。
- * 10-10 起已有成功回执不再拦重做：用例 2、3、5、6 由「被拒」改判「照常执行」。
- * 只装扩展、隔离构建、本机脚本模型、本机转发服务（扣住并换掉目标核对）、本机练习页。
- *   npx tsx scripts/acceptance/real-path/refill-after-check.mts --headless
- *   1) 填「Note」、核对判继续；续做不读页、直接对同一栏填对的句子：执行（草稿框最终是对的句子），回执里没有「不重复执行」。
- *   2) 填一句、核对判继续；续做直接再填同一句：照常执行（回执是「Filled」，没有「不重复执行」）。
- *   3) 点提交按钮、核对判继续；续做直接再点：照常执行（服务端 POST 计数到 2）。按钮不叫「发送」：点「发送」会先停下等用户确认，那不是这里要测的。
- *   4) 下拉框 <option value="CN">中国</option> 按 value「CN」填：助手收到的回执没有「Problem」。
- *   5) 网页在输入时把手机号加空格，读回是「不一样」：同值重填两次都执行（网页共收到 3 次 input）。
- *   6) 下拉框一选就被网页换成别的元素：换一个值再选不被闸门拦（回执没有「不重复执行」；落在替换后的元素上报什么照实记下）。
- * 失败方式：恢复「已有成功回执，不重复执行」的闸门，用例 2、3、5、6 失败（反例结果见验收文件）。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -77,11 +64,9 @@ const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished th
 
 const verdictJson = (remaining: string) => JSON.stringify({ status: "continue", remaining, correction: "草稿是「Note」，不是第一句" });
 
-/** 助手（脚本模型）收到的全部工具回执原文。 */
 const toolTexts: string[] = [];
 
 const model = await startScriptedModel([
-  // 续做消息带着核对结论里的 remaining（MARK-…）；它也带着用户原话，所以放在案例之前先认。
   { match: "MARK-R1", steps: [fill("#draft", SENTENCE), { text: CASES.r1.final }] },
   { match: "MARK-R2", steps: [fill("#draft", SENTENCE), { text: CASES.r2.final }] },
   { match: "MARK-R3", steps: [{ tool: { name: "click", args: { target: "#send" } } }, { text: CASES.r3.final }] },
@@ -107,10 +92,8 @@ const model = await startScriptedModel([
   }
 });
 
-/** 接下来的目标核对依次怎么回；没排上的判完成。 */
 const verdicts: string[] = [];
 
-/** 最近一次首轮核对给的结论：复核照它再判。 */
 let lastFirst = "VERDICT-DONE";
 
 const proxy = createServer(async (req, res) => {
@@ -122,7 +105,6 @@ const proxy = createServer(async (req, res) => {
   if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
     // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as Record<string, unknown>;
-    // 复核照首轮结论再判一次，不占用排好的下一条结论。
     const again = reverifyContinue(body);
     if (!again) lastFirst = verdicts.shift() ?? "VERDICT-DONE";
     forward = JSON.stringify({ ...payload, messages: [{ role: "user", content: again ? recheckProbe(lastFirst, again) : lastFirst }] });
@@ -163,7 +145,6 @@ try {
 
   const settled = () => until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")') || undefined, 60_000, "turn settled", 100);
 
-  /** 发出一条，等 waitFor 的字出现在侧栏，再等这一轮（含续做）停稳。 */
   async function runCase(key: keyof typeof CASES, waitFor: string) {
     const c = CASES[key];
     await settled();
@@ -182,7 +163,6 @@ try {
 
   const REFUSED = "不重复执行";
 
-  // 1) 改正的重填：不读页，直接对同一栏填对的句子。
   verdicts.push("PROBE-R1");
   await runCase("r1", CASES.r1.final);
   const draft1 = await draft();
@@ -192,7 +172,6 @@ try {
   assert.ok(!toolTexts.some(t => t.includes(REFUSED)), `1: no 「${REFUSED}」 in any tool result: ${JSON.stringify(toolTexts)}`);
   assert.ok(fills1.some(t => t.includes(`«${SENTENCE}»`)), `1: the model saw the right sentence read back: ${JSON.stringify(fills1)}`);
 
-  // 2) 同一句重填：照常执行。
   const before2 = toolTexts.length;
   verdicts.push("PROBE-R2");
   await runCase("r2", CASES.r2.final);
@@ -201,7 +180,6 @@ try {
   assert.ok(!after2.some(t => t.includes(REFUSED)), `2: the same-value refill was not refused: ${JSON.stringify(after2)}`);
   assert.equal(await draft(), SENTENCE, "2: textarea holds the sentence");
 
-  // 3) 同一按钮再点：照常执行，服务端收到两次。
   const before3 = toolTexts.length;
   verdicts.push("PROBE-R3");
   await runCase("r3", CASES.r3.final);
@@ -210,7 +188,6 @@ try {
   assert.ok(!after3.some(t => t.includes(REFUSED)), `3: the repeated click was not refused: ${JSON.stringify(after3)}`);
   assert.equal(posts, 2, "3: the server received both POSTs");
 
-  // 4) 下拉框按 value 填：回执没有问题。
   const before4 = toolTexts.length;
   await runCase("r4", CASES.r4.first);
   const after4 = toolTexts.slice(before4);
@@ -220,7 +197,6 @@ try {
   assert.ok(after4.some(t => t.startsWith("Filled #country")), `4: the fill returned a receipt: ${JSON.stringify(after4)}`);
   assert.ok(!after4.some(t => t.includes("Problem")), `4: no mismatch problem in the select receipt: ${JSON.stringify(after4)}`);
 
-  // 5) 网页给手机号加空格，读回「不一样」：同值重填两次都执行。
   const before5 = toolTexts.length;
   verdicts.push("PROBE-R5");
   await runCase("r5", CASES.r5.final);
@@ -230,7 +206,6 @@ try {
   assert.equal(inputs5, 3, `5: the page saw 3 input events (first fill + two refills): ${JSON.stringify(after5)}`);
   assert.ok(!after5.some(t => t.includes(REFUSED)), `5: no same-value refill was refused: ${JSON.stringify(after5)}`);
 
-  // 6) 下拉框被网页换掉：换值重选不被闸门拦；落在替换后的元素上的结果照实记下。
   const before6 = toolTexts.length;
   verdicts.push("PROBE-R6");
   await runCase("r6", CASES.r6.final);

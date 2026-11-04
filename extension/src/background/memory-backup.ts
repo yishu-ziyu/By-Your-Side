@@ -5,7 +5,6 @@ import { BROWSE_ON_KEY } from "../shared/browse-habits.js";
 
 const TRIGGER_KEYS = [BROWSE_ON_KEY];
 
-/** 连续写入（一轮里记忆、过往任务、习惯计数先后写）合成一次备份。 */
 const CHECK_ALARM = "memory-backup-check";
 const RETRY_KEY = "memory_backup_retry";
 const UI_DISABLED_KEY = "memory_backup_ui_disabled";
@@ -70,7 +69,6 @@ async function writeBackup(): Promise<void> {
   const backup = await collectBackup();
   if (!Object.keys(backup.documents).length && !(await chrome.storage.local.get(BACKUP_LAST_KEY))[BACKUP_LAST_KEY]) return;
   const filename = backupFileName(await installAt());
-  // 备份每次记忆变化都写；不关下载气泡和不删下载历史的话，用户的下载列表会被它刷满。
   const hideUi = typeof chrome.downloads.setUiOptions === "function";
 
   if (hideUi) {
@@ -142,7 +140,6 @@ export function installMemoryBackup(): void {
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    // 浏览记录不进备份，只有用户选择的观察开关需要备份。
     if (area === "local" && TRIGGER_KEYS.some(key => key in changes)) schedule();
   });
 }

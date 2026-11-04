@@ -1,7 +1,3 @@
-/**
- * 扩展内构建替换 `node:crypto`：randomUUID / randomBytes 用浏览器的 crypto；
- * createHash 只支持任务核心用到的 sha256 + hex（同步；浏览器的 subtle.digest 是异步的，替换不了）。
- */
 export const randomUUID = () => crypto.randomUUID();
 
 export const randomBytes = (size: number) => crypto.getRandomValues(new Uint8Array(size));

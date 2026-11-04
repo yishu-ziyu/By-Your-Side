@@ -1,9 +1,3 @@
-/**
- * 发送 / 停止按钮的状态切换：真实侧栏、真实点击与键盘，本机脚本模型只控制加载、完成和失败。
- *   npx tsx scripts/acceptance/real-path/composer-motion.mts --headless
- *
- * 判据：按钮原地切换、连点只停一次、运行中能插话、错误后恢复、焦点可读、减少动态效果时不做过渡。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";

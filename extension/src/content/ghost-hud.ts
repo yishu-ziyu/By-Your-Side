@@ -1,11 +1,5 @@
 import { isPageInteractionMessage, type GhostQuickAction, type GhostQuickReply } from '../../../shared/protocol.js';
 
-/**
- * 侧栏直连按钮的页面一侧：直接操作页面已有的媒体、播放器自带的「下一个」按钮和代码块高度，不经模型。
- * 做完在页面正中浮起一枚提示，1.2 秒后淡出并删除。
- */
-
-/** 只认播放器自带的「下一个」按钮；不猜网页上其他叫 Next 的链接。 */
 const NEXT_BUTTONS = ['.ytp-next-button', '.bpx-player-ctrl-next', '.bilibili-player-video-btn-next'];
 
 const TALL_CODE_PX = 240;
@@ -36,7 +30,6 @@ function visibleArea(element: Element): number {
   return width * height;
 }
 
-/** 正在播的优先，其次可见面积最大的视频，最后是页面里的音频。 */
 function mainMedia(): HTMLMediaElement | null {
   const all = Array.from(document.querySelectorAll<HTMLMediaElement>('video, audio')).filter(media => media.currentSrc || media.src || media.querySelector('source'));
   const playing = all.filter(media => !media.paused && !media.ended);
@@ -87,7 +80,6 @@ function ensureFoldStyle(): void {
   document.documentElement.append(style);
 }
 
-/** 做动作，返回给用户看的结果。播放可能被浏览器的自动播放规则拒绝，如实说。 */
 async function perform(action: GhostQuickAction): Promise<{ ok: boolean; icon: string; message: string; elapsedMs: number }> {
   const started = performance.now();
   const done = (ok: boolean, icon: string, message: string) => ({ ok, icon, message, elapsedMs: Math.round(performance.now() - started) });
@@ -173,7 +165,6 @@ export function installGhostHud(): void {
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (!isPageInteractionMessage(message) || message.type !== 'GHOST_QUICK_ACTION') return;
 
-    // 只认扩展自己的页面（侧栏），不认别的网页脚本。
     if (sender.id !== chrome.runtime.id || sender.tab) return;
 
     if (message.action === 'probe') {

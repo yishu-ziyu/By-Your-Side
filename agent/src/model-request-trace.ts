@@ -3,36 +3,22 @@ import type { Message, Tool } from "@earendil-works/pi-ai";
 import type { TraceRecorder } from "../../shared/run-trace-core.js";
 import { warmUpSummary } from "./warm-connection.js";
 
-/**
- * 每次模型调用的请求指纹：
- * 系统提示词和工具说明记 sha256 与字数，同一诊断会话里第一次出现时分段写全文；
- * 宿主插入的上下文消息记原文（脱敏照常）；图片只记原始字节的 sha256、类型和字节数，不存像素。
- * 只观察：任何异常都吞掉，不影响模型调用。
- */
-
-/** 模型这次实际收到的工具说明（名字、说明、参数表；有提示词准则时一并带上）。 */
 export interface ModelRequestTool extends Tool {
   promptGuidelines?: readonly string[];
 }
 
-/** 模型这次实际收到的请求；injected 是本次请求里宿主插入的上下文消息（custom 消息）。 */
 export interface ModelRequestObservation {
   systemPrompt: string;
   tools: readonly ModelRequestTool[];
   messages: readonly Message[];
   injected: ReadonlyArray<{ customType: string; text: string }>;
-  /** 这次调用用的思考档。 */
   effort?: string;
-  /** 这个对话最近一次预热前缀缓存（DurableAgentLoop.warmPromptCache）：发出到这次请求多少毫秒、用了多久、结果；没预热过时没有。 */
   promptWarm?: { sinceMs: number; ms: number | null; outcome: string };
-  /** 模型服务的 origin，用来对上提前建连接的记录；只写进诊断的是摘要，不写地址。 */
   origin?: string;
 }
 
-/** 全文分段字数：远低于脱敏的单串上限（64k 字）与单行上限（256 KB，最坏每字 6 字节转义也不到 100 KB）。 */
 const CHUNK_CHARS = 16_000;
 
-/** 同一张图在每次调用里都会重发：按 base64 原串缓存指纹，避免反复计算。 */
 const IMAGE_CACHE_MAX = 64;
 
 const sha256Text = (text: string): string => createHash("sha256").update(text).digest("hex");
@@ -46,7 +32,6 @@ function base64Bytes(data: string): Uint8Array {
   return bytes;
 }
 
-/** 工具说明全文里的一项：名字、说明、参数表，有提示词准则时才带上。 */
 function manifestEntry(tool: ModelRequestTool): ModelRequestTool {
   const entry: ModelRequestTool = { name: tool.name, description: tool.description, parameters: tool.parameters };
 
@@ -82,17 +67,15 @@ export class ModelRequestTrace {
         warmUp: warmUpSummary(request.origin, this.requestAt),
         ...(request.promptWarm ? { promptWarm: request.promptWarm } : {}),
       });
-    } catch { /* Diagnostics must never interrupt the model call. */ }
+    } catch {  }
   }
 
-  /** 响应头到了（fetch 返回），和第一个流事件（first_response）分开记：前者含建连接，后者还含服务端排队和思考。 */
   response(status: number): void {
     try {
       this.record("response_headers", { status, sinceRequestMs: this.requestAt ? Date.now() - this.requestAt : null });
-    } catch { /* Diagnostics must never interrupt the model call. */ }
+    } catch {  }
   }
 
-  /** 全文按 sha256 只写一次：chunk 依 index 顺序拼回即原文（脱敏后）。 */
   private writeOnce(type: "system_prompt" | "tools_manifest", sha256: string, text: string): void {
     const key = `${type}:${sha256}`;
 

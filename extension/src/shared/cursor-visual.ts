@@ -1,10 +1,3 @@
-/**
- * 虚拟光标视觉常量（tldraw 协作光标：色填 + 白描边 + 深色外晕 + 名牌）。
- * 大小接近系统 / OpenAI 的普通箭头，静止时不压住站点 logo。
- * 箭头取 lucide MousePointer2 的轮廓，三个角和内凹加大圆角，看着不扎手；
- * 圆角会削掉面积，所以轮廓略放大到面积和原箭头相同（不变胖，两翼略短），圆角后的尖仍落在原来的尖上。
- */
-
 export const CURSOR_SVG_SIZE = 20;
 
 export const CURSOR_STROKE_WHITE = 2.2;

@@ -1,11 +1,3 @@
-/**
- * 真扩展 + 隔离 Chrome + 本机脚本模型：标签组名是按任务和网站起的短名，不是用户原话的前半句。
- * 脚本模型对起名请求回「起名 N 站」（N = 碰过几个网站）；任务在 127.0.0.1 开始，再打开 localhost 的页面。
- * 判定：标签组名先变成「起名 1 站」或直接「起名 2 站」，打开第二个网站后变成「起名 2 站」，从没停在原话上；侧栏会话标题跟着变。
- * 不证明真实模型起的名字好不好，只证明名字从哪来、什么时候换。
- * --live：主模型换成真实模型（默认 gpt-6-luna），在真网站上做一件跨两个网站的事，只看起出来的名字：不是原话、不超过 12 个字。
- * npx tsx scripts/acceptance/real-path/task-group-name.mts --headless [--live] [--model=服务商/模型]
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -40,7 +32,6 @@ try {
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60000, "侧栏就绪");
   await rp.click(panel, "#input"); await rp.typeText(panel, goal); await rp.pressEnter(panel);
   if (live) {
-    // 真模型：一直采样到这一轮结束（发送键回来），看起过哪些名字。
     const seen: string[] = [];
     await until(async () => {
       const titles = await rp.evaluate(panel, "chrome.tabGroups.query({}).then(gs=>gs.map(g=>g.title??''))") as string[];
@@ -51,7 +42,6 @@ try {
     const last = seen.at(-1) ?? "";
     check("真模型起的名字不是原话、不超过 12 个字", !!last && last !== goal && [...last.replace(/[\s·]/g, "")].length <= 12, seen);
   } else {
-    // 从发出到回答一直采样所有标签组名：看到过什么名字，最后停在哪。
     const seen: string[] = [];
     await until(async () => {
       const titles = await rp.evaluate(panel, "chrome.tabGroups.query({}).then(gs=>gs.map(g=>g.title??''))") as string[];
@@ -60,7 +50,6 @@ try {
     }, 40000, "标签组名换成两个网站的短名", 100).catch(err => check("流程完成", false, String(err)));
     await rp.screenshot(panel, join(out, "panel.png"));
     check("标签组名跟着网站换成「起名 2 站」", seen.at(-1) === "起名 2 站", seen);
-    // 第一个名字可能还没回来时标签组已建好，那一刻显示原话；名字回来后不应再回到原话。
     const named = seen.findIndex(title => title.startsWith("起名"));
     check("起名之后不再回到用户原话", named >= 0 && seen.slice(named).every(title => title.startsWith("起名")), seen);
     check("侧栏会话标题和标签组名一致", await rp.evaluate(panel, 'document.body.innerText.includes("起名 2 站")') as boolean, {});

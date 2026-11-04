@@ -1,14 +1,3 @@
-/**
- * 助手在后台开的、在后台出声的标签页先静音，用户切过去时恢复声音；开在眼前的页不静音。
- * 只装扩展、隔离构建、本机脚本模型；练习页一打开就用 WebAudio 出声（Chrome 带 --autoplay-policy=no-user-gesture-required）。
- *   npx tsx scripts/acceptance/real-path/quiet-background-tabs.mts --headless
- *   a) 助手用 tabs open 在后台开声音页：这一页是静音的。
- *   d) 扩展重载后（更新时也一样），这一页仍是静音的。
- *   b) 用户切到这一页：静音取消。
- *   c) 助手用 tabs show 开的页在眼前：不静音。
- * 「后台的工作页开始出声就静音」靠 Chrome 的 audible 状态，无头 Chrome 没有声音输出、不会报 audible，这一条在日常 Chrome 里核对。
- * 失败方式：去掉 openTab 里的 quietOpenedTab，a 失败；启动时不重新静音，d 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -60,7 +49,6 @@ try {
   const opened = await until(async () => { const t = await tabState("/sound?a"); return t && t.muted ? t : null; }, 10_000, "后台声音页静音").catch(async () => await tabState("/sound?a"));
   check("a 助手在后台开的声音页是静音的", !!opened && !opened.active && opened.muted, opened as Json);
 
-  // Chrome 重载扩展时会撤销扩展做过的静音。
   await rp.evaluate(panel, `setTimeout(() => chrome.runtime.reload(), 100), true`).catch(() => {});
   await sleep(4_000);
   panel = await rp.attach(await rp.openSidePanel());

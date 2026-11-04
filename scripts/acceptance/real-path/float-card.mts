@@ -1,12 +1,3 @@
-/**
- * 浮在网页上的会话卡片：只装扩展的隔离无头 Chrome、真侧栏、本机两张练习页与本机脚本模型。
- *
- *   npx tsx scripts/acceptance/real-path/float-card.mts --headless [--record]
- *
- * 真实路径走：侧栏里聊一句 → 菜单点「浮在页面上」→ 侧栏关掉、卡片出现在网页上、里面是同一段对话 →
- * 拖标题条移动 → 拉左边改宽 → 收起成圆钮、点圆钮展开 → 换到另一个标签页，卡片跟过去（旧页拆掉）→ 点 × 关掉。
- * 点击和拖动一律是真鼠标事件；位置从存储里的卡片位置算，卡片在 closed shadow 里，网页脚本看不到里面。
- */
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -117,7 +108,6 @@ try {
   };
   const clickAt = async (s: string, x: number, y: number) => { await mouse(s, "mouseMoved", x, y); await mouse(s, "mousePressed", x, y); await mouse(s, "mouseReleased", x, y); await sleep(300); };
 
-  // 在卡片里用真鼠标点输入框、发一句话：卡片里的会话照常能用；助手要点的网页按钮被卡片挡着，点击时卡片让开
   const frameBox = async (s: string, sel: string) => await rp.evaluate(s, `(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`) as { x: number; y: number };
   const toPage = (p: { x: number; y: number }) => ({ x: vw - r.right - r.width + 1 + 8 + p.x, y: r.top + 1 + 28 + p.y });
   const inputAt = toPage(await frameBox(inner, "#input"));
@@ -128,7 +118,6 @@ try {
   check("卡片挡住的网页按钮助手能点到", Number(await rp.evaluate(A.s, "window.underHits || 0")) === 1, String(await rp.evaluate(A.s, "window.underHits || 0")));
   check("点完卡片回来", await hitsCard(A.s, vw - r.right - r.width / 2, r.top + r.height / 2) === true);
 
-  // 网页在卡片上面盖一层不接鼠标的假界面，骗用户点到下面卡片里的按钮：点击不生效；拿掉后照常
   const before = (await card()).conversation;
   const newAt = toPage(await frameBox(inner, "#conversation-new"));
   await rp.evaluate(A.s, `(() => { const d = document.createElement("div"); d.id = "decoy"; d.popover = "manual"; d.textContent = "领取优惠券"; d.style.cssText = "margin:0;inset:auto;left:0;top:0;width:100vw;height:100vh;padding:0;border:0;background:rgba(255,255,255,.9);pointer-events:none"; document.body.append(d); d.showPopover(); return true; })()`);
@@ -142,14 +131,12 @@ try {
   await until(async () => (await card()).conversation !== before || undefined, 5000, "恢复后点新会话生效");
   check("拿掉遮挡后点击照常", true);
 
-  // 拖标题条：从中间把手往左下拖
   const left = vw - r.right - r.width;
   await drag(A.s, left + r.width / 2, r.top + 14, left + r.width / 2 - 260, r.top + 14 + 60);
   const moved = (await card()).rect;
   check("拖标题条能移动卡片", Math.abs(moved.right - (r.right + 260)) <= 2 && Math.abs(moved.top - (r.top + 60)) <= 2, JSON.stringify({ before: r, after: moved }));
   r = moved;
 
-  // 拉左边改宽
   const edgeX = vw - r.right - r.width + 5;
   await drag(A.s, edgeX, r.top + r.height / 2, edgeX - 80, r.top + r.height / 2);
   const wider = (await card()).rect;
@@ -157,7 +144,6 @@ try {
   r = wider;
   await rp.screenshot(A.s, join(out, "02-moved-resized.png"));
 
-  // 收起：标题条右起第二个按钮（× 左边）
   const barRight = vw - r.right - 1 - 6;
   await clickAt(A.s, barRight - 11 - 24, r.top + 14);
   await until(async () => (await card()).collapsed || undefined, 3000, "收起");
@@ -169,7 +155,6 @@ try {
   await until(async () => !(await card()).collapsed || undefined, 3000, "展开");
   check("点圆钮展开", true);
 
-  // 换到 B 页：卡片跟过去，A 页拆掉
   await rp.cdp.send("Target.activateTarget", { targetId: B.targetId });
   await rp.cdp.send("Page.bringToFront", {}, B.s);
   shotOf = B.s;
@@ -182,7 +167,6 @@ try {
   await sleep(500);
   await rp.screenshot(B.s, join(out, "04-follows-tab.png"));
 
-  // ×：关掉
   await clickAt(B.s, barRight - 11, r.top + 14);
   await until(async () => (await rp.evaluate(B.s, `!!document.querySelector('[data-sideagent-overlay="float-card"]')`)) === false || undefined, 3000, "关掉");
   check("点 × 关掉卡片", (await frameTarget()).length === 0);
@@ -193,7 +177,7 @@ try {
   recording = false;
   await recorder;
   if (record && frames.length > 1) {
-    try { execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", (frames.length / ((Date.now() - recordStart) / 1000)).toFixed(2), "-i", join(frameDir, "%05d.jpg"), "-vf", "format=yuv420p", join(out, "run.mp4")]); } catch { /* 没装 ffmpeg 只少录屏 */ }
+    try { execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-framerate", (frames.length / ((Date.now() - recordStart) / 1000)).toFixed(2), "-i", join(frameDir, "%05d.jpg"), "-vf", "format=yuv420p", join(out, "run.mp4")]); } catch {  }
   }
   await writeFile(join(out, "summary.json"), JSON.stringify({ status: error ? "FAIL" : "PASS", error, results }, null, 2));
   console.log(JSON.stringify({ status: error ? "FAIL" : "PASS", out, error, checked: results.map(r => r.name) }));

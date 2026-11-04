@@ -1,14 +1,7 @@
-/**
- * Local pages for complexity-ladder tasks that no stable public site offers (task URLs say `{ladder}`).
- * /oopif: a checkout page on 127.0.0.1 whose card form comes from localhost — another site, so Chrome runs
- * it as a cross-site iframe (its own process), like a real payment widget. The form reports what is typed to
- * the top page, so the final page text shows it.
- */
 import { createServer } from "node:http";
 
 const page = (body) => `<!doctype html><meta charset="utf-8"><style>body{font:16px system-ui;margin:24px}label{display:block;margin:10px 0}</style>${body}`;
 
-/** 插话评测页面的写入记录：{t, type, name, value}，t 是 Date.now()，和 harness 同一台机器的时钟。 */
 const DUPLEX_LOG = `<script>
   (() => {
     const read = () => JSON.parse(localStorage.getItem("duplexLog") || "[]");
@@ -55,8 +48,6 @@ export async function startLadderSites() {
       <button type="button" onclick="parent.postMessage('已付款', 'http://127.0.0.1:${port}')">付款</button>
       <script>document.addEventListener("input", () => parent.postMessage([...document.querySelectorAll("input")].map((i) => i.name + "=" + i.value).join("; "), "http://127.0.0.1:${port}"));</script>`);
 
-    // 插话评测（eval/tasks/duplex.md）：页面自己记下每次写入的时刻和值，存在 localStorage `duplexLog`，翻页也不丢。
-    // 这份记录不经过扩展和模型，所以「插话后还写了旧值」「停下后还动了页面」以它为准。
     if (path === "/duplex-form") return send(`<title>订餐</title><h1>订餐</h1>${DUPLEX_LOG}
       <form id="f">
         <label>姓名 <input name="name"></label>

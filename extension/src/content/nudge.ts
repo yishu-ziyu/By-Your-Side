@@ -1,12 +1,6 @@
 import { NUDGE_ACT, NUDGE_AUTO_HIDE_MS, NUDGE_DISMISS, NUDGE_DWELL_MS, NUDGE_KEY, NUDGE_PAGE, NUDGE_SHOW, isNudgeCard, isNudgeOn, nudgeableUrl, type NudgeCard, type NudgePageMessage } from '../shared/nudge.js';
 import { OVERLAY_ATTR } from '../shared/overlay.js';
 
-/**
- * 主动建议卡的页面一半：开关打开时，这一页在前台停够 15 秒且用户滚动或选过文字，就把页面摘录报给后台；
- * 后台判断有建议时，页面右下角出一张小卡：一句话、一行出处、一个按钮、×。
- * 外观有意和右边缘的边缘胶囊不同（浅色卡、在右下角），免得把「建议」看成「任务进度」。
- */
-
 const TICK_MS = 1000;
 
 const RESEND_MS = 30_000;
@@ -30,7 +24,6 @@ const STYLE = `
 @media (prefers-color-scheme:dark){.card{background:#2c2c2e;color:#f5f5f7;border-color:rgba(255,255,255,.12)}.evidence{color:#a1a1a6}.close:hover{background:rgba(255,255,255,.1);color:#f5f5f7}.action{background:#f5f5f7;color:#1d1d1f}.action:hover{background:#d2d2d7}}
 @media (prefers-reduced-motion:reduce){.card{animation:none}}`;
 
-/** 正文摘录：优先 article/main，没有就整页，压成一行后截到 4000 字。 */
 function mainText(): string {
   const root = document.querySelector<HTMLElement>('article') ?? document.querySelector<HTMLElement>('main,[role=main]') ?? document.body;
 
@@ -74,7 +67,6 @@ export function installNudge(): void {
 
   const show = (next: NudgeCard) => {
     shown = next;
-    // 句子是动词后面的宾语：页角卡的标题把动词接回去。
     sentence.textContent = `${next.actionLabel}${next.sentence}`;
     const quote = `「${next.evidence}」`;
     evidence.textContent = next.source && next.source !== next.evidence ? `${quote} · ${next.source}` : quote;
@@ -84,7 +76,7 @@ export function installNudge(): void {
     armHide();
   };
 
-  // 光标脚本第一次注入时会清掉页面上所有扩展浮层：卡片该显示时被清掉就挂回去。
+  // WHY: 光标脚本第一次注入时会清掉页面上所有扩展浮层：卡片该显示时被清掉就挂回去。
   new MutationObserver(() => { if (shown && !host.isConnected) document.documentElement.append(host); }).observe(document.documentElement, { childList: true });
 
   chrome.runtime.onMessage.addListener((message, sender) => {
@@ -93,7 +85,6 @@ export function installNudge(): void {
     if (isNudgeCard(message.card)) show(message.card);
   });
 
-  // 停留与动作：按网址计，换页（含单页应用换地址）重新计。
   let enabled = false;
   let url = location.href;
   let dwell = 0;
@@ -121,7 +112,7 @@ export function installNudge(): void {
 
     if (selection) message.selection = selection;
     inFlight = true; viewReported = true; sentInteracted = interacted; lastSent = Date.now();
-    void chrome.runtime.sendMessage(message).then((reply: { again?: boolean } | undefined) => { if (!reply?.again) done = true; }, () => { /* 后台未就绪，下次再报 */ })
+    void chrome.runtime.sendMessage(message).then((reply: { again?: boolean } | undefined) => { if (!reply?.again) done = true; }, () => {  })
       .finally(() => { inFlight = false; });
   };
 
@@ -135,7 +126,6 @@ export function installNudge(): void {
 
     if (done || inFlight || dwell < NUDGE_DWELL_MS) return;
 
-    // 先报一次「看过」（记进最近看过的页）；用户动过手后再报一次请求判断；后台说冷却中就隔 30 秒再报。
     if (!viewReported || (interacted && (!sentInteracted || Date.now() - lastSent >= RESEND_MS))) report();
   }, TICK_MS);
 

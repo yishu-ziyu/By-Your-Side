@@ -1,22 +1,3 @@
-/**
- * 点击和回车之后，等网站的请求回来再告诉助手页面变没变。
- * 只装扩展、隔离构建、本机脚本模型、本机练习页；只有模型回复是脚本。
- *   npx tsx scripts/acceptance/real-path/settle-after-requests.mts --headless
- * 练习页：
- *   「加载更多」：GET /items 900 毫秒后才回，再插入 5 条。按钮本身不变。
- *   「刷新列表」：马上显示「加载中」，GET /items 900 毫秒后换成结果。
- *   搜索框：回车提交，GET /search 300 毫秒后列出结果。
- *   「开始同步」：发出永不返回的 GET /hang，别的什么都不做。
- *   「什么也不做」：没有请求，页面不变。
- * 判据只读回到模型的工具结果原文、服务器记录的时刻和模型服务收到请求的时刻（同一台机器的时钟）。
- *   a 「加载更多」的工具结果写页面有反应。
- *   b 模型收到「刷新列表」的工具结果，晚于服务器送出 /items 的结果。
- *   c 回车的工具结果写页面有反应。
- *   d 「开始同步」的点击在 5 秒内回到模型。
- *   e 「什么也不做」写页面没有变化，并且很快返回（不等别处没回来的请求）。
- *   f 站内搜索（GET 表单）回车后跳到新页面：工具结果写加载了新文档，不写没有变化。
- * 失败方式：去掉等请求的代码，a、b 失败；去掉回车的变化报告，c 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -60,7 +41,6 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const ASK = "等请求验收：读页面，然后点加载更多、刷新列表，搜索猫并回车，再点开始同步和什么也不做，最后站内搜索狗并回车。";
 const FINAL = "都试过了。";
-// 编号在读页后才知道：onPayload 从读页结果里填进这些参数，模型服务在回复前才序列化它们。
 const t = { more: { target: "" }, refresh: { target: "" }, q: { target: "", value: "猫" }, sync: { target: "" }, noop: { target: "" }, w: { target: "", value: "狗" } };
 const NAMES = { more: 'button "加载更多"', refresh: 'button "刷新列表"', q: 'searchbox "搜索"', sync: 'button "开始同步"', noop: 'button "什么也不做"', w: 'searchbox "站内搜索"' } as const;
 
@@ -88,7 +68,6 @@ type Receipt = { name: string; args: string; text: string; seenAt: number };
 const receipts: Receipt[] = [];
 const seenCalls = new Set<string>();
 
-/** 回到模型的每个工具结果原文和模型服务第一次收到它的时刻（每次请求带着全部历史，按调用编号去重）。 */
 function onPayload(payload: { messages?: Array<{ role: string; content?: unknown; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }>; tools?: unknown[] }) {
   if (!payload.tools?.length) return;
   const now = Date.now();
@@ -138,12 +117,10 @@ try {
   const sync = of("click", "sync");
   check("d 「开始同步」请求永不返回：点击 5 秒内回到模型", !!sync && served.hangStarted !== undefined && sync.seenAt - served.hangStarted < 5000, { waitedMs: sync && served.hangStarted ? sync.seenAt - served.hangStarted : null, result: sync?.text ?? null });
   const noop = of("click", "noop");
-  // 从上一个工具结果到这一个，包括脚本模型回复、光标移动和点击本身；一直等满 3 秒的实现会超过 2.5 秒。
   const noopMs = noop && sync ? noop.seenAt - sync.seenAt : null;
   check("e 「什么也不做」：工具结果写页面没有变化，并且 2.5 秒内回到模型", /Nothing on the page changed/.test(noop?.text ?? "") && noopMs !== null && noopMs < 2500, { ms: noopMs, result: noop?.text ?? null });
   const nav = all("press_key")[1];
   check("f 站内搜索回车跳到新页面：工具结果写加载了新文档，不写没有变化", /new document/.test(nav?.text ?? "") && !/Nothing on the page changed/.test(nav?.text ?? ""), { result: nav?.text ?? null });
-  // #257：写明换到了哪一页（标题和路径，不带查询参数），模型不必再跑一轮确认。
   check("f 工具结果写出新页面的标题和路径，不带查询参数", /new document: "搜索结果" — http:\/\/[^ ]+\/results/.test(nav?.text ?? "") && !/\/results\?/.test(nav?.text ?? ""), { result: nav?.text ?? null });
   await rp.screenshot(work, join(out, "page.png"));
 } catch (error) { check("流程完成", false, String(error)); } finally {

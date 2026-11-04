@@ -1,5 +1,3 @@
-// Tiny real request per model: pi ModelRuntime resolves the id (same path as the companion),
-// then one chat completion to its baseUrl. Key read from ~/.pi/agent/auth.json, never printed.
 import { ModelRuntime, resolveCliModel } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs"; import { homedir } from "node:os";
 

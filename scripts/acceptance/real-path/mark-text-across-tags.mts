@@ -1,9 +1,3 @@
-/**
- * Real extension and page: circling a term finds it when tags split it ("72" and "ha" as two links joined by a
- * no-break space, "Forbid<b>den</b> City"), still finds plain matches, and never joins text across paragraphs.
- *   npx tsx scripts/acceptance/real-path/mark-text-across-tags.mts --headless
- * The model is scripted (its mark call is fixed), so this proves the page layer, not model behaviour.
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';

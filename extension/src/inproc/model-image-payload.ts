@@ -12,7 +12,6 @@ async function encode(source: string): Promise<string> {
     const context = canvas.getContext('2d');
     if (!context) return source;
     context.drawImage(bitmap, 0, 0);
-    // Only the transport encoding changes: preserve dimensions, alpha and original stored evidence.
     const blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.94 });
     if (blob.type !== 'image/webp' || blob.size >= original.size * 0.8) return source;
     const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -24,7 +23,6 @@ async function encode(source: string): Promise<string> {
 
 async function compact(source: string): Promise<string> {
   if (!source.startsWith('data:image/png;base64,') || source.length < MIN_IMAGE_CHARS) return source;
-  // Hash keys avoid retaining another copy of every large uncompressed screenshot.
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source)));
   const key = Array.from(digest, n => n.toString(16).padStart(2, '0')).join('');
   const cached = images.get(key);
@@ -52,7 +50,6 @@ async function contentParts(parts: unknown[]): Promise<unknown[]> {
   for (const part of parts) {
     if (!record(part)) { result.push(part); continue; }
     if (part.type === 'input_image' && typeof part.image_url === 'string') {
-      // ChatGPT reads several images in one message at low resolution under "auto", so small text in a 2160px collage becomes unreadable.
       result.push({ ...part, ...(part.detail === 'auto' ? { detail: 'high' } : {}), image_url: await compact(part.image_url) });
     } else if (part.type === 'image_url' && record(part.image_url) && typeof part.image_url.url === 'string') {
       result.push({ ...part, image_url: { ...part.image_url, url: await compact(part.image_url.url) } });
@@ -68,7 +65,6 @@ async function contentParts(parts: unknown[]): Promise<unknown[]> {
   return result;
 }
 
-/** Transform only protocol image fields; text, tool arguments and persisted conversation objects stay intact. */
 export async function compactModelImages(payload: unknown): Promise<unknown> {
   if (!record(payload)) return payload;
   const field = Array.isArray(payload.input) ? 'input' : Array.isArray(payload.messages) ? 'messages' : null;

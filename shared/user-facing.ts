@@ -1,14 +1,6 @@
-/**
- * 宿主文字到用户面前的最后一道翻译：工具名、元素编号、原始错误和 Chrome 错误码只留在记录和模型上下文里，
- * 侧栏、页面浮层和语音只说人话。
- *
- * 规则只有两条：用户面前永远不出现内部名字；翻不出来时说一句笼统但真实的话，不回退到原文。
- * 原文仍进诊断记录（run trace、agent.log），排查不受影响。
- */
 import { describeTimeout } from "./timeouts.js";
 import type { ModelConnectionIdentity } from "./protocol.js";
 
-/** 工具名 → 用户看得懂的动作（动宾短语，可直接接在「正在」后面）。 */
 const TOOL_ACTIONS = new Map<string, string>(Object.entries({
   tabs: "查看标签页", list_tabs: "查看标签页", get_active_tab: "确认当前页面", open_tab: "打开标签页", switch_tab: "切换标签页", close_tab: "关闭标签页",
   navigate: "打开页面", snapshot: "读取页面", screenshot: "查看页面截图", read_page: "读取页面", read_element: "读取页面内容", read_elements: "读取页面内容",
@@ -25,15 +17,10 @@ const TOOL_ACTIONS = new Map<string, string>(Object.entries({
   resolve_unknown_result: "核对结果", send_user_message: "整理回答",
 }));
 
-/** 工具名翻成动作；没登记的工具不露原名，说「处理这一步」。 */
 export function toolAction(name: string): string {
   return TOOL_ACTIONS.get(name) ?? "处理这一步";
 }
 
-/**
- * 账本里一步的说明（「填写 @1443」「fetch」「点击 loc=css:#save」）→ 人话。
- * 元素编号、定位符和工具名是给模型核对用的，用户看不懂也用不上。
- */
 export function plainStep(description: string): string {
   const cleaned = description
     .replace(/loc=\S+/g, "")
@@ -42,9 +29,7 @@ export function plainStep(description: string): string {
     .replace(/\s+/g, " ")
     .trim();
 
-  // 去掉定位符后只剩一个动作（「填写 @3」→「填写」）：补上宾语，不留半句话。
   const text = cleaned !== description.trim() && !/\s/.test(cleaned) && cleaned.length <= 6 ? `${cleaned}页面上的一项` : cleaned;
-  // 自动记账的说明以工具名开头（没登记中文名的工具）；模型或用户写的文字不改。
   const [head = "", ...rest] = text.split(" ");
   const plain = /^[a-z][a-z0-9_]*$/.test(head) ? [toolAction(head), ...rest].join(" ") : text;
 
@@ -52,19 +37,17 @@ export function plainStep(description: string): string {
 }
 
 /**
- * 服务商「忙」：限流（429）或同账号同时请求数超限。等一下再试就能好，不能当失败交给用户。
+ * WHY: 服务商「忙」：限流（429）或同账号同时请求数超限。等一下再试就能好，不能当失败交给用户。
  * Kimi 编程套餐在主模型与快速模型同时请求时回 403「concurrent request limit」，不是 key 的问题。
  */
 export function isProviderBusyError(message: string | undefined): boolean {
   return !!message && /concurrent request limit|too many concurrent|rate.?limit|\b429\b|overloaded|请求过于频繁|并发/i.test(message);
 }
 
-/** 额度或余额用尽：常带 429，但等多久都不会好。 */
 export function isQuotaError(message: string | undefined): boolean {
   return !!message && /insufficient_quota|quota exceeded|exceeded your current quota|usage.?limit|out of budget|billing|available balance|余额不足|额度(不足|用尽|已用完)/i.test(message);
 }
 
-/** 错误卡按种类给按钮：auth 换 key，busy 倒计时自动重试或换模型，quota 稍后重试或换模型，missing 换模型，network 重试。 */
 export type ModelErrorKind = "auth" | "busy" | "quota" | "missing" | "network" | "other";
 
 export function isModelTimeoutError(text: string): boolean {
@@ -73,11 +56,6 @@ export function isModelTimeoutError(text: string): boolean {
 
 export interface ModelErrorCopy { kind: ModelErrorKind; title: string; copy: string; model?: string; modelConnection?: ModelConnectionIdentity; detail: string }
 
-/**
- * 模型服务的错误 → 错误卡的标题和说明。宿主写成「模型请求最终失败（provider/id）：原文」，原文形如
- * 「503: {"message":...}」「Connection error.」「401 Unauthorized」；不是这种格式时返回 null。
- * 只按状态码和常见字样分类，不猜原因；原文只进 detail（卡上的「技术详情」）。
- */
 export function describeModelError(raw: string): ModelErrorCopy | null {
   const head = /^模型请求最终失败(?:（([^）]+)）)?：/.exec(raw);
 
@@ -86,7 +64,6 @@ export function describeModelError(raw: string): ModelErrorCopy | null {
   const text = raw.slice(head[0].length);
 
   const described = classifyModelError(text, model);
-  // 哪个模型出的错写在「技术详情」里，正文不出现内部的模型名。
   const result: ModelErrorCopy = { ...described, detail: model ? `${text} · ${model}` : text };
 
   if (model) result.model = model;
@@ -96,15 +73,12 @@ export function describeModelError(raw: string): ModelErrorCopy | null {
 
 function classifyModelError(text: string, model: string | undefined): Pick<ModelErrorCopy, "kind" | "title" | "copy"> {
   const quota = { kind: "quota", title: "额度用完了", copy: "充值或等额度恢复后再试，或换个模型立刻继续。" } as const;
-  // 额度用尽常带 429，但等多久都不会好：带这些字样的一律不进自动重试。
   const quotaWords = /quota|insufficient|余额|额度/i.test(text);
 
   if (isQuotaError(text)) return quota;
 
   const busy = { kind: "busy", title: "模型太忙了", copy: "请求太频繁，或同时请求太多。可以稍后再试，或换个模型立刻继续。" } as const;
 
-  // 只有同时请求数超限的原话在 401/403 之前认：Kimi 回的是 403 permission_error，等一下就好，不是 key 的问题。
-  // 其余「忙」的字样（429、并发）放在 key 检查之后，免得 401 正文里碰巧带这些字时不让用户换 key。
   if (/concurrent request limit|too many concurrent/i.test(text) && !quotaWords) return busy;
 
   if (/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid.{0,20}(api.?key|token)/i.test(text)) {
@@ -115,8 +89,6 @@ function classifyModelError(text: string, model: string | undefined): Pick<Model
 
   if (quotaWords) return quota;
 
-  // 服务商的内容审核拦下了输出（MiniMax 1027 new_sensitive、OpenAI content_filter）：同一个模型再试多半还会被拦，
-  // 只给「换一个模型」，换不换由用户定；不自动换，免得替用户绕过他选的服务商的审核。
   if (/new_sensitive|content[_ ]filter|content[_ ]policy|sensitive content|内容审核|敏感内容/i.test(text)) {
     return { kind: "missing", title: "模型的内容审核拦下了这次回答", copy: "同一个模型再试多半还会被拦，可以换个模型再问。" };
   }
@@ -135,7 +107,6 @@ function classifyModelError(text: string, model: string | undefined): Pick<Model
   return { kind: "other", title: "模型这次没有给出回答", copy: "可以再试一次，或换个模型。" };
 }
 
-/** Chrome 下载中断原因（chrome.downloads InterruptReason）→ 人话。 */
 const DOWNLOAD_REASONS = new Map<string, string>(Object.entries({
   FILE_FAILED: "文件没能写入下载文件夹", FILE_ACCESS_DENIED: "没有权限写入下载文件夹", FILE_NO_SPACE: "磁盘空间不够",
   FILE_NAME_TOO_LONG: "文件名太长", FILE_TOO_LARGE: "文件太大", FILE_VIRUS_INFECTED: "文件被判定为有病毒", FILE_TRANSIENT_ERROR: "写文件时出了临时错误",
@@ -152,15 +123,9 @@ export function plainDownloadError(code: string | null | undefined): string {
   return (code && DOWNLOAD_REASONS.get(code)) || "下载中断了";
 }
 
-/**
- * 工具失败 → 侧栏那一句人话原因（≤16 字）。
- * 错误原文是给模型看的：先认已知的说法，认不出就取第一小句、剥掉英文括注和不可信标记；
- * 整句没有一点中文就只说「没做成」，不照搬原文。
- */
-// 按顺序认第一条：fetch 抛错时外面还包着一层「fetch 请求已发出，结果未知：…」，里面的具体原因（连不上、超时）要先认。
 const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [
   [/fetch 请求失败|Failed to fetch|ERR_(NAME_NOT_RESOLVED|CONNECTION_REFUSED|CONNECTION_TIMED_OUT|CONNECTION_RESET|ADDRESS_UNREACHABLE|INTERNET_DISCONNECTED|NETWORK_FAILED)/, "连不上这个地址"],
-  [/timed out|超时/i, "这一步超时了"], // 具体耗时由 describeTimeout 补在错误卡上
+  [/timed out|超时/i, "这一步超时了"],
   [/已取消/, "已取消"],
   [/not connected|disconnected/i, "连接断开了"],
   [/ERR_(CERT|SSL)/, "页面证书有问题"],
@@ -181,7 +146,6 @@ export function plainToolError(errorText: string): string {
   const timeout = describeTimeout(text);
   if (timeout) return timeout.copy;
 
-  // 挡住它的元素名字是网页原文（不可信）：只取 ≤11 字显示，标签只作文字（input.ts 的「被挡住」回执）。
   const blockedBy = /元素名字：<page-content[^>]*>\s*([^<]{1,40}?)\s*<\//.exec(text)?.[1]?.trim();
   if (blockedBy) return `被「${blockedBy.slice(0, 11)}」挡住`;
 
@@ -190,7 +154,6 @@ export function plainToolError(errorText: string): string {
 
   for (const [pattern, reason] of TOOL_ERROR_REASONS) if (pattern.test(text)) return reason;
 
-  // 取冒号前那一小句；它没有中文时（如页面脚本抛的「Error: 接口没回」）取冒号后第一段有中文的。
   const clauses = text.split(/[\n，。；,;]/, 1)[0]!.split(/[：:]/);
   const first = (clauses.find((clause) => /[一-鿿]/.test(clause)) ?? clauses[0]!)
     .replace(/（[A-Za-z][^）]*）/g, "")
@@ -205,7 +168,6 @@ export function plainToolError(errorText: string): string {
   return first.length <= 16 ? first : `${first.slice(0, 15)}…`;
 }
 
-/** 目标核对判「受阻」的原因类别（goal-check.ts）：站点连不上、要的页面或数据不存在、服务端拒绝。 */
 export const BLOCKED_CAUSES = ["unreachable", "missing", "refused", "unresponsive"] as const;
 
 type BlockedCause = typeof BLOCKED_CAUSES[number];
@@ -217,7 +179,6 @@ const BLOCKED_REASONS: Record<BlockedCause, string> = {
   unresponsive: "页面上的按钮没有反应，这次做不成",
 };
 
-/** 受阻原因 → 任务条和过往任务里的那一句。核对模型没给出能认的类别时说笼统但真实的话。 */
 export function plainBlockedReason(cause: BlockedCause | null): string {
   return cause ? BLOCKED_REASONS[cause] : "网站那边出了问题，这次做不成";
 }

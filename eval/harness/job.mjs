@@ -1,14 +1,3 @@
-/**
- * One eval job = one (model spec, task) in its own headless Chrome with only the extension installed.
- *
- * Reuses the real-path acceptance driver (scripts/acceptance/real-path/harness.mts): Chrome for Testing
- * `--headless=new`, own temp profile, extension built from the tested repo into a temp dir with a random
- * key, agent core in the extension's offscreen document, real side panel via chrome.sidePanel.open. No
- * companion process, no Native Messaging; never touches the daily Chrome, its profile, CDP 9222 or
- * extension/dist. Main + fast model and credentials go into the extension's own storage (same keys the
- * settings page writes). After the run, that job's diagnostics are exported through the settings page
- * (IndexedDB `sideagent-diagnostics`) into <task>.trace.jsonl for judge v3 and analyze.py.
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, copyFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,7 +11,6 @@ const MODEL_EMPTY = /模型返回了空响应/;
 
 export { REPO };
 
-/** The tested repo's real-path driver (BYS_REPO decides which checkout is built and driven). */
 const driver = () => import(pathToFileURL(join(REPO, "scripts/acceptance/real-path/harness.mts")).href);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -57,7 +45,6 @@ const PANEL_PROBE = `(() => {
     inputReady: !!q("#input") };
 })()`;
 
-/** Old process rows can retain their checking label after a new run starts. */
 export function runProgress(trace, run) {
   const runId = trace.findLast(e => e.type === "run_start")?.runId ?? run?.runId ?? null;
   const events = runId ? trace.filter(e => e.runId === runId) : [];
@@ -70,10 +57,6 @@ export function runProgress(trace, run) {
   };
 }
 
-/**
- * Trace lines written since primary key `after`, read from the panel (same extension origin as the offscreen
- * writer). Opens the existing v2 database only (never creates or upgrades it) and closes it right away.
- */
 const traceSince = (after) => `(async () => {
   const dbs = await indexedDB.databases();
   if (!dbs.some((d) => d.name === "sideagent-diagnostics" && d.version >= 2)) return { last: ${after}, lines: "" };
@@ -88,7 +71,6 @@ const traceSince = (after) => `(async () => {
   } finally { db.close(); }
 })()`;
 
-/** Select `needle` (whitespace ignored) in the visible page text, open shadow roots included (MDN code blocks); returns the selected text or null. */
 const selectText = (needle) => `(() => {
   const want = ${JSON.stringify(needle)}.replace(/\\s+/g, "");
   let flat = ""; const at = [];
@@ -113,7 +95,6 @@ const selectText = (needle) => `(() => {
   return getSelection().toString();
 })()`;
 
-/** The page's 划词 reading thread, as the extension stores it (chrome.storage.session, read from the panel). */
 const READING_PROBE = `chrome.storage.session.get("readingRecords").then((s) => {
   const turn = (s.readingRecords ?? []).sort((a, b) => a.updatedAt - b.updatedAt).at(-1)?.turns.at(-1);
   return turn ? { state: turn.state, answer: turn.answer, error: turn.error ?? "" } : null;
@@ -121,7 +102,6 @@ const READING_PROBE = `chrome.storage.session.get("readingRecords").then((s) => 
 
 const parseLines = (text) => text.split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
 
-/** Child processes still alive (so the runner can kill them if it exits). */
 export const LIVE = new Set();
 
 export function killLive() {
@@ -130,13 +110,10 @@ export function killLive() {
   LIVE.clear();
 }
 
-/** `{ladder}` in a task URL = the local ladder pages (ladder-sites.mjs), started by run.mjs. */
 const siteUrl = (url) => url.replace("{ladder}", process.env.BYS_LADDER_BASE ?? "{ladder}");
 
-/** Center of the first element matching `selector` (page coordinates for a mouse click). */
 const centerOf = (selector) => `(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`;
 
-/** Each conversation in the panel menu with its state label (运行中 / 空闲 / …). */
 const CONVERSATIONS = `[...document.querySelectorAll("#conversation-menu [data-conversation-id]")].map((b) => ({ id: b.dataset.conversationId, title: b.title, state: b.lastElementChild?.textContent ?? "" }))`;
 
 export async function runJob({ task, model, outDir, capMs = 240000, log = () => {}, dryRun = false, dist }) {
@@ -167,14 +144,12 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     await rp.cdp.send("Page.enable", {}, pageSid);
     await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: rp.dirs.downloads, eventsEnabled: true }).catch(() => {});
 
-    // --- real side panel + model config through the extension's own storage (what the settings page saves) ---
     const ps = await rp.attach(await rp.openSidePanel());
     await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, ps).catch(() => {});
     await until(async () => evalIn(ps, "!!document.querySelector('#input')"), 15000, "panel input");
     await evalIn(ps, `chrome.storage.local.set(${JSON.stringify(cfg.items)}).then(() => true)`);
     rec.harness.stored_config = await evalIn(ps, `chrome.storage.local.get(["inproc_model_config", "inproc_fast_model_config"])`);
 
-    // Record the task tab's main-document response, never subresource/assistant errors.
     let documentResponse = null;
     rp.cdp.onEvent("Network.responseReceived", ({ sessionId, params }) => {
       if (sessionId === pageSid && params.type === "Document") documentResponse = { url: params.response.url, status: params.response.status };
@@ -189,7 +164,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       return observed;
     };
 
-    // --- task page ---
     rec.timestamps.page_open = iso(Date.now());
     const navigation = await rp.cdp.send("Page.navigate", { url: siteUrl(task.site_url) }, pageSid);
     await until(async () => (await evalIn(pageSid, "document.readyState").catch(() => "")) === "complete", 45000, "page load").catch((e) => rec.errors.push(`page load: ${e.message}`));
@@ -197,8 +171,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     await sleep(1000);
     await until(async () => (await evalIn(ps, PANEL_PROBE)).connected, 90000, "panel connected to the in-extension agent");
 
-    // BYS_SCREENCAST=1: record the task page and the side panel as JPEG frames (<id>-cast/{page,panel}-<Date.now()>.jpg)
-    // so a run can be watched as video; same clock as page_log and interjections.
     if (process.env.BYS_SCREENCAST) {
       const castDir = join(outDir, `${task.id}-cast`);
       mkdirSync(castDir, { recursive: true });
@@ -229,7 +201,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       return rec;
     }
 
-    // --- task setup_steps: extra tabs; a text selection opened in the page's 划词 card like a user (Shift-select → 问 AI) ---
     let selected = null;
     rec.setup = [];
 
@@ -273,7 +244,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
           selected = await evalIn(pageSid, selectText(step.text));
 
           if (!selected) throw new Error(`text not found on page: ${step.text.slice(0, 60)}`);
-          await sleep(600); // let scrollIntoView finish; a scroll hides the toolbar
+          await sleep(600);
           const shift = { key: "Shift", code: "ShiftLeft", windowsVirtualKeyCode: 16 };
           await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", modifiers: 8, ...shift }, pageSid);
           await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...shift }, pageSid);
@@ -309,7 +280,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       return rec;
     }
 
-    // --- memory quiz: earlier turns (same or new conversation), each run to the end before the next; not timed ---
     const newConversation = async () => {
       await rp.click(ps, "#conversation-new");
       await until(async () => evalIn(ps, "document.querySelector('#send-btn')?.disabled === false && !document.querySelector('#messages .msg.user')"), 30000, "new conversation");
@@ -325,7 +295,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
         throw e; };
 
-      // the default conversation may still be starting: Enter is then ignored, so wait for the send button and confirm the message landed
       await until(async () => evalIn(ps, "document.querySelector('#send-btn')?.disabled === false"), 30000, "send ready").catch(shot);
       await rp.click(ps, "#input");
       await rp.typeText(ps, text);
@@ -334,8 +303,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
         await sent().catch(shot); });
 
-      // a pure 「记住…」 turn often ends with no text: only the 「已记住」 chip (fixed 2026-10-07; before that, a false 「模型返回了空响应」 notice).
-      // Either counts as settled and is recorded as empty.
       const settled = await until(async () => evalIn(ps, `(() => { const idle = !document.querySelector('#status-pill')?.classList.contains('running') && !document.querySelector('#send-btn')?.classList.contains('stopping');
         const empty = [...document.querySelectorAll('#messages .msg')].slice(-3).find((m) => ${MODEL_EMPTY}.test(m.innerText))?.innerText;
 
@@ -343,7 +310,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
         return idle && (document.querySelectorAll('#messages .msg.assistant').length > ${answers} ? 'answer' : empty ? 'empty: ' + empty : remembered ? 'remembered' : ''); })()`), capMs, "earlier turn done").catch(shot);
 
-      await sleep(4000); // memory judgments run after the turn settles
+      await sleep(4000);
       rec.before_turns.push({ prompt: text, answer: settled === "answer" ? await evalIn(ps, "[...document.querySelectorAll('#messages .msg.assistant')].at(-1)?.innerText ?? ''") : "", empty: settled !== "answer", ended_by: settled.startsWith("empty") ? "empty_notice" : settled });
     };
 
@@ -356,7 +323,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     if (task.new_conversation) await newConversation();
 
-    // --- send prompt like a user: focus, type, Enter (selection tasks: into the open 划词 card, minus the （选中…） stage note) ---
     const inputSid = selected ? pageSid : ps;
 
     const askedBefore = await evalIn(ps, "document.querySelectorAll('#messages .msg.user').length");
@@ -369,7 +335,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     rec.timestamps.send = iso(rec._t0);
     await rp.pressEnter(inputSid);
 
-    // a conversation still being created can clear the typed text (BYS-163 stayed blank, input empty): type and send once more
     if (!selected) {
       await until(async () => evalIn(ps, `document.querySelectorAll('#messages .msg.user').length > ${askedBefore}`), 15000, "prompt sent").catch(async () => {
         rec.errors.push("harness: first send was lost, typed again");
@@ -379,7 +344,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       });
     }
 
-    // --- L7: a second task in a new foreground tab and a new conversation, while the first one runs ---
     let pageB = null;
 
     if (task.parallel) {
@@ -394,7 +358,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       rec.parallel = { site_url: task.parallel.site_url, prompt: task.parallel.prompt, sent_at: t(Date.now()) };
     }
 
-    // --- L6: the user takes over once `takeover.when` holds on the page, edits one field, hands back ---
     const takeover = async () => {
       const at = Date.now();
       await rp.click(ps, "#takeover-btn");
@@ -409,22 +372,18 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       rec.takeover = { at: t(at), paused_ms: paused - at, edited: task.takeover.edit, value_after_edit: await evalIn(pageSid, `document.querySelector(${JSON.stringify(task.takeover.edit.selector)}).value`) };
     };
 
-    // --- 插话（eval/tasks/duplex.md）：页面满足 `when`，或发出后过了 `after_ms`，用户在输入框里补一句（text），或点停止（stop）---
     const pendingInterjections = (task.interject ?? []).map((x) => ({ ...x }));
     rec.interjections = [];
 
-    // The interjection counts from the moment the user sends it (Enter, or the stop click), not from when typing began:
-    // the readout measures the product, and typing time is the harness's, kept apart as typed_ms.
     const interject = async (x) => {
       const began = Date.now();
       let at;
 
-      if (x.stop) { at = Date.now(); await rp.click(ps, "#send-btn"); } // 运行中发送键就是停止键
+      if (x.stop) { at = Date.now(); await rp.click(ps, "#send-btn"); }
       else { await rp.click(ps, "#input"); await rp.typeText(ps, x.text); at = Date.now(); await rp.pressEnter(ps); }
       rec.interjections.push({ kind: x.kind ?? (x.stop ? "stop" : "text"), text: x.text ?? null, at: t(at), at_ms: at, typed_ms: at - began });
     };
 
-    // --- watch panel DOM + extension diagnostics ---
     const seen = new Set();
 
     const addStep = (at, source, text) => {
@@ -435,7 +394,7 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       rec.steps.push({ t: t(at), at: iso(at), source, text: String(text).slice(0, 500) });
     };
 
-    const firstSeen = new Map(); // 气泡编号 -> 第一次出字的时刻
+    const firstSeen = new Map();
     let firstOut = null, lastChange = Date.now(), lastSig = "", ended = null, lastTraceRead = 0;
     const deadline = rec._t0 + capMs;
     let snap;
@@ -443,7 +402,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     while (Date.now() < deadline) {
       const now = Date.now();
 
-      // 划词 answers stream into the page card, not the panel
       if (selected) {
         const r = await evalIn(ps, READING_PROBE).catch(() => null);
 
@@ -459,7 +417,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
         lastChange = Date.now();
       }
 
-      // 一次轮询最多插一句；条件按顺序检查，所以第二句不会抢在第一句前面
       const next = pendingInterjections.find((x) => !x.done);
 
       if (next && (next.after_ms != null ? now - rec._t0 >= next.after_ms : await evalIn(pageSid, next.when).catch(() => false))) {
@@ -472,7 +429,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
       if (snap?.error) { rec.errors.push(`panel probe: ${snap.error}`); await sleep(500); continue; }
 
-      // the prompt can still sit in the input if Enter landed before the panel was ready
       const afterUser = snap.msgs.slice(snap.msgs.findLastIndex((m) => /\buser\b/.test(m.cls)) + 1);
 
       for (const m of afterUser) if (m.text && !/streaming/.test(m.cls)) addStep(now, `panel:${m.cls.replace(/^msg\s*/, "") || "msg"}`, m.text.slice(0, 300));
@@ -487,7 +443,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
       const visible = afterUser.some((m) => m.text) || snap.runs.some((r) => r.chips.length || (r.title && !r.title.startsWith("正在")) || r.thinking);
 
-      // 等待期间每 2 秒拍一次侧栏，最多 15 张，和日常全套一致（#239）：复看页据此判过程界面看不看得懂。
       if ((snap.running || snap.streaming || snap.abortVisible) && rec.panel_wait.length < 15 && now - rec._t0 >= (rec.panel_wait.length + 1) * 2000) {
         const file = `${task.id}-panel-wait-${(rec.panel_wait.length + 1) * 2}s.png`;
         const process = snap.runs.map((r) => [r.title, ...r.chips.map((c) => c.label)].filter(Boolean).join(" · ")).filter(Boolean).join(" | ");
@@ -501,7 +456,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
       if (!firstOut && (afterUser.some((m) => m.text) || snap.runs.some((r) => r.chips.length || r.thinking))) { firstOut = now; rec.timestamps.first_visible_output = iso(now); }
 
-      // diagnostics, read incrementally every ~1.5 s
       if (now - lastTraceRead > 1500) {
         lastTraceRead = now;
         const got = await evalIn(ps, traceSince(traceKey)).catch(() => null);
@@ -531,7 +485,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     rec.seconds_total = t(endAt);
     rec.seconds_to_first_output = t(firstOut);
 
-    // a timed-out task is stopped like a user would (send button doubles as stop) before collecting evidence
     if (!ended) {
       await rp.click(ps, "#send-btn").catch(() => {});
       const stopped = (s) => !s.running && !s.abortVisible;
@@ -539,18 +492,14 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       snap = await evalIn(ps, PANEL_PROBE).catch(() => snap);
     }
 
-    // --- final state ---
     if (snap && !snap.error) {
       const afterUser = snap.msgs.slice(snap.msgs.findLastIndex((m) => /\buser\b/.test(m.cls)) + 1);
       rec.panel_messages = afterUser;
 
-      // 有插话时，「最后一个用户气泡之后」只剩插话之后的部分；整段从原始要求那个气泡算起另存一份
       if (task.interject) {
         const userIdx = snap.msgs.map((m, i) => (/\buser\b/.test(m.cls) ? i : -1)).filter((i) => i >= 0);
         rec.panel_messages_all = snap.msgs.slice((userIdx[askedBefore] ?? -1) + 1);
       }
-      // 首字（#264 口径）：最后留在回答区的第一个回答气泡开始出字的时刻。开场话（.opening-line）、ack 交付、
-      // 被收进过程的前导正文都不算，所以要等跑完、看清哪个气泡是回答再定。没有回答时保持 null。
       const reply = afterUser.find((m) => /assistant/.test(m.cls) && !/opening-line|error/.test(m.cls) && m.kind !== "ack" && m.text);
 
       if (reply) { const at = firstSeen.get(reply.id) ?? endAt; rec.timestamps.first_answer_text = iso(at); rec.seconds_to_first_answer_text = t(at); }
@@ -562,7 +511,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
       if (!rec.final_answer_verbatim && afterUser.length) rec.final_answer_verbatim = afterUser.map((m) => m.text).join("\n");
 
-      // no answer, only the product's empty-response notice: the model gave nothing back, not a product verdict
       const empty = afterUser.find((m) => MODEL_EMPTY.test(m.text));
 
       if (!answers.length && empty) { rec.status = "environment"; rec.environment = { kind: "model_empty", text: empty.text.slice(0, 200) }; }
@@ -597,7 +545,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       rec.final_page = { url: (await evalIn(pageSid, "location.href").catch(() => null)) ?? blank.url, title: await evalIn(pageSid, "document.title").catch(() => null), tabs: tabs.map((x) => ({ url: x.url, title: x.title })) };
       rec.page_changed = rec.final_page.url !== task.site_url;
       rec.environment = siteBlock(await observeSite());
-      // final page text for the judge: visible text + form field values (bounded; a native dialog can block this)
       rec.final_page_text = await Promise.race([
         evalIn(pageSid, `(()=>{const f=[...document.querySelectorAll('input,select,textarea')].filter(e=>e.type!=='hidden'&&e.type!=='password').slice(0,80).map(e=>(e.name||e.id||e.type)+'='+(e.type==='checkbox'||e.type==='radio'?e.checked:(e.tagName==='SELECT'?(e.selectedOptions[0]?.text??''):e.value))).join('; ');return (document.body?.innerText??'').slice(0,30000)+(f?'\\n[form fields] '+f:'')})()`),
         sleep(5000).then(() => null)]).catch(() => null);
@@ -605,7 +552,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
       if (pageB) rec.final_page_text = `[tab 1] ${rec.final_page_text ?? ""}\n\n[tab 2] ${await evalIn(pageB, "(document.body?.innerText ?? '').slice(0, 15000)").catch(() => "")}`;
 
       if (task.interject) {
-        // 没等到条件、任务就结束了的插话：这题没测到插话，不能当通过或失败看
         for (const x of pendingInterjections.filter((y) => !y.done)) rec.interjections.push({ kind: x.kind ?? (x.stop ? "stop" : "text"), text: x.text ?? null, missed: true });
         rec.page_log = await evalIn(pageSid, "JSON.parse(localStorage.getItem('duplexLog') || 'null')").catch(() => null);
       }
@@ -613,21 +559,18 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     if (task.before_turns || task.memory_check) {
       const memory = await evalIn(ps, `new Promise((ok) => { const q = indexedDB.open("sideagent-memory"); q.onsuccess = () => { const g = q.result.transaction("kv").objectStore("kv").get("memories"); g.onsuccess = () => ok(g.result ?? null); g.onerror = () => ok(null); }; q.onerror = () => ok(null); })`).catch(() => null);
-      const doc = memory ? JSON.parse(memory) : null; // document-idb stores the document as JSON text
+      const doc = memory ? JSON.parse(memory) : null;
       const entries = (doc?.entries ?? []).filter((e) => e.status === "active").map((e) => ({ kind: e.kind, scope: e.scope, text: e.text }));
       const dst = join(outDir, `${task.id}.memory.json`);
       writeFileSync(dst, JSON.stringify(entries, null, 1));
       rec.downloads.push({ kind: "memory store after the run (active entries)", name: "memory.json", path: dst, bytes: statSync(dst).size });
     }
 
-    // fact check runs after delivery: give it time to land under the answer before the snapshot
     if (task.wait_fact_check) {
       const t0 = Date.now();
       rec.fact_check = await until(async () => evalIn(ps, "(() => { const a = [...document.querySelectorAll('#messages .msg.assistant[data-fact-checked]')].at(-1); return a ? { count: Number(a.dataset.factChecked), problems: [...a.querySelectorAll('.fact-check li')].map((li) => li.textContent) } : null; })()").then((v) => v || undefined), 150_000, "fact check").catch(() => null);
       if (rec.fact_check) rec.fact_check.seconds = Math.round((Date.now() - t0) / 1000);
     }
-    // screenshots: page + side panel side by side (what the judge prompt calls the window), and the panel alone
-    // blind-review tasks: the run gets a perturbed prompt, the reviewer sees the panel as if the plain prompt had been sent
     if (task.display_prompt) {
       await evalIn(ps, `(() => { const from = ${JSON.stringify(rec.typed_prompt ?? task.prompt)}, to = ${JSON.stringify(task.display_prompt)};
         const bubble = [...document.querySelectorAll('#messages .msg.user')].at(-1); if (!bubble) return;
@@ -635,7 +578,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
         for (let n = w.nextNode(); n; n = w.nextNode()) if (n.data.includes(from)) { n.data = n.data.replace(from, to); return; }
         bubble.firstElementChild ? (bubble.firstElementChild.textContent = to) : (bubble.textContent = to); })()`).catch((e) => rec.errors.push(`display prompt: ${e.message}`));
     }
-    // self-contained copy of the panel (styles inlined, scripts dropped) so a reviewer can scroll the whole answer and open its links
     if (task.snapshot_panel) {
       const html = await evalIn(ps, `(() => { const rules = (sheet) => { try { return [...sheet.cssRules].map((r) => r.styleSheet ? rules(r.styleSheet) : r.cssText).join('\\n'); } catch { return ''; } }; const css = [...document.styleSheets].map(rules).join('\\n');
         const doc = document.documentElement.cloneNode(true); doc.querySelectorAll('script, link[rel=stylesheet]').forEach((e) => e.remove());
@@ -655,7 +597,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     if (existsSync(panelPng)) rec.screenshots.push(panelPng);
 
-    // artifact cards: click 下载 like a user
     const cardNames = await evalIn(ps, "[...document.querySelectorAll('.artifact-card')].filter((c) => !c.querySelector('.artifact-download')?.disabled).map((c) => c.dataset.filename)").catch(() => []);
 
     for (const name of cardNames ?? []) {
@@ -666,7 +607,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     if (cardNames?.length) await sleep(2500);
 
-    // diagnostics: export through the settings page like a user (fresh profile, so the file is this job only)
     let exported = null;
 
     try {
@@ -706,7 +646,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     rec.n_tool_calls = trace.filter((e) => e.type === "tool_execution_start").length;
     rec.n_steps = rec.steps.filter((s) => s.source === "trace:tool_start" || s.source === "panel:chip").length;
 
-    // artifacts rebuilt from the artifacts tool calls (in case the card download did not land)
     const arts = new Map();
 
     for (const e of trace) {
@@ -722,7 +661,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     for (const [name, content] of arts) { const dst = join(outDir, `${task.id}.artifact.${name}`); writeFileSync(dst, content); rec.downloads.push({ kind: "artifact(tool args)", name, path: dst, bytes: Buffer.byteLength(content) }); }
 
-    // browser downloads (artifact cards, page downloads)
     for (const f of existsSync(rp.dirs.downloads) ? readdirSync(rp.dirs.downloads) : []) {
       const src = join(rp.dirs.downloads, f);
 
@@ -735,7 +673,6 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
     writeFileSync(join(outDir, `${task.id}.trace.jsonl`), trace.map((e) => JSON.stringify(e)).join("\n"));
     const mainId = rec.main_model.slice(rec.main_model.indexOf("/") + 1);
 
-    // run_start records the model as "provider/modelId"
     if (rec.trace_model != null && !JSON.stringify(rec.trace_model).includes(mainId)) rec.errors.push(`MODEL MISMATCH: trace says ${JSON.stringify(rec.trace_model)}`);
   } catch (e) {
     rec.errors.push(`harness: ${e.stack ?? e.message}`);
@@ -745,13 +682,12 @@ export async function runJob({ task, model, outDir, capMs = 240000, log = () => 
 
     if (rp) {
       await rp.close().catch(() => {});
-      await rp.remove().catch(() => {}); // deletes the temp profile, which holds the credential in extension storage
+      await rp.remove().catch(() => {});
       LIVE.delete(rp);
     }
 
     rec.load_at_end = os.loadavg().map((x) => Math.round(x * 10) / 10);
     writeFileSync(join(outDir, `${task.id}.json`), JSON.stringify(rec, null, 2));
-    // credentials must not reach results: scan every file this job wrote (bytes compared in memory, never printed)
     const mine = readdirSync(outDir).filter((f) => f.startsWith(`${task.id}.`) || f.startsWith(`${task.id}-`));
     const leaks = mine.filter((f) => secrets.some((s) => readFileSync(join(outDir, f)).includes(Buffer.from(s))));
     rec.secret_scan = { files: mine.length, leaked_files: leaks };

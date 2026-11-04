@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-/**
- * Complexity ladder (docs/evals/20261006-complexity-ladder.md): runs every level of eval/tasks/ladder.json
- * N times with run.mjs, then writes one table per level: pass rate, median tool calls, median seconds.
- *   node eval/harness/ladder.mjs --tag before --models openai-codex/gpt-6-luna [--repeats 3] [--levels L1,L6] [--concurrency 3]
- *   node eval/harness/ladder.mjs --tag before --report        (table only, from existing results)
- * Output: <runs>/ladder-<tag>/r<n>-<level>/ (normal run dirs, judged) and <runs>/ladder-<tag>/ladder.{md,json}
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

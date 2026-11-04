@@ -1,12 +1,3 @@
-/**
- * 用户在设置里打开「回答里的小程序」，下一个问题起助手就知道可以用小程序回答；关掉后不再告诉它。
- * 扩展内的助手跑在 offscreen 文档里，那里读不到 chrome.storage：开关要由后台推过去。
- * 只装扩展、隔离构建、本机脚本模型；看发给模型的本轮上下文里有没有小程序说明。
- *   npx tsx scripts/acceptance/real-path/mini-apps-setting.mts --headless
- *   a) 开关打开后问一句：本轮上下文带「Mini apps」说明。
- *   b) 关掉后再问：不带。
- * 失败方式：offscreen 里直接读 chrome.storage，每次都读失败当作关，a 失败。
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, sleep, until, type Json } from "./harness.mts";
@@ -30,7 +21,6 @@ const model = await startScriptedModel([
   if (!payload.tools?.length) return;
   const texts = (payload.messages ?? []).map(m => textOf(m.content));
 
-  // 本轮上下文紧挨着这一问插入；更早几轮的上下文不算。
   for (const ask of [ON, OFF]) {
     const at = texts.findLastIndex(text => text.includes(ask));
 
@@ -55,7 +45,6 @@ try {
     await until(async () => await rp.evaluate(panel, ready), 60_000, "这一轮结束");
   };
 
-  // 设置页的开关写的就是这个键（settings/main.ts bindToggle）。
   await rp.evaluate(panel, `chrome.storage.local.set({ sideagent_mini_apps: true }).then(() => true)`);
   await sleep(1_000);
   await say(ON, "第一问答完了");

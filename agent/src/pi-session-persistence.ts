@@ -2,7 +2,6 @@ import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { SessionLogEntry, SessionLogPort } from './session-log.js';
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent';
 
-/** Synchronous checkpoint reads retain the existing task contract. Writes await Pi's durable append. */
 export class PiSessionPersistence {
   private entries: SessionEntry[] = [];
   private tail: Promise<void> = Promise.resolve();
@@ -17,8 +16,6 @@ export class PiSessionPersistence {
   }
   getBranch(): SessionEntry[] { return [...this.entries]; }
   appendCustomEntry(customType: string, data?: Parameters<SessionManager['appendCustomEntry']>[1]): Promise<string> {
-    // Capture the checkpoint now, before later task events can mutate nested fields.
-    // Optional undefined fields use the existing JSONL representation.
     const durable = data === undefined ? undefined : JSON.parse(JSON.stringify(data));
 
     return this.enqueue(async () => {
@@ -32,7 +29,6 @@ export class PiSessionPersistence {
     });
   }
   appendMessage(message: AgentMessage): Promise<string> {
-    // 深拷贝成纯 JSON 再写入日志。
     const durable: AgentMessage = JSON.parse(JSON.stringify(message));
 
     return this.enqueue(() => this.native.appendMessage(durable));
@@ -50,17 +46,12 @@ export class PiSessionPersistence {
     });
 
     this.tail=pending.then(()=>{},error=>{this.error=error;});
-    // Event subscribers cannot await; flush at acceptance, tool and settled boundaries reports failure.
     void pending.catch(()=>{});
 
     return pending;
   }
 }
 
-/**
- * 按 Pi 0.84.4 的 buildSessionContext 从分支条目还原消息：取 message 条目，跳过 stopReason 为 deferred 的助手消息。
- * 我们只写 message 与 custom 条目，custom 条目不进模型上下文；不写 compaction 与 branch_summary，所以不处理它们。
- */
 function branchMessages(branch: SessionLogEntry[]): AgentMessage[] {
   return branch.flatMap(entry => {
     if (entry.type !== 'message') return [];

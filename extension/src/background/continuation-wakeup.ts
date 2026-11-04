@@ -2,7 +2,6 @@ import { CONTINUATION_KEY } from '../../../shared/task-continuation.js';
 
 const ALARM = 'sideagent-continuation-wakeup';
 
-/** A wake hint only. The task checkpoint, not alarm delivery, decides what may resume. */
 export function installContinuationWakeup(wake: () => void): void {
   const sync = async () => {
     const values = await chrome.storage.local.get(CONTINUATION_KEY);

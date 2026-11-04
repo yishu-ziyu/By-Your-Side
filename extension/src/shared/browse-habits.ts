@@ -1,25 +1,17 @@
 import { isBrowseHabit, type BrowseHabit } from '../../../shared/browse-habits.js';
 
-/** 从用户自己的浏览里学习习惯：网页、后台、侧栏、设置页共用的键和消息。 */
-
-/** chrome.storage.local：开关。默认开，只有明确存了 false 才算关（关掉＝暂停，已记的保留）。 */
 export const BROWSE_ON_KEY = 'sideagent_browse_habits';
 export const BROWSE_INDUCE_AFTER_STEPS = 5;
 export const BROWSE_INDUCE_EVERY_MS = 30 * 60_000;
 
-/** chrome.storage.local：操作记录 { events: BrowseEvent[], since: number, lastAt: number }，只有后台写。 */
 export const BROWSE_LOG_KEY = 'sideagent_browse_log';
 
-/** chrome.storage.local：最近一次归纳出的事 BrowseHabit[]，只有后台写；侧栏「看到的操作」照此显示。 */
 export const BROWSE_FOUND_KEY = 'sideagent_browse_found';
 
-/** chrome.storage.local：用户在「看到的操作」里删掉的 key：不再显示、不再问。 */
 export const BROWSE_DISMISSED_KEY = 'sideagent_browse_dismissed';
 
-/** 页面 → 后台：用户做了一步。 */
 export const BROWSE_EVENT = 'BROWSE_EVENT';
 
-/** 侧栏 → 后台：删一条归纳（key）或全部删除。由后台和记录写入排在一起做，免得被正在写的旧记录盖回去。 */
 export const BROWSE_CONTROL = 'BROWSE_CONTROL';
 
 export type BrowseStep =
@@ -28,7 +20,6 @@ export type BrowseStep =
   | { kind: 'fill'; label: string; value: string }
   | { kind: 'submit'; label: string; value: string };
 
-/** 后台存的一步：line 是已经写成一行的人话，交给模型和侧栏都用它。 */
 export interface BrowseEvent { at: number; day: string; host: string; line: string }
 
 export const isBrowseOn = (stored: unknown) => stored !== false;
@@ -60,7 +51,6 @@ export function readDismissed(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : [];
 }
 
-/** 本地日期 YYYY-MM-DD。 */
 export function localDay(at: number): string {
   const d = new Date(at);
 

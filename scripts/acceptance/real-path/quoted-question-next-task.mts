@@ -1,10 +1,3 @@
-/**
- * Real extension: an answer that ends by listing a title with a question mark (《Are markets efficient?》) is not taken as
- * the assistant asking the user. When the goal check has no verdict, the next unrelated message still starts a new task
- * instead of being folded into the old one as a revision; an answer that really ends with a question still is.
- *   npx tsx scripts/acceptance/real-path/quoted-question-next-task.mts --headless [--only=title,asks]
- * The model and the checker are scripted (the checker returns no verdict), so this proves the host layer.
- */
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -29,7 +22,6 @@ for(const item of CASES.filter(c=>!only||only.includes(c.id))){
  const first=`问号验收${item.id}：帮我找这个作者的个人主页。`;
  const second=`问号验收${item.id}：另外帮我算一下 17 乘 23。`;
  const model=await startScriptedModel([
-  // 核对拿不到结论：只剩宿主看回答结尾判断是不是在等用户。
   {match:'"lastReply"',steps:[{text:'no verdict'},{text:'no verdict'},{text:'no verdict'},{text:'no verdict'}]},
   {match:second,steps:[{text:'391。'}]},
   {match:first,steps:[{tool:{name:'navigate',args:{url:origin}}},{text:item.ending}]},
@@ -46,7 +38,6 @@ for(const item of CASES.filter(c=>!only||only.includes(c.id))){
   await until(()=>rp.evaluate(panel,`document.body.innerText.includes('391')`),60000,'second answer');
   const trace=await rp.evaluate(panel,traceExpression) as Array<{type:string;data?:{text?:string}}>;
   await writeFile(join(out,`${item.id}-trace.jsonl`),trace.map(e=>JSON.stringify(e)).join('\n'));
-  // 接成旧任务时，第二句开的一轮目标仍是第一句原话（并记 restart_resume）；新任务的一轮目标是第二句。
   const started=trace.some(e=>e.type==='run_start'&&e.data?.text===second);
   const continued=trace.filter(e=>e.type==='run_start'&&e.data?.text===first).length>1;
   summary={started,continued};

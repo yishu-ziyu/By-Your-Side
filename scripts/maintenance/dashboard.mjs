@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-/**
- * 项目看板：从仓库现有数据（git、gh、评测结果、STATUS）生成一页静态 HTML。
- * 输出 out/dashboard/index.html；只读，不改仓库、不联网同步，gh 不可用时对应区块降级。
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -43,8 +39,6 @@ const TYPE_LABELS = {
   other: "其他",
 };
 
-// ---------- helpers ----------
-
 function esc(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -58,7 +52,6 @@ function run(cmd, args, timeout = 20_000) {
   return execFileSync(cmd, args, { cwd: ROOT, encoding: "utf8", timeout, maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
 }
 
-// gh 偶尔遇到瞬时网络错误（如 graphql EOF），多试一次再降级。
 function tryRun(cmd, args, timeout) {
   const attempts = cmd === "gh" ? 2 : 1;
   let last;
@@ -111,7 +104,6 @@ function shortModel(spec) {
     .join(" + 快速 ");
 }
 
-// Relative link from out/dashboard/index.html back into the repo.
 function repoHref(rel) {
   return `../../${rel.split("/").map(encodeURIComponent).join("/")}`;
 }
@@ -120,7 +112,6 @@ function notice(text) {
   return `<p class="notice">${esc(text)}</p>`;
 }
 
-// Minimal RFC 4180 CSV parser (quoted fields may contain commas, quotes, newlines).
 function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -159,8 +150,6 @@ function parseCsv(text) {
   return body.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])));
 }
 
-// ---------- section 1: top line ----------
-
 function topLine() {
   const parts = [`<span>生成于 ${esc(fmtTime(Date.now()))}</span>`];
   const head = tryRun("git", ["rev-parse", "--short", "main"]);
@@ -193,8 +182,6 @@ function topLine() {
 
   return `<div class="topline">${parts.join("")}</div>`;
 }
-
-// ---------- section 2: tiers ----------
 
 function loadTasks() {
   const text = readText("eval/tasks/tasks.jsonl");
@@ -294,7 +281,6 @@ function tierChart(series, tier) {
       lastGroup = s.group;
     }
 
-    // 「主模型 + 快速 模型」分两行，长名字不压到条形上。
     const [main, fast] = s.label.split(" + 快速 ");
     let note = `${n} 题${environment ? ` · 另有${environment}条站点不可用` : ""}`;
 
@@ -372,8 +358,6 @@ function tiersSection() {
   return head.join("") + cards.join("\n") + `<p class="evidence">来源：eval/tasks/tiers.json · eval/results/full-1/report_per_task.csv（不含关闭思考的对照组）· eval/runs/*/report.json；浅色条为旧基线。</p>`;
 }
 
-// ---------- section 3: recent commits ----------
-
 function evalOutcome(rel) {
   const text = readText(rel);
 
@@ -447,8 +431,6 @@ function commitsSection() {
   return `${html}</ol>`;
 }
 
-// ---------- section 4: issues ----------
-
 function parseIssueTitle(title) {
   const m = title.match(/^\[([^\]/]*)\/?(P\d[^\]]*)?\]\s*(.*)$/);
 
@@ -510,8 +492,6 @@ function issuesSection() {
 
   return `${html}<h3 class="sub">最近 ${RECENT_DAYS} 天解决了 ${recent.length} 个</h3><ul class="closed">${items}</ul>`;
 }
-
-// ---------- section 5: capabilities ----------
 
 function stripMd(text) {
   return text
@@ -576,8 +556,6 @@ function capabilitiesSection() {
   return `<div class="cap-grid">${cards.join("\n")}</div>`;
 }
 
-// ---------- section 6: work lines ----------
-
 function workSection() {
   const blocks = [];
   const refs = tryRun("git", ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)%1f%(committerdate:iso-strict)%1f%(subject)", "refs/heads", "refs/remotes"]);
@@ -634,8 +612,6 @@ function workSection() {
 
   return `<div class="work-grid">${blocks.join("\n")}</div>`;
 }
-
-// ---------- page ----------
 
 function safeSection(title, lead, build) {
   let body;

@@ -1,31 +1,17 @@
 import { resolveDiagramCite, type AnswerSourceMap, type DiagramCite } from "./answer-source.js";
-/**
- * 回答里的卡片：解析与取数，侧栏、语音、复制共用。
- * 侧栏怎么画在 extension/src/sidepanel/answer-cards.ts；模型怎么写在 agent/src/prompt.ts 的「Answer cards」一节。
- *
- * - 只认代码块以外的 <card>…</card>；写到一半的组件不算，只记下它开了头（pending），侧栏据此放空位。
- * - 数由这里算：value 写成算式时算出结果；正文的 {=名字} 换成卡片算出的数。实验里模型心算的合计 9 次全错，卡片算式全对。
- * - 卡片里有算式时，卡片写完后，正文里不在卡片里的金额换成「见下方卡片」，不让心算错的数留在结论句里。
- */
 
-/** expr：引用了可调的数的算式原文（如 68*months+398），用户改数时侧栏按它重算；只有常数的算式没有 expr。 */
-/** 这一行的数出自哪个标签页：tab 是标签页编号，find 是到那一页去找的那个数（页面上原样写的数，不是算出来的）。 */
 export type RowSource = { tab: string; find: string };
 
 export type Stat = { id?: string; label: string; value: string; formula?: string; note?: string; tag?: string; computed?: number; expr?: string; unit?: string; from?: RowSource };
 
-/** 用户能在卡片上调的数：算式用 id 引用它。 */
 export type CardInput = { id: string; label: string; value: number; min: number; max: number; step: number; unit?: string };
 
-/** 助手问用户时的一栏：有 options 就从中挑，没有就填字；from 是预填值的出处。 */
 export type CardField = { id: string; label: string; value: string; options?: string[]; from?: string; required: boolean };
 
-/** 选项的价、表格格子：值和可重算的算式。 */
 export type Cell = { value: string; expr?: string; unit?: string };
 
 export type Block =
   | { kind: "inputs"; items: CardInput[] }
-  /** 助手当场写的小程序：整段网页原文，侧栏放进不联网的沙箱里运行。 */
   | { kind: "app"; title: string; html: string }
   | { kind: "fields"; items: CardField[] }
   | { kind: "stats"; items: Stat[] }
@@ -36,13 +22,10 @@ export type Block =
   | { kind: "callout"; tone: "info" | "warn"; text: string }
   | { kind: "diagram"; source: string; cites: Record<string, DiagramCite> };
 
-/** submit：把卡片里各栏的名字和值合成一句用户的话发出。 */
 export type CardButton = { label: string; tab?: string; submit?: boolean; primary: boolean };
 
-/** 卡片末尾已经开了头、还没写完的组件：tag 是标签名，written 是已写出的属性原文（侧栏据此放尺寸接近的空位）。 */
 export type PendingComponent = { tag: "stat" | "step" | "option" | "table" | "tr" | "check" | "callout" | "diagram"; written: string };
 
-/** key：整张卡原文的摘要，用户在卡片上调过、勾过的状态按它存。 */
 export type Card = { key: string; title: string; sub?: string; blocks: Block[]; buttons: CardButton[]; source?: string; closed: boolean; numbers: Set<string>; values: Map<string, string>; formulas: boolean; pending?: PendingComponent };
 
 type AnswerPart = { prose: string } | { card: Card | undefined };
@@ -67,19 +50,17 @@ function attrsOf(source: string): Attrs {
 
 const str = (v: string | true | undefined) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
-/** 算式里能用的函数；可调的数不能用这些名字。 */
 const FUNCS: Record<string, (...a: number[]) => number> = {
   min: Math.min, max: Math.max, abs: Math.abs, floor: Math.floor, ceil: Math.ceil,
   round: (x, digits = 0) => Math.round(x * 10 ** digits) / 10 ** digits,
 };
 
 /**
- * 算式的小解析器：扩展页面的 CSP 不允许动态求值。认数字、+ − × ÷、^、括号、比较（结果 1 或 0）、条件 a ? b : c、FUNCS 里的函数。
+ * WHY: 算式的小解析器：扩展页面的 CSP 不允许动态求值。认数字、+ − × ÷、^、括号、比较（结果 1 或 0）、条件 a ? b : c、FUNCS 里的函数。
  * 乘方和条件是给房贷月供、分档折扣这类算式用的：真模型想写，但写不出来就只能心算。
  */
 function calc(expression: string): number | undefined {
   const s = expression.replace(/[−–]/g, "-").replace(/×/g, "*").replace(/÷/g, "/").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/\s+/g, "");
-  // 逗号：有函数时是参数分隔，没有时是千分位。
   const t = /[a-z]\(/.test(s) ? s : s.replace(/,/g, "");
   let i = 0;
   const eat = (token: string) => (t.startsWith(token, i) ? ((i += token.length), true) : false);
@@ -114,7 +95,6 @@ function calc(expression: string): number | undefined {
     return Number(m[0]);
   };
   const unary = (): number => (eat("-") ? -unary() : eat("+") ? unary() : power());
-  // 右结合：2^3^2 = 2^9；-2^2 = -(2^2)。
   const power = (): number => {
     const base = atom();
 
@@ -168,10 +148,8 @@ function calc(expression: string): number | undefined {
   }
 }
 
-/** 可调的数的名字：字母或下划线开头。 */
 const NAME = /[A-Za-z_]\w*/g;
 
-/** 把算式里可调的数的名字换成当前值再算；有不认识的名字就算不出。 */
 export function evaluate(expression: string, vars: ReadonlyMap<string, number>): number | undefined {
   let unknown = false;
   const s = expression.replace(NAME, (name) => {
@@ -180,32 +158,26 @@ export function evaluate(expression: string, vars: ReadonlyMap<string, number>):
 
     if (v === undefined) unknown = true;
 
-    // 负数加括号：x^2 在 x = −2 时是 4，不是 -2^2 = −4。
     return v !== undefined && v < 0 ? `(${v})` : String(v);
   });
 
   return unknown ? undefined : calc(s);
 }
 
-/** 算式里出现了哪个可调的数。 */
 const usesVars = (expression: string, vars: ReadonlyMap<string, number>) => [...expression.matchAll(NAME)].some((m) => vars.has(m[0]));
 
-/** 给人看的算式：名字换成当前值，运算符换成 × ÷。 */
 export function showFormula(expression: string, vars: ReadonlyMap<string, number>): string {
   return prettyFormula(expression.replace(NAME, (name) => (name in FUNCS ? name : String(vars.get(name) ?? name))));
 }
 
-/** 算出的数加千分位和单位。 */
 export const showValue = (n: number, unit?: string) => withUnit(formatNumber(n), unit);
 
 const formatNumber = (n: number) => n.toLocaleString("zh-CN", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 
 const prettyFormula = (f: string) => f.replace(/\s+/g, "").replace(/\*/g, " × ").replace(/\//g, " ÷ ").replace(/\+/g, " + ").replace(/(\d|\))-/g, "$1 − ").replace(/>=/g, " ≥ ").replace(/<=/g, " ≤ ").replace(/([^ ≥≤])([<>])/g, "$1 $2 ").replace(/\?/g, " ? ").replace(/:/g, " : ").replace(/,/g, ", ");
 
-/** 比较用的数：去掉千分位和多余的小数零。 */
 const plain = (n: string) => String(Number(n.replace(/,/g, "")));
 
-/** 货币符号放在数前面，其他单位放在后面；值里已经带了单位就不再加。 */
 function withUnit(value: string, unit: string | undefined): string {
   if (!unit || !/^-?[\d,]+(?:\.\d+)?$/.test(value)) return value;
 
@@ -216,23 +188,16 @@ const MAX_INPUTS = 2;
 
 const MAX_FIELDS = 6;
 
-/**
- * 密码、卡号、验证码这类栏不画：这些值只由用户自己在网页上填（hand_to_user），不经过侧栏和模型。
- * 模型可能被网页内容带偏，写出一张“请填写银行卡号”的表单，所以按名字拦，不靠提示词。
- */
 const SECRET_FIELD_ZH = /密码|口令|卡号|信用卡|银行卡|储蓄卡|有效期|验证码|校验码|安全码|动态码|身份证/;
 
-/** 英文按整词比：shipping 里的 pin 不算。 */
 const SECRET_FIELD_EN = /\b(?:pin|cvv\d?|cvc\d?|otp\w*|password\w*|passcode|card\s*num(?:ber)?|security\s*code|one[-\s]*time\w*)\b/i;
 
 function cardField(a: Attrs): CardField | undefined {
   const id = str(a.id);
   const label = str(a.label);
 
-  // 先去掉看不见的字和空白再比：「密\u200b码」「验 证 码」看起来就是密码、验证码。显示的名字也去掉看不见的字。
   const visible = (t: string) => t.normalize("NFKC").replace(/[\p{Cf}\u00ad\u180e]/gu, "");
 
-  // id 拆成词再比：user_password、userPassword 里的 password 也算。
   const words = visible(`${label} ${(id ?? "").replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2")}`);
 
   if (!id || !/^[A-Za-z_]\w*$/.test(id) || !label || SECRET_FIELD_ZH.test(words.replace(/\s+/g, "")) || SECRET_FIELD_EN.test(words)) return undefined;
@@ -242,7 +207,6 @@ function cardField(a: Attrs): CardField | undefined {
   return { id, label: visible(label), value: options?.length && !options.includes(value) ? "" : value, options: options?.length ? options : undefined, from: str(a.from), required: a.optional === undefined };
 }
 
-/** 卡片原文的摘要：同一张卡重开、重放时不变。 */
 function digest(s: string): string {
   let h = 5381;
 
@@ -253,7 +217,6 @@ function digest(s: string): string {
 
 const num = (v: string | true | undefined) => (typeof v === "string" && v.trim() && Number.isFinite(Number(v)) ? Number(v) : undefined);
 
-/** 不能用的可调的数不画：名字不合规、值不是数、范围反了。没写范围时按值给一个够用的范围。 */
 function cardInput(a: Attrs): CardInput | undefined {
   const id = str(a.id);
   const label = str(a.label);
@@ -271,10 +234,6 @@ function cardInput(a: Attrs): CardInput | undefined {
 
 const cell = (v: { value: string; expr?: string; unit?: string }): Cell => ({ value: v.value, expr: v.expr, unit: v.unit });
 
-/**
- * 一行的出处：写了数字 tab，并且这一行有数。算式取它的第一个数（=6199+15 取 6199）：比价时最要紧的那一行多半是“标价 + 运费”算出来的，
- * 页面上没有算出的数，但第一个数就是页面上的标价，圈它就是这一行的出处。
- */
 function rowSource(tab: string | true | undefined, raws: string[]): RowSource | undefined {
   const id = typeof tab === "string" && /^\d+$/.test(tab.trim()) ? tab.trim() : undefined;
 
@@ -282,7 +241,6 @@ function rowSource(tab: string | true | undefined, raws: string[]): RowSource | 
 
   for (const raw of raws) {
     const body = raw.startsWith("=") ? raw.slice(1).replace(/[¥￥$€£\s]/g, "") : raw;
-    // 负号留着：页面上的 -50（优惠）和 50 是两个数。
     const n = /[−-]?\d[\d,]*(?:\.\d+)?/.exec(body)?.[0]?.replace("−", "-");
 
     if (n) return { tab: id, find: n };
@@ -311,13 +269,8 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   let tagged = false;
   let picked = false;
   let primary = false;
-  /**
-   * 卡片里任何一处值（数字格、选项的价、表格格子）写成算式（= 开头）时都在这里算：模型会把算式也写进选项和表格，不只数字格。
-   * 算不出就去掉 =，原样显示，不把「=1699-50」露给用户。
-   */
   const resolve = (raw: string, unit?: string): { value: string; computed?: number; formula?: string; expr?: string; unit?: string } => {
     if (!raw.startsWith("=")) return { value: withUnit(raw, unit) };
-    // 模型有时把货币符号或「元」也写进算式（=¥1699-50）：先拿掉再算，符号当单位用。
     const symbol = /[¥￥$€£]/.exec(raw)?.[0];
     const expression = raw.slice(1).replace(/[¥￥$€£]/g, "").replace(/\s*元\s*$/, "");
     const live = usesVars(expression, vars);
@@ -343,11 +296,6 @@ function parseCard(source: string, closed: boolean): Card | undefined {
 
     return fresh;
   };
-  /**
-   * 图等整张卡写完才画：边写边画时每加一行整张图都会重排，图后面的原文（cite）也要写完才能点。
-   * 没写完时只放图前面的组件和图的空位，空位的位置就是图的位置，收尾时原位换成图。
-   * 图的原文里有 <br/>、-->，原文摘录里可能有网页上的任何字（包括像 <button> 的字），都不走下面的组件正则。
-   */
   let body = source.slice(head[0].length);
   const diagramAt = body.indexOf("<diagram>");
   let diagram: Extract<Block, { kind: "diagram" }> | undefined;
@@ -380,7 +328,6 @@ function parseCard(source: string, closed: boolean): Card | undefined {
     return `<tr html-row="${index}" />`;
   });
   const component = new RegExp(String.raw`<(input|field|stat|step|option|table|tr|check|callout|button|source|diagram-at)\b${ATTRS}\s*\/?>(?:([^<]*)<\/\1>)?`, "g");
-  // 可调的数先全部认出来：算式可能写在它前面。
   const inputs = new Map<string, CardInput>();
 
   for (const m of body.matchAll(new RegExp(String.raw`<input\b${ATTRS}\s*\/?>`, "g"))) {
@@ -402,7 +349,6 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       const field = cardField(a);
       const block = group("fields", () => ({ kind: "fields", items: [] }));
 
-      // 同一个 id 在整张卡里只认第一个：存下来的值按 id 还原，两栏同名会互相盖掉。
       if (field && !fieldIds.has(field.id) && fieldIds.size < MAX_FIELDS) { fieldIds.add(field.id); block.items.push(field); }
     } else if (tag === "input") {
       const id = str(a.id);
@@ -417,9 +363,7 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       if (!label || !raw) continue;
       const v = resolve(raw, str(a.unit));
 
-      // 数字格的算式算不出就不画这一格：它就是给人照着做决定的数。
       if (raw.startsWith("=") && v.computed === undefined) continue;
-      // 和可调的数同名的 id 不要：正文里的 {=名字} 只能有一个来源。
       const stat: Stat = { id: inputs.has(str(a.id) ?? "") ? undefined : str(a.id), label, value: v.value, formula: v.formula, computed: v.computed, note: str(a.note), expr: v.expr, unit: v.unit, from: rowSource(a.tab, [raw]) };
 
       if (str(a.tag) && !tagged) { stat.tag = str(a.tag); tagged = true; }
@@ -472,8 +416,6 @@ function parseCard(source: string, closed: boolean): Card | undefined {
     }
   }
 
-  // 没写完的卡片：末尾开了头的组件记下来。只认真的开头（「<stat 」），不猜后面还有几个；
-  // 只看最后一个开头标签，前面哪个属性少了引号也不会一路配到末尾。
   const lastOpen = closed ? undefined : [...body.matchAll(/<(?:stat|step|option|table|tr|check|callout)\s/g)].at(-1)?.index;
   const tail = lastOpen === undefined ? "" : body.slice(lastOpen);
   const open = /^<(stat|step|option|table|tr|check|callout)\s((?:[^<>"]|"[^"]*")*(?:"[^"]*)?)$/.exec(tail) ?? /^<(callout)\b([^<>]*)>[^<]*(?:<\/?[a-z]*)?$/.exec(tail);
@@ -485,14 +427,8 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   return card.title || card.blocks.length ? card : undefined;
 }
 
-/** 依据面的一行：卡片上的一个数字格。tab 是指向这一项的「切到…看」按钮的标签页。 */
 type EvidenceRow = { label: string; value: string; formula?: string; source?: string; tab?: string; expr?: string; unit?: string };
 
-/**
- * 卡片的依据面：每个数字格一行，只用卡片已有的数据（算式、source、tab 按钮），不补写。
- * tab 按钮写的是「切到拼多多看」这种话，按名字落到标签含这个名字的那一格；对不上或对上不止一格就不挂，不猜。
- * 没写完、没有数字格、既没算式也没出处的卡片没有依据面。选项和表格里的算式不列：它们只留下了结果。
- */
 export function cardEvidence(card: Card): EvidenceRow[] {
   const stats = card.blocks.flatMap((b) => (b.kind === "stats" ? b.items : []));
 
@@ -503,8 +439,6 @@ export function cardEvidence(card: Card): EvidenceRow[] {
     return b.tab && name.length >= 2 ? [{ name, tab: b.tab }] : [];
   });
 
-  // 每格取它标签里出现的名字，被更长的名字包含的不算（「京东自营」不落到「京东」）；剩下不止一个（差价这类算出来的格），
-  // 或同一个名字落到不止一格，都不挂：宁可不给「指给我看」，也不指错。
   const named = stats.map((s) => {
     const hits = tabs.filter((t) => s.label.includes(t.name));
     const own = hits.filter((t) => !hits.some((o) => o !== t && o.name.includes(t.name)));
@@ -515,28 +449,18 @@ export function cardEvidence(card: Card): EvidenceRow[] {
   return stats.map((s, i) => ({ label: s.label, value: s.value, formula: s.formula, expr: s.expr, unit: s.unit, source: card.source, tab: named[i] && named.filter((t) => t?.name === named[i]!.name).length === 1 ? named[i]!.tab : undefined }));
 }
 
-/** 可能有卡片（含卡片外的结构图）：快速判断，确定要再走 splitAnswer。 */
 const MAY_HAVE_CARD = /<card[\s>]|(?:^|\n)<diagram>/;
 
-/** 代码块和行内代码的范围：里面的 <card、{=…}、金额都按原文处理。 */
 function codeRanges(text: string): Array<[number, number]> {
   return [...text.matchAll(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`/g)]
-    // 一对反引号里有 <card、后面又有真的 </card>：是正文里落单的反引号碰上了卡片属性里的反引号，不当代码。
     .filter((m) => m[0].startsWith("```") || m[0].startsWith("~~~") || !/<card[\s>]/.test(m[0]) || m[0].includes("</card>") || text.indexOf("</card>", m.index + m[0].length) < 0)
     .map((m) => [m.index, m.index + m[0].length]);
 }
 
-/**
- * 回答里的卡片和小程序各在哪：start 是开头，end 是收尾标签之后（没写完时是全文结尾）。代码块里讲写法的 <card 不算。
- * 小程序里是整段网页，常有反引号（JS 模板字符串）：先把小程序的内容盖掉再找代码块，免得一个反引号把后面的卡片都算成代码。
- * 模型有时把结构图 <diagram> 和它的 <cite> 直接写在正文里、不包 <card>：独占一行开头的这种也算一张卡片（bare），
- * 否则图的代码和原文会当正文显示出来。
- */
 export function cardSpans(text: string): CardSpan[] {
   let masked = text;
   const plainCode = codeRanges(text);
 
-  // 代码里讲写法的 <app 不是小程序，不盖。
   for (const m of text.matchAll(/<app[\s>]/g)) {
     if (plainCode.some(([a, b]) => m.index >= a && m.index < b) || masked.slice(m.index, m.index + 4) !== "<app") continue;
     const close = text.indexOf("</app>", m.index);
@@ -570,10 +494,6 @@ export function cardSpans(text: string): CardSpan[] {
 
 export type CardSpan = { tag: "card" | "app"; start: number; end: number; closed: boolean; bare?: { bodyEnd: number } };
 
-/**
- * 卡片外的结构图：到 </diagram> 为止，再带上紧跟着的 <cite>。图写完就算写完；
- * 写到一半的那条 cite 先藏起来（end 到全文结尾），但不算进卡片（bodyEnd 停在上一条写完的 cite），免得已经画好的图又消失。
- */
 function bareDiagram(text: string, start: number): Omit<CardSpan, "tag"> {
   const close = text.indexOf("</diagram>", start);
 
@@ -600,7 +520,6 @@ function parseApp(source: string, closed: boolean): Card | undefined {
   return { key: digest(html), title: "", blocks: [{ kind: "app", title: str(attrsOf(head[1]!).title) ?? "小程序", html }], buttons: [], closed, numbers: new Set(), values: new Map(), formulas: false };
 }
 
-/** 回答原文切成正文与卡片（小程序也算一种卡片）。没写完的 closed 为 false。 */
 export function splitAnswer(text: string): AnswerPart[] {
   const parts: AnswerPart[] = [];
   let at = 0;
@@ -613,22 +532,14 @@ export function splitAnswer(text: string): AnswerPart[] {
     at = span.end;
   }
 
-  // 结尾写到一半的「<car」「<ap」「{=to」、行首的「<diag」不露出来。
   if (at < text.length) parts.push({ prose: text.slice(at).replace(/(?:<(?:c(?:a(?:r(?:d)?)?)?|a(?:p(?:p)?)?)?|(?<=^|\n)<d(?:i(?:a(?:g(?:r(?:a(?:m)?)?)?)?)?)?|\{=[\w-]*)$/, "") });
 
   return parts;
 }
 
-/** 只改代码以外、链接文字以外的正文。 */
 const outsideCode = (text: string, edit: (prose: string) => string) => text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\n]*\))/).map((part, i) => (i % 2 ? part : edit(part))).join("");
 
-/**
- * 正文：{=名字} 换成卡片算出的数（卡片还没写到时先显示「…」）。
- * 卡片里有算式、且卡片已写完时，正文里不在卡片里的金额换成「见下方卡片」；
- * 后面跟着 万/千/以内 这类字的、前面是“预算/低于/不超过”这类字的，是用户的条件或约数，不换。
- */
 export function resolveProse(prose: string, cards: Card[], mark = (value: string, _id: string) => value): string {
-  // 同名的数以第一张卡为准，侧栏重算时也只让这张卡改正文。
   const values = new Map(cards.flatMap((c) => [...c.values]).reverse());
   const done = cards.some((c) => c.closed);
   const guard = done && cards.some((c) => c.formulas);
@@ -641,9 +552,6 @@ export function resolveProse(prose: string, cards: Card[], mark = (value: string
   });
 }
 
-/**
- * {=名字} 换成卡片算出的数；正文和卡片里的说明文字共用。算出的数已带单位，模型常在后面再写一遍（「{=slow} 小时」），只留一个。
- */
 export function fillRefs(text: string, values: ReadonlyMap<string, string>, mark: (value: string, id: string) => string, missing: string): string {
   let out = "";
   let at = 0;
@@ -664,7 +572,6 @@ export function fillRefs(text: string, values: ReadonlyMap<string, string>, mark
   return out + text.slice(at);
 }
 
-/** 念出来、写进结果摘要用的文字：只要卡片外的正文；正文为空时用卡片标题。 */
 export function answerSpeech(text: string): string {
   if (!MAY_HAVE_CARD.test(text) && !text.includes("{=")) return text;
   const parts = splitAnswer(text);
@@ -674,14 +581,12 @@ export function answerSpeech(text: string): string {
   return prose || cards.map((c) => c.title).filter(Boolean).join("；");
 }
 
-/** 图里某个方块上写的字（复制时给原文配上方块名）；找不到就用方块的 id。 */
 export function diagramLabel(source: string, node: string): string {
   const label = new RegExp(String.raw`(?:^|[\s&;>])${node.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\s*[[({>]+\s*"([^"]*)"`, "m").exec(source)?.[1];
 
   return label ? label.replace(/<br\s*\/?>/gi, " ").trim() : node;
 }
 
-/** 复制为 Markdown：卡片换成等价的 Markdown（数字格、步骤、选项、表格、清单），按钮不复制。 */
 export function answerMarkdown(text: string, sources?: AnswerSourceMap): string {
   if (!MAY_HAVE_CARD.test(text) && !text.includes("{=")) return text;
   const parts = splitAnswer(text);
@@ -706,16 +611,10 @@ export function answerMarkdown(text: string, sources?: AnswerSourceMap): string 
   return parts.map((p) => ("prose" in p ? resolveProse(p.prose, cards) : p.card ? `\n\n${md(p.card)}\n\n` : "")).join("").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** 网页底部胶囊上方的精简卡片：标题，加上最多几行；推荐、最高这类标了的一项排第一并高亮。 */
 export type CardPreview = { title: string; rows: Array<{ label: string; value?: string; tag?: string }>; more: number };
 
-/**
- * 回答里第一张写完的卡片的精简版（语音胶囊用）；没有卡片时为 null。字和数原样取自卡片，不改写。
- * 取第一个列出来非空的块：选项、表格、数字格、步骤、清单；只有提示条时就用提示条那一句。标题和行都空时为 null，不画空框。
- */
 export function cardPreview(text: string, maxRows = 3): CardPreview | null {
   if (!MAY_HAVE_CARD.test(text)) return null;
-  // 第一张能摘出东西的卡片：卡片外的结构图没有标题、也没有可列的行，跳过它。
   const card = splitAnswer(text).flatMap((p) => ("card" in p && p.card?.closed && (p.card.title || p.card.blocks.some((b) => !["diagram", "app", "inputs"].includes(b.kind))) ? [p.card] : []))[0];
 
   if (!card) return null;
@@ -738,7 +637,6 @@ export function cardPreview(text: string, maxRows = 3): CardPreview | null {
   const all = block ? rowsOf(block) : [];
 
   if (!card.title && !all.length) return null;
-  // 步骤有先后，不挪；其他把标了的一项提到最前。
   const tagged = block?.kind === "steps" ? -1 : all.findIndex((r) => r.tag);
   const ordered = tagged > 0 ? [all[tagged]!, ...all.slice(0, tagged), ...all.slice(tagged + 1)] : all;
 

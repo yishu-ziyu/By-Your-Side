@@ -1,24 +1,3 @@
-/**
- * Realtime 3 实时连接。生产与隔离试用共用；任务权限由注入的宿主处理。
- * 只做三件事：连 StepFun Realtime、转发事件、把工具调用交给注入的桥。
- * key 只出现在服务端连接头，不写日志、不转发；原始音频只在内存过一次，不落盘。
- *
- * 前端 → handle():
- *   {type:'audio', data} base64 PCM16 24kHz 单声道 | {type:'text', text}
- *   {type:'stop_speech'} 只停当前语音（cancel + 清播放队列）；已请求、created 还没到的那次回复也拦住，
- *   这一轮在途工具回来后不再续答；之后的任务通知照常播报，不取消后台任务
- *   {type:'playback_done', responseId} 前端确实把该轮播完 | {type:'stop'} 结束通话（只关语音）
- * 本模块 → send():
- *   ready{model} status{text} transcript{role,text,final,responseId?} audio{data,responseId}
- *   response_done{responseId,status} clear_audio{} metric{name,value,unit} error{message} closed{}
- * error 只用于会结束通话的故障（后面跟 closed）；可恢复的 provider 报错走 status，便于前端区分。
- *
- * transcript.text 是该 item/response 目前的累计文本，final 表示已定稿。
- * metric 只是服务端事件到达本进程的时刻（相对 ready），不是真人说完到听见；实际播放由 UI 侧测。
- * response.done 只是生成结束，播放结束以前端 playback_done 为准；该轮没有音频时直接算播完。
- *
- * 已知限制：不做断线重连；provider 30 分钟会话上限由外部处理；同一实例只持一条会话。
- */
 import { REALTIME_BROWSER_TOOL_NAMES, realtimeBrowserError, REALTIME_BROWSER_TOOLS, REALTIME_BROWSER_INSTRUCTIONS, validateRealtimeBrowserTool, type RealtimeBrowserCall } from './realtime-browser-tools.js';
 import { isExecutionFeedback, type ExecutionFeedback } from '../../shared/execution-feedback.js';
 import WebSocket, {type RawData} from 'ws';
@@ -26,9 +5,6 @@ import { DEFAULT_STEP_VOICE, type RealtimeVoiceModel } from '../../shared/voice.
 
 export const MODEL = 'stepaudio-3-realtime-preview';
 
-/**
- * 人设紧跟在身份句之后（实测放在全部规则末尾时几乎不影响口吻），并写明它只管语气措辞、与规则冲突时以规则为准。
- */
 function withPersona(persona: string | undefined, instructions: string): string {
   const text = persona?.trim();
 
@@ -39,7 +15,6 @@ function withPersona(persona: string | undefined, instructions: string): string 
   return cut < 0 ? `${instructions}\n${section}` : `${instructions.slice(0, cut + 1)}${section}${instructions.slice(cut + 1)}`;
 }
 
-/** 服务端事件的形状由 handle() 的入参定义；扣住与重放沿用同一类型。 */
 type ProviderEvent = Parameters<RealtimeVoiceConnection["handle"]>[0];
 
 const ENDPOINT = `wss://api.stepfun.com/v1/realtime?model=${MODEL}`;
@@ -50,41 +25,24 @@ const SAMPLE_RATE = 24_000;
 
 const CONNECT_TIMEOUT_MS = 15_000;
 
-/** 建连阶段瞬时供应商错误的静默重建预算；耗尽后按原样 fatal（面板恢复仍兑底）。 */
 const MAX_HANDSHAKE_RETRIES = 2;
 
 const RESPONSE_WATCHDOG_MS = 12_000;
 
-// server_vad 在 speech_stopped 后会自行创建回复；事故日志显示 created/首个工具调用通常在个位数~8ms 内抵达
-// 。留约两百倍余量防抖动；
-// 超时仍未到就当作这轮没有自动回复，按原逻辑正常 flush，避免工具结果被无限期扣住。
 const AUTO_RESPONSE_WATCHDOG_MS = 2_000;
 
 const ASR_WAIT_MS = 3_000;
 
-/**
- * 会话挂住的判定（StepFun 偶发整体挂住：开口后不再回任何事件，对 commit 和 response.create 也不回应，
- * 约 60 秒后才断线）。说了一段像样的话（累计 STALL_MIN_SPEECH_MS 以上人声）或服务端给了「开始说话」，却没给出「说完/附和/转写」，
- * 距最后一次人声和最后一个服务端事件又都过了 STALL_MS，就断开重连，请用户重说。服务端正常时断句最晚约比人声晚 8 秒。
- */
 const STALL_MS = 12_000;
 
-/**
- * 能直接操作页面时附在 read_page 结果上：要圈按钮时模型常先 read_page，
- * 说一句「我先获取快照找到它的 ref」就结束，因为通用指令要求读页后直接回答。
- */
 const READ_PAGE_ACTION_HINT = '这里只有页面文字，没有元素引用。若用户要操作或圈画页面元素，现在就调用 snapshot，拿到 ref 后直接调用对应工具；只是问页面内容就直接回答。';
 
 const STALL_MIN_SPEECH_MS = 600;
 
-/** 一帧 PCM16 峰值超过它算人声；静音与底噪远低于它。 */
 const STALL_SPEECH_PEAK = 3_000;
 
-/** 调用发出后用户又开口（常见于 StepAudio 3 按语义把一句话切成两轮）：如实说明没执行，并让模型合起来重新调用。 */
 const SUPERSEDED_BY_SPEECH = '用户在你调用后又接着说了话，这次调用没有执行，也没有动页面。把前后几句合起来理解完整要求，然后直接重新调用需要的工具；不要只说要去做。';
 
-// 转写通常比首帧音频晚几十毫秒；
-// 超过这个上限仍没有转写就按原样放行，不让可控任务期间的普通对话被卡住。
 const TRANSCRIPT_GATE_MS = 1_500;
 
 const PLAYBACK_TAIL_MS = 10_000;
@@ -138,15 +96,10 @@ interface RealtimeVoiceConnectionOptions {
   tools: RealtimeVoiceTools;
   log?: (event: Record<string, unknown>) => void;
   voiceId?: string;
-  /** Step timbre id; defaults to STEP_VOICE. */
   voice?: string;
-  /** 人设描述正文；只附在规则之后，并声明冲突时以规则为准。空串或缺省表示不附加。 */
   persona?: string;
-  /** 有可控任务或待确认控制时为真：服务端自动回复先扣住，等本轮转写到了再放行或交给宿主。 */
   holdForTranscript?: () => boolean;
-  /** 本轮转写是否由宿主接管（明确终止任务）；接管时模型本轮回复被取消，不出声。 */
   claimTranscript?: (text: string) => boolean;
-  /** 执行被接管的这句话；返回要原样告诉用户的话，null 表示由回执通知播报。 */
   runClaimed?: (text: string) => Promise<string | null>;
 }
 
@@ -180,14 +133,10 @@ interface PendingToolCall {
   responseId: string | null;
   output: string | null;
   settled: boolean;
-  /** Accepted asynchronous work will provide a separate final delivery. */
   deferReply?: boolean;
   arguments?:Record<string,unknown>;
-  /** 宿主对动作自身的反馈；是否结束整条请求还须匹配请求判断。 */
   feedback?: ExecutionFeedback;
-  /** 工具回执 ok:false：即使无反馈也必须正常续答。 */
   failed?: boolean;
-  /** 发起它的那一轮已被停声：输出照常交回，但不为它请求续答。 */
   muted?: boolean;
 }
 
@@ -226,7 +175,6 @@ function serializeToolOutput(value: unknown, preserveExecution = false): string 
 
     const field = typeof result.error === 'string' ? 'error' : 'contentPreview';
     const content = field === 'error' ? String(result.error) : JSON.stringify(result.content) ?? text;
-    // Measure encoded JSON: quotes, escapes and surrogate pairs count toward the same budget.
     const encode = (length:number) => JSON.stringify({...metadata, [field]:content.slice(0,length)});
     let low = 0, high = Math.min(content.length, MAX_TOOL_OUTPUT_CHARS);
 
@@ -243,7 +191,6 @@ function serializeToolOutput(value: unknown, preserveExecution = false): string 
   return text.length > MAX_TOOL_OUTPUT_CHARS ? `${text.slice(0, MAX_TOOL_OUTPUT_CHARS)}…[输出过长已截断]` : text;
 }
 
-/** session.updated 的 echo 必须和请求一致才允许 ready。纯函数，便于离线用反例检查。 */
 function configurationIssues(createdModel: string | null, session: Record<string, unknown>, serverVad = true, voice: string = STEP_VOICE, model: RealtimeVoiceModel = MODEL): string[] {
   const issues: string[] = [];
 
@@ -283,9 +230,8 @@ export class RealtimeVoiceConnection {
   private readonly playedResponses = new Set<string>();
   private readonly audioBytes = new Map<string, number>();
   private readonly assistantText = new Map<string, string>();
-  private readonly finalizedText = new Map<string, string>(); // 已确认并交付的完整终稿（按值幂等，增量前缀不算）
+  private readonly finalizedText = new Map<string, string>();
   private userSpeaking = false;
-  /** 挂住判定：还没得到服务端回应的人声时长、最后一次人声与最后一个服务端事件的时刻。 */
   private unansweredSpeechMs = 0;
   private lastSpeechAt = 0;
   private lastProviderEventAt = 0;
@@ -310,23 +256,15 @@ export class RealtimeVoiceConnection {
   private creatingNotice:{notice:{text:string;id?:string;valid?:()=>boolean;verbatim?:boolean};speechSeq:number}|null=null;
   private noticeSeq=0;
   private pendingNotice:{itemId:string;wireText:string;speechSeq:number;notice:{text:string;id?:string;valid?:()=>boolean;verbatim?:boolean}}|null=null;
-  /** 后台通知触发的这一轮不允许再派发 browser_request；该轮 response.done 时解除。 */
   private suppressDispatch = false;
-  /** stop_speech 后属于该轮的迟到音频不再下发给前端。 */
   private localCancelResponseId: string | null = null;
-  /** 用户开口时已在播的回复：之后迟到的音频不再下发，回复本身与工具调用照常。 */
   private readonly silencedResponses = new Set<string>();
-  /** stop 时已请求的回复 created 还没到：迟到的 created 立即取消、音频不下发；取消后或下一次真实用户输入时解锁。 */
   private pendingStop = false;
   private browserAbort = new AbortController();
   private browserQueue: Promise<unknown> = Promise.resolve();
-  /** 已向前端交付过 response_done 的轮次：重复 response.done 不重复交付。 */
   private readonly finishedResponses = new Set<string>();
-  /** 非 null 时是该 speechSeq 已置位的服务端自动回复待启动窗口：created 到达或超时前，不能自己发 response.create。 */
   private autoResponsePending: number | null = null;
-  /** 转写闸门扣住的自动回复：事件按序缓存，放行时原样重放，接管时整轮作废。 */
   private held: {id: string; seq: number; events: Array<{type: string; event: ProviderEvent}>} | null = null;
-  /** 被宿主接管而作废的回复：只收它的 response.done 记账，文字、音频、工具调用一律不交付。 */
   private readonly droppedResponses = new Set<string>();
 
   private readonly planResponseOrigins: number[] = [];
@@ -339,7 +277,6 @@ export class RealtimeVoiceConnection {
     this.options = options;
   }
 
-  /** 只建立一条真实连接；重复调用被忽略。 */
   start(): void {
     if (this.phase !== 'idle') return this.log({type: 'start_ignored', phase: this.phase});
     this.phase = 'connecting';
@@ -349,7 +286,6 @@ export class RealtimeVoiceConnection {
     this.ws = socket;
     socket.on('message', (data: RawData) => this.onProviderMessage(data));
     socket.on('error', (error: Error) => {
-      // 底层原因只进诊断日志；用户面前只说连不上和能做什么。
       this.log({type: 'socket_error', message: error.message});
 
       if (!this.closed) this.fatal('连不上语音服务：检查网络，或在「更多 → 模型与语音」里核对语音 key，再试一次。');
@@ -358,7 +294,6 @@ export class RealtimeVoiceConnection {
     this.armTimer('connect', CONNECT_TIMEOUT_MS, () => this.fatal('连接语音服务超时，请重试'));
   }
 
-  /** 处理前端消息；工具在后台异步执行，不阻塞音频进出。 */
   handle(message: Record<string, unknown>): void {
     const type = asString(message.type);
 
@@ -389,7 +324,7 @@ export class RealtimeVoiceConnection {
       const text = (asString(message.text) ?? '').trim();
 
       if (!text) return;
-      this.pendingStop = false; // 新的真实输入解锁停声
+      this.pendingStop = false;
       this.browserAbort.abort(); this.browserAbort = new AbortController();
       this.speechSeq++;this.speechItemId=null;
       this.recordUserInput({id: `text-${++this.textSeq}`, text});
@@ -415,7 +350,6 @@ export class RealtimeVoiceConnection {
     this.log({type: 'unknown_client_message', clientType: type});
   }
 
-  /** Preserve independent task deliveries; recheck their run before speaking. */
   notifyTask(text: string, id?: string, valid?:()=>boolean, verbatim=false): void {
     const trimmed = text.trim();
 
@@ -427,7 +361,6 @@ export class RealtimeVoiceConnection {
     this.log({type:'notify_queued',chars:trimmed.length});
   }
 
-  /** 只关语音：不取消后台任务、不等未完成的工具；幂等。 */
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -442,14 +375,11 @@ export class RealtimeVoiceConnection {
     try {
       this.ws?.close(1000, 'voice ended');
     } catch {
-      /* already closing */
     }
 
     this.log({type: 'closed'});
     this.sendToClient({type: 'closed'});
   }
-
-  // --- provider events ---
 
   private onProviderMessage(data: RawData): void {
     let event: Record<string, unknown>;
@@ -466,7 +396,6 @@ export class RealtimeVoiceConnection {
     const type = asString(event.type) ?? '';
     const eventId = asString(event.event_id);
 
-    // 转写片段不算回应：实测挂住时服务端仍每秒发两三条 transcription.delta，却始终不给「说完」。
     if (!type.endsWith('input_audio_transcription.delta')) this.lastProviderEventAt = Date.now();
 
     if (type === 'input_audio_buffer.speech_stopped' || type === 'input_audio_buffer.speech_backchannel' || type.endsWith('input_audio_transcription.completed')) this.unansweredSpeechMs = 0;
@@ -513,8 +442,6 @@ export class RealtimeVoiceConnection {
         this.responseInputs.set(id, planOrigin ?? -1);
         if (this.planMode && this.planResponseOrigins.length === 0) this.clearTimer('plan-source');
 
-        // 通知已随本轮回复开始生成：普通通知（无 deliveryId）也在这里一次性消费，不再重新入队（R1）。
-        // deliveryId 只负责把正式交付和这条回复/播放回执关联；话轮已换或已停声时回复不属于这条通知，重新排队。
         if(this.creatingNotice){
           if(this.creatingNotice.speechSeq===this.speechSeq&&!this.pendingStop){
             if(this.creatingDeliveryId)this.sendToClient({type:'delivery_response',deliveryId:this.creatingDeliveryId,responseId:id});
@@ -522,8 +449,6 @@ export class RealtimeVoiceConnection {
         }
 
         this.creatingDeliveryId=undefined;this.creatingNotice=null;
-        // 日志从不记录 response.created，是本次事故"唯一根因缺原始帧证明"的直接原因；
-        // 留痕区分这条 created 是我们请求的（requested）还是服务端在自动回复待启动期内自己发的（autoPending）。
         this.log({type:'response_created',responseId:id,requested:this.sendingResponse,autoPending:this.autoResponsePending!==null});
         this.sendingResponse = false;
         this.busyRetries = 0;
@@ -533,10 +458,9 @@ export class RealtimeVoiceConnection {
 
         if (this.planMode && !noticeResponse && planOrigin !== this.speechSeq) { this.dropResponse(id); return; }
         if (this.pendingStop) {
-          // stop_speech 时 response.create 已发、created 未到：这时才等到，立即取消并抑制这轮音频。
           this.socketSend({type: 'response.cancel'});
           this.localCancelResponseId = id;
-          this.pendingStop = false; // 只拦这一次请求；之后的任务通知照常播报
+          this.pendingStop = false;
           this.log({type: 'late_response_cancelled', responseId: id});
         } else if (this.planMode && !this.options.diagnostic && !noticeResponse) this.gatePlanResponse(id);
         else if (autoForSpeech && !this.options.diagnostic && this.options.holdForTranscript?.()) this.gateResponse(id);
@@ -559,7 +483,7 @@ export class RealtimeVoiceConnection {
 
 return asString(c?.text)??asString(c?.transcript)??'';}).join(''):'';
 
-        // Preview currently replaces client IDs and echoes input_text as audio/transcript.
+        // WHY: Preview currently replaces client IDs and echoes input_text as audio/transcript.
         // Match the exact sent content, never just 'the next user item'.
         if(pending&&(item?.id===pending.itemId||(item?.role==='user'&&content===pending.wireText))){
           this.clearTimer('notice-ack');this.pendingNotice=null;
@@ -582,7 +506,6 @@ return asString(c?.text)??asString(c?.transcript)??'';}).join(''):'';
           else if (this.activeResponseId) this.dropResponse(this.activeResponseId);
         }
         this.browserAbort.abort(); this.browserAbort = new AbortController();
-        // 全双工交给 provider 判断：不清队列、不发 response.cancel、不动后台任务。
         this.userSpeaking = true;
         this.silenceOutput();
 
@@ -591,9 +514,9 @@ return asString(c?.text)??asString(c?.transcript)??'';}).join(''):'';
         this.speechStopAt = null;
         this.firstTextNoted = false;
         this.firstAudioNoted = false;
-        this.latestInput = null; // 新回合开口：上一回合没派发的转写不再是候选，避免旧句被迟到工具调用带走
-        this.pendingStop = false; // 新的真实回合解锁停声
-        this.autoResponsePending = null; // 旧回合的自动回复等待作废，新一轮重新判断
+        this.latestInput = null;
+        this.pendingStop = false;
+        this.autoResponsePending = null;
         this.clearTimer('auto-response-watchdog');
         this.speechSeq += 1;
         this.speechItemId=asString(event.item_id);
@@ -624,21 +547,19 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
         this.emitMetric('vad_speech_stopped_since_ready', this.sinceReady());
 
         if (!this.options.diagnostic) {
-          // server_vad 多半会自动创建这一轮回复；created 抵达前不能抢发 response.create，
+          // WHY: server_vad 多半会自动创建这一轮回复；created 抵达前不能抢发 response.create，
           // 否则会和服务端自己的回复相撞
           this.autoResponsePending = this.speechSeq;
           this.armTimer('auto-response-watchdog', AUTO_RESPONSE_WATCHDOG_MS, () => {
             this.log({type: 'auto_response_watchdog', speechSeq: this.autoResponsePending});
             this.autoResponsePending = null;
-            if (!this.sendingResponse) this.pendingStop = false; // 停声要拦的自动回复没来
+            if (!this.sendingResponse) this.pendingStop = false;
             this.maybeFlush();
           });
         }
 
         return this.maybeFlush();
       case 'input_audio_buffer.speech_backchannel': {
-        // 未公开事件：服务端把短句（实测“对。”）当附和清掉，不再发 speech_stopped，也没有转写。
-        // 不复位就会一直当作用户在说话，后续回复与通知全被挡住。
         this.userSpeaking = false;
         this.speechStopAt = null;
         this.log({type: 'speech_backchannel'});
@@ -651,7 +572,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     }
   }
 
-  /** 服务端整体挂住时快速发现：可恢复错误带 sayAgain，侧栏重连后请用户重说；不补发旧音频，避免重复执行。 */
   private watchForStall(data: string): void {
     if (this.options.diagnostic || this.phase !== 'ready') return;
     const bytes = atob(data);
@@ -672,7 +592,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       return;
     }
 
-    // 服务端说过「开始说话」却没给「说完」，同样欠着回应（前一段的转写晚到会把人声计数清零）。
     const owed = this.unansweredSpeechMs >= STALL_MIN_SPEECH_MS || this.userSpeaking;
 
     if (!owed || now - this.lastSpeechAt < STALL_MS || now - this.lastProviderEventAt < STALL_MS) return;
@@ -705,7 +624,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
   }
 
   private onSessionUpdated(event: Record<string, unknown>): void {
-    if (this.phase === 'ready') return; // 重复 echo 不重启会话
+    if (this.phase === 'ready') return;
     const session = asRecord(event.session) ?? {};
     const issues = configurationIssues(this.createdModel, session, !this.options.diagnostic, this.options.voice ?? STEP_VOICE, this.model);
 
@@ -716,7 +635,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     this.clearTimer('connect');
     this.log({type: 'ready', model: this.createdModel, voice: session.voice, vad: asRecord(session.turn_detection)?.type});
     this.sendToClient({type: 'ready', model: this.createdModel ?? this.model});
-    this.maybeFlush(); // ready 前排队的通知在这里播
+    this.maybeFlush();
   }
 
   private onAudioDelta(event: Record<string, unknown>): void {
@@ -745,7 +664,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     if (!delta) return;
     const responseId = asString(event.response_id) ?? this.activeResponseId ?? 'resp-unknown';
 
-    if (this.finalizedText.has(responseId)) return; // 已确认终稿就不再吃迟到 delta
+    if (this.finalizedText.has(responseId)) return;
 
     if (!this.firstTextNoted && this.speechStopAt !== null) {
       this.firstTextNoted = true;
@@ -763,19 +682,19 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     const prior = text ? this.finalizedText.get(responseId) : undefined;
 
     if (text) {
-      this.assistantText.set(responseId, text); // 累计权威文本
+      this.assistantText.set(responseId, text);
 
-      if (prior !== text) this.finalizedText.set(responseId, text); // 终稿事件才确认完整文本；更完整迟到终稿可覆盖旧值（R2/A3）
+      if (prior !== text) this.finalizedText.set(responseId, text);
     }
 
-    if (!text || prior === text) return; // 空事件/相同最终事件重复 → 幂等不新增消息（A1）
+    if (!text || prior === text) return;
     this.sendToClient({type: 'transcript', role: 'assistant', text, final: true, responseId});
   }
 
   private onUserCompleted(event: Record<string, unknown>): void {
     const text = (asString(event.transcript) ?? '').trim();
 
-    if (!text) return; // 只有噪声没有识别结果，不算一条请求
+    if (!text) return; // WHY: 只有噪声没有识别结果，不算一条请求
     // 缺 item_id 时不能都叫 user-input，会和已消费的旧回合撞 id；按 speech 轮 + 序号给唯一 id。
     const itemId = asString(event.item_id) ?? `speech-${this.speechSeq}-${++this.asrSeq}`;
     const knownRequest = this.requests.get(itemId)?.input;
@@ -789,7 +708,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     if((origin && origin.seq !== this.speechSeq) || (this.speechItemId&&asString(event.item_id)&&itemId!==this.speechItemId)){
       if(origin&&origin.seq>=this.speechSeq-3&&Date.now()-origin.at<=12000){
         this.pendingInputs.set(itemId,{...origin,text});this.log({type:'late_asr_retained',itemId,speechSeq:origin.seq});
-        // 不作为 latestInput、不派发，但用户说过的这句话必须能在界面上看到、被持久化。
         this.sendToClient({type:'transcript',role:'user',text,final:true,itemId,turn:origin.seq+1,current:false});
       }else this.log({type:'late_asr_ignored',itemId});
 
@@ -797,7 +715,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     }
 
     this.pendingInputs.set(itemId,{seq:this.speechSeq,at:origin?.at??Date.now(),text});
-    // With no VAD/item binding, show/route ASR as before but never authorize capsule-only behavior.
     this.recordUserInput({id: itemId, text});
     this.sendToClient({type: 'transcript', role: 'user', text, final: true,itemId,turn:this.speechSeq+1,current:true});
 
@@ -847,7 +764,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     }).catch(() => { if (current()) this.failPlanRouting('这句话的分流失败，未确认执行，请查看侧栏。'); });
   }
 
-  /** 自动回复先于转写到达：已有本轮转写就当场裁决，否则扣住等转写（有上限）。 */
   private gateResponse(id: string): void {
     const input = this.latestInput;
 
@@ -873,7 +789,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     for (const {type, event} of held.events) this.dispatchProviderEvent(type, event);
   }
 
-  /** 作废这轮回复：文字、音频、工具调用都不交付；provider 已结束生成就直接记账，否则请它取消。 */
   private dropResponse(id: string): void {
     const bufferedDone = this.held?.id === id && this.held.events.some(e => e.type === 'response.done');
 
@@ -888,7 +803,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     else this.socketSend({type: 'response.cancel'});
   }
 
-  /** 宿主接管：模型本轮回复不出声，这句话由宿主执行，结果据实播报。 */
   private claimResponse(id: string): void {
     const input = this.latestInput;
     this.dropResponse(id);
@@ -908,7 +822,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     if (!id) return this.log({type: 'response_done_without_id'});
     const status = asString(response?.status) ?? 'completed';
 
-    // The official API also delivers complete tool calls in response.done.output.
+    // WHY: The official API also delivers complete tool calls in response.done.output.
     // Both paths share the same idempotent receiver; cancelled/incomplete output never executes.
     if(status==='completed'&&Array.isArray(response?.output))for(const raw of response.output){
       const item=asRecord(raw);
@@ -916,31 +830,22 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       if(item?.type==='function_call'&&(item.status===undefined||item.status==='completed'))this.onFunctionCall({...item,response_id:id});
     }
 
-    // 先落权威文本与定稿事件：response.done 自带的全文覆盖增量，重复定稿不重复交付（A1/R2）。
     this.finalizeResponseText(id, asString(response?.transcript) ?? asString(response?.text));
-    // 「生成结束」与「音频是否播放」从此分账：工具输出与续答请求不等音频裁决（A3）。
     this.markGenerationDone(id);
     this.finishResponseDone(id, status, null);
   }
 
-  /** 确认定稿（幂等）：只有 response.done 自带的完整文本字段（或 transcript.done 终稿事件）
-   * 才算完整材料与定稿；不拿增量前缀冒充定稿，也不因幂等封死更完整的迟到终稿（R2/A3）。 */
   private finalizeResponseText(id: string, doneText: string | null): void {
     const incoming = (doneText ?? '').trim();
 
-    if (!incoming) return; // 无确认文本：不定稿、不发 final（迟到终稿仍可交付）
+    if (!incoming) return;
     this.assistantText.set(id, incoming);
 
-    if (this.finalizedText.get(id) === incoming) return; // 相同最终文本：幂等
+    if (this.finalizedText.get(id) === incoming) return;
     this.finalizedText.set(id, incoming);
     this.sendToClient({type: 'transcript', role: 'assistant', text: incoming, final: true, responseId: id});
   }
 
-  /**
-   * 供应商生成结束即刻入账，与音频是否播放无关：本轮进入 doneResponses、释放
-   * activeResponseId 占用，工具输出与续答不再等音频裁决（A3）。只清与本 response
-   * 绑定的状态；若期间已为下一轮发出了 response.create，不碰它的看门狗。
-   */
   private markGenerationDone(id: string): void {
     this.doneResponses.add(id);
 
@@ -954,12 +859,10 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     this.suppressDispatch = false;
   }
 
-  /** 本 response 对前端的收账：定稿、response_done、播放记账。幂等：重复 response.done 只交付一次（A1）。 */
   private finishResponseDone(id: string, status: string, doneText: string | null): void {
     if (this.finishedResponses.has(id)) return;
     this.finishedResponses.add(id);
 
-    // 套餐分流作废的回复没有交给播放器；旧 done 不能重置新声音或覆盖失败提示。
     if (this.planMode && this.droppedResponses.has(id)) {
       this.playedResponses.add(id); this.clearTimer(`playback:${id}`);
       if (this.localCancelResponseId === id) this.localCancelResponseId = null;
@@ -977,12 +880,11 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     const bytes = this.audioBytes.get(id) ?? 0;
 
     if (status === 'cancelled') {
-      // provider 已放弃这轮：剩余音频作废，不再等 playback_done。
       this.playedResponses.add(id);
       this.clearTimer(`playback:${id}`);
       this.sendToClient({type: 'clear_audio'});
     } else if (bytes > 0 && !this.playedResponses.has(id)) {
-      // Tool continuations can arrive while earlier audio is still queued in
+      // WHY: Tool continuations can arrive while earlier audio is still queued in
       // VoicePlayer. Its deadline must include that queue, not only this reply.
       let queuedBytes = 0;
 
@@ -1008,7 +910,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
     if (!callId) return this.log({type:'tool_call_ignored',reason:'missing_call_id',name:event.name});
 
-    if (this.seenCallIds.has(callId)) return this.log({type:'tool_call_ignored',reason:'duplicate_call_id',callId,name:event.name}); // 同一个 call_id 只执行一次
+    if (this.seenCallIds.has(callId)) return this.log({type:'tool_call_ignored',reason:'duplicate_call_id',callId,name:event.name});
     this.seenCallIds.add(callId);
     const responseId=asString(event.response_id)??this.activeResponseId;
 
@@ -1036,14 +938,11 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     this.log({type: 'provider_error', providerType: type, code, message});
 
     if (this.phase !== 'ready') {
-      // 建连阶段的供应商瞬时错误：有界、静默地重建握手，不让一次抖动中断整次会话；
-      // 已有用户输入或预算耗尽时回退原 fatal（面板恢复作为兑底）。
       if (this.retryHandshake(message)) return;
 
       return this.fatal(`语音服务出错：${message}`);
     }
 
-    // 作废回复可能已生成完，迟到的取消提示不能盖掉本轮「未执行」原因。
     if (this.planMode && this.planDecision?.seq === this.speechSeq && this.planDecision.status === 'failed'
       && /no ongoing response to cancel/i.test(message)) return;
 
@@ -1051,8 +950,8 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       this.sendingResponse = false;
       this.clearTimer('create-watch');
 
-      if (this.pendingStop) { this.pendingStop = false; return; } // 已停声：不把被拒的这一轮排回来，拦的那次也没了
-      this.wantResponse = true; // 被拒的那次 response.create 已带走的输出还等在对话里，稍后重来
+      if (this.pendingStop) { this.pendingStop = false; return; }
+      this.wantResponse = true;
       const retrying = this.busyRetries++ < MAX_BUSY_RETRIES;
 
       if (!retrying) return this.fatal('语音服务持续繁忙，通话已停止；后台任务保留，请重试。');
@@ -1062,11 +961,8 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     }
 
     if(this.pendingNotice)return this.fatal('任务通知未被语音服务接收，未标记已播报；文字结果仍保留在侧栏。');
-    // 会话还能继续的 provider 报错不改状态，只提示事实（error 留给会结束通话的故障）。
     this.sendToClient({type: 'status', text: `语音服务提示：${message}`});
   }
-
-  // --- tools ---
 
   private async executeTool(call: PendingToolCall): Promise<void> {
     const started = Date.now();
@@ -1119,7 +1015,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     call.feedback = isExecutionFeedback(feedback) ? feedback : undefined;
 
     if (direct) {
-      // 模型只需知道回执文案（界面会显示，受限页由侧栏降级）；静音/身份等宿主内部标记不进模型上下文。
       const visible = {...asRecord(result)};
       delete visible.feedback;
       result = call.feedback ? {...visible, hostFeedback:{text:call.feedback.text}} : visible;
@@ -1141,7 +1036,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
   private async runDirectBrowserTool(call: PendingToolCall, signal: AbortSignal): Promise<unknown> {
     const current = () => !this.closed && !signal.aborted && !this.pendingStop && !this.suppressDispatch && call.speechSeq === this.speechSeq;
-    // 新一轮开口或打字会中止在途调用并推进轮次，所以这里不看 signal：轮次变了且未关闭、未停声，就是被用户的新输入作废。
     const superseded = () => !this.closed && !this.pendingStop && call.speechSeq !== this.speechSeq;
 
     if (!current()) throw realtimeBrowserError(superseded() ? SUPERSEDED_BY_SPEECH : '这轮浏览器请求已取消或过期，未执行。', 'not_executed');
@@ -1159,7 +1053,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     return this.options.tools.browserTool!({name:call.name,args:call.arguments,callId:call.callId,inputId:input.id,text:input.text}, signal);
   }
 
-  /** 只把用户最新的真实输入交出去；ASR 没到可短等，等不到就不执行。同一个输入只派发一次。 */
   private async runBrowserRequest(speechSeq:number,action?:RealtimeTaskAction): Promise<unknown> {
     if (this.suppressDispatch) return {ok: false, error: '这轮是后台任务的进展通知，不是用户的新要求；没有执行网页操作'};
     const input = await this.resolveUserInput(action? action.includePending===true:this.continuationFrom!==null);
@@ -1192,10 +1085,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     return result;
   }
 
-  /**
-   * 只接受当前回合还没派发过的原话：已消费的旧候选直接判无，等待期间收到的重复旧转写也不顶包；
-   * 迟到的工具调用因此不会再派一次旧句，等不到本回合新 ASR 就不执行。
-   */
   private inputWithContinuation(input:UserInput,includePending=false):UserInput|null{
     const floor=includePending?(this.continuationFrom??this.speechSeq):this.speechSeq;
     const parts=[...this.pendingInputs.entries()].filter(([id,p])=>!this.consumedInputIds.has(id)&&p.seq<=this.speechSeq&&p.seq>=Math.max(floor,this.speechSeq-3)&&Date.now()-p.at<=(includePending?30000:12000)).sort((a,b)=>a[1].seq-b[1].seq);
@@ -1229,7 +1118,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
   }
 
   private recordUserInput(input: UserInput): void {
-    if (this.consumedInputIds.has(input.id)) return; // 旧回合的重复/迟到结果不算新候选，也不打断正在等新 ASR 的调用
+    if (this.consumedInputIds.has(input.id)) return;
 
     if (!this.requests.has(input.id)) {
       const identity: VoiceRequestInput = {voiceId: this.options.voiceId ?? '', turn: this.speechSeq + 1,
@@ -1246,22 +1135,17 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     for (const waiter of waiters) waiter(input);
   }
 
-  // --- flush: tool outputs + notifications + response.create ---
-
-  /** 工具续答只等生成结束，不等前导语播放；主动通知仍等实际播放结束。 */
   private maybeFlush(): void {
     if (this.phase !== 'ready' || this.closed) return;
 
-    // 2.5 的自动 created 可能晚于旧 2 秒看门狗。来源仍待确认时不能把下一条 created 猜成通知。
     if (this.planMode && this.planResponseOrigins.length > 0) return;
 
-    if (this.pendingStop||this.pendingNotice) return; // 停声/等待通知接收期间不创建新回复
+    if (this.pendingStop||this.pendingNotice) return;
 
-    if (this.autoResponsePending === this.speechSeq) return; // 服务端自动回复待启动，created 或超时前不抢发
+    if (this.autoResponsePending === this.speechSeq) return;
 
     if (this.activeResponseId !== null || this.sendingResponse || this.userSpeaking) return;
 
-    // A response may contain several calls. Return the complete batch before asking for continuation.
     if ([...this.pendingToolCalls.values()].some(call => !call.settled && call.output === null)) return;
     let replyNeeded = false;
     const batch: PendingToolCall[] = [];
@@ -1270,7 +1154,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       if (call.settled || call.output === null) continue;
       const finished = call.responseId === null ? this.activeResponseId === null : this.doneResponses.has(call.responseId);
 
-      if (!finished) continue; // 服务端须已结束生成；播放回执不阻塞工具结果。
+      if (!finished) continue;
       this.socketSend({type: 'conversation.item.create', item: {type: 'function_call_output', call_id: call.callId, output: call.output}});
       call.settled = true;
       batch.push(call);
@@ -1282,8 +1166,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
     while(this.queuedNotify[0]?.valid&&!this.queuedNotify[0].valid!())this.queuedNotify.shift();
 
-    // 前一条通知还在等自己的回复创建（creatingNotice 未清）：先为它发 response.create，
-    // 后一条不能抢占发送或覆盖它的关联（R2）。
     if (this.queuedNotify.length && !replyNeeded && !this.creatingNotice) {
       const notice = this.queuedNotify.shift()!;
       const text = notice.text;
@@ -1291,8 +1173,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       const wireText=notice.verbatim?`【系统通知】请原样对用户说这句话，不增删、不改写：${text} 这不是用户的新请求，不要调用工具。`:`【系统通知】${text}。请用一句话自然告知用户，说完就停，不反问、不客套；这不是用户的新请求，不要调用工具。`;
       this.pendingNotice={itemId,wireText,speechSeq:this.speechSeq,notice};
       this.suppressDispatch = true;
-      // Realtime conversation items accept user/assistant, NOT the system role.
-      // Do not bind a delivery or create a reply before the provider accepts the item.
       this.socketSend({
         type: 'conversation.item.create',
         item: {id:itemId,type: 'message', role: 'user', content: [{type: 'input_text', text: wireText}]},
@@ -1311,7 +1191,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
         this.log({type: 'create_watchdog'});
         this.sendingResponse = false;
 
-        // 通知回复的 created 一直没到：为同一条通知重试请求，不能让队列卡死在第一条。
         if (this.creatingNotice) this.wantResponse = true;
         this.maybeFlush();
       });
@@ -1326,7 +1205,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     return false;
   }
 
-  /** 用户开口：已下发和还在生成的旧回复音频都作废，侧栏同时停播；不作废请求，不拦下一轮。 */
   private silenceOutput(): void {
     for (const id of this.audioBytes.keys()) {
       this.silencedResponses.add(id);
@@ -1337,10 +1215,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     if (this.activeResponseId) this.silencedResponses.add(this.activeResponseId);
   }
 
-  /**
-   * 侧栏在回答播放中本地听出用户开口。StepFun 生成回答期间几乎不断句（实测 75 秒长回答里用户开口始终没有
-   * speech_started），所以要取消这轮生成，它才会听到这句新话。与停声不同：不作废最新请求，也不拦下一轮。
-   */
   private bargeIn(): void {
     const responseId = this.activeResponseId;
     this.silenceOutput();
@@ -1354,12 +1228,9 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     this.log({type: 'barge_in', responseId});
   }
 
-  /** 明确停声：只 cancel 当前语音并清播放队列，不取消后台任务，也不清输入缓冲。 */
   private stopSpeech(): void {
     const responseId = this.activeResponseId;
 
-    // response.create 已发、created 未到（或 provider 自动响应在路上）时 responseId 还是 null，要拦住那一次；
-    // 生成已结束、只剩声音在播时没有在路上的回复，挂上标记会把之后的任务通知全部挡掉。
     if (responseId === null && (this.sendingResponse || this.autoResponsePending === this.speechSeq)) this.pendingStop = true;
 
     for (const call of this.pendingToolCalls.values()) if (!call.settled) call.muted = true;
@@ -1375,7 +1246,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       this.localCancelResponseId = responseId;
     }
 
-    // 侧栏清掉播放队列后不会再为这些回复回 playback_done，等它的计时器会把通话判死。
     for (const id of this.audioBytes.keys()) {
       this.playedResponses.add(id);
       this.clearTimer(`playback:${id}`);
@@ -1386,8 +1256,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     this.log({type: 'stop_speech', responseId});
     this.maybeFlush();
   }
-
-  // --- plumbing ---
 
   private onSocketClose(code: number, reason: string): void {
     if (this.closed) return;
@@ -1403,11 +1271,9 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     this.close();
   }
 
-  /** 建连阶段拆掉旧套接字并重新握手；返回 false 表示不可重试（调用方按原样 fatal）。 */
   private retryHandshake(reason: string): boolean {
     if (this.closed || this.phase === 'ready' || this.handshakeRetries >= MAX_HANDSHAKE_RETRIES) return false;
 
-    // 已有用户输入后不再静默重建：把真实故障如实抛给调用方处理。
     if (this.latestInput !== null || this.requests.size > 0) return false;
     this.handshakeRetries += 1;
     this.log({type: 'handshake_retry', attempt: this.handshakeRetries, reason: reason.slice(0, 120)});
@@ -1417,10 +1283,9 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     if (old) {
       try {
         old.removeAllListeners();
-        // 弃用套接字晚到的 error 不得因无监听器而炸掉进程。
-        old.on('error', () => { /* retired socket */ });
+        old.on('error', () => {  });
         old.close();
-      } catch { /* 套接字已死 */ }
+      } catch {  }
     }
 
     this.clearTimer('connect');
@@ -1462,7 +1327,6 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     try {
       this.options.log?.({...event, at: Date.now()});
     } catch {
-      /* logging must never break the call */
     }
   }
 

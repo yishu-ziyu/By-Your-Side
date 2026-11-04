@@ -1,9 +1,3 @@
-/**
- * 第二版侧栏：真实扩展侧栏、真实输入和会话路径；只有模型回复由本机脚本提供。
- *
- * npx tsx scripts/acceptance/real-path/sidebar-interaction.mts --headless --run=baseline
- * 产物：out/acceptance/sidebar-interaction/<run>/ 下的截图与 summary.json。
- */
 import { useSavedSettingsModel } from './inproc-config.mts';
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -116,7 +110,7 @@ try {
   const pressed = await rp.evaluate(panel, `getComputedStyle(document.querySelector('#header-more')).transform`);
   check("按钮按下缩放为0.96", pressed === "matrix(0.96, 0, 0, 0.96, 0, 0)", pressed);
   await rp.cdp.send("Input.dispatchMouseEvent", { type:"mouseReleased", ...pressPoint, button:"left", clickCount:1 }, panel);
-  await rp.click(panel, "#header-more"); // 收起按压检查打开的菜单
+  await rp.click(panel, "#header-more");
 
   await rp.click(panel, "#header-more");
   await rp.click(panel, "#model-settings-open");
@@ -136,16 +130,13 @@ try {
   await rp.click(settings, "#model-save");
   await until(async () => String(await rp!.evaluate(settings, `document.querySelector('#model-status').textContent`)).startsWith("已保存") || undefined, 10_000, "模型保存");
   await useSavedSettingsModel(rp, settings, 'custom', 'demo-model');
-  // 保存前会先试连一次（10-13）：之后的「不发模型请求」从这里数起。
   const afterSave = model.requests.length;
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget.targetId });
   await sleep(600);
 
-  // 入口与菜单都走真实点击：模型只在输入框的芯片里切，菜单开在输入框上方、不能被别的层盖住。
   type ModelEntry = { inHeaderMenu: boolean; inComposer: boolean; visible: boolean; label: string };
   // SAFETY: 页面脚本返回的对象字段与 ModelEntry 一一对应。
   const readEntry = async () => await rp!.evaluate(panel, `(() => { const b = document.querySelector('#think-chip'); return { inHeaderMenu: !!document.querySelector('#header-menu #think-chip'), inComposer: !!document.querySelector('#composer #think-chip'), visible: !!b && !b.hidden && b.getClientRects().length > 0 && getComputedStyle(b).visibility === 'visible', label: b?.innerText ?? '' }; })()`) as ModelEntry;
-  // 芯片在输入框的工具行里：用户先点输入框，工具行才展开；芯片还要等宿主报出当前模型才显示。
   await rp.click(panel, "#input");
   await until(async () => (await readEntry()).visible || undefined, 10_000, "模型芯片出现").catch(() => undefined);
   const modelEntry = await readEntry();
@@ -189,7 +180,6 @@ try {
     check("点模型芯片后菜单可见且第一行能点到", false, { reason: "模型芯片不可见" });
   }
 
-  // Real content script, closed shadow DOM and background relay; no model request on transfer.
   await rp.evaluate(work, `(() => { const r=document.createRange(); r.selectNodeContents(document.querySelector('p')); const s=getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
   const worker = await rp.attach((await rp.serviceWorker())!.targetId);
   await rp.evaluate(worker, `chrome.tabs.query({}).then(tabs => { const t=tabs.find(t => t.url === ${JSON.stringify(`${origin}/writers`)}); return chrome.tabs.sendMessage(t.id,{type:'ask-hotkey'}); })`);
@@ -242,7 +232,6 @@ try {
   await rp.pressEnter(panel);
   await until(async () => model.requests.some((r) => r.rule === "找米娅") || undefined, 30_000, "真实发送抵达脚本模型");
   const running = await shot("2-running", 400);
-  // #58 C：不再有重复目标的厚任务卡；过程只有一行，点开是步骤，减少动态效果时不扫光。
   check("真实运行不再生成重复目标的任务卡", await rp.evaluate(panel, `!document.querySelector('.ai-task-card .task-goal-line')?.getClientRects().length`), null);
   const line = await until(async () => await rp.evaluate(panel, `document.querySelector("details.run-steps .run-title")?.textContent || ""`) || undefined, 20_000, "过程行");
   check("过程只有一行，写在做什么", /^正在|^做了/.test(String(line)), { line });
@@ -255,12 +244,10 @@ try {
   await until(async () => (await read()).answerText?.includes(reply.split("\n")[0]!) || undefined, 60_000, "回答落入真实侧栏");
   await until(async () => !!(await read()).actions || undefined, 15_000, "回答操作出现");
 
-  // 与本任务的红基线实测读数成对校准：sans-serif 是系统字体回退项，不应误判为 serif 阅读档。
   const baselineReading = { answerFont: '"Songti SC", STSong, "Songti TC", SimSun, serif', answerSize: 15, answerLineHeight: 27 };
   const currentReading = await read();
   check("阅读判据校准：系统栈通过、红基线宋体失败", systemReading(currentReading) && !systemReading(baselineReading), { current: { font: currentReading.answerFont, size: currentReading.answerSize, lineHeight: currentReading.answerLineHeight }, baseline: baselineReading });
 
-  // 每个回答一个主动作（#351），是一个短的文字按钮「复制」，不再是 32px 的图标。
   for (const width of [360, 400, 440]) {
     const done = await shot("3-done", width);
     check(`${width}px 无横向溢出`, done.documentWidth <= width + 1 && done.overflow.length === 0, { documentWidth: done.documentWidth, overflow: done.overflow });

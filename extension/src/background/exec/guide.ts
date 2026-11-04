@@ -1,7 +1,3 @@
-/**
- * guide_step：教一步。圈出目标、光标停在旁边，在这次工具调用里等用户自己点。
- * 工具自己从不点击：页面里只听用户的真实点击，结果经 port 报回来。等待方式与发送确认相同（send-confirm.ts）。
- */
 import type { GuideStepResult, GuideWait, ToolContract } from "../../../../shared/protocol.js";
 import { bringForwardForUser } from "../foreground.js";
 import { readCurrentDocument } from "./page-readiness.js";
@@ -10,17 +6,14 @@ import { resolveWorkingTab } from "../state.js";
 import { showGuide } from "./input.js";
 import { notExecuted } from "./page-call.js";
 
-/** 用户多久没点中就结束这一步。宿主放宽的期限比这个长，所以总是这里先给出 timeout。 */
 const GUIDE_WAIT_MS = 120_000;
 
 const PORT_PREFIX = "guide-step:";
 
-/** 页面没在这么久内连上后台，就当没画出来。 */
 const SHOW_MS = 5_000;
 
 const POLL_MS = 150;
 
-/** 第二次点中仍没变化就交回模型：再等下去用户也只会继续点一个没反应的东西。 */
 const NO_CHANGE_LIMIT = 2;
 
 const NOT_CLICKED = "工具没有替用户点任何东西。";
@@ -35,7 +28,6 @@ const TEXT = {
   notShown: "没能在网页上圈出这一步（页面不让显示），没有开始等待。",
 };
 
-/** 正在教的标签页：同一页同时只教一步。 */
 const pendingTabs = new Set<number>();
 
 const waitingPorts = new Map<string, { tabId: number; take: (port: chrome.runtime.Port) => void }>();
@@ -44,7 +36,6 @@ chrome.runtime.onConnect.addListener(port => {
   if (!port.name.startsWith(PORT_PREFIX)) return;
   const waiting = waitingPorts.get(port.name);
 
-  // 只认这次教学所在标签页的顶层文档。
   if (!waiting || port.sender?.id !== chrome.runtime.id || port.sender.tab?.id !== waiting.tabId || port.sender.frameId !== 0) { port.disconnect(); return; }
   waitingPorts.delete(port.name);
   waiting.take(port);
@@ -73,7 +64,6 @@ export async function guideStep(params: Params, sessionId: string, guard: SendGu
   pendingTabs.add(tabId);
 
   try {
-    // 要用户在网页上动手：先把这页切到其窗口内前台（不抢别的窗口）。
     await bringForwardForUser(tabId, "guide");
 
     return await waitForUser(tabId, params, sessionId, guard);
@@ -82,7 +72,6 @@ export async function guideStep(params: Params, sessionId: string, guard: SendGu
 
 async function waitForUser(tabId: number, params: Params, sessionId: string, guard: SendGuard): Promise<GuideStepResult> {
   const portName = `${PORT_PREFIX}${crypto.randomUUID()}`;
-  // 页面可能已经连上、画了圈，之后画的那一步才报错：留着这个 port，出错时断开它，页面才会撤圈、摘监听。
   let taken: chrome.runtime.Port | null = null;
   const connected = new Promise<chrome.runtime.Port>(take => waitingPorts.set(portName, { tabId, take: p => { taken = p; take(p); } }));
   let port: chrome.runtime.Port | null = null;
@@ -94,7 +83,6 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
   } catch (error) {
     waitingPorts.delete(portName);
     (taken as chrome.runtime.Port | null)?.disconnect();
-    // 只画了圈、断开后就撤掉，网页上没有留下任何改动：确实没执行，不记成结果未知。
     throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), { executionFact: "not_executed" as const });
   }
 
@@ -106,7 +94,6 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
   guard.waiting(true, wait);
   let misses = 0;
   let noChangeClicks = 0;
-  // 点中以后、用户下一次点错之前：这时换了文档，就是这次点击换的页（慢的网页可能在「没有变化」提示之后才换）。
   let hitPending = false;
   const cleanups: Array<() => void> = [];
 
@@ -127,12 +114,10 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
     });
     const gone = () => {
       if (!hitPending) { done({ outcome: "left" }); return; }
-      // 换了文档：目标已经不在了，告诉模型现在是哪一页。
       void chrome.tabs.get(tabId).then(tab => tab.url, () => undefined).then(url => done({ outcome: "done", changed: "document", ...(url ? { after: `new page · url ${clip(url, 200)}` } : {}) }));
     };
     shown.onDisconnect.addListener(gone);
     const removed = (closed: number) => { if (closed === tabId) done({ outcome: "left" }); };
-    // 网页自己改网址（pushState、#）不换文档，页面里的监听还在，由页面报变化；只有顶层文档换了才在这里结束。
     const updated = (changed: number, info: { url?: string; status?: string }) => {
       if (changed !== tabId || (info.url === undefined && info.status !== "loading")) return;
       void readCurrentDocument(tabId).then(now => { if (now && now.documentId !== shown.sender?.documentId) gone(); });
@@ -145,11 +130,9 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
   });
 
   for (const cleanup of cleanups) cleanup();
-  // 页面在 port 断开时撤圈、松开光标、摘掉监听：每条结束路径都经过这里。
   shown.disconnect();
   guard.waiting(false, wait);
 
-  // 没完成的四种结局都带原因：侧栏不画成失败，宿主也不把它们算进连续出错。
   if (ending.outcome !== "done") throw Object.assign(notExecuted(new Error(TEXT[ending.outcome])), { heldReason: `guide_${ending.outcome}` as const });
 
   return { outcome: ending.outcome, misses, noChangeClicks, ...(ending.changed ? { changed: ending.changed } : {}), ...(ending.after ? { after: ending.after } : {}) };

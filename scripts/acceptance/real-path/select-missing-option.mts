@@ -1,9 +1,3 @@
-/**
- * 真扩展 + 隔离 Chrome + 脚本模型：在下拉框里选一个不存在的选项。
- * 判定：模型拿到的是「下拉框没有匹配选项」和可选项，而不是一句看不懂的脚本错误；网页上原来选中的值不变。
- * 失败方式：页面里抛出的错误被 executeScript 换成空结果，工具崩成 “Cannot read properties of undefined”；或先清空了原选中项。
- *   npx tsx scripts/acceptance/real-path/select-missing-option.mts --headless
- */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";

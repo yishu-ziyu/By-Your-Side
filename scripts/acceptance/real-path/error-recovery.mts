@@ -1,9 +1,3 @@
-/**
- * 模型出错后，用户在错误卡上修掉原因，助手在原对话里接着做。
- * 只装扩展、隔离构建、本机脚本模型；前面挡一个本机服务，按场景回 401、429 或断开连接。
- *   npx tsx scripts/acceptance/real-path/error-recovery.mts --headless
- * 失败方式：错误卡只有一行字或只有「继续原任务」；换 key 要去设置页；限流时要用户点了才倒计时；修好后要用户重发；没有回执。
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -25,7 +19,6 @@ const CASES = {
 
 const model = await startScriptedModel(Object.values(CASES).map(c => ({ match: c.ask, steps: [{ text: c.answer }] })));
 
-// 挡在模型前面：key 不对回 401；busy 时接下来几次任务请求（带工具表）回 429；netDown 时任务请求一律直接断开。
 let failNext: { kind: "busy"; count: number } | null = null;
 
 let netDown = false;
@@ -72,7 +65,6 @@ const rp = await launchRealPath();
 
 let error: string | null = null;
 
-/** 写进 result.json 的证据。 */
 interface Evidence { stage?: string; storedKey?: unknown; messages?: unknown; gate?: string[] }
 
 const evidence: Evidence = {};
@@ -106,7 +98,6 @@ try {
     await until(async () => receipt.test(String(await rp.evaluate(panel, '[...document.querySelectorAll(".error-receipt")].at(-1)?.textContent ?? ""'))) || undefined, 10_000, `${name} receipt`);
     assert.equal(await userBubbles(CASES[name].ask), 1, `${name}: the user did not have to resend`);
     assert.equal(await visible(".error-card"), false, `${name}: the error card is gone after recovery`);
-    // 回执留在出错的位置，续写的答案跟在它下面（#286）：不是答案之后再冒出来的第二条元素。
     const receiptBeforeAnswer = await rp.evaluate(panel, `(() => {
       const line = [...document.querySelectorAll(".error-receipt")].at(-1);
       const answer = [...document.querySelectorAll("#messages .msg.assistant")].at(-1);
@@ -115,7 +106,6 @@ try {
     assert.equal(receiptBeforeAnswer, true, `${name}: the receipt line stays where the error happened, before the resumed answer`);
   };
 
-  // 甲：key 无效 → 卡上「去换 key」→ 底部面板测试通过才能保存 → 保存后自动接着做。
   evidence.stage = "auth";
   await send(CASES.auth.ask);
   await waitFor('.error-card [data-act="fix-key"]', "auth card with fix-key");
@@ -123,7 +113,7 @@ try {
   assert.equal(await visible('.error-card [data-act="retry-anyway"]'), true, "auth card keeps retry-anyway");
   await rp.click(panel, '.error-card [data-act="fix-key"]');
   await waitFor("#key-sheet.is-open", "key sheet");
-  await sleep(500); // 面板升起的动画结束后再点，否则点到的是升起前的位置
+  await sleep(500);
   assert.equal(await rp.evaluate(panel, 'document.querySelector("#key-sheet-save").disabled'), true, "save is disabled before a passing test");
   await rp.click(panel, "#key-sheet-input");
   await rp.typeText(panel, "still-bad");
@@ -142,7 +132,6 @@ try {
   assert.equal(evidence.storedKey, "good-key", "the new key is saved for later tasks");
   await rp.screenshot(panel, join(artifacts, "auth-final.png"));
 
-  // 乙：限流 → 卡上不用点就倒计时，到点自动接着做。
   evidence.stage = "busy";
   failNext = { kind: "busy", count: 3 };
   await send(CASES.busy.ask);
@@ -153,13 +142,11 @@ try {
   await rp.screenshot(panel, join(artifacts, "busy-card.png"));
   await recovered("busy", /出过错.*重试.*从出错处继续/);
 
-  // 丙：断网 → 「重试」→ 接着做。
   evidence.stage = "net";
   netDown = true;
   await send(CASES.net.ask);
   await waitFor('.error-card [data-act="retry"]', "net card with retry");
   await rp.screenshot(panel, join(artifacts, "net-card.png"));
-  // 还没恢复时点「重试」：换一张新卡，仍可再点。
   await rp.click(panel, '.error-card [data-act="retry"]');
   await until(async () => await visible(".error-card.is-recovering") === false && await visible('.error-card [data-act="retry"]') || undefined, 60_000, "net card again while still down");
   assert.equal(await rp.evaluate(panel, 'document.querySelectorAll(".error-card").length'), 1, "a failed retry replaces the card instead of stacking a second one");

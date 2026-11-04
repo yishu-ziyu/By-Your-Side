@@ -1,5 +1,5 @@
 /**
- * 页面内容进入模型上下文前的两道处理（纯函数）：
+ * WHY: 页面内容进入模型上下文前的两道处理（纯函数）：
  * 1. 不可信边界：页面文本一律包进 <page-content untrusted ...>，并声明它是数据不是指令；
  * 2. 凭据隐去：高熵串（恢复码、API key、私钥）只留标记。
  *
@@ -18,7 +18,7 @@ function clipMeta(value: string): string {
 }
 
 /**
- * 包一层不可信边界。载荷里出现的同名标签一律打断，防止页面文本伪造闭合标签逃逸边界。
+ * WHY: 包一层不可信边界。载荷里出现的同名标签一律打断，防止页面文本伪造闭合标签逃逸边界。
  */
 export function wrapPageContent(text: string, meta: { tabId?: number; url?: string; title?: string } = {}): string {
   const attrs = [
@@ -33,7 +33,6 @@ export function wrapPageContent(text: string, meta: { tabId?: number; url?: stri
   return `${open}\n${safe}\n</${PAGE_CONTENT_TAG}>`;
 }
 
-/** 随机/凭据长相的 token 判定。 */
 function isCredentialToken(token: string, allowModelNumber = true): boolean {
   if (token.length < 12 || token.length > 256) return false;
 
@@ -43,8 +42,6 @@ function isCredentialToken(token: string, allowModelNumber = true): boolean {
   const hasUpper = /[A-Z]/.test(token);
   const hasLower = /[a-z]/.test(token);
 
-  // 结构化的业务 id 不隐去（隐掉它们会直接破坏抓数据任务）：B站 BV1xm376WEc5 这类
-  // 短混合串放行，小写+连字符的订单号放行。只挡真正的凭据长相。
   if (hasUpper && hasLower) return token.length >= 16;
 
   if (token.length >= 24) return true;
@@ -54,8 +51,6 @@ function isCredentialToken(token: string, allowModelNumber = true): boolean {
   return !(allowModelNumber && isModelNumber(token));
 }
 
-/** 全大写的型号、订单号（GL702VM-GC146T、ORD-20261019-ABCD）：只有大写字母、数字，用连字符分成长短不一的段。
- * 恢复码多是等长分段（ABCD-EF12-3456）或不分段，带 _ = / + 的是编码串，都不算。 */
 function isModelNumber(token: string): boolean {
   if (token.length < 12 || token.length >= 24 || !/^[A-Z0-9-]+$/.test(token) || !/[0-9]/.test(token) || !/[A-Z]/.test(token)) return false;
   const segments = token.split("-");
@@ -65,16 +60,10 @@ function isModelNumber(token: string): boolean {
 
 const MASK = "[redacted]";
 
-/**
- * 隐去文本里的凭据长相内容（`[redacted]`）。
- * 行级：整行是一个高熵 token 时整行折叠（几十行恢复码不逐行占上下文）。
- * 词级：只处理含空白的正文（不含空白的字符串是标识符：selector、URL、ref、JS）。
- */
 export function redactCredentialText(text: string): string {
   if (!text) return text;
   const kept: string[] = [];
   let maskedLines = 0;
-  // key=value / key: value：只隐去值，保留键名，模型仍知道这里有东西被隐去了。
   const assignment = /^([A-Za-z][A-Za-z0-9_ .-]{0,24}\s*[:=]\s*)(\S+)$/;
 
   for (const line of text.split("\n")) {
@@ -86,7 +75,6 @@ export function redactCredentialText(text: string): string {
       continue;
     }
 
-    // 值是型号（model=GL702VM-GC146T）：不再把键名连同值当成一个长串整行折叠。
     if (asAssignment && isModelNumber(asAssignment[2]!)) { kept.push(line); continue; }
 
     if (isCredentialToken(trimmed)) { maskedLines += 1; continue; }
@@ -95,17 +83,12 @@ export function redactCredentialText(text: string): string {
   }
 
   let body = kept.join("\n");
-  // 含空白（正文）、中文或结构化符号（JSON/HTML 的引号括号、key=value）才做词级替换；
-  // 纯标识符字符串（selector、JS 片段）不动。token 按凭据字符集切，`"key":"值"` 里的值才抓得到。
-  // `/` 不入字符集：它是 URL/路径分隔符，把它算进 token 会把路径段拼成长串，
-  // 把 `https://api.github.com/repos/…/issues/335552` 这类正常 URL 隐成 `https://api.github.[redacted]`。
   const structured = /[\s\u4e00-\u9fff"'{}[\],:=]/.test(body);
 
-  // 型号只在独立成词时放行：凭据被 / . : \\ = 或夹入的字符切开后，每一段单独看都像型号（ABCD12-EFGH3454/IJKL56-MNOP7890）。
+  // WHY: 型号只在独立成词时放行：凭据被 / . : \\ = 或夹入的字符切开后，每一段单独看都像型号（ABCD12-EFGH3454/IJKL56-MNOP7890）。
   // 词按空白、HTML 标签边界、引号、括号、逗号和中文切；去掉开头的 `键名=`、`:` 和末尾标点后，整个词就是这一段才放行。
   // 全角只算标点（，：；！？（）等），全角字母数字不算边界，否则能拿它们把凭据拆开。
   if (structured) body = body.replace(/[^\s<>"'`{}[\](),\u3000-\u303f\u4e00-\u9fff\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]+/g, (word) => {
-    // 键名带小写字母时可以有数字、. -（model1=、product-id=），这种键名不会是全大写凭据的一半。
     const head = word.replace(/^(?:[A-Za-z_]{1,24}|[a-z][A-Za-z0-9_.-]{0,24})[:=]|^[:=]+/, "");
     let end = head.length;
 
@@ -113,8 +96,6 @@ export function redactCredentialText(text: string): string {
     const core = head.slice(0, end);
 
     const mask = (part: string) => part.replace(/[A-Za-z0-9+_-]{12,256}/g, (token) => (isCredentialToken(token, token === core) ? MASK : token));
-    // 网址路径里的长串是资源编号（Spotify 专辑、Google 文档），隐掉就拿不到链接；主机前的账号口令和 ?、# 之后的参数照旧隐去。
-    // 按反斜杠分段找网址：JSON 字符串里的换行是字面 `\n`，不切开的话下一段的凭据会被当成路径放过，后面的网址也认不出。
     return word.split(/(?=\\)/).map((part) => {
       const url = /https?:\/\/[^/?#]*/.exec(part);
 

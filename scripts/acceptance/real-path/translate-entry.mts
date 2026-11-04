@@ -1,11 +1,3 @@
-/**
- * 侧栏的「翻译这一页」：只装扩展的隔离无头 Chrome、真侧栏、本机练习页与本机脚本模型（只回翻译，每批 2 秒，不给主模型规则）。
- * a 点侧栏输入框旁的翻译按钮：2.5 秒内出现第一段译文，主模型请求 0 次；翻译过程中网页右边缘的胶囊写「在翻译 这一页」。
- * b 译完后 3 秒内胶囊不再写「正在思考」（不留在「助手还在做」的样子）。
- * c 再点一次：还原，页面上没有译文和占位。
- *   npx tsx scripts/acceptance/real-path/translate-entry.mts --headless
- * 证据在 out/acceptance/real-path/<时间>-translate-entry/：侧栏、翻译中网页、翻译后网页的截图和 result.json。
- */
 import { createServer } from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -24,10 +16,8 @@ const rp = await launchRealPath();
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => { checks.push({ name, pass, actual }); console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual)); };
 
-/** 整棵 DOM（含封闭的 shadow root，边缘胶囊就在里面）里有没有这段字。 */
 type DomNode = { nodeValue?: string; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
 const hasText = (node: DomNode, text: string): boolean => !!node.nodeValue?.includes(text) || [...(node.children ?? []), ...(node.shadowRoots ?? [])].some(child => hasText(child, text));
-/** 只在边缘胶囊里找：光标浮层收起后节点里还留着旧字，但用户看不到。 */
 const edgeTab = (node: DomNode): DomNode | null => {
   const at = node.attributes?.indexOf("data-sideagent-overlay") ?? -1;
 

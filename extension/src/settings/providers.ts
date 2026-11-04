@@ -1,7 +1,3 @@
-/**
- * 设置页服务商列表的界面分组：同一家的不同地区合成一行，配品牌图标，搜索同时匹配模型名。
- * 只影响显示；存储仍按原服务商 id。
- */
 import type { ProviderChoice } from "../inproc/model-runtime.js";
 
 export interface Entry { key: string; name: string; members: Array<{ id: string; region?: string }> }
@@ -13,10 +9,6 @@ const FAMILIES: Array<{ name: string; members: Array<[string, string]> }> = [
   { name: "Xiaomi Token Plan", members: [["xiaomi-token-plan-cn", "中国"], ["xiaomi-token-plan-sgp", "新加坡"], ["xiaomi-token-plan-ams", "阿姆斯特丹"]] },
 ];
 
-/**
- * 服务商 id → icons/providers/ 里的文件名（@lobehub/icons-static-svg 1.95.1，MIT）。没有的用首字，留给目录以后新增的服务商。
- * 小米用 simple-icons 的 MI 标（CC0）：lobehub 只有 MiMo 的文字标（xiaomimimo），18px 下看不清。
- */
 const ICONS = new Map(Object.entries({
   stepfun: "stepfun", "opencode-go": "opencode", opencode: "opencode", "zai-coding-cn": "zhipu", zai: "zai", "kimi-coding": "kimi",
   "ant-ling": "antgroup", anthropic: "anthropic", azure: "azure", baseten: "baseten", cerebras: "cerebras", deepseek: "deepseek", fireworks: "fireworks",
@@ -43,7 +35,6 @@ export function groupEntries(choices: ProviderChoice[]): Entry[] {
   return entries;
 }
 
-/** 品牌图标：用遮罩上色，跟随文字颜色（深色模式也一样）。 */
 export function providerIcon(id: string, name: string): HTMLElement {
   const el = document.createElement("span");
   el.setAttribute("aria-hidden", "true");
@@ -60,7 +51,6 @@ export function providerIcon(id: string, name: string): HTMLElement {
   return el;
 }
 
-/** 每个词都要命中服务商名、id、地区，或某个模型名；返回命中的模型。 */
 export function matchEntry(entry: Entry, choices: ProviderChoice[], query: string) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const member = (id: string) => choices.find((c) => c.id === id);
