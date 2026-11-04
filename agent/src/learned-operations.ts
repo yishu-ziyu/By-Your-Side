@@ -265,8 +265,6 @@ export async function runLearnedOperation(
     assertSite(startTab.url, operation.site);
     let contentReads = 0;
 
-    // WHY: 每一步都钉在开始时的工作标签页上：程序给的 tabId、inPlace 和宿主专用参数一律丢掉再由这里补上，
-    // 否则同站跳转会切到同窗口里已开着的那一页，程序就离开了被核对过的标签页。
     const pinnedTab = async (): Promise<{ id: number; url: string }> => {
       const tab = boundTab(await runtime.call("list_tabs", {}, undefined, "readonly-poll"), tabId);
       if (!tab) throw new LearnedOperationError("unavailable", "原来的工作标签页已经关闭或换了，做法已停止。");

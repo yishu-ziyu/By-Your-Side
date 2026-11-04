@@ -36,10 +36,6 @@ export function plainStep(description: string): string {
   return plain || "处理这一步";
 }
 
-/**
- * WHY: 服务商「忙」：限流（429）或同账号同时请求数超限。等一下再试就能好，不能当失败交给用户。
- * Kimi 编程套餐在主模型与快速模型同时请求时回 403「concurrent request limit」，不是 key 的问题。
- */
 export function isProviderBusyError(message: string | undefined): boolean {
   return !!message && /concurrent request limit|too many concurrent|rate.?limit|\b429\b|overloaded|请求过于频繁|并发/i.test(message);
 }

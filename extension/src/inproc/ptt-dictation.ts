@@ -1,11 +1,3 @@
-/**
- * WHY: 按住说话的听写。
- * 用按量的 Realtime 3 只做转写：关掉服务端 VAD、不给工具、松开时手动提交、从不请求回复。
- * Step Plan 套餐已不含任何语音模型（实时和 ASR 都回「模型不存在或无权限」），所以只能走按量的 /v1/realtime。
- * 计时从松开算：本机代理会让连接和回应慢上好几秒，
- * 所以连不上和不回话分开判，服务端每回一个事件就重新等，不按一个固定时长丢掉慢而正常的听写。
- */
-
 const DICTATION_URL = "wss://api.stepfun.com/v1/realtime?model=stepaudio-3-realtime-preview";
 
 export interface DictationSocket {
@@ -120,7 +112,6 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
       socket = deps.open(DICTATION_URL);
       socket.onmessage = data => {
         try {
-          // SAFETY: 服务端只发 JSON 事件，只读 ServerEvent 里的可选字段；读不出就当作出错。
           onEvent(JSON.parse(data) as ServerEvent);
         } catch {
           finish({ ok: false, reason: "failed", message: "听写服务返回了读不懂的内容" });

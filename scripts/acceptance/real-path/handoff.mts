@@ -87,7 +87,6 @@ try {
 
   const rings = async (): Promise<Ring[] | null> => {
     for (const contextId of [...isolated]) {
-      // SAFETY: CDP Runtime.evaluate 返回 { result: { value } }；读数是可序列化的普通对象。
       const res = await rp.cdp.send('Runtime.evaluate', { expression: '(() => globalThis.__sideagent?.handoffState?.())()', contextId, returnByValue: true }, work).catch(() => null) as { result?: { value?: Ring[] } } | null;
 
       if (res?.result?.value) return res.result.value;
@@ -129,7 +128,6 @@ try {
   const liveWalk = (n: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => leaving(n) ? undefined : hit(n) ? n : [...(n.children ?? []), ...(n.shadowRoots ?? [])].map(c => liveWalk(c, hit)).find(Boolean);
 
   const pageBar = async () => {
-    // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
     const root = (await rp.cdp.send('DOM.getDocument', { depth: -1, pierce: true }, work)).root as DomNode;
     const host = walk(root, n => n.nodeName === 'DIV' && !!n.attributes?.includes('edge-tab'));
     const bar = host && walk(host, n => n.nodeName === 'DIV' && !!n.attributes?.includes('clip'));

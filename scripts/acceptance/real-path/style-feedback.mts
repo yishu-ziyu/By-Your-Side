@@ -41,7 +41,6 @@ const PANEL = `(() => {
   };
 })()`;
 type PanelState = { connected: boolean; ready: boolean; busy: boolean; userMessages: number; replies: number };
-// SAFETY: PANEL 返回的字段与 PanelState 一一对应。
 const read = async () => (await rp.evaluate(panel, PANEL)) as PanelState;
 const shot = (name: string) => rp.screenshot(panel, join(out, `${name}.png`));
 

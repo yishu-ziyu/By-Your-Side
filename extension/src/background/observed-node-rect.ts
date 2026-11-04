@@ -1,6 +1,5 @@
 type ScrollAlignOptions = { block?: string; inline?: string };
 
-/** WHY: Serialized into the observed node's realm via CDP. Keep this function self-contained. */
 export function observedNodeRect(this: Node, contentOnly = false) {
   if (!this.isConnected) throw new Error('节点已离开文档，请重新 snapshot');
   const el = this.nodeType === 3 ? this.parentElement : this as Element;
@@ -41,11 +40,6 @@ export function observedNodeRect(this: Node, contentOnly = false) {
   return {x,y,width:r.width,height:r.height};
 }
 
-/**
- * WHY: mark 的 target..through：两个节点围成一个 Range，框住同一行里从起点到终点的全部内容。
- * nodeRect 传 observedNodeRect（滚入视口、校验可见并折算 iframe 偏移）。
- * Serialized into the observed node's realm via CDP. Keep this function self-contained.
- */
 export function observedNodeRange(
   this: Node,
   end: Node,

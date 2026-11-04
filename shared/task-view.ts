@@ -157,7 +157,6 @@ export function isTaskView(value: unknown): value is TaskView {
 
   const itemOk = (x: unknown): boolean => {
     if (!x || typeof x !== "object") return false;
-    // SAFETY: 下面逐个字段核对类型，不信任断言本身。
     const item = x as TaskViewResultItem;
 
     return typeof item.id === "string" && typeof item.description === "string" && TASK_RESULT_ITEM_STATUSES.includes(item.status);

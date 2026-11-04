@@ -51,7 +51,6 @@ const relay = createServer(async (req, res) => {
       const verdict = again ? recheckProbe(lastVerdict, again) : !continued && body.includes(ASK_CONT) ? "GOAL-CHECK-CONTINUE" : "GOAL-CHECK-DONE";
       if (!again) lastVerdict = verdict;
       if (verdict === "GOAL-CHECK-CONTINUE") continued = true;
-      // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
       body = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), messages: [{ role: "user", content: verdict }] });
     }
     const up = await fetch(new URL(req.url ?? "/", modelOrigin), { method: req.method, headers: { "content-type": req.headers["content-type"] ?? "application/json" }, body: req.method === "GET" ? undefined : body });

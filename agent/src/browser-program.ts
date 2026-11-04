@@ -401,7 +401,6 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     throw new ProgramAssertError({ failedAt, name: params.name.trim(), reason, completed }, trail);
   }
 
-  /** WHY: pageInfo：list_tabs 与 js 之间工作页必须稳定，禁止 A 身份 + B 内容；附带未处理 JS dialog。 */
   async function pageInfo(_params: Record<string, unknown>, stepId: string): Promise<unknown> {
     guard();
     const sub = nextSubId(stepId);
@@ -447,10 +446,6 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     return options.call("arm_event", callParams, stepId);
   }
 
-  /**
-   * WHY: waitForLoad：等当前这次文档到达 domcontentloaded/load；旧文档 complete 不能在文档替换后冒充就绪。
-   * 默认 domcontentloaded：模型几乎从不传 state，按 load 会陪图片和广告干等。
-   */
   async function waitForLoad(params: Record<string, unknown>, stepId: string): Promise<unknown> {
     const state = params.state === "load" ? "load"
       : params.state === undefined || params.state === "domcontentloaded" ? "domcontentloaded"
@@ -836,7 +831,6 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   } finally {
     closed = true;
 
-    // WHY: An already-dispatched action is drained, never reported as rolled back.
     try { await chain; }
     finally {
       for (const deferred of pending) if (deferred.alive) deferred.dispose();

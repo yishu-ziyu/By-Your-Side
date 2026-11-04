@@ -74,7 +74,6 @@ try {
   await until(async () => await rp.evaluate(panel, 'document.querySelectorAll("#memory-body .memory-row:not(.past-task)").length === 4 && document.querySelectorAll("#memory-body .past-task").length === 2') || undefined, 20_000, "drawer lists the seeded memories and tasks");
   await sleep(400);
 
-  // SAFETY: 页面里这段脚本返回的字段与下面的类型一一对应。
   const view = () => rp.evaluate(panel, `(() => {
     const shown = (el) => !!el && el.getClientRects().length > 0;
     const rows = [...document.querySelectorAll("#memory-body .memory-row")].filter(shown);

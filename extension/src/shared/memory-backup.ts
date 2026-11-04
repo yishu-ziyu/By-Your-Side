@@ -1,7 +1,3 @@
-/**
- * WHY: 记忆备份：卸载扩展时 Chrome 会删掉它的全部存储，记忆只在这里另存一份到下载文件夹，重装后从设置页选文件恢复。
- * 后台、离屏宿主、设置页共用的键、文件格式和读写。凭据（inproc_cred:*、settings_connection:*）从不进备份。
- */
 import { BROWSE_ON_KEY } from "./browse-habits.js";
 
 export const MEMORY_CHANGED = "memory_backup_changed";
@@ -62,7 +58,6 @@ export async function isOwnBackupDownload(item: { id: number; url?: string; fina
   const url = [item.url, item.finalUrl].find(value => value?.startsWith(BACKUP_URL_PREFIX));
   if (!url) return false;
   if (item.byExtensionId !== undefined) return item.byExtensionId === chrome.runtime.id;
-  // WHY: onCreated can precede Chrome's extension attribution; use the actual download() result, never the MIME prefix alone.
   await startingBackupDownload?.catch(() => undefined);
   const saved: unknown = (await chrome.storage.local.get(BACKUP_DOWNLOAD_KEY))[BACKUP_DOWNLOAD_KEY];
   return !!saved && typeof saved === "object" && "id" in saved && saved.id === item.id

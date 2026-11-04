@@ -33,7 +33,6 @@ try {
   rp.cdp.onEvent("Runtime.executionContextsCleared", (m: { sessionId?: string }) => { if (m.sessionId) isolated.get(m.sessionId)?.clear(); });
   const tab = async (session = work): Promise<Tab | null> => {
     for (const id of [...(isolated.get(session) ?? [])]) {
-      // SAFETY: CDP Runtime.evaluate 回 { result: { value } }，value 是 edgeTab() 的可序列化读数。
       const res = await rp.cdp.send("Runtime.evaluate", { expression: "globalThis.__sideagent?.edgeTab?.() ?? undefined", contextId: id, returnByValue: true }, session).catch(() => null) as { result?: { value?: Tab } } | null;
       if (res?.result?.value !== undefined) return res.result.value;
     }
@@ -60,7 +59,6 @@ try {
     await sleep(600);
   };
   const shot = async (session: string, name: string, y = 0, h = height) => {
-    // SAFETY: Page.captureScreenshot 回 { data: base64 }。
     const r = await rp.cdp.send("Page.captureScreenshot", { format: "png", clip: { x: width - 340, y, width: 340, height: h, scale: 2 } }, session) as { data: string };
     await writeFile(join(out, name), Buffer.from(r.data, "base64"));
   };
@@ -73,7 +71,6 @@ try {
   await shot(work, "a-dragged.png");
   check("a 拖下 300px：停在新位置、不算点、移开收回", await atEdge(work, MID_Y + 300) === "edge-tab" && await atEdge(work, MID_Y) !== "edge-tab" && translated === false && rested, { at: await atEdge(work, MID_Y + 300), translated, rested });
 
-  // SAFETY: Target.createTarget 回 { targetId }。
   const otherId = (await rp.cdp.send("Target.createTarget", { url: "about:blank" }) as { targetId: string }).targetId;
   const other = await rp.attach(otherId);
   await load(other);

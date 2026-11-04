@@ -1,10 +1,6 @@
 import { getDocument, type PDFDocumentLoadingTask, type PDFDocumentProxy } from "pdfjs-dist";
 import * as pdfWorker from "pdfjs-dist/build/pdf.worker.mjs";
 
-/**
- * WHY: Chrome 的 PDF 阅读器是另一个扩展的页面：无障碍树里只有工具栏，没有正文，调试器也进不去。
- * 所以 PDF 正文由本扩展自己用 pdf.js 解析。服务工作线程里不能开 Worker，pdf.js 认 globalThis.pdfjsWorker 在本线程里跑。
- */
 (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = pdfWorker;
 
 const PDF_TEXT_BUDGET = 14_000;

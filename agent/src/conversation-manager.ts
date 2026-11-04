@@ -7,9 +7,7 @@ import { ReadingRequests } from "./reading.js";
 import {join} from "node:path";
 import type {UserInputOptions} from "./session.js";
 import {VoicePlanStore,type VoicePlanStep,type VoiceProposal} from "./voice-plan-store.js";
-import {runFastOp,VOICE_FAST_OP_SITES,type VoiceFastDecision} from './voice-fast-op.js';
-import type {VoicePageOp,VoicePageReply,VoicePageState} from '../../shared/voice-page-op.js';
-import {delegatedVoiceAction,isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
+import {isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   DEFAULT_CONVERSATION_ID, isLeadSession, normalizeConversationId,
@@ -79,8 +77,6 @@ function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | n
 }
 
 const WARM_UP_INTERVAL_MS = 30_000;
-
-const VOICE_PAGE_OP_TIMEOUT_MS = 3_000;
 
 export class ConversationManager {
   continuationEnabled: () => boolean = () => false;
@@ -194,11 +190,6 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
 
   private warmedAt = new Map<string, number>();
 
-  /**
-   * WHY: 经代理新建一条到模型服务的加密连接要几秒，只有第一次请求要付。用户开始打字时先发一个 HEAD，
-   * 浏览器把连接留在池里，真正的请求就复用它；回什么都不影响请求，只记进诊断。
-   * 凭据模式必须和模型请求（extension/src/inproc/model-runtime.ts 的 omitCookies）一样是 omit：Chrome 按凭据模式分连接池，不一致就另开一条连接。
-   */
   private warmUp(id: string, context?: PageContext, connectionOnly = false): void {
     const session = (this.entries.get(id) ?? [...this.entries.values()][0])?.runtime.session;
     const origin = session?.modelOrigin();
@@ -387,17 +378,12 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
       return {kind:'silent'};
     }
 
-    const fast=route?.nativeChat&&!route.resumeReadOnly&&['steer','start'].includes(delegatedVoiceAction(text,before.state))?await this.runVoiceFastOp(id,session,text,before,route):null;
-
-    if(fast&&'result' in fast)return fast.result;
     route?.reportStage?.('classifying');
 
     const prepared=route?.resumeReadOnly
       ?{plan:{steps:[{action:route.resumeReadOnly,target:null,text}]},replyText:null,protocol:'plan' as const}
       :before.state==='interrupted'&&isInterruptedResumeText(text)
         ?{plan:{steps:[{action:'resume' as const,target:null,text}]},replyText:null,protocol:'plan' as const}
-      :route?.delegated||(fast&&'task' in fast)
-        ?{plan:{steps:[{action:delegatedVoiceAction(text,before.state),target:null,text}]},replyText:null,protocol:'plan' as const}
       :await this.proposeVoiceTurn(id,session,text,before,catalog,route);
 
     const plan=prepared.plan;
@@ -686,30 +672,6 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
     return {plan:prepared.plan,replyText:prepared.replyText,protocol:prepared.protocol};
   }
-  private async runVoiceFastOp(id:string,session:Runtime['session'],text:string,before:TaskProgressSnapshot,route:VoiceRouteContext):Promise<{result:VoiceRouteResult}|{task:true}|null>{
-    const tabId=route.input?.context?.tabId,url=route.input?.context?.url,rpc=this.entries.get(id)?.runtime.rpc;
-
-    if(tabId===undefined||!url||!rpc||!VOICE_FAST_OP_SITES.test(url)||typeof session.decideVoiceFastOp!=='function')return null;
-    const send=(op:VoicePageOp)=>rpc.call('voice_page_op',{tabId,op},VOICE_PAGE_OP_TIMEOUT_MS) as Promise<VoicePageReply>;
-    const started=Date.now();
-    let state:VoicePageState,decision:VoiceFastDecision;
-
-    try{
-      state=(await send({kind:'state'})).state;
-      decision=await session.decideVoiceFastOp(text,state,(route.recentTurns??[]).slice(-4));
-    }catch{return null;}
-
-    if(decision.op==='chat')return {result:{kind:'none',nativeChat:true}};
-
-    if(decision.op==='task')return {task:true};
-
-    if(decision.op==='open'&&before.state==='running')return {task:true};
-    route.onInputDecision?.(true);
-    const spokenText=await runFastOp(decision,state,send).catch(error=>`这个操作没有成功：${error instanceof Error?error.message:String(error)}`);
-    this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:`${spokenText} ${((Date.now()-started)/1000).toFixed(1)} 秒，没有开任务。`}});
-
-    return {result:{kind:'none',spokenText}};
-  }
   private releaseVoiceOutput(id:string,released:{streams:UserDeliveryStream[];deliveries:UserDelivery[]}):void{
     for(const stream of released.streams)this.emit({type:'agent_event',conversationId:id,event:{kind:'user_delivery_stream',stream}});
 
@@ -899,9 +861,6 @@ return host?[`${host}${pages.some(other=>other.title&&memoryHostOfUrl(other.url)
 
     if(!history||!progress||!snap?.runId||!snap.goal||!['idle','aborted','error'].includes(snap.state))return;
 
-    // WHY: 只记做成了事的任务（提交、填写、点按钮这类会留下后果的执行记录），或还没做完、在等用户的任务。读页、查询、纯聊天（核对为「做完」）不记：
-    // 否则「我的手机号是 …」会记成一条过往任务，撤销记忆后号码仍留在过往任务里。
-    // 打开页面、滚动不算：只读查询记下后，回答里的旧结论会被下一次照抄。
     const acted=(snap.results??[]).some(item=>resultHasWriteEffect(item));
     const committed=(snap.results??[]).some(item=>resultLocksWhenUnknown(item));
     const view=projectTaskView(snap);
@@ -1409,8 +1368,6 @@ return receipt;
           }
         }
 
-        // WHY: “已接收”回执必须以真实可恢复存储为准：先把附件与检查点写盘，失败则回滚为未接收，
-        // 不启动模型或网页动作。
         const targetProgress=this.progress.get(request.conversationId)!;
         const beforeAccept=targetProgress.snapshot();
         targetProgress.request(request.text??'',request.context,request.attachments);
@@ -1559,7 +1516,6 @@ return receipt;
 
     for (const method of ["observe", "request", "abort", "recordRequirement", "interrupt", "prepareResume", "restoreResults", "reviseResults", "invalidatePage", "registerResults", "stopAfterFailures", "stopForRestrictedPage"] as const) {
       const original = progress[method].bind(progress) as (...args: unknown[]) => unknown;
-      // SAFETY: 同名方法按原签名包装，参数与返回值形状不变；动态按方法名赋值 TypeScript 无法表达。
       (progress as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
         const result = original(...args);
         this.queueTaskView(id);
@@ -1594,7 +1550,6 @@ return receipt;
       }
       const progressSnapshot=progress.snapshot();
 
-      // WHY: 只按任务进展起名：会话恢复时发的思考档位等事件不是新进展，否则侧栏一连上就给上百个旧会话同时起名，打爆快速模型。
       if(message.type==='agent_event'&&['agent_start','tool_end','agent_end'].includes(message.event.kind))this.nameTask(id,progressSnapshot,progress.visitedPages());
 
       if(progressSnapshot.state==='interrupted')summary.checkpoint='interrupted';

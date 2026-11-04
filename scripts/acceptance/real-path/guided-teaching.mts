@@ -106,7 +106,6 @@ const scripted = modelArg ? null : await startScriptedModel([
   });
 
   for (const m of payload.messages ?? []) {
-    // SAFETY: OpenAI 兼容的 tool 消息带 tool_call_id。
     const id = String((m as { tool_call_id?: unknown }).tool_call_id ?? "");
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
 
@@ -141,7 +140,6 @@ try {
 
   const probe = async <T,>(expression: string): Promise<T | null> => {
     for (const contextId of [...isolated]) {
-      // SAFETY: CDP Runtime.evaluate 返回 { result: { value } }；读数是可序列化的普通对象。
       const res = await rp.cdp.send("Runtime.evaluate", { expression: `(() => { const ns = globalThis.__sideagent; return ns?.holdState ? (${expression}) : undefined; })()`, contextId, returnByValue: true }, work).catch(() => null) as { result?: { value?: T } } | null;
 
       if (res?.result && res.result.value !== undefined) return res.result.value;

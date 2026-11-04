@@ -129,7 +129,6 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
       return;
     }
 
-    // SAFETY: OpenAI 兼容请求体，messages 为消息数组。
     const raw = await body(req);
     const payload = JSON.parse(raw) as { messages?: ChatMessage[]; stream?: boolean; tools?: unknown[] };
     const messages = payload.messages ?? [];
@@ -165,7 +164,6 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
 
       try {
         await new Promise((done) => setTimeout(done, translate.delayMs ?? 800));
-        // SAFETY: 产品的翻译请求体是 {language, blocks:[{id, segments:[{id, text}]}]}。
         const input = JSON.parse(textOf(messages.find((m) => m.role === "user")?.content)) as { blocks: Array<{ segments: Array<{ id: string; text: string }> }> };
         const out = input.blocks.flatMap((b) => b.segments.map((seg) => ({ id: seg.id, text: `中文译文：${seg.text}` })));
         const step = { text: JSON.stringify(out) };
@@ -180,7 +178,6 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
     }
 
     if (messages.some((m) => m.role === "system" && textOf(m.content).startsWith("Name a browser task"))) {
-      // SAFETY: 产品的起名请求体是 {task, pages:[{site, title}]}。
       const input = JSON.parse(textOf(messages.find((m) => m.role === "user")?.content)) as { pages: Array<{ site: string }> };
       const step = { text: JSON.stringify({ title: `起名 ${new Set(input.pages.map((p) => p.site)).size} 站` }) };
 
@@ -231,7 +228,6 @@ function withRecheck(step: Step, lastUser: string): Step {
   const at = lastUser.indexOf(RECHECK_MARK);
   if (at < 0 || !("text" in step) || typeof step.text !== "string") return step;
   try {
-    // SAFETY: 首轮结论是用例自己写的 JSON；补的字段由 recheckProbe 生成。
     const verdict = JSON.parse(step.text) as { status?: string };
     if (verdict.status !== "continue") return step;
     return { ...step, text: JSON.stringify({ ...verdict, ...(JSON.parse(lastUser.slice(at + RECHECK_MARK.length)) as object) }) };
@@ -239,7 +235,6 @@ function withRecheck(step: Step, lastUser: string): Step {
 }
 
 export function reverifyContinue(body: string): { verificationSubject: string; evidence: string } | null {
-  // SAFETY: 产品发出的 OpenAI 兼容请求体；核对输入是 user 消息里的一段 JSON。
   const request = JSON.parse(body) as { messages?: ChatMessage[] };
   const user = (request.messages ?? []).find((m) => m.role === "user");
   let input: { lastReply?: string; verification?: { finding?: { verificationSubject?: string }; reads?: Array<{ data?: string }> } };

@@ -6,7 +6,6 @@ const WORD = 'by-your-side-read-aloud-word';
 
 const RATES = [1, 1.5, 2];
 
-/** WHY: Chrome 读太长的一段会中途断掉，所以按句切，过长的句子再按逗号/空格切。 */
 const MAX_CHUNK = 220;
 
 const BLOCK = 'p,li,h1,h2,h3,h4,h5,h6,td,th,pre,blockquote,dt,dd,figcaption,div,section,article';
@@ -33,7 +32,6 @@ function collect(range: Range | null, fallback: string): Collected {
   const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
 
   while (walker.nextNode()) {
-    // SAFETY: walker 用 SHOW_TEXT 创建，currentNode 只会是文字节点。
     nodes.push(walker.currentNode as Text);
   }
 
@@ -326,7 +324,6 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
 
   bar.addEventListener('pointerdown', event => event.preventDefault());
   bar.addEventListener('click', event => {
-    // SAFETY: 监听器挂在工具条上，点击目标是其内部元素（按钮或图标）。
     const action = (event.target as Element).closest('[data-read]')?.getAttribute('data-read');
 
     if (action === 'close') {

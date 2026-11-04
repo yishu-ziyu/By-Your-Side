@@ -26,7 +26,6 @@ export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
     return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key }, baseUrl };
   }
 
-  // SAFETY: 本机套餐清单由用户维护，形状见文件头注释。
   const plans = JSON.parse(await readFile(join(homedir(), ".sideagent/providers.local.json"), "utf8")) as Record<string, { key?: string; source?: string }>;
   const plan = providerId === "stepfun" && !plans.stepfun ? { key: (await readFile(join(homedir(), ".sideagent/stepfun-api.key"), "utf8")).trim() } : providerId === "openai-codex" ? plans[providerId] ?? { source: "pi-auth" } : plans[providerId];
 
@@ -41,7 +40,6 @@ export async function loadModelPlan(modelArg: string): Promise<ModelPlan> {
     return { providerId, modelId: idParts.join("/"), credential: { type: "oauth", access: kimi.access, refresh: "", expires: kimi.expires } };
   }
 
-  // SAFETY: Pi 的 auth.json 按服务商存订阅登录 { access, refresh, expires } 或填的 key { type: "api_key", key }。
   const login = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { type?: string; key?: string; access: string; refresh: string; expires: number; accountId?: string } | undefined>)[providerId];
 
   if (!plan && login?.type === "api_key" && login.key) return { providerId, modelId: idParts.join("/"), credential: { type: "api_key", key: login.key } };
@@ -67,7 +65,6 @@ export function modelStorageItems(plan: ModelPlan): JsonRecord {
 
 async function catalogBaseUrl(plan: ModelPlan): Promise<string> {
   const pi = join(REPO, "node_modules/@earendil-works/pi-ai/dist/providers/all.js");
-  // SAFETY: pi-ai 的公开入口，builtinModels 返回服务商目录。
   const { builtinModels } = await import(pi) as { builtinModels: () => { getModels(provider: string): Array<{ baseUrl: string; api: string }> } };
   const model = builtinModels().getModels(plan.providerId).find((m) => m.api === "openai-completions");
 
@@ -144,7 +141,6 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   await rp.click(page, "#model-test");
 
   const testStatus = await until(async () => {
-    // SAFETY: 这段页面脚本返回 [data-tone, textContent] 两个字符串。
     const [tone, text] = await rp.evaluate(page, `[document.querySelector("#model-status").dataset.tone, document.querySelector("#model-status").textContent]`) as [string, string];
 
     const keyReason = await rp.evaluate(page, `document.querySelector('#key-reason').checkVisibility() ? document.querySelector('#key-reason-text').textContent : ''`);
@@ -157,7 +153,6 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   await rp.click(page, saveButton);
 
   const saveStatus = await until(async () => {
-    // SAFETY: textContent 是字符串。
     const text = await rp.evaluate(page, `document.querySelector("#model-status").textContent`) as string;
 
     return text.startsWith("已保存") ? text : undefined;
@@ -166,7 +161,6 @@ export async function configureViaSettings(rp: RealPath, panel: string, plan: Mo
   await useSavedSettingsModel(rp, page, asCustom ? 'custom' : plan.providerId, plan.modelId, asFast);
   const storageKey = asFast ? "inproc_fast_model_config" : "inproc_model_config";
   await until(async () => await rp.evaluate(page, `chrome.storage.local.get("${storageKey}").then(s => s["${storageKey}"]?.modelId === ${JSON.stringify(plan.modelId)})`) || undefined, 5000, '用途选择已保存');
-  // SAFETY: 返回本次通过设置页选择并已核对的配置。
   const stored = await rp.evaluate(page, `chrome.storage.local.get("${storageKey}").then((s) => s["${storageKey}"])`) as JsonRecord;
 
   return { testStatus, saveStatus, stored, settingsTargetId: target.targetId, menuClicks, menuToggles };

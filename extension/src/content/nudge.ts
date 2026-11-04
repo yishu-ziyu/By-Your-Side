@@ -76,7 +76,6 @@ export function installNudge(): void {
     armHide();
   };
 
-  // WHY: 光标脚本第一次注入时会清掉页面上所有扩展浮层：卡片该显示时被清掉就挂回去。
   new MutationObserver(() => { if (shown && !host.isConnected) document.documentElement.append(host); }).observe(document.documentElement, { childList: true });
 
   chrome.runtime.onMessage.addListener((message, sender) => {

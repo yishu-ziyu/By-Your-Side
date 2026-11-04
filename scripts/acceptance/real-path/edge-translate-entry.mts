@@ -39,12 +39,10 @@ try {
   await load();
   const width = await rp.evaluate(work, "document.documentElement.clientWidth") as number;
   const edge = async (name: string) => {
-    // SAFETY: Page.captureScreenshot 回 { data: base64 }。
     const shot = await rp.cdp.send("Page.captureScreenshot", { format: "png", clip: { x: width - 260, y: 20, width: 260, height: 140, scale: 2 } }, work) as { data: string };
     await writeFile(join(out, name), Buffer.from(shot.data, "base64"));
   };
   const capsuleText = async () => {
-    // SAFETY: DOM.getDocument 回 CDP 节点树，这里只读 nodeValue、attributes、children、shadowRoots。
     const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
     const tab = edgeTab(root);
 

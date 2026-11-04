@@ -56,7 +56,6 @@ export class IdbDocument implements DocumentPersistence {
   }
 
   exclusive<T>(fn: () => Promise<T>): Promise<T> {
-    // SAFETY: offscreen 页与 Node 测试里都可能没有 navigator；缺省时只用进程内互斥。
     const locks = (globalThis.navigator as Navigator | undefined)?.locks;
 
     return this.lock.run(() => locks ? locks.request(`${DB_NAME}:${this.key}`, fn) : fn());

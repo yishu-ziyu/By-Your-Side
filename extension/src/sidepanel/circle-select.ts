@@ -10,12 +10,7 @@ const GLOBAL_KEY = "__byYourSideCircle";
 
 type PageCircles = { enter: (start: number, set: number) => void; exit: () => void; remove: (n: number) => void; reveal: (n: number, set: number) => boolean };
 
-/**
- * WHY: 注入页面执行（会被序列化，不能引用本模块的任何东西）。第一次调用建好画圈层，之后再调用只重新进入圈画。
- * start 是下一圈的编号；为 1 时清掉页面上之前的圈，开始新的一组（set 是侧栏给这组的编号，回指时核对）。
- */
 function circleInPage(globalKey: string, start: number, set: number, motionVars: string): void {
-  // SAFETY: 页面全局对象按字符串键取值；这个键只存放本模块写入的控制对象。
   const g = globalThis as typeof globalThis & Record<string, PageCircles | undefined>;
 
   if (g[globalKey]) { g[globalKey].enter(start, set);
@@ -232,17 +227,14 @@ kbd{font:11px -apple-system,BlinkMacSystemFont,sans-serif;color:#77756d;border:1
 }
 
 function exitInPage(globalKey: string): void {
-  // SAFETY: 同 circleInPage：这个键只存放本模块写入的控制对象。
   (globalThis as typeof globalThis & Record<string, PageCircles | undefined>)[globalKey]?.exit();
 }
 
 function revealInPage(globalKey: string, n: number, set: number): boolean {
-  // SAFETY: 同 circleInPage：这个键只存放本模块写入的控制对象。
   return (globalThis as typeof globalThis & Record<string, PageCircles | undefined>)[globalKey]?.reveal(n, set) ?? false;
 }
 
 function removeInPage(globalKey: string, n: number): void {
-  // SAFETY: 同 circleInPage：这个键只存放本模块写入的控制对象。
   (globalThis as typeof globalThis & Record<string, PageCircles | undefined>)[globalKey]?.remove(n);
 }
 

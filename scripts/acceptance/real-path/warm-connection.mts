@@ -100,7 +100,6 @@ try {
   await rp.screenshot(panel, join(artifacts, "panel.png"));
 
   const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(artifacts, "downloads"));
-  // SAFETY: 诊断记录每行是 { runId, type, data } 的 JSON。
   const lines = traces.split("\n").filter(Boolean).map((line) => JSON.parse(line) as { time: string; runId: string | null; type: string; data?: JsonRecord });
   const runId = lines.find((l) => l.type === "run_start" && String(l.data?.text ?? "").includes("这页标题是什么"))?.runId;
   const firstModelRequest = lines.find((l) => l.runId === runId && l.type === "model_request");

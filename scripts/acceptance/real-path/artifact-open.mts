@@ -119,7 +119,6 @@ const PANEL_STATE = `(() => ({
 
 type PanelState = { ready: boolean; busy: boolean; userMessages: number; cards: Array<{ filename: string; deleted: boolean; buttons: Array<{ text: string; disabled: boolean }> }> };
 
-// SAFETY: PANEL_STATE 返回的字段与 PanelState 一一对应。
 const readPanel = async () => (await rp.evaluate(panel, PANEL_STATE)) as PanelState;
 
 async function send(text: string, settled: (s: PanelState) => boolean) {
@@ -170,7 +169,6 @@ async function evaluateInSandbox(viewer: string, expression: string): Promise<Js
   const frameTarget = (await rp.targets()).find((t) => t.type === "iframe" && t.url.includes("/artifact-sandbox.html"));
 
   if (frameTarget) return rp.evaluate(await rp.attach(frameTarget.targetId), expression);
-  // SAFETY: CDP Page.getFrameTree 的返回形状。
   const tree = (await rp.cdp.send("Page.getFrameTree", {}, viewer)) as { frameTree: { childFrames?: Array<{ frame: { id: string; url: string } }> } };
   const child = tree.frameTree.childFrames?.find((f) => f.frame.url.includes("/artifact-sandbox.html"));
 
@@ -216,23 +214,19 @@ try {
 
   for (const f of FILES) {
     viewers[f.filename] = await openCard(f.filename);
-    // SAFETY: VIEWER_BASICS 返回 {title, downloadVisible, missing}。
     basics[f.filename] = (await rp.evaluate(viewers[f.filename]!.session, VIEWER_BASICS)) as JsonRecord;
   }
 
   evidence.viewerBasics = basics;
   checks.newTabs = Object.keys(viewers).length === FILES.length;
-  // SAFETY: 上面写入的 basics 每项都是 VIEWER_BASICS 的形状。
   checks.titleAndDownload = FILES.every((f) => (basics[f.filename] as { title: string; downloadVisible: boolean }).title === f.filename && (basics[f.filename] as { downloadVisible: boolean }).downloadVisible);
 
   const html = viewers["probe-page.html"]!;
   const frameInfo = await rp.evaluate(html.session, `(() => { const f = document.querySelector("#view iframe"); return f ? { sandbox: f.getAttribute("sandbox"), src: f.src } : null; })()`);
   evidence.htmlFrame = frameInfo;
   await until(async () => (await evaluateInSandbox(html.session, `document.body?.dataset.done === "1"`).catch(() => false)) || undefined, 10_000, "网页探针跑完");
-  // SAFETY: 探针页在 #probes 写的是 {名字:{ok,value?,error?}}。
   const inside = (await evaluateInSandbox(html.session, `({ heading: document.querySelector("#hello")?.textContent, ran: document.querySelector("#ran")?.textContent, probes: JSON.parse(document.querySelector("#probes").textContent) })`)) as { heading: string; ran: string; probes: Record<string, { ok: boolean; value?: string; error?: string }> };
   evidence.htmlInside = inside;
-  // SAFETY: frameInfo 形状见上。
   const frame = frameInfo as { sandbox: string | null; src: string } | null;
   checks.htmlRendersAndRuns = inside.heading === "论证链条测试页" && inside.ran === "脚本已运行";
   checks.htmlSandboxed = !!frame && frame.sandbox !== null && frame.sandbox.includes("allow-scripts") && !frame.sandbox.includes("allow-same-origin") && frame.src.endsWith("/artifact-sandbox.html");
@@ -251,19 +245,16 @@ try {
   evidence.htmlLeaks = leaks;
   evidence.cdnScript = await evaluateInSandbox(html.session, `({ dayjsLoaded: typeof dayjs === "function", networkError: !!window.cdnError, cspBlocked: window.cspBlocked })`);
   evidence.viewerAfterProbes = viewerAfter;
-  // SAFETY: 上一行表达式的返回形状。
   const va = viewerAfter as { title: string; url: string; bodyHasPwned: boolean };
   checks.htmlIsolated = Object.keys(inside.probes).length === 8 && leaks.length === 0 && va.title === "probe-page.html" && va.url === html.url && !va.bodyHasPwned;
   const control = await rp.evaluate(html.session, `(async () => ({ storage: JSON.stringify(await chrome.storage.local.get("artifactProbeSecret")), local: localStorage.getItem("artifact-probe"), runtime: chrome.runtime.id }))()`);
   evidence.controlInExtensionOrigin = control;
-  // SAFETY: 上一行表达式的返回形状。
   const ctl = control as { storage: string; local: string | null; runtime: string };
   checks.probeControl = ctl.storage.includes(STORAGE_SECRET) && ctl.local === LOCAL_SECRET && ctl.runtime === rp.extensionId;
   await shot(html.session, "viewer-html");
 
   const md = await rp.evaluate(viewers["notes.md"]!.session, `(() => { const a = document.querySelector("#view article"); return a ? { h1: a.querySelector("h1")?.textContent, strong: a.querySelector("strong")?.textContent, items: a.querySelectorAll("li").length, text: a.innerText } : null; })()`);
   evidence.markdown = md;
-  // SAFETY: 上一行表达式的返回形状。
   const mdv = md as { h1?: string; strong?: string; items: number; text: string } | null;
   checks.markdown = !!mdv && mdv.h1 === "周报摘要" && mdv.strong === "三件事" && mdv.items === 2 && !mdv.text.includes("**") && !mdv.text.includes("# ");
   await shot(viewers["notes.md"]!.session, "viewer-md");
@@ -272,7 +263,6 @@ try {
   const csv = await textOf("prices.csv");
   const json = await textOf("data.json");
   evidence.text = { csv, json };
-  // SAFETY: textOf 的返回形状。
   const mono = (v: Json, want: string) => !!v && (v as { text: string }).text === want && /mono|Menlo|SFMono/i.test((v as { font: string }).font);
   checks.text = mono(csv, CSV) && mono(json, JSON_TEXT);
   await shot(viewers["prices.csv"]!.session, "viewer-csv");
@@ -280,13 +270,11 @@ try {
 
   const svg = await rp.evaluate(viewers["logo.svg"]!.session, `(async () => { const i = document.querySelector("#view img"); if (!i) return null; await i.decode().catch(() => {}); return { w: i.naturalWidth, h: i.naturalHeight, src: i.src.slice(0, 5) }; })()`);
   evidence.svg = svg;
-  // SAFETY: 上一行表达式的返回形状。
   const sv = svg as { w: number; h: number; src: string } | null;
   checks.image = !!sv && sv.w === 120 && sv.h === 80 && sv.src === "blob:";
   await shot(viewers["logo.svg"]!.session, "viewer-svg");
   const pdf = await rp.evaluate(viewers["hello.pdf"]!.session, `(async () => { const f = document.querySelector("#view iframe"); if (!f) return null; const r = await fetch(f.src); const t = await r.text(); return { src: f.src.slice(0, 5), type: r.headers.get("content-type"), head: t.slice(0, 8), same: t === ${JSON.stringify(PDF)} }; })()`);
   evidence.pdf = pdf;
-  // SAFETY: 上一行表达式的返回形状。
   const pv = pdf as { src: string; type: string; head: string; same: boolean } | null;
   checks.pdf = !!pv && pv.src === "blob:" && pv.type === "application/pdf" && pv.same;
   await sleep(1500);
@@ -303,7 +291,6 @@ try {
   const mdSession = viewers["notes.md"]!.session;
 
   const liveMissing = await until(async () => {
-    // SAFETY: VIEWER_BASICS 形状。
     const b = (await rp.evaluate(mdSession, VIEWER_BASICS)) as { title: string; missing: string | null; downloadVisible: boolean };
 
     return b.missing ? b : undefined;
@@ -312,12 +299,10 @@ try {
   await shot(mdSession, "viewer-md-deleted");
   await rp.cdp.send("Page.reload", {}, mdSession);
   await sleep(1500);
-  // SAFETY: VIEWER_BASICS 形状。
   const reloaded = (await rp.evaluate(mdSession, VIEWER_BASICS)) as { title: string; missing: string | null; downloadVisible: boolean };
   const bogus = await rp.cdp.send("Target.createTarget", { url: `${viewerPrefix()}?id=does-not-exist&name=${encodeURIComponent("旧文件.html")}` });
   const bogusSession = await rp.attach(bogus.targetId);
   await sleep(1500);
-  // SAFETY: VIEWER_BASICS 形状。
   const bogusState = (await rp.evaluate(bogusSession, VIEWER_BASICS)) as { title: string; missing: string | null; downloadVisible: boolean };
   await shot(bogusSession, "viewer-missing");
   evidence.missing = { liveMissing, reloaded, bogusState };

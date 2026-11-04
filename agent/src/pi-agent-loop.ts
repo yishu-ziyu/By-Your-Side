@@ -36,7 +36,6 @@ const MODEL_FIRST_EVENT_TIMEOUT_MS = MODEL_FIRST_EVENT_MS;
 const RUNAWAY_TOOL_ARGS_BLANKS = 512;
 
 export function streamThrough(models: ModelPort, observe: (context: Parameters<StreamFn>[1]) => void, observeResponse: ((status: number) => void) | undefined, effort: ((model: Model<Api>) => ModelThinkingLevel) | undefined, firstEventTimeoutMs: number | undefined, onCut: (cut: () => boolean, live: boolean) => void, onHedge: ((record: ModelHedgeRecord) => void) | undefined): StreamFn {
-  // SAFETY: ModelPort.streamSimple 与 Agent 期望的 streamFn 同签名；两边是同一 pi-ai 版本的类型。
   return ((model, context, streamOptions) => {
     observe(context);
     const level = effort?.(model);
@@ -52,7 +51,6 @@ export function streamThrough(models: ModelPort, observe: (context: Parameters<S
       await options?.onResponse?.(response, responseModel);
     };
 
-    // SAFETY: 同上，参数原样转交；对冲那份与原请求的 context 和参数完全相同。
     return withFirstEventDeadline(model, options?.signal, firstEventTimeoutMs ?? firstEventTimeout(model) ?? MODEL_FIRST_EVENT_TIMEOUT_MS, hedgeAfter(model) ?? MODEL_HEDGE_MS, (signal, accepted, hedge, onQueued) => models.streamSimple(model as never, context as never, { ...options, signal, onProviderStreamEvent: withAccepted(accepted), onResponse: withResponse(!hedge), ...(onQueued ? { onQueued } : {}) } as never), onCut, onHedge);
   }) as StreamFn;
 }
@@ -130,7 +128,6 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     timer = setTimeout(() => fail(message), Math.max(0, at - Date.now()));
   };
 
-  /** WHY: 只按规范化后的内容进展续期；供应商的心跳或空 delta 不能证明回答还在推进。 */
   const alive = () => {
     if (closed || finished) return;
     clearTimeout(stallTimer);
@@ -184,7 +181,6 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     if (closed || partial?.content.some(part => part.type === "toolCall")) return false;
     const written = !!partial?.content.some(part => part.type === "text" && part.text.trim());
     closed = true;
-    // WHY: 深拷贝：取消请求后供应商还会就地改它的流式对象，收下的这条消息不能跟着变。
     const message: AssistantMessage = written ? { ...structuredClone(partial!), stopReason: "stop" } : {
       role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
       usage: partial ? structuredClone(partial.usage) : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },

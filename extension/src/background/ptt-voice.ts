@@ -15,7 +15,6 @@ export function createPttVoice(notice: (conversationId: string, message: string)
   chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && (PTT_SPEECH_KEY in changes || PTT_SPEAK_RESULT in changes)) void load(); });
 
   const send = (command: PttSpeechCommand) =>
-    // SAFETY: 离屏文档对 PttSpeechCommand 只回 PttSpeechReply；没有接收方时 sendMessage 会抛错。
     (chrome.runtime.sendMessage(command) as Promise<PttSpeechReply | undefined>).catch(() => undefined);
 
   return {

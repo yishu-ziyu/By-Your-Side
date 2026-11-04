@@ -76,10 +76,6 @@ export class TaskQueue {
       }
     }
   }
-  /**
-   * WHY: A restarted host must not repeat an external action or silently resume an old page request.
-   * 改写的收条带新的 updatedAt：后台按它去重，沿用旧时间会被当成旧消息丢掉，侧栏停在重启前的样子。
-   */
   private restore(job: QueuedTask) {
     const updatedAt = Date.now();
 

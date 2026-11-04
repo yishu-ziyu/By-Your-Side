@@ -1,6 +1,5 @@
 import type { PageElementSource } from '../../../shared/protocol.js';
 
-/** WHY: 编号（UUID v4 格式）。普通 http 网页不是安全上下文，没有 crypto.randomUUID；crypto.getRandomValues 在那里也可用。 */
 export function newId(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   const b = crypto.getRandomValues(new Uint8Array(16));

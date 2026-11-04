@@ -5,7 +5,6 @@ const dir = process.argv[2]!;
 
 type Line = { time: string; sessionId: string; type: string; data?: { text?: string; toolName?: string; status?: string; attempt?: number; remaining?: string; finding?: string; message?: { role?: string; content?: Array<{ type: string; text?: string }> } } };
 
-// SAFETY: 诊断记录一行一个 JSON 对象，字段见 shared/run-trace-core.ts；rows.json 由 turns-baseline.mts 写出。
 const lines = (await readFile(join(dir, "traces.jsonl"), "utf8")).split("\n").filter(Boolean).map(l => JSON.parse(l) as Line);
 
 const { rows } = JSON.parse(await readFile(join(dir, "rows.json"), "utf8")) as { rows: Array<{ task: string; run: number; askedAt: number; turnAt: number; doneAt: number; ok: boolean; why: string; oldDirectionSteps: number }> };

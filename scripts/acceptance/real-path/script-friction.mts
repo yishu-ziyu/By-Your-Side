@@ -51,7 +51,6 @@ const model = await startScriptedModel([{ match: MARK, steps: [
   { tool: { name: "js", args: { code: READ, saveAs: "page-data.txt", deliver: true } } },
   { text: `【${MARK}结束】` },
 ] }], undefined, payload => {
-  // SAFETY: 脚本模型把产品的 OpenAI 兼容请求体原样交给这里；Payload 只取其中可选的 tools 与 messages。
   payloads.push(payload as Payload);
 });
 

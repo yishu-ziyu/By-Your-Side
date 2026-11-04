@@ -80,9 +80,7 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
-  // SAFETY: 表达式返回数字。
   const subsTab = await until(async () => await rp.evaluate(panel, `chrome.tabs.query({}).then(ts => ts.find(t => (t.url || "").endsWith("/subs"))?.id ?? 0)`) as number || undefined, 10_000, "订阅页的标签页编号");
-  // SAFETY: rules 在请求到来时才读，这里填进真实的标签页编号。
   (rules[0]!.steps[0] as { text: string }).text = card(subsTab);
 
   await rp.click(panel, "#input");
@@ -93,7 +91,6 @@ try {
   const end = Date.now() + 60_000;
 
   while (Date.now() < end) {
-    // SAFETY: 表达式返回字符串。
     const text = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].map(m => m.innerText).join("\\n")`) as string;
 
     if (/<\/?(card|stat|option|button|marquee)|&lt;|\{=total\}/.test(text)) leaks.push(text.slice(0, 200));
@@ -104,7 +101,6 @@ try {
 
   await sleep(800);
   await rp.screenshot(panel, join(artifacts, "card.png"));
-  // SAFETY: 表达式返回下面这个形状的对象。
   const seen = await rp.evaluate(panel, `(() => {
     const a = [...document.querySelectorAll("#messages .msg.assistant")].find(m => m.querySelector(".gen-card"));
     const card = a?.querySelector(".gen-card");
@@ -167,7 +163,6 @@ try {
   await rp.pressEnter(panel);
   await until(async () => await rp.evaluate(panel, `(() => { const c = [...document.querySelectorAll("#messages .gen-card")].find(c => c.textContent.includes("三款降噪耳机")); return !!c?.querySelector(".gc-actions, .gc-option") && !document.querySelector("#messages .msg.assistant.streaming"); })()`) || undefined, 60_000, "R5: extreme card drawn");
   await sleep(800);
-  // SAFETY: 表达式返回下面这个形状的对象。
   const extreme = await rp.evaluate(panel, `(() => {
     const card = [...document.querySelectorAll("#messages .gen-card")].find(c => c.textContent.includes("三款降噪耳机"));
     card.scrollIntoView({ block: "start" });
@@ -214,7 +209,6 @@ async function live(): Promise<never> {
     await rp.pressEnter(panel);
     await until(async () => await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll("#messages .msg.assistant")].filter(m => m.querySelector(".answer-actions")); return a.length >= ${n} && !document.querySelector("#messages .msg.assistant.streaming"); })()`) || undefined, 180_000, `第 ${n} 个回答`);
     await sleep(1_000);
-    // SAFETY: 表达式返回下面这个形状的对象。
     return await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll("#messages .msg.assistant")].filter(m => m.querySelector(".answer-actions")).at(-1); const c = a?.querySelector(".gen-card"); return { card: !!c, marked: !!c?.querySelector(".gc-stat.best, .gc-option.pick, tr.best"), buttons: [...(c?.querySelectorAll(".gc-btn") ?? [])].map(b => b.textContent), text: a?.innerText.slice(0, 400) }; })()`) as { card: boolean; marked: boolean; buttons: string[]; text: string };
   };
 

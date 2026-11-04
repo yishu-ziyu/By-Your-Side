@@ -93,7 +93,6 @@ export function installDragFeed(): void {
   addEventListener('scroll', () => { if (current) place(); }, { capture: true, passive: true });
   addEventListener('resize', () => { if (current) place(); }, { passive: true });
 
-  // WHY: 拖动只认用户真拖：网页脚本派发的 dragstart 不能往后台登记材料。
   grip.addEventListener('dragstart', event => {
     if (!event.isTrusted) return;
     const block = current;

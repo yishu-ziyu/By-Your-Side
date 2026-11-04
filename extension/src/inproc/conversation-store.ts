@@ -59,7 +59,6 @@ export async function openConversationStore(log: (message: string) => void): Pro
   try {
     db = await openDb();
     const store = db.transaction(STORE).objectStore(STORE);
-    // SAFETY: 这几个键只由下面的 save / saveReading / taskQueue.save 写入，形状见 StoredValue；读出后仍逐条校验。
     const [index, stored, queued] = await Promise.all([request(store.get(INDEX_KEY)) as Promise<ConversationSummary[] | undefined>, request(store.get(READINGS_KEY)) as Promise<Record<string, ReadingTranscript> | undefined>, request(store.get(QUEUE_KEY)) as Promise<unknown>]);
     summaries = validSummaries(index);
     if (Array.isArray(queued)) queue = queued;

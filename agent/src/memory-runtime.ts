@@ -147,7 +147,6 @@ class PendingJudgments {
 
   private async load(): Promise<PendingDocument> {
     try {
-      // SAFETY: 只有本类写这份文档；下面只取数组，单项字段缺失时补判照常失败并按次数放弃。
       const parsed = JSON.parse((await this.doc.read()) ?? "null") as Partial<PendingDocument> | null;
 
       const userWriteAt = parsed?.userWriteAt ?? {};
@@ -197,10 +196,6 @@ const styleDocs = new WeakMap<MemoryStore, DocumentPersistence>();
 
 const pausedFlags = new WeakMap<MemoryStore, () => boolean>();
 
-/**
- * WHY: 模拟用户模式：代理替用户试用产品期间，记忆照常读（带进回答），但不判断要不要记、不问、不学习惯。
- * 它说的话不是用户的话，记下来就成了用户的偏好。宿主另把写入挡在存储那一层，这里管的是界面上不出现「已记住」。
- */
 export function usePausedMemory(store: MemoryStore, paused: () => boolean): MemoryStore {
   pausedFlags.set(store, paused);
 
@@ -233,7 +228,6 @@ function habitDocFor(store: MemoryStore): DocumentPersistence {
 
 async function loadHabits(doc: DocumentPersistence): Promise<HabitDocument> {
   try {
-    // SAFETY: 只有 MemoryRuntime 写这份文档；形状不对就当没有（只是重新计数）。
     const parsed = JSON.parse((await doc.read()) ?? "null") as Partial<HabitDocument> | null;
 
     return { state: parsed?.state?.habits ? parsed.state : emptyHabitState(), hosts: parsed?.hosts ?? {} };
@@ -703,7 +697,6 @@ export class MemoryRuntime {
       if (!this.running) void this.drainPending();
     }, Math.max(0, at - Date.now()));
 
-    // SAFETY: Node 的定时器带 unref；浏览器里是数字，取不到 unref 就跳过。
     (this.timer as { unref?: () => void }).unref?.();
   }
 
@@ -957,7 +950,6 @@ export class MemoryRuntime {
     if (!this.current(turn)) return null;
     const semantic = entries.some(entry => entry.experience) ? await this.store.select(turn.query).catch(() => []) : [];
     if (!this.current(turn)) return null;
-    // WHY: select also returns literal matches; permanent preferences must not be relabeled as recalled task evidence.
     const semanticIds = new Set(semantic.filter(entry => entry.experience && entry.version === 1).map(entry => entry.id));
     const selection = selectMemoryContext({ entries, tasks, hostname, text: turn.text, semanticIds: [...semanticIds], now: Date.now() });
     const current = new Map((await this.store.markUsed(selection.entries.map(({ entry }) => entry))).map(entry => [entry.id, entry]));
@@ -1017,7 +1009,6 @@ export class MemoryRuntime {
     try {
       const input = JSON.stringify({ today: localDateOf(Date.now()), goal: task.goal.slice(0, 600), revisions: task.revisions.slice(-8), result: task.summary.slice(0, 600) });
       const raw = await this.complete(TASK_DATE_PROMPT, input, AbortSignal.timeout(TASK_DATE_TIMEOUT_MS));
-      // SAFETY: 只读 date 字段，下面用 validLocalDate 核对。
       const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/u, "").replace(/\s*```$/u, "")) as { date?: unknown } | null;
       const answer = parsed?.date;
       date = validLocalDate(answer) ? answer : null;
@@ -1036,7 +1027,6 @@ export class MemoryRuntime {
     try {
       const input = JSON.stringify({ goal: task.goal.slice(0, 600), revisions: task.revisions.slice(-8), unfinished: task.unfinished.slice(0, 8), result: task.summary.slice(0, 400) });
       const raw = await this.complete(TASK_LABEL_PROMPT, input, AbortSignal.timeout(TASK_LABEL_TIMEOUT_MS));
-      // SAFETY: 只读 title、next 两个字段，下面逐个核对。
       const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/u, "").replace(/\s*```$/u, "")) as { title?: unknown; next?: unknown } | null;
       const title = parsed?.title;
       const next = parsed?.next;
@@ -1053,7 +1043,6 @@ export class MemoryRuntime {
     try {
       const input = JSON.stringify({ goal: task.goal.slice(0, 600), revisions: task.revisions.slice(-8), result: task.summary.slice(0, 600), unfinished: task.unfinished.slice(0, 8) });
       const raw = await this.complete(TASK_DONE_PROMPT, input, AbortSignal.timeout(TASK_DONE_TIMEOUT_MS));
-      // SAFETY: 只读 done 字段，下面核对类型、长度和像不像密码。
       const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/u, "").replace(/\s*```$/u, "")) as { done?: unknown } | null;
       const done = typeof parsed?.done === "string" ? parsed.done.replace(/\s+/gu, " ").trim() : "";
 
@@ -1071,7 +1060,6 @@ export class MemoryRuntime {
     try {
       const input = JSON.stringify({ goal: task.goal.slice(0, 600), revisions: task.revisions.slice(-8), hosts: task.hosts.slice(0, 8), result: task.summary.slice(0, 400) });
       const raw = await this.complete(TASK_HABIT_PROMPT, input, AbortSignal.timeout(TASK_HABIT_TIMEOUT_MS));
-      // SAFETY: 只读 key、habit 两个字段，下面逐个核对。
       const parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/u, "").replace(/\s*```$/u, "")) as { key?: unknown; habit?: unknown } | null;
 
       if (!validMemoryText(parsed?.key) || !validMemoryText(parsed.habit)) return;
@@ -1126,7 +1114,6 @@ export class MemoryRuntime {
     const found: BrowseHabit[] = [];
 
     for (const item of list.slice(0, BROWSE_HABIT_LIMIT)) {
-      // SAFETY: 只读这几个字段，下面逐个核对。
       const h = (item ?? {}) as { key?: unknown; habit?: unknown; hosts?: unknown; days?: unknown; times?: unknown };
 
       if (typeof h.key !== "string" || !HABIT_KEY.test(h.key.trim()) || !validMemoryText(h.habit)) continue;
@@ -1406,7 +1393,6 @@ export class MemoryRuntime {
 
     this.emit({ kind: "memory", action, entries: changed, message, ...await this.rev(), ...await this.replaced(action, changed) });
 
-    // WHY: A forget receipt carries IDs to the UI but never echoes the deleted content to the model.
     return result(action, action === "forgotten" ? [] : changed, message + (turn.memoryOnly ? "\n本轮仅修改记忆：用一句话告诉用户记下了什么，不要操作当前网页。" : ""));
   }
 }

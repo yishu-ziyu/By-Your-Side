@@ -2,7 +2,6 @@ import { OVERLAY_ATTR, OVERLAY_KIND_PAY_STOP } from "../shared/overlay.js";
 import { bringForwardForUser } from "./foreground.js";
 import type { HeldReason } from "../../../shared/protocol.js";
 
-/** WHY: 在页面 ISOLATED world 里画提示和按钮外圈；序列化进页面，必须自包含。页面文字只用 textContent 放进去。 */
 function showPayStop(attr: string, kind: string, label: string, x: number, y: number): void {
   document.querySelectorAll(`[${attr}="${kind}"]`).forEach(node => node.remove());
   const host = document.createElement("div");

@@ -1259,7 +1259,6 @@ details.run-steps.done .chip.error { background: transparent; }
   padding: 4px 14px 0;
   color: var(--text-secondary);
 }
-/* WHY: 空会话由脚本判断（#messages 里常驻续做卡挂载点，:empty 永远不成立；:has 又不能嵌套）。 */
 #app.starter-ready.conversation-empty #starter { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; }
 #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #messages-frame { flex: 0 1 auto; }
 #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #starter { position: static; flex: 0 0 auto; margin-top: auto; padding-bottom: var(--s-3); }
@@ -1500,7 +1499,6 @@ details.run-steps.done .chip.error { background: transparent; }
 }
 
 #input {
-  /* WHY: 不用 flex: 1：框高随内容走，flex-basis 为 0 会把 autoResize 写的高度压回最小高度，多行只能在两行里滚。 */
   flex: none;
   resize: none;
   border: none;
@@ -2179,7 +2177,6 @@ details.run-steps.done .chip.error { background: transparent; }
 #conversation-switcher { display:flex; align-items:center; gap:7px; }
 #conversation-switcher .conversation-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #conversation-switcher .conversation-title { color:var(--text-primary); font-weight:500; }
-/* WHY: lucide 的 createElement 不带 .lucide 类名，按元素选中图标，否则是默认的 24px 粗箭头。 */
 #conversation-switcher svg { flex-shrink:0; width:12px; height:12px; stroke-width:1.75; color:var(--text-tertiary); }
 
 #memory-shade { position:absolute; inset:0; z-index:34; border:0; padding:0; background:rgba(23,34,52,.18); cursor:default; }

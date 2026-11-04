@@ -27,10 +27,6 @@ export function recordObservedDocument(tabId: number, member: string, documentId
   observed.set(keyOf(tabId, member), documentId);
 }
 
-/**
- * WHY: Only an @N ref belongs to the snapshot's document. Selectors, text, coordinates, page js and cdp act on
- * whatever page is current, so a reload/navigation after the last snapshot refuses only @N targets.
- */
 export async function assertObservedDocument(tabId: number, member: string, targets: ReadonlyArray<string | undefined>): Promise<string | null> {
   const current = await readCurrentDocument(tabId);
   const expected = observed.get(keyOf(tabId, member));

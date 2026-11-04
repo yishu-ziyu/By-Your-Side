@@ -103,7 +103,6 @@ export function createOpfsFileSystem(): FileSystem {
         const handle = await file(source, false);
         const target = parts(destination);
         const name = target.pop()!;
-        // SAFETY: Chrome 的 FileSystemFileHandle.move(dir, name) 不在 TS DOM 库里。
         await (handle as unknown as { move(d: FileSystemDirectoryHandle, n: string): Promise<void> }).move(await dir(target, true), name);
         return ok(undefined);
       } catch (error) { return fromDom(error, source); }

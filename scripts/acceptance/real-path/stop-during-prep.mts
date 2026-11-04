@@ -79,7 +79,6 @@ try {
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "侧栏可发送");
 
   const panelText = 'JSON.stringify({ answers: [...document.querySelectorAll("#messages .msg.assistant")].map(el => el.innerText.trim()), notices: [...document.querySelectorAll("#messages .msg.notice")].map(el => el.innerText.trim()) })';
-  // SAFETY: panelText 只返回两个字符串数组。
   const read = async () => JSON.parse(String(await rp.evaluate(panel, panelText))) as { answers: string[]; notices: string[] };
   const stopping = async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.classList.contains("stopping") === true') === true;
   const idle = async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled === false && !document.querySelector("#send-btn").classList.contains("stopping")') === true;
@@ -139,7 +138,6 @@ try {
   evidence.notices = (await read()).notices;
   await rp.screenshot(panel, join(artifacts, "last.png"));
 
-  // SAFETY: PREP_STOPS 只返回毫秒数数组。
   const prepStops = JSON.parse(String(await rp.evaluate(panel, PREP_STOPS))) as number[];
   evidence.prepStops = prepStops.length;
   const rounds = evidence.rounds;

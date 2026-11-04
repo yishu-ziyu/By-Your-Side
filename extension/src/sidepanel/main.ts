@@ -1051,7 +1051,6 @@ function renderConversations(): void {
     conversationSwitcher.title = otherTaskCopy(waiting.length, cue.title).line;
   }
 
-  // WHY: 菜单开着时不能反复移动这一行，否则下面正在按下的会话会错位。
   if ((existingOther?.dataset.other ?? "") !== otherKey) {
     existingOther?.remove();
 
@@ -1412,7 +1411,6 @@ if (isPopout) {
 popoutOpen.addEventListener("click", () => void openFloat());
 
 function watchFullyVisible(target: Element, onChange: (visible: boolean) => void): void {
-  // SAFETY: trackVisibility / delay 和回调条目上的 isVisible 是 IntersectionObserver v2 的，DOM 类型里还没有；没有 isVisible 就当看不全。
   new IntersectionObserver(([entry]) => onChange((entry as (IntersectionObserverEntry & { isVisible?: boolean }) | undefined)?.isVisible === true),
     { trackVisibility: true, delay: 100 } as IntersectionObserverInit).observe(target);
 }
@@ -1596,11 +1594,6 @@ function noteModelInfo(model: string | undefined, models: ModelOption[] | undefi
   if (pendingModelSwitch?.id === model) { clearTimeout(pendingModelSwitch.timer); pendingModelSwitch.done(); pendingModelSwitch = null; }
 }
 
-/**
- * WHY: 后台把同一次出错发给看着这个会话的每个侧栏，只能有一个替用户自动重试：每个会话一把锁，先拿到的侧栏负责，它关掉或切走后由下一个接手。
- * 锁按会话分：侧栏只收自己看着的会话的出错，全局一把锁会让拿着锁、却看着别的会话的侧栏把这次重试漏掉。
- * 不按窗口编号排：chrome.runtime.getContexts 给侧栏的 windowId 是 -1。
- */
 const AUTO_RETRY_LOCK = "sideagent-auto-retry-owner";
 
 let autoRetryLock: { conversationId: string; held: boolean; release: () => void } | null = null;
@@ -2407,9 +2400,6 @@ function appendToMessages(node: HTMLElement): void {
   const anchor = resumeRoot?.parentElement === messagesEl ? resumeRoot : null;
 
   if (node.parentElement === messagesEl && node.querySelector(".artifact-inline-frame")) {
-    // WHY: Chromium's state-preserving move keeps the iframe's JS state and form
-    // values. Move only the touched card, never the following messages or
-    // unrelated cards from earlier turns.
     const container = messagesEl as HTMLElement & { moveBefore?: (child: Node, before: Node | null) => void };
 
     if (typeof container.moveBefore === "function") container.moveBefore(node, anchor);
@@ -3098,7 +3088,6 @@ function finishRun(): void {
     const done = Array.from(run.body.querySelectorAll<HTMLElement>(".chip:not(.prep):not(.note)"));
     const ended = outcome === "failed" || outcome === "stopped" ? outcome : "completed";
     const only = done.length === 1 && ended === "completed" ? done[0] : null;
-    // SAFETY: data-kind 由 onToolStart 写入，取值就是 IconKind。
     setActionIcon(run.actIcon, only ? (only.dataset.kind as IconKind) : "many");
     clearTimeout(run.titleTimer);
 

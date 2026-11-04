@@ -43,7 +43,6 @@ export function redactTaskSecrets(entry: TaskHistoryEntry): TaskHistoryEntry {
 
 function withoutRoute(task: TaskHistoryEntry): TaskHistoryEntry {
   if (!("route" in task)) return task;
-  // SAFETY: 只去掉旧字段 route；其余字段已由 isTaskHistoryEntry 核对。
   const { route: _old, ...rest } = task as TaskHistoryEntry & { route?: unknown };
 
   return rest;
@@ -145,7 +144,6 @@ export class TaskHistoryStore {
     if (raw === null) return { tasks: [], invalid: [], readOnly: false };
 
     try {
-      // SAFETY: 只读 format 与 tasks 两个字段，tasks 里每条再用 isTaskHistoryEntry 核对。
       const file = JSON.parse(raw) as Partial<HistoryFile> | null;
 
       if (file?.format === 1 && Array.isArray(file.tasks)) {

@@ -208,8 +208,6 @@ function fadeSpan(delay: number): HTMLSpanElement {
   const onEnd = (event: AnimationEvent) => {
     if (event.target === span) unwrap();
   };
-  // WHY: 不显示的元素里（<span hidden>、收起的 <details>）动画不跑，等不到 animationend；淡入时长过了就自己拆，
-  // 否则收尾一直等 .chunk-fade 消失，回答永远停在「正在显示」。
   const timer = window.setTimeout(unwrap, Math.max(FADE_MS - delay, 0) + FADE_SLACK_MS);
   span.addEventListener("animationend", onEnd);
 
@@ -380,7 +378,6 @@ class Reveal {
     }
 
     delete this.el.dataset.revealing;
-    // WHY: 收尾会拆分正文节点；必须等淡入拆掉 span，避免复制节点时丢失 animationend 监听。
     this.finishIfDone();
   }
 
@@ -461,11 +458,6 @@ class Reveal {
     wrapRanges([...this.el.childNodes], fades, now);
   }
 
-  /**
-   * WHY: 续写不含记号也可能改掉已渲染的结构：补上的 `)` 让「[来源](https:」先成了链接，后半截网址其实在地址里；
-   * 「[来源]」接上「(网址)」才成链接；裸网址接着写要改地址；「```j」接上「s」语言名才完整；段尾的空行不是正文。
-   * 所以只在新渲染结果正好等于旧结果最后一个字后面接上 added 时才直接追加，返回接上的位置（按块里的字数）；否则返回 null。
-   */
   private appendOffset(old: Block, nodes: ChildNode[], added: string): number | null {
     const before = old.parsed ?? topNodes(old.html, this.el);
     const last = lastText(before);

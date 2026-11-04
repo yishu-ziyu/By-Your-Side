@@ -147,7 +147,6 @@ export class RealtimeVoiceSession {
     if (!snapshot || !this.deps.dispatchTask) return '任务没有停止：当前没有可终止的任务。';
 
     try {
-      // SAFETY: dispatchTask 由宿主注入，解析为 shared/task-actions 的 TaskReceipt；这里只读 status 与 message。
       const receipt = await this.deps.dispatchTask({
         requestId: randomUUID(), conversationId: snapshot.conversationId, source: 'voice', action: 'abort',
         expectedRunId: snapshot.runId ?? null, expectedControlVersion: snapshot.controlVersion, text,

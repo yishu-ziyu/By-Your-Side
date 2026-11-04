@@ -167,7 +167,6 @@ const ENGINE_URL = { flow: "./diagram-engine.js", more: "./diagram-engine-more.j
 
 const engines: Partial<Record<keyof typeof ENGINE_URL, Promise<Engine>>> = {};
 
-// SAFETY: ENGINE_URL 里就是 diagram-engine.ts、diagram-engine-more.ts 的构建产物，导出同样的 mount、render。
 const loadEngine = (kind: keyof typeof ENGINE_URL) => (engines[kind] ??= import(ENGINE_URL[kind]) as Promise<Engine>);
 
 function cleanSvg(svg: string): Node {
@@ -228,7 +227,6 @@ function fit(canvas: HTMLElement): void {
 }
 
 const fitter = new ResizeObserver((entries) => {
-  // SAFETY: 只 observe 过 .gc-diagram-canvas 这个 HTMLElement。
   for (const entry of entries) fit(entry.target as HTMLElement);
 });
 
@@ -946,10 +944,8 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
   });
   draw();
   root.addEventListener("keydown", (event) => {
-    // SAFETY: keydown 事件的 target 是 Element。
     const node = (event.target as Element).closest<SVGElement>(".gc-diagram [data-cited]");
 
-    // SAFETY: 同上。
     const row = (event.target as Element).closest<HTMLElement>(".gen-card .gc-linked");
 
     if (row && event.target === row && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); void revealRow(row);
@@ -995,27 +991,23 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
     else if ((el.type === "checkbox" && el.closest(".gc-check")) || el.classList.contains("gc-text")) save(card);
   });
   root.addEventListener("click", async (event) => {
-    // SAFETY: click 事件的 target 是 Element。
     const node = (event.target as Element).closest<SVGElement>(".gc-diagram [data-cited]");
 
     if (node) { toggleCite(node);
 
  return; }
-    // SAFETY: click 事件的 target 是 Element。
     const face = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-face");
     const card = face?.closest<HTMLElement>(".gen-card");
 
     if (face && card) { showFace(card, face.dataset.face ?? "answer");
 
  return; }
-    // SAFETY: 同上。
     const step = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-bump");
     const num = step?.closest(".gc-input")?.querySelector<HTMLInputElement>(".gc-num");
 
     if (step && num) { setVar(num, Number(num.value) + Number(step.dataset.gcBump) * (Number(num.step) || 1));
 
  return; }
-    // SAFETY: 同上。
     const chip = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-chip");
     const form = chip?.closest<HTMLElement>(".gen-card");
 
@@ -1026,9 +1018,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
 
       return;
     }
-    // SAFETY: 同上。
     const button = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-btn");
-    // SAFETY: 同上。
     const row = (event.target as Element).closest<HTMLElement>(".gen-card .gc-linked");
 
     if (!button && row && !(event.target as Element).closest(".num-cite")) { void revealRow(row);

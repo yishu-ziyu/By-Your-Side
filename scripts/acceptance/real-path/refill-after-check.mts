@@ -103,7 +103,6 @@ const proxy = createServer(async (req, res) => {
   let forward = body;
 
   if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
-    // SAFETY: OpenAI 兼容请求体；只换 messages，保留 stream 等其余字段。
     const payload = JSON.parse(body) as Record<string, unknown>;
     const again = reverifyContinue(body);
     if (!again) lastFirst = verdicts.shift() ?? "VERDICT-DONE";

@@ -1,10 +1,3 @@
-/**
- * WHY: 填写像真人敲键盘：先清空，再用 CDP Input.insertText 写进去，写完读回分级。
- * 原生 setter 加脚本派发的事件不算可信输入：只认可信 input 事件的搜索框、只按 beforeinput 更新的编辑器都收不到。
- * 做法参考 Ego lite 的 fill（MIT，github.com/citrolabs/ego-lite，package/ego-browser/src/driver/page-actions.ts）：
- * insertText 写入、清空用全选覆盖、空值发 Delete、连续两次读到一样才算数、五级结果、没写进去先点一下再试。
- * 日期、时间、颜色、滑块和下拉框不走这里（键盘写不进去），照旧直接设值。
- */
 import { sendCommand } from "../debugger.js";
 
 export class TypingInterrupted extends Error {}
@@ -18,7 +11,6 @@ type Guard = (() => Promise<void>) & { checkNow?: () => void; noteEffect?: () =>
 const READS = 5;
 const READ_GAP_MS = 50;
 
-/** WHY: 键盘能写的框：聚焦、全选，返回原内容的长度；其余（日期、颜色、下拉框、不可写）返回 null，走旧写法。自包含。 */
 function prepareInPage(this: unknown, target: string | null, requested?: string): { beforeLen: number; beforeHash: number; sameRequest?: boolean; editor?: true } | null {
   const hash = (text: string) => { let h = 2166136261; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619); return h >>> 0; };
   if (!(this instanceof Element) && target && /^(text=|loc=role:)/.test(target)) return null;
@@ -29,7 +21,6 @@ function prepareInPage(this: unknown, target: string | null, requested?: string)
   const prevReq = el.getAttribute("data-bys-last-requested");
   if (typeof requested === "string") el.setAttribute("data-bys-last-requested", requested);
   const sameRequest = typeof requested === "string" && prevReq === requested;
-  // WHY: 聚焦后焦点必须真的在它身上（被禁用的 fieldset、inert、藏起来的框聚焦不了）：不然键盘输入会落进上一个有焦点的框。
   const holdsFocus = (node: Element) => {
     let active = node.ownerDocument.activeElement;
 
@@ -39,7 +30,6 @@ function prepareInPage(this: unknown, target: string | null, requested?: string)
   };
 
   if (tag === "input" || tag === "textarea") {
-    // SAFETY: tag 已核对是 input 或 textarea。
     const field = el as HTMLInputElement;
     const typed = ["", "text", "search", "email", "url", "tel", "password"];
 
@@ -80,7 +70,6 @@ function gradeInPage(this: unknown, target: string | null, requested: string, be
   const tag = el.tagName.toLowerCase();
 
   if (tag !== "input" && tag !== "textarea" && !el.isConnected) while (el.parentElement?.isContentEditable) el = el.parentElement;
-  // SAFETY: 上面按 tag 分开：输入框读 value，编辑器读 innerText。
   const now = tag === "input" || tag === "textarea" ? (el as HTMLInputElement).value : (el as HTMLElement).innerText.replace(/\n$/, "");
   const loose = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -97,7 +86,6 @@ function gradeInPage(this: unknown, target: string | null, requested: string, be
   return "transformed";
 }
 
-/** WHY: 点一下这个框的落点：落点上确实是它（或它里面）才给，不然不点，免得点到别的控件。只在顶层页面里给。自包含。 */
 function clickPointInPage(this: unknown, target: string | null): [number, number] | null {
   const el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
 
@@ -234,17 +222,11 @@ export async function regrade(run: PageRun, value: string, before: { beforeLen: 
 
 export { written as typingWritten };
 
-/**
- * WHY: 「填完回车」之前在页面里看这个框：只给搜索框和普通单行文字框；焦点必须还在它身上（回车落在别的框上就不按）。
- * 交回它附近的按钮名字（同一个表单里的全部，不在表单里就往上三层、不到 body），由后台按发送、付款的同一套规则判：
- * 名字写在 button、a、div、span 上都算。回车发送不经过发送确认是已知缺口（docs/web-actions.md），不能扩大。自包含。
- */
 export function submitProbeInPage(this: unknown, target: string | null): { refused: string } | { labels: string[] } {
   const el = this instanceof Element ? this : target ? window.__sideagent?.dom?.resolve(target) : null;
 
   if (!el) return { refused: "找不到这个框，没有回车。" };
   const role = (el.getAttribute("role") ?? "").toLowerCase();
-  // SAFETY: 只在 tag 是 input 时读 type。
   const type = el.tagName === "INPUT" ? (el as HTMLInputElement).type : "";
 
   if (!(type === "search" || type === "text" || role === "searchbox" || role === "combobox") || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable) {

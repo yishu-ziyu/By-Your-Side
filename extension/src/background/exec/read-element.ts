@@ -46,7 +46,6 @@ function typedReadElementError(error: unknown): Error {
   return error instanceof Error ? error : new Error(text);
 }
 
-/** WHY: Serialized unchanged into either CDP or executeScript; no closure or page-supplied code. */
 function readInPage(kind: "ref" | "css", ref: number | null, selector: string | null, properties: ElementProperty[], supplied: Element | null, readback: {deadline:number;originalNode?:boolean} | null, sensitiveName: string, layout = false): ReadReply {
   try {
     if(readback&&Date.now()>=readback.deadline)throw new Error('READBACK_TIMEOUT');
@@ -71,8 +70,6 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
     }
 
     if (!element?.isConnected) throw new Error('目标已失效；请重新 snapshot');
-    // SAFETY: 元素来自 snapshot-ref/CSS 解析（Element）；运行时按 tagName 分支收窄，
-    // 联合断言仅为读取 value/textContent 等成员，所有成员访问都有 hasValue/tagName 判定守卫。
     const el = element as unknown as HTMLElement & HTMLInputElement & HTMLMediaElement & HTMLOptionElement;
     const tagName = element.nodeType === 3 ? '#text' : String(element.tagName || '').toLowerCase();
     const hasValue = ['input', 'textarea', 'select', 'option'].includes(tagName);
@@ -162,9 +159,7 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       else if (property === 'visibleText') value = renderedText();
       else if (property === 'value' && hasValue) value = maskValue(String(el.value ?? ''));
       else if (property === 'displayValue' && hasValue) {
-        // SAFETY: 上一分支已断言 tagName==='select'，运行时即 HTMLSelectElement。
         const select = tagName === 'select' ? el as unknown as HTMLSelectElement : null;
-        // SAFETY: 上一分支已断言 tagName==='option'，运行时即 HTMLOptionElement。
         const option = tagName === 'option' ? el as unknown as HTMLOptionElement : null;
         const shown = option ? option.textContent : select ? (select.selectedOptions?.[0]?.textContent ?? select.options?.[select.selectedIndex]?.textContent ?? select.value) : el.value;
         value = maskValue(String(shown ?? ''));
@@ -188,15 +183,11 @@ function readInPage(kind: "ref" | "css", ref: number | null, selector: string | 
       } else values[property] = value;
     }
 
-    // WHY: Extract only naming sources here. The shared anchorFor() owns naming priority and
-    // clipping; this function is serialized into Chrome and cannot close over imports.
     let anchorSource: ElementData['anchorSource'];
     let fullText: string | undefined;
     let inputRange: ElementData['inputRange'];
 
     if (element.nodeType !== 3 && typeof el.getAttribute === 'function') {
-      // WHY: Page readout rules (shared/page-readout.ts), inlined because this function is serialized:
-      // a shown text ending in an ellipsis gains the fuller title/aria value that starts with it.
       const shown = textContent.replace(/\s+/g, ' ').trim();
       const tail = /(?:…|\.{3})$/;
       const prefix = shown.replace(tail, '').trimEnd().toLowerCase();

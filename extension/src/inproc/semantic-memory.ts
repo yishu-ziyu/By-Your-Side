@@ -5,7 +5,6 @@ import type { MemoryEntry } from "../../../shared/memory.js";
 
 const MODEL_ID = "Xenova/multilingual-e5-small";
 const EMBED_TIMEOUT_MS = 1500;
-// WHY: 这个小模型给无关中文句子也可能打出 0.85，不能沿用通用向量库常见的 0.70 门槛。
 const MIN_SIMILARITY = 0.86;
 
 env.allowLocalModels = false;

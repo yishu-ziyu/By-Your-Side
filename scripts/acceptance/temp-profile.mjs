@@ -68,8 +68,6 @@ export function trackTempDir(dir, child) {
       try {
         remove(dir);
       } catch {
-        // WHY: Chrome's helper processes can still be writing the profile right after close (seen under load: ENOTEMPTY).
-        // Leave it for the exit cleanup instead of throwing: a failed tidy-up must not lose the run's report.
         live.set(dir, current);
       }
     },

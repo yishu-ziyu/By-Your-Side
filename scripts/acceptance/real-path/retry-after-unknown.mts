@@ -52,7 +52,6 @@ let hidden = false;
 let workSession: string | null = null;
 
 const model = await startScriptedModel([{ match: MARK, steps }], undefined, payload => {
-  // SAFETY: 脚本模型把产品的 OpenAI 兼容请求体原样交给这里；Payload 只取其中可选的 tools 与 messages。
   const p = payload as Payload;
   payloads.push(p);
   const tools = (p.messages ?? []).filter(m => m.role === "tool");

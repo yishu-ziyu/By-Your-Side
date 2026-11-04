@@ -50,7 +50,6 @@ export function mountComposerGlide(app: HTMLElement, dock: HTMLElement, starter:
       starter.style.setProperty("--starter-leaving-height", `${leaving.height}px`);
       app.classList.add("starter-leaving");
       const fade = starter.animate([{ opacity: 1, transform: "translateY(0)" }, { opacity: 0, transform: "translateY(-12px)" }], { duration: duration * 0.6, easing, fill: "forwards" });
-      // WHY: 淡完先撤掉临时摆位再取消动画，否则下次回到空会话时问候还停在透明。
       void fade.finished.finally(() => { app.classList.remove("starter-leaving"); fade.cancel(); lastStarter = null; });
     }
 

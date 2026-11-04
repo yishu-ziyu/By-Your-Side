@@ -76,7 +76,6 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
 
         if (hops > FETCH_MAX_REDIRECTS) throw new FetchRefused("fetch 重定向次数过多，后续请求未执行。");
         assertRedirectAllowed(request.url, next);
-        // WHY: 307/308 原样带着方法和正文再发一次：放行的搜索请求不能借重定向落到没问过的写入地址。
         if (request.method !== "GET" && !confirmed && opts?.confirmPost && needsRequestConfirm({ ...request, url: next })) throw new FetchRefused("POST 请求被重定向到需要用户确认的地址，后续请求未执行。");
         request.url = next;
 

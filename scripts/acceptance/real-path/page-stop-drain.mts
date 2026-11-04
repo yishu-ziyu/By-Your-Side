@@ -47,7 +47,6 @@ const check = (name: string, pass: boolean, actual: Json) => {
   console.log(`${pass ? "PASS" : "FAIL"} ${name}`, JSON.stringify(actual));
 };
 
-// SAFETY: 读数来自 CDP returnByValue，是可序列化的普通对象。
 const asJson = (v: unknown) => v as Json;
 const timeline: Array<{ at: number; tone: string | null; a: string; end: string | null }> = [];
 
@@ -62,7 +61,6 @@ try {
 
   const inExtension = async <T,>(expression: string): Promise<T | null> => {
     for (const contextId of [...isolated]) {
-      // SAFETY: CDP Runtime.evaluate 返回 { result: { value } }；读数是可序列化的普通对象。
       const res = await rp.cdp.send("Runtime.evaluate", { expression: `(() => { const ns = globalThis.__sideagent; return ns?.cursor ? (${expression}) : undefined; })()`, contextId, returnByValue: true }, work).catch(() => null) as { result?: { value?: T } } | null;
 
       if (res?.result && res.result.value !== undefined) return res.result.value;

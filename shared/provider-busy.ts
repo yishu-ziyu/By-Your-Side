@@ -3,13 +3,7 @@ import { isProviderBusyError, isQuotaError } from "./user-facing.js";
 
 type Completion = { stopReason: string; errorMessage?: string };
 
-/**
- * WHY: 模型调用的暂时失败（服务忙、5xx、网络断）：主任务据此重试或换快速模型。
- * pi-ai 只认 Node 的「fetch failed」；扩展跑在 Chrome 里，断网报「Failed to fetch」（代理断开连接时整轮直接报错）。
- * 工具参数写跑了（runaway tool call，见 pi-agent-loop）重来一次通常就好。
- */
 export function isTransientModelError(message: AssistantMessage): boolean {
-  // WHY: 额度用尽常带 429，但等多久都不会好，不能当「忙」：和 pi-ai 不重试的额度类错误同一组说法。
   if (isQuotaError(message.errorMessage)) return false;
 
   return isRetryableAssistantError(message) || (message.stopReason === "error" && (isProviderBusyError(message.errorMessage) || /failed to fetch|runaway tool call/i.test(message.errorMessage ?? "")));

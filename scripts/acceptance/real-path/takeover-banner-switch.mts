@@ -29,7 +29,6 @@ try {
   const ready = () => until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60000, "侧栏就绪");
   await ready();
   await rp.cdp.send("Page.bringToFront", {}, work);
-  // SAFETY: 表达式只返回 { shown, text } 这样的普通对象。
   const banner = () => rp.evaluate(panel, '(()=>{const b=document.querySelector("#handoff-banner");return{shown:!!b&&!b.hidden,text:b?.textContent??""}})()') as Promise<{ shown: boolean; text: string }>;
   const settle = async (want: (b: { shown: boolean; text: string }) => boolean, ms: number) => { const end = Date.now() + ms; let b = await banner(); while (!want(b) && Date.now() < end) { await sleep(200); b = await banner(); } return b; };
   const OPERATING = "你在操作 · 助手在旁边等";

@@ -2,7 +2,6 @@ import type { PanelHistoryEntry, PanelHistoryItem } from "../relay.js";
 
 const DEFAULT_PANEL_HISTORY_LIMIT = 5_000;
 
-/** WHY: 单个会话落盘的历史字节上限。写满 chrome.storage.local 配额会让扩展所有写入失败。 */
 export const HISTORY_PERSIST_BUDGET_BYTES = 256 * 1024;
 
 export type StoredPanelHistory = { updatedAt: number; entries: PanelHistoryEntry[]; seqFloor?: number };

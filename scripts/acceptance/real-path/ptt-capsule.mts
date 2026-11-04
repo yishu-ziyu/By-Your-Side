@@ -35,7 +35,6 @@ await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
 
 const planKey = (await readFile(join(homedir(), ".sideagent", "step-plan.key"), "utf8")).trim();
 
-// SAFETY: Pi 的 auth.json 里 minimax-cn 存 { type: "api_key", key }。
 const speechKey = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { key?: string }>)["minimax-cn"]?.key ?? "";
 
 const ANSWER3 = "表格已经放在页面下方，三家都按去年营收从高到低排好了，数字来自各家官网的年报。";
@@ -209,7 +208,6 @@ try {
 
   const inproc = inprocSession = await rp.attach((await until(async () => (await rp.targets()).find(t => t.url.endsWith("/inproc.html")), 30_000, "offscreen document")).targetId);
   const items = { inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" }, inproc_voice_key: planKey };
-  // SAFETY: CDP Target.createTarget 返回 { targetId }。
   const { targetId: settingsTarget } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html` }) as { targetId: string };
   const settings = await rp.attach(settingsTarget);
   await until(async () => await rp.evaluate(settings, "typeof chrome !== 'undefined' && !!chrome.storage?.local && !!document.querySelector('#speech-key')"), 15_000, "settings page");
@@ -218,7 +216,6 @@ try {
   const saveSpeechKey = async (key: string) => {
     await rp.evaluate(settings, `(() => { const input = document.querySelector("#speech-key"); input.value = ${JSON.stringify(key)}; document.querySelector("#speech-save").click(); return true; })()`);
     await sleep(500);
-    // SAFETY: 表达式返回 { status, stored }。
     return await rp.evaluate(settings, `chrome.storage.local.get("ptt_speech_key").then(got => ({ status: document.querySelector("#speech-status").textContent, stored: typeof got.ptt_speech_key === "string" }))`) as { status: string; stored: boolean };
   };
   const rejected = await saveSpeechKey("eyJhbGciOiJSUzI1NiJ9.pay-as-you-go-shaped");
@@ -240,7 +237,6 @@ try {
     const request = message.params?.request;
 
     if (message.sessionId !== inproc || !request?.url.includes("minimax")) return;
-    // SAFETY: 念结果的请求体是 { model, text, ... } 的 JSON。
     const body = request.postData ? JSON.parse(request.postData) as { model?: string; text?: string } : {};
     evidence.speechRequests.push({ url: request.url, model: body.model, text: body.text, at: Date.now() });
   });
@@ -271,7 +267,6 @@ try {
   assert.ok((one.ack as { ok?: boolean; playedMs?: number }).ok && (one.ack as { playedMs: number }).playedMs > 300, `ack: played in full while the task ran ${JSON.stringify(one.ack)}`);
   assert.ok(model.requests.some(r => r.rule === rule.match && r.step === 1), "ack: the model was already asked for the step after the tool when the ack finished");
   assert.deepEqual(evidence.speechRequests.map(request => request.text), [ACK], "ack: spoken first, from the local rule");
-  // SAFETY: 表达式返回字符串或 null。
   one.pillDuringCapsule = await rp.evaluate(work, `document.querySelector('[data-sideagent-overlay="edge-tab"]')?.dataset.shown ?? null`) as string | null;
   assert.notEqual(one.pillDuringCapsule, "true", "R4: the right-edge capsule yields on the voice capsule's page");
   await waitPhase(work, one, "done", 30_000);
@@ -364,7 +359,6 @@ try {
   await sleep(400);
   await rp.screenshot(work, join(artifacts, "7c-done-with-card.png"));
   const cardBox = (await capsuleBox(work, "card"))!, capBox = (await capsuleBox(work, "cap"))!;
-  // SAFETY: 表达式返回数字。
   const viewport = await rp.evaluate(work, "innerHeight") as number;
   six.ms.cardGap = Math.round(capBox.top - cardBox.bottom);
   assert.ok(six.ms.cardGap >= 4 && six.ms.cardGap <= 12 && Math.abs(cardBox.left - capBox.left) <= 1 && Math.abs(cardBox.right - capBox.right) <= 1 && cardBox.top >= 0 && cardBox.bottom <= viewport && cardBox.bottom - cardBox.top <= 220, `card: right above the capsule, same width, inside the viewport ${JSON.stringify({ cardBox, capBox, viewport })}`);

@@ -175,13 +175,9 @@ export async function ensureAttached(tabId: number): Promise<void> {
       const msg = oneLine(e);
 
       if (/another debugger|already attached/i.test(msg)) {
-        // WHY: Chrome uses the same "another debugger" error after our SW forgets
-        // its own live session. A native read succeeds only for our attachment;
-        // do not infer ownership from the error text or replay the failed action.
         let ownsSession = false;
 
         try {
-          // SAFETY: Page.getFrameTree 成功时必回 {frameTree:{frame:{id}}}；可选链只防序列化缺口，id 非空即本附件所有。
           const tree = await withTimeout(chrome.debugger.sendCommand({ tabId }, "Page.getFrameTree"),
             1500, "Debugger ownership check timed out") as { frameTree?: { frame?: { id?: string } } };
 
@@ -194,10 +190,6 @@ export async function ensureAttached(tabId: number): Promise<void> {
       }
     }
 
-    // WHY: 从没显示过的后台标签页不渲染，CDP 的鼠标和键盘输入会丢，确认却照常返回。
-    // 焦点模拟让页面按「正被看着」渲染和收输入；代价是连着调试器期间这一页的 visibilityState 恒为 visible，
-    // 所以只给接手时在后台的页开（用户正在看的页已经渲染过）。必须在第一次输入前生效，所以等它；
-    // 页面被对话框挡住时渲染进程可能不回，设超时。先解冻（浏览器进程处理），再开焦点模拟（要渲染进程回复）。
     if (!(await chrome.tabs.get(tabId).then(t => t.active, () => true))) {
       await withTimeout(chrome.debugger.sendCommand({ tabId }, "Page.setWebLifecycleState", { state: "active" }), 1500, "lifecycle").catch(() => undefined);
       await withTimeout(chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }), 1500, "focus emulation").catch(() => undefined);
@@ -241,7 +233,6 @@ export async function sendCommand<T = unknown>(
 
       if (method.startsWith("Input.") || method === "Runtime.evaluate" || method === "Runtime.callFunctionOn" || method === "DOM.setFileInputFiles" || method === "Page.handleJavaScriptDialog") checkBeforeDispatch?.noteEffect?.();
 
-      // SAFETY: T 由调用方按它请求的那个 CDP 方法声明；这里只是给 ACK 或超时路径补上同一结果类型。
       return await (timeoutMs === undefined ? pending : withTimeout(pending, timeoutMs,
         `CDP ${method} ACK ${timeoutMs}ms timeout; execution unknown; re-read the page before retrying`)) as T;
     } catch (error) {
@@ -288,13 +279,11 @@ if (typeof chrome !== "undefined" && chrome.debugger) {
     if (source.tabId == null || !attached.has(source.tabId)) return;
 
     if (method === "Target.attachedToTarget") {
-      // SAFETY: Target.attachedToTarget 的 params 就是 CDP 的 AttachedToTarget 事件体，字段与 targetInfo 对齐。
       noteAttachedToTarget(source.tabId, (params ?? {}) as {
         sessionId?: string;
         targetInfo?: { targetId?: string; type?: string; url?: string };
       });
     } else if (method === "Target.detachedFromTarget") {
-      // SAFETY: Target.detachedFromTarget 的 params 必带 sessionId；可选链只防异常事件体。
       const sessionId = (params as { sessionId?: string } | undefined)?.sessionId;
 
       if (sessionId) noteDetachedFromTarget(sessionId);

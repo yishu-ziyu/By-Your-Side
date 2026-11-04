@@ -47,12 +47,6 @@ interface SnapshotRead extends SnapshotBody {
   collectionLimitReached?: boolean;
 }
 
-/**
- * WHY: snapshot 工具：scope=full_page（默认）走 CDP Accessibility 全量无障碍树；
- * scope=viewport 走已有 DOM 视口快照（真做视口过滤，明确声明降级）。
- * 任何一次返回 DOM 快照后都清掉该页 AX 登记：DOM ref 与 backendDOMNodeId
- * 同处数字空间，不清会导致后续 @N 经 isAxRef 误走 CDP。
- */
 export async function snapshot(
   params: { tabId?: number; scope?: "full_page" | "viewport"; decision?:boolean; cursor?: string; viewScopeId?: string; fresh?: boolean },
   sessionId: string = LEAD_SESSION_ID,
@@ -66,7 +60,6 @@ export async function snapshot(
   if(params.decision&&params.scope==='viewport')throw new Error('DECISION_UNSUPPORTED: 决策观察需要完整控件树，不能退回 viewport DOM 身份。');
 
   const read = (seen: chrome.tabs.Tab) => withObservedDocumentIdentity(tabId, sessionId, async () => {
-    // WHY: 不等页面空闲：页面还在加载时默认注入会卡到加载完，与无障碍树读取并行执行。
     const [result, translation, marks] = await Promise.all([
       snapshotTab(tabId, params.scope, params.decision),
       Promise.resolve().then(() => chrome.scripting.executeScript({ target: { tabId }, injectImmediately: true, world: 'ISOLATED', func: readTranslationDisplay })).then(r => r[0]?.result ?? null).catch(() => null),
@@ -304,7 +297,6 @@ export async function readPageChanges(tabId: number, roots: ReadonlyArray<{ sel:
   const fresh = (freshLines(tabId, lines) ?? []).flatMap(line => line.ref === undefined ? [] : [line.ref]);
   const items = await withTimeout(readItems(tabId, fresh, list, found), ITEM_TIMEOUT_MS, "读所在那一项超时").catch(() => new Map<number, string>());
 
-  // WHY: 调用方已经超时返回：模型没看到这次读到的，不能拿它挪基准、登记 ref。
   if (!opts.current()) return null;
   const changes = pageChangesSince(tabId, lines, opts.scrub, items, found);
 
@@ -365,8 +357,6 @@ async function axSnapshot(tabId: number,decision=false): Promise<{ text: string;
     return {text,textEvidence,controls:[],truncated,controlsTruncated:false,dialogs:[],collectionComplete:true,collectionLimitReached:false};
   }
 
-  // WHY: Decision controls come from the AX tree itself — never from text-budget keptRefs.
-  // Text refs shown to the model are executable too (mark/read a text node), so register both.
   const collected = collectDecisionControls(nodes);
   collected.controls = collected.controls.filter(c => zeroSize.get(Number(c.ref.slice(1))) !== false);
   recordAxSnapshot(tabId, [...backendIds, ...collected.controls.map(c => Number(c.ref.slice(1))).filter(n => Number.isSafeInteger(n))]);
@@ -418,12 +408,6 @@ function withoutSubtrees(nodes: AxNodeLite[], hosts: Set<number>): AxNodeLite[] 
   return nodes.filter(n => !drop.has(n.nodeId));
 }
 
-/**
- * WHY: 宽或高为 0 的节点（Bing 藏起来的提交按钮）：给了 ref 也点不到、填不进，动作只会报「元素不可见（零尺寸）」。
- * 一次 DOMSnapshot 拿全部布局盒子；盒子是文档坐标、不按视口裁，滚出视口的元素尺寸照旧，不受影响。
- * 没有布局盒子的节点（display:contents、跨进程 iframe）不算零尺寸。读不到时返回空表，快照照常输出。
- * 值为 true 的是原生下拉框和文件框：select_option、upload_file、read_element 直接对节点操作、不用坐标，留着 ref。
- */
 async function readZeroSizeNodes(tabId: number): Promise<Map<number, boolean>> {
   const zero = new Map<number, boolean>();
   const sized = new Set<number>();
@@ -514,10 +498,6 @@ async function readInputRanges(tabId: number, nodes: readonly AxNodeLite[]): Pro
 
 const FIELD_ROLES = new Set(["textbox", "searchbox", "spinbutton", "combobox"]);
 
-/**
- * WHY: AX 树照抄输入框里的值（卡号、安全码、PIN 等），快照又会原样交给模型。这里按 backendDOMNodeId
- * 到页面里查哪些栏是敏感栏，规则同 exec/input.ts 的 readFieldInPage。查不到的栏按敏感处理：宁可少给模型一个值。
- */
 async function readSecretFields(tabId: number, nodes: readonly AxNodeLite[]): Promise<Set<number>> {
   const ids = nodes.flatMap(n => !n.ignored && n.backendDOMNodeId !== undefined && FIELD_ROLES.has(n.role?.value ?? "") ? [n.backendDOMNodeId] : []);
   const secret = new Set(ids);
@@ -552,7 +532,6 @@ async function readSecretFields(tabId: number, nodes: readonly AxNodeLite[]): Pr
 }
 
 function isSecretFieldInPage(el: Element, sensitiveName: string): boolean {
-  // SAFETY: 只读 input/textarea 的通用属性；tagName 与 isContentEditable 决定是否可编辑。
   const field = el as HTMLElement & HTMLInputElement;
   const tag = field.tagName.toLowerCase();
 
@@ -636,12 +615,10 @@ if(style.visibility==='hidden'||style.display==='none'||style.opacity==='0')cont
  return {x:scrollX,y:scrollY,width:innerWidth,height:innerHeight,text:pieces.join('\n').slice(0,6000)};
 }
 
-/** WHY: 标注层在内容脚本的隔离环境里；页面写的文字不能冒充这里的读数。 */
 function readMarksDisplay():HostDrawnMark[] {
   return window.__sideagent?.marksState?.() ?? [];
 }
 
-/** WHY: Serialized read-only observation; never trust page-written text as a completion flag. */
 function readTranslationDisplay():TranslationDisplayState|null {
   type Block={element:HTMLElement;output?:HTMLElement;segments:Array<{node:Text;original:string;translation?:string}>};
 

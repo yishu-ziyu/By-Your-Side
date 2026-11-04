@@ -37,13 +37,6 @@ export async function refindDetachedRef(tabId: number, target: string | undefine
   }
 }
 
-/**
- * WHY: 在隔离环境里执行，保持自包含。旧节点还在文档里返回 null。
- * 被换掉时用旧节点自己的标签、type 和名字（name、aria-label、placeholder、title）去对；
- * id、class、role 不对，框架重新挂载时常改它们（维基百科新输入框没有 id，role 变成 combobox）。
- * 只有一个在文档里、宽高都不为 0、CSS 上可见的元素对得上才返回它，否则返回 null。
- * 旧节点在 shadow root 里时不找：替身多半也在 shadow root 里，按文档查只会找错。
- */
 function refindInPage(this: Node): Element | null {
   if (this.isConnected || this.nodeType !== 1) return null;
   const old = this as Element;

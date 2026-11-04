@@ -16,8 +16,6 @@ export function evaluate(task, state, effects, audit, refreshed = null, commands
   if(errors.length) return {status:'failure',errors};
   if (scripts.length) return { status: 'unknown', errors: ['UNVERIFIED_PAGE_SCRIPT'] };
   if (!state || state.ready !== 'complete' || state.status === '更新中…') return { status: 'unknown', errors: ['STATE_UNSETTLED'] };
-  // WHY: CDP fill's built-in compatibility adapter emits synthetic DOM events.
-  // Accept its provenance, not its claim of success: values are still read independently.
   const browserInput = event => event.trusted || commands.some(command => command.inputAdapter === 'fill' && command.status === 'executed' && command.name === event.name && command.value === event.value && event.at >= command.at && event.at <= command.completedAt);
   if (task === 'todo') {
     const expected = [{ text: '阅读论文', done: true }, { text: '整理实验', done: false }];

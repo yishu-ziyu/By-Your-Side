@@ -46,8 +46,6 @@ export async function beginEffect(
     await ensureEffectScript(tabId);
     const payload: EffectInput = { token, ...input };
 
-    // WHY: 必须拿到页面侧确认才算基线成立：脚本未注入/版本不符时不能给 token，
-    // 否则后面的轮询会空转到超时，把「没采集」当成「没变化」。
     const ack = await callPage<[EffectInput], Promise<{ ok?: boolean } | undefined> | { ok?: boolean } | undefined>(
       tabId,
       (i: EffectInput) => window.__sideagent?.effect?.begin(i),
@@ -122,11 +120,6 @@ async function withDocumentChange(tabId: number, token: string, report: EffectRe
 
 const PAGE_CHANGES_TIMEOUT_MS = 1500;
 
-/**
- * WHY: 动作之后页面上有地方变了、又没换页时，读变过的那几处，只交回新出现的行（规则见 page-changes.ts）。
- * 换了页的沿用换页后的回执，不叠加；页面没变的不读，不多花时间。
- * 还原填写记下的旧值从摘要里去掉：旧值只能留在后台内存（fill-undo.ts）。
- */
 export async function pageChangesAfter(tabId: number, sessionKey: string, report: EffectReport | undefined): Promise<PageAppeared | undefined> {
   if (!report || report.documentChanged) return undefined;
 
@@ -206,11 +199,6 @@ async function readAppeared(tabId: number, sessionKey: string, roots: Roots | nu
 
 const DOWNLOAD_WAIT_MS = 3000;
 
-/**
- * WHY: 处理这次点击期间开始的下载。只在两种情况下等（最多 DOWNLOAD_WAIT_MS）：
- * 同网站的下载还没报完成；或点击引起的文档跳转还没结束、或被中止（跳转变成下载时 CDP 报 ERR_ABORTED）。
- * 普通跳转一加载完、普通点击没有下载，都只查一次就返回，不拖慢点击。拿不到下载记录时返回空，不影响点击本身。
- */
 async function clickDownloads(tabId: number, since: number): Promise<EffectDownload[]> {
   if (!chrome.downloads?.search) return [];
   const startedAfter = new Date(since - 50).toISOString();
@@ -243,7 +231,6 @@ async function clickDownloads(tabId: number, since: number): Promise<EffectDownl
       referrer: i.referrer ?? "",
       filename: base || "(no name yet)",
       path: i.filename,
-      // SAFETY: chrome.downloads.State 只有这三个值。
       state: i.state as EffectDownload["state"],
       bytes: i.state === "complete" ? (i.fileSize >= 0 ? i.fileSize : i.bytesReceived) : undefined,
       error: i.error,

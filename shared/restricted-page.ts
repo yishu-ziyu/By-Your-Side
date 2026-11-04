@@ -4,7 +4,6 @@ export class RestrictedPageError extends Error {
   constructor(readonly tabId: number | null, readonly url: string) { super(RESTRICTED_PAGE_FACT); }
 }
 
-/** WHY: Chrome refuses extension page access for these addresses independently of host permissions. */
 export function isRestrictedPage(url: string | undefined): boolean {
   if (!url) return false;
   try {

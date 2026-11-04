@@ -241,7 +241,6 @@ function staleReads<T extends { tool: string; text: string }>(observations: read
 
 function isGoalReply(value: unknown): value is { status: "done" | "needs_user" | "continue" | "open" | "blocked"; remaining?: string; cause?: unknown; correction?: string; finding?: string; items?: unknown; verificationTargets?: unknown; evidence?: unknown; verificationSubject?: unknown; goalOnPage?: unknown; pointedFound?: unknown; citationChecks?: unknown; navigationRequirement?: unknown; repair?: unknown } {
   if (!value || typeof value !== "object") return false;
-  // SAFETY: 只把它当成待核对的对象读这两个字段，下面逐个检查后才返回 true；cause 不认得时按笼统原因处理，不拒收。
   const reply = value as { status?: unknown; remaining?: unknown; correction?: unknown; finding?: unknown };
 
   return (reply.status === "done" || reply.status === "needs_user" || reply.status === "continue" || reply.status === "open" || reply.status === "blocked")
@@ -484,7 +483,6 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     parsed = await sideJudgment(host, model, {
       purpose: "goal_check", systemPrompt: PROMPT, content, signal, timeoutMs: GOAL_CHECK_TIMEOUT_MS, headers,
       effort: input.sourceCitations?.items.length ? 'low' : undefined,
-      // WHY: 阶跃这类始终开思考的模型，思考也占输出额度：留足，否则思考完之前就被截断，核对拿不到结论。
       maxTokens: 1600 + (input.sourceCitations?.items.length ?? 0) * 60,
       onRecord: line => { side = line; },
       onRequest: request => {
@@ -528,7 +526,6 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
         correction: "用户指的是当时那一页上的东西，但那一页上没有它，助手换了个理解去做。不要再打开、搜索或点击。只改写回答：说清在那一页上没找到什么、按什么理解做了什么，问用户指的是哪一个、要不要换个做法。" }, "model", undefined, "pointed_missing");
     }
 
-    // WHY: 「还差什么」会进任务条和过往任务，以后再带进上下文：只留一句短话，防止把页面原文（含注入）搬进去。
     const remaining = parsed.remaining?.trim() ? parsed.remaining.trim().replace(/\s+/g, " ").slice(0, 60) : null;
 
     if (parsed.status === "blocked") {

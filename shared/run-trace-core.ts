@@ -112,7 +112,6 @@ export class TraceRecorder {
         this.record("first_response", { elapsedMs: now - this.turnStarted });
       }
 
-      // SAFETY: pi-ai 的 message_update 带 assistantMessageEvent；没有时下面的判断落空。
       if (!this.firstText && (event.assistantMessageEvent as { type?: string } | undefined)?.type === "text_delta") {
         this.firstText = true;
         this.record("first_text", { elapsedMs: now - this.turnStarted });
@@ -122,7 +121,6 @@ export class TraceRecorder {
     }
 
     if (event.type === "tool_execution_update") {
-      // SAFETY: 组合工具的进度事件把 programStep 放在 partialResult.details 下；缺省时下面的判断落空。
       const partial = event.partialResult as { details?: { programStep?: unknown } } | undefined;
 
       if ((event.toolName === "browser_run" || event.toolName === "learned_operation") && partial?.details?.programStep) {
@@ -149,7 +147,6 @@ export class TraceRecorder {
     }
 
     if (event.type === "turn_end") {
-      // SAFETY: turn_end 的 message 是 pi-ai 的 AssistantMessage；没有 usage 时记 undefined。
       const usage = (event.message as { usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } } | undefined)?.usage;
       data.usage = usage && { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite };
       delete data.message;

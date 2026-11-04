@@ -26,7 +26,6 @@ await mkdir(dirname(out), { recursive: true });
 await mkdir(out, { recursive: false });
 const model = DEFAULT_TEST_MODEL;
 const plan = await loadModelPlan(model);
-// WHY: The test extension must not race the user's login refresh owner.
 if (plan.credential.type === 'oauth') plan.credential.refresh = '';
 const git = (...args: string[]) => execFileSync('git', args, { cwd: REPO, encoding: 'utf8' }).trim();
 const version = git('rev-parse', 'HEAD');

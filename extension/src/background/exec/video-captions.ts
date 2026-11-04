@@ -20,7 +20,6 @@ interface PageCaptions {
   videos: number;
   tracks: CaptionTrack[];
   lists: Array<{ request: string; field: string; count: number }>;
-  /** WHY: 网站说要登录才给字幕（B站未登录时字幕清单为空并带 need_login_subtitle）：这时的空清单不能当作没有字幕。 */
   loginRequired: boolean;
   failed: string[];
 }

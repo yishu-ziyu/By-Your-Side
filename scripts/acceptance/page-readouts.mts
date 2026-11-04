@@ -97,8 +97,6 @@ const callTool = async (name: string, params: ToolParams) => {
   const deadline = Date.now() + 25_000;
 
   while (Date.now() < deadline) {
-    // SAFETY: the local hook stores either its tool_result (optional data/error)
-    // or the explicit {ok:false,error:string} rejection above; initial state is null.
     const result = await iso!.swEval("globalThis.__readoutResult") as { ok?: boolean; error?: string; data?: any } | null;
 
     if (result) return result;
@@ -118,17 +116,13 @@ const tool = async (name: string, params: ToolParams) => {
 
 const agentFill = async (target: string, value: string): Promise<string> => {
   const rpc = { call: async (name: string, params: ToolParams) => tool(name, params) };
-  // SAFETY: createBrowserTools only calls rpc.call on this path (no execution scope);
-  // the optional ToolRpc members are all guarded with `?.`.
   const tools = createBrowserTools(rpc as never);
   const fill = tools.find(t => t.name === "fill")!;
-  // SAFETY: fill's schema is {target: string, value: string}; its execute returns the textResult shape.
   const result = await fill.execute("readouts", { target, value } as never, undefined, undefined, undefined as never) as { content: Array<{ text: string }> };
 
   return result.content.map(c => c.text).join("\n");
 };
 
-// SAFETY: swEval uses Runtime.evaluate with returnByValue, so the page hands back a plain JSON value.
 const page = async (expression: string): Promise<JsonValue> => iso!.swEval(`(async()=>{const r=await chrome.scripting.executeScript({target:{tabId:${tabId}},world:'MAIN',func:()=>(${expression})});return r[0]?.result;})()`) as Promise<JsonValue>;
 
 const go = async (url: string) => {
@@ -179,16 +173,12 @@ try {
     tabId = (await tool("open_tab", { url: `${iso.fixtureOrigin}/products` })).tabId;
   } else {
     fixtureTarget = await iso.newTarget(`${iso.fixtureOrigin}/products`);
-    // SAFETY: chrome.tabs.query returns Chrome's numeric id for the exact page
-    // created immediately above; a missing tab throws inside the expression.
     tabId = await iso.swEval(`(async()=> (await chrome.tabs.query({url:${JSON.stringify(`${iso.fixtureOrigin}/products`)}}))[0].id)()`) as number;
     const extensionId = await iso.swEval("chrome.runtime.id");
     panel = await iso.newTarget(`chrome-extension://${extensionId}/sidepanel.html`);
     await iso.swEval(`globalThis.__saSetSecurityHost({id:"default",title:"Page readouts fixture",createdAt:1,updatedAt:1,state:"running",mode:"act",runId:${JSON.stringify(runId)}})`);
     const { until } = await import("./isolated-extension.mts");
     await until(async () => {
-      // SAFETY: __saSecurityProbe exposes the local hook's numeric panel count
-      // and production ConversationSummary records set by __saSetSecurityHost.
       const state = await iso!.swEval("globalThis.__saSecurityProbe()") as { panels?: number; summaries?: Array<{ id: string; runId?: string }> };
 
       return (state.panels ?? 0) > 0 && state.summaries?.some(summary => summary.id === "default" && summary.runId === runId) ? true : undefined;
@@ -275,7 +265,6 @@ try {
     return `@${ref}`;
   };
 
-  // SAFETY: the expression below returns exactly the Validity fields, read from the live input.
   const validity = () => page("(()=>{const e=document.querySelector('input[name=delivery]');return {value:e.value,rangeOverflow:e.validity.rangeOverflow,rangeUnderflow:e.validity.rangeUnderflow,stepMismatch:e.validity.stepMismatch}})()") as Promise<Validity>;
 
   await run("range/fill-invalid-time-format", async () => {
@@ -302,8 +291,6 @@ try {
     const currentField = async (index: number) => {
       const text: string = (await tool("snapshot", {})).text;
       await writeFile(join(out, snapshotSequence++ === 0 ? "time-native-subfields.txt" : `time-native-subfields-${snapshotSequence}.txt`), text);
-      // WHY: Filling recreates native UA children. Re-observe the exact first input's
-      // Hours/Minutes field before each action; never reuse a disconnected ref.
       const lines = text.split("\n");
       const firstTime = lines.findIndex(line => /InputTime|type=time/.test(line));
       const nextTime = lines.findIndex((line, i) => i > firstTime && /InputTime|type=time/.test(line));
@@ -431,7 +418,6 @@ try {
   const dailyAfter = await readFile(join(repo, "extension/dist/background.js")).catch(() => null);
   const executed = cases.filter(c => c.status !== "NOT_RUN");
   const dailyDistUnchanged = String(dailyBefore) === String(dailyAfter);
-  // SAFETY: cleanup is either IsolatedExtension.close()'s {status} or the NOT_STARTED sentinel.
   const cleanStatus = (cleanup as { status?: string }).status;
   const ok = !fatal && executed.length > 0 && executed.every(c => c.status === "PASS") && cleanStatus === "PASS" && dailyDistUnchanged;
   const result = { ok, runKind: selected.size ? "filtered" : live ? "full+live" : "full", cases, cleanup, dailyDistUnchanged, modelRequests: 0 };

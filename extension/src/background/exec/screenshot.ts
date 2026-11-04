@@ -29,13 +29,7 @@ interface ScreenshotResult {
   coordinates?: ToolContract["screenshot"]["data"]["coordinates"];
 }
 
-/**
- * WHY: 截图幕帘：拍之前把产品自己画的一切（光标、标注、控制条）藏起来，拍完放下。
- * 不藏的话 agent 会在自己的截图里看到一个页面上并不存在的发光箭头，把它当页面元素去理解甚至去点。
- * 幕帘失败（页面禁止注入、导航换文档）绝不能弄失败截图本身。
- */
 async function curtain(tabId: number, hidden: boolean, beforeDispatch?: DispatchGuard, onDispatch?: () => void): Promise<void> {
-  // WHY: A revoked dispatch (stop/takeover) must escape the best-effort injection error handling.
   if (hidden) {
     await beforeDispatch?.();
     beforeDispatch?.checkNow?.();
@@ -62,8 +56,6 @@ async function curtain(tabId: number, hidden: boolean, beforeDispatch?: Dispatch
           }
         }
 
-        // WHY: 合成器要到下一帧才用上新样式；不等这一帧会拍到幕帘生效前的画面。
-        // 页面被 JS dialog 挡住时 rAF 永不回调——必须有超时。
         if (hide) {
           await Promise.race([
             new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
@@ -109,9 +101,6 @@ async function pngPixels(dataUrl: string): Promise<{ width: number; height: numb
 
 type CaptureRegion = { x: number; y: number; width: number; height: number };
 
-/** WHY: Chromium may quantize a fractional clip before applying its scale. Capture
- * the integer enclosing region, then crop only those real captured pixels.
- * Never draw substitute content; unknown source geometry fails closed. */
 async function cropFractionalRegion(dataUrl: string, captured: CaptureRegion, requested: CaptureRegion, density: number): Promise<string> {
   const bitmap = await decodePng(dataUrl);
 
@@ -257,7 +246,6 @@ async function buildResult(opts: {
   density?: number;
 }): Promise<ScreenshotResult> {
   const pixels = await pngPixels(opts.dataUrl);
-  // WHY: 捕获后重读：URL 必须与捕获前一致，否则是旧图配新 URL，直接丢弃。
   const post = await chrome.tabs.get(opts.tabId);
 
   if ((post.url ?? "") !== (opts.preUrl ?? "")) {
@@ -283,8 +271,6 @@ async function buildResult(opts: {
     throw new Error(`截图期间视口变化（${mismatch ?? "滚动位置改变"}），已丢弃本次截图，请重拍。`);
   }
 
-  // WHY: Last asynchronous check: a same-URL reload during the post-capture
-  // viewport read must not return pixels labeled with the old document.
   const currentDocument = await readCurrentDocument(opts.tabId);
 
   if (opts.documentId && currentDocument?.documentId !== opts.documentId) {
@@ -328,10 +314,6 @@ async function buildResult(opts: {
   return result;
 }
 
-/**
- * WHY: CDP 失败后的可见捕获回退：仅当工作页确为同窗口活动页才拍，
- * 否则明确失败——绝不返回另一页的图片、绝不谎称工作页截图，也不为截图抢前台。
- */
 async function visibleFallback(tab: chrome.tabs.Tab, cdpError: unknown): Promise<string> {
   const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
 

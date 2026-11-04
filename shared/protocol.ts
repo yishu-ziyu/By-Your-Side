@@ -1,4 +1,3 @@
-import { isVoicePageOp } from './voice-page-op.js';
 import { isReadingClientMessage, isReadingEvent, isReadingRouteResult, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingRouteResult, type ReadingTranscript } from "./reading.js";
 import { isNudgeClientMessage, isNudgeResult, type NudgeClientMessage, type NudgeResult } from "./nudge.js";
 import { isBrowseHabitClientMessage, isBrowseHabitResult, type BrowseHabitClientMessage, type BrowseHabitResult } from "./browse-habits.js";
@@ -456,7 +455,6 @@ export const TOOL_NAMES = [
   "press_key",
   "scroll",
   "js",
-  "voice_page_op",
   "screenshot",
   "observe_page",
   "mark",
@@ -708,7 +706,6 @@ export interface ToolContract {
   scroll: { params: { tabId?: number; dy?: number; toBottom?: boolean }; data: { atBottom: boolean } };
   js: { params: { tabId?: number; code: string }; data: { value: unknown } };
   observe_page: {params:{token:string;mode?:'text'|'image'};data:unknown};
-  voice_page_op: { params: { tabId: number; op: import('./voice-page-op.js').VoicePageOp }; data: import('./voice-page-op.js').VoicePageReply };
   screenshot: {
     params: {
       tabId?: number;
@@ -1341,7 +1338,6 @@ export type PageInteractionMessage =
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'consume'; token: string }
   | { type: 'FEED_DROPPED_ELEMENT'; action: 'validate'; source: PageElementSource }
   | { type: 'GHOST_QUICK_ACTION'; action: GhostQuickAction | 'probe' }
-  | { type: 'VOICE_PAGE_OP'; op: import('./voice-page-op.js').VoicePageOp }
   | { type: 'MEMORY_FIELD_MARK'; token: string; memory: { id: string; text: string; createdAt: number } }
   | { type: 'MEMORY_FIELD_FORGET'; id: string; requestId: string }
   | { type: 'CIRCLE_DRAWN'; n: number; rect: { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number };  text?: string }
@@ -1357,7 +1353,6 @@ export type GhostQuickReply =
 
 export function isPageElementSource(value: unknown): value is PageElementSource {
   if (!value || typeof value !== 'object') return false;
-  // SAFETY: value is a non-null object; all required fields are validated below.
   const source = value as Partial<PageElementSource>;
 
   return typeof source.document === 'string' && source.document.length <= 80
@@ -1372,7 +1367,6 @@ interface PageDocumentIdentity { document: string; url: string }
 
 export function isPageDocumentIdentity(value: unknown): value is PageDocumentIdentity {
   if (!value || typeof value !== 'object') return false;
-  // SAFETY: object established above; both fields are checked before admission.
   const identity = value as Partial<PageDocumentIdentity>;
 
   return typeof identity.document === 'string' && identity.document.length > 0 && identity.document.length <= 80
@@ -1381,7 +1375,6 @@ export function isPageDocumentIdentity(value: unknown): value is PageDocumentIde
 
 export function isPageInteractionMessage(value: unknown): value is PageInteractionMessage {
   if (!value || typeof value !== 'object') return false;
-  // SAFETY: non-null object only; each union branch validates its complete payload.
   const message = value as Partial<PageInteractionMessage>;
   const token = (input: unknown): input is string => typeof input === 'string' && input.length > 0 && input.length <= 80;
   const tab = (input: number | undefined) => input !== undefined && Number.isSafeInteger(input) && input > 0;
@@ -1416,8 +1409,6 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
     return Number.isSafeInteger(message.n) && (message.n ?? 0) > 0 && !!rect && typeof rect === 'object'
       && size(rect.x) && size(rect.y) && size(rect.width) && size(rect.height) && size(rect.viewportWidth) && size(rect.viewportHeight) && rect.viewportWidth > 0 && rect.viewportHeight > 0;
   }
-
-  if (message.type === 'VOICE_PAGE_OP') return isVoicePageOp(message.op);
 
   if (message.type === 'GHOST_QUICK_ACTION') return message.action === 'probe' || GHOST_QUICK_ACTIONS.includes(message.action as GhostQuickAction);
 

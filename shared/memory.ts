@@ -64,10 +64,6 @@ export function normalizeMemoryHostname(value: string): string | null {
   } catch { return null; }
 }
 
-/**
- * WHY: 网址对应的记忆网站：只有 http(s) 网页才算一个网站。扩展页（chrome-extension://…，主机名是扩展编号）、
- * 浏览器页（chrome://）、about:blank 等一律是「没有当前网站」，不能成为记忆范围，也不能对上网站范围的记忆。
- */
 export function memoryHostOfUrl(url: string | null | undefined): string | null {
   if (!url) return null;
 
@@ -87,7 +83,6 @@ export function isMemoryScope(value: unknown): value is MemoryScope {
 
 export function validLocalDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  // SAFETY: 上一行已核对是 4-2-2 位数字，split 后正好三段数字。
   const [y, m, d] = value.split("-").map(Number) as [number, number, number];
   const date = new Date(y, m - 1, d);
 
@@ -95,7 +90,6 @@ export function validLocalDate(value: unknown): value is string {
 }
 
 export function endOfLocalDay(date: string): number {
-  // SAFETY: 调用方传入的是 validLocalDate 核对过的 YYYY-MM-DD，split 后正好三段数字。
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
 
   return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
@@ -109,7 +103,6 @@ export function localDateOf(ms: number): string {
 
 export function isMemoryValidity(value: unknown): value is MemoryValidity {
   if (!value || typeof value !== "object") return false;
-  // SAFETY: 只把它当成待核对的对象读字段，下面逐个检查后才返回 true。
   const v = value as MemoryValidity;
 
   return (v.start === undefined || Number.isFinite(v.start)) && (v.end === undefined || Number.isFinite(v.end))
@@ -127,7 +120,6 @@ export function withinValidity(validity: MemoryValidity | undefined, now: number
 
 function isLegacyMemoryEntry(value: unknown): value is LegacyMemoryEntry {
   if (!value || typeof value !== "object") return false;
-  // SAFETY: 只把它当成待核对的对象读字段，下面逐个检查后才返回 true。
   const entry = value as LegacyMemoryEntry;
 
   return validMemoryId(entry.id) && validMemoryVersion(entry.version) && validMemoryText(entry.text)
@@ -148,7 +140,6 @@ type StatusFields = Omit<MemoryEntry, "factId" | "formatVersion">;
 
 function hasStatusFields(value: unknown): value is StatusFields {
   if (!isLegacyMemoryEntry(value)) return false;
-  // SAFETY: 公共字段已核对；新字段下面逐个检查后才返回 true。
   const entry = value as StatusFields;
 
   return KINDS.has(entry.kind) && STATUSES.has(entry.status)

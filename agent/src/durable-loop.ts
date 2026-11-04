@@ -26,7 +26,6 @@ const CONTINUE_TEXT = `${RUN_CONTEXT_HEADER}\n\n上一次模型调用没有完�
 const MAX_RETRIES = 2;
 const PROMPT_WARM_FRESH_MS = 4 * 60_000;
 const PROMPT_WARM_TEXT = "Reply with OK.";
-/** WHY: 预热挂住时不能一直占着服务商的并发位子（Kimi 只有 1 个）。 */
 const PROMPT_WARM_TIMEOUT_MS = 15_000;
 const RETRY_MARK = " (network error)";
 
@@ -85,10 +84,6 @@ export class DurableAgentLoop implements AgentLoop {
   private elide = false;
   private runStart = 0;
   private cutText: (() => boolean) | null = null;
-  /**
-   * WHY: 截断后 pi-durable 把这一轮当作答完，排着的插话另起一轮。对界面它们是同一轮（旧核心就是这样）：
-   * 中间不发 agent_end，否则半句会被当成最终回答交付。
-   */
   private cutForSteer = false;
   private endSkipped = false;
   private skippedEndTimer: ReturnType<typeof setTimeout> | undefined;
@@ -513,8 +508,6 @@ export class DurableAgentLoop implements AgentLoop {
       else if (change.type === "text_delta" || change.type === "thinking_delta") this.appendDelta(change.type, change.contentIndex, change.delta);
       else if (change.type === "text_start" || change.type === "thinking_start" || change.type === "toolcall_start" || change.type === "block") this.ensureBlock(change.contentIndex, change.block);
       if (!this.partial) continue;
-      // WHY: 整条或整块送来时，块里可能已经带着这一批里出的字（pi-durable：整块发送的块已含本批后续改动），这些字没走增量：
-      // 当场补发，界面收到的字始终是全文的开头；不然收尾补发时对不上，会把整句再发一遍（侧栏出现「后半句＋整句」）。
       if (change.type === "message" || change.type === "text_start" || change.type === "thinking_start" || change.type === "block") this.emitUnsent(this.partial);
       const assistantMessageEvent = change.type === "text_delta" || change.type === "thinking_delta"
         ? { type: change.type, contentIndex: change.contentIndex, delta: change.delta, partial: this.partial }
@@ -694,10 +687,6 @@ function elideBefore(messages: readonly Message[], floor: number): Message[] | n
   return elided ? result : null;
 }
 
-/**
- * WHY: pi-durable 只按 pi-ai 的说法判断能不能重试。扩展里断网报「Failed to fetch」、服务商用中文说并发满了、工具参数写跑了，
- * 这些我们也当暂时错误，在错误后面补一个它认得的词（RETRY_MARK）。
- */
 function retryable(stream: AssistantMessageEventStream, onError?: (message: AssistantMessage) => void): AssistantMessageEventStream {
   const out = createAssistantMessageEventStream();
   void (async () => {

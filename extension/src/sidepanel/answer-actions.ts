@@ -261,7 +261,6 @@ export function answerPanelSection(answer: HTMLElement, kind: keyof typeof SECTI
     panel.append(section);
   }
 
-  // SAFETY: 上面刚建的结构里第二个子元素就是 body。
   return section.querySelector<HTMLElement>(".answer-panel-body")!;
 }
 
@@ -282,7 +281,6 @@ export function refreshAnswerPanel(answer: HTMLElement): void {
 
   const glyphs = Array.from(panel.querySelectorAll<HTMLElement>(".answer-source-glyph"));
   const hosts = new Map(glyphs.map(node => [node.dataset.host ?? node.textContent ?? "", node]));
-  // SAFETY: cloneNode 保持原节点类型。
   const squares = [...hosts.values()].slice(0, 2).map(node => node.cloneNode(true) as HTMLElement);
 
   button.replaceChildren(...squares, "来源");
@@ -314,7 +312,6 @@ export function siteGlyph(url: string, host: string): HTMLElement {
 export async function offerWorkingTab(answer: HTMLElement, conversationId: string, sources: ReadonlyArray<{ url: string }>): Promise<void> {
   if (!chrome.storage?.session || !chrome.tabs?.get) return;
   const stored = await chrome.storage.session.get(WORKING_TABS_STORAGE_KEY).catch(() => null);
-  // SAFETY: 后台在这个键下只写「执行身份 → 标签页 id」；下面仍按数字核对。
   const map = stored?.[WORKING_TABS_STORAGE_KEY] as Record<string, unknown> | undefined;
   const tabId = map?.[executionKey(conversationId)];
 

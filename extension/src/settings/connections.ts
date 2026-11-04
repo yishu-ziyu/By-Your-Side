@@ -58,7 +58,6 @@ export function credentialContents(value: unknown, sameAccount = false): string 
   if (sameAccount && fields.type === 'oauth' && typeof fields.accountId === 'string' && fields.accountId) {
     return JSON.stringify({ type: fields.type, accountId: fields.accountId });
   }
-  // WHY: chrome.storage can return object properties in a different order from the saved credential.
   return JSON.stringify(fields, (_key, value: unknown) => value && typeof value === 'object' && !Array.isArray(value)
     ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
     : value);

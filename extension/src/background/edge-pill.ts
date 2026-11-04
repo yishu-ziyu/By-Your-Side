@@ -51,7 +51,6 @@ export function installEdgePill(capsuleTab: () => number | null = () => null) {
 
     if (type === EDGE_PILL_GET) respond({ pill: pillFor(sender.tab.id), task: taskFor(sender.tab.id), voice: capsuleTab() === sender.tab.id });
 
-    // WHY: 必须在这次点击的消息里同步打开：等异步之后浏览器就不认是用户动作了。
     if (type === EDGE_PILL_OPEN) void chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {  });
   });
 

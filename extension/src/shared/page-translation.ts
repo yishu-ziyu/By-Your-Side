@@ -1,6 +1,5 @@
 import type { TranslationCommand, TranslationReceipt, TranslationMode, TranslationFont, TranslationPageResult } from '../../../shared/page-translation.js';
 
-/** WHY: Serialized into Chrome's ISOLATED world. Keep all runtime helpers inside this function. */
 export function translationInPage(command: TranslationCommand): TranslationPageResult {
   let mutated = false;
   let applied = 0;
@@ -22,7 +21,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
  return url.href; };
 
-  // SAFETY: this private namespace is created only by our scripts in the extension ISOLATED world.
   const world = globalThis as typeof globalThis & {__bysTranslation?: State};
   let state = world.__bysTranslation;
 
@@ -307,7 +305,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
       block.element.append(mark); block.pendingMark = mark; mutated = true;
     }
 
-    // WHY: If the run dies without settling, marks must not stay forever; the agent itself gives up after 180 s idle.
     clearTimeout(current.markTimer);
     const owned = current;
     current.markTimer = setTimeout(() => {
@@ -336,7 +333,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   return receipt;
   } catch (error) {
-    // WHY: Chrome omits a thrown injection's result. Return an explicit receipt instead.
     return {error: error instanceof Error ? error.message : String(error), executionFact: mutated ? 'unknown' : 'not_executed'};
   }
 }

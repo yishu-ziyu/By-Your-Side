@@ -1,7 +1,3 @@
-/**
- * WHY: 用户附上的文件怎样交给助手：开头一段直接接在用户的话后面，其余由 read_attachment 按位置或关键词去读。
- * 文件内容和网页一样包进不可信边界：文件里写的「忽略之前的指令」只是数据。
- */
 import { Type } from "typebox";
 import type { Attachment, FileAttachment, ImageAttachment } from "../../shared/protocol.js";
 import { wrapPageContent } from "../../shared/untrusted.js";

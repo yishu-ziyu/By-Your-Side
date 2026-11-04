@@ -62,7 +62,6 @@ async function runCase(name: string, renameOnHover: boolean, rerender = false, s
     { tool: { name: "click", args: rerender ? { target: "text=已读", point: [40, 70] } : { target: "#ack" } } },
     { text: `【${MARK}结束】` },
   ] }], undefined, async payload => {
-    // SAFETY: 脚本模型把产品的 OpenAI 兼容请求体原样交给这里；Payload 只取其中可选的 tools 与 messages。
     const p = payload as Payload;
     payloads.push(p);
     const toolResults = (p.messages ?? []).filter(m => m.role === "tool").length;

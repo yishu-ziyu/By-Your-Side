@@ -115,10 +115,6 @@ async function enabled(): Promise<boolean> {
   }
 }
 
-/**
- * WHY: 每个开着的侧栏都收到同样的事件。用户在看任何一个开着侧栏的窗口就不响；不在看时只让窗口 id 最小的那个侧栏响，
- * 不然几个侧栏会一起响。看的是侧栏所在的窗口，不是侧栏本身：用户看着侧栏旁边的网页时 document.hasFocus() 是 false。
- */
 async function playsHere(): Promise<boolean> {
   const mine = await myWindow;
   const focused = await chrome.windows.getLastFocused().catch(() => null);
@@ -142,10 +138,6 @@ presence.onmessage = (event: MessageEvent<unknown>) => {
   if (event.data === "who") void myWindow.then(id => { if (id !== null) presence.postMessage({ windowId: id }); });
 };
 
-/**
- * WHY: 开着侧栏的窗口。chrome.runtime.getContexts 只报得出侧栏有几个，报不出在哪个窗口（windowId 一律是 -1），
- * 所以用它定要等几个回答，窗口由各个侧栏自己报。单独窗口里的会话是标签页里的侧栏页，也算一个。
- */
 async function panelWindows(mine: number): Promise<number[]> {
   const contexts = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.SIDE_PANEL, chrome.runtime.ContextType.TAB] }).catch(() => []);
   const count = contexts.filter(c => c.contextType === chrome.runtime.ContextType.SIDE_PANEL || isPanelUrl(c.documentUrl)).length;

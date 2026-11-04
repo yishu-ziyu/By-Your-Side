@@ -83,7 +83,6 @@ function onPayload(payload: { messages?: Array<{ role: string; content?: unknown
   const names = new Map<string, string>();
   for (const m of payload.messages ?? []) for (const call of m.tool_calls ?? []) names.set(call.id, call.function.name);
   for (const m of payload.messages ?? []) {
-    // SAFETY: OpenAI 兼容的 tool 消息带 tool_call_id。
     const id = String((m as { tool_call_id?: unknown }).tool_call_id ?? "");
     if (m.role !== "tool" || seenCalls.has(id)) continue;
     seenCalls.add(id);
@@ -191,7 +190,6 @@ try {
   await sleep(300);
   await ask(ASK.e);
   const payNote = async () => {
-    // SAFETY: pierce 模式下 DOM.getDocument 的 root 就是 DomNode 树。
     const root = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)).root as DomNode;
     return walk(root, n => n.nodeName === "DIV" && (n.attributes ?? []).join("\u0000").includes("data-sideagent-overlay\u0000pay-stop")) ?? null;
   };

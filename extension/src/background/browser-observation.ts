@@ -6,22 +6,6 @@ import { readCurrentDocument } from './exec/page-readiness.js';
 
 const allowedRoles = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'treeitem', 'textbox', 'searchbox', 'combobox', 'spinbutton']);
 
-/**
- * WHY: role-less 悬停触发器的准入判据。
- *
- * 页面作者常用 `<div tabindex=0>账号</div>` 这种写法做悬停菜单触发器：它没有 ARIA role，
- * Chrome 的 AX 树给的 role 是 `generic`，而它是页面上唯一能展开 CSS hover 菜单的东西。
- * 白名单只有语义角色，所以这类节点会被丢掉；丢了它，`browserCandidates()` 永远生成不出
- * hover 候选，任务书 §7 的 hover 接线就无从覆盖。
- *
- * 准入卡两个条件，缺一不可：
- *   1. `focusable=true`——页面作者显式把它做成了可键盘操作的对象（tabindex），这是交互意图的证据；
- *   2. 有可读名字——自身可访问名，或（generic 容器 Chrome 不做 name-from-contents）文本后代的拼接。
- *
- * 不收"不可聚焦"或"既无名也无文本"的 generic：否则每个 div 都会变成候选，
- * 直接撑爆 256 候选 / 64K 字节预算，反噬 SEL-01/02/03 的选择链。
- * 只收 generic 一个 role，不收 none/presentation：那两类是明确声明"无语义"的。
- */
 function focusableGeneric(n: AxNodeLite, textName: (n: AxNodeLite) => string): boolean {
   if ((n.role?.value ?? '') !== 'generic') return false;
   const props = Object.fromEntries((n.properties ?? []).map(p => [p.name, p.value?.value]));
@@ -65,7 +49,6 @@ function decisionControls(nodes: readonly AxNodeLite[], refs?: readonly number[]
     childrenOf.set(n.parentId, list);
   }
 
-  /** WHY: Chrome 不为 generic 容器做 name-from-contents，名字散在子 StaticText 里；取文本后代拼接。 */
   const textName = (n: AxNodeLite): string => {
     const parts: string[] = [];
     const stack = [...(childrenOf.get(n.nodeId) ?? [])];
@@ -458,8 +441,6 @@ export function collectDecisionControls(nodes: readonly AxNodeLite[], limit = MA
   return { controls: all.slice(0, limit), collectionComplete: false, collectionLimitReached: true };
 }
 
-// WHY: Exclude our own UI by DOM ownership, not by a business/site/name heuristic. Closed
-// shadow roots are visible to CDP; the page cannot turn an assistant control into a task candidate.
 export async function readDecisionTree(tabId: number): Promise<AxNodeLite[]> {
   const { root } = await sendCommand<{
     root: {

@@ -95,7 +95,6 @@ export function installMemoryMark(): void {
  return; }
 
       button.disabled = true;
-      // SAFETY: 侧栏按 MEMORY_FIELD_FORGET 回 { ok }；没人接时是 undefined，出错时上面换成 null。
       const result = await chrome.runtime.sendMessage({ type: 'MEMORY_FIELD_FORGET', id: memory.id, requestId: crypto.randomUUID() }).catch(() => null) as { ok?: boolean } | null;
 
       if (result?.ok) { clearField(); remove();

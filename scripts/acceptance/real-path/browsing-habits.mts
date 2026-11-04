@@ -121,7 +121,6 @@ try {
   await rp.click(panel, '[data-memory-ask] [data-memory-ask-answer="remember"]');
   await until(async () => await rp.evaluate(panel, `document.querySelector("[data-memory-ask]")?.dataset.state === "remembered"`) || undefined, 15_000, "card shows remembered");
   await rp.screenshot(panel, join(artifacts, "habit-remembered.png"));
-  // SAFETY: memories 文档是 {entries:[MemoryEntry]}，这里只取比对要用的字段。
   const memories = await rp.evaluate(ext, `new Promise((res, rej) => { const r = indexedDB.open("sideagent-memory"); r.onerror = () => rej(r.error);
     r.onsuccess = () => { const q = r.result.transaction("kv").objectStore("kv").get("memories"); q.onsuccess = () => res(JSON.parse(q.result ?? "null")); q.onerror = () => rej(q.error); }; })`) as { entries?: Array<{ text: string; kind: string; status: string; scope: { kind: string; hostname?: string } }> } | null;
   const saved = (memories?.entries ?? []).filter(e => e.status === "active").map(e => ({ text: e.text, kind: e.kind, scope: e.scope }));

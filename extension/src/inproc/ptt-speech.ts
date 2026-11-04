@@ -1,8 +1,3 @@
-/**
- * WHY: 离屏文档里念结果。
- * MiniMax speech-2.8-hd 流式返回 24kHz 16 位小端 PCM（十六进制），收到一段就排进 AudioContext 接着放。
- * 只用订阅 Key：MiniMax 按 Key 扣费，订阅 Key 只扣套餐；Key 由后台随命令带来（离屏文档读不到 chrome.storage）。
- */
 import { isSubscriptionKey, PTT_SPEECH_TARGET, type PttSpeechCommand, type PttSpeechReply } from "../shared/ptt.js";
 
 const SPEECH_URL = "https://api.minimaxi.com/v1/t2a_v2";
@@ -112,7 +107,6 @@ export function installPttSpeech(): void {
         const json = line.startsWith("data:") ? line.slice(5) : line.trim().startsWith("{") ? line : null;
 
         if (!json) return;
-        // SAFETY: MiniMax 接口每段是一个 SpeechChunk JSON。
         const chunk = JSON.parse(json) as SpeechChunk;
 
         if (chunk.base_resp?.status_code) throw new Error(chunk.base_resp.status_msg || `MiniMax ${chunk.base_resp.status_code}`);

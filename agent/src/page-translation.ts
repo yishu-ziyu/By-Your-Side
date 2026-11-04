@@ -155,7 +155,6 @@ export async function runPageTranslation(
     const target = {tabId: latest.tabId, document: latest.document};
     settle = {...target, action: 'settle'};
     let stalledBatches = 0, started = 0, acknowledgedWrite = false, halt = false, throttles = 0, cooldownUntil = 0;
-    // SAFETY: 由下方闭包赋值；写成断言是为了不让 TypeScript 把它收窄成永远的 null。
     let failure = null as {error: Error | undefined; model: boolean} | null;
     const inFlight = new Map<number, {ids: string[]; done: Promise<number>}>();
     const misses = new Map<string, number>();

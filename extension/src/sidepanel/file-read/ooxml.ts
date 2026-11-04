@@ -36,9 +36,6 @@ function attr(node: Element | null | undefined, name: string): string | null {
   return null;
 }
 
-/**
- * WHY: 关系编号 r:id。不能按 localName 取：幻灯片列表的 <p:sldId id="256" r:id="rId2"> 里两个属性的 localName 都是 id。
- */
 function relId(node: Element | null | undefined): string | null {
   if (!node) return null;
 

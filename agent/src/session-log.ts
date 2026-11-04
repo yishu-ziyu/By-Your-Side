@@ -24,7 +24,6 @@ export class SessionLog implements SessionLogPort {
   private leaf: string | null = null;
   private tail: Promise<unknown> = Promise.resolve();
 
-  /** WHY: `write` must durably append one line before it resolves. */
   private constructor(private readonly write: (line: string) => Promise<void>) {}
 
   static header(id: string, createdAt: number): string {
@@ -103,7 +102,6 @@ export class SessionLog implements SessionLogPort {
 
     if (line.kind === 'entry') {
       const { kind: _kind, lane, ...fields } = line;
-      // SAFETY: every entry line carries type, id, parentId, seq and timestamp; Pi's encoder and append() both write them.
       const entry = fields as SessionLogEntry;
 
       this.entries.set(entry.id, entry);

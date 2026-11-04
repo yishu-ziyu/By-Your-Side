@@ -262,7 +262,6 @@ function isReadingTurn(t: unknown): t is ReadingSnapshot["turns"][number] {
 
 function isReadingSnapshot(v: unknown): v is ReadingSnapshot {
   if (!v || typeof v !== "object") return false;
-  // SAFETY: 只读字段做类型核对，核对通过才当成阅读记录。
   const r = v as ReadingSnapshot;
 
   return typeof r.threadId === "string" && !!r.source && typeof r.source.tabId === "number" && typeof r.source.url === "string"

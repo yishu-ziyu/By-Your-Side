@@ -61,7 +61,6 @@ const fixture = scripted ? await startScriptedModel([
 ]) : null;
 const plan = await loadModelPlan(DEFAULT_TEST_MODEL);
 const planKey = (await readFile(join(homedir(), ".sideagent", "stepfun-api.key"), "utf8")).trim();
-// SAFETY: Pi 的 auth.json 里 minimax-cn 存 { type: "api_key", key }。
 const speechKey = (JSON.parse(await readFile(join(homedir(), ".pi/agent/auth.json"), "utf8")) as Record<string, { key?: string }>)["minimax-cn"]?.key ?? "";
 
 const rp = await launchRealPath({ microphoneWav: silence });
@@ -135,7 +134,6 @@ try {
   rp.cdp.onEvent("Runtime.executionContextsCleared", (m: { sessionId?: string }) => { if (m.sessionId === work) isolated.clear(); });
   inExtension = async <T,>(expression: string): Promise<T | null> => {
     for (const contextId of [...isolated]) {
-      // SAFETY: CDP Runtime.evaluate 返回 { result: { value } }；读数是可序列化的普通对象。
       const res = await rp.cdp.send("Runtime.evaluate", { expression: `(() => { const ns = globalThis.__sideagent; return ns?.cursor ? (${expression}) : undefined; })()`, contextId, returnByValue: true }, work).catch(() => null) as { result?: { value?: T } } | null;
       if (res?.result && res.result.value !== undefined) return res.result.value;
     }
@@ -175,7 +173,6 @@ try {
   if (worker) { const session = await rp.attach(worker.targetId); consoleOf.set(session, "background"); await rp.cdp.send("Runtime.enable", {}, session); }
   const models = fixture ? { inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: fixture.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } } : modelStorageItems(plan);
   const items = { ...models, inproc_voice_key: planKey, ptt_speech_key: speechKey };
-  // SAFETY: CDP Target.createTarget 返回 { targetId }。
   const { targetId: settingsTarget } = await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html` }) as { targetId: string };
   const settings = await rp.attach(settingsTarget);
   await until(async () => await rp.evaluate(settings, "typeof chrome !== 'undefined' && !!chrome.storage?.local") || undefined, 15_000, "设置页");
@@ -207,7 +204,6 @@ try {
   record.model = fixture ? "scripted" : DEFAULT_TEST_MODEL;
 
   const drainAudio = async () => {
-    // SAFETY: 表达式返回上面记下的两份数据。
     const got = await rp.evaluate(inproc, `(() => { const p = window.__played.splice(0); return { p, c: window.__closed }; })()`) as { p: Array<{ ctx: string; at: number; b64: string }>; c: Record<string, number> };
     for (const item of got.p) { const buf = Buffer.from(item.b64, "base64"); played.push({ ctx: item.ctx, at: item.at, pcm: new Int16Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length)) }); }
     for (const [id, at] of Object.entries(got.c)) closed.set(id, at);
@@ -222,7 +218,6 @@ try {
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, work);
 
-  // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
   type DomNode = { nodeName: string; backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
   const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
   const find = (n: DomNode): DomNode | null => {
@@ -234,7 +229,6 @@ try {
   if (!shadow) throw new Error("找不到阅读卡 shadow root");
   const shadowId = String((await rp.cdp.send("DOM.resolveNode", { backendNodeId: shadow.backendNodeId }, work)).object.objectId);
   const card = async (): Promise<CardState> => {
-    // SAFETY: callFunctionOn 以 returnByValue 返回 CARD_STATE 的结果。
     const reply = await rp.cdp.send("Runtime.callFunctionOn", { objectId: shadowId, functionDeclaration: CARD_STATE, returnByValue: true }, work);
     if (reply.exceptionDetails) throw new Error(`阅读卡脚本出错：${reply.exceptionDetails.text}`);
     return reply.result.value as CardState;
@@ -255,7 +249,6 @@ try {
   let sampling = false;
   const sampleOnce = async () => {
     const t = Date.now(), both = allowBoth;
-    // SAFETY: callFunctionOn 以 returnByValue 返回 CARD_SAMPLE 的结果。
     const [cardReply, page, count, state] = await Promise.all([
       rp.cdp.send("Runtime.callFunctionOn", { objectId: shadowId, functionDeclaration: CARD_SAMPLE, returnByValue: true }, work) as Promise<{ result: { value: Pick<Sample, "visible" | "quote" | "pending" | "lens" | "writing"> } }>,
       rp.evaluate(work, `({ hosts: document.querySelectorAll("[data-sideagent-ask]").length, capsule: !!document.querySelector('[data-sideagent-overlay="ptt-capsule"]')?.isConnected })`) as Promise<{ hosts: number; capsule: boolean }>,
@@ -273,7 +266,6 @@ try {
   const quotes = (quote: string, paragraph: string) => !!plainQuote(quote) && paragraph.replace(/\s+/g, "").startsWith(plainQuote(quote).slice(0, 12));
 
   const selectParagraph = async (needle: string) => {
-    // SAFETY: 表达式返回段落第一行中间的坐标。
     const at = await rp.evaluate(work, `(() => { const p = [...document.querySelectorAll("p")].find(p => p.innerText.includes(${JSON.stringify(needle)})); p.scrollIntoView({ block: "center" }); const r = p.getClientRects()[0]; return { x: r.left + 40, y: r.top + 10 }; })()`) as { x: number; y: number };
     await sleep(400);
     await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...at }, work);
@@ -328,7 +320,6 @@ try {
       if (phases.filter((x) => !x.startsWith("reason:")).at(-1) === p) return;
       phases.push(p);
       if (p === "failed") {
-        // SAFETY: DOM.getDocument 返回 { root: Node }。
         const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode & { nodeValue?: string } };
         const text = (n: DomNode & { nodeValue?: string }): string => n.nodeName === "#text" ? n.nodeValue ?? "" : n.nodeName === "STYLE" ? "" : [...(n.shadowRoots ?? []), ...(n.children ?? [])].map(text).join(" ");
         const host = (n: DomNode): DomNode | null => (n.attributes ?? []).includes("ptt-capsule") ? n : [...(n.children ?? [])].reduce<DomNode | null>((hit, c) => hit ?? host(c), null);

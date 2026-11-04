@@ -204,7 +204,6 @@ export class Uplink {
     port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
   }
 
-  /** WHY: 模型选择与各家凭据一起发：offscreen 文档读不到 chrome.storage。 */
   private async pushModelConfig(): Promise<void> {
     if (!this.inprocPort) return;
     const stored = await chrome.storage.local.get(null);
@@ -225,7 +224,6 @@ export class Uplink {
   private async pushVoiceKey(): Promise<void> {
     const stored = await chrome.storage.local.get(null);
     const configured = await installVoiceHeaderRule(resolveVoiceKey(Object.entries(stored))).catch(() => false);
-    // WHY: 不在这里修正无效选择：宿主须拒绝启动，不能偷偷回到按量接口。
     this.inprocPort?.postMessage({ type: "inproc_voice", configured, model: stored[INPROC_VOICE_MODEL_KEY] });
   }
 

@@ -64,7 +64,6 @@ const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }), delayMs: CHECK_DELAY_MS }] },
   { match: MARK, steps },
 ], undefined, payload => {
-  // SAFETY: 脚本模型把产品的 OpenAI 兼容请求体原样交给这里；Payload 只取其中可选的 tools 与 messages。
   const p = payload as Payload;
 
   if (!p.tools?.length || !p.messages?.some(m => m.role === "user" && textOf(m.content).includes(MARK))) return;

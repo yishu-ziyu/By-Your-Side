@@ -46,7 +46,6 @@ type RawVerdict = Omit<CorrectionVerdict, "replaces"> & { replaces?: string | nu
 
 function isRawVerdict(value: unknown): value is RawVerdict {
   if (!value || typeof value !== "object") return false;
-  // SAFETY: 只把它当成待核对的对象读字段，下面逐个检查后才返回 true。
   const v = value as RawVerdict;
 
   return typeof v.correction === "boolean" && typeof v.reusable === "boolean" && (v.about === "site" || v.about === "assistant")
@@ -71,7 +70,6 @@ export function correctionMessageKey(userMessage: string): string {
   return `message\n${userMessage.replace(/\s+/gu, " ").trim()}`;
 }
 
-/** WHY: 规则里出现的邮箱、网址、5 位以上数字：必须是用户原话里就有的，否则是模型编的或抄自别处。 */
 const CONCRETE_VALUE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+|https?:\/\/[^\s，。；！？）)】]+|\d{5,}/giu;
 
 function ruleGrounded(rule: string, userMessage: string): boolean {

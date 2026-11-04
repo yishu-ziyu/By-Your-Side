@@ -388,7 +388,6 @@ async function checkTraceExport(modelPlan: ModelPlan) {
 function effortsOf(text: string) {
   const rows = text.split("\n").filter(Boolean).flatMap((raw) => {
     try {
-      // SAFETY: 导出文件每行是 { runId, type, data } 的 JSON；解析失败的行丢弃。
       return [JSON.parse(raw) as { runId?: string; type: string; data?: { text?: string; effort?: string } }];
     } catch {
       return [];
@@ -405,7 +404,6 @@ function effortsOf(text: string) {
 function goalChecksOf(text: string): GoalCheckLine[] {
   return text.split("\n").filter(Boolean).flatMap((raw) => {
     try {
-      // SAFETY: 导出文件每行是 run-trace-core 写的 { type, data } 对象；只取 goal_check 行的 data。
       const row = JSON.parse(raw) as { type: string; data?: GoalCheckLine };
       return row.type === "goal_check" && row.data ? [{ status: row.data.status, remaining: row.data.remaining ?? null, correction: row.data.correction }] : [];
     } catch {
@@ -423,7 +421,6 @@ function translationFacts(text: string) {
 
   const rows = text.split("\n").filter(Boolean).flatMap((raw) => {
     try {
-      // SAFETY: 导出文件每行是 run-trace-core 写的 { type, data } 对象；解析失败的行丢弃。
       return [JSON.parse(raw) as { type: string; data?: TraceData }];
     } catch {
       return [];
@@ -531,7 +528,6 @@ try {
 
   await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
 
-  // SAFETY: PANEL_STATE 返回的对象字段与 PanelState 一一对应。
   const readPanel = async () => (await rp.evaluate(panel, PANEL_STATE)) as PanelState;
 
   if (daily && (await rp.targets()).some((t) => t.url === `chrome-extension://${rp.extensionId}/inproc.html`)) inproc = await watchInproc(rp, rp.extensionId);
@@ -570,7 +566,6 @@ try {
   }
 
   const boxOf = async (nodeId: number): Promise<Box | null> => {
-    // SAFETY: CDP 规范里 DOM.getBoxModel 返回 { model: { border: Quad } }，Quad 为 4 个点 8 个数。
     const { model } = (await rp.cdp.send("DOM.getBoxModel", { nodeId }, work)) as { model: { border: number[] } };
     const xs = [0, 2, 4, 6].map((i) => model.border[i]!);
     const ys = [1, 3, 5, 7].map((i) => model.border[i]!);
@@ -579,7 +574,6 @@ try {
   };
 
   const readMarks = async (): Promise<DrawnMark[]> => {
-    // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
     const { root } = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)) as { root: DomNode };
     const found: Array<{ frame: number; label: number | null }> = [];
 
@@ -615,7 +609,6 @@ try {
   const declineSendConfirm = async (shot: string): Promise<boolean> => {
     if (!(await rp.evaluate(work, `!!document.querySelector(${JSON.stringify(SEND_CONFIRM)})`).catch(() => false))) return false;
     await rp.screenshot(work, shot).catch(() => {});
-    // SAFETY: CDP 规范里 DOM.getDocument 返回 { root: Node }。
     const { root } = (await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work)) as { root: DomNode };
     const attrOf = (node: DomNode, name: string) => { const attrs = node.attributes ?? []; const at = attrs.indexOf(name); return at >= 0 ? attrs[at + 1] ?? "" : ""; };
     const find = (node: DomNode, hit: (n: DomNode) => boolean): DomNode | undefined => hit(node) ? node : [...(node.children ?? []), ...(node.shadowRoots ?? [])].map((c) => find(c, hit)).find(Boolean);
@@ -633,7 +626,6 @@ try {
     return true;
   };
 
-  // SAFETY: 下面这段页面脚本只返回 { text, x, y, w, h } 数组，字段与 TextBox 一致。
   const readTexts = async (): Promise<TextBox[]> => (await rp.evaluate(work, `(() => {
     const out = [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -647,7 +639,6 @@ try {
     return out;
   })()`)) as TextBox[];
 
-  // SAFETY: 下面这段页面脚本只返回 { text, x, y, w, h } 数组：FREQ_WORDS 每处出现的视口框。
   const readWords = async (): Promise<TextBox[]> => (await rp.evaluate(work, `(() => {
     const words = ${JSON.stringify(FREQ_WORDS)}, out = [];
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -797,7 +788,6 @@ try {
     const tabs = (await rp.targets()).filter((t) => t.type === "page").map((t) => t.url);
     const activeUrl = await rp.evaluate(panel, "chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([t]) => t?.url ?? null)").catch(() => null);
     const answer = final?.answers.join("\n\n") ?? "";
-    // SAFETY: 这段页面脚本只返回卡片 data-filename 组成的字符串数组。
     const cardNames = (await rp.evaluate(panel, "[...document.querySelectorAll('.artifact-card')].filter((c) => !c.querySelector('.artifact-download')?.disabled).map((c) => c.dataset.filename)").catch(() => [])) as string[];
 
     for (const name of cardNames) {
@@ -814,11 +804,8 @@ try {
     await rp.screenshot(work, join(artifacts, `${item.id}-page-final.png`)).catch(() => {});
     const translatedBlocks = Number(await rp.evaluate(work, TRANSLATED_BLOCKS).catch(() => 0));
     const pendingMarks = Number(await rp.evaluate(work, PENDING_MARKS).catch(() => 0));
-    // SAFETY: READABLE_BLOCKS 返回 { readable, untranslated } 两个数字。
     const coverage = (await rp.evaluate(work, READABLE_BLOCKS).catch(() => ({ readable: 0, untranslated: 0 }))) as { readable: number; untranslated: number };
-    // SAFETY: WATCH_PENDING 在页面上写入的记录：数字数组与对象数组。
     const pendingLog = ((await rp.evaluate(work, "window.__bysPendingLog ?? []").catch(() => [])) as number[]);
-    // SAFETY: 同上，闪烁记录是对象数组，这里只数个数。
     const pendingFlickers = ((await rp.evaluate(work, "window.__bysPendingFlickers ?? []").catch(() => [])) as unknown[]);
     const pendingRose = pendingFlickers.length > 0;
     const ctx: Ctx = { words: await readWords().catch(() => []), answer, pageText, translatedBlocks, pendingMarks, stopClearMs, ...coverage, pendingRose, marks: await readMarks().catch(() => []), texts: await readTexts().catch(() => []), draft: draftValue == null ? null : String(draftValue), tabs, saves: saveRequests, sendConfirms, files, pageInputs, activeUrl: activeUrl == null ? null : String(activeUrl) };

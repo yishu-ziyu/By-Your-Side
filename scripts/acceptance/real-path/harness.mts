@@ -663,7 +663,6 @@ async function streamIncludes(file: string, token: Buffer): Promise<boolean> {
   let carry = Buffer.alloc(0);
 
   for await (const chunk of createReadStream(file, { highWaterMark: 4 * 1024 * 1024 })) {
-    // SAFETY: createReadStream 没有设 encoding，读出的每块都是 Buffer。
     const window = Buffer.concat([carry, chunk as Buffer]);
 
     if (window.includes(token)) return true;

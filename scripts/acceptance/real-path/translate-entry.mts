@@ -48,7 +48,6 @@ try {
 
   for (const end = Date.now() + 8000; Date.now() < end && (firstMs === null || !capsule);) {
     if (!capsule) {
-      // SAFETY: DOM.getDocument 回的是 CDP 节点树，这里只读 nodeValue、children、shadowRoots。
       const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
       capsule = capsuleHas(root, "在翻译");
 
@@ -66,7 +65,6 @@ try {
 
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || null, 15000, "侧栏回到空闲");
   const settled = await until(async () => {
-    // SAFETY: DOM.getDocument 回的是 CDP 节点树，这里只读 nodeValue、children、shadowRoots。
     const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
 
     return !capsuleHas(root, "正在思考") || null;

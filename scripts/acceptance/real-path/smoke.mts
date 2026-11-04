@@ -52,7 +52,6 @@ const evidence: JsonRecord = { model: modelArg, email, fillValue };
 
 type PanelState = { ready: boolean; busy: boolean; users: string[]; answers: string[] };
 
-// SAFETY: 页面脚本返回的对象与 PanelState 逐字段对应。
 const state = () => rp.evaluate(panel, `({
   ready: document.querySelector("#send-btn")?.disabled === false,
   busy: !!(document.querySelector("#send-btn")?.classList.contains("stopping") || document.querySelector("#status-pill")?.classList.contains("running") || document.querySelector(".msg.assistant.streaming,.msg.assistant[data-revealing]")),
@@ -85,14 +84,12 @@ const ask = async (text: string) => {
 };
 
 const storedMemories = async (): Promise<string[]> => {
-  // SAFETY: CDP Target.createTarget 的返回值带字符串 targetId。
   const target = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/voice-permission.html` })).targetId as string;
 
   try {
     const ext = await rp.attach(target);
     await until(async () => (await rp.evaluate(ext, `location.protocol === "chrome-extension:" && document.readyState === "complete"`)) || undefined, 10_000, "扩展页");
 
-    // SAFETY: 页面脚本返回 kv 里 memories 的 JSON 文本，库或键不存在时返回空串。
     const raw = await rp.evaluate(ext, `(async () => {
       if (!(await indexedDB.databases()).some((d) => d.name === "sideagent-memory")) return "";
       const db = await new Promise((res, rej) => { const r = indexedDB.open("sideagent-memory"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
@@ -102,14 +99,12 @@ const storedMemories = async (): Promise<string[]> => {
       return typeof v === "string" ? v : "";
     })()`) as string;
 
-    // SAFETY: memories 键由扩展写入，形状是 { entries: [{ text, status }] }。
     return raw ? (JSON.parse(raw) as { entries?: Array<{ text: string; status?: string }> }).entries?.filter((e) => e.status === "active").map((e) => e.text) ?? [] : [];
   } finally {
     await rp.cdp.send("Target.closeTarget", { targetId: target }).catch(() => undefined);
   }
 };
 
-// SAFETY: 页面脚本返回字符串。没存过时 background 用默认会话（"default"），这里同一规则。
 const selectedConversation = () => rp.evaluate(panel, `chrome.storage.local.get("selectedConversationId").then((v) => v.selectedConversationId ?? "default")`) as Promise<string>;
 
 try {

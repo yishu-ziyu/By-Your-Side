@@ -51,7 +51,6 @@ try {
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
   await rp.evaluate(panel, `Promise.all(["/tmall", "/dup", "/mail"].map(p => chrome.tabs.create({ url: ${JSON.stringify(origin)} + p, active: false }))).then(() => true)`);
-  // SAFETY: 表达式返回 {jd, tmall, dup} 三个标签页编号。
   const tabs = await until(async () => {
     const ids = await rp.evaluate(panel, `chrome.tabs.query({}).then(ts => { const id = p => ts.find(t => (t.url || "").endsWith(p) && t.status === "complete")?.id; return { jd: id("/jd"), tmall: id("/tmall"), dup: id("/dup"), mail: id("/mail") }; })`) as Record<string, number | undefined>;
     return ids.jd && ids.tmall && ids.dup && ids.mail ? ids as Record<string, number> : undefined;
