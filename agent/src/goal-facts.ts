@@ -94,7 +94,12 @@ export class PageTrail {
         this.createdTabs.add(newTab.tabId);
         if (typeof newTab.url === "string") landed(newTab.tabId, newTab.url, before.byAssistant);
         else this.urls.set(newTab.tabId, { url: null, byAssistant: before.byAssistant });
-      } else if (record(data.effect).documentChanged) this.urls.set(tab, { url: null, byAssistant: before.byAssistant });
+      } else if (record(data.effect).documentChanged) {
+        const pageUrl = record(data.page).url;
+
+        if (typeof pageUrl === "string") landed(tab, pageUrl, before.byAssistant);
+        else this.urls.set(tab, { url: null, byAssistant: before.byAssistant });
+      }
     }
   }
 

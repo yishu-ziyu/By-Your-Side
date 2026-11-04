@@ -31,6 +31,7 @@ import { stopBeforePay } from "../pay-stop.js";
 import { getMarkMotion } from "../mark-motion.js";
 import { parseExecutionKey } from "../tab-bindings.js";
 import { beginEffect, beginWatch, collectEffect, endWatch, pageChangesAfter, watchChangesAfter } from "./effect.js";
+import { waitForQuietDom } from "./page-readiness.js";
 import { regrade, submitProbeInPage, typeIntoField, typingWritten, TypingInterrupted, type PageRun } from "./fill-typing.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
@@ -564,6 +565,7 @@ async function releaseHold(sessionId: string): Promise<void> {
 }
 
 type ClickParams = {
+  awaitPage?: boolean;
   tabId?: number;
   target?: string;
   point?: [number, number];
@@ -586,7 +588,22 @@ type KeyEventParams = {
   text?: string;
 };
 
-type ClickResult = { clicked: true; effect?: EffectReport; appeared?: PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog; sendConfirmed?: true };
+type ClickResult = { clicked: true; effect?: EffectReport; appeared?: PageAppeared; newTab?: { tabId: number; url?: string }; dialog?: OpenedDialog; sendConfirmed?: true; timing?: Record<string, number> };
+
+function phaseClock() {
+  const phases: Record<string, number> = {};
+  let last = Date.now();
+
+  return {
+    phases,
+    mark(phase: string): void {
+      const now = Date.now();
+
+      phases[phase] = (phases[phase] ?? 0) + now - last;
+      last = now;
+    },
+  };
+}
 
 async function resolveOverlayTabId(sessionId: string): Promise<number | null> {
   try {
@@ -1565,10 +1582,16 @@ export async function click(
   sendGuard?: SendGuard,
   showCursor = !beforeDispatch,
 ): Promise<ClickResult> {
-  return withUncoveredTarget(params, sessionId, beforeDispatch, () => clickTarget(params, sessionId, beforeDispatch, sendGuard, showCursor));
+  const clock = phaseClock();
+
+  return withUncoveredTarget(params, sessionId, beforeDispatch, () => {
+    clock.mark("uncover");
+
+    return clickTarget(params, sessionId, clock, beforeDispatch, sendGuard, showCursor);
+  });
 }
 
-async function clickTarget(params: ClickParams, sessionId: string, beforeDispatch?: PointerDispatchGuard, sendGuard?: SendGuard, showCursor = !beforeDispatch): Promise<ClickResult> {
+async function clickTarget(params: ClickParams, sessionId: string, clock: ReturnType<typeof phaseClock>, beforeDispatch?: PointerDispatchGuard, sendGuard?: SendGuard, showCursor = !beforeDispatch): Promise<ClickResult> {
   const tab = await resolveWorkingTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -1601,8 +1624,10 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
   if (sendName && (params.clickCount ?? 1) > 1) throw notExecuted(new Error(SEND_MULTI_CLICK));
 
   await beforeDispatch?.();
+  clock.mark("locate");
   let [x, y] = point!;
   let sendConfirmed = await confirmSendIfNeeded(tabId, sendName, sendGuard, () => readSendDetails(tabId, x, y));
+  clock.mark("sendConfirm");
 
   if (!target) {
     await callPointGuard(tabId, x, y, "remember");
@@ -1615,9 +1640,11 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
 
   const actionId = showCursor ? await beginCursorAction(tabId, cid, "click", target, name) : "";
   const opens = await watchOpenedTabs({ ...tab, id: tabId });
+  clock.mark("prepare");
 
   try {
     if (showCursor) await cursorMove(tabId, x, y, cid);
+    clock.mark("cursor");
 
     if (target && !force) {
       const confirmed = await confirmPointerTarget(tabId, target, beforeDispatch);
@@ -1628,9 +1655,11 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
         x = confirmed.point[0];
         y = confirmed.point[1];
       }
+      clock.mark("confirm");
 
       if (x !== point[0] || y !== point[1]) {
         if (showCursor) await cursorMove(tabId, x, y, cid);
+        clock.mark("cursor");
       }
     }
 
@@ -1680,6 +1709,7 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
         if (!sendConfirmed && current.buttons.some(isSendLabel)) throw notExecuted(new Error("内嵌页面的操作目标已变为发送按钮，未点击；请重新查看页面。"));
       }
       const dialogWatch = watchDialog(tabId);
+      clock.mark("preflight");
 
       const pressing = (async () => {
         for (let n = 1; n <= clickCount; n++) {
@@ -1704,8 +1734,9 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
             modifiers,
           });
         }
+        clock.mark("press");
 
-        return await collectEffect(tabId, effectToken);
+        return await collectEffect(tabId, effectToken, clock.mark);
       })();
 
       try {
@@ -1769,7 +1800,9 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
               [target], undefined, pressGuard,
             );
 
-            return await collectEffect(tabId, fallbackToken);
+            clock.mark("press");
+
+            return await collectEffect(tabId, fallbackToken, clock.mark);
           })();
 
           const fallbackSettled = await Promise.race([
@@ -1795,11 +1828,13 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
 
         if (fallbackEffect) clicked.effect = fallbackEffect;
         const fallbackAppeared = await pageChangesAfter(tabId, sessionId, fallbackEffect);
+        clock.mark("appeared");
 
         if (fallbackAppeared) clicked.appeared = fallbackAppeared;
 
         if (sendConfirmed) clicked.sendConfirmed = true;
         await rememberActionTarget(tabId, target, name);
+        clicked.timing = clock.phases;
 
         return clicked;
       }
@@ -1811,18 +1846,24 @@ async function clickTarget(params: ClickParams, sessionId: string, beforeDispatc
     await endCursorAction(tabId, cid, actionId, "done", [x, y]);
     await recordCursorTrail(tabId, sessionId, x, y, true);
     const newTab = tabsBefore.size ? await followOpenedTab(tabsBefore, opens, sessionId) : undefined;
+    clock.mark("finish");
 
     const clicked: Extract<ClickResult, { clicked: true }> = { clicked: true };
 
     if (effect) clicked.effect = effect;
     const appeared = newTab ? undefined : await pageChangesAfter(tabId, sessionId, effect);
+    clock.mark("appeared");
 
     if (appeared) clicked.appeared = appeared;
 
     if (newTab) clicked.newTab = newTab;
 
     if (sendConfirmed) clicked.sendConfirmed = true;
+    // WHY: 脚本里的连续点击不读新页面，不多等；单独的点击工具马上要读新页面，页面画完才读得到内容。
+    if (effect?.documentChanged && !newTab && params.awaitPage) await waitForQuietDom(tabId);
+    clock.mark("pageQuiet");
     await rememberActionTarget(tabId, target, name);
+    clicked.timing = clock.phases;
 
     return clicked;
   } catch (error) {
