@@ -223,12 +223,6 @@ export function gaveUpWithoutChange(input: { reply: string; partial: boolean; pa
   return input.partial || claimsUnfinished(input.reply);
 }
 
-function claimsDeadControl(reply: string): boolean {
-  return /没(有)?反应|不起作用|没(能)?(存上|生效|保存成功|翻)|保存失败|翻不过去|无法翻页|(无法|不能|没能)确认|没有.{0,8}(成功|变化|迹象)|仍(然)?(显示|是|停在)|点了.{0,6}(没用|无效)|did(n'?t| not) (work|respond|do anything|change)|no effect|nothing happened|still (shows|on)/i.test(reply);
-}
-
-const NO_EFFECT = /nothing (on the page changed in a way )?(was )?attributable to this click|"effect":\{[^{}]*"changed":false/gi;
-
 const PAGE_ACTIONS: ReadonlySet<string> = new Set(["click", "double_click", "fill", "type_text", "press_key", "select_option", "upload_file", "navigate", "browser_run", "js", "page_translation", "accept_dialog", "dismiss_dialog", "guide_step", "hand_to_user"]);
 
 function wholePageRead(item: { tool: string; text: string }): boolean {
@@ -281,8 +275,6 @@ function aboutNames(names: readonly string[], text: string): boolean {
   return names.length > 0 && (names.some(name => text.includes(name.split(" ").at(-1)!)) || /作者|姓名|人名|名字|名单|\b(authors?|names?|people)\b/i.test(text));
 }
 
-const ASKS_ELSEWHERE = /打开|搜|查|找|访问|去[^，。,.]{0,8}(网站|页面|主页|官网)|https?:\/\/|\b(open|search|find|look up|visit|go to)\b/i;
-
 function unmetNavigation(input: GoalCheckInput, requirement: unknown): GoalVerdict | null {
   const navigation = input.facts?.navigation;
   if (!navigation || navigation.originTabId === null || !requirement || typeof requirement !== "object"
@@ -308,7 +300,7 @@ function unmetNavigation(input: GoalCheckInput, requirement: unknown): GoalVerdi
 
 function strayedFrom(input: GoalCheckInput): { finding: string; correction: string } | null {
   const facts = input.facts;
-  if (!facts || !input.goalPage || ASKS_ELSEWHERE.test(input.goal.join("\n"))) return null;
+  if (!facts || !input.goalPage) return null;
   const elsewhere = [...new Set(facts.actions.filter(action => action.page !== null && !action.onGoalPage && action.openedByAssistant).map(action => action.page!))];
   const searched = facts.searchedNotFromUser;
   if (!elsewhere.length && !searched.length) return null;
@@ -324,37 +316,6 @@ function strayedFrom(input: GoalCheckInput): { finding: string; correction: stri
 const NO_CAPTIONS = "the player's own caption list for this video is empty";
 
 const SAYS_NO_CAPTIONS = /没有(任何)?(可用的|可加载的|可读的)?字幕|无字幕|拿不到字幕|字幕(列表|清单|轨)?(是|为)?空|no (subtitles|captions)/i;
-
-const NOT_FOUND = /(没有|不存在|没找到|未找到|找不到|查不到|没能找到)[^。！？\n]{0,16}(条目|词条|页面|结果|记录)|目前没有[^。！？\n]{0,24}(条目|词条)|\b(no (article|results?|entry|page)|does not exist|not found)\b/i;
-
-const ASKS_TO_FIND = /找|查|搜|有没有|是否有|\b(find|search|look up|is there)\b/i;
-
-const LANDED = /(?:Created tab \d+: [^\n]*? — |Navigation result: |working tab \d+ shows "[^"\n]*" — )(https?:\/\/[^\s;"'<>]+)/g;
-
-function searchedWordings(observations: GoalCheckInput["observations"]): string[] {
-  const terms = new Set<string>();
-
-  for (const item of observations ?? []) {
-    if (item.earlier) continue;
-
-    for (const [, address] of item.text.matchAll(LANDED)) {
-      let url: URL;
-      try { url = new URL(address!); } catch { continue; }
-      const page = /\/wiki\/([^/?#]+)/.exec(url.pathname)?.[1];
-      const decode = (text: string) => { try { return decodeURIComponent(text); } catch { return text; } };
-
-      if (page && !/^(Special|Wikipedia|Help|File|Category|Portal)[:：]/i.test(decode(page))) terms.add(decode(page).replace(/_/g, " ").trim().toLowerCase());
-
-      for (const key of ["search", "q", "query", "wd", "keyword"]) {
-        const value = url.searchParams.get(key)?.trim();
-
-        if (value) terms.add(value.toLowerCase());
-      }
-    }
-  }
-
-  return [...terms];
-}
 
 function namesNotRead(input: GoalCheckInput): string[] {
   if (input.notInReads) return input.notInReads;
@@ -468,17 +429,9 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
       ? csvTotalMismatches(file.content).map(mismatch => `${file.filename}：${mismatch.column}列的分项之和为${mismatch.calculated}，合计却写成${mismatch.reported}`) : []);
 
     if (totals.length && !asksUser(input.lastReply)) return finish({ status: "continue", verifiedByHost: true, verificationSubject: 'file', remaining: "修正文件的合计", correction: `${totals.slice(0, 4).join("；")}。按原数据重新计算并修正文件，说明纠正。`.slice(0, 800) }, "host:csv_total_mismatch", { mismatches: totals });
-    const deadClicks = (input.observations ?? []).filter(item => !item.earlier).reduce((count, item) => count + (item.text.match(NO_EFFECT)?.length ?? 0), 0);
-
-    if (deadClicks >= 2 && claimsDeadControl(input.lastReply) && !asksUser(input.lastReply)) return finish({ status: "blocked", remaining: plainBlockedReason("unresponsive"), cause: "unresponsive" }, "host:dead_clicks", { deadClicks });
     const captionsAbsent = (input.observations ?? []).some(item => !item.earlier && item.text.includes(NO_CAPTIONS));
 
     if (captionsAbsent && /字幕|captions?|subtitles?/i.test(input.goal.join(" ")) && SAYS_NO_CAPTIONS.test(input.lastReply) && !asksUser(input.lastReply)) return finish({ status: "blocked", remaining: plainBlockedReason("missing"), cause: "missing" }, "host:no_captions", { captionsAbsent });
-    const wordings = input.verification ? [] : searchedWordings(input.observations);
-
-    if (wordings.length === 1 && ASKS_TO_FIND.test(input.goal.join("\n")) && NOT_FOUND.test(input.lastReply.slice(0, 120)) && !asksUser(input.lastReply)) {
-      return finish({ status: "continue", verifiedByHost: true, verificationSubject: 'answer', remaining: "换个说法再找", correction: `只用「${wordings[0]!.slice(0, 40)}」找过一次就说没有。换近义说法、常见别名、英文名或更宽的词再找；找到对应的条目或页面就打开读完，再讲它的内容；都找不到再说没有，并说清试过哪些说法。` }, "host:single_search_wording", { wordings });
-    }
 
     parsed = await sideJudgment(host, model, {
       purpose: "goal_check", systemPrompt: PROMPT, content, signal, timeoutMs: GOAL_CHECK_TIMEOUT_MS, headers,
@@ -520,7 +473,7 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
       if (asksUser(input.lastReply) || input.replyForm) return finish({ status: "needs_user", remaining: "等你决定要不要换个做法" }, "model", undefined, "strayed+asksUser");
       return finish({ status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: strayed.finding, correction: strayed.correction }, "model", undefined, "strayed");
     }
-    if (parsed.goalOnPage === true && parsed.pointedFound === false && !input.verification && parsed.status !== "blocked" && parsed.status !== "needs_user" && !ASKS_ELSEWHERE.test(input.goal.join("\n"))) {
+    if (parsed.goalOnPage === true && parsed.pointedFound === false && !input.verification && parsed.status !== "blocked" && parsed.status !== "needs_user") {
       if (asksUser(input.lastReply) || input.replyForm) return finish({ status: "needs_user", remaining: "等你说指的是哪一个" }, "model", undefined, "pointed_missing+asksUser");
       return finish({ status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: "你指的东西在这一页上没有，助手换了个理解去做",
         correction: "用户指的是当时那一页上的东西，但那一页上没有它，助手换了个理解去做。不要再打开、搜索或点击。只改写回答：说清在那一页上没找到什么、按什么理解做了什么，问用户指的是哪一个、要不要换个做法。" }, "model", undefined, "pointed_missing");
