@@ -4254,7 +4254,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
         if (checked.answer && checked !== currentRun && checked.root.classList.contains("done")) paintAnsweredTitle(checked);
       }
-      if (ev.status === "open" && ev.finding && !resumeCardShown()) addMsg("msg notice", checkNoteForUser(ev.finding, ev.remaining));
+      if (ev.status === "open" && !resumeCardShown()) addMsg("msg notice", checkNoteForUser(ev.finding, ev.remaining));
 
       if (ev.status === "continue" && !ev.held) {
         supersedeAnswer(checked?.answer ? checked : null);

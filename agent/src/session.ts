@@ -3356,7 +3356,16 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
     if (!verdict) flushChecks();
 
-    const abandon = () => { flushChecks(); letGo(); if (this.deliveryRunId() === runId) emit({ kind: "goal_check", status: "unavailable" }); };
+    const abandon = () => {
+      const unfinished = verdict as GoalVerdict | null;
+      const sameRun = this.deliveryRunId() === runId, sameEpoch = epoch === this.controlEpoch, held = this.hold.isHeld();
+      this.runTrace.recordAt(checkCorrelation, "goal_continue_skipped", { verdict: unfinished?.status ?? null, sameRun, sameEpoch, held, streaming: !!this.session?.isStreaming, continuation: this.conversationSnapshot()?.continuation?.state ?? null });
+      flushChecks();
+      letGo();
+      if (!sameRun) return;
+      if (unfinished?.status === "continue" && sameEpoch && !held) emit({ kind: "goal_check", status: "open", ...(unfinished.remaining ? { remaining: unfinished.remaining } : {}), ...(unfinished.finding ? { finding: unfinished.finding } : {}) });
+      else emit({ kind: "goal_check", status: "unavailable" });
+    };
 
     if (!current()) { abandon(); return; }
     if (copyPolicyUnavailable) emit({ kind: 'notice', message: '原样搬运要求暂时无法判断，复制结果没有完成独立核对。' });
