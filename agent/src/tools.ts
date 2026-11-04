@@ -828,7 +828,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       description:
         "Read a tab as indented text. Main can pass any tabId without taking control; omit tabId for the working tab. Workers can read only assigned tabs. scope=full_page (default): the real CDP accessibility tree (covers shadow DOM and virtualized content); rendered content (including headings, text, images and controls) carries [ref=N] when backed by a DOM node (= backendDOMNodeId, CDP path). scope=viewport: a viewport-only simplified DOM snapshot (downgrade, not the full AX tree); its refs are DOM snapshot numbers valid only via the DOM path — do not mix them with older AX refs. This is your primary way to observe the page.",
       promptGuidelines: [
-        "Take a snapshot after actions that change the page; navigate and tabs action:\"open\" already return a fresh snapshot of the new page.",
+        "Take a snapshot after actions that change the page; navigate, tabs action:\"open\" and a click that loads a new page already return a fresh snapshot of it.",
         "Ref numbers are stable for persistent nodes, but @N must appear in the latest snapshot. A new snapshot replaces the available ref set; navigation or node replacement invalidates old refs.",
         "Viewport snapshots return a different (DOM) ref space; never reuse full_page AX refs after a viewport snapshot.",
       ],
@@ -869,7 +869,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "click",
       label: "Click",
       description:
-        'Click an element in the working tab. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click. When new elements or text appear on the same page, the result lists them with usable refs.',
+        'Click an element in the working tab. When the click loads a new page, the result already contains a fresh snapshot of it, so act on it directly instead of taking another snapshot. Provide target ("@N" ref, "loc=css:..." locator, or a raw CSS selector) or point [x, y] viewport coordinates. Native <select> dropdowns: use fill with the visible option text (for example 杭州); do not click — headless has no OS picker. The result reports whether the page reacted (target state, target region, new notices) and says explicitly when nothing is attributable to the click. When new elements or text appear on the same page, the result lists them with usable refs.',
       parameters: Type.Object({
         target: Type.Optional(
           Type.String({ description: '"@N" ref, "loc=css:..." locator, or raw CSS selector' }),
@@ -893,7 +893,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         label: Type.Optional(Type.String({ description: "Short human-readable description of what you click" })),
       }),
       execute: async (_id, params) => {
-        const data = (await call("click", params)) as ToolContract["click"]["data"];
+        const data = (await call("click", { ...params, awaitPage: true })) as ToolContract["click"]["data"];
         const what = params.label ?? params.target ?? (params.point ? `(${params.point[0]}, ${params.point[1]})` : "element");
 
         const dialog = "dialog" in data ? data.dialog : undefined;
@@ -911,7 +911,18 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
 
         if (effectText) {
-          return textResult(`${clicked} Event dispatch confirmed.${effectText}${newTabText}${appeared}`, data);
+          const head = `${clicked} Event dispatch confirmed.${effectText}${newTabText}${appeared}`;
+
+          if (!effect?.documentChanged || opened) return textResult(head, data);
+
+          try {
+            const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
+            const notes = page.url ? await siteNotesAfter(page.url) : "";
+
+            return textResult(`${head}\n\n${freshSnapshotLabel(page)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}${notes}`, { ...data, page });
+          } catch {
+            return textResult(head, data);
+          }
         }
 
         return textResult(`${clicked} This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}${appeared}`, data);

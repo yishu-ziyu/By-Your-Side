@@ -65,7 +65,7 @@ export async function beginEffect(
   }
 }
 
-export async function collectEffect(tabId: number, token: string | null): Promise<EffectReport | undefined> {
+export async function collectEffect(tabId: number, token: string | null, mark?: (phase: string) => void): Promise<EffectReport | undefined> {
   if (!token) return undefined;
 
   try {
@@ -79,6 +79,7 @@ export async function collectEffect(tabId: number, token: string | null): Promis
         return null;
       }
     }, { pending: () => since === undefined ? 0 : pendingRequests(networkRingFor(tabId)?.entries ?? [], since, startUrl) });
+    mark?.("settle");
 
     const pageUrl = since === undefined ? "" : await chrome.tabs.get(tabId).then(tab => tab.url ?? "", () => "");
     const report = await withDocumentChange(tabId, token, settled, startUrl, pageUrl);
@@ -93,6 +94,7 @@ export async function collectEffect(tabId: number, token: string | null): Promis
     const final = !sent.length ? report : { ...(report ?? EMPTY_EFFECT_REPORT), changed: true, evidence: [...(report ?? EMPTY_EFFECT_REPORT).evidence, ...sent] };
 
     if (final && roots) changedRoots.set(final, { roots, since: rootsAt });
+    mark?.("evidence");
 
     return final;
   } finally {
