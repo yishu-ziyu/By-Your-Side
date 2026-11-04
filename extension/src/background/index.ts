@@ -32,7 +32,7 @@ import { isWriteTool, WRITE_TOOL_SET } from "../../../shared/effect-policy.js";
 import { dimPage, glowPage } from "./page-glow.js";
 import { PANEL_PORT_NAME, parseRedeliver, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
 import type { PanelHistoryEntry, PanelHistoryServerMessage, UserTurnContext } from "../relay.js";
-import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
+import { HISTORY_PERSIST_BUDGET_BYTES, PanelHistory, cleanStoredHistory, historyKeysToDrop, historyUpdatedAt, type StoredPanelHistory } from "./panel-history.js";
 import { Uplink, type UplinkHandlers } from "./uplink.js";
 import { rememberTaskTab, taskPageContext } from "./task-pages.js";
 import { VoiceRelay } from "./voice-relay.js";
@@ -826,7 +826,21 @@ const panelHistory = new PanelHistory();
 const goneRetries = new Map<string, number>();
 const historyKey = `${HISTORY_PREFIX}${conversationId}`;
 
-const historyReady = chrome.storage.local.get(historyKey).then(async got => {
+async function cleanHistoryArea(area: chrome.storage.StorageArea): Promise<void> {
+ const stored = await area.get(null);
+ const cleaned: Record<string, unknown> = {};
+
+ for (const [key, value] of Object.entries(stored)) {
+  if (!key.startsWith(HISTORY_PREFIX)) continue;
+  const next = cleanStoredHistory(value);
+
+  if (JSON.stringify(next) !== JSON.stringify(value)) cleaned[key] = next;
+ }
+
+ if (Object.keys(cleaned).length) await area.set(cleaned);
+}
+
+const historyReady = Promise.all([cleanHistoryArea(chrome.storage.local), cleanHistoryArea(chrome.storage.session)]).catch(error => { console.error("[sideagent] 旧历史清理失败", error); }).then(() => chrome.storage.local.get(historyKey)).then(async got => {
  panelHistory.restore(got[historyKey] ?? (await chrome.storage.session.get(historyKey))[historyKey]);
 }).catch(() => {});
 
