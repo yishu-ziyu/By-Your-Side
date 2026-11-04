@@ -6,7 +6,6 @@ import { attachAnswerSources } from "./answer-sources.js";
 import { renderFactCheck } from "./fact-check-note.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
-import { answerSkeleton } from "./run-heartbeat.js";
 import { reducedMotion } from "./branch-graph.js";
 import { mountVoiceUI } from "./voice-ui.js";
 import { observeForCue } from "./cue.js";
@@ -1778,7 +1777,6 @@ interface RunHost {
   receipt: { head: string; total: string | null; steps: number; failed: number; ended: "completed" | "failed" | "stopped" } | null;
   graph: LiveGraph;
   beatEl: HTMLElement;
-  skeleton: HTMLElement;
   lastToolName: string | null;
   readingTools: Map<string, boolean>;
 }
@@ -2587,8 +2585,6 @@ function ensureRun(): NonNullable<typeof currentRun> {
   trail.className = "run-trail";
   trail.hidden = true;
   graph.el.after(trail);
-  const skeleton = answerSkeleton();
-  trail.after(skeleton);
   const start = runStartAt || eventTime();
   retirePlanCard();
   taskPlan.adopt(root, body);
@@ -2626,7 +2622,6 @@ function ensureRun(): NonNullable<typeof currentRun> {
     receipt: null,
     graph,
     beatEl: beat,
-    skeleton,
     lastToolName: null,
     readingTools: new Map(),
   };
@@ -3027,9 +3022,6 @@ function finishRun(): void {
   const endedAt = eventTime();
   closeThink(run, endedAt);
   run.trail.remove();
-  const skeleton = run.skeleton;
-  skeleton.dataset.state = "gone";
-  window.setTimeout(() => skeleton.remove(), reducedMotion() ? 0 : D_STATE);
   const hasSteps = Array.from(run.body.children).some(child => !(child as HTMLElement).hidden);
   run.orbActivity.finish();
   const outcome = run.orbActivity.state();
@@ -3497,7 +3489,6 @@ function appendLeadAnswer(delta: string): void {
   if (leadAnswer && leadAnswerTurnClosed) foldLeadAnswer();
 
   if (!leadAnswer) {
-    run.skeleton.dataset.state = "gone";
     quietRunForProse();
     leadAnswer = addMsg("msg assistant markdown streaming", "");
     leadAnswerText = "";
@@ -3602,7 +3593,6 @@ function appendTrace(pre: HTMLElement, delta: string): void {
 function appendDelta(kind: "assistant" | "thinking", delta: string): void {
   if (kind === "assistant") {
     if (!currentAssistant) {
-      if (currentRun) currentRun.skeleton.dataset.state = "gone";
       currentAssistant = addMsg("msg assistant markdown streaming", "");
     }
     currentAssistantText += delta;
