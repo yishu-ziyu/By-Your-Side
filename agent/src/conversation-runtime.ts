@@ -97,6 +97,7 @@ export async function createConversationRuntime(
 
   toolSession = session;
   rpc.beforeCall = () => session.flushPersistence();
+  rpc.userMessageWaiting = () => session.hasCorrectionWaiting();
   control.attachLead(session);
 
   if (!session.available) {

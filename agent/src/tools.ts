@@ -15,7 +15,7 @@ import { WRITE_TOOLS } from "../../shared/effect-policy.js";
 import { plainDownloadError } from "../../shared/user-facing.js";
 import { requiresControlGate } from "../../shared/effect-policy.js";
 import { USER_CONFIRM_TIMEOUT_MS, type ToolRpc } from "./rpc.js";
-import { runBrowserProgram, availableProgramHelpers, ProgramAssertError, type ProgramStep } from "./browser-program.js";
+import { runBrowserProgram, availableProgramHelpers, ProgramAssertError, ProgramWaitInterrupted, type ProgramStep } from "./browser-program.js";
 import type { LearnedOperationRuntime } from "./learned-operations.js";
 import { assertArtifactFilename, saveFileFromProgram, type ArtifactStore } from "./artifacts-tool.js";
 
@@ -582,6 +582,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         try {
           result = await runBrowserProgram({ code: params.code,
           call: (name, args, stepId, origin, deadline) => call(name, args, id, stepId, origin, undefined, deadline), signal, id,
+          userMessageWaiting: sid ? undefined : () => rpc.userMessageWaiting?.() ?? false,
           saveFile: files ? async (args) => {
             const store = files();
 
@@ -599,6 +600,13 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           },
           });
         } catch (error) {
+          if (error instanceof ProgramWaitInterrupted) {
+            rpc.noteToolFact?.(id, "executed");
+            const done = endedSteps.filter(step => !step.error && !PROGRAM_QUIET_STEPS.has(step.name)).map(step => step.name);
+            const ended = await endedOn();
+
+            return textResult(`${error.message}${done.length ? ` Already finished: ${done.join(", ")}.` : ""}${ended.text}`, { interrupted: true, ...(ended.page ? { page: ended.page } : {}) });
+          }
           if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${finishedBefore()}${(await endedOn()).text}`, { cause: error });
           rpc.noteToolFact?.(id, "executed");
 

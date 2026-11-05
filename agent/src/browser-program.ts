@@ -6,6 +6,7 @@ import { HOST_PAGE_PROBES } from "../../shared/effect-policy.js";
 import { isSaveFileParams, rejectSaveFileParams, type SaveFileParams, type SavedFileReceipt } from "./artifacts-tool.js";
 import { fetchFailureReason, type FetchReply } from "./fetch-result.js";
 import { runSiteMethod } from "./site-methods.js";
+import { ProgramBudget } from "./program-budget.js";
 
 export interface ProgramStep {
   parentId: string;
@@ -18,6 +19,10 @@ export interface ProgramStep {
   error?: string;
   reason?: string;
   elapsedMs?: number;
+}
+
+export class ProgramWaitInterrupted extends Error {
+  constructor() { super("The user just sent a new message, so this program stopped at its wait; no further actions dispatched. Deal with the message first, and wait again only if it is still needed."); }
 }
 
 export class ProgramAssertError extends Error {
@@ -38,6 +43,7 @@ interface ProgramOptions {
   id?: string;
   timeoutMs?: number;
   onStep?(step: ProgramStep): void;
+  userMessageWaiting?(): boolean;
   saveFile?(params: SaveFileParams): SavedFileReceipt | Promise<SavedFileReceipt>;
 }
 
@@ -53,7 +59,7 @@ const BROWSER_PROGRAM_HELPERS = [
   { name: "waitForElement", summary: "waitFor 的语义别名", composed: "waitFor" },
   { name: "check", summary: "check({text|selector,state=appears|disappears,timeoutMs=3000}) 等文字或目标出现/消失，不叫模型；返回 {ok,waitedMs,polls}，超时返回 ok:false 不抛错", composed: "read_element expect 轮询（只读）" },
   { name: "assert", summary: "assert({ok,name,reason}) 条件不成立就停下整个程序，后面的动作一个都不执行；结果带停在第几步、名字、原因、已完成几步", composed: "宿主停止路径" },
-  { name: "sleep", summary: "有界等待毫秒（纯宿主，不伪造浏览器动作）", composed: "host timer" },
+  { name: "sleep", summary: "有界等待毫秒，单次最多 10 秒（纯宿主，不伪造浏览器动作）。等页面长时间生成时循环 sleep 加读取：等待不占程序的 60 秒，累计可等 10 分钟；用户发来新消息时等待立刻结束", composed: "host timer" },
   { name: "pageInfo", summary: "url/title/readyState/视口/滚动/工作页/未处理 JS dialog（身份一致才返回）", composed: "list_tabs + js + dialog_info" },
   { name: "waitForLoad", summary: "等当前文档就绪：默认 domcontentloaded（内容可读可点）；要等图片等全部资源再传 state:'load'", composed: "js(document.readyState+timeOrigin)" },
   { name: "waitForNetworkIdle", summary: "纳入范围的在途请求为 0 且持续静默；捕获不完整不冒充空闲（≠业务完成）", composed: "network 在途集合轮询" },
@@ -165,9 +171,9 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   const vm = engine.newContext();
   vm.runtime.setMemoryLimit(16 * 1024 * 1024);
   vm.runtime.setMaxStackSize(256 * 1024);
-  const deadline = Date.now() + Math.min(Math.max(options.timeoutMs ?? 60_000, 1), 120_000);
+  const budget = new ProgramBudget(Date.now, Math.min(Math.max(options.timeoutMs ?? 60_000, 1), 120_000));
   const call = options.call;
-  options = { ...options, call: (name, params, stepId, origin) => call(name, params, stepId, origin, deadline) };
+  options = { ...options, call: (name, params, stepId, origin) => call(name, params, stepId, origin, budget.deadline) };
   let cpuDeadline = Date.now() + 100;
   let stopped = "";
   let closed = false;
@@ -193,7 +199,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   const guard = () => {
     if (options.signal?.aborted) throw stop("Browser program aborted; no further actions dispatched");
 
-    if (Date.now() >= deadline) throw stop("Browser program timed out; no further actions dispatched");
+    if (budget.expired()) throw stop(budget.waitBudgetUsed() ? "Browser program waited 10 minutes and the page still has not finished; no further actions dispatched. Do not wait again the same way: tell the user what the page shows now or change method" : "Browser program timed out; no further actions dispatched");
 
     if (stopped || closed) throw stop(stopped || "Browser program already ended");
   };
@@ -203,7 +209,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
     if (options.signal?.aborted) stop("Browser program aborted");
 
-    if (Date.now() >= deadline) stop("Browser program timed out");
+    if (budget.expired()) stop("Browser program timed out");
 
     return Boolean(stopped || closed);
   });
@@ -217,7 +223,13 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     if (!Number.isFinite(ms) || ms < 0 || ms > 10_000) throw new Error("INVALID_ARGUMENT: sleep.ms must be between 0 and 10000");
     const until = Date.now() + ms;
 
-    while (Date.now() < until) { guard(); await pause(Math.min(50, until - Date.now())); }
+    while (Date.now() < until) {
+      guard();
+      if (options.userMessageWaiting?.()) throw stop(new ProgramWaitInterrupted());
+      const started = Date.now();
+      await pause(Math.min(50, until - Date.now()));
+      budget.creditWait(Date.now() - started);
+    }
 
     guard();
 
@@ -260,7 +272,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const timeout = Number(params.timeoutMs ?? 5000);
 
     if (!Number.isFinite(timeout) || timeout < 1 || timeout > 30_000) throw new Error("INVALID_ARGUMENT: wait_for.timeoutMs must be between 1 and 30000");
-    const until = Math.min(deadline, Date.now() + timeout);
+    const until = Math.min(budget.deadline, Date.now() + timeout);
     let polls = 0;
     const sub = nextSubId(stepId);
 
@@ -366,7 +378,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const timeout = Number(params.timeoutMs ?? 3000);
 
     if (!Number.isFinite(timeout) || timeout < 1 || timeout > 30_000) throw new Error("INVALID_ARGUMENT: check.timeoutMs must be between 1 and 30000");
-    const until = Math.min(deadline, Date.now() + timeout);
+    const until = Math.min(budget.deadline, Date.now() + timeout);
     const started = Date.now();
     let polls = 0;
     const sub = nextSubId(stepId);
@@ -468,7 +480,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const timeout = Number(params.timeoutMs ?? 15_000);
 
     if (!Number.isFinite(timeout) || timeout < 1 || timeout > 30_000) throw new Error("INVALID_ARGUMENT: waitForLoad.timeoutMs must be between 1 and 30000");
-    const until = Math.min(deadline, Date.now() + timeout);
+    const until = Math.min(budget.deadline, Date.now() + timeout);
     const started = Date.now();
     let polls = 0;
     const sub = nextSubId(stepId);
@@ -539,7 +551,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const timeout = Number(params.timeoutMs ?? 10_000);
 
     if (!Number.isFinite(timeout) || timeout < 1_000 || timeout > 30_000) throw new Error("INVALID_ARGUMENT: waitForNetworkIdle.timeoutMs must be between 1000 and 30000");
-    const until = Math.min(deadline, Date.now() + timeout);
+    const until = Math.min(budget.deadline, Date.now() + timeout);
     const started = Date.now();
     let samples = 0;
     const sub = nextSubId(stepId);
@@ -607,7 +619,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const timeout = Number(params.timeoutMs ?? 15_000);
 
     if (!Number.isFinite(timeout) || timeout < 1 || timeout > 30_000) throw new Error("INVALID_ARGUMENT: scrollToBottomUntil.timeoutMs must be between 1 and 30000");
-    const until = Math.min(deadline, Date.now() + timeout);
+    const until = Math.min(budget.deadline, Date.now() + timeout);
     const sub = nextSubId(stepId);
 
     const check = async (): Promise<boolean> => {
