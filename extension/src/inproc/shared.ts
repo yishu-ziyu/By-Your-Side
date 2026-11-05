@@ -65,7 +65,7 @@ export interface InprocModelConfig {
 export const CUSTOM_PROVIDER_ID = "custom";
 export const CUSTOM_ENDPOINT_ENV = "SIDEAGENT_CUSTOM_ENDPOINT";
 
-export interface CustomCatalogModel { id: string; contextWindow?: number; images?: boolean }
+export interface CustomCatalogModel { id: string; contextWindow?: number; images?: boolean; thinking?: string[] }
 export interface CustomCatalog { baseUrl: string; models: CustomCatalogModel[] }
 
 export function readCustomCatalog(value: unknown): CustomCatalog | null {
@@ -76,6 +76,7 @@ export function readCustomCatalog(value: unknown): CustomCatalog | null {
       id: item.id,
       ...("contextWindow" in item && typeof item.contextWindow === "number" && item.contextWindow > 0 ? { contextWindow: item.contextWindow } : {}),
       ...("images" in item && item.images === true ? { images: true } : {}),
+      ...("thinking" in item && Array.isArray(item.thinking) ? { thinking: item.thinking.filter((level: unknown): level is string => typeof level === "string") } : {}),
     }];
   });
   return { baseUrl: value.baseUrl, models };

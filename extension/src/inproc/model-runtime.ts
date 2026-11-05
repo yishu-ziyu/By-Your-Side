@@ -104,13 +104,23 @@ export interface ModelRuntime {
 
 interface CompatibleProvider { provider: Provider; models: Model<"openai-completions">[] }
 
+const LISTED_THINKING_LEVELS: readonly string[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+function listedThinkingMap(listed: readonly string[]): Model<"openai-completions">["thinkingLevelMap"] {
+  return {
+    ...Object.fromEntries(LISTED_THINKING_LEVELS.map((level) => [level, listed.includes(level) ? level : null])),
+    ...(listed.includes("none") || listed.includes("off") ? {} : { off: null }),
+  };
+}
+
 function openAICompatible(id: string, name: string, baseUrl: string, listings: readonly (string | CustomCatalogModel)[]): CompatibleProvider {
   const models = listings.map((listing): Model<"openai-completions"> => {
-    const { id: modelId, contextWindow, images } = typeof listing === "string" ? { id: listing, contextWindow: undefined, images: false } : listing;
+    const { id: modelId, contextWindow, images, thinking } = typeof listing === "string" ? { id: listing, contextWindow: undefined, images: false, thinking: undefined } : listing;
+    const reasoning = !!thinking?.some((level) => LISTED_THINKING_LEVELS.includes(level));
 
     return withMeasuredCapability({
       id: modelId, name: modelId, api: "openai-completions", provider: id, baseUrl,
-      reasoning: false, input: images ? ["text", "image"] : ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: contextWindow ?? 128_000, maxTokens: 16_384,
+      reasoning, ...(reasoning ? { thinkingLevelMap: listedThinkingMap(thinking!) } : {}), input: images ? ["text", "image"] : ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: contextWindow ?? 128_000, maxTokens: 16_384,
     });
   });
 
@@ -132,8 +142,9 @@ function customListing(value: unknown): CustomCatalogModel | undefined {
   if (!isRecord(value) || typeof value.id !== "string" || !value.id) return undefined;
   const contextWindow = [value.context_length, value.context_window].find((size): size is number => typeof size === "number" && size > 0);
   const inputs = isRecord(value.modalities) && Array.isArray(value.modalities.input) ? value.modalities.input : [];
+  const thinking = Array.isArray(value.reasoning_levels) ? value.reasoning_levels.filter((level: unknown): level is string => typeof level === "string") : [];
 
-  return { id: value.id, ...(contextWindow ? { contextWindow } : {}), ...(inputs.includes("image") ? { images: true } : {}) };
+  return { id: value.id, ...(contextWindow ? { contextWindow } : {}), ...(inputs.includes("image") ? { images: true } : {}), ...(thinking.length ? { thinking } : {}) };
 }
 
 export async function fetchCustomCatalog(baseUrl: string, key: string, signal?: AbortSignal): Promise<CustomCatalog> {
