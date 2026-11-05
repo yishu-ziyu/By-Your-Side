@@ -134,10 +134,7 @@ export function renderSettings(): void {
   </section>
     </div>
     <div class="settings-panel" data-settings-panel="appearance" hidden>
-  <section class="sx" aria-labelledby="appearance-title"><div class="sx-head"><h2 id="appearance-title">外观</h2></div><div class="surface rows">      <div class="row stack">
-        <span class="row-main"><span id="tone-title" class="row-title">界面底色</span><span class="row-desc">侧栏、设置页与网页卡片共用同一套底色色阶。点一下立即切换。</span></span>
-        <div id="tone-list" class="radio-rows" role="radiogroup" aria-labelledby="tone-title"></div>
-      </div>
+  <section class="sx" aria-labelledby="appearance-title"><div class="sx-head"><h2 id="appearance-title">光球</h2></div><div class="surface rows">
       <div class="row stack">
         <span class="row-main"><span id="orb-title" class="row-title">光球</span><span class="row-desc">侧栏首屏和语音里的光球。点一下就换。</span></span>
         <div id="orb-list" class="radio-rows" role="radiogroup" aria-labelledby="orb-title"></div>

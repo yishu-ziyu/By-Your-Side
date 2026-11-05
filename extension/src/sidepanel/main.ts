@@ -22,7 +22,7 @@ import { attachShorten } from "./answer-shorten.js";
 import { revealText } from "./stream-reveal.js";
 import { configureOpenThreads, receiveOpenThreadsTasks, refreshOpenThreads } from "./open-threads.js";
 import { mountVoiceOrb } from "../shared/orb-style.js";
-import { syncColorTone } from "../shared/color-tone.js";
+import { syncColorScheme, syncColorTone } from "../shared/color-tone.js";
 import { dropPendingMessage, holdPendingMessage, noteNeedsModelManual, playConnectArrival, renderReceipt } from "./receipt-view.js";
 import { receiptCopy } from "./receipt-copy.js";
 import { handoffChoices } from "../../../shared/handoff-choice.js";
@@ -109,6 +109,7 @@ import { skillResultText } from "../shared/skill-result.js";
 import { isVoiceDiagnosticsOn, VOICE_DIAGNOSTICS_KEY } from "../shared/voice-diagnostics.js";
 
 syncColorTone();
+syncColorScheme();
 
 const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>();
 
@@ -282,7 +283,7 @@ app.innerHTML = `
     <div id="header-menu" popover="auto" aria-label="更多功能">
       <button id="popout-open" type="button"><span>浮在页面上</span></button>
       <button id="model-settings-open" type="button"><span>模型与语音</span></button>
-      <button id="reading-settings-btn" type="button"><span>字体字号</span></button>
+      <button id="reading-settings-btn" type="button"><span>外观</span></button>
     </div>
   </header>
   <div id="ghost-bar" aria-label="直接操作当前页" hidden></div>
@@ -407,7 +408,7 @@ headerMenu.addEventListener("click", (event) => {
 });
 
 mountReadingSettings({
-  topbar: document.getElementById("topbar")!, app,
+  app,
   trigger: document.getElementById("reading-settings-btn") as HTMLButtonElement,
   returnFocus: headerMore,
 });

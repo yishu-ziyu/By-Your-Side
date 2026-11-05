@@ -25,7 +25,7 @@ import { isSubscriptionKey, PTT_SPEAK_RESULT, PTT_SPEECH_KEY } from "../shared/p
 import { OPEN_THREADS_KEY } from "../sidepanel/open-threads.js";
 import { ATTENTION_CUES_KEY, isCuesOn } from "../shared/cues.js";
 import { CUSTOM_PERSONA_MAX_CHARS, DEFAULT_STEP_VOICE, GPT_LIVE_MODEL, isStepVoice, ORB_STYLE_STORAGE_KEY, ORB_STYLES, parseOrbStyle, parseVoicePersona, STEP_VOICE_STORAGE_KEY, STEP_VOICES, VOICE_PERSONA_STORAGE_KEY, VOICE_PERSONAS, type OrbStyle, type VoicePersona } from "../../../shared/voice.js";
-import { COLOR_TONE_KEY, COLOR_TONES, parseColorTone, syncColorTone, writeCachedTone, type ColorTone } from "../shared/color-tone.js";
+import { syncColorScheme, syncColorTone } from "../shared/color-tone.js";
 import { renderSettings } from "./view.js";
 import { mountSettingsNavigation } from "./navigation.js";
 import { mountModelPicker } from "./model-picker.js";
@@ -33,6 +33,7 @@ import { CONNECTION_PREFIX, modelConfig, optionConfig, readConnectionChecks, rea
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
 
 syncColorTone();
+syncColorScheme();
 
 async function writeCredential(providerId: string, credential: Credential | StoredCredential | undefined): Promise<void> {
   const key = `${INPROC_CREDENTIAL_PREFIX}${providerId}`;
@@ -1380,7 +1381,6 @@ async function reloadSettings(): Promise<void> {
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
   renderOrbStyles(parseOrbStyle(stored[ORB_STYLE_STORAGE_KEY]));
-  renderColorTones(parseColorTone(stored[COLOR_TONE_KEY]));
   renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
   renderTranslationStyles(parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]));
   $<HTMLInputElement>("edge-entry").checked = !isEdgeEntryOff(stored[EDGE_ENTRY_KEY]);
@@ -1507,30 +1507,6 @@ function renderTimbres(current: string): void {
 }
 
 const orbList = $("orb-list");
-const toneList = $("tone-list");
-
-function renderColorTones(current: ColorTone): void {
-  toneList.replaceChildren(...COLOR_TONES.map((tone) => {
-    const row = document.createElement("div");
-    row.className = "radio-row";
-    const pick = radioRow("tone-option", tone.label, tone.id === current, tone.summary);
-    pick.dataset.toneOption = tone.id;
-    pick.addEventListener("click", () => {
-      document.documentElement.dataset.tone = tone.id;
-      writeCachedTone(tone.id);
-      renderColorTones(tone.id);
-      void chrome.storage.local.set({ [COLOR_TONE_KEY]: tone.id });
-    });
-    const preview = document.createElement("span");
-    preview.className = "tone-preview";
-    preview.dataset.tonePreview = tone.id;
-    preview.setAttribute("aria-hidden", "true");
-    pick.prepend(preview);
-    row.append(pick);
-
-    return row;
-  }));
-}
 
 function renderOrbStyles(current: OrbStyle): void {
   orbList.replaceChildren(...ORB_STYLES.map((style) => {
@@ -1766,7 +1742,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === CUSTOM_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === READING_ALOUD_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === CUSTOM_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === READING_ALOUD_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));

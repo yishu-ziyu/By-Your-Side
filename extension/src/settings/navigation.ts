@@ -5,7 +5,7 @@ const pages = [
   { id: 'voice', label: '语音与朗读', icon: Mic },
   { id: 'web', label: '网页体验', icon: MousePointer2 },
   { id: 'tasks', label: '任务与通知', icon: ListChecks },
-  { id: 'appearance', label: '外观', icon: Palette },
+  { id: 'appearance', label: '光球', icon: Palette },
   { id: 'data', label: '记忆与数据', icon: Database },
   { id: 'labs', label: '实验功能', icon: FlaskConical },
 ] as const;

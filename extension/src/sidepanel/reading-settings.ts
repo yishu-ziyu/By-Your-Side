@@ -1,76 +1,127 @@
-import { createElement as icon, Settings } from "lucide";
+import { createElement as icon, X } from "lucide";
+import {
+  COLOR_SCHEME_KEY,
+  COLOR_SCHEMES,
+  COLOR_TONE_KEY,
+  COLOR_TONES,
+  DEFAULT_COLOR_SCHEME,
+  DEFAULT_COLOR_TONE,
+  parseColorScheme,
+  parseColorTone,
+  writeCachedScheme,
+  writeCachedTone,
+  type ColorScheme,
+  type ColorTone,
+} from "../shared/color-tone.js";
 
-type ReadingFont = "song" | "hei" | "system";
+const READING_FONTS = [
+  { value: "system", label: "系统", stack: null },
+  { value: "hei", label: "黑体", stack: '"Heiti SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif' },
+  { value: "song", label: "宋体", stack: '"Songti SC", "STSong", "Songti TC", "SimSun", serif' },
+  { value: "kai", label: "楷体", stack: '"Kaiti SC", "STKaiti", "KaiTi", serif', needs: ["Kaiti SC", "STKaiti", "KaiTi"] },
+  { value: "yuan", label: "圆体", stack: '"Yuanti SC", "YouYuan", sans-serif', needs: ["Yuanti SC", "YouYuan"] },
+  { value: "wenkai", label: "文楷", stack: '"LXGW WenKai", "LXGW WenKai Screen", serif', needs: ["LXGW WenKai", "LXGW WenKai Screen"] },
+] as const;
 
-type ReadingSize = "small" | "normal" | "large";
+type ReadingFont = typeof READING_FONTS[number]["value"];
 
-interface ReadingPrefs {
-  font: ReadingFont;
-  size: ReadingSize;
-}
+const READING_CHOICES = {
+  lineHeight: { label: "行距", fallback: 1.7, options: [[1.5, "紧凑"], [1.7, "适中"], [1.9, "宽松"], [2.1, "很松"]] },
+  letterSpacing: { label: "字距", fallback: 0, options: [[0, "标准"], [0.03, "略宽"], [0.06, "宽"]] },
+  margin: { label: "页边", fallback: "normal", options: [["narrow", "窄"], ["normal", "适中"], ["wide", "宽"]] },
+  align: { label: "对齐", fallback: "left", options: [["left", "靠左"], ["justify", "两端"]] },
+  paragraph: { label: "段落", fallback: "gap", options: [["gap", "空一行"], ["indent", "首行缩进"]] },
+  heading: { label: "标题", fallback: 1, options: [[1, "同正文"], [1.15, "大一号"], [1.3, "大两号"]] },
+  list: { label: "列表", fallback: "normal", options: [["tight", "紧凑"], ["normal", "适中"], ["loose", "宽松"]] },
+  code: { label: "代码", fallback: "default", options: [["default", "SF Mono"], ["menlo", "Menlo"], ["wenkai", "文楷等宽"]] },
+  link: { label: "链接", fallback: "underline", options: [["underline", "下划线"], ["none", "只用颜色"]] },
+} as const;
+
+type ReadingChoice = keyof typeof READING_CHOICES;
+
+type ReadingPrefs = { font: ReadingFont; size: number } & {
+  [K in ReadingChoice]: typeof READING_CHOICES[K]["options"][number][0];
+};
+
+const READING_CHOICE_KEYS = Object.keys(READING_CHOICES) as ReadingChoice[];
+
+const READING_SIZE_MIN = 12;
+const READING_SIZE_MAX = 22;
 
 const READING_DEFAULT_PREFS: Readonly<ReadingPrefs> = Object.freeze({
   font: "system",
-  size: "normal",
+  size: 15,
+  ...(Object.fromEntries(READING_CHOICE_KEYS.map((key) => [key, READING_CHOICES[key].fallback])) as { [K in ReadingChoice]: ReadingPrefs[K] }),
 });
-
-const READING_FONT_OPTIONS: ReadonlyArray<{ value: ReadingFont; label: string }> = [
-  { value: "song", label: "宋体" },
-  { value: "hei", label: "黑体" },
-  { value: "system", label: "系统默认" },
-];
-
-const READING_SIZE_OPTIONS: ReadonlyArray<{ value: ReadingSize; label: string }> = [
-  { value: "small", label: "小 13px" },
-  { value: "normal", label: "标准 15px" },
-  { value: "large", label: "大 17px" },
-];
 
 const READING_STORAGE_KEY = "sideagent_reading_appearance";
 
-const READING_FONTS: readonly ReadingFont[] = ["song", "hei", "system"];
+const LEGACY_READING_SIZES: Record<string, number> = { small: 13, normal: 15, large: 17 };
 
-const READING_SIZES: readonly ReadingSize[] = ["small", "normal", "large"];
+const READING_MARGINS: Record<ReadingPrefs["margin"], string | null> = { narrow: "10px", normal: null, wide: "26px" };
 
-const READING_FONT_OVERRIDES: Record<Exclude<ReadingFont, "system">, string> = {
-  hei: '"Heiti SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
-  song: '"Songti SC", "STSong", "Songti TC", "SimSun", serif',
+const READING_LIST_GAPS: Record<ReadingPrefs["list"], string | null> = { tight: "1px", normal: null, loose: "8px" };
+
+const READING_CODE_STACKS: Record<ReadingPrefs["code"], string | null> = {
+  default: null,
+  menlo: "Menlo, Consolas, monospace",
+  wenkai: '"LXGW WenKai Mono", "SF Mono", Menlo, monospace',
 };
 
-const READING_SIZE_OVERRIDES: Record<Exclude<ReadingSize, "normal">, string> = {
-  small: "13px",
-  large: "17px",
-};
+const SPECIMEN_HTML = `<h2>为什么长文要留行距</h2>
+<p>段落之间留出空隙，读到行尾时更容易找到下一行。可以读 <a>Practical Typography</a>，或试试 <code>font-size: 16px</code>。</p>
+<p>字距和页边同样影响舒适度，调一下就能在这里看到变化。</p>
+<ul><li>小字号适合查资料</li><li>大字号适合连续阅读</li></ul>`;
 
-interface ReadingStyleVars {
-  "--reading-font": string | null;
-  "--reading-size": string | null;
-}
-
-function readingStyleVars(prefs: ReadingPrefs): ReadingStyleVars {
-  const normalized = normalizeReadingPrefs(prefs);
+function readingStyleVars(prefs: ReadingPrefs): Record<string, string | null> {
+  const fallback = READING_DEFAULT_PREFS;
+  const indented = prefs.paragraph === "indent";
 
   return {
-    "--reading-font": normalized.font === "system" ? null : READING_FONT_OVERRIDES[normalized.font],
-    "--reading-size": normalized.size === "normal" ? null : READING_SIZE_OVERRIDES[normalized.size],
+    "--reading-font": READING_FONTS.find((font) => font.value === prefs.font)?.stack ?? null,
+    "--reading-size": prefs.size === fallback.size ? null : `${prefs.size}px`,
+    "--reading-line": prefs.lineHeight === fallback.lineHeight ? null : String(prefs.lineHeight),
+    "--reading-tracking": prefs.letterSpacing === fallback.letterSpacing ? null : `${prefs.letterSpacing}em`,
+    "--reading-pad": READING_MARGINS[prefs.margin],
+    "--reading-align": prefs.align === fallback.align ? null : prefs.align,
+    "--reading-para-gap": indented ? "2px" : null,
+    "--reading-indent": indented ? "2em" : null,
+    "--reading-heading": prefs.heading === fallback.heading ? null : String(prefs.heading),
+    "--reading-list-gap": READING_LIST_GAPS[prefs.list],
+    "--reading-code": READING_CODE_STACKS[prefs.code],
+    "--reading-link": prefs.link === fallback.link ? null : prefs.link,
   };
 }
 
 function sameReadingPrefs(a: ReadingPrefs, b: ReadingPrefs): boolean {
-  return a.font === b.font && a.size === b.size;
+  return (Object.keys(READING_DEFAULT_PREFS) as (keyof ReadingPrefs)[]).every((key) => a[key] === b[key]);
+}
+
+function hasLegacySize(raw: unknown): boolean {
+  return !!raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).size === "string";
+}
+
+function normalizeSize(raw: unknown): number {
+  const size = typeof raw === "string" ? LEGACY_READING_SIZES[raw] : raw;
+
+  return typeof size === "number" && Number.isInteger(size) && size >= READING_SIZE_MIN && size <= READING_SIZE_MAX
+    ? size
+    : READING_DEFAULT_PREFS.size;
 }
 
 function normalizeReadingPrefs(raw: unknown): ReadingPrefs {
   const source =
     raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const choices = Object.fromEntries(READING_CHOICE_KEYS.map((key) => {
+    const options: ReadonlyArray<readonly [unknown, string]> = READING_CHOICES[key].options;
+
+    return [key, options.some(([value]) => value === source[key]) ? source[key] : READING_CHOICES[key].fallback];
+  })) as { [K in ReadingChoice]: ReadingPrefs[K] };
 
   return {
-    font: READING_FONTS.includes(source.font as ReadingFont)
-      ? (source.font as ReadingFont)
-      : READING_DEFAULT_PREFS.font,
-    size: READING_SIZES.includes(source.size as ReadingSize)
-      ? (source.size as ReadingSize)
-      : READING_DEFAULT_PREFS.size,
+    font: READING_FONTS.find((font) => font.value === source.font)?.value ?? READING_DEFAULT_PREFS.font,
+    size: normalizeSize(source.size),
+    ...choices,
   };
 }
 
@@ -84,6 +135,22 @@ function applyReadingPrefs(
     if (value === null) root.style.removeProperty(name);
     else root.style.setProperty(name, value);
   }
+}
+
+// WHY: Chrome offers no API to list installed fonts without a permission prompt, so a font counts as present when it changes measured width against every generic family.
+function fontInstalled(doc: Document, family: string): boolean {
+  const context = doc.createElement("canvas").getContext("2d");
+
+  if (!context) return false;
+  const sample = "永和九年阅读Ag";
+
+  return ["monospace", "serif", "sans-serif"].some((generic) => {
+    context.font = `40px ${generic}`;
+    const base = context.measureText(sample).width;
+    context.font = `40px "${family}", ${generic}`;
+
+    return context.measureText(sample).width !== base;
+  });
 }
 
 interface ReadingSettingsPort {
@@ -159,13 +226,6 @@ interface ReadingSettingsDeps {
   onStatus?: (status: ReadingStatus) => void;
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
-  const text = typeof error === "string" ? error : "";
-
-  return text || "无法写入本地存储";
-}
-
 class ReadingSettingsStore {
   private current: ReadingPrefs = { ...READING_DEFAULT_PREFS };
   private pending: ReadingPrefs | null = null;
@@ -198,6 +258,8 @@ class ReadingSettingsStore {
     if (this.revision > 0) return;
     this.current = normalizeReadingPrefs(stored);
     this.deps.apply(this.current);
+
+    if (hasLegacySize(stored)) this.enqueue(this.current);
   }
 
   update(patch: Partial<ReadingPrefs>): void {
@@ -208,7 +270,7 @@ class ReadingSettingsStore {
   }
 
   reset(): void {
-    this.update({ font: READING_DEFAULT_PREFS.font, size: READING_DEFAULT_PREFS.size });
+    this.update({ ...READING_DEFAULT_PREFS });
   }
 
   retry(): void {
@@ -297,18 +359,17 @@ class ReadingSettingsStore {
   }
 }
 
-const SAVE_STATUS_TEXT: Record<ReadingSaveState, string> = {
-  idle: "",
-  saving: "保存中…",
-  saved: "已保存",
-  error: "未保存",
-};
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  const text = typeof error === "string" ? error : "";
+
+  return text || "无法写入本地存储";
+}
 
 interface ReadingSettingsHost {
-  topbar: HTMLElement;
-  trigger?: HTMLButtonElement;
+  trigger: HTMLButtonElement;
   returnFocus?: HTMLElement;
-  app?: HTMLElement | null;
+  app: HTMLElement;
   styleRoot?: HTMLElement | null;
   port?: ReadingSettingsPort;
   doc?: Document;
@@ -324,96 +385,272 @@ interface ReadingSettingsHandle {
 export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettingsHandle {
   const doc = host.doc ?? document;
   const styleRoot = host.styleRoot ?? doc.documentElement;
+  const button = host.trigger;
+  const syncs: Array<(prefs: ReadingPrefs) => void> = [];
 
-  const wrapper = doc.createElement("div");
-  wrapper.className = "reading-settings";
-
-  const button = host.trigger ?? doc.createElement("button");
-  button.id = "reading-settings-btn";
-  button.type = "button";
-  button.className = "reading-settings-btn";
-  button.title = host.trigger ? "字体字号" : "设置";
-  button.setAttribute("aria-label", host.trigger ? "字体字号" : "设置");
+  button.title = "外观";
+  button.setAttribute("aria-label", "外观");
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", "reading-settings-panel");
 
-  if (!host.trigger) button.append(icon(Settings));
+  const make = <K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] => {
+    const el = doc.createElement(tag);
 
-  const panel = doc.createElement("section");
-  panel.id = "reading-settings-panel";
-  panel.className = "reading-settings-panel";
-  panel.setAttribute("role", "dialog");
-  panel.setAttribute("aria-label", "字体字号");
-  panel.hidden = true;
+    if (className) el.className = className;
+    if (text) el.textContent = text;
 
-  const head = doc.createElement("div");
-  head.className = "reading-settings-head";
-  const title = doc.createElement("h2");
-  title.textContent = "字体字号";
-  const closeBtn = doc.createElement("button");
-  closeBtn.id = "reading-settings-close";
-  closeBtn.type = "button";
-  closeBtn.textContent = "关闭";
-  head.append(title, closeBtn);
+    return el;
+  };
 
-  function field(rowLabel: string, selectId: string, options: ReadonlyArray<{ value: string; label: string }>) {
-    const row = doc.createElement("div");
-    row.className = "reading-settings-row";
-    const label = doc.createElement("label");
-    label.setAttribute("for", selectId);
-    label.textContent = rowLabel;
-    const select = doc.createElement("select");
-    select.id = selectId;
-    select.className = "reading-settings-select";
+  function radios<V>(
+    name: string,
+    options: ReadonlyArray<{ value: V; label: string; className?: string; prepare?: (label: HTMLLabelElement) => void }>,
+    pick: (value: V) => void,
+  ): { inputs: Array<{ input: HTMLInputElement; label: HTMLLabelElement; value: V }>; sync(value: V): void } {
+    const inputs = options.map((option, index) => {
+      const label = make("label", option.className ?? "appearance-seg-option");
+      const input = make("input");
+      input.type = "radio";
+      input.name = name;
+      input.value = String(index);
+      input.addEventListener("change", () => pick(option.value));
+      label.append(input);
+      option.prepare?.(label);
+      label.append(make("span", "", option.label));
 
-    for (const option of options) {
-      const el = doc.createElement("option");
-      el.value = option.value;
-      el.textContent = option.label;
-      select.append(el);
-    }
+      return { input, label, value: option.value };
+    });
 
-    row.append(label, select);
-
-    return { row, select };
+    return {
+      inputs,
+      sync(value) {
+        for (const item of inputs) item.input.checked = item.value === value;
+      },
+    };
   }
 
-  const fontField = field("字体", "reading-settings-font", READING_FONT_OPTIONS);
-  const sizeField = field("字号", "reading-settings-size", READING_SIZE_OPTIONS);
-  const hint = doc.createElement("p");
-  hint.className = "reading-settings-hint";
-  hint.textContent = "调整回答正文的字体和大小。";
+  function segmented<V>(
+    name: string,
+    label: string,
+    options: ReadonlyArray<readonly [V, string]>,
+    pick: (value: V) => void,
+  ): { row: HTMLElement; sync(value: V): void } {
+    const box = make("div", "appearance-seg");
+    box.setAttribute("role", "radiogroup");
+    box.setAttribute("aria-label", label);
+    box.style.setProperty("--seg-count", String(options.length));
+    const group = radios(name, options.map(([value, text]) => ({ value, label: text })), pick);
+    box.append(make("i"), ...group.inputs.map((item) => item.label));
+    const row = make("div", "appearance-row");
+    row.append(make("span", "appearance-row-label", label), box);
 
-  const foot = doc.createElement("div");
-  foot.className = "reading-settings-foot";
-  const resetBtn = doc.createElement("button");
-  resetBtn.id = "reading-settings-reset";
-  resetBtn.type = "button";
-  resetBtn.className = "reading-settings-reset";
-  resetBtn.textContent = "恢复默认";
-  const status = doc.createElement("p");
+    return {
+      row,
+      sync(value) {
+        group.sync(value);
+        box.style.setProperty("--seg-index", String(Math.max(0, options.findIndex(([option]) => option === value))));
+      },
+    };
+  }
+
+  function choiceRow<K extends ReadingChoice>(key: K): HTMLElement {
+    const choice = READING_CHOICES[key];
+    const options = choice.options as unknown as ReadonlyArray<readonly [ReadingPrefs[K], string]>;
+    const field = segmented(`reading-${key}`, choice.label, options, (value) => {
+      store.update({ [key]: value } as unknown as Partial<ReadingPrefs>);
+    });
+    syncs.push((prefs) => field.sync(prefs[key]));
+
+    return field.row;
+  }
+
+  function fontTiles(): HTMLElement {
+    const box = make("div", "appearance-fonts");
+    box.setAttribute("role", "radiogroup");
+    box.setAttribute("aria-label", "字体");
+    const available = READING_FONTS.filter((font) => !("needs" in font) || font.needs.some((family) => fontInstalled(doc, family)));
+    const group = radios("reading-font", available.map((font) => ({
+      value: font.value as ReadingFont,
+      label: font.label,
+      className: "appearance-font",
+      prepare: (label: HTMLLabelElement) => {
+        const glyph = make("b", "", "永");
+
+        if (font.stack) glyph.style.fontFamily = font.stack;
+        label.append(glyph);
+      },
+    })), (value) => store.update({ font: value }));
+    box.append(...group.inputs.map((item) => item.label));
+    syncs.push((prefs) => group.sync(prefs.font));
+
+    return box;
+  }
+
+  function sizeRow(): HTMLElement {
+    const step = (delta: number, label: string, className: string) => {
+      const stepper = make("button", className, "A");
+      stepper.type = "button";
+      stepper.setAttribute("aria-label", label);
+      stepper.addEventListener("click", () => {
+        store.update({ size: Math.min(READING_SIZE_MAX, Math.max(READING_SIZE_MIN, store.prefs.size + delta)) });
+      });
+
+      return stepper;
+    };
+    const range = make("input");
+    range.type = "range";
+    range.min = String(READING_SIZE_MIN);
+    range.max = String(READING_SIZE_MAX);
+    range.step = "1";
+    range.setAttribute("aria-label", "字号");
+    range.addEventListener("input", () => store.update({ size: Number(range.value) }));
+    const value = make("output");
+    const control = make("div", "appearance-size");
+    control.append(step(-1, "小一号", "appearance-size-down"), range, step(1, "大一号", "appearance-size-up"), value);
+    const row = make("div", "appearance-row");
+    row.append(make("span", "appearance-row-label", "字号"), control);
+    syncs.push((prefs) => {
+      range.value = String(prefs.size);
+      value.textContent = String(prefs.size);
+    });
+
+    return row;
+  }
+
+  const panel = make("dialog", "reading-settings-panel");
+  panel.id = "reading-settings-panel";
+  panel.setAttribute("aria-labelledby", "reading-settings-title");
+
+  const head = make("div", "reading-settings-head");
+  const title = make("h2", "", "外观");
+  title.id = "reading-settings-title";
+  const closeBtn = make("button");
+  closeBtn.id = "reading-settings-close";
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "关闭");
+  closeBtn.append(icon(X));
+  head.append(title, closeBtn);
+
+  const specimen = make("div", "msg assistant markdown reading-specimen");
+  specimen.setAttribute("aria-hidden", "true");
+  specimen.innerHTML = SPECIMEN_HTML;
+
+  const status = make("p", "reading-settings-status");
   status.id = "reading-settings-status";
-  status.className = "reading-settings-status";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
-  const retryBtn = doc.createElement("button");
+  const retryBtn = make("button", "reading-settings-retry", "重试保存");
   retryBtn.id = "reading-settings-retry";
   retryBtn.type = "button";
-  retryBtn.className = "reading-settings-retry";
-  retryBtn.textContent = "重试保存";
   retryBtn.hidden = true;
+
+  const writeTheme = (values: Record<string, string>) => {
+    void chrome.storage.local.set(values).then(
+      () => {
+        status.textContent = "";
+      },
+      (error: unknown) => {
+        status.textContent = `未保存：${errorMessage(error)}`;
+      },
+    );
+  };
+
+  const toneGroup = radios<ColorTone>("color-tone", COLOR_TONES.map((tone) => ({
+    value: tone.id,
+    label: tone.label,
+    className: "tone-option",
+    prepare: (label: HTMLLabelElement) => {
+      label.dataset.toneOption = tone.id;
+      label.dataset.tonePreview = tone.id;
+      label.append(make("b", "", "永 Ag"));
+    },
+  })), (tone) => {
+    doc.documentElement.dataset.tone = tone;
+    writeCachedTone(tone);
+    writeTheme({ [COLOR_TONE_KEY]: tone });
+  });
+  const toneBox = make("div", "appearance-tones");
+  toneBox.setAttribute("role", "radiogroup");
+  toneBox.setAttribute("aria-label", "底色");
+  toneBox.append(...toneGroup.inputs.map((item) => item.label));
+
+  const schemeField = segmented<ColorScheme>("color-scheme", "明暗", COLOR_SCHEMES.map((scheme) => [scheme.id, scheme.label] as const), (scheme) => {
+    writeCachedScheme(scheme);
+    writeTheme({ [COLOR_SCHEME_KEY]: scheme });
+    schemeField.sync(scheme);
+  });
+
+  const pages = [
+    { name: "文字", kids: () => [fontTiles(), sizeRow(), choiceRow("lineHeight"), choiceRow("letterSpacing"), choiceRow("margin"), choiceRow("align"), choiceRow("paragraph")] },
+    { name: "回答", kids: () => [choiceRow("heading"), choiceRow("list"), choiceRow("code"), choiceRow("link")] },
+    { name: "外观", kids: () => [toneBox, schemeField.row] },
+  ];
+  const tabList = make("div", "appearance-seg appearance-tabs");
+  tabList.setAttribute("role", "tablist");
+  tabList.setAttribute("aria-label", "外观分类");
+  tabList.style.setProperty("--seg-count", String(pages.length));
+  tabList.append(make("i"));
+  const body = make("div", "appearance-body");
+  const tabs = pages.map((page, index) => {
+    const tab = make("button", "appearance-seg-option", page.name);
+    tab.type = "button";
+    tab.id = `appearance-tab-${index}`;
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-controls", `appearance-page-${index}`);
+    tab.addEventListener("click", () => selectTab(index));
+    tab.addEventListener("keydown", (event) => {
+      const delta = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+
+      if (!delta) return;
+      event.preventDefault();
+      selectTab((index + delta + pages.length) % pages.length);
+      tabs[(index + delta + pages.length) % pages.length]?.focus();
+    });
+    tabList.append(tab);
+
+    return tab;
+  });
+  const sections = pages.map((page, index) => {
+    const section = make("section", "appearance-page");
+    section.id = `appearance-page-${index}`;
+    section.setAttribute("role", "tabpanel");
+    section.setAttribute("aria-labelledby", `appearance-tab-${index}`);
+    section.append(...page.kids());
+    body.append(section);
+
+    return section;
+  });
+
+  function selectTab(active: number): void {
+    tabList.style.setProperty("--seg-index", String(active));
+    tabs.forEach((tab, index) => {
+      tab.setAttribute("aria-selected", String(index === active));
+      tab.tabIndex = index === active ? 0 : -1;
+    });
+    sections.forEach((section, index) => {
+      section.hidden = index !== active;
+    });
+  }
+
+  const foot = make("div", "reading-settings-foot");
+  const resetBtn = make("button", "reading-settings-reset", "恢复默认");
+  resetBtn.id = "reading-settings-reset";
+  resetBtn.type = "button";
   foot.append(resetBtn, status, retryBtn);
 
-  panel.append(head, fontField.row, sizeField.row, hint, foot);
-
-  if (!host.trigger) wrapper.append(button);
-  wrapper.append(panel);
-  host.topbar.append(wrapper);
+  panel.append(head, specimen, tabList, body, foot);
+  host.app.append(panel);
+  selectTab(0);
 
   function syncControls(prefs: ReadingPrefs): void {
-    fontField.select.value = prefs.font;
-    sizeField.select.value = prefs.size;
+    for (const sync of syncs) sync(prefs);
+  }
+
+  async function syncTheme(): Promise<void> {
+    const stored = await chrome.storage.local.get([COLOR_TONE_KEY, COLOR_SCHEME_KEY]);
+    toneGroup.sync(parseColorTone(stored[COLOR_TONE_KEY]));
+    schemeField.sync(parseColorScheme(stored[COLOR_SCHEME_KEY]));
   }
 
   const store = new ReadingSettingsStore({
@@ -423,66 +660,45 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
       syncControls(prefs);
     },
     onStatus: (next) => {
-      status.textContent = next.state === "error" ? `${SAVE_STATUS_TEXT[next.state]}：${next.message}` : SAVE_STATUS_TEXT[next.state];
+      status.textContent = next.state === "error" ? `未保存：${next.message}` : "";
       status.dataset.state = next.state;
       retryBtn.hidden = next.state !== "error";
     },
   });
 
-  let open = false;
-
-  function focusTrigger(): void {
-    (host.returnFocus ?? button).focus();
-  }
-
   function openPanel(): void {
-    open = true;
-    panel.hidden = false;
+    void syncTheme();
+    panel.showModal();
     button.setAttribute("aria-expanded", "true");
-    fontField.select.focus();
   }
 
-  function closePanel(returnFocus: boolean): void {
-    open = false;
-    panel.hidden = true;
+  function closePanel(): void {
+    if (panel.open) panel.close();
+  }
+
+  const onTrigger = () => openPanel();
+  button.addEventListener("click", onTrigger);
+  closeBtn.addEventListener("click", closePanel);
+  panel.addEventListener("close", () => {
     button.setAttribute("aria-expanded", "false");
-    const active = doc.activeElement;
-
-    if (returnFocus || (active && wrapper.contains(active))) focusTrigger();
-  }
-
-  button.addEventListener("click", () => {
-    if (open) closePanel(false);
-    else openPanel();
+    (host.returnFocus ?? button).focus();
   });
-  closeBtn.addEventListener("click", () => closePanel(true));
 
-  fontField.select.addEventListener("change", () => {
-    store.update({ font: fontField.select.value as ReadingFont });
+  resetBtn.addEventListener("click", () => {
+    store.reset();
+    doc.documentElement.dataset.tone = DEFAULT_COLOR_TONE;
+    writeCachedTone(DEFAULT_COLOR_TONE);
+    writeCachedScheme(DEFAULT_COLOR_SCHEME);
+    writeTheme({ [COLOR_TONE_KEY]: DEFAULT_COLOR_TONE, [COLOR_SCHEME_KEY]: DEFAULT_COLOR_SCHEME });
+    toneGroup.sync(DEFAULT_COLOR_TONE);
+    schemeField.sync(DEFAULT_COLOR_SCHEME);
   });
-  sizeField.select.addEventListener("change", () => {
-    store.update({ size: sizeField.select.value as ReadingSize });
-  });
-  resetBtn.addEventListener("click", () => store.reset());
   retryBtn.addEventListener("click", () => store.retry());
 
-  function onDocumentKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape" && open) {
-      event.preventDefault();
-      closePanel(true);
-    }
-  }
-
-  function onOutsidePointerdown(event: Event): void {
-    if (!open) return;
-    const target = event.target as Node | null;
-
-    if (target && (wrapper.contains(target) || button.contains(target))) return;
-    closePanel(false);
-  }
-
-  doc.addEventListener("keydown", onDocumentKeydown);
-  doc.addEventListener("pointerdown", onOutsidePointerdown, true);
+  const onThemeChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+    if (area === "local" && (COLOR_TONE_KEY in changes || COLOR_SCHEME_KEY in changes)) void syncTheme();
+  };
+  chrome.storage.onChanged.addListener(onThemeChanged);
 
   syncControls(store.prefs);
   void store.start();
@@ -490,12 +706,12 @@ export function mountReadingSettings(host: ReadingSettingsHost): ReadingSettings
   return {
     store,
     open: openPanel,
-    close: () => closePanel(true),
+    close: closePanel,
     destroy: () => {
-      doc.removeEventListener("keydown", onDocumentKeydown);
-      doc.removeEventListener("pointerdown", onOutsidePointerdown, true);
+      button.removeEventListener("click", onTrigger);
+      chrome.storage.onChanged.removeListener(onThemeChanged);
       store.stop();
-      wrapper.remove();
+      panel.remove();
     },
   };
 }
