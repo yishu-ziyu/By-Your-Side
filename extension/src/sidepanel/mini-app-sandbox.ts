@@ -1,8 +1,8 @@
 import { removeWebRtc } from "./sandbox-offline.js";
 
-type MiniAppMessage = { html: string; state: string | null };
+type MiniAppMessage = { html: string; state: string | null; maxHeight?: number };
 
-const MAX_HEIGHT = 720;
+const DEFAULT_MAX_HEIGHT = 720;
 
 const BASE = `<style>
 :root { color-scheme: light dark; --bys-text: #1d1d1b; --bys-muted: #6b6b66; --bys-border: #e3e3df; --bys-subtle: #f3f3f1; --bys-accent: #2c5fb3; --bys-good: #2f7a4f; }
@@ -12,10 +12,24 @@ body { padding: 12px; overflow-x: hidden; }
 *, *::before, *::after { box-sizing: border-box; }
 </style>`;
 
-const bridge = (state: string | null) => `<script>
+const bridge = (state: string | null, maxHeight: number) => `<script>
 (() => {
   const post = (data) => parent.postMessage(Object.assign({ miniApp: data.kind }, data), "*");
   let saved = null;
+  let nextCall = 0;
+  const calls = new Map();
+  addEventListener("message", (e) => {
+    const reply = e.source === parent && e.data && e.data.miniAppReply;
+    const call = reply && calls.get(reply);
+    if (!call) return;
+    calls.delete(reply);
+    if (e.data.ok) call.resolve(e.data.value); else call.reject(new Error(e.data.error || "页面没有响应"));
+  });
+  const ask = (op, seconds) => new Promise((resolve, reject) => {
+    const id = ++nextCall;
+    calls.set(id, { resolve, reject });
+    post({ kind: "page", id, op, seconds });
+  });
   try { saved = ${JSON.stringify(state)} === null ? null : JSON.parse(${JSON.stringify(state)}); } catch { saved = null; }
   window.bys = Object.freeze({
     state: saved,
@@ -27,6 +41,7 @@ const bridge = (state: string | null) => `<script>
       post({ kind: "save", state: text });
     },
     say(text) { post({ kind: "draft", text: String(text ?? "").slice(0, 500) }); },
+    page: Object.freeze({ captions: () => ask("captions"), seek: (seconds) => ask("seek", Number(seconds)) }),
   });
   const fail = (message) => post({ kind: "error", message: String(message).slice(0, 300) });
   addEventListener("error", (e) => fail(e.message || "脚本出错"));
@@ -35,7 +50,7 @@ const bridge = (state: string | null) => `<script>
   // 没超过侧栏给的最高时框和内容一样高，差的一两像素不该变成一条滚动条；超过了才让它滚。
   const height = () => {
     const h = Math.ceil(document.body.getBoundingClientRect().height);
-    document.documentElement.style.overflowY = h <= ${MAX_HEIGHT} ? "hidden" : "auto";
+    document.documentElement.style.overflowY = h <= ${maxHeight} ? "hidden" : "auto";
     post({ kind: "height", h });
   };
   addEventListener("load", () => {
@@ -54,12 +69,12 @@ let written = false;
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
   if (event.source !== window.parent || written) return;
-  const { html, state } = event.data as MiniAppMessage;
+  const { html, state, maxHeight } = event.data as MiniAppMessage;
 
   written = true;
   removeWebRtc();
   document.open();
-  document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">${BASE}${bridge(typeof state === "string" ? state : null)}</head><body>${String(html)}</body></html>`);
+  document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">${BASE}${bridge(typeof state === "string" ? state : null, typeof maxHeight === "number" ? maxHeight : DEFAULT_MAX_HEIGHT)}</head><body>${String(html)}</body></html>`);
   document.close();
 });
 
