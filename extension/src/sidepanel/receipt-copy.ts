@@ -1,3 +1,4 @@
+import { RESUME_UNCONFIRMED } from "../../../shared/handoff-choice.js";
 import type { TaskReceipt, TaskReceiptDiff } from "../../../shared/task-actions.js";
 
 function diffLine(diff: TaskReceiptDiff): string {
@@ -19,7 +20,7 @@ export function receiptCopy(receipt: TaskReceipt, selectedConversationId: string
   }
 
   if (local && receipt.status === "accepted" && receipt.action === "steer") {
-    if (receipt.message.startsWith("选择已保存，自动继续未确认")) return { summary: receipt.message, detail, collapsed: false };
+    if (receipt.message.startsWith(RESUME_UNCONFIRMED)) return { summary: receipt.message, detail, collapsed: false };
     const queued = receipt.message.includes("继续后生效");
 
     return { summary: queued ? "修改已保存，点「交还」后生效" : "修改已送达当前任务", detail, collapsed: true };

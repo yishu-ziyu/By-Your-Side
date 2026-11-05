@@ -1,18 +1,5 @@
 import { hostOf } from "./tab-mentions.js";
 
-interface TaskPlanLines {
-  go: string;
-  dont: string;
-}
-
-interface TaskPlan {
-  shouldAsk: (text: string, pages: Array<{ url: string }>, currentUrl: string) => boolean;
-  announce: (text: string, pages: Array<{ title: string; url: string }>, currentUrl: string, currentTitle?: string) => void;
-  adopt: (root: HTMLDetailsElement, body: HTMLElement) => boolean;
-  endRun: () => void;
-  reset: () => void;
-}
-
 interface PlanReceiptView {
   filled: number | null;
   steps: number;
@@ -26,85 +13,15 @@ interface PlanReceiptView {
   onUndo: () => void;
 }
 
-const WRITE = /填|写进|写入|写成|写上|写好|改成|改为|改掉|点一?下|点击|提交|删除|输入|粘贴|勾选|选择|选成|选为|下单|购买|发帖|发表|保存(?!按钮|键|在|是)|新建(?!按钮|键|在|是)|创建(?!按钮|键|在|是)|填到|填进/;
-
 function clip(text: string, max: number): string {
   const t = text.replace(/\s+/g, " ").trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
-}
-
-function uniqueHosts(urls: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const url of urls) {
-    const host = hostOf(url);
-    if (!host || seen.has(host)) continue;
-    seen.add(host);
-    out.push(host);
-  }
-  return out;
 }
 
 export function siteName(url: string, title?: string): string {
   const host = hostOf(url);
   if (!host || /^(localhost|127\.|0\.0\.0\.0)/.test(host)) return clip((title ?? "").replace(/\s+/g, " "), 12) || host || "当前页";
   return host;
-}
-
-function planLines(text: string, pages: Array<{ title: string; url: string }>, currentUrl: string, currentTitle?: string): TaskPlanLines {
-  const names: string[] = [];
-  for (const item of [{ url: currentUrl, title: currentTitle ?? "" }, ...pages]) {
-    const name = siteName(item.url, item.title);
-    if (name && !names.includes(name)) names.push(name);
-  }
-  const go = names.join("、") || "当前页";
-  return { go, dont: notAuthorized(text) };
-}
-
-function notAuthorized(text: string): string {
-  const asked = text
-    .replace(/报名表|报名页|订单|订阅/g, "")
-    .replace(/(?:不要|别|不用|不需要|先不|无需|不)(?:直接|马上|帮我|去|点击|点)*(?:提交|报名|预订|预约|订|付款|支付|下单|购买|发帖|发表|发送)/g, "");
-  const left = [
-    !/提交|报名|预订|预约|订|发帖|发表|发送|下单/.test(asked) && "提交",
-    !/付款|支付|下单|购买|买下/.test(asked) && "付款",
-  ].filter(Boolean);
-  return left.length ? left.join("、") : "你没说的事";
-}
-
-function needsTaskPlan(text: string, pages: Array<{ url: string }>, currentUrl: string): boolean {
-  const hosts = uniqueHosts([currentUrl, ...pages.map((p) => p.url)]);
-  return hosts.length > 1 || WRITE.test(text);
-}
-
-export function mountTaskPlan(opts: { root: HTMLElement }): TaskPlan {
-  let waiting: HTMLElement | null = null;
-  const clear = (): void => { waiting?.remove(); waiting = null; };
-
-  return {
-    shouldAsk: needsTaskPlan,
-    announce: (text, pages, currentUrl, currentTitle) => {
-      clear();
-      const lines = planLines(text, pages, currentUrl, currentTitle);
-      const row = document.createElement("div");
-      row.className = "task-plan-goal";
-      row.setAttribute("aria-label", "这次的计划");
-      row.textContent = `会去 ${lines.go} · 不会做 ${lines.dont}`;
-      opts.root.prepend(row);
-      waiting = row;
-    },
-    adopt: (root, body) => {
-      if (!waiting) return false;
-      body.prepend(waiting);
-      waiting = null;
-      root.classList.add("plan-card");
-      root.open = true;
-
-      return true;
-    },
-    endRun: clear,
-    reset: clear,
-  };
 }
 
 export function paintPlanReceipt(root: HTMLDetailsElement, view: PlanReceiptView): void {

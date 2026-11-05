@@ -184,11 +184,10 @@ try {
   await until(async () => (await rp.evaluate(work, 'st.textContent')) === '账单账号已保存', 10000, '用户保存了账单');
   const afterSave = await settle(rings, all => all?.length === 4 && all.every(r => r.faded));
   check('R2 三栏填好、用户点了保存：4 个圈都淡出', afterSave?.length === 4 && afterSave.every(r => r.faded), afterSave);
+  const sentBefore = payloads.length;
   await rp.click(panel, '#input'); await rp.typeText(panel, STEER); await rp.pressEnter(panel);
   const steerSaved = await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.user .user-msg-text")].some(n => n.textContent === ${JSON.stringify(STEER)})`) || undefined, 10000, '补充要求已发出').catch(() => null);
   check('页面归用户期间的补充要求发成了自己的消息', !!steerSaved, steerSaved);
-  const sentBefore = payloads.length;
-  await rp.click(panel, '.handoff-card .btn-primary');
   await until(async () => !!(await done()), 10000, '卡片收起');
   check('交还后卡片收成一行「你已交还 · 我从你所在的页面接着做」', (await done()) === '你已交还 · 我从你所在的页面接着做' && !(await card()), { done: await done(), card: await card() });
   const handedBack = await settle(rings, noRings);
