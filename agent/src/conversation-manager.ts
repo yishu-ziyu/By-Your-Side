@@ -1322,17 +1322,6 @@ return receipt;
         return {status:'applied',runId:request.expectedRunId,message:'恢复已停止，原任务仍保留在检查点；没有继续执行。'};
       }
 
-      if(request.action==='abort'&&snapshot.state==='interrupted'){
-        this.pendingStarts.delete(request.conversationId);
-        this.checkpointResumes.delete(request.conversationId);
-        this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
-        this.progress.get(request.conversationId)?.abort();
-        entry.runtime.handleMessage({type:'abort'});
-        await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
-
-        return {status:'applied',runId:request.expectedRunId,message:'已终止保留在检查点的原任务。'};
-      }
-
       if (request.action === 'start') {
         const reserved=this.taskQueue.get(request.conversationId);
         const ownsReservation=reserved?.state==='starting'&&reserved.request.requestId===request.requestId;
@@ -1406,7 +1395,7 @@ return receipt;
 
         if(request.action==='resume'&&!entry.runtime.session.isHeld()&&!entry.runtime.control.isGroupHeld())throw new TaskActionRejected(snapshot.state==='aborted'?'任务已经中止，不能继续原任务。':'原任务没有暂停，未执行交还。');
 
-        if(request.action!=='resume'&&!['running','paused',...(request.action==='abort'?['aborted']:[])].includes(snapshot.state))throw new TaskActionRejected('当前没有正在执行的任务，操作未执行。');
+        if(request.action!=='resume'&&!['running','paused',...(request.action==='abort'?['aborted','interrupted']:[])].includes(snapshot.state))throw new TaskActionRejected('当前没有正在执行的任务，操作未执行。');
         this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
         const result=await this.controls.request(request.conversationId,request.requestId,request.action,request.expectedRunId,request.scope,request.tabId);
 

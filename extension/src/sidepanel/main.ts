@@ -2758,12 +2758,12 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
     lastUserHasPage = flags.userHasPage;
     currentRun?.graph.user(flags.userHasPage);
 
-    if (!flags.userHasPage) collapseHandoffCard(running ? "你已交还 · 我从你所在的页面接着做" : "任务已中止");
+    if (!flags.userHasPage) collapseHandoffCard(!running);
     const phase = document.getElementById("handoff-banner")?.dataset.phase;
 
     if (flags.userHasPage && phase !== "user" && phase !== "leaving") applyHandoffPhase("user");
     else if (!flags.userHasPage && phase === "user") applyHandoffPhase("agent");
-  }
+  } else if (!flags.live) collapseHandoffCard(true);
 
   takeoverBtn.hidden = !flags.takeoverVisible && !flags.userHasPage;
   translateBtn.hidden = !takeoverBtn.hidden;
@@ -3517,11 +3517,11 @@ function showHandoffCard(ask: string, choice = false): void {
   handoffCard = card;
 }
 
-function collapseHandoffCard(text = "你已交还 · 我从你所在的页面接着做"): void {
-  if (!handoffCard) return;
-  if (handoffCard.dataset.choice === "true" && text.startsWith("你已交还")) text = "已继续 · 我从当前页面接着做";
-  handoffCard.className = "handoff-done";
-  handoffCard.textContent = text;
+function collapseHandoffCard(stopped = false): void {
+  for (const card of messagesEl.querySelectorAll<HTMLElement>(".handoff-card")) {
+    card.textContent = stopped ? "任务已中止" : card.dataset.choice === "true" ? "已继续 · 我从当前页面接着做" : "你已交还 · 我从你所在的页面接着做";
+    card.className = "handoff-done";
+  }
   handoffCard = null;
 }
 
