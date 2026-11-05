@@ -3,6 +3,7 @@ import { firstEventTimeout, hedgeAfter } from "../../shared/model-capabilities.j
 import { createAssistantMessageEventStream, type Api, type AssistantMessage, type AssistantMessageEvent, type AssistantMessageEventStream, type Model, type ModelThinkingLevel, type StreamOptions } from "@earendil-works/pi-ai";
 import type { ExtensionFactory, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ModelPort, ModelQueueOptions } from "./agent-loop.js";
+import type { ContextFitRecord } from "./context-fit.js";
 import type { ModelRequestObservation } from "./model-request-trace.js";
 import type { PiSessionPersistence } from "./pi-session-persistence.js";
 import { MODEL_FIRST_EVENT_MS, MODEL_HEDGE_MS, MODEL_STALL_AFTER_START_MS, MODEL_STALL_MID_STREAM_MS } from "../../shared/timeouts.js";
@@ -24,12 +25,9 @@ export interface PiAgentLoopOptions {
   onModelRequest?: (request: ModelRequestObservation) => void;
   onModelResponse?: (status: number) => void;
   onModelHedge?: (record: ModelHedgeRecord) => void;
+  onContextFit?: (record: ContextFitRecord) => void;
   effort?: (model: Model<Api>) => ModelThinkingLevel;
 }
-
-export const ELIDE_MIN_CHARS = 1000;
-
-export const PAGE_OBSERVATION_MARK = "[FRESH PAGE OBSERVATION";
 
 const MODEL_FIRST_EVENT_TIMEOUT_MS = MODEL_FIRST_EVENT_MS;
 

@@ -11,7 +11,8 @@ import type { AgentSessionEvent, AgentSessionEventListener, PromptOptions, Sessi
 import { RunNotStarted, type AgentLoop } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
 import type { ModelRequestObservation } from "./model-request-trace.js";
-import { ELIDE_MIN_CHARS, PAGE_OBSERVATION_MARK, streamThrough, type PiAgentLoopOptions } from "./pi-agent-loop.js";
+import { ContextFit, RUN_CONTEXT_HEADER } from "./context-fit.js";
+import { streamThrough, type PiAgentLoopOptions } from "./pi-agent-loop.js";
 import type { PiSessionPersistence } from "./pi-session-persistence.js";
 import { composeSystemPrompt } from "./system-prompt.js";
 
@@ -21,9 +22,10 @@ const REPLAY_SAFE = new Set(["snapshot", "screenshot", "read_element", "read_ele
 
 const REPEAT_NOTE_AT = 3;
 const REPEAT_TRACKED_TOOLS = new Set(["tabs", "snapshot", "read_element", "read_elements", "browser_run"]);
-const RUN_CONTEXT_HEADER = "本次运行的上下文，不是用户消息，无需回应这段数据。之前消息前的同类段落只是历史，现状以这一段为准。";
 const CONTINUE_TEXT = `${RUN_CONTEXT_HEADER}\n\n上一次模型调用没有完成。接着做同一件事，已经做完的工具不要再执行。`;
 const MAX_RETRIES = 2;
+const MAX_OVERFLOW_RETRIES = 2;
+const TOOL_OUTPUT_STORED = { maxBytes: 4 * 1024 * 1024, maxLines: 200_000 };
 const PROMPT_WARM_FRESH_MS = 4 * 60_000;
 const PROMPT_WARM_TEXT = "Reply with OK.";
 const PROMPT_WARM_TIMEOUT_MS = 15_000;
@@ -81,7 +83,7 @@ export class DurableAgentLoop implements AgentLoop {
   private markRunEnd: (() => void) | undefined;
   private runEnd: Promise<void> = Promise.resolve();
   private runInput: string | undefined;
-  private elide = false;
+  private readonly contextFit = new ContextFit();
   private runStart = 0;
   private cutText: (() => boolean) | null = null;
   private cutForSteer = false;
@@ -259,28 +261,36 @@ export class DurableAgentLoop implements AgentLoop {
     const observed = (stream: AssistantMessageEventStream) => retryable(stream, message => {
       this.retryLimit = isModelTimeoutError(message.errorMessage ?? "") ? 1 : MAX_RETRIES;
     });
-    const earlier = elideBefore(messages, runFloor(messages, this.runInput));
-    if (this.elide) return observed(send(earlier ?? messages));
+    const floor = runFloor(messages, this.runInput);
+    const record = this.options.onContextFit;
+    const first = this.contextFit.fit(messages, model, floor, record);
     const out = createAssistantMessageEventStream();
     void (async () => {
-      const held: AssistantMessageEvent[] = [];
-      let first = true;
-      for await (const event of send(messages)) {
-        if (first && event.type === "start") { held.push(event); continue; }
-        if (first && earlier && event.type === "error" && isContextOverflow(event.error, model.contextWindow ?? 0)) {
-          this.elide = true;
+      let view = first;
+      for (let overflows = 0; ; overflows += 1) {
+        const held: AssistantMessageEvent[] = [];
+        let waiting = true;
+        let retry: Message[] | null = null;
+        for await (const event of send(view)) {
+          if (waiting && event.type === "start") { held.push(event); continue; }
+          if (waiting && event.type === "error" && overflows < MAX_OVERFLOW_RETRIES && isContextOverflow(event.error, model.contextWindow ?? 0)) {
+            retry = this.contextFit.afterOverflow(messages, model, floor, record);
+            if (retry) break;
+          }
+          waiting = false;
+          for (const start of held.splice(0)) out.push(start);
+          out.push(event);
+        }
+        if (retry) {
           this.emit({ type: "compaction_start", reason: "overflow" });
           this.emit({ type: "compaction_end", reason: "overflow", result: undefined, aborted: false, willRetry: true });
-          for await (const retried of observed(send(earlier))) out.push(retried);
-          out.end();
-          return;
+          view = retry;
+          continue;
         }
-        first = false;
-        for (const start of held.splice(0)) out.push(start);
-        out.push(event);
+        for (const start of held) out.push(start);
+        out.end();
+        return;
       }
-      for (const start of held) out.push(start);
-      out.end();
     })();
     return observed(out);
   }
@@ -306,6 +316,8 @@ export class DurableAgentLoop implements AgentLoop {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
+      // WHY: the harness default keeps 50 KB of whole lines, so a one-line JSON read over that reaches the model empty; ContextFit decides what the model sees and the transcript keeps the rest for read_attachment.
+      outputLimits: TOOL_OUTPUT_STORED,
       ...(REPLAY_SAFE.has(tool.name) ? { replay: "safe" as const } : {}),
       execute: async (args, api, context) => {
         await this.flushPersistence();
@@ -647,44 +659,6 @@ function runFloor(messages: readonly Message[], input: string | undefined): numb
   let at = messages.length - 1;
   while (at >= 0 && !isInput(messages[at]!)) at -= 1;
   return at > 0 && textOf(messages[at - 1]!).startsWith(RUN_CONTEXT_HEADER) ? at - 1 : at;
-}
-
-function elideBefore(messages: readonly Message[], floor: number): Message[] | null {
-  let elided = 0;
-  const stub = (chars: number): TextContent => ({ type: "text", text: `[Earlier content elided to fit the context window: ${chars} chars. The page may have changed since; read it again if needed.]` });
-  const trim = (text: string): string | null => {
-    if (text.startsWith(RUN_CONTEXT_HEADER)) return text.length >= ELIDE_MIN_CHARS ? stub(text.length).text : null;
-    const at = text.indexOf(PAGE_OBSERVATION_MARK);
-    return at >= 0 && text.length - at >= ELIDE_MIN_CHARS ? `${text.slice(0, at)}${stub(text.length - at).text}` : null;
-  };
-  const result = messages.map((message, index): Message => {
-    if (index >= floor) return message;
-    if (message.role === "toolResult") {
-      const chars = message.content.reduce((sum, part) => sum + (part.type === "text" ? part.text.length : ELIDE_MIN_CHARS), 0);
-      if (chars < ELIDE_MIN_CHARS) return message;
-      elided += 1;
-      return { ...message, content: [stub(chars)] };
-    }
-    if (message.role !== "user") return message;
-    if (typeof message.content === "string") {
-      const text = trim(message.content);
-      if (text === null) return message;
-      elided += 1;
-      return { ...message, content: text };
-    }
-    let changed = false;
-    const content = message.content.map(part => {
-      if (part.type === "image") { changed = true; return stub(ELIDE_MIN_CHARS); }
-      const text = trim(part.text);
-      if (text === null) return part;
-      changed = true;
-      return { ...part, text };
-    });
-    if (!changed) return message;
-    elided += 1;
-    return { ...message, content };
-  });
-  return elided ? result : null;
 }
 
 function retryable(stream: AssistantMessageEventStream, onError?: (message: AssistantMessage) => void): AssistantMessageEventStream {
