@@ -5,7 +5,7 @@ import { oneLine } from "../util.js";
 
 interface CdpEvalResult {
   result?: { type?: string; value?: unknown; objectId?: string; subtype?: string; className?: string; description?: string };
-  exceptionDetails?: { text?: string; exception?: { description?: string } };
+  exceptionDetails?: { text?: string; exception?: { description?: string; className?: string } };
 }
 
 function invokeBareFunction(code: string): string {
@@ -29,6 +29,11 @@ const READ_ONLY_MESSAGE = "JS 只允许读取页面和计算数据；点击、�
 
 function refused(detail: string): Error {
   return Object.assign(new Error(`${detail} ${READ_ONLY_MESSAGE}`), { executionFact: "not_executed" as const });
+}
+
+function readFailure(details: NonNullable<CdpEvalResult["exceptionDetails"]>): string {
+  if (details.exception?.description?.startsWith("EvalError: Possible side-effect")) return "脚本无法作为只读表达式执行：浏览器判定这个调用可能改动页面（例如 localStorage.getItem、localStorage.key、canvas 的 getImageData），换写法也会被拒绝。不要再试这个调用，改用 snapshot、read_element 或 screenshot 获取信息。";
+  return `脚本读取时抛出 ${details.exception?.className?.slice(0, 40) ?? "异常"}，没有拿到结果。`;
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -115,7 +120,7 @@ export async function evaluateJs(
       timeout: 3_000,
       objectGroup,
     }, beforeExecute, 5_000);
-    if (result.exceptionDetails) throw refused("脚本无法作为只读表达式执行，或读取过程发生异常。");
+    if (result.exceptionDetails) throw refused(readFailure(result.exceptionDetails));
     return { value: await readData(tabId, result.result) };
   } finally {
     await sendCommand(tabId, "Runtime.releaseObjectGroup", { objectGroup }, undefined, 1_000).catch(error => { console.warn("[readonly-js] releaseObjectGroup failed:", oneLine(error)); });

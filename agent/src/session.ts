@@ -3379,7 +3379,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     if (!current()) { abandon(); return; }
 
-    const continuation = verdict ? this.continuePolicy.next(verdict, { runId, snapshot, goal: this.activeGoal ?? "", failed: this.goalLedger.failuresFor(runId), progress: this.noProgressPolicy?.progressVersion }) : null;
+    const continuation = verdict ? this.continuePolicy.next(verdict, { runId, snapshot, goal: this.activeGoal ?? "", failed: this.goalLedger.failuresFor(runId), progress: this.noProgressPolicy?.progressVersion, stoppedForNoProgress: this.noProgressPolicy?.hasStopped }) : null;
 
     if (verdict && continuation && "prompt" in continuation && this.session && !movedTo) {
       const session = this.session;
