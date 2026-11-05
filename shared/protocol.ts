@@ -1239,7 +1239,7 @@ export function isTeamView(v: unknown): v is TeamView {
 
   if (typeof t.capturedAt !== "number" || !Number.isFinite(t.capturedAt)) return false;
 
-  if (!Array.isArray(t.members) || t.members.length === 0) return false;
+  if (!Array.isArray(t.members) || t.members.length === 0 && t.phase !== "aborted") return false;
 
   return t.members.every(isTeamMemberView);
 }

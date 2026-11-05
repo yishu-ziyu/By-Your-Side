@@ -97,7 +97,7 @@ import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
 import { mountSlashSkills } from "./slash-skills.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
-import { mountTaskPlan, paintPlanReceipt, siteName } from "./task-plan.js";
+import { paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
 import { connectSkillOperations, deleteSkillOperation, knownSkillOperations, onSkillOperationsChange, receiveSkillOperationRun, receiveSkillOperations, refreshSkillOperations, runSkillOperation, skillOperationsLoaded } from "./skill-operations.js";
 import { mountChapters } from "./chapters.js";
@@ -518,7 +518,6 @@ const tabMentions = mountTabMentions({
 
 let pendingContinueDraft: string | null = null;
 
-const taskPlan = mountTaskPlan({ root: document.getElementById("task-bar-root")! });
 
 const answerCommand = mountAnswerCommand({
   inputEl,
@@ -1148,7 +1147,6 @@ function selectConversation(id: string, notify = true): void {
   renderConversations();
   renderTaskStrip();
   taskBar.reset();
-  taskPlan.reset();
   queryTaskView();
 
   if (notify) port?.postMessage({ kind: "select_conversation", conversationId: id } satisfies PanelToBg);
@@ -2503,7 +2501,6 @@ function ensureRun(): NonNullable<typeof currentRun> {
   graph.el.after(trail);
   const start = runStartAt || eventTime();
   retirePlanCard();
-  taskPlan.adopt(root, body);
 
   currentRun = {
     root,
@@ -2761,12 +2758,12 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
     lastUserHasPage = flags.userHasPage;
     currentRun?.graph.user(flags.userHasPage);
 
-    if (!flags.userHasPage) collapseHandoffCard(running ? "你已交还 · 我从你所在的页面接着做" : "任务已中止");
+    if (!flags.userHasPage) collapseHandoffCard(!running);
     const phase = document.getElementById("handoff-banner")?.dataset.phase;
 
     if (flags.userHasPage && phase !== "user" && phase !== "leaving") applyHandoffPhase("user");
     else if (!flags.userHasPage && phase === "user") applyHandoffPhase("agent");
-  }
+  } else if (!flags.live) collapseHandoffCard(true);
 
   takeoverBtn.hidden = !flags.takeoverVisible && !flags.userHasPage;
   translateBtn.hidden = !takeoverBtn.hidden;
@@ -2804,7 +2801,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
       : teamView?.phase === "partial" || teamView?.phase === "restoring"
         ? PLACEHOLDER_PARTIAL
         : flags.composer === "user"
-          ? (handoffCard?.dataset.choice === "true" ? "回复你的选择，我会接着做" : PLACEHOLDER_USER)
+          ? (handoffCard?.dataset.choice === "true" ? "回复你的选择，我会接着做" : handoffCard ? "做好了说一声，我接着做" : PLACEHOLDER_USER)
           : flags.composer === "running"
             ? PLACEHOLDER_RUNNING
             : PLACEHOLDER_IDLE;
@@ -2869,7 +2866,6 @@ function finishRun(): void {
 
   if (!run) return;
   for (const acts of run.root.querySelectorAll(".run-escalate")) acts.remove();
-  taskPlan.endRun();
   lastRun = run;
   stopLiveSeconds(run);
   const endedAt = eventTime();
@@ -3521,11 +3517,11 @@ function showHandoffCard(ask: string, choice = false): void {
   handoffCard = card;
 }
 
-function collapseHandoffCard(text = "你已交还 · 我从你所在的页面接着做"): void {
-  if (!handoffCard) return;
-  if (handoffCard.dataset.choice === "true" && text.startsWith("你已交还")) text = "已继续 · 我从当前页面接着做";
-  handoffCard.className = "handoff-done";
-  handoffCard.textContent = text;
+function collapseHandoffCard(stopped = false): void {
+  for (const card of messagesEl.querySelectorAll<HTMLElement>(".handoff-card")) {
+    card.textContent = stopped ? "任务已中止" : card.dataset.choice === "true" ? "已继续 · 我从当前页面接着做" : "你已交还 · 我从你所在的页面接着做";
+    card.className = "handoff-done";
+  }
   handoffCard = null;
 }
 
@@ -4071,7 +4067,6 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         materialsTray?.noteReceipt(ev.receipt);
 
         if (ev.receipt.action === "steer" && (ev.receipt.status === "rejected" || ev.receipt.status === "failed")) steerRibbon.reset();
-        if (ev.receipt.action === "start" && (ev.receipt.status === "rejected" || ev.receipt.status === "failed") && ev.receipt.conversationId === selectedConversationId) taskPlan.endRun();
 
         if (ev.receipt.conversationId === selectedConversationId) {
           if (ev.receipt.action === "abort") {
@@ -5011,13 +5006,6 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
 
         if (!running) {
           runStartAt = eventTime();
-          if (restoring) {
-            const context = entry.item.context;
-            const pages = context?.pages ?? [];
-            if (taskPlan.shouldAsk(entry.item.text, pages, context?.url ?? "")) {
-              taskPlan.announce(entry.item.text, pages, context?.url ?? "", context?.title);
-            }
-          }
         }
         else if (steering) steerRibbon.noteSteer(entry.item.text);
         confirmSentText(entry.item.text);
@@ -5370,7 +5358,6 @@ function restoreLostSend(): void {
   if (!lost || lost.postedOn === "queued" || lost.postedOn === port || lost.conversationId !== selectedConversationId) return;
   unconfirmedSend = null;
   materialsTray?.forgetRequest(lost.conversationId, lost.requestId);
-  taskPlan.endRun();
 
   if (resending?.conversationId === lost.conversationId && resending.text === lost.text) resending = null;
 
@@ -5438,10 +5425,6 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
     : undefined);
 
   const mentioned = quick ? [] : tabMentions.pages();
-  const planUrl = pendingAsk?.url || activeTabInfo?.url || "";
-  const planTitle = pendingAsk?.title || activeTabInfo?.title || "";
-  const planPages = tabMentions.items();
-  const announcePlan = !quick && !running && !held && taskPlan.shouldAsk(text, mentioned, planUrl);
 
   const clientAttachments = pendingAtts.length > 0 ? pendingAtts : undefined;
   const conversation = selectedConversationId;
@@ -5468,7 +5451,6 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
 
  return false; }
 
-  if (announcePlan) taskPlan.announce(text, planPages, planUrl, planTitle);
 
   marginalia.showConversation();
   const citationPage = context ?? activeTabInfo;

@@ -3597,7 +3597,6 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 .ctx-chip[data-status="unread"] { text-decoration: line-through; color: var(--text-tertiary); }
 .ctx-chip .ctx-ok { color: var(--ok); font-size: var(--fs-micro); }
 
-.task-plan-goal { margin: 0 0 4px; font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--text-secondary); }
 
 details.run-steps.plan-card {
   padding: 6px 12px;
