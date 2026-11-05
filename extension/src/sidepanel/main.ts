@@ -13,7 +13,8 @@ import { resetSendConfirmCards, sendConfirmCard } from "./send-confirm-card.js";
 import { mountDictation } from "./dictation.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 import { renderMarkdownHtml } from "./markdown.js";
-import { bindAnswerCards, renderAnswerHtml } from "./answer-cards.js";
+import { bindAnswerCards, markFreshApp, renderAnswerHtml } from "./answer-cards.js";
+import { appMarkup } from "../../../shared/saved-tools.js";
 import { answerSpeech } from "../../../shared/answer-cards.js";
 import { linkifyPageRefs, quotedNames } from "./page-refs.js";
 import { attachAnswerActions as attachCopyActions, dropShowTab, offerWorkingTab, setAnswerTime, siteGlyph } from "./answer-actions.js";
@@ -477,6 +478,12 @@ const slashSkills = mountSlashSkills({
     };
     paint();
     if (!runSkillOperation(operation.id, input, activeTabContext()?.tabId, paint)) paint({ type: "skill_operation_run_result", requestId: "", ok: false, error: "助手没连上，请再试一次。" });
+  },
+  openTool: (tool) => {
+    markFreshApp();
+    const card = addMsg("msg assistant markdown", "");
+    card.innerHTML = renderMarkdown(appMarkup(tool));
+    scrollToEnd();
   },
   verifiedRequest: isLatestVerifiedRequest,
 });

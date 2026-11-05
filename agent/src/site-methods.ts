@@ -1,3 +1,4 @@
+import { parseTimedCaptions } from "../../shared/timed-captions.js";
 import { SITE_METHODS, siteOfUrl } from "../../shared/site-methods.js";
 import type { ToolName } from "../../shared/protocol.js";
 
@@ -24,36 +25,9 @@ const READ_X_POST = String.raw`(() => {
 })()`;
 
 function transcript(text: string): { text: string; format: string } | null {
-  try {
-    const value = fields(JSON.parse(text));
-    if (value && Array.isArray(value.body)) {
-      const lines = value.body.map(fields).filter((item): item is Fields => !!item && typeof item.content === "string");
-      if (lines.length === value.body.length && lines.length) return { text: lines.map(item => item.content).join("\n"), format: "bilibili-json" };
-    }
-    if (value && Array.isArray(value.events)) {
-      const lines = value.events.map(fields).flatMap(item => Array.isArray(item?.segs) ? item.segs.map(fields).flatMap(segment => typeof segment?.utf8 === "string" ? [segment.utf8] : []).join("") : []).filter(Boolean);
-      if (lines.length) return { text: lines.join("\n"), format: "youtube-json3" };
-    }
-  } catch {  }
+  const parsed = parseTimedCaptions(text);
 
-  const decode = (value: string) => value.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&#(x[\da-f]+|\d+);/gi, (_, code: string) => {
-    const point = code[0]!.toLowerCase() === "x" ? parseInt(code.slice(1), 16) : Number(code);
-    return point >= 0 && point <= 0x10ffff ? String.fromCodePoint(point) : "�";
-  }).replace(/&(lt|gt|quot|apos);/g, (_, name: string) => ({ lt: "<", gt: ">", quot: '"', apos: "'" })[name] ?? "");
-
-  if (/^\uFEFF?WEBVTT\b/.test(text)) {
-    const lines = text.split(/\r?\n\r?\n/).flatMap(block => {
-      const parts = block.split(/\r?\n/);
-      const at = parts.findIndex(line => /\d{2}:\d{2}.*-->/.test(line));
-      return at < 0 ? [] : [decode(parts.slice(at + 1).join("\n"))];
-    }).filter(Boolean);
-    if (lines.length) return { text: lines.join("\n"), format: "webvtt" };
-  }
-  if (/<(?:transcript|timedtext)\b/.test(text)) {
-    const lines = [...text.matchAll(/<(?:text|p)\b[^>]*>([\s\S]*?)<\/(?:text|p)>/g)].map(match => decode(match[1]!)).filter(Boolean);
-    if (lines.length) return { text: lines.join("\n"), format: "timedtext" };
-  }
-  return null;
+  return parsed && { text: parsed.cues.map(cue => cue.text).join("\n"), format: parsed.format };
 }
 
 const READ_FLOMO = String.raw`(() => {

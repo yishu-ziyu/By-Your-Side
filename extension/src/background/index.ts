@@ -12,6 +12,7 @@ import { installMemoryBackup } from "./memory-backup.js";
 import { installSkillPackages } from "./skill-packages.js";
 import type { NudgeCard } from "../shared/nudge.js";
 import { installPageInteractions } from "./page-interactions.js";
+import { registerToolPage } from "./tool-page.js";
 import { pageTranslation } from "./exec/page-translation.js";
 import { installReading } from "./reading.js";
 import type { ReadingRecord } from "../shared/reading-state.js";
@@ -387,6 +388,8 @@ chrome.runtime.onConnect.addListener(port => {
   if (msg.kind === "ping") port.postMessage({ kind: "pong" } satisfies BgToPanel);
  });
 });
+
+registerToolPage(sender => sender.id === chrome.runtime.id && isPanelUrl(sender.url));
 
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
  if (!raw || typeof raw !== "object" || (raw as {type?:unknown}).type !== "page_stop_click") return;

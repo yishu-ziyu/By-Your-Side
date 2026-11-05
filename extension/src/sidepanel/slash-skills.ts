@@ -4,6 +4,8 @@ import { deleteSkillOperation, knownSkillOperations, onSkillOperationsChange, re
 import { targetWindowId } from "./target-window.js";
 import { onSkillPackagesChange, removeSkillPackageConfig, saveSkillPackageConfig, skillPackageConfig } from "./skill-packages.js";
 import type { JsonObject, JsonSchema } from "../../../shared/learned-operations.js";
+import type { SavedTool } from "../../../shared/saved-tools.js";
+import { allSavedTools, onSavedToolsChange, removeTool, savedToolsFor } from "./saved-tools.js";
 
 interface PromptSkill {
   id: string;
@@ -134,6 +136,7 @@ interface SlashSkillsOptions {
   inputEl: HTMLTextAreaElement;
   run: (text: string) => void;
   runOperation: (operation: SkillOperationSummary, input: JsonObject) => void;
+  openTool: (tool: SavedTool) => void;
   verifiedRequest: (bubble: HTMLElement) => boolean;
 }
 
@@ -143,7 +146,7 @@ interface SlashSkills {
   saveFromText: (text: string) => void;
 }
 
-export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verifiedRequest }: SlashSkillsOptions): SlashSkills {
+export function mountSlashSkills({ composerEl, inputEl, run, runOperation, openTool, verifiedRequest }: SlashSkillsOptions): SlashSkills {
   let skills: PromptSkill[] = [];
   let pageUrl: string | null = null;
   let loaded = false;
@@ -185,7 +188,9 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
     if (!manage.hidden && !editing) renderManageList();
   });
 
-  type Row = { kind: "skill"; skill: PromptSkill } | { kind: "operation"; operation: SkillOperationSummary } | { kind: "manage" };
+  onSavedToolsChange(() => { refresh(); });
+
+  type Row = { kind: "skill"; skill: PromptSkill } | { kind: "operation"; operation: SkillOperationSummary } | { kind: "tool"; tool: SavedTool } | { kind: "manage" };
 
   async function syncPage(): Promise<void> {
     const windowId = await targetWindowId().catch(() => undefined);
@@ -237,7 +242,8 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
     if (dismissedFor !== null) dismissedFor = null;
     const matched = skills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.body.toLowerCase().includes(q));
     const operations = skillOperationsFor(pageUrl).filter((o) => !q || o.name.toLowerCase().includes(q) || o.purpose.toLowerCase().includes(q));
-    rows = [...operations.map((operation): Row => ({ kind: "operation", operation })), ...matched.map((skill): Row => ({ kind: "skill", skill })), { kind: "manage" }];
+    const savedTools = savedToolsFor(pageUrl).filter((tool) => !q || tool.name.toLowerCase().includes(q));
+    rows = [...savedTools.map((tool): Row => ({ kind: "tool", tool })), ...operations.map((operation): Row => ({ kind: "operation", operation })), ...matched.map((skill): Row => ({ kind: "skill", skill })), { kind: "manage" }];
     active = Math.min(active, rows.length - 1);
 
     if (rows.length > 1 && active === rows.length - 1) active = 0;
@@ -251,7 +257,12 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", String(i === active));
 
-      if (row.kind === "operation") {
+      if (row.kind === "tool") {
+        const glyph = el("span", "pskill-emoji");
+        glyph.append(icon(Zap));
+        item.dataset.savedTool = "";
+        item.append(glyph, el("span", "pskill-name", row.tool.name), el("span", "pskill-hint", row.tool.canSeek ? "读当前视频的字幕，点一句让视频跳转" : "读当前视频的字幕"));
+      } else if (row.kind === "operation") {
         const glyph = el("span", "pskill-emoji");
         glyph.append(icon(Zap));
         item.append(glyph, el("span", "pskill-name", row.operation.name), el("span", "pskill-badge", "直接运行"), el("span", "pskill-hint", row.operation.purpose));
@@ -295,6 +306,12 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
 
     if (row.kind === "operation") {
       startOperation(row.operation);
+      return;
+    }
+
+    if (row.kind === "tool") {
+      setInput("");
+      openTool(row.tool);
       return;
     }
 
@@ -507,7 +524,26 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, verif
       list.append(row);
     }
 
-    if (!skills.length && !knownSkillOperations().length) list.append(el("div", "pskill-empty", "还没有技能。也可以在发过的消息上点「存成技能」。"));
+    for (const tool of allSavedTools()) {
+      const row = el("div", "pskill-row pskill-op-row");
+      const glyph = el("span", "pskill-emoji");
+      glyph.append(icon(Zap));
+      row.append(glyph, el("span", "pskill-name", tool.name), el("span", "pskill-badge", siteLabel(tool.site)));
+      const del = el("button", "pskill-btn danger", "删除");
+      del.type = "button";
+      del.dataset.toolDelete = "";
+      del.addEventListener("click", () => {
+        if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "确认删除";
+
+ return; }
+
+        void removeTool(tool.html).then(renderManageList);
+      });
+      row.append(del);
+      list.append(row);
+    }
+
+    if (!skills.length && !knownSkillOperations().length && !allSavedTools().length) list.append(el("div", "pskill-empty", "还没有技能。也可以在发过的消息上点「存成技能」。"));
     manage.append(list);
     const add = el("button", "pskill-btn primary", "新建技能");
     add.type = "button";
