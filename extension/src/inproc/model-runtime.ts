@@ -15,7 +15,7 @@ import { isTransientModelError, retryWhenBusy } from "../../../shared/provider-b
 import { isProviderBusyError } from "../../../shared/user-facing.js";
 import { measuredModelIds, providerConcurrency, thinkingProfile, unlistedModel, withMeasuredCapability } from "../../../shared/model-capabilities.js";
 import { gatedCall, gatedStream, ProviderGate, type ModelQueueWait, type QueuePurpose } from "./provider-gate.js";
-import { COMMANDCODE_PROVIDER_ID, CUSTOM_PROVIDER_ID, CUSTOM_ENDPOINT_ENV, STEPFUN_PROVIDER_ID, type InprocModelConfig, type StoredCredentials } from "./shared.js";
+import { COMMANDCODE_PROVIDER_ID, CUSTOM_PROVIDER_ID, CUSTOM_ENDPOINT_ENV, readCustomCatalog, STEPFUN_PROVIDER_ID, type CustomCatalog, type CustomCatalogModel, type InprocModelConfig, type StoredCredentials } from "./shared.js";
 import { codexIdentity, readCodexCatalog } from "./codex-catalog.js";
 import { compactModelImages } from "./model-image-payload.js";
 
@@ -99,15 +99,20 @@ export interface ModelRuntime {
   providerChoices(): ProviderChoice[];
   loadProviderModels(signal?: AbortSignal): Promise<void>;
   applyCodexCatalog(value: unknown): Promise<void>;
+  applyCustomCatalog(value: unknown): void;
 }
 
 interface CompatibleProvider { provider: Provider; models: Model<"openai-completions">[] }
 
-function openAICompatible(id: string, name: string, baseUrl: string, modelIds: readonly string[]): CompatibleProvider {
-  const models = modelIds.map((modelId): Model<"openai-completions"> => withMeasuredCapability({
-    id: modelId, name: modelId, api: "openai-completions", provider: id, baseUrl,
-    reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: 16_384,
-  }));
+function openAICompatible(id: string, name: string, baseUrl: string, listings: readonly (string | CustomCatalogModel)[]): CompatibleProvider {
+  const models = listings.map((listing): Model<"openai-completions"> => {
+    const { id: modelId, contextWindow, images } = typeof listing === "string" ? { id: listing, contextWindow: undefined, images: false } : listing;
+
+    return withMeasuredCapability({
+      id: modelId, name: modelId, api: "openai-completions", provider: id, baseUrl,
+      reasoning: false, input: images ? ["text", "image"] : ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: contextWindow ?? 128_000, maxTokens: 16_384,
+    });
+  });
 
   const provider = createProvider({
     id, name, baseUrl,
@@ -121,6 +126,24 @@ function openAICompatible(id: string, name: string, baseUrl: string, modelIds: r
   });
 
   return { provider, models };
+}
+
+function customListing(value: unknown): CustomCatalogModel | undefined {
+  if (!isRecord(value) || typeof value.id !== "string" || !value.id) return undefined;
+  const contextWindow = [value.context_length, value.context_window].find((size): size is number => typeof size === "number" && size > 0);
+  const inputs = isRecord(value.modalities) && Array.isArray(value.modalities.input) ? value.modalities.input : [];
+
+  return { id: value.id, ...(contextWindow ? { contextWindow } : {}), ...(inputs.includes("image") ? { images: true } : {}) };
+}
+
+export async function fetchCustomCatalog(baseUrl: string, key: string, signal?: AbortSignal): Promise<CustomCatalog> {
+  const response = await omitCookies(`${baseUrl}/models`, { signal, ...(key ? { headers: { authorization: `Bearer ${key}` } } : {}) });
+
+  if (!response.ok) throw new Error(`模型清单返回 ${response.status}`);
+  const body: unknown = await response.json();
+  const data = isRecord(body) && Array.isArray(body.data) ? body.data : [];
+
+  return { baseUrl, models: data.flatMap((item: unknown) => customListing(item) ?? []) };
 }
 
 const COMMANDCODE_BASE_URL = "https://api.commandcode.ai/provider";
@@ -217,6 +240,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   const codexProvider = models.getProvider("openai-codex");
   const codexBuiltins = models.getModels("openai-codex");
   let codexOnline = false;
+  let customCatalog: CustomCatalog | null = null;
   let codexCandidates = new Map<string, Model<Api>>();
   let codexCatalogGeneration = 0;
   models.setProvider(openAICompatible(STEPFUN_PROVIDER_ID, "阶跃星辰", STEPFUN_STEP_PLAN_BASE_URL, STEPFUN_MODELS).provider);
@@ -230,10 +254,11 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
 
     if (config.provider === CUSTOM_PROVIDER_ID) {
       if (!config.baseUrl) throw new Error("自定义服务缺少地址：在「模型与语音」里填写。");
-      const { provider, models: [model] } = openAICompatible(CUSTOM_PROVIDER_ID, "自定义 OpenAI 兼容", config.baseUrl, [config.modelId]);
+      const listed = customCatalog?.baseUrl === config.baseUrl ? customCatalog.models : [];
+      const { provider, models: customModels } = openAICompatible(CUSTOM_PROVIDER_ID, "自定义 OpenAI 兼容", config.baseUrl, listed.some((m) => m.id === config.modelId) ? listed : [...listed, config.modelId]);
       models.setProvider(provider);
 
-      return model!;
+      return customModels.find((m) => m.id === config.modelId)!;
     }
 
     const known = models.getModel(config.provider, config.modelId) ?? (config.provider === "openai-codex" ? codexCandidates.get(config.modelId) : undefined);
@@ -290,6 +315,14 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
     if (listings.length) models.setProvider(commandCodeProvider(listings, anthropicCatalog));
   }
 
+  function applyCustomCatalog(value: unknown): void {
+    const next = readCustomCatalog(value);
+
+    if (!next && !customCatalog) return;
+    customCatalog = next;
+    models.setProvider(openAICompatible(CUSTOM_PROVIDER_ID, "自定义 OpenAI 兼容", next?.baseUrl ?? "", next?.models ?? []).provider);
+  }
+
   async function applyCodexCatalog(value: unknown): Promise<void> {
     if (!codexProvider) return;
     const generation = ++codexCatalogGeneration;
@@ -324,7 +357,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   }
 
   const runtime: ModelRuntime = {
-    sessionId, credentials, models, resolveModel, headersFor, providerChoices, loadProviderModels, applyCodexCatalog,
+    sessionId, credentials, models, resolveModel, headersFor, providerChoices, loadProviderModels, applyCodexCatalog, applyCustomCatalog,
     createCoreModels: (selectedConfig, fastConfig, backupConfig) => createCoreModelPort(runtime, selectedConfig, fastConfig, backupConfig),
   };
 
