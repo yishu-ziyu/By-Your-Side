@@ -19,6 +19,7 @@ type ControlOwner = "agent" | "user";
 export const USER_BLOCKED_ERROR = "页面现在归你，操作未执行";
 
 export const FOREIGN_TAB_ERROR = "该页正在由其他会话使用";
+export const HELD_BY_OTHER_TASK_ERROR = "这一页已交给用户，另一个任务正暂停等用户交还，操作未执行";
 
 export function aggregateRunState(states: Iterable<AgentRunState>): AgentRunState {
   let sawUser = false;

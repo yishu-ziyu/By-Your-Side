@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { HELD_BY_OTHER_TASK_ERROR } from "../../shared/control.js";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
 import { emailStepIsNext, gaveUpWithoutChange, type GoalVerdict } from "./goal-check.js";
 
@@ -53,6 +54,7 @@ export class ContinuePolicy {
   next(verdict: GoalVerdict, ctx: RunContext): Continuation {
     this.selectRun(ctx.runId);
     if (verdict.status !== "continue") return { settle: verdict.status };
+    if (ctx.failed.some(item => item.reason.startsWith(HELD_BY_OTHER_TASK_ERROR))) return { settle: "open" };
     const progress = ctx.progress ?? 0;
     if (progress > this.lastProgress) { this.attempts = 0; this.startedAt = null; }
     this.lastProgress = progress;

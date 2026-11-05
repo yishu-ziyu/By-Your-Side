@@ -47,6 +47,7 @@ import {endingFromResults,resultHasWriteEffect,resultLocksWhenUnknown} from '../
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
 import { warmUpStarted } from './warm-connection.js';
 import { RESUME_UNCONFIRMED } from '../../shared/handoff-choice.js';
+import { HELD_BY_OTHER_TASK_ERROR } from "../../shared/control.js";
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
@@ -1604,13 +1605,23 @@ return receipt;
     const promise = this.factory(id, pump, summary).then((runtime) => {
       summary.model = runtime.session.modelName();
       runtime.onHandToUser?.((ask, targets) => this.handToUser(id, ask, targets));
-      runtime.control.setTabCoordinator?.(async (owner, members) => {
-        const source = this.entries.get(owner)?.runtime;
+      runtime.control.setTabCoordinator?.(async (owner, members, userNamedThisPage) => {
+        const held = this.entries.get(owner);
+        const source = held?.runtime;
 
-        if (!source) return;
+        if (!source) return {};
 
-        if (source.session.isHeld()) throw new Error("页面现在归你，操作未执行");
+        if (source.session.isHeld()) {
+          const title = held!.summary.title;
+          if (!userNamedThisPage) throw new Error(`${HELD_BY_OTHER_TASK_ERROR}。占着它的任务是「${title}」。只有用户最新一句话明确要操作这一页时，才调用 take_tab 并带 userNamedThisPage:true；否则不要再试，直接告诉用户：可以回到那个任务交还，或明确说要操作这一页。`);
+
+          runtime.session.notifyUser(`已接手这一页；任务「${title}」仍暂停，之后可以回到它接着做。`);
+
+          return { pausedTask: title };
+        }
         await source.control.stopMembersForForeignTakeover(members);
+
+        return {};
       });
       runtime.control.setIdleOwnerCheck?.(owner => this.conversationIdle(owner));
       const entry = { summary, runtime };

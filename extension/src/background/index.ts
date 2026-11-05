@@ -95,6 +95,8 @@ const handlers: Record<ToolName, Handler> = {
 
     for (const key of keys) { const who = parseExecutionKey(key); const owner = controller(who.conversationId); await owner.ready;
 
+ if (p.overrideUserHold && who.conversationId !== parseExecutionKey(sid).conversationId) continue;
+
  if (owner.isUserHeld(who.sessionId)) throw new Error("页面现在归你，操作未执行"); }
   }),
   page_translation: (p, sid) => pageTranslation(p, sid),

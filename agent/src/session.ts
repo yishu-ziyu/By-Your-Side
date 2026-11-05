@@ -53,7 +53,7 @@ import type { UserDelivery, UserDeliveryFacts, UserDeliverySourceRef, UserDelive
 import { attachedPageImages, createReadAttachmentTool, withAttachedFiles } from "./attached-files.js";
 import { createArtifactStore, createArtifactsTool, type ArtifactStore, type ArtifactPersistence } from "./artifacts-tool.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
-import { SessionHold, handbackContinueText } from "../../shared/control.js";
+import { HELD_BY_OTHER_TASK_ERROR, SessionHold, handbackContinueText } from "../../shared/control.js";
 import { leadSystemPrompt } from "./prompt.js";
 import { createBrowserTools, STALE_STEP_MESSAGE } from "./tools.js";
 import { translationMemory } from "./translation-memory.js";
@@ -635,6 +635,7 @@ if(required.includes(key))candidates.set(key,attachment);
   private controlEpoch = 0;
   private readonly pendingCorrections: CorrectionRecord[] = [];
   private handbackDelivery: { text: string; ids: string[] } | null = null;
+  notifyUser(message: string): void { this.callbacks.emit({ kind: "notice", message }); }
   hasCorrectionWaiting(): boolean { return this.pendingCorrections.length > 0; }
   canWriteCurrentInput(toolCallId?: string): boolean {
     if (this.hold.isHeld()) return false;
@@ -2911,6 +2912,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           if(event.toolName==='send_user_message')this.deliveryPrefixes.delete(event.toolCallId);
 
           if (!this.rpc?.heldReason?.(event.toolCallId)) this.goalLedger.recordFailure(this.deliveryRunId(), event.toolName, event.isError, event.result);
+
+          if (event.toolName === "take_tab" && !event.isError) this.goalLedger.forgetFailures(this.deliveryRunId(), HELD_BY_OTHER_TASK_ERROR);
 
           if (!(event.isError && firstResultText(event.result).startsWith(STALE_STEP_MESSAGE)) && !this.rpc?.heldReason?.(event.toolCallId)) this.tallyPageChange(event.toolName, event.isError, PROGRAM_TOOLS.has(event.toolName) ? Number(event.result?.details?.steps ?? 0) : 1);
 
