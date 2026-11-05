@@ -2,10 +2,10 @@ import { mountReadingVoice } from './reading-voice.js';
 import { mountDictationSettings } from "./dictation.js";
 import type { AuthEvent, AuthInteraction, AuthPrompt, Credential } from "@earendil-works/pi-ai";
 import { Check, ChevronDown, ChevronRight, CircleCheck, createElement as icon, KeyRound, Link, Play, Search, X } from "lucide";
-import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, omitCookies, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
+import { createModelRuntime, DEFAULT_MODELS, FEATURED_PROVIDERS, fetchCustomCatalog, omitCookies, PROBE_TIMEOUT_MS, probeModel, type ProviderChoice } from "../inproc/model-runtime.js";
 import { CODEX_CATALOG_TTL_MS, codexIdentity, fetchCodexCatalog, readCodexCatalog } from "../inproc/codex-catalog.js";
 import {
-  CODEX_CATALOG_KEY, CUSTOM_PROVIDER_ID, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, modelCredential, resolveVoiceKey, resolveVoiceModel,
+  CODEX_CATALOG_KEY, CUSTOM_CATALOG_KEY, CUSTOM_PROVIDER_ID, readCustomCatalog, type CustomCatalog, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, pickCredentials, modelCredential, resolveVoiceKey, resolveVoiceModel,
   STEPFUN_PROVIDER_ID,
   type InprocModelConfig, type StoredCredential, type StoredCredentials,
 } from "../inproc/shared.js";
@@ -64,6 +64,8 @@ const connectionDialog = $<HTMLDialogElement>("connection-dialog");
 const connectionClose = $<HTMLButtonElement>("connection-close");
 const connectionHeading = $("connection-heading");
 let savedConnections = new Map<string, InprocModelConfig>();
+let customCatalog: CustomCatalog | null = null;
+let customCatalogAsked = "";
 let connectionChecks = new Map<string, ConnectionCheck>();
 let addingConnection = false;
 
@@ -537,9 +539,24 @@ let modelActive = -1;
 
 let modelFilter = "";
 
+function customModelIds(baseUrl: string | undefined): string[] {
+  return baseUrl && customCatalog?.baseUrl === baseUrl ? customCatalog.models.map((m) => m.id) : [];
+}
+
+async function refreshCustomCatalog(baseUrl: string): Promise<void> {
+  customCatalogAsked = baseUrl;
+  const credential = credentials[CUSTOM_PROVIDER_ID];
+  try {
+    const catalog = await fetchCustomCatalog(baseUrl, credential?.type === "api_key" ? credential.key ?? "" : "", AbortSignal.timeout(PROBE_TIMEOUT_MS));
+    if (catalog.models.length && savedConnections.get(CUSTOM_PROVIDER_ID)?.baseUrl === baseUrl) await chrome.storage.local.set({ [CUSTOM_CATALOG_KEY]: catalog });
+  } catch (error) {
+    console.debug("[sideagent]", `custom model list failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function connectionModels(): string[] {
   const saved = selected && savedConnections.get(selected.id);
-  return [...new Set([...(selected?.models ?? []), ...(selected?.id === "openai-codex" ? codexDiscoveryModels : []), ...(saved ? [saved.modelId] : [])])];
+  return [...new Set([...(selected?.models ?? []), ...(selected?.id === "openai-codex" ? codexDiscoveryModels : []), ...(selected?.id === CUSTOM_PROVIDER_ID ? customModelIds(saved?.baseUrl) : []), ...(saved ? [saved.modelId] : [])])];
 }
 
 function renderModelList(): void {
@@ -871,7 +888,7 @@ async function disconnectProvider(): Promise<boolean> {
   const id = selected.id;
   const result = await withModelSettings(async () => {
     const stored = await chrome.storage.local.get([INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY]);
-    const keys = [CONNECTION_PREFIX + id];
+    const keys = [CONNECTION_PREFIX + id, ...(id === CUSTOM_PROVIDER_ID ? [CUSTOM_CATALOG_KEY] : [])];
     const notes: string[] = [];
     if (modelConfig(stored[INPROC_CONFIG_KEY])?.provider === id) { keys.push(INPROC_CONFIG_KEY); notes.push("主模型已清空，到模型页重新选一个。"); }
     if (modelConfig(stored[INPROC_FAST_CONFIG_KEY])?.provider === id) { keys.push(INPROC_FAST_CONFIG_KEY); notes.push("快速模型已改回主模型。"); }
@@ -1045,6 +1062,7 @@ function modelOptionGroups(current: InprocModelConfig | null): Array<HTMLOptGrou
     if (!credentialNote(choice.id) && !(choice.id === CUSTOM_PROVIDER_ID && saved)) continue;
     const configs: InprocModelConfig[] = choice.models.map(modelId => ({ provider: choice.id, modelId }));
     if (saved) configs.push(saved);
+    if (choice.id === CUSTOM_PROVIDER_ID && saved?.baseUrl) configs.push(...customModelIds(saved.baseUrl).map(modelId => ({ provider: choice.id, modelId, baseUrl: saved.baseUrl })));
     for (const selected of [config, fastConfig, backupConfig]) if (selected?.provider === choice.id) configs.push(selected);
     const group = document.createElement('optgroup');
     group.label = labelOf(choice.id);
@@ -1333,6 +1351,10 @@ async function reloadSettings(): Promise<void> {
   }
   codexCatalog = stored[CODEX_CATALOG_KEY];
   await runtime.applyCodexCatalog(codexCatalog);
+  customCatalog = readCustomCatalog(stored[CUSTOM_CATALOG_KEY]);
+  runtime.applyCustomCatalog(customCatalog);
+  const customBaseUrl = savedConnections.get(CUSTOM_PROVIDER_ID)?.baseUrl ?? "";
+  if (customBaseUrl !== customCatalogAsked) { if (customBaseUrl) void refreshCustomCatalog(customBaseUrl); else customCatalogAsked = ""; }
   codexDiscoveryModels = readCodexCatalog(codexCatalog, identity)?.models.filter(m => m.discoveryOnly).map(m => m.id) ?? [];
   syncModelChoices();
   const storedVoiceKey = stored[INPROC_VOICE_KEY];
@@ -1744,7 +1766,7 @@ bindToggle(speakToggle, PTT_SPEAK_RESULT, speechStatus, (on) => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === READING_ALOUD_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
+  if (area === "local" && Object.keys(changes).some((k) => k === CODEX_CATALOG_KEY || k === CUSTOM_CATALOG_KEY || k === INPROC_CONFIG_KEY || k === INPROC_FAST_CONFIG_KEY || k === INPROC_BACKUP_CONFIG_KEY || k === INPROC_VOICE_KEY || k === INPROC_VOICE_MODEL_KEY || k === PTT_SPEECH_KEY || k === PTT_SPEAK_RESULT || k === STEP_VOICE_STORAGE_KEY || k === VOICE_PERSONA_STORAGE_KEY || k === SELECTION_BAR_KEY || k === READING_ALOUD_KEY || k === NUDGE_KEY || k === OPEN_THREADS_KEY || k === ATTENTION_CUES_KEY || k === COLOR_TONE_KEY || k === ORB_STYLE_STORAGE_KEY || k === BROWSE_ON_KEY || k === MINI_APPS_KEY || k === TRANSLATION_STYLE_KEY || k === EDGE_ENTRY_KEY || k.startsWith(CONNECTION_PREFIX) || k.startsWith(INPROC_CREDENTIAL_PREFIX))) void reload();
 });
 
 const showPage = mountSettingsNavigation(() => closeForm(false));

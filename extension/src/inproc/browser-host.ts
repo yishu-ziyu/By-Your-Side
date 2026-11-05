@@ -39,8 +39,8 @@ function originalBytes(dataBase64: string): Uint8Array<ArrayBuffer> {
 }
 
 type Inbound = ClientMessage
-  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; connections?: unknown; credentials: StoredCredentials; codexCatalog?: unknown }
-  | { type: "inproc_catalog"; codexCatalog?: unknown }
+  | { type: "inproc_config"; config: InprocModelConfig | null; fast?: InprocModelConfig | null; backup?: InprocModelConfig | null; connections?: unknown; credentials: StoredCredentials; codexCatalog?: unknown; customCatalog?: unknown }
+  | { type: "inproc_catalog"; codexCatalog?: unknown; customCatalog?: unknown }
   | { type: "inproc_settings"; values: unknown }
   | { type: "inproc_voice"; configured: boolean; model?: unknown }
   | { type: "inproc_key_save_result"; requestId: string; ok: boolean };
@@ -265,6 +265,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     if (message.type === "inproc_key_save_result") return;
     if (message.type === "inproc_catalog") {
       await models.applyCodexCatalog(message.codexCatalog);
+      models.applyCustomCatalog(message.customCatalog);
       if (core && connection) connection.send({ type: "model_info", models: await core.session.availableModels() });
       return;
     }
@@ -290,6 +291,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
       storedCredentials = message.credentials ?? {};
       await models.credentials.load(storedCredentials);
       await models.applyCodexCatalog(message.codexCatalog);
+      models.applyCustomCatalog(message.customCatalog);
 
       if (!selected) return;
       const model = models.resolveModel(selected);

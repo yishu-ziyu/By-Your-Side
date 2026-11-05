@@ -55,6 +55,8 @@ export function providerLabel(provider: string): string {
 
 export function displayName(m: ModelOption): string {
   const raw = (m.name || m.modelId).trim();
+
+  if (m.provider === "custom") return raw;
   const slash = raw.lastIndexOf("/");
 
   return (slash >= 0 ? raw.slice(slash + 1) : raw) || m.modelId;

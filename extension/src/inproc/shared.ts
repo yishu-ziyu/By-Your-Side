@@ -6,6 +6,8 @@ export const INPROC_CONFIG_KEY = "inproc_model_config";
 
 export const CODEX_CATALOG_KEY = "inproc_codex_catalog";
 
+export const CUSTOM_CATALOG_KEY = "inproc_custom_catalog";
+
 export const INPROC_FAST_CONFIG_KEY = "inproc_fast_model_config";
 
 export const INPROC_BACKUP_CONFIG_KEY = "inproc_backup_model_config";
@@ -62,6 +64,22 @@ export interface InprocModelConfig {
 
 export const CUSTOM_PROVIDER_ID = "custom";
 export const CUSTOM_ENDPOINT_ENV = "SIDEAGENT_CUSTOM_ENDPOINT";
+
+export interface CustomCatalogModel { id: string; contextWindow?: number; images?: boolean }
+export interface CustomCatalog { baseUrl: string; models: CustomCatalogModel[] }
+
+export function readCustomCatalog(value: unknown): CustomCatalog | null {
+  if (!value || typeof value !== "object" || !("baseUrl" in value) || typeof value.baseUrl !== "string" || !("models" in value) || !Array.isArray(value.models)) return null;
+  const models = value.models.flatMap((item: unknown): CustomCatalogModel[] => {
+    if (!item || typeof item !== "object" || !("id" in item) || typeof item.id !== "string" || !item.id) return [];
+    return [{
+      id: item.id,
+      ...("contextWindow" in item && typeof item.contextWindow === "number" && item.contextWindow > 0 ? { contextWindow: item.contextWindow } : {}),
+      ...("images" in item && item.images === true ? { images: true } : {}),
+    }];
+  });
+  return { baseUrl: value.baseUrl, models };
+}
 
 export function modelCredential(config: InprocModelConfig, key: string): StoredCredential {
   return config.provider === CUSTOM_PROVIDER_ID && config.baseUrl
