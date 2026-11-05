@@ -144,9 +144,6 @@ try {
     await rp.screenshot(page, join(out, '05b-voice-gpt-live.png'));
     checked.push('音色跟着语音模型变、左栏滚动时不动');
     await nav('appearance');
-    await click('button[data-tone-option="warm"]');
-    await until(async () => await stored('color_tone') === 'warm' || undefined, 5000, '暖纸底色保存');
-    assert.equal(await rp.evaluate(page, 'document.documentElement.dataset.tone'), 'warm');
     await rp.screenshot(page, join(out, '06-appearance.png'));
     await nav('web');
     const before = await rp.evaluate(page, `document.querySelector('#selection-bar').checked`);

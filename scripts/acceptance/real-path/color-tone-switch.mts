@@ -37,7 +37,11 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   const config = await configureViaSettings(rp, panel, { providerId: "custom", modelId: "fixture", credential: { type: "api_key", key: "local-fixture" } }, { baseUrl: model.baseUrl });
   const settings = await rp.attach(config.settingsTargetId);
-  await rp.click(settings, '[data-settings-page="appearance"]');
+  const openAppearance = async () => {
+    await rp.click(panel, "#header-more");
+    await rp.click(panel, "#reading-settings-btn");
+    await rp.click(panel, "#appearance-tab-2");
+  };
 
   await rp.evaluate(work, `(() => {
     const el = document.getElementById("para-text");
@@ -57,22 +61,22 @@ try {
     panelTone: await rp.evaluate(panel, `document.documentElement.dataset.tone`),
     panelBg: await rp.evaluate(panel, `getComputedStyle(document.body).backgroundColor`),
     askTone: await rp.evaluate(work, `document.querySelector("[data-sideagent-ask]")?.getAttribute("data-tone")`),
-    options: await rp.evaluate(settings, `[...document.querySelectorAll(".tone-option")].map(b => ({ id: b.getAttribute("data-tone-option"), checked: b.getAttribute("aria-checked"), text: b.textContent }))`),
+    options: await rp.evaluate(panel, `[...document.querySelectorAll(".tone-option")].map(b => ({ id: b.getAttribute("data-tone-option"), checked: b.querySelector("input").checked, text: b.textContent }))`),
   });
 
-  await until(async () => (await rp.evaluate(settings, `document.querySelectorAll(".tone-option").length === 2`)) || undefined, 5_000, "2 tone options rendered");
+  await openAppearance();
+  await until(async () => (await rp.evaluate(panel, `document.querySelectorAll(".tone-option").length === 2`)) || undefined, 5_000, "2 tone options rendered");
   const initial = await readColors();
   assert.equal(initial.options.length, 2, "只保留两种颜色选项");
   assert.equal(initial.settingsTone, "blue", "默认是淡蓝");
   assert.equal(initial.panelTone, "blue", "侧栏默认是淡蓝");
   assert.equal(initial.askTone, "blue", "网页浮层默认是淡蓝");
 
-  await rp.evaluate(settings, `document.getElementById("tone-list")?.scrollIntoView({ block: "center" })`);
   await sleep(200);
   await rp.screenshot(settings, join(out, "1-settings-blue.png"));
   await rp.screenshot(panel, join(out, "1-panel-blue.png"));
 
-  await rp.click(settings, `.tone-option[data-tone-option="warm"]`);
+  await rp.click(panel, `.tone-option[data-tone-option="warm"]`);
   await until(async () => (await rp.evaluate(panel, `document.documentElement.dataset.tone === "warm"`)) || undefined, 5_000, "panel switched to warm");
   await until(async () => (await rp.evaluate(work, `document.querySelector("[data-sideagent-ask]")?.getAttribute("data-tone") === "warm"`)) || undefined, 5_000, "ask host switched to warm");
   await sleep(250);
@@ -103,7 +107,8 @@ try {
   await rp.cdp.send("Page.reload", {}, panel);
   await until(async () => (await rp.evaluate(panel, `document.documentElement.dataset.tone === "warm"`)) || undefined, 5_000, "reloaded panel keeps warm tone");
 
-  await rp.click(settings, `.tone-option[data-tone-option="blue"]`);
+  await openAppearance();
+  await rp.click(panel, `.tone-option[data-tone-option="blue"]`);
   await until(async () => (await rp.evaluate(panel, `document.documentElement.dataset.tone === "blue"`)) || undefined, 5_000, "panel switched back to blue");
   const backBlue = await readColors();
   assert.equal(backBlue.panelBg, initial.panelBg, "切回淡蓝后恢复原背景色");

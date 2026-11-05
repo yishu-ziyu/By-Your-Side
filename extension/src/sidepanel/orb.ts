@@ -1,3 +1,4 @@
+import { isDarkScheme, onColorSchemeChange } from "../shared/color-tone.js";
 import type { RunOrbState } from "./run-orb.js";
 import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
@@ -49,7 +50,7 @@ function prefersReduce(): boolean {
 }
 
 function prefersDark(): boolean {
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  return isDarkScheme();
 }
 
 function readInk(token = "--orb-ink"): Rgb | null {
@@ -167,14 +168,16 @@ function bindTheme(): void {
   window.matchMedia?.("(prefers-reduced-motion: reduce)").addEventListener?.("change", () => {
     for (const o of instances) o.refreshMotion();
   });
-  window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+  const repaint = () => {
     inkResolved = false;
     cachedStrong = undefined;
 
     for (const o of instances) {
       if (!o.running) paintStill(o);
     }
-  });
+  };
+  window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", repaint);
+  onColorSchemeChange(repaint);
 }
 
 export type OrbHandle = {
