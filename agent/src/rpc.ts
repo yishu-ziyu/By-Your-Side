@@ -114,6 +114,7 @@ export class ToolRpc {
   private pageTargetSeq = 0;
 
   beforeCall?: () => Promise<void>;
+  userMessageWaiting?: () => boolean;
   continuationPage?: () => { tabId: number; url: string; documentId: string } | undefined;
 
   constructor(send?: RpcSend) {

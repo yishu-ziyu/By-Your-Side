@@ -635,6 +635,7 @@ if(required.includes(key))candidates.set(key,attachment);
   private controlEpoch = 0;
   private readonly pendingCorrections: CorrectionRecord[] = [];
   private handbackDelivery: { text: string; ids: string[] } | null = null;
+  hasCorrectionWaiting(): boolean { return this.pendingCorrections.length > 0; }
   canWriteCurrentInput(toolCallId?: string): boolean {
     if (this.hold.isHeld()) return false;
 
