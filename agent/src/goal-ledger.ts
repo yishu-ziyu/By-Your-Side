@@ -137,6 +137,10 @@ export class GoalLedger {
     this.failures.items = items.slice(-6);
   }
 
+  forgetFailures(runId: string | null, startsWith: string): void {
+    if (this.failures.runId === runId) this.failures.items = this.failures.items.filter(item => !item.reason.startsWith(startsWith));
+  }
+
   failuresFor(runId: string | null): readonly Failure[] {
     return this.failures.runId === runId ? this.failures.items : [];
   }
