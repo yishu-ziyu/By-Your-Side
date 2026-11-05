@@ -1,7 +1,7 @@
 import { typedValuesOf } from "./site-notes.js";
 
 export interface GoalFacts {
-  navigation?: { originTabId: number | null; tabs: Array<{ tabId: number; url: string | null; created: boolean }>; truncated: boolean };
+  navigation?: { originTabId: number | null; tabs: Array<{ tabId: number; url: string | null; created: boolean; closed?: true }>; truncated: boolean };
   actions: Array<{ page: string | null; tools: string[]; onGoalPage: boolean; openedByAssistant: boolean }>;
   typedNotFromUser: string[];
   searchedNotFromUser: string[];
@@ -45,6 +45,7 @@ export class PageTrail {
   private urls = new Map<number, Visit>();
   private originTabId: number | null = null;
   private createdTabs = new Set<number>();
+  private closedTabs = new Set<number>();
   private actions: Array<{ tool: string } & Visit> = [];
   private typed: string[] = [];
   private searched: string[] = [];
@@ -54,6 +55,7 @@ export class PageTrail {
     this.urls = new Map();
     this.originTabId = page?.tabId ?? null;
     this.createdTabs.clear();
+    this.closedTabs.clear();
     this.actions = [];
     this.typed = [];
     this.searched = [];
@@ -82,6 +84,10 @@ export class PageTrail {
 
     this.typed.push(...typedValuesOf(name, params));
 
+    if (name === "close_tab" && tab >= 0 && data.closed === true) {
+      this.closedTabs.add(tab);
+      if (!this.urls.has(tab)) this.urls.set(tab, { url: null, byAssistant: true });
+    }
     if (name === "open_tab" && typeof data.tabId === "number" && !data.tabClosed) this.createdTabs.add(data.tabId);
     if (name === "navigate" && tab >= 0 && typeof data.workingTabId === "number" && data.workingTabId !== tab) this.createdTabs.add(data.workingTabId);
     if (name === "navigate") landed(typeof data.workingTabId === "number" ? data.workingTabId : tab, data.url, true);
@@ -129,7 +135,7 @@ export class PageTrail {
     const visits = [...this.urls.entries()];
     const recent = visits.filter(([tabId]) => tabId !== this.originTabId).slice(-15);
     const tabs = [...visits.filter(([tabId]) => tabId === this.originTabId), ...recent]
-      .map(([tabId, visit]) => ({ tabId, url: visit.url, created: this.createdTabs.has(tabId) }));
+      .map(([tabId, visit]) => ({ tabId, url: visit.url, created: this.createdTabs.has(tabId), ...(this.closedTabs.has(tabId) ? { closed: true as const } : {}) }));
     return { navigation: { originTabId: this.originTabId, tabs, truncated: tabs.length < visits.length }, actions: [...pages.values()].slice(0, 12), typedNotFromUser: foreign([...this.typed, ...this.searched]), searchedNotFromUser: foreign(this.searched) };
   }
 }

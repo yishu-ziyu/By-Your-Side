@@ -3242,7 +3242,6 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           && !contentMatches.some(match => match.equal);
         if (confirmsOriginal) recordHostGoalCheck(model, verificationInput, "fresh_evidence_unchanged", original, trace, { needsPageReread, confirmsOriginal });
         else if (needsPageReread) verdict = await checkGoal(this.sideHost()!, model, verificationInput, AbortSignal.timeout(20_000), headers, trace);
-        else recordHostGoalCheck(model, verificationInput, "retry_not_needed", original, trace, { needsPageReread });
         if (verdict.status === 'continue') retryFingerprint = fingerprint;
       }
     }
@@ -3372,6 +3371,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     if (!current()) { abandon(); return; }
     if (copyPolicyUnavailable) emit({ kind: 'notice', message: '原样搬运要求暂时无法判断，复制结果没有完成独立核对。' });
+    if (verdict?.status === "done") this.goalLedger.confirmGoal(snapshot?.recoveryInput?.requirements ?? []);
 
     if (!verdict) { letGo(); emit({ kind: "goal_check", status: "unavailable" }); }
 

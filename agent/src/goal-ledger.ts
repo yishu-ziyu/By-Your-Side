@@ -45,10 +45,15 @@ export class GoalLedger {
   private failures: { runId: string | null; items: Failure[] } = { runId: null, items: [] };
   private readonly trail = new PageTrail();
   private wholeSource: { url: string; text: string } | null = null;
+  private confirmed: readonly string[] = [];
 
   beginRequest(page: { tabId?: number; url?: string } | null): void {
     this.trail.begin(page);
     this.wholeSource = null;
+  }
+
+  confirmGoal(requirements: readonly string[]): void {
+    this.confirmed = [...requirements];
   }
 
   recordWholeSource(url: string, text: string): void {
@@ -156,12 +161,15 @@ export class GoalLedger {
 
   input(run: GoalRun): GoalCheckInput {
     const { snapshot, page, tabId } = run;
-    const goal = snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [run.goal];
+    const asked = snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [run.goal];
+    const earlier = asked.length > this.confirmed.length && this.confirmed.every((text, index) => asked[index] === text) ? this.confirmed.length : 0;
+    const goal = asked.slice(earlier);
     return {
       copies: run.copies,
       goal,
+      ...(earlier ? { earlierDone: asked.slice(0, earlier) } : {}),
       goalPage: snapshot?.goalPage ?? null,
-      facts: this.trail.facts(goal, snapshot?.goalPage ?? null),
+      facts: this.trail.facts(asked, snapshot?.goalPage ?? null),
       files: run.files,
       observations: this.observations.map(item => ({ tool: item.tool, text: item.text, ...(item.at < run.requestStartedAt ? { earlier: true } : {}) })),
       readWords: this.words,
