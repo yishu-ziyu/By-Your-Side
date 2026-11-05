@@ -78,7 +78,7 @@ export function attachedPageImages(attachments?: Attachment[]): Array<{ type: "i
   return (attachments ?? []).filter(isFile).flatMap(file => (file.pageImages ?? []).map(image => ({ type: "image" as const, data: image.dataBase64, mimeType: image.mimeType })));
 }
 
-function readSlice(file: FileAttachment, offset: number, maxChars: number): string {
+function readSlice(file: Pick<FileAttachment, "name" | "text">, offset: number, maxChars: number): string {
   const start = Math.min(Math.max(0, offset), file.text.length);
   const end = start + cutAt(file.text.slice(start), maxChars);
   const part = partAt(file.text, start);
@@ -87,7 +87,7 @@ function readSlice(file: FileAttachment, offset: number, maxChars: number): stri
   return `${file.name}: characters ${start + 1}–${end} of ${file.text.length}${part ? `, starting in ${part}` : ""}.${next}\n${wrapPageContent(file.text.slice(start, end), { title: file.name })}`;
 }
 
-function search(file: FileAttachment, query: string): string {
+function search(file: Pick<FileAttachment, "name" | "text">, query: string): string {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const lower = file.text.toLowerCase();
   const hits: Array<{ start: number; end: number }> = [];
@@ -109,18 +109,25 @@ function search(file: FileAttachment, query: string): string {
   return `${hits.length} passage(s) in ${file.name} matching ${JSON.stringify(query)}${hits.length === SEARCH_HITS_MAX ? " (first 8 shown; narrow the query for more)" : ""}:\n${wrapPageContent(body, { title: file.name })}`;
 }
 
-export function createReadAttachmentTool(attachments: () => readonly Attachment[], original?: (file: FileAttachment) => string | undefined, seesImages: () => boolean = () => true) {
+export function createReadAttachmentTool(attachments: () => readonly Attachment[], original?: (file: FileAttachment) => string | undefined, seesImages: () => boolean = () => true, earlier?: (name: string) => string | undefined) {
   return defineTool({
     name: "read_attachment",
     label: "Read attached file",
-    description: "Read a file the user attached or a file downloaded during this task (PDF, Word, Excel, PowerPoint, CSV, text, or an image). Image files return the captured original pixels with their filename; use this directly after downloading instead of reopening the file in a browser and taking screenshots. Offset/query apply only to text documents. For newly downloaded files, use the exact filename from the download receipt. Read by offset (a character position, as given in the message or a previous read), or pass query to find passages containing those words. The text marks boundaries as [Page N], [Sheet: name] or [Slide N]; Excel rows start with their row number.",
+    description: "Read a file the user attached or a file downloaded during this task (PDF, Word, Excel, PowerPoint, CSV, text, or an image). Image files return the captured original pixels with their filename; use this directly after downloading instead of reopening the file in a browser and taking screenshots. Offset/query apply only to text documents. For newly downloaded files, use the exact filename from the download receipt. Read by offset (a character position, as given in the message or a previous read), or pass query to find passages containing those words. The text marks boundaries as [Page N], [Sheet: name] or [Slide N]; Excel rows start with their row number. Earlier tool results that were elided from this conversation can be read the same way, using the name given in the elision note.",
     parameters: Type.Object({
-      name: Type.String({ minLength: 1, description: "File name exactly as attached, e.g. \"report.pdf\"" }),
+      name: Type.String({ minLength: 1, description: "File name exactly as attached, e.g. \"report.pdf\", or the earlier: name from an elision note" }),
       offset: Type.Optional(Type.Integer({ minimum: 0, description: "Character position to start reading from" })),
       maxChars: Type.Optional(Type.Integer({ minimum: 500, maximum: READ_MAX, description: `How many characters to read (default ${READ_DEFAULT})` })),
       query: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: "Words to search for instead of reading by offset" })),
     }),
     execute: async (_id, params) => {
+      const earlierText = earlier?.(params.name.trim());
+
+      if (earlierText !== undefined) {
+        const saved = { name: params.name.trim(), text: earlierText };
+        return { content: [{ type: "text" as const, text: params.query?.trim() ? search(saved, params.query.trim()) : readSlice(saved, params.offset ?? 0, params.maxChars ?? READ_DEFAULT) }], details: undefined };
+      }
+
       const all = attachments();
       const files = all.filter(isFile);
       const file = files.filter(item => item.name === params.name.trim()).at(-1);
