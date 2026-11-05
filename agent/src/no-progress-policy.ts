@@ -47,6 +47,7 @@ export class NoProgressPolicy {
   private stopped=false;
   private evidenceVersion=0;
   get progressVersion():number {return this.evidenceVersion;}
+  get hasStopped():boolean {return this.stopped;}
   constructor(private readonly onStop:(stop:NoProgressStop)=>void) {}
 
   reset():void {this.seen.clear();this.streak=[];this.weight=0;this.steps.clear();this.stopped=false;this.evidenceVersion=0;}
@@ -67,6 +68,7 @@ export class NoProgressPolicy {
 
   extension():ExtensionFactory {
     return pi=>{
+      pi.on('agent_start',()=>{this.stopped=false;this.streak=[];this.weight=0;});
       pi.on('tool_result',(event,ctx)=>{
         if(this.stopped)return;
         const details:unknown=event.details;
