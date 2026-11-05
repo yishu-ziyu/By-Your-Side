@@ -8,7 +8,7 @@ import {
 } from "../../../shared/protocol.js";
 import type { ConnState, TransportKind } from "../relay.js";
 import {
-  CODEX_CATALOG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, installVoiceHeaderRule, modelCredential, pickCredentials, resolveVoiceKey, type StoredCredential,
+  CODEX_CATALOG_KEY, CUSTOM_CATALOG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, INPROC_FAST_CONFIG_KEY, INPROC_DOCUMENT, INPROC_PORT_NAME, INPROC_VOICE_KEY, INPROC_VOICE_MODEL_KEY, installVoiceHeaderRule, modelCredential, pickCredentials, resolveVoiceKey, type StoredCredential,
 } from "../inproc/shared.js";
 import { CORE_SETTING_KEYS } from "../shared/core-settings.js";
 import { CONNECTION_PREFIX, credentialFingerprint, modelConfig, readConnections, withModelSettings } from "../settings/connections.js";
@@ -38,7 +38,7 @@ export class Uplink {
       const keys = Object.keys(changes);
 
       if (keys.some((key) => key === INPROC_CONFIG_KEY || key === INPROC_FAST_CONFIG_KEY || key === INPROC_BACKUP_CONFIG_KEY || key.startsWith(INPROC_CREDENTIAL_PREFIX) || key.startsWith(CONNECTION_PREFIX))) void this.pushModelConfig();
-      if (keys.includes(CODEX_CATALOG_KEY)) void this.pushModelCatalog();
+      if (keys.includes(CODEX_CATALOG_KEY) || keys.includes(CUSTOM_CATALOG_KEY)) void this.pushModelCatalog();
 
       if (keys.some((key) => CORE_SETTING_KEYS.includes(key))) void this.pushCoreSettings();
 
@@ -207,12 +207,12 @@ export class Uplink {
   private async pushModelConfig(): Promise<void> {
     if (!this.inprocPort) return;
     const stored = await chrome.storage.local.get(null);
-    this.inprocPort?.postMessage({ type: "inproc_config", config: stored[INPROC_CONFIG_KEY] ?? null, fast: stored[INPROC_FAST_CONFIG_KEY] ?? null, backup: stored[INPROC_BACKUP_CONFIG_KEY] ?? null, connections: Object.fromEntries(readConnections(stored)), credentials: pickCredentials(Object.entries(stored)), codexCatalog: stored[CODEX_CATALOG_KEY] });
+    this.inprocPort?.postMessage({ type: "inproc_config", config: stored[INPROC_CONFIG_KEY] ?? null, fast: stored[INPROC_FAST_CONFIG_KEY] ?? null, backup: stored[INPROC_BACKUP_CONFIG_KEY] ?? null, connections: Object.fromEntries(readConnections(stored)), credentials: pickCredentials(Object.entries(stored)), codexCatalog: stored[CODEX_CATALOG_KEY], customCatalog: stored[CUSTOM_CATALOG_KEY] });
   }
 
   private async pushModelCatalog(): Promise<void> {
-    const stored = await chrome.storage.local.get(CODEX_CATALOG_KEY);
-    this.inprocPort?.postMessage({ type: "inproc_catalog", codexCatalog: stored[CODEX_CATALOG_KEY] });
+    const stored = await chrome.storage.local.get([CODEX_CATALOG_KEY, CUSTOM_CATALOG_KEY]);
+    this.inprocPort?.postMessage({ type: "inproc_catalog", codexCatalog: stored[CODEX_CATALOG_KEY], customCatalog: stored[CUSTOM_CATALOG_KEY] });
   }
 
   private async pushCoreSettings(): Promise<void> {
