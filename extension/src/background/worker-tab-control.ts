@@ -34,7 +34,7 @@ class WorkerTabControl {
     return job;
   }
 
-  async manage(params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null; orActive?: boolean }, leadKey: string, canTake: (keys: string[]) => Promise<void> = async () => {}) {
+  async manage(params: { action: "inspect" | "release" | "claim"; tabId?: number; workerId?: string; expectedConversationId?: string | null; orActive?: boolean; overrideUserHold?: boolean }, leadKey: string, canTake: (keys: string[]) => Promise<void> = async () => {}) {
     const lead = parseExecutionKey(leadKey);
 
     if (!isLeadSession(lead.sessionId)) throw new Error("只有父 Agent 可以管理 worker 页面");

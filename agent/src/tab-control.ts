@@ -8,8 +8,8 @@ import type { BrowserAgentSession } from "./session.js";
 
 export class TabControl {
   private lead: BrowserAgentSession | null = null;
-  private coordinateTab?: (owner: string, members: string[]) => Promise<void>;
-  setTabCoordinator(coordinate: (owner: string, members: string[]) => Promise<void>): void { this.coordinateTab = coordinate; }
+  private coordinateTab?: (owner: string, members: string[], userNamedThisPage: boolean) => Promise<{ pausedTask?: string }>;
+  setTabCoordinator(coordinate: (owner: string, members: string[], userNamedThisPage: boolean) => Promise<{ pausedTask?: string }>): void { this.coordinateTab = coordinate; }
   private ownerIdle?: (conversationId: string) => boolean;
   private readonly idleReleases = new Map<number | "working", Promise<boolean>>();
   setIdleOwnerCheck(check: (conversationId: string) => boolean): void { this.ownerIdle = check; }
@@ -109,19 +109,21 @@ export class TabControl {
     return [LEAD_SESSION_ID];
   }
 
-  async takeTab(tabId?: number): Promise<{ tabId: number }> {
+  async takeTab(tabId?: number, userNamedThisPage = false): Promise<{ tabId: number; pausedTask?: string }> {
     const info = await this.rpc.call("worker_tabs", tabId != null ? { action: "inspect", tabId } : { action: "inspect" }) as { tabId: number; workers: string[]; owned?: boolean; conversationId?: string | null; foreign?: boolean; members?: string[] };
+
+    let pausedTask: string | undefined;
 
     if (info.foreign) {
       if (!this.coordinateTab) throw new Error("页面协调器尚未就绪，请重连后再试");
-      await this.coordinateTab(info.conversationId!, info.members ?? info.workers);
+      pausedTask = (await this.coordinateTab(info.conversationId!, info.members ?? info.workers, userNamedThisPage)).pausedTask;
     }
 
     if (info.owned !== false || info.conversationId !== undefined) {
-      await this.rpc.call("worker_tabs", info.conversationId !== undefined ? { action: "claim", tabId: info.tabId, expectedConversationId: info.conversationId } : { action: "claim", tabId: info.tabId });
+      await this.rpc.call("worker_tabs", info.conversationId !== undefined ? { action: "claim", tabId: info.tabId, expectedConversationId: info.conversationId, ...(pausedTask !== undefined ? { overrideUserHold: true } : {}) } : { action: "claim", tabId: info.tabId });
     }
 
-    return { tabId: info.tabId };
+    return { tabId: info.tabId, ...(pausedTask !== undefined ? { pausedTask } : {}) };
   }
 
   async releaseIdleForeignTab(tabId?: number): Promise<boolean> {
@@ -165,12 +167,13 @@ export function createTakeTabTool(control: TabControl): ToolDefinition {
   return defineTool({
     name: "take_tab",
     label: "接管页面",
-    description: "Take control of any browser tab. Coordinates with its current conversation, stops it and waits for pending operations before handing it over. User control remains protected. For reading alone use snapshot or read_element with tabId; no takeover is needed.",
-    parameters: Type.Object({ tabId: Type.Number() }),
+    description: "Take control of any browser tab. Coordinates with its current conversation, stops it and waits for pending operations before handing it over. A page handed to the user stays protected: set userNamedThisPage only when the user's latest message explicitly asks you to act on this very page; the task waiting on it stays paused. For reading alone use snapshot or read_element with tabId; no takeover is needed.",
+    parameters: Type.Object({ tabId: Type.Number(), userNamedThisPage: Type.Optional(Type.Boolean()) }),
     execute: async (_id, params) => {
-      const result = await control.takeTab(params.tabId);
+      const result = await control.takeTab(params.tabId, params.userNamedThisPage === true);
+      const paused = result.pausedTask !== undefined ? ` 任务「${result.pausedTask}」仍暂停，之后用户可以回到它接着做；回答时告诉用户这一点。` : "";
 
-      return { content: [{ type: "text" as const, text: `页面 ${result.tabId} 已交回本会话。` }], details: result };
+      return { content: [{ type: "text" as const, text: `页面 ${result.tabId} 已交回本会话。${paused}` }], details: result };
     },
   });
 }
