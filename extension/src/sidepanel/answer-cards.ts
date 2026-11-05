@@ -6,6 +6,8 @@ import { type Block, type Card, type CardField, type CardInput, type Cell, type 
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { captureCitationContext, clearFailure, noteFailure } from "./sonar-citations.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
+import { TOOL_PAGE_MESSAGE, siteOf, type ToolCaptionsReply } from "../../../shared/saved-tools.js";
+import { removeTool, saveTool, savedToolWith } from "./saved-tools.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -784,7 +786,80 @@ const mountTickets = new WeakMap<HTMLElement, symbol>();
 
 const APP_MIN_HEIGHT = 60;
 
-const APP_MAX_HEIGHT = 720;
+const appMaxHeight = () => Math.min(720, Math.max(280, Math.round(window.innerHeight * 0.6)));
+
+const FRESH_APP_MS = 3000;
+
+let freshAppUntil = 0;
+
+export const markFreshApp = (): void => { freshAppUntil = performance.now() + FRESH_APP_MS; };
+
+type PageSession = { tabId: number; url: string; box: HTMLElement; remount: () => void };
+
+const pageSessions = new Set<PageSession>();
+
+const activeTab = async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+
+function syncPageSessions(): void {
+  void activeTab().then(tab => {
+    for (const session of pageSessions) {
+      if (!session.box.isConnected) { pageSessions.delete(session); continue; }
+
+      if (tab?.url === session.url) {
+        if (session.box.dataset.pageStale) { delete session.box.dataset.pageStale; session.box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", ""); }
+        continue;
+      }
+
+      if (session.box.dataset.pageStale) continue;
+      session.box.dataset.pageStale = "1";
+      appBar(session.box, "这里还是上一个页面的内容，不是当前页面。", { label: "换成当前页面", run: session.remount });
+    }
+  }).catch(() => {});
+}
+
+chrome.tabs?.onActivated?.addListener(syncPageSessions);
+chrome.tabs?.onUpdated?.addListener((_tabId, info) => { if (info.url) syncPageSessions(); });
+
+function toolFoot(box: HTMLElement, html: string, title: string, site: string): void {
+  let foot = box.querySelector<HTMLElement>(":scope > .gc-app-foot");
+
+  if (!foot) { foot = document.createElement("div"); foot.className = "gc-app-foot"; box.append(foot); }
+  const holder = foot;
+  const button = (label: string, primary: boolean, run: () => void) => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = primary ? "gc-btn primary" : "gc-btn";
+    el.textContent = label;
+    el.addEventListener("click", run);
+
+    return el;
+  };
+  const line = (text: string) => { const el = document.createElement("span"); el.textContent = text; return el; };
+  const canSeek = html.includes("bys.page.seek");
+  const paint = () => {
+    holder.dataset.mode = savedToolWith(html) ? "saved" : "idle";
+
+    if (savedToolWith(html)) { holder.replaceChildren(line("已保存，输入 / 可以再次打开"), button("撤销", false, () => { void removeTool(html).then(paint); })); return; }
+    holder.replaceChildren(line(""), button("保存", false, form));
+  };
+  const form = () => {
+    holder.dataset.mode = "form";
+    const name = document.createElement("input");
+    name.value = title;
+    name.maxLength = 80;
+    name.setAttribute("aria-label", "工具名字");
+    const row = (label: string, value: HTMLElement) => { const el = document.createElement("div"); el.className = "gc-app-save-row"; el.append(line(label), value); return el; };
+    const actions = document.createElement("div");
+    actions.className = "gc-app-save-actions";
+    actions.append(button("取消", false, paint), button("保存", true, () => {
+      void saveTool({ name: name.value.trim() || title, site, html, canSeek }).then(paint);
+    }));
+    holder.replaceChildren(row("名字", name), row("用在", line(`${new URL(site).hostname} 上的页面`)), row("能做", line(canSeek ? "读当前视频的字幕；你点一句时让视频跳转" : "读当前视频的字幕")), actions);
+    holder.scrollIntoView({ block: "nearest" });
+    name.focus({ preventScroll: true });
+  };
+  paint();
+}
 
 let miniAppsOn: Promise<boolean> | undefined;
 
@@ -823,6 +898,7 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
 
   mountTickets.set(box, ticket);
   mountedApps.set(box, () => {});
+  const opened = performance.now() < freshAppUntil;
   const card = box.closest<HTMLElement>(".gen-card");
   const holder = box.querySelector<HTMLElement>(":scope > .gc-app-frame");
   const title = box.dataset.appTitle ?? "小程序";
@@ -846,6 +922,9 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
   if (!current()) return;
 
   if (saved?.app) appStates.set(card, saved.app);
+  const fresh = opened || !saved;
+
+  if (!saved) save(card);
   const frame = document.createElement("iframe");
   frame.className = "gc-app-iframe";
   frame.title = title;
@@ -855,6 +934,52 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
   let ready = false;
   let failed = false;
   let heardAt = 0;
+  let shownHeight = 0;
+  let session: PageSession | undefined;
+  const reply = (id: number, ok: boolean, value: unknown) => frame.contentWindow?.postMessage(ok ? { miniAppReply: id, ok, value } : { miniAppReply: id, ok, error: value }, "*");
+  const remount = () => {
+    mountedApps.get(box)?.();
+    mountedApps.delete(box);
+    delete box.dataset.pageStale;
+    box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", "");
+    markFreshApp();
+    void mountApp(box, say);
+  };
+  const askPage = async (id: number, op: unknown, seconds: unknown, userClicked: boolean) => {
+    const tab = await activeTab();
+
+    if (tab?.id == null || !tab.url) { reply(id, false, "没有可读取的页面"); return; }
+
+    if (op === "captions") {
+      // WHY: 重开侧栏时历史回答里的工具会重新加载，它们不能自己去读用户此刻打开的页面（读字幕会带登录态请求网站）。
+      if (!fresh && !userClicked) { appBar(box, "这个工具要读当前页面的字幕。", { label: "读取", run: remount }); reply(id, false, "等你点「读取」"); return; }
+      const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, action: "captions", tabId: tab.id }) as { ok: boolean; value?: ToolCaptionsReply; error?: string } | undefined;
+
+      if (!result?.ok) { reply(id, false, result?.error ?? "没有读到页面"); return; }
+      session = { tabId: tab.id, url: tab.url, box, remount };
+      pageSessions.add(session);
+      const site = siteOf(tab.url);
+      const note = box.querySelector<HTMLElement>(".gc-app-note");
+
+      if (note) note.textContent = "只读这一页 · 不联网";
+
+      if (site && result.value?.status === "ok") toolFoot(box, decodeURIComponent(box.dataset.app ?? ""), title, site);
+      else box.querySelector(":scope > .gc-app-foot")?.remove();
+      reply(id, true, result.value);
+
+      return;
+    }
+
+    if (op !== "seek" || typeof seconds !== "number") { reply(id, false, "不支持这个操作"); return; }
+
+    // WHY: 程序在沙箱里，它发来的消息说明不了用户点过；只有宿主这边的激活状态才可信，用户没点时不动页面。
+    if (!userClicked) { reply(id, false, "只有用户点击时才能操作页面"); return; }
+
+    if (!session || session.tabId !== tab.id || session.url !== tab.url) { reply(id, false, "页面已经换了"); return; }
+    const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, action: "seek", tabId: tab.id, url: tab.url, seconds }) as { ok: boolean; value?: unknown; error?: string } | undefined;
+
+    reply(id, result?.ok === true, result?.ok ? result.value : result?.error ?? "视频没有响应");
+  };
   const onMessage = (event: MessageEvent<unknown>) => {
     if (event.source !== frame.contentWindow) return;
     heardAt = performance.now();
@@ -865,9 +990,11 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
 
     if (kind === "ready" && !ready) {
       ready = true;
-      frame.contentWindow?.postMessage({ html: decodeURIComponent(box.dataset.app ?? ""), state: appStates.get(card) ?? null }, "*");
+      frame.contentWindow?.postMessage({ html: decodeURIComponent(box.dataset.app ?? ""), state: appStates.get(card) ?? null, maxHeight: appMaxHeight() }, "*");
     } else if (kind === "height" && "h" in data && typeof data.h === "number") {
-      frame.style.height = `${Math.min(APP_MAX_HEIGHT, Math.max(APP_MIN_HEIGHT, data.h))}px`;
+      // WHY: 只增不减。搜索把列表变短时框如果跟着缩，清空搜索后下面的「保存」会被挤出可见区。
+      shownHeight = Math.max(shownHeight, Math.min(appMaxHeight(), Math.max(APP_MIN_HEIGHT, data.h)));
+      frame.style.height = `${shownHeight}px`;
     } else if (kind === "save" && "state" in data && typeof data.state === "string" && data.state.length <= 50_000) {
       appStates.set(card, data.state);
       save(card);
@@ -875,6 +1002,12 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
       const text = data.text.replace(/\s+/g, " ").trim().slice(0, 500);
 
       appBar(box, `小程序想放进输入框：「${text}」`, { label: "放进输入框", run: () => fillInput(text) });
+    } else if (kind === "page" && "id" in data && typeof data.id === "number") {
+      const id = data.id;
+      const op = "op" in data ? data.op : undefined;
+      const seconds = "seconds" in data ? data.seconds : undefined;
+
+      void askPage(id, op, seconds, navigator.userActivation?.isActive === true).catch((error: unknown) => reply(id, false, error instanceof Error ? error.message : String(error)));
     } else if (kind === "error" && "message" in data && typeof data.message === "string" && !failed) {
       failed = true;
       const message = data.message.slice(0, 300);
@@ -884,7 +1017,11 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
   };
 
   window.addEventListener("message", onMessage);
-  mountedApps.set(box, () => window.removeEventListener("message", onMessage));
+  mountedApps.set(box, () => {
+    window.removeEventListener("message", onMessage);
+
+    if (session) pageSessions.delete(session);
+  });
   frame.addEventListener("load", () => {
     if (!ready) return;
     const at = performance.now();
