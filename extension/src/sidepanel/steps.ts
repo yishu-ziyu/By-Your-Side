@@ -24,7 +24,7 @@ const ACTION_NAMES: Record<string, string> = {
   double_click: "双击",
   drag: "拖动",
   upload_file: "上传文件",
-  read_attachment: "读附件",
+  read_attachment: "读取内容",
   cdp: "直接操作浏览器",
   hover: "悬停",
   remember_user_preference: "存入记忆",
