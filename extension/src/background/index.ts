@@ -946,7 +946,7 @@ const isWorkingTabId = (tabId: number | undefined): tabId is number => typeof ta
 function emitTeam(): void {
   const view = team.view();
 
-  if (!view || view.members.length === 0) return;
+  if (!view || view.members.length === 0 && view.phase !== "aborted") return;
   const status: Extract<ServerMessage, { type: "team_status" }> = { type: "team_status", team: view };
 
   if (epochRunId) status.runId = epochRunId;

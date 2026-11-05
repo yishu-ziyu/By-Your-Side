@@ -46,7 +46,7 @@ import {asksUser} from './goal-check.js';
 import {endingFromResults,resultHasWriteEffect,resultLocksWhenUnknown} from '../../shared/task-results.js';
 import type {TaskHistoryEntry} from '../../shared/task-history.js';
 import { warmUpStarted } from './warm-connection.js';
-import { matchesHandoffChoice } from '../../shared/handoff-choice.js';
+import { RESUME_UNCONFIRMED } from '../../shared/handoff-choice.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
@@ -121,7 +121,7 @@ export class ConversationManager {
   private readonly voiceConfirmations=new Map<string,VoiceProposal>();
   private readonly controlConfirmations=new Map<string,ControlConfirmSnapshot>();
   private readonly controlVersions=new Map<string,number>();
-  private readonly pendingHandoffChoices = new Map<string, { runId: string; version: number; choices: string[] }>();
+  private readonly pendingHandoffs = new Map<string, { runId: string; version: number }>();
   private readonly makeupRuns=new Set<string>();
   private readonly voicePlans:VoicePlanStore;
   private readonly voiceTurns=new VoiceTurnGate();
@@ -774,17 +774,17 @@ return { kind: "silent" };}
 
     return null;
   }
-  private async handToUser(id:string,ask:string,targets?:string[],choices?:string[]):Promise<void>{
+  private async handToUser(id:string,ask:string,targets?:string[]):Promise<void>{
     const runId=this.getTaskProgress(id)?.runId;
 
     if(!runId)throw new Error('没有正在执行的任务，页面没有交给用户。');
     const version = (this.controlVersions.get(id) ?? 0) + 1;
     this.controlVersions.set(id, version);
-    this.pendingHandoffChoices.delete(id);
+    this.pendingHandoffs.delete(id);
     const result=await this.controls.request(id,randomUUID(),'pause',runId,'page',undefined,ask,targets);
 
     if(!result.ok)throw new Error(result.reason??'页面没有交给用户。');
-    if (choices && this.getTaskProgress(id)?.runId === runId && this.controlVersions.get(id) === version) this.pendingHandoffChoices.set(id, { runId, version, choices });
+    if (this.getTaskProgress(id)?.runId === runId && this.controlVersions.get(id) === version) this.pendingHandoffs.set(id, { runId, version });
   }
 
   private async continuesOpenTask(request:TaskActionRequest,snapshot:TaskProgressSnapshot,entry:ConversationEntry):Promise<boolean>{
@@ -1322,17 +1322,6 @@ return receipt;
         return {status:'applied',runId:request.expectedRunId,message:'恢复已停止，原任务仍保留在检查点；没有继续执行。'};
       }
 
-      if(request.action==='abort'&&snapshot.state==='interrupted'){
-        this.pendingStarts.delete(request.conversationId);
-        this.checkpointResumes.delete(request.conversationId);
-        this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
-        this.progress.get(request.conversationId)?.abort();
-        entry.runtime.handleMessage({type:'abort'});
-        await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
-
-        return {status:'applied',runId:request.expectedRunId,message:'已终止保留在检查点的原任务。'};
-      }
-
       if (request.action === 'start') {
         const reserved=this.taskQueue.get(request.conversationId);
         const ownsReservation=reserved?.state==='starting'&&reserved.request.requestId===request.requestId;
@@ -1406,7 +1395,7 @@ return receipt;
 
         if(request.action==='resume'&&!entry.runtime.session.isHeld()&&!entry.runtime.control.isGroupHeld())throw new TaskActionRejected(snapshot.state==='aborted'?'任务已经中止，不能继续原任务。':'原任务没有暂停，未执行交还。');
 
-        if(request.action!=='resume'&&!['running','paused',...(request.action==='abort'?['aborted']:[])].includes(snapshot.state))throw new TaskActionRejected('当前没有正在执行的任务，操作未执行。');
+        if(request.action!=='resume'&&!['running','paused',...(request.action==='abort'?['aborted','interrupted']:[])].includes(snapshot.state))throw new TaskActionRejected('当前没有正在执行的任务，操作未执行。');
         this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
         const result=await this.controls.request(request.conversationId,request.requestId,request.action,request.expectedRunId,request.scope,request.tabId);
 
@@ -1447,19 +1436,17 @@ return receipt;
           await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
         }
 
-        const choice = this.pendingHandoffChoices.get(request.conversationId);
-        if (choice && originRun === choice.runId && request.source === 'text' && !request.attachments?.length
-          && choice.version === (this.controlVersions.get(request.conversationId) ?? 0)
-          && matchesHandoffChoice(request.text ?? '', choice.choices)) {
-          this.pendingHandoffChoices.delete(request.conversationId);
-          this.controlVersions.set(request.conversationId, choice.version + 1);
+        const handoff = this.pendingHandoffs.get(request.conversationId);
+        if (handoff && originRun === handoff.runId && handoff.version === (this.controlVersions.get(request.conversationId) ?? 0)) {
+          this.pendingHandoffs.delete(request.conversationId);
+          this.controlVersions.set(request.conversationId, handoff.version + 1);
           let reason = '页面控制没有确认';
           try {
-            const resumed = await this.controls.request(request.conversationId, randomUUID(), 'resume', choice.runId);
-            if (resumed.ok) return {status:'accepted',runId:originRun,message:'已收到选择，正在继续原任务。'};
+            const resumed = await this.controls.request(request.conversationId, randomUUID(), 'resume', handoff.runId);
+            if (resumed.ok) return {status:'accepted',runId:originRun,message:'已收到，正在继续原任务。'};
             reason = resumed.reason ?? reason;
           } catch (error) { reason = error instanceof Error ? error.message : reason; }
-          return {status:'accepted',runId:originRun,message:`选择已保存，自动继续未确认：${reason}。请先查看当前页面状态。`};
+          return {status:'accepted',runId:originRun,message:`${RESUME_UNCONFIRMED}：${reason}。请先查看当前页面状态。`};
         }
 
         return {status:'accepted',runId:originRun??null,message:`修改已保存，继续后生效：${request.text??'所选资料'}`};
@@ -1616,7 +1603,7 @@ return receipt;
     this.messagePumps.set(id, pump);
     const promise = this.factory(id, pump, summary).then((runtime) => {
       summary.model = runtime.session.modelName();
-      runtime.onHandToUser?.((ask, targets, choices) => this.handToUser(id, ask, targets, choices));
+      runtime.onHandToUser?.((ask, targets) => this.handToUser(id, ask, targets));
       runtime.control.setTabCoordinator?.(async (owner, members) => {
         const source = this.entries.get(owner)?.runtime;
 

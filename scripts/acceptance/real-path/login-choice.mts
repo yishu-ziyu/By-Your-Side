@@ -41,14 +41,6 @@ try {
   if (!known) {
     await until(() => rp.evaluate(panel, live ? `!!document.querySelector('.handoff-card .btn-primary:not(:disabled)') || [...document.querySelectorAll('.msg.assistant')].some(n => /Google/i.test(n.textContent) && /GitHub/i.test(n.textContent) && /[?？]/.test(n.textContent))` : `!!document.querySelector('.handoff-card .btn-primary:not(:disabled)')`), live ? 90_000 : 30_000, '等待用户选择');
     await rp.screenshot(panel, join(out, 'choice-panel.png'));
-    if (!live) {
-      const requestsBefore = requests.length;
-      await rp.click(panel, '#input'); await rp.typeText(panel, '不要 Google，等一下'); await rp.pressEnter(panel);
-      await sleep(1500);
-      assert.equal(await rp.evaluate(work, `document.querySelector('#result').textContent`), '', '否定选择时不动页面');
-      assert.equal(requests.length, requestsBefore, '否定选择时不恢复模型');
-      assert.equal(await rp.evaluate(panel, `!!document.querySelector('.handoff-card .btn-primary:not(:disabled)')`), true, '否定选择时仍等待用户');
-    }
     await rp.click(panel, '#input'); await rp.typeText(panel, choice); await rp.pressEnter(panel);
   }
   await until(() => rp.evaluate(work, `document.querySelector('#result').textContent === '已选择 Google，等待验证'`), live ? 90_000 : 10_000, '助手点击 Google');
@@ -77,10 +69,10 @@ try {
     const count = requests.length;
     await rp.click(panel, '#input'); await rp.typeText(panel, 'Google'); await rp.pressEnter(panel);
     await sleep(1500);
-    assert.equal(requests.length, count, '验证交接时补充文字不能自动继续');
+    assert.ok(requests.length > count, '交给用户后，用户说话就接着做');
     assert.equal(await rp.evaluate(work, `document.querySelector('#result').textContent`), '已选择 Google，等待验证', '验证未提交');
     assert.equal(await rp.evaluate(work, `document.querySelector('#code').value`), '', '验证码未填写');
-    result.personalHandoffStayedPaused = true;
+    result.personalHandoffContinued = true;
 
   }
   console.log('PASS 登录方式选择后继续', JSON.stringify(result));
