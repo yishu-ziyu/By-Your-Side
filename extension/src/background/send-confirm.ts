@@ -253,13 +253,14 @@ export function requestSummary(body: string | undefined): string | undefined {
   return text?.replace(/\s+/g, " ").trim().slice(0, 120) || undefined;
 }
 
-export async function confirmRequest(tabId: number, request: { url: string; body?: string }, guard: SendGuard): Promise<void> {
-  const classified = classifyRequest({ method: "POST", url: request.url, body: request.body });
+export async function confirmRequest(tabId: number, request: Readonly<{ url: string; method: string; headers: Readonly<Record<string, string>>; body?: string }>, guard: SendGuard): Promise<void> {
+  const classified = classifyRequest(request);
   if (!classified.confirm) return;
   let host = classified.host, path = classified.path || request.url;
   try { const url = new URL(request.url); host = url.host; path = url.pathname; } catch {  }
   const content = requestSummary(request.body);
   await confirmSend(tabId, `${classified.method} ${path}`.slice(0, 60), guard, async () => ({
+    binding: JSON.stringify([request.method, request.url, Object.entries(request.headers).sort(([a], [b]) => a.localeCompare(b)), request.body ?? null]),
     ...(content ? { content } : {}),
     ...(host ? { host } : {}),
     route: "request",

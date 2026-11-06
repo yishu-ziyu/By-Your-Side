@@ -5,7 +5,7 @@ import { confirmCopy } from "./send-confirm-copy.js";
 import { describeTimeout } from "./timeouts.js";
 import { liveStatus, runMetaLine, LIVE_ESCALATE_MS } from "./run-status.js";
 
-test("搜索类 POST 放行，写入和拿不准的要确认", () => {
+test("POST 不靠地址或正文猜只读，统一要确认", () => {
   const ieee = {
     method: "POST",
     url: "https://ieeexplore.ieee.org/rest/search",
@@ -19,13 +19,13 @@ test("搜索类 POST 放行，写入和拿不准的要确认", () => {
   const queryOutsideGraphql = { method: "POST", url: "https://api.github.com/repos/a/b/issues", body: JSON.stringify({ title: "New issue", body: "query" }) };
   const get = { method: "GET", url: "https://ieeexplore.ieee.org/rest/search?q=gait" };
 
-  assert.equal(classifyRequest(ieee).intent, "search");
-  assert.equal(classifyRequest(ieee).confirm, false);
+  assert.equal(classifyRequest(ieee).intent, "unknown");
+  assert.equal(classifyRequest(ieee).confirm, true);
   assert.equal(classifyRequest(ieee).query, '"A Comprehensive Study on Cross-View Gait"');
-  assert.equal(classifyRequest(gqlQuery).confirm, false);
-  assert.equal(classifyRequest(send).intent, "write");
+  assert.equal(classifyRequest(gqlQuery).confirm, true);
+  assert.equal(classifyRequest(send).intent, "unknown");
   assert.equal(classifyRequest(send).confirm, true);
-  assert.equal(classifyRequest(gqlMut).intent, "write");
+  assert.equal(classifyRequest(gqlMut).intent, "unknown");
   assert.equal(classifyRequest(unknown).intent, "unknown");
   assert.equal(classifyRequest(unknown).confirm, true);
   assert.equal(classifyRequest(issue).intent, "unknown");
@@ -33,7 +33,7 @@ test("搜索类 POST 放行，写入和拿不准的要确认", () => {
   assert.equal(classifyRequest(queryOutsideGraphql).intent, "unknown");
   assert.equal(classifyRequest(queryOutsideGraphql).confirm, true);
   assert.equal(classifyRequest(get).confirm, false);
-  assert.equal(needsRequestConfirm(ieee), false);
+  assert.equal(needsRequestConfirm(ieee), true);
   assert.equal(needsRequestConfirm(send), true);
 });
 
@@ -48,11 +48,11 @@ test("确认卡标题是人话，JSON 只进技术细节", () => {
     path: "/rest/search",
     body,
   });
-  assert.equal(searchCard.kind, "search");
+  assert.equal(searchCard.kind, "request");
   assert.match(searchCard.headline, /IEEE Xplore/);
-  assert.match(searchCard.headline, /搜索/);
+  assert.match(searchCard.headline, /提交/);
   assert.doesNotMatch(searchCard.headline, /POST|\/rest\/|\{/);
-  assert.equal(searchCard.yes, "允许搜索");
+  assert.equal(searchCard.yes, "允许提交");
   assert.ok(searchCard.quote?.includes("Comprehensive Study"));
   assert.equal(searchCard.tech?.path, "/rest/search");
 

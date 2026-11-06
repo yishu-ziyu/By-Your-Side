@@ -1,4 +1,4 @@
-export type RequestIntent = "search" | "save" | "write" | "unknown";
+export type RequestIntent = "search" | "unknown";
 
 export interface RequestClassifyInput {
   method?: string;
@@ -29,7 +29,7 @@ const SITE_NAMES: Record<string, string> = {
   "bilibili.com": "B站",
 };
 
-export function requestShape(method: string, url: string, body: string | undefined, base = "https://invalid.invalid"): { intent: RequestIntent; host: string; path: string; search: string } {
+export function requestShape(method: string, url: string, base = "https://invalid.invalid"): { intent: RequestIntent; host: string; path: string; search: string } {
   const verb = method.toUpperCase();
   let host = "", path = url.slice(0, 80), search = "";
   try {
@@ -41,35 +41,7 @@ export function requestShape(method: string, url: string, body: string | undefin
 
   if (verb === "GET" || verb === "HEAD" || verb === "OPTIONS") return { intent: "search", host, path, search };
 
-  const text = (body ?? "").trim();
-  let gql: RequestIntent | null = null;
-  if (/graphql|gql/i.test(path) && text) {
-    if (/\bmutation\b/i.test(text)) gql = "write";
-    else {
-      try {
-        const json = JSON.parse(text) as { query?: unknown; operationName?: unknown };
-        const q = typeof json.query === "string" ? json.query : "";
-        if (/\bmutation\b/i.test(q) || /mutation/i.test(String(json.operationName ?? ""))) gql = "write";
-        else if (/^\s*(query\b|\{)/i.test(q)) gql = "search";
-      } catch {
-        let q = text;
-        try { if (/^[^=&\s]+=/.test(text)) q = new URLSearchParams(text).get("query") ?? ""; } catch { q = ""; }
-        if (/\bmutation\b/i.test(q)) gql = "write";
-        else if (/^\s*(query\b|\{)/i.test(q)) gql = "search";
-      }
-    }
-  }
-
-  const write = /(send|message|msg|chat|comment|reply|tweet|mail|publish|share|submit|发送|pay|payment|checkout|purchase|order|delete|trash|buy|create|update)/i.test(path)
-    || /(?:^|\/)(posts?|messages?|comments?|replies|tweets?|mails?|orders?|payments?)(?:\/|$)/i.test(path)
-    || gql === "write";
-  const graphql = /graphql|gql/i.test(path);
-  const searchLike = (!graphql && /(search|query|suggest|autocomplete|lookup|find)/i.test(path))
-    || gql === "search";
-
-  const save = !write && /(?:^|\/)(save|draft|drafts|autosave)(?:\/|$)/i.test(path);
-
-  return { intent: write ? "write" : searchLike ? "search" : save ? "save" : "unknown", host, path, search };
+  return { intent: "unknown", host, path, search };
 }
 
 export function extractSearchQuery(body?: string, url?: string): string | undefined {
@@ -114,10 +86,10 @@ export function siteDisplayName(host: string): string {
 
 export function classifyRequest(input: RequestClassifyInput): RequestClassification {
   const method = (input.method ?? "GET").toUpperCase();
-  const { intent, host, path } = requestShape(method, input.url, input.body);
+  const { intent, host, path } = requestShape(method, input.url);
   const query = extractSearchQuery(input.body, input.url);
 
-  return { method, host, path, intent, confirm: intent === "write" || intent === "unknown", ...(query ? { query } : {}) };
+  return { method, host, path, intent, confirm: intent === "unknown", ...(query ? { query } : {}) };
 }
 
 export function needsRequestConfirm(input: RequestClassifyInput): boolean {

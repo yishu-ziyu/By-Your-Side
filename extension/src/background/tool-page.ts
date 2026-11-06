@@ -3,6 +3,7 @@ import { fetchUrl } from "./exec/fetch-url.js";
 import { videoCaptions } from "./exec/video-captions.js";
 import { parseTimedCaptions, pickCaptionTrack } from "../../../shared/timed-captions.js";
 import { TOOL_PAGE_MESSAGE, type ToolCaptionsReply, type ToolPageRequest } from "../../../shared/saved-tools.js";
+import { readCurrentDocument } from "./exec/page-readiness.js";
 
 const MAX_CUES = 5000;
 
@@ -12,14 +13,6 @@ const READ_LOADED_CUES = `(() => {
     if (cues.length) return { language: track.language || "", cues: cues.map(cue => ({ start: cue.startTime, end: cue.endTime, text: cue.text })) };
   }
   return null;
-})()`;
-
-const SEEK = (seconds: number) => `(() => {
-  const video = [...document.querySelectorAll("video")].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
-  if (!video) return null;
-  video.currentTime = ${seconds};
-  void video.play().catch(() => {});
-  return video.currentTime;
 })()`;
 
 const empty = (status: ToolCaptionsReply["status"], message: string, title = ""): ToolCaptionsReply => ({ status, message, title, language: "", automatic: false, cues: [] });
@@ -70,8 +63,12 @@ export function registerToolPage(isPanel: (sender: chrome.runtime.MessageSender)
     const tabId = message.tabId!;
 
     void (async () => {
+      const current = await readCurrentDocument(tabId);
+      if (!current || current.documentId !== message.documentId || current.url !== message.url) throw new Error("页面已经换了");
       if (message.action === "captions") {
-        respond({ ok: true, value: await captions(tabId) });
+        const value = await captions(tabId);
+        if ((await readCurrentDocument(tabId))?.documentId !== current.documentId) throw new Error("页面已经换了");
+        respond({ ok: true, value });
 
         return;
       }
@@ -80,7 +77,18 @@ export function registerToolPage(isPanel: (sender: chrome.runtime.MessageSender)
       const tab = await chrome.tabs.get(tabId);
 
       if (tab.url !== message.url) throw new Error("页面已经换了");
-      const time = await evaluate(tabId, SEEK(message.seconds!));
+      const [frame] = await chrome.scripting.executeScript({
+        target: { tabId, documentIds: [current.documentId] },
+        func: (seconds: number) => {
+          const video = [...document.querySelectorAll("video")].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+          if (!video) return null;
+          video.currentTime = seconds;
+          void video.play().catch(() => {});
+          return video.currentTime;
+        },
+        args: [message.seconds!],
+      });
+      const time = frame?.result;
 
       if (typeof time !== "number") throw new Error("这个页面上没有视频");
       respond({ ok: true, value: { time } });

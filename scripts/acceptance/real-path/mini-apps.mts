@@ -71,7 +71,7 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   await rp.evaluate(panel, `chrome.storage.local.set({ sideagent_mini_apps: false }).then(() => true)`);
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && document.querySelector("#conversation-new")?.disabled===false') || undefined, 60_000, "sidebar ready");
   const answers = () => rp.evaluate(panel, `document.querySelectorAll("#messages .msg.assistant .answer-actions").length`) as Promise<number>;
   const ask = async (text: string) => {
     const before = await answers();
@@ -141,7 +141,7 @@ try {
   await rp.screenshot(panel, join(artifacts, "3-counted.png"));
   assert.ok(said?.includes("计数 2"), `R2: the app works and offers a draft: ${said}`);
   const users = await rp.evaluate(panel, `document.querySelectorAll("#messages .msg.user").length`) as number;
-  await rp.evaluate(panel, `${lastApp}.querySelector(".gc-app-bar button").click(), true`);
+  await rp.click(panel, "#messages .gc-app:last-of-type .gc-app-bar button");
   const input = await rp.evaluate(panel, `document.querySelector("#input").value`) as string;
   assert.ok(input.includes("计数 2"), `R3: draft goes into the input box: ${input}`);
   assert.equal(await rp.evaluate(panel, `document.querySelectorAll("#messages .msg.user").length`), users, "R3: the app cannot send by itself");
@@ -166,9 +166,11 @@ try {
   const broken = await until(async () => { const b = await bar(); return b?.includes("小程序出错了") ? b : undefined; }, 10_000, "R2: 报错").catch(async () => await bar());
   evidence.broken = broken;
   await rp.screenshot(panel, join(artifacts, "4-broken.png"));
-  assert.ok(broken?.includes("故意的错") && broken.includes("让助手修好"), `R2: the error is shown with a fix button: ${broken}`);
-  await rp.evaluate(panel, `${lastApp}.querySelector(".gc-app-bar button").click(), true`);
+  assert.ok(broken?.includes("小程序出错了") && broken.includes("让助手修好"), `R2: the error is shown with a fix button: ${broken}`);
+  await rp.evaluate(panel, `${lastApp}.querySelector(".gc-app-bar button").id="repair-mini-app";true`);
+  await rp.click(panel, "#repair-mini-app");
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].some(m => m.textContent.includes("小程序「坏的」出错了"))`) || undefined, 10_000, "R2: 点了才发出修复请求");
+  assert.equal(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].some(m => m.textContent.includes("故意的错"))`), true, "R2: the repair request includes the actual error");
 
   await rp.evaluate(panel, `chrome.storage.local.set({ sideagent_mini_apps: false }).then(() => true)`);
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .gc-app")].every(a => !a.querySelector("iframe") && a.querySelector(".gc-app-off"))`) || undefined, 10_000, "R1: 关掉后只剩说明");
