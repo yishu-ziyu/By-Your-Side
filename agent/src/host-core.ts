@@ -9,6 +9,7 @@ import type { BrowserAgentSession } from "./session.js";
 import { TaskDispatcher } from "./task-dispatcher.js";
 import { VoiceService } from "./voice-service.js";
 import { readVoicePage } from "./voice-page-reader.js";
+import type { TaskRecordStore } from './task-record-store.js';
 
 export interface ClientConn {
   send(msg: ServerMessage): void;
@@ -16,6 +17,7 @@ export interface ClientConn {
 }
 
 export interface HostCoreOptions {
+  taskRecords?: TaskRecordStore;
   continuationEnabled?: () => boolean;
   createRuntime: ConstructorParameters<typeof ConversationManager>[0];
   store?: ConversationPersistence;
@@ -64,6 +66,7 @@ export async function startHostCore(options: HostCoreOptions): Promise<HostCore>
   );
 
   conversations.taskHistory = options.taskHistory;
+  if (options.taskRecords) conversations.taskRecords = options.taskRecords;
   conversations.continuationEnabled = options.continuationEnabled ?? (() => false);
   conversations.learnedOperations = options.learnedOperations;
   conversations.siteNotes = options.siteNotes;
