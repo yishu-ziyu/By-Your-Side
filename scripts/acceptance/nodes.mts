@@ -67,7 +67,7 @@ export const SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o",
 export const SKIP_FILES = new Set(["harness.mts", "run-all.mts", "shard-run.mts", "background-tab-input.mts", "attention-cues.mts", "learned-operations-live.mts"]);
 
 export const PR_CASES = [
-  "sidebar-interaction", "composer-expand", "handoff", "pay-stop", "retry-after-unknown",
+  "sidebar-interaction", "composer-expand", "handoff", "panel-send-confirm", "pay-stop", "error-recovery", "retry-after-unknown",
   "target-gone", "restart-resume", "file-attachments", "self-use-isolation", "snapshot-privacy", "readback-privacy", "open-in-front", "site-hint", "answer-ui",
 ];
 
