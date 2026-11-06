@@ -192,11 +192,11 @@ export function renderSettings(): void {
   <section class="sx" aria-labelledby="labs-title">
     <div class="sx-head"><h2 id="labs-title">实验功能</h2><p class="sx-sub">可能会调整或下线，关掉不影响日常对话和网页操作。</p></div>
     <div class="surface rows">
-      ${toggleRow("mini-apps", "回答里的小程序", "在回答中调整条件、筛选比较或运行小模拟。")}
+      ${toggleRow("mini-apps", "回答里的可操作界面", "地图、图表、清单、计算器等，助手按问题选择，可以直接操作。")}
       ${toggleRow("continuous-delegation", "持续关注网页", "交代一次，等待页面结果后自动筛选和标注。仅限原页面和约定期限，需保持浏览器打开。")}
       ${toggleRow("voice-diagnostics", "语音诊断", "排查语音问题时打开。打开后，输入框“+”菜单里会多一项“语音诊断”。")}
     </div>
-    <details class="settings-detail"><summary>小程序可以访问什么？</summary><p>要动手试的问题（调几个条件看结果、筛选比较一批东西、小模拟），助手当场写一个小程序放在回答里。小程序在侧栏的沙箱里运行，不能联网，碰不到你的登录。需要时它能读当前视频的字幕，也能在你点击时让视频跳转，其他网页内容都碰不到。你在里面改过的东西重开侧栏还在。写小程序比写文字慢几秒。</p></details>
+    <details class="settings-detail"><summary>这些界面可以访问什么？</summary><p>界面在侧栏的沙箱里运行，不能联网，碰不到你的登录。地图底图来自 Esri，配图来自维基百科，由侧栏代取，这两家能看到地图位置和配图的搜索词。小程序需要时能读当前视频的字幕，也能在你点击时让视频跳转，其他网页内容都碰不到。只有你点界面里的按钮时，才会把内容发给助手或打开网页。你改过的东西重开侧栏还在。做界面比写文字慢几秒。</p></details>
     <p id="labs-status" class="settings-status" role="status" aria-live="polite"></p>
   </section>
     </div>

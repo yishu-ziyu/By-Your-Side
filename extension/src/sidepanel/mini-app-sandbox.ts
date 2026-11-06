@@ -41,10 +41,11 @@ const bridge = (state: string | null, maxHeight: number) => `<script>
       post({ kind: "save", state: text });
     },
     say(text) { post({ kind: "draft", text: String(text ?? "").slice(0, 500) }); },
+    send(text) { post({ kind: "send", text: String(text ?? "").slice(0, 3000) }); },
     page: Object.freeze({ captions: () => ask("captions"), seek: (seconds) => ask("seek", Number(seconds)) }),
   });
   const fail = (message) => post({ kind: "error", message: String(message).slice(0, 300) });
-  addEventListener("error", (e) => fail(e.message || "脚本出错"));
+  addEventListener("error", (e) => { if (!/^ResizeObserver loop/.test(e.message)) fail(e.message || "脚本出错"); });
   addEventListener("unhandledrejection", (e) => fail((e.reason && e.reason.message) || e.reason || "脚本出错"));
   // 量 body 自己的高（含内边距）：量整页的 scrollHeight 会差一两像素，框里就多出一条滚动条。
   // 没超过侧栏给的最高时框和内容一样高，差的一两像素不该变成一条滚动条；超过了才让它滚。
