@@ -3,11 +3,13 @@ import { mkdir, mkdtemp, open, readFile, readdir, writeFile } from "node:fs/prom
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO } from "./harness.mts";
-import { CORE_CASES as CORE, SKIP_FILES as SKIP } from "../nodes.mts";
+import { CORE_CASES, PR_CASES, SKIP_FILES as SKIP } from "../nodes.mts";
 
 const HERE = join(REPO, "scripts/acceptance/real-path");
 
-const core = process.argv.includes("--core");
+const CORE = process.argv.includes("--pr") ? PR_CASES : CORE_CASES;
+
+const core = process.argv.includes("--core") || process.argv.includes("--pr");
 
 const onlyArg = process.argv.find((arg) => arg.startsWith("--only="));
 
