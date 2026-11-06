@@ -69,6 +69,7 @@ try {
   await rp.cdp.send("Page.enable", {}, work);
   await rp.cdp.send("Page.navigate", { url: `${origin}/` }, work);
   const panel = await rp.attach(await rp.openSidePanel());
+  await rp.evaluate(panel, `chrome.storage.local.set({ sideagent_mini_apps: false }).then(() => true)`);
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
   const answers = () => rp.evaluate(panel, `document.querySelectorAll("#messages .msg.assistant .answer-actions").length`) as Promise<number>;
@@ -112,11 +113,11 @@ try {
   await rp.screenshot(panel, join(artifacts, "1-off.png"));
   assert.equal(leaks.length, 0, `R2: program text leaked while streaming: ${leaks[0]}`);
   assert.ok(sawPlaceholder, "R2: a placeholder shows while the app is being written");
-  assert.ok(off.note?.includes("设置 → 实验功能") && !off.frame, `R1: off by default, only a note: ${JSON.stringify(off)}`);
+  assert.ok(off.note?.includes("设置 → 实验功能") && !off.frame, `R1: switched off, only a note: ${JSON.stringify(off)}`);
 
   const settingsTab = (await rp.cdp.send("Target.createTarget", { url: `chrome-extension://${rp.extensionId}/settings.html`, background: true })).targetId;
   const settings = await rp.attach(settingsTab);
-  await until(async () => await rp.evaluate(settings, 'document.querySelector("#mini-apps")?.checked === false').catch(() => false) || undefined, 15_000, "设置页的小程序开关默认关");
+  await until(async () => await rp.evaluate(settings, 'document.querySelector("#mini-apps")?.checked === false').catch(() => false) || undefined, 15_000, "设置页的开关是关的");
   await rp.click(settings, '[data-settings-page="labs"]');
   await until(async () => await rp.evaluate(settings, 'document.querySelector("#mini-apps").checkVisibility()') || undefined, 5_000, "切到实验功能");
   await rp.evaluate(settings,'document.querySelector("#mini-apps").scrollIntoView({ block: "center" }); true');

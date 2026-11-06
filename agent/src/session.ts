@@ -52,7 +52,7 @@ import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, FileAttachment
 import { annotateReachableModels } from "./reachable-models.js";
 import type { UserDelivery, UserDeliveryFacts, UserDeliverySourceRef, UserDeliveryStream, VoiceConversationContext, TaskProgressSnapshot } from "../../shared/voice.js";
 import { attachedPageImages, createReadAttachmentTool, withAttachedFiles } from "./attached-files.js";
-import { createArtifactStore, createArtifactsTool, type ArtifactStore, type ArtifactPersistence } from "./artifacts-tool.js";
+import { createAnswerUiGuideTool, createArtifactStore, createArtifactsTool, type ArtifactStore, type ArtifactPersistence } from "./artifacts-tool.js";
 import { COMPOSE_USER_DELIVERY_PROMPT, assertDeliveryText, composeUserDeliveryInput, createSendUserMessageTool, createUserDelivery, deliverUserMessage, deliveryMetrics, isLeadDeliveryHost, toolDeliveryId, projectDeliveryFacts, type DeliveryFactInput, type PageChangeTally, type SendUserMessageOptions } from "./user-delivery.js";
 import { HELD_BY_OTHER_TASK_ERROR, SessionHold, handbackContinueText } from "../../shared/control.js";
 import { leadSystemPrompt } from "./prompt.js";
@@ -441,7 +441,7 @@ if(required.includes(key))candidates.set(key,attachment);
     if (!c || c.state === 'COMPLETED') return;
     if (c.state !== 'RUNNING') throw new Error('委托当前没有可执行片段，操作未执行。');
     if (Date.now() >= c.expiresAt || c.activeMs + (c.segmentStartedAt === null ? 0 : Date.now() - c.segmentStartedAt) >= c.maxActiveMs || c.modelCalls >= c.maxModelCalls) throw new Error('委托期限或预算已用完，操作未执行。');
-    if (!new Set(['snapshot','read_element','read_elements','mark','clear_marks','task_goals','record_task_results','send_user_message','wait_for_condition','read_attachment']).has(name)) throw new Error('自动续做仅允许读取、分析和页面标注，本次操作未执行。');
+    if (!new Set(['snapshot','read_element','read_elements','mark','clear_marks','task_goals','record_task_results','send_user_message','wait_for_condition','read_attachment','answer_ui_guide']).has(name)) throw new Error('自动续做仅允许读取、分析和页面标注，本次操作未执行。');
     if (params.tabId !== undefined && params.tabId !== c.tabId) throw new Error('自动续做不能访问其他页面。');
     if (['snapshot','read_element','read_elements','mark','clear_marks'].includes(name)) {
       const [tabs, identity] = await Promise.all([
@@ -810,6 +810,7 @@ if(required.includes(key))candidates.set(key,attachment);
           })] : []),
           ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
           ...(artifactStore ? [createArtifactsTool({ emit: event => callbacks.emit(event), store: artifactStore })] : []),
+          createAnswerUiGuideTool(),
           createReadAttachmentTool(() => resultHost?.userAttachments() ?? [], file => resultHost?.downloadedOriginal(file), () => resultHost?.modelSeesImages() ?? false, name => earlierResultText(resultHost?.session?.agent.state.messages, name)),
         ];
 
