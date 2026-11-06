@@ -36,9 +36,12 @@ jobs:
         run: echo "EGO_ACCEPTANCE_CHROME=$(find ~/.cache/ms-playwright -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
       - name: Key cases
         run: npx tsx scripts/acceptance/real-path/run-all.mts --pr
+        env:
+          SIDEAGENT_RECORD: "1"
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pr-cases-evidence-${{ github.run_attempt }}
           path: out/
           if-no-files-found: ignore
+          retention-days: 7
