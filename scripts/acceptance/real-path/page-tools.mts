@@ -71,7 +71,7 @@ try {
   const panel = await rp.attach(await rp.openSidePanel());
   panelSession = panel;
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ sideagent_mini_apps: true, inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && document.querySelector("#conversation-new")?.disabled===false') || undefined, 60_000, "sidebar ready");
   const lastApp = `[...document.querySelectorAll("#messages .gc-app:not(.gc-ph)")].at(-1)`;
   const bar = async () => await rp.evaluate(panel, `(() => { const b = ${lastApp}?.querySelector(".gc-app-bar"); return b && !b.hidden ? b.textContent : ""; })()`) as string;
   const waitBar = (text: string, ms = 15_000) => until(async () => { const b = await bar(); return b.includes(text) ? b : undefined; }, ms, `提示「${text}」`);
@@ -94,12 +94,20 @@ try {
   await rp.screenshot(panel, join(artifacts, "1-tool.png"));
 
   assert.equal(await time(), 0, "reading does not move the video");
+  await waitBar("跳到视频", 12_000);
+  assert.equal(await time(), 0, "a proposed seek without the host button leaves the video untouched");
+  await rp.evaluate(panel, `${lastApp}.querySelector(".gc-app-bar button:last-child").id="cancel-tool-seek";true`);
+  await rp.click(panel, "#cancel-tool-seek");
   const refused = await waitBar("自动跳转", 12_000);
   evidence.autoSeek = refused;
   assert.ok(refused.includes("自动跳转被拒"), `a seek with no user click is refused: ${refused}`);
   assert.equal(await time(), 0, "the refused seek did not move the video");
 
   await clickInApp(60, 12 + 30 + 24 + 36 * 2 + 18);
+  await waitBar("跳到视频");
+  assert.equal(await time(), 0, "the tool does not turn its own click into authority");
+  await rp.evaluate(panel, `${lastApp}.querySelector(".gc-app-bar button").id="confirm-tool-seek";true`);
+  await rp.click(panel, "#confirm-tool-seek");
   const seeked = await until(async () => { const t = await time(); return t >= 10 ? t : undefined; }, 8_000, "点第三句后视频跳到 10 秒");
   evidence.clickSeek = seeked;
   assert.ok(seeked < 14, `seek landed on the clicked line: ${seeked}`);
@@ -140,12 +148,16 @@ try {
   assert.equal(requests(), asked, "opening a saved tool does not call the model");
   await rp.screenshot(panel, join(artifacts, "6-new-video.png"));
   await clickInApp(60, 12 + 30 + 24 + 36 + 18);
+  await waitBar("跳到视频");
+  await rp.evaluate(panel, `${lastApp}.querySelector(".gc-app-bar button").id="confirm-bill-seek";true`);
+  await rp.click(panel, "#confirm-bill-seek");
   const billSeek = await until(async () => { const t = await time(); return t >= 5 ? t : undefined; }, 8_000, "新视频跳到第二句");
   evidence.billSeek = billSeek;
 
   await go("/silent");
   await waitBar("上一个页面");
-  await rp.evaluate(panel, `${lastApp}.querySelector(".gc-app-bar button").click(), true`);
+  await rp.evaluate(panel, `${lastApp}.querySelector(".gc-app-bar button").id="reload-tool-page";true`);
+  await rp.click(panel, "#reload-tool-page");
   evidence.none = await waitBar("状态：");
   await rp.screenshot(panel, join(artifacts, "7-no-captions.png"));
   assert.equal(await foot(), "", "a tool with nothing to read offers no save");

@@ -42,7 +42,7 @@ try {
   panel = await rp.attach(await rp.openSidePanel());
 
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-demo-no-secret" } })}).then(() => true)`);
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "侧栏就绪");
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && document.querySelector("#conversation-new")?.disabled===false') || undefined, 60_000, "侧栏就绪");
   const userCount = () => rp.evaluate(panel, `document.querySelectorAll("#messages .msg.user").length`) as Promise<number>;
   const sessions = new Map<string, string>();
   const inFrame = async <T,>(expression: string): Promise<T> => {
@@ -114,6 +114,9 @@ try {
   assert.deepEqual(hits, [], `数据没有到别的网站：${hits.join(", ")}`);
 
   await clickButton(byText("查 JD5290"));
+  assert.equal(await userCount(), users, "界面只能提出动作，不能自己提交消息");
+  await until(() => rp.evaluate(panel, 'document.querySelector(".gc-app-bar")?.innerText.includes("查 JD5290")'), 5_000, "宿主展示发送内容");
+  await rp.click(panel, ".gc-app-bar button");
   await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.user")].some(m => m.textContent.includes("查 JD5290 实时状态"))`) || undefined, 10_000, "点击后交回助手");
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#messages").innerText`) as string).includes("JD5290 准点") || undefined, 30_000, "助手接着答");
   await rp.screenshot(panel, join(artifacts, "3-handed-back.png"));

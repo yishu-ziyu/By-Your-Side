@@ -15,7 +15,7 @@ export function wrapPageContent(text: string, meta: { tabId?: number; url?: stri
     meta.title ? `title="${clipMeta(meta.title)}"` : "",
   ].filter(Boolean).join(" ");
 
-  const safe = text.split(`</${PAGE_CONTENT_TAG}`).join(`<\\/${PAGE_CONTENT_TAG}`);
+  const safe = text.replace(/<\/?page-content\b/gi, tag => tag.replace("<", "&lt;"));
   const open = attrs ? `<${PAGE_CONTENT_TAG} untrusted ${attrs}>` : `<${PAGE_CONTENT_TAG} untrusted>`;
 
   return `${open}\n${safe}\n</${PAGE_CONTENT_TAG}>`;
