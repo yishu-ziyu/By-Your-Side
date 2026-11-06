@@ -48,6 +48,9 @@ import type {TaskHistoryEntry} from '../../shared/task-history.js';
 import { warmUpStarted } from './warm-connection.js';
 import { RESUME_UNCONFIRMED } from '../../shared/handoff-choice.js';
 import { HELD_BY_OTHER_TASK_ERROR } from "../../shared/control.js";
+import { TaskRecordStore } from './task-record-store.js';
+import type { TaskRecord } from '../../shared/task-record.js';
+import { InProcessLock } from './document-persistence.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
@@ -80,6 +83,118 @@ function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | n
 const WARM_UP_INTERVAL_MS = 30_000;
 
 export class ConversationManager {
+  taskRecords = new TaskRecordStore();
+  private readonly taskRecordLock = new InProcessLock();
+  private readonly routingLocks = new Map<string, InProcessLock>();
+  private readonly taskMutations = new Map<string,number>();
+
+  private async rememberTask(request: TaskActionRequest, snapshot: TaskProgressSnapshot): Promise<void> {
+    await this.taskRecordLock.run(async () => {
+      const queued = this.taskQueue.get(request.conversationId);
+      const prior = await this.taskRecords.findExecution(request.conversationId, snapshot.runId ?? null)
+        ?? (queued ? await this.taskRecords.findExecution(request.conversationId, null) : undefined);
+      const id = prior?.id ?? `task-${createHash('sha256').update(request.conversationId + ':' + request.requestId).digest('hex').slice(0,32)}`;
+      await this.taskRecords.put({ id, originConversationId: prior?.originConversationId ?? request.originConversationId ?? request.conversationId,
+        executionConversationId: request.conversationId, runId: snapshot.runId ?? null, goal: snapshot.goal ?? request.text ?? '使用所选资料',
+        revision: prior?.revision ?? 0, controlVersion: snapshot.controlVersion ?? 0, state: 'running', updatedAt: Date.now() });
+    });
+  }
+
+  private async syncTask(id: string, revised = false, snapshot = this.getTaskProgress(id)): Promise<TaskRecord | undefined> {
+    return this.taskRecordLock.run(async () => {
+      const job = this.taskQueue.get(id);
+      const prior = await this.taskRecords.findExecution(id,snapshot?.runId ?? null);
+      if (!prior) return;
+      if (snapshot?.runId && prior.runId && snapshot.runId !== prior.runId) return prior;
+      if (prior.state === 'cancelled' && snapshot?.state !== 'aborted') return prior;
+      const state: TaskRecord['state'] = job && ['queued','suspended'].includes(job.state) ? job.state === 'queued' ? 'queued' : 'interrupted'
+        : job?.state === 'cancelled' || snapshot?.state === 'aborted' ? 'cancelled'
+        : snapshot?.state === 'paused' ? 'paused' : snapshot?.state === 'interrupted' || job?.state === 'unknown' ? 'interrupted'
+        : snapshot?.state === 'error' ? 'failed' : snapshot?.state === 'running' ? 'running'
+        : snapshot?.goalCheck?.status === 'done' || snapshot?.state === 'idle' && !projectTaskView(snapshot).resumable ? 'completed' : 'waiting';
+      const delivery = snapshot?.conversationContext?.latestDelivery;
+      const revision = prior.revision + (revised ? 1 : 0);
+      const next: TaskRecord = { ...prior, runId: snapshot?.runId ?? prior.runId, state,
+        goal: (snapshot?.recoveryInput?.requirements.join('\n') || job?.request.text || prior.goal).slice(-12000),
+        revision, controlVersion: Math.max(prior.controlVersion, snapshot?.controlVersion ?? 0), updatedAt: Date.now() };
+      if (revised) delete next.delivery;
+      else if (!this.taskMutations.has(id) && state === 'completed' && delivery?.kind === 'finding' && delivery.runId === next.runId) {
+        next.delivery = { id: delivery.id, text: delivery.text, revision };
+      }
+      if (!revised && next.goal === prior.goal && next.state === prior.state && next.runId === prior.runId && next.controlVersion === prior.controlVersion && JSON.stringify(next.delivery) === JSON.stringify(prior.delivery)) return prior;
+      await this.taskRecords.put(next);
+      return next;
+    });
+  }
+
+  private async taskCatalog(origin: string): Promise<TaskRecord[]> {
+    for (const [id] of this.entries) {
+      const job = this.taskQueue.get(id), snapshot = this.getTaskProgress(id);
+      if (id !== origin && job?.request.originConversationId !== origin || !snapshot?.runId || !snapshot.goal) continue;
+      if (!await this.taskRecords.findExecution(id,snapshot.runId)) await this.rememberTask({requestId:`legacy-${snapshot.runId}`,conversationId:id,originConversationId:job?.request.originConversationId,source:'text',action:'start',expectedRunId:snapshot.runId,text:snapshot.goal},snapshot);
+    }
+    for (const task of await this.taskRecords.list(origin)) {
+      const snapshot = this.getTaskProgress(task.executionConversationId);
+      if ((snapshot?.runId ?? null) === task.runId) await this.syncTask(task.executionConversationId,false,snapshot);
+    }
+    return (await this.taskRecords.list(origin)).sort((a,b) => b.updatedAt-a.updatedAt).slice(0,12);
+  }
+
+  private async coordinateInput(request: TaskActionRequest, stillCurrent = () => true): Promise<{ receipts?: TaskReceipt[]; question?: string; chat?: true } | null> {
+    const origin = request.conversationId, session = this.entries.get(origin)?.runtime.session;
+    if (!session || !request.text?.trim() || request.taskId || request.forkedFrom) return null;
+    const catalog = await this.taskCatalog(origin);
+    if (!catalog.some(task => !['completed','cancelled','failed'].includes(task.state))) return null;
+    const steps = await session.routeTaskInput(request.text, catalog);
+    if (!stillCurrent()) throw new TaskActionRejected('要求已变化，这条没有执行。');
+    if (steps[0]?.action === 'chat') return {chat:true};
+    if (steps[0]?.action === 'clarify') {
+      const progress = this.progress.get(origin)!;
+      progress.recordRoutingQuestion(request.text,steps[0].text);
+      await session.persistTaskResults(progress.snapshot());
+      return {question:steps[0].text};
+    }
+    const receipts: TaskReceipt[] = [];
+    for (const [index, step] of steps.entries()) {
+      if (step.action === 'chat' || step.action === 'clarify') continue;
+      const target = catalog.find(task => task.id === step.taskId);
+      const requestId = steps.length === 1 ? request.requestId : `${request.requestId}-${index}`;
+      if (step.action === 'start') {
+          const targetId = `task-worker-${createHash('sha256').update(origin+':'+requestId).digest('hex').slice(0,24)}`;
+          const queued: TaskActionRequest = { ...request, requestId, conversationId:targetId, originConversationId:origin, action:'start', expectedRunId:null, text:step.text,
+            context:undefined,pages:request.pages?.length?request.pages:request.context?[request.context]:undefined };
+          const record: TaskRecord = { id:`task-${createHash('sha256').update(origin+':'+requestId).digest('hex').slice(0,32)}`, originConversationId:origin, executionConversationId:targetId, runId:null, goal:step.text, revision:0, controlVersion:0, state:'queued', updatedAt:Date.now() };
+          if (!await this.taskRecords.get(record.id)) await this.taskRecords.put(record);
+          try {
+            const receipt = this.taskQueue.add({...queued,taskId:record.id},step.text.slice(0,36));
+            if (receipt.status === 'rejected') await this.taskRecords.put({...record,state:'failed',updatedAt:Date.now()});
+            await this.taskQueue.persisted();
+            receipts.push(receipt); if (receipt.status !== 'rejected') this.pumpTasks();
+          } catch (error) {
+            await this.taskRecords.put({...record,state:'failed',updatedAt:Date.now()});
+            throw error;
+          }
+          continue;
+      }
+      if (!target) throw new TaskActionRejected('任务归属不明确，未执行。');
+      const current = await this.taskRecords.get(target.id);
+      if (!current || current.revision !== target.revision || current.controlVersion !== target.controlVersion) throw new TaskActionRejected('原任务刚刚变化，请重新说明这项修改。');
+      const receipt = await this.dispatchTaskAction({requestId,taskId:target.id,conversationId:target.executionConversationId,
+        ...(target.executionConversationId !== origin ? {originConversationId:origin} : {}),source:request.source,action:step.action,
+        expectedRunId:target.runId,expectedControlVersion:target.controlVersion,text:step.text,
+        context:target.executionConversationId === origin ? request.context : undefined,
+        pages:request.pages?.length?request.pages:request.context?[request.context]:undefined,attachments:request.attachments},stillCurrent);
+      receipts.push(receipt);
+      if (!['accepted','applied','queued'].includes(receipt.status)) break;
+      const updated = await this.taskRecords.get(target.id);
+      if (updated) Object.assign(target, updated);
+    }
+    this.emitReceipt({requestId:request.requestId,conversationId:origin,source:request.source,action:request.action,runId:this.getTaskProgress(origin)?.runId??null,
+      text:request.text,targetTitle:'任务安排',status:receipts.every(receipt=>['accepted','applied','queued'].includes(receipt.status))?'accepted':'rejected',
+      message:receipts.every(receipt=>['accepted','applied','queued'].includes(receipt.status))?'已分派到对应任务。':receipts.map(receipt=>receipt.message).join('；'),updatedAt:Date.now()});
+    return {receipts};
+  }
+
   continuationEnabled: () => boolean = () => false;
   private readonly observers = new Map<string, TaskContinuationObserver>();
   private async saveContinuation(id: string): Promise<void> {
@@ -159,6 +274,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
           const entry=await this.create(request.conversationId,request.text?.slice(0,36)||'独立任务');
 
           if(this.queueClosed){entry.runtime.dispose();throw new TaskActionRejected('连接已关闭，任务未启动。');}
+          if (this.taskQueue.get(request.conversationId)?.state !== 'starting') throw new TaskActionRejected('任务已取消或暂停，没有启动。');
           const earlier=request.originConversationId?this.getTaskProgress(request.originConversationId)?.conversationContext?.recentTurns:undefined;
 
           if(earlier?.length)this.progress.get(request.conversationId)?.inheritTurns(earlier);
@@ -170,7 +286,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
           return receipt;
         }catch(error){this.pendingStarts.delete(request.conversationId);throw error;}
       },
-      changed:job=>this.emitReceipt(job.receipt),
+      changed:job=>{ const receipt=structuredClone(job.receipt); void this.taskQueue.persisted().then(()=>this.emitReceipt(receipt),()=>this.emitReceipt({...receipt,status:'unknown',message:'任务状态未能保存，请核对已有结果；不会自动重做。'})); },
     });}
 
   async ensureDefault(): Promise<ConversationEntry> {
@@ -381,6 +497,18 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
 
     route?.reportStage?.('classifying');
 
+    if (route && !route.resumeReadOnly && !pending && !control && (await this.taskRecords.list(id)).length > 1) {
+      const coordinated = await this.coordinateInput({requestId:route.requestId,conversationId:id,source:'voice',action:'steer',expectedRunId:route.runId,text,...route.input},stillCurrent);
+      if (coordinated !== null) {
+        if (coordinated.question) return {kind:'clarify',message:coordinated.question};
+        if (coordinated.chat) return this.answerSourcedChat(id,text,before,stillCurrent,session,route.turn);
+        const receipts=coordinated.receipts??[];
+        const last = receipts.at(-1);
+        return last ? {kind:'action',ok:receipts.every(r=>['accepted','applied','queued'].includes(r.status)),status:last.status,message:receipts.map(r=>r.message).join('；'),receipts}
+          : {kind:'none'};
+      }
+    }
+
     const prepared=route?.resumeReadOnly
       ?{plan:{steps:[{action:route.resumeReadOnly,target:null,text}]},replyText:null,protocol:'plan' as const}
       :before.state==='interrupted'&&isInterruptedResumeText(text)
@@ -531,6 +659,7 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
         const target='voice-'+createHash('sha256').update(id+':'+requestId+':'+index).digest('hex').slice(0,32);
         const newPage=/(新(的)?标签页|新(的)?窗口)/.test(step.text);
         const receipt=this.taskQueue.add({requestId:plan.steps.length===1?requestId:`${requestId}-${index}`,conversationId:target,originConversationId:id,source:'voice',action:'start',expectedRunId:null,text:step.text,...(!newPage&&route.input?.context?{context:route.input.context}:{}),...(route.input?.attachments?{attachments:route.input.attachments}:{})},step.text.slice(0,36));
+        await this.taskQueue.persisted();
         receipts.push(receipt);journal[index]!.targetId=target;journal[index]!.targetTitle=receipt.targetTitle;journal[index]!.status='complete';journal[index]!.receipt=receipt;save();
 
         if(receipt.status==='rejected')return {kind:'action',ok:false,status:receipt.status,message:receipt.message,receipts};
@@ -970,19 +1099,6 @@ return;}
       }
     }
   }
-  private async startSeparateAsk(id: string, request: TaskActionRequest): Promise<boolean> {
-    const text=request.text??'';
-    const target='text-'+createHash('sha256').update(id+':'+request.requestId).digest('hex').slice(0,32);
-    const sharesPage=/这页|这个页面|当前页|本页|这篇|这个网页|this page/i.test(text);
-    const receipt=this.taskQueue.add({requestId:request.requestId,conversationId:target,originConversationId:id,source:'text',action:'start',expectedRunId:null,text,
-      ...(sharesPage&&request.context?{context:request.context}:{}),...(request.pages?.length?{pages:request.pages}:{}),...(request.attachments?.length?{attachments:request.attachments}:{})},text.slice(0,36));
-
-    if(receipt.status==='rejected')return false;
-    await this.taskQueue.pump();
-
-    return true;
-  }
-
   private async mergeSeparateAsk(id: string, here?: PageContext): Promise<void> {
     const job=this.taskQueue.get(id);
 
@@ -1008,13 +1124,15 @@ return;}
     }finally{this.merging.delete(id);}
   }
 
-  private relaySeparateAnswer(id: string): void {
+  private async relaySeparateAnswer(id: string): Promise<void> {
+    if(this.taskMutations.has(id))return;
+    const record=await this.syncTask(id);
     const job=this.taskQueue.get(id),snapshot=this.getTaskProgress(id);
     const delivery=snapshot?.conversationContext?.latestDelivery;
+    if(!job?.request.originConversationId)return;
+    if (this.taskMutations.has(id) || snapshot?.state==='running' || record && record.runId !== snapshot?.runId) return;
 
-    if(!job?.request.originConversationId||job.request.source!=='text')return;
-
-    if(delivery&&delivery.kind!=='ack'&&delivery.text.trim()&&delivery.runId===snapshot?.runId)this.taskQueue.settleSeparate(id,{text:delivery.text});
+    if(snapshot?.state!=='aborted'&&snapshot?.state!=='error'&&delivery&&delivery.kind!=='ack'&&delivery.text.trim()&&delivery.runId===snapshot?.runId)this.taskQueue.settleSeparate(id,{text:delivery.text});
     else if(snapshot?.state==='error'||snapshot?.state==='aborted')this.taskQueue.settleSeparate(id,{failed:snapshot.state==='aborted'?'已停下，没有做完。':'没做成，出错了。'});
   }
 
@@ -1130,6 +1248,36 @@ return;}
 
   async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
+    const record = request.taskId ? await this.taskRecords.get(request.taskId) : undefined;
+    if (record && record.executionConversationId === request.conversationId && request.expectedRunId === null && record.runId !== null && ['running','paused','waiting'].includes(record.state)) request = {...request,expectedRunId:record.runId};
+    if (request.taskId && (!record || record.executionConversationId !== request.conversationId || record.runId !== request.expectedRunId)) throw new TaskActionRejected('任务身份已变化，操作未执行。');
+    if (record?.state === 'cancelled' && request.action !== 'status') throw new TaskActionRejected('任务已经取消，不能继续。');
+    const mutation = ['steer','abort','pause','resume'].includes(request.action);
+    const replay = !!this.dispatcher.get(request.conversationId,request.requestId);
+    if (mutation) this.taskMutations.set(request.conversationId,(this.taskMutations.get(request.conversationId) ?? 0)+1);
+    try {
+      const receipt = await this.dispatchExecutionAction(request,stillCurrent,inputOptions);
+      const accepted = ['accepted','applied','queued'].includes(receipt.status);
+      const task = await this.syncTask(request.conversationId,accepted && request.action === 'steer' && !replay);
+      const result = { ...receipt, ...(task ? {taskId:task.id,taskState:task.state,targetTitle:task.goal.split('\n')[0]!.slice(0,36)} : {}) };
+      if (accepted) this.taskQueue.applyControl(request.conversationId,result);
+      if (this.taskQueue.get(request.conversationId)) await this.taskQueue.persisted();
+      this.emitReceipt(result);
+      return result;
+    } finally {
+      if (mutation) {
+        const count=(this.taskMutations.get(request.conversationId) ?? 1)-1;
+        if (count) this.taskMutations.set(request.conversationId,count);
+        else {
+          this.taskMutations.delete(request.conversationId);
+          if (request.action === 'steer' || request.action === 'resume') void this.relaySeparateAnswer(request.conversationId).catch(()=>this.emit({type:'agent_event',conversationId:request.originConversationId??request.conversationId,event:{kind:'error',message:'结果尚未保存并交付，请核对原任务。'}}));
+        }
+      }
+    }
+  }
+
+  private async dispatchExecutionAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
+    if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
 
     if (request.action !== 'status') this.entries.get(request.conversationId)?.runtime.session.settleAnswerGate();
 
@@ -1137,7 +1285,7 @@ return;}
 
     const waiting=this.taskQueue.get(request.conversationId);
 
-    if(waiting&&['queued','suspended'].includes(waiting.state)&&request.action!=='start'){
+    if(waiting&&(['queued','suspended'].includes(waiting.state)||waiting.state==='starting'&&!waiting.receipt.runId)&&request.action!=='start'){
       if(!stillCurrent()||request.expectedRunId!==null)throw new TaskActionRejected('待办身份已变化，操作未执行。');
 
       const receipt=await this.dispatcher.dispatch(request,waiting.title,async()=>{
@@ -1151,14 +1299,12 @@ return;}
           if(!original||!request.context||pageRecoveryKey(request.context.tabId,request.context.url)?.urlHash!==original.urlHash)throw new TaskActionRejected('请先打开这项待办原来的页面再继续；原要求和附件仍保留。');
         }
 
-        const result=request.action==='abort'?this.taskQueue.cancel(request.conversationId):request.action==='steer'?this.taskQueue.revise(request.conversationId,request.text??''):request.action==='status'?this.taskQueue.get(request.conversationId)?.receipt:request.action==='resume'?this.taskQueue.resumePending(request.conversationId,request.context):undefined;
+        const result=request.action==='abort'?this.taskQueue.cancel(request.conversationId):request.action==='steer'?this.taskQueue.revise(request.conversationId,request.text??'',request):request.action==='status'?this.taskQueue.get(request.conversationId)?.receipt:request.action==='resume'?this.taskQueue.resumePending(request.conversationId,request.context):undefined;
 
         if(!result)throw new TaskActionRejected('待办已变化，这条操作未执行。');
 
         return {...result,status:request.action==='steer'?'accepted':request.action==='status'?'applied':result.status};
       });
-
-      this.emitReceipt(receipt);
 
 if(request.action==='resume'&&receipt.status==='queued')this.pumpTasks();
 
@@ -1339,7 +1485,7 @@ return receipt;
 
         if(!entry.runtime.session.available)throw new TaskActionRejected('当前执行模型不可用，任务未启动。');
 
-        if (request.source === 'text' && !request.attachments?.length && !request.pages?.length) {
+        if (request.source === 'text' && !request.attachments?.length && !request.pages?.length && !this.taskQueue.get(request.conversationId)) {
           const quickReceipt = await this.tryQuickNavSwitch(request, entry);
 
           if (quickReceipt) return quickReceipt;
@@ -1371,11 +1517,19 @@ return receipt;
             await entry.runtime.session.persistRecoveryAttachments?.(acceptedRunId,request.attachments);
             await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
           }
+          await this.rememberTask(request,targetProgress.snapshot());
         }catch(error){
           targetProgress.restoreResults(beforeAccept);
           throw new TaskActionRejected(`任务未能保存到本地，尚未接收、没有启动：${error instanceof Error?error.message:String(error)}`);
         }
 
+        const queued = this.taskQueue.get(request.conversationId);
+        if (queued && queued.state !== 'starting' || !stillCurrent() || this.queueClosed) {
+          targetProgress.abort();
+          await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
+          await this.syncTask(request.conversationId,false,targetProgress.snapshot());
+          throw new TaskActionRejected('任务已取消或暂停，没有启动。');
+        }
         this.taskQueue.bindRun(request.conversationId,acceptedRunId);
 
         if(entry.summary.title==='新会话')entry.summary.title=title;
@@ -1481,8 +1635,6 @@ return receipt;
       return {status:'accepted',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已送达当前任务：${request.text}`};
     },{deferredResume:request.action==='resume'&&['interrupted','idle','error'].includes(this.getTaskProgress(request.conversationId)?.state??'')});
 
-    this.emitReceipt(receipt);
-
     return receipt;
   }
   list(): ConversationSummary[] { return [...this.entries.values()].map(({ summary }) => ({ ...summary })); }
@@ -1537,6 +1689,9 @@ return receipt;
         if (c && message.event.status === 'continue' && c.state === 'VERIFYING') progress.setContinuation({ ...c, state: 'RUNNING' });
       }
       const progressSnapshot=progress.snapshot();
+      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && ['agent_end','goal_check','error'].includes(message.event.kind)) {
+        void this.syncTask(id,false,progressSnapshot).catch(() => this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'任务状态未能保存，请核对已有结果。'}}));
+      }
 
       if(message.type==='agent_event'&&['agent_start','tool_end','agent_end'].includes(message.event.kind))this.nameTask(id,progressSnapshot,progress.visitedPages());
 
@@ -1568,7 +1723,7 @@ return receipt;
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_end') this.goalContinuing.delete(id);
 
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId) && !progressSnapshot.continuation) {
-        void this.fulfillOwedDelivery(id).finally(()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); this.relaySeparateAnswer(id); });
+        void this.fulfillOwedDelivery(id).then(async()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); await this.relaySeparateAnswer(id); }).catch(()=>this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'结果尚未保存并交付，请核对原任务。'}}));
 
         try{this.taskQueue.finish(id,progress.snapshot().state==='aborted'?'cancelled':progress.snapshot().state==='error'?'failed':'completed');}catch{this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'任务结束状态未能保存，请核对已有结果。'}});}
 
@@ -1602,7 +1757,7 @@ return receipt;
       if (message.type === "status" || message.type === "model_info") this.store?.save(this.list());
     };
     this.messagePumps.set(id, pump);
-    const promise = this.factory(id, pump, summary).then((runtime) => {
+    const promise = this.factory(id, pump, summary).then(async (runtime) => {
       summary.model = runtime.session.modelName();
       runtime.onHandToUser?.((ask, targets) => this.handToUser(id, ask, targets));
       runtime.control.setTabCoordinator?.(async (owner, members, userNamedThisPage) => {
@@ -1677,6 +1832,9 @@ return receipt;
       runtime.session.bindConversationContext?.(() => this.getTaskProgress(id));
       runtime.session.bindVisitedUrls?.(() => this.progress.get(id)?.visitedUrls() ?? []);
       this.entries.set(id, entry);
+      const savedTask = await this.taskRecords.findExecution(id,progress.snapshot().runId ?? null);
+      if (savedTask) this.controlVersions.set(id,Math.max(this.controlVersions.get(id) ?? 0,savedTask.controlVersion));
+      if (savedTask?.state === 'cancelled') progress.abort();
       const observer = new TaskContinuationObserver({
         rpc: runtime.rpc, enabled: () => this.continuationEnabled() && this.connected && !this.queueClosed,
         snapshot: () => progress.snapshot(), update: value => progress.setContinuation(value),
@@ -1685,7 +1843,7 @@ return receipt;
           const c = progress.snapshot().continuation;
           if (c?.state === 'COMPLETED') {
             this.taskQueue.finish(id, 'completed');
-            void this.fulfillOwedDelivery(id).finally(() => { this.recordTaskHistory(id); this.relaySeparateAnswer(id); });
+            void this.fulfillOwedDelivery(id).then(async () => { this.recordTaskHistory(id); await this.relaySeparateAnswer(id); }).catch(()=>this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'结果尚未保存并交付，请核对原任务。'}}));
           }
           if (c?.state === 'STOPPED') this.taskQueue.finish(id, 'cancelled');
         },
@@ -1924,10 +2082,18 @@ return;}
     if (message.type === 'task_action') {
       const request=message.request,session=entry.runtime.session;
 
-      const runId=this.getTaskProgress(id)?.runId??null,control=this.controlVersions.get(id)??0;
-      const same=()=>session.isStreaming()&&!session.isHeld()&&(this.getTaskProgress(id)?.runId??null)===runId&&(this.controlVersions.get(id)??0)===control;
-      if(request.source==='text'&&request.action==='steer'&&request.text?.trim()&&request.expectedRunId===runId&&same()
-        &&await session.judgeInterjection(request.text)==='separate'&&same()&&await this.startSeparateAsk(id,request))return;
+      if (request.source === 'text' && ['start','steer'].includes(request.action) && !request.taskId && !request.forkedFrom) {
+        let lock = this.routingLocks.get(id);
+        if (!lock) { lock = new InProcessLock(); this.routingLocks.set(id,lock); }
+        await lock.run(async () => {
+          const routed = await this.coordinateInput(request);
+          if (routed === null) { await this.dispatchTaskAction(request); return; }
+          if (routed.question) this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:routed.question}});
+          if (routed.chat) await this.answerSourcedChat(id,request.text??'',this.getTaskProgress(id)!,()=>true,session);
+        });
+        return;
+      }
+
       await this.dispatchTaskAction(request);
 
       return;

@@ -1113,6 +1113,7 @@ function resetConversationRender(): void {
 }
 
 function selectConversation(id: string, notify = true): void {
+  targetedTask = null;
   const preserveInitialDraft = !conversationReady && (inputEl.value.length > 0 || attachments.getAttachments().length > 0 || pendingAsk !== null);
 
   if (id !== selectedConversationId) { cancelPendingKeySaves(); voiceUI.stop(); dictationUI?.cancel(); memoryInline.asksUnanswered("switched_conversation"); }
@@ -2204,6 +2205,7 @@ function activeTabContext(): PageContext | undefined {
 }
 
 const separateAskOrigins = new Map<string, string>();
+let targetedTask: TaskReceipt | null = null;
 
 function resumeSeparateAsk(receipt: TaskReceipt): boolean {
   const context = activeTabContext();
@@ -2212,12 +2214,12 @@ function resumeSeparateAsk(receipt: TaskReceipt): boolean {
 }
 
 function isSeparateAsk(receipt: TaskReceipt): boolean {
-  return receipt.source === "text" && receipt.action === "start" && receipt.originConversationId === selectedConversationId && receipt.conversationId !== selectedConversationId;
+  return (receipt.action === "start" || !!receipt.taskId) && receipt.originConversationId === selectedConversationId && receipt.conversationId !== selectedConversationId;
 }
 
 function renderSeparateAsk(receipt: TaskReceipt): void {
   separateAskOrigins.set(receipt.conversationId, receipt.originConversationId!);
-  const key = `${receipt.conversationId}:${receipt.requestId}`;
+  const key = receipt.taskId ?? `${receipt.conversationId}:${receipt.requestId}`;
   const previous = receiptMessages.get(key);
   const root = document.createElement("div");
   root.className = "msg separate-ask";
@@ -2229,9 +2231,10 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
   tag.textContent = receipt.targetTitle || receipt.text.slice(0, 36);
   const state = document.createElement("span");
   state.className = "separate-ask-state";
-  const paused = receipt.status === "queued" && /连接(已重启|断开)/.test(receipt.message);
+  const paused = receipt.taskState === 'paused' || receipt.taskState === 'interrupted' && receipt.status === 'queued';
   const stopped = receipt.status === "unknown" && !receipt.result;
-  state.textContent = receipt.result ? "已完成" : paused ? receipt.message : receipt.status === "queued" ? "排队中" : receipt.status === "accepted" ? "正在做，不打断当前任务" : receipt.message;
+  const cancelled = receipt.action === 'abort' && ['applied','accepted'].includes(receipt.status);
+  state.textContent = cancelled ? '已取消' : receipt.result ? "已完成" : paused ? receipt.message : receipt.status === "queued" ? "排队中" : receipt.status === "accepted" ? "正在做，不打断当前任务" : receipt.message;
   head.append(tag, state);
   root.append(head);
 
@@ -2253,7 +2256,7 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
     const resume = document.createElement("button");
     resume.type = "button";
     resume.textContent = "继续";
-    resume.onclick = () => { resume.disabled = true; const context = activeTabContext(); if (!send({ type: "task_action", request: { requestId: crypto.randomUUID(), conversationId: receipt.conversationId, source: "text", action: "resume", expectedRunId: null, ...(context ? { context } : {}) } })) resume.disabled = false; };
+    resume.onclick = () => { resume.disabled = true; const context = activeTabContext(); if (!send({ type: "task_action", request: { requestId: crypto.randomUUID(), taskId:receipt.taskId, conversationId: receipt.conversationId, originConversationId:selectedConversationId, source: "text", action: "resume", expectedRunId: receipt.runId, ...(context ? { context } : {}) } })) resume.disabled = false; };
     actions.append(resume);
   }
 
@@ -2265,7 +2268,14 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
     actions.append(resume);
   }
 
-  if (!receipt.result && (receipt.status === "queued" || receipt.status === "accepted")) {
+  if (!cancelled && !receipt.result && (receipt.status === "queued" || receipt.status === "accepted")) {
+    const revise = document.createElement('button');
+    revise.type = 'button'; revise.textContent = '修改要求';
+    revise.onclick = () => { targetedTask = receipt; inputEl.placeholder = `补充「${receipt.targetTitle}」`; inputEl.focus(); };
+    const stop = document.createElement('button');
+    stop.type = 'button'; stop.textContent = '取消';
+    stop.onclick = () => { stop.disabled = true; if (!send({type:'task_action',request:{requestId:crypto.randomUUID(),taskId:receipt.taskId,conversationId:receipt.conversationId,originConversationId:selectedConversationId,source:'text',action:'abort',expectedRunId:receipt.runId}})) stop.disabled = false; };
+    actions.append(revise,stop);
     const merge = document.createElement("button");
     merge.type = "button";
     merge.textContent = "改成补充上一件";
@@ -2286,7 +2296,7 @@ function renderSeparateAsk(receipt: TaskReceipt): void {
   if (note?.matches(".ctx-chips")) note = note.nextElementSibling;
   if (note instanceof HTMLElement && note.matches(".steer-received")) {
     const label = note.querySelector(".steer-received-label");
-    if (label) label.textContent = receipt.status === "applied" ? "已收到 · 并回上一件处理" : "另开一件 · 不打断当前任务";
+    if (label) label.textContent = receipt.action !== 'start' ? '已按对应任务处理' : receipt.status === "applied" ? "已收到 · 并回上一件处理" : "另开一件 · 不打断当前任务";
   }
 }
 
@@ -2295,7 +2305,7 @@ function markSteerReceived(bubble: HTMLElement): void {
   note.className = "steer-received";
   const label = document.createElement("span");
   label.className = "steer-received-label";
-  label.textContent = "已收到 · 接在当前任务里处理";
+  label.textContent = "已收到";
   note.append(label);
   const saveButton = bubble.querySelector<HTMLButtonElement>(".pskill-save");
   if (saveButton) note.append(saveButton);
@@ -4073,6 +4083,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg notice',text));
       }else if (ev.receipt) {
         materialsTray?.noteReceipt(ev.receipt);
+        if (ev.receipt.taskId && ev.receipt.conversationId === selectedConversationId && ev.receipt.action === 'steer' && ['accepted','applied'].includes(ev.receipt.status)) steerRibbon.noteSteer(ev.receipt.text);
 
         if (ev.receipt.action === "steer" && (ev.receipt.status === "rejected" || ev.receipt.status === "failed")) steerRibbon.reset();
 
@@ -5015,7 +5026,6 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         if (!running) {
           runStartAt = eventTime();
         }
-        else if (steering) steerRibbon.noteSteer(entry.item.text);
         confirmSentText(entry.item.text);
         const resent = resending && resending.conversationId === selectedConversationId && resending.text === entry.item.text ? resending : null;
         resending = null;
@@ -5443,10 +5453,11 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
 
   const request = {
     requestId: crypto.randomUUID(),
-    conversationId: selectedConversationId,
+    conversationId: targetedTask?.conversationId ?? selectedConversationId,
+    ...(targetedTask ? {taskId:targetedTask.taskId,originConversationId:selectedConversationId} : {}),
     source: 'text' as const,
-    action: (running||held ? 'steer' : 'start') as "steer" | "start",
-    expectedRunId: conversations.get(selectedConversationId)?.runId ?? null,
+    action: (targetedTask||running||held ? 'steer' : 'start') as "steer" | "start",
+    expectedRunId: targetedTask ? targetedTask.runId : conversations.get(selectedConversationId)?.runId ?? null,
     text,
     context,
     pages: mentioned.length ? mentioned : undefined,
@@ -5458,6 +5469,8 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
   if (!sent) { noticeSendFailed();
 
  return false; }
+
+  targetedTask = null;
 
   invalidateAppActions();
 

@@ -161,10 +161,11 @@ export class MaterialsTray {
   }
 
   noteReceipt(receipt: TaskReceipt): void {
-    const delivery = this.deliveries.get(receipt.conversationId);
+    const conversationId = receipt.originConversationId ?? receipt.conversationId;
+    const delivery = this.deliveries.get(conversationId);
 
     if (!delivery || delivery.request.requestId !== receipt.requestId) return;
-    if (receipt.status === "accepted" || receipt.status === "applied") this.deliveries.delete(receipt.conversationId);
+    if (receipt.status === "accepted" || receipt.status === "applied") this.deliveries.delete(conversationId);
     else delivery.receipt = receipt;
     this.sync();
   }

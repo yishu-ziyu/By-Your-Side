@@ -16,6 +16,7 @@ const ASK = "把刚才那个例子整理成要点";
 const RECALLED = "整理要点：沿用上一轮的青柠协议";
 
 const model = await startScriptedModel([
+  { match: `"message":"${ASK}","clauses":`, steps: [{ text: JSON.stringify({steps:[{action:'start',taskId:null,text:ASK}]}) }] },
   { match: `"message":"${ASK}`, steps: [{ text: '{"kind":"separate"}' }] },
   { match: `"text":"${FIRST_ANSWER.slice(0, 4)}`, steps: [{ text: RECALLED }] },
   { match: FIRST, steps: [{ text: FIRST_ANSWER }] },

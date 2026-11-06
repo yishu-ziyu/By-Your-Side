@@ -9,8 +9,10 @@ import { type Arm, type Pass, type Verdict, judge, registrationOf, shuffled } fr
 import { poolOf, type Row } from "./replay-row.mts";
 
 const MAX_LOAD = 20;
+const ignoreLoad = process.argv.includes('--force');
 
 async function waitForQuietMachine() {
+  if (ignoreLoad) return;
   while (loadavg()[0] >= MAX_LOAD) await sleep(20_000);
 }
 
@@ -41,6 +43,7 @@ await mkdir(outDir, { recursive: true });
 const started = Date.now();
 const reasons: string[] = [];
 const notes: string[] = [];
+if (ignoreLoad) notes.push('本次按用户要求跳过负载等待；耗时不用于速度改善结论。');
 let early: Verdict | null = null;
 
 async function runCase(name: string, arm: Arm, args: string[] = []) {

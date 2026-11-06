@@ -55,6 +55,7 @@ export async function openConversationStore(log: (message: string) => void): Pro
   let summaries: ConversationSummary[] = [];
   let queue: readonly unknown[] = [];
   const readings = new Map<string, ReadingTranscript>();
+  let queueWrite: Promise<void> = Promise.resolve();
 
   try {
     db = await openDb();
@@ -96,7 +97,21 @@ export async function openConversationStore(log: (message: string) => void): Pro
     readingFor: (id) => readings.get(id),
     taskQueue: {
       load: () => queue,
-      save: (jobs) => write(QUEUE_KEY, trimQueue(jobs)),
+      save: jobs => {
+        const next = structuredClone(trimQueue(jobs));
+        queueWrite = queueWrite.then(async () => {
+          if (!db) throw new Error('任务存储不可用，尚未接收。');
+          const tx = db.transaction(STORE,'readwrite',{durability:'strict'});
+          tx.objectStore(STORE).put(next,QUEUE_KEY);
+          await new Promise<void>((resolve,reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('任务未能保存。'));
+          });
+          queue = next;
+        });
+        void queueWrite.catch(() => {});
+      },
+      flush: () => queueWrite,
     },
   };
 }

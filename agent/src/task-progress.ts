@@ -269,6 +269,11 @@ export class TaskProgress {
     for (const turn of turns) this.pushTurn(turn.role, turn.text);
   }
 
+  recordRoutingQuestion(text: string, question: string): void {
+    this.pushTurn('user',text);
+    this.pushTurn('assistant',question);
+  }
+
   recordUserTurn(text: string, requestId?: string): void {
     if (requestId) {
       if (this.voicedRequests.has(requestId)) return;

@@ -1,10 +1,12 @@
 import type { Attachment, PageContext } from './protocol.js';
+import { TASK_RECORD_STATES, type TaskRecord } from './task-record.js';
 
 export const TASK_ACTIONS = ['start', 'steer', 'status', 'pause', 'resume', 'abort'] as const;
 
 export type TaskAction = typeof TASK_ACTIONS[number];
 
 export interface TaskActionRequest {
+  taskId?: string;
   forkedFrom?: { conversationId: string; requestId: string };
   requestId: string;
   conversationId: string;
@@ -35,6 +37,8 @@ export interface TaskReceiptDiff {
 }
 
 export interface TaskReceipt {
+  taskId?: string;
+  taskState?: TaskRecord['state'];
   newConversationRequest?: TaskActionRequest;
   requestId: string;
   conversationId: string;
@@ -57,6 +61,7 @@ export const taskId = (v: unknown): v is string => typeof v === 'string' && /^[\
 export function isTaskActionRequest(v: unknown): v is TaskActionRequest {
   if (!v || typeof v !== 'object') return false;
   const a = v as TaskActionRequest;
+  if (a.taskId !== undefined && !taskId(a.taskId)) return false;
 
   return (a.forkedFrom === undefined || a.action === 'start' && taskId(a.forkedFrom.conversationId) && taskId(a.forkedFrom.requestId)) && taskId(a.requestId) && taskId(a.conversationId) && ['text','voice'].includes(a.source)
     && (a.originConversationId===undefined||taskId(a.originConversationId))
@@ -81,6 +86,8 @@ const receiptDiff = (v: unknown): v is TaskReceiptDiff => !!v && typeof v === 'o
 export function isTaskReceipt(v: unknown): v is TaskReceipt {
   if (!v || typeof v !== 'object') return false;
   const r = v as TaskReceipt;
+  if (r.taskId !== undefined && !taskId(r.taskId)) return false;
+  if (r.taskState !== undefined && !TASK_RECORD_STATES.includes(r.taskState)) return false;
 
   return (r.newConversationRequest === undefined || r.status === 'rejected' && r.action === 'start' && isTaskActionRequest(r.newConversationRequest) && r.newConversationRequest.action === 'start' && r.newConversationRequest.requestId === r.requestId && r.newConversationRequest.conversationId === r.conversationId) && taskId(r.requestId) && taskId(r.conversationId) && ['text','voice'].includes(r.source)
     && (r.originConversationId===undefined||taskId(r.originConversationId))
