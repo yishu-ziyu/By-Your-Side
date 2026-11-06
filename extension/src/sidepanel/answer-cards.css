@@ -57,7 +57,7 @@
 .gc-app-off { margin: 0; padding: 10px 14px 14px; color: var(--text-secondary); font-size: var(--fs-meta); }
 .gc-app-bar { display: flex; align-items: center; gap: var(--s-2); padding: 8px 14px 10px; border-top: 1px solid var(--content-border); font-size: var(--fs-meta); color: var(--text-secondary); }
 .gc-app-bar[hidden] { display: none; }
-.gc-app-bar > span { flex: 1; min-width: 0; }
+.gc-app-bar > span { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .gc-app-foot { display: flex; align-items: center; gap: var(--s-2); padding: 8px 14px 10px; border-top: 1px solid var(--content-border); font-size: var(--fs-meta); color: var(--text-secondary); }
 .gc-app-foot > span { flex: 1; min-width: 0; }
 .gc-app-foot[data-mode="form"] { display: grid; }

@@ -9,8 +9,8 @@ export type ToolCaptionStatus = "ok" | "none" | "login" | "unavailable";
 export interface ToolCaptionsReply { status: ToolCaptionStatus; message: string; title: string; language: string; automatic: boolean; cues: Array<{ start: number; end: number; text: string }> }
 
 export type ToolPageRequest =
-  | { type: typeof TOOL_PAGE_MESSAGE; action: "captions"; tabId: number }
-  | { type: typeof TOOL_PAGE_MESSAGE; action: "seek"; tabId: number; url: string; seconds: number };
+  | { type: typeof TOOL_PAGE_MESSAGE; action: "captions"; tabId: number; url: string; documentId: string }
+  | { type: typeof TOOL_PAGE_MESSAGE; action: "seek"; tabId: number; url: string; documentId: string; seconds: number };
 
 export const appMarkup = (tool: Pick<SavedTool, "name" | "html">): string => `<app title="${tool.name.replace(/["<>]/g, "")}">${tool.html}</app>`;
 

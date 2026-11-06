@@ -25,10 +25,11 @@ interface FetchResult {
   timingsMs: { confirmation: number; dispatch: number; response: number; body: number };
 }
 
-export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?: AbortSignal; beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}; confirmPost?: (request: { url: string; body?: string }) => Promise<void> }): Promise<FetchResult & { sendConfirmed?: true }> {
+export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?: AbortSignal; beforeDispatch?: (() => Promise<void>) & {checkNow?: () => void}; confirmPost?: (request: Readonly<{ url: string; method: string; headers: Readonly<Record<string, string>>; body?: string }>) => Promise<void> }): Promise<FetchResult & { sendConfirmed?: true }> {
   const request = normalizeFetchRequest(params);
   const started = performance.now();
-  const confirmed = request.method !== "GET" && opts?.confirmPost && needsRequestConfirm(request) ? await opts.confirmPost({ url: request.url, body: request.body }).then(() => true, (error: unknown) => {
+  if (needsRequestConfirm(request) && !opts?.confirmPost) throw new FetchRefused("POST 请求没有用户确认通道，没有发出。");
+  const confirmed = needsRequestConfirm(request) ? await opts!.confirmPost!(Object.freeze({ ...request, headers: Object.freeze({ ...request.headers }) })).then(() => true, (error: unknown) => {
     throw error && typeof error === "object" && "executionFact" in error ? error : Object.assign(new Error(`POST 请求没能先问用户，没有发出：${oneLine(error)}`), { executionFact: "not_executed" as const });
   }) : false;
   const confirmation = Math.round(performance.now() - started);
@@ -60,7 +61,7 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
           headers: request.headers,
           body: request.body,
           credentials: "include",
-          redirect: "manual",
+          redirect: request.method === "GET" ? "manual" : "error",
           signal: controller.signal,
         });
         responseTime += performance.now() - responseStart;
@@ -76,7 +77,7 @@ export async function fetchUrl(params: Record<string, unknown>, opts?: { signal?
 
         if (hops > FETCH_MAX_REDIRECTS) throw new FetchRefused("fetch 重定向次数过多，后续请求未执行。");
         assertRedirectAllowed(request.url, next);
-        if (request.method !== "GET" && !confirmed && opts?.confirmPost && needsRequestConfirm({ ...request, url: next })) throw new FetchRefused("POST 请求被重定向到需要用户确认的地址，后续请求未执行。");
+        if (request.method !== "GET") throw new FetchRefused("POST 请求不能沿用原授权重定向，后续请求未执行。");
         request.url = next;
 
         if (request.method === "GET") request.body = undefined;

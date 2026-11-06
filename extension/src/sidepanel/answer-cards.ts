@@ -501,6 +501,9 @@ type CardState = { vars?: Record<string, number>; checks?: number[]; fields?: Re
 const STATE_PREFIX = "answerCard:";
 
 let conversationOf = () => "default";
+const currentUserTurn = () => [...document.querySelectorAll("#messages .msg.user")].at(-1);
+let actionRevision = 0;
+export const invalidateAppActions = (): void => { actionRevision += 1; };
 
 const slots = new WeakMap<HTMLElement, string>();
 
@@ -800,18 +803,26 @@ let freshAppUntil = 0;
 
 export const markFreshApp = (): void => { freshAppUntil = performance.now() + FRESH_APP_MS; };
 
-type PageSession = { tabId: number; url: string; box: HTMLElement; remount: () => void };
+type PageSession = { tabId: number; url: string; documentId: string; box: HTMLElement; remount: () => void };
 
 const pageSessions = new Set<PageSession>();
 
 const activeTab = async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+
+async function appPage(): Promise<{ tabId: number; url: string; documentId: string } | null> {
+  const tab = await activeTab();
+  if (tab?.id == null || !tab.url) return null;
+  if (!/^https?:/.test(tab.url)) return { tabId: tab.id, url: tab.url, documentId: "" };
+  const [frame] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: "ISOLATED", func: () => location.href }).catch(() => []);
+  return frame?.documentId && frame.result === tab.url ? { tabId: tab.id, url: tab.url, documentId: frame.documentId } : null;
+}
 
 function syncPageSessions(): void {
   void activeTab().then(tab => {
     for (const session of pageSessions) {
       if (!session.box.isConnected) { pageSessions.delete(session); continue; }
 
-      if (tab?.url === session.url) {
+      if (tab?.id === session.tabId && tab.url === session.url) {
         if (session.box.dataset.pageStale) { delete session.box.dataset.pageStale; session.box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", ""); }
         continue;
       }
@@ -867,8 +878,6 @@ function toolFoot(box: HTMLElement, html: string, title: string, site: string): 
   paint();
 }
 
-const SEND_GAP_MS = 800;
-
 const UI_MAX_HEIGHT = 4000;
 
 let miniAppsOn: Promise<boolean> | undefined;
@@ -883,7 +892,7 @@ function releaseApps(): void {
   }
 }
 
-function appBar(box: HTMLElement, text: string, action?: { label: string; run: () => void }): void {
+function appBar(box: HTMLElement, text: string, action?: { label: string; run: () => void; cancel?: () => void }): void {
   const bar = box.querySelector<HTMLElement>(":scope > .gc-app-bar");
 
   if (!bar) return;
@@ -896,8 +905,20 @@ function appBar(box: HTMLElement, text: string, action?: { label: string; run: (
     button.type = "button";
     button.className = "gc-btn";
     button.textContent = action.label;
-    button.addEventListener("click", () => { action.run(); button.disabled = true; });
+    button.addEventListener("click", (event) => {
+      if (!event.isTrusted || button.disabled) return;
+      bar.querySelectorAll<HTMLButtonElement>("button").forEach(b => { b.disabled = true; });
+      action.run();
+    });
     bar.append(button);
+    if (action.cancel) {
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "gc-btn";
+      cancel.textContent = "取消";
+      cancel.addEventListener("click", event => { if (event.isTrusted && !button.disabled) { button.disabled = true; action.cancel?.(); } });
+      bar.append(cancel);
+    }
   }
   bar.hidden = false;
 }
@@ -928,6 +949,8 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
     return;
   }
   const saved = await readState(card);
+  const target = await appPage();
+  const conversation = conversationOf();
 
   if (!current()) return;
 
@@ -946,7 +969,8 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
   let heardAt = 0;
   let shownHeight = 0;
   let session: PageSession | undefined;
-  let sentAt = -SEND_GAP_MS;
+  let pendingAction = false;
+  let lastAction = "";
   // WHY: 界面是回答的一部分，跟着回答滚；框内再有滚动条，地图和按钮会被藏在第二层滚动后面。
   const maxHeight = () => box.dataset.appSurface === "ui" ? UI_MAX_HEIGHT : appMaxHeight();
   const reply = (id: number, ok: boolean, value: unknown) => frame.contentWindow?.postMessage(ok ? { miniAppReply: id, ok, value } : { miniAppReply: id, ok, error: value }, "*");
@@ -958,18 +982,38 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
     markFreshApp();
     void mountApp(box, say);
   };
+  const offerAction = (key: string, text: string, label: string, run: () => void | Promise<void>, cancel?: () => void): boolean => {
+    if (!current() || pendingAction || lastAction === key) return false;
+    pendingAction = true;
+    const turn = currentUserTurn();
+    const revision = actionRevision;
+    appBar(box, text, {
+      label,
+      cancel: () => { pendingAction = false; lastAction = key; box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", ""); cancel?.(); },
+      run: () => {
+        lastAction = key;
+        void (async () => {
+          const now = await appPage();
+          if (!current() || actionRevision !== revision || currentUserTurn() !== turn || conversationOf() !== conversation || !target || !now || now.tabId !== target.tabId || now.url !== target.url || now.documentId !== target.documentId) throw new Error("页面或对话已经变化，操作未执行。请重新打开工具。");
+          await run();
+          if (current()) box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", "");
+        })().catch((error: unknown) => { if (current()) appBar(box, error instanceof Error ? error.message : String(error)); }).finally(() => { pendingAction = false; });
+      },
+    });
+    return true;
+  };
   const askPage = async (id: number, op: unknown, seconds: unknown, userClicked: boolean) => {
-    const tab = await activeTab();
+    const tab = await appPage();
 
-    if (tab?.id == null || !tab.url) { reply(id, false, "没有可读取的页面"); return; }
+    if (!tab || !target || tab.tabId !== target.tabId || tab.url !== target.url || tab.documentId !== target.documentId) { reply(id, false, "页面已经变化，请重新打开工具"); return; }
 
     if (op === "captions") {
       // WHY: 重开侧栏时历史回答里的工具会重新加载，它们不能自己去读用户此刻打开的页面（读字幕会带登录态请求网站）。
       if (!fresh && !userClicked) { appBar(box, "这个工具要读当前页面的字幕。", { label: "读取", run: remount }); reply(id, false, "等你点「读取」"); return; }
-      const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, action: "captions", tabId: tab.id }) as { ok: boolean; value?: ToolCaptionsReply; error?: string } | undefined;
+      const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, action: "captions", ...tab }) as { ok: boolean; value?: ToolCaptionsReply; error?: string } | undefined;
 
       if (!result?.ok) { reply(id, false, result?.error ?? "没有读到页面"); return; }
-      session = { tabId: tab.id, url: tab.url, box, remount };
+      session = { ...tab, box, remount };
       pageSessions.add(session);
       const site = siteOf(tab.url);
       const note = box.querySelector<HTMLElement>(".gc-app-note");
@@ -988,8 +1032,8 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
     // WHY: 程序在沙箱里，它发来的消息说明不了用户点过；只有宿主这边的激活状态才可信，用户没点时不动页面。
     if (!userClicked) { reply(id, false, "只有用户点击时才能操作页面"); return; }
 
-    if (!session || session.tabId !== tab.id || session.url !== tab.url) { reply(id, false, "页面已经换了"); return; }
-    const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, action: "seek", tabId: tab.id, url: tab.url, seconds }) as { ok: boolean; value?: unknown; error?: string } | undefined;
+    if (!session || session.tabId !== tab.tabId || session.documentId !== tab.documentId || session.url !== tab.url) { reply(id, false, "页面已经换了"); return; }
+    const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, action: "seek", ...tab, seconds }) as { ok: boolean; value?: unknown; error?: string } | undefined;
 
     reply(id, result?.ok === true, result?.ok ? result.value : result?.error ?? "视频没有响应");
   };
@@ -1012,17 +1056,20 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
       appStates.set(card, data.state);
       save(card);
     } else if (kind === "draft" && "text" in data && typeof data.text === "string" && data.text.trim()) {
+      if (pendingAction) return;
       const text = data.text.replace(/\s+/g, " ").trim().slice(0, 500);
 
       appBar(box, `小程序想放进输入框：「${text}」`, { label: "放进输入框", run: () => fillInput(text) });
     } else if (kind === "send" && "text" in data && typeof data.text === "string" && data.text.trim()) {
       // WHY: 程序在沙箱里，只有宿主的激活状态能证明用户真的点了；加载、定时、输入时都不许替用户发消息。
-      if (navigator.userActivation?.isActive && performance.now() - sentAt > SEND_GAP_MS) {
-        sentAt = performance.now();
-        say(data.text.slice(0, 3000));
-      }
+      const text = data.text.trim().slice(0, 3000);
+      offerAction(`send:${text}`, `发送给助手：${text}`, "发送", () => { if (say(text) === false) throw new Error("这条消息没有发出，请稍后再试。"); });
     } else if (kind === "open" && "url" in data && typeof data.url === "string") {
-      if (navigator.userActivation?.isActive && /^https?:\/\//i.test(data.url)) void chrome.tabs.create({ url: data.url });
+      let url: URL;
+      try { url = new URL(data.url); } catch { return; }
+      if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) return;
+      const href = url.href;
+      offerAction(`open:${href}`, `打开网页：${href}`, "打开", async () => { await chrome.tabs.create({ url: href }); });
     } else if (kind === "net" && "id" in data && typeof data.id === "number" && box.dataset.appSurface === "ui") {
       const id = data.id;
 
@@ -1032,7 +1079,9 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
       const op = "op" in data ? data.op : undefined;
       const seconds = "seconds" in data ? data.seconds : undefined;
 
-      void askPage(id, op, seconds, navigator.userActivation?.isActive === true).catch((error: unknown) => reply(id, false, error instanceof Error ? error.message : String(error)));
+      if (op === "seek" && typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0) {
+        if (!offerAction(`seek:${seconds}`, `跳到视频 ${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`, "跳转", () => askPage(id, op, seconds, true), () => reply(id, false, "用户取消了跳转"))) reply(id, false, "这个跳转没有获得用户授权");
+      } else void askPage(id, op, seconds, false).catch((error: unknown) => reply(id, false, error instanceof Error ? error.message : String(error)));
     } else if (kind === "error" && "message" in data && typeof data.message === "string" && !failed) {
       failed = true;
       const message = data.message.slice(0, 300);
@@ -1189,7 +1238,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
 
  return; }
 
-    if (!button) return;
+    if (!button || button.closest(".gc-app")) return;
     const label = button.textContent?.trim() ?? "";
 
     if (button.dataset.cardSubmit !== undefined) {

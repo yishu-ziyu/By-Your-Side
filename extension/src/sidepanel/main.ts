@@ -13,7 +13,7 @@ import { resetSendConfirmCards, sendConfirmCard } from "./send-confirm-card.js";
 import { mountDictation } from "./dictation.js";
 import { createOrb, type OrbHandle } from "./orb.js";
 import { renderMarkdownHtml } from "./markdown.js";
-import { bindAnswerCards, markFreshApp, renderAnswerHtml } from "./answer-cards.js";
+import { bindAnswerCards, invalidateAppActions, markFreshApp, renderAnswerHtml } from "./answer-cards.js";
 import { appMarkup } from "../../../shared/saved-tools.js";
 import { answerSpeech } from "../../../shared/answer-cards.js";
 import { linkifyPageRefs, quotedNames } from "./page-refs.js";
@@ -5459,6 +5459,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
 
  return false; }
 
+  invalidateAppActions();
 
   marginalia.showConversation();
   const citationPage = context ?? activeTabInfo;
@@ -5506,6 +5507,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
 
 function stopCurrentTask(): void {
   if (!send({ type: "abort" })) return;
+  invalidateAppActions();
   taskBar.noteControlRequested("stop");
 
   if (currentRun) { currentRun.orbActivity.stop(); syncRunOrb(currentRun); }
