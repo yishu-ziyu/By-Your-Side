@@ -32,7 +32,7 @@ function wikimediaImage(value: unknown): string | undefined {
   try {
     const url = new URL(value);
 
-    return url.protocol === "https:" && url.hostname === "upload.wikimedia.org" ? url.href : undefined;
+    return url.protocol === "https:" && url.hostname === "upload.wikimedia.org" ? url.href : undefined; // WHY: hardcode-ok 这是图片来源白名单，是安全边界，不是按网站猜用户意图。
   } catch {
     return undefined;
   }
