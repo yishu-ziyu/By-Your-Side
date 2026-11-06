@@ -17,7 +17,16 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npx --yes playwright install --with-deps chromium
+      - id: browser
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.browser.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+        timeout-minutes: 4
+      - run: npx playwright install-deps chromium
+        timeout-minutes: 4
       - name: Locate Chrome for Testing
         run: echo "EGO_ACCEPTANCE_CHROME=$(find ~/.cache/ms-playwright -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
       - name: Key cases
