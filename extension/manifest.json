@@ -12,7 +12,7 @@
     "sandbox": "sandbox allow-scripts allow-forms allow-modals; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'"
   },
   "sandbox": {
-    "pages": ["artifact-sandbox.html", "mini-app.html"]
+    "pages": ["artifact-sandbox.html", "mini-app.html", "answer-ui.html"]
   },
   "background": {
     "service_worker": "background.js",

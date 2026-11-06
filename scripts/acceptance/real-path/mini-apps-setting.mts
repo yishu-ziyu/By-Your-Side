@@ -11,7 +11,7 @@ await mkdir(out, { recursive: true });
 
 const ON = "小程序核对一：算一下房贷";
 const OFF = "小程序核对二：再算一下房贷";
-const GUIDE = "Mini apps (the user turned this experiment on)";
+const GUIDE = "Interactive answers: choose the form";
 const seen: Record<string, boolean> = {};
 const textOf = (content: unknown): string => typeof content === "string" ? content : Array.isArray(content) ? content.map((part: { text?: string }) => part.text ?? "").join("") : "";
 const model = await startScriptedModel([

@@ -18,10 +18,16 @@
     "@huggingface/transformers": "4.3.2",
     "@sideagent/agent": "file:../agent",
     "dompurify": "3.4.16",
+    "katex": "0.16.47",
+    "leaflet": "1.9.4",
     "lucide": "1.39.0",
+    "lucide-react": "0.562.0",
     "marked": "18.0.11",
     "pdfjs-dist": "6.4.299",
     "pele": "1.6.0",
-    "rememori": "0.7.0"
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "rememori": "0.7.0",
+    "zod": "4.6.6"
   }
 }

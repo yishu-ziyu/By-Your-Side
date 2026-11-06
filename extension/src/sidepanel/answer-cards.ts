@@ -6,6 +6,7 @@ import { type Block, type Card, type CardField, type CardInput, type Cell, type 
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { captureCitationContext, clearFailure, noteFailure } from "./sonar-citations.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
+import { answerUiNet } from "./answer-ui-net.js";
 import { TOOL_PAGE_MESSAGE, siteOf, type ToolCaptionsReply } from "../../../shared/saved-tools.js";
 import { removeTool, saveTool, savedToolWith } from "./saved-tools.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
@@ -113,6 +114,11 @@ function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<strin
 }
 
 function appCardHtml(card: Card, app: Extract<Block, { kind: "app" }>): string {
+  if (app.surface === "ui") {
+    if (!card.closed) return `<div class="gen-card gen-app-card">${keyed("app", `<div class="gc-app gc-ph" aria-hidden="true"><div class="gc-app-wait">${BAR}<span>正在做界面…</span></div></div>`)}</div>`;
+
+    return `<div class="gen-card gen-app-card" data-gc-card="${card.key}">${keyed("app", `<div class="gc-app" data-app="${encodeURIComponent(app.html)}" data-app-title="${esc(app.title)}" data-app-surface="ui"><div class="gc-app-frame"></div><div class="gc-app-bar" hidden></div></div>`)}</div>`;
+  }
   const head = `<div class="gc-app-head"><span class="gc-app-title">${esc(app.title)}</span><span class="gc-app-note">助手写的小程序 · 不联网</span></div>`;
 
   if (!card.closed) return `<div class="gen-card gen-app-card">${keyed("app", `<div class="gc-app gc-ph" aria-hidden="true">${head}<div class="gc-app-wait">${BAR}<span>正在写小程序…</span></div></div>`)}</div>`;
@@ -861,6 +867,10 @@ function toolFoot(box: HTMLElement, html: string, title: string, site: string): 
   paint();
 }
 
+const SEND_GAP_MS = 800;
+
+const UI_MAX_HEIGHT = 4000;
+
 let miniAppsOn: Promise<boolean> | undefined;
 
 const readMiniAppsOn = () => (miniAppsOn ??= chrome.storage.local.get(MINI_APPS_KEY).then((r) => isMiniAppsOn(r[MINI_APPS_KEY]), () => false));
@@ -912,7 +922,7 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
   if (!on) {
     const off = document.createElement("p");
     off.className = "gc-app-off";
-    off.textContent = `这条回答里有一个小程序「${title}」。在「设置 → 实验功能」打开「回答里的小程序」后显示。`;
+    off.textContent = `这条回答里有一个界面「${title}」。在「设置 → 实验功能」打开「回答里的可操作界面」后显示。`;
     holder.replaceChildren(off);
 
     return;
@@ -936,6 +946,9 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
   let heardAt = 0;
   let shownHeight = 0;
   let session: PageSession | undefined;
+  let sentAt = -SEND_GAP_MS;
+  // WHY: 界面是回答的一部分，跟着回答滚；框内再有滚动条，地图和按钮会被藏在第二层滚动后面。
+  const maxHeight = () => box.dataset.appSurface === "ui" ? UI_MAX_HEIGHT : appMaxHeight();
   const reply = (id: number, ok: boolean, value: unknown) => frame.contentWindow?.postMessage(ok ? { miniAppReply: id, ok, value } : { miniAppReply: id, ok, error: value }, "*");
   const remount = () => {
     mountedApps.get(box)?.();
@@ -990,10 +1003,10 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
 
     if (kind === "ready" && !ready) {
       ready = true;
-      frame.contentWindow?.postMessage({ html: decodeURIComponent(box.dataset.app ?? ""), state: appStates.get(card) ?? null, maxHeight: appMaxHeight() }, "*");
+      frame.contentWindow?.postMessage({ html: decodeURIComponent(box.dataset.app ?? ""), state: appStates.get(card) ?? null, maxHeight: maxHeight() }, "*");
     } else if (kind === "height" && "h" in data && typeof data.h === "number") {
       // WHY: 只增不减。搜索把列表变短时框如果跟着缩，清空搜索后下面的「保存」会被挤出可见区。
-      shownHeight = Math.max(shownHeight, Math.min(appMaxHeight(), Math.max(APP_MIN_HEIGHT, data.h)));
+      shownHeight = Math.max(shownHeight, Math.min(maxHeight(), Math.max(APP_MIN_HEIGHT, data.h)));
       frame.style.height = `${shownHeight}px`;
     } else if (kind === "save" && "state" in data && typeof data.state === "string" && data.state.length <= 50_000) {
       appStates.set(card, data.state);
@@ -1002,6 +1015,18 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
       const text = data.text.replace(/\s+/g, " ").trim().slice(0, 500);
 
       appBar(box, `小程序想放进输入框：「${text}」`, { label: "放进输入框", run: () => fillInput(text) });
+    } else if (kind === "send" && "text" in data && typeof data.text === "string" && data.text.trim()) {
+      // WHY: 程序在沙箱里，只有宿主的激活状态能证明用户真的点了；加载、定时、输入时都不许替用户发消息。
+      if (navigator.userActivation?.isActive && performance.now() - sentAt > SEND_GAP_MS) {
+        sentAt = performance.now();
+        say(data.text.slice(0, 3000));
+      }
+    } else if (kind === "open" && "url" in data && typeof data.url === "string") {
+      if (navigator.userActivation?.isActive && /^https?:\/\//i.test(data.url)) void chrome.tabs.create({ url: data.url });
+    } else if (kind === "net" && "id" in data && typeof data.id === "number" && box.dataset.appSurface === "ui") {
+      const id = data.id;
+
+      void answerUiNet("op" in data ? data.op : undefined, "arg" in data ? data.arg : undefined).then((value) => reply(id, true, value), (error: unknown) => reply(id, false, error instanceof Error ? error.message : String(error)));
     } else if (kind === "page" && "id" in data && typeof data.id === "number") {
       const id = data.id;
       const op = "op" in data ? data.op : undefined;
@@ -1012,7 +1037,9 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
       failed = true;
       const message = data.message.slice(0, 300);
 
-      appBar(box, "小程序出错了", { label: "让助手修好", run: () => { say(`小程序「${title}」出错了：${message}。请修好它。`); } });
+      const noun = box.dataset.appSurface === "ui" ? "界面" : "小程序";
+
+      appBar(box, `${noun}出错了`, { label: "让助手修好", run: () => { say(`${noun}「${title}」出错了：${message}。请修好它。`); } });
     }
   };
 
@@ -1032,7 +1059,7 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
       appBar(box, "小程序想跳到外面的网页，已拦下。");
     }, 800);
   });
-  frame.src = chrome.runtime.getURL("mini-app.html");
+  frame.src = chrome.runtime.getURL(box.dataset.appSurface === "ui" ? "answer-ui.html" : "mini-app.html");
   holder.replaceChildren(frame);
 }
 

@@ -25,12 +25,24 @@ function recordNote(prompt: string): string {
   return `\n\n# Noting something down\nThe user asked to note this down without saying where. Do both: (1) ${flomo}; (2) user_memory {action:"interest",topic:"<what the user is interested in, a short noun phrase>"}. Do (2) even when (1) fails. Report each from its own result: flomo counts only when the method returns status observed; memory counts only when its receipt says 已记住 or 早已记着. When both worked say e.g. "记进 flomo 了，也记住了你对 X 感兴趣"; when one did not, name which one and why (not signed in, refused, unconfirmed). Never just say "记下来了".`;
 }
 
+const ANSWER_FORM_GUIDE = `
+
+Interactive answers: choose the form of each answer yourself.
+- Text only for a quick fact, a piece of writing, code, small talk, or an operation on a web page. Follow a format the user asked for.
+- Everything else gets one conclusion sentence plus <ui title="short name">program</ui>, even when the user did not ask for an interface: working out or adjusting numbers (a calculator), comparing or deciding between options (a table with the assumptions adjustable), a list or plan (checklist, schedule), places (a map), and explaining how something works or fits together (a labelled drawing or a stepper). Compose it from maps, charts, tables, calculators, checklists, drawings, flashcards and photos, combined as the question needs.
+- The first time in a conversation, call answer_ui_guide before writing <ui>; it returns the language. Do not mention it.
+- A <ui> works by itself in the user's panel. Give a button @ToAssistant for what it cannot compute, such as live status, a new search or an action in a site: the user's click sends that message to you as a new turn, and you answer it with your real tools.
+- Before writing a formula, work out the page's default case yourself and make sure the program gives the same figure; state that figure in your conclusion sentence.
+- Only put facts you read or were told into a <ui>. Never invent live data, prices or sources; label estimates and sample values on the page.
+- Answer cards stay for asking the user with <field>s and for rows linked to open tabs. Where these rules and the answer format above differ, these rules win.
+`;
+
 const MINI_APP_GUIDE = `
 
-Mini apps (the user turned this experiment on): when the user asks for a tool that works on the video in the current page, an app is the only thing that can do it. An HTML file saved with artifacts runs in a sealed preview that cannot read the page or captions or move the video, so never build such a tool as a file and never say a file can do that. Also when the user needs to try things rather than read an answer — explore several conditions at once (a loan with rate, years and down payment), filter or sort many items you read from pages, a small simulation or game, an interactive chart — answer with one conclusion sentence plus <app title="short name">complete HTML</app>. If a card (stats, options, table, inputs, fields) already does it, use the card; one-sentence answers stay plain text.
+Mini apps (<app>, free HTML, for what a <ui> cannot do: a loop-driven game or simulation, or a tool on the current page's video): when the user asks for a tool that works on the video in the current page, an app is the only thing that can do it. An HTML file saved with artifacts runs in a sealed preview that cannot read the page or captions or move the video, so never build such a tool as a file and never say a file can do that. Also when the user needs to try things rather than read an answer — explore several conditions at once (a loan with rate, years and down payment), filter or sort many items you read from pages, a small simulation or game, an interactive chart — answer with one conclusion sentence plus <app title="short name">complete HTML</app>. If a card (stats, options, table, inputs, fields) already does it, use the card; one-sentence answers stay plain text.
 - Self-contained: inline <style> and <script>, plain JavaScript, no frameworks. External scripts, styles, fonts, images, requests and navigation are all blocked: put the data you read into the script as a JSON constant.
 - It sits in the sidebar, about 360px wide: design for 320-480px. Colors only from var(--bys-text), var(--bys-muted), var(--bys-border), var(--bys-subtle), var(--bys-accent), var(--bys-good); they follow light and dark mode. Background stays transparent; body already has padding.
-- Start from bys.state (null the first time) and call bys.save(state) whenever the user changes something, so reopening the sidebar restores it. bys.say(text) offers a follow-up the user can put into the input box with one click; it never sends.
+- Start from bys.state (null the first time) and call bys.save(state) whenever the user changes something, so reopening the sidebar restores it. bys.say(text) offers a follow-up the user can put into the input box with one click. bys.send(text) in a button's click handler sends a message to you as a new turn, with the values it needs written in the text; it does nothing without a user click, so never call it on load, on a timer or on input.
 - It must work on first load; the sidebar shows script errors to the user. Keep it under about 8000 characters.
 - Never ask for passwords, card numbers, verification codes or ID numbers inside an app.
 - Tools for a video on the current page (a searchable transcript, jumping to a moment): when the user asks for one, do not read the captions yourself and do not embed them. Write an app that calls await bys.page.captions() on load; it returns {status:"ok"|"none"|"login"|"unavailable", message, title, language, automatic, cues:[{start,end,text}]}, with start and end in seconds. When status is not "ok", show message and nothing else: never invent captions. await bys.page.seek(seconds) moves the video and works only from a user click inside the app, so call it directly in a click handler; catch its rejection and show the error. Show lines in a scrolling list with a fixed max-height of about 300px. The app reads the live page, so it keeps working when the user saves it and reopens it on another video.`;
@@ -100,7 +112,7 @@ export class ProductContext {
 
         return {
           systemPrompt:productSystemPrompt(event.systemPrompt,active),
-          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+recordNote(asked)+ANSWER_CARD_REMINDER+(apps?MINI_APP_GUIDE:'')},
+          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+recordNote(asked)+ANSWER_CARD_REMINDER+(apps?ANSWER_FORM_GUIDE+MINI_APP_GUIDE:'')},
         };
       });
     };

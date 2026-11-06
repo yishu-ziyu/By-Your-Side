@@ -43,6 +43,41 @@ await esbuild.build({
   entryPoints: { "artifact-sandbox": "src/sidepanel/artifact-sandbox.ts", "mini-app-sandbox": "src/sidepanel/mini-app-sandbox.ts" },
 });
 
+const openui = path.join(root, "src/vendor/openui/engine");
+
+// WHY: 沙箱的内容安全策略不许加载样式文件，只许内联 <style>，所以样式打进脚本里写入页面。
+const inlineStyles = {
+  name: "inline-styles",
+  setup(build) {
+    build.onLoad({ filter: /\.css$/ }, async (args) => {
+      const css = await esbuild.build({
+        entryPoints: [args.path], bundle: true, write: false, minify: true, logLevel: "silent", outdir: "/",
+        loader: { ".woff2": "dataurl", ".png": "dataurl", ".woff": "empty", ".ttf": "empty" },
+      });
+
+      return { contents: `const style=document.createElement("style");style.textContent=${JSON.stringify(css.outputFiles[0].text)};document.head.append(style);`, loader: "js" };
+    });
+  },
+};
+
+await esbuild.build({
+  ...common,
+  format: "iife",
+  minify: true,
+  entryPoints: { "answer-ui-sandbox": "src/sidepanel/answer-ui-sandbox.tsx" },
+  jsx: "automatic",
+  define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
+  alias: {
+    "@openuidev/lang-core": path.join(openui, "lang-core/index.mjs"),
+    "@openuidev/react-lang": path.join(openui, "react-lang/index.mjs"),
+    "@openuidev/observability": path.join(openui, "observability/index.mjs"),
+    "@openuidev/devtools": path.join(openui, "absent.mjs"),
+    "ci-info": path.join(openui, "absent.mjs"),
+    "react-dom/client": path.join(root, "../node_modules/react-dom/client.js"),
+  },
+  plugins: [inlineStyles],
+});
+
 execFileSync(process.execPath, [path.join(root, "../node_modules/tsx/dist/cli.mjs"), path.join(root, "../scripts/voice/export-realtime-tools.mts")], { stdio: "ignore" });
 
 const agentSrc = path.join(root, "../agent/src");
@@ -107,6 +142,8 @@ for (const [from, to] of [
   ["artifact-viewer.html", "artifact-viewer.html"],
   ["artifact-sandbox.html", "artifact-sandbox.html"],
   ["mini-app.html", "mini-app.html"],
+  ["answer-ui.html", "answer-ui.html"],
+  ["src/vendor/openui/LICENSE", "openui-MIT.txt"],
   ["src/sidepanel/styles.css", "styles.css"],
   ["src/sidepanel/motion-tokens.css", "motion-tokens.css"],
   ["src/sidepanel/answer-cards.css", "answer-cards.css"],

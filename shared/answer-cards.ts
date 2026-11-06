@@ -12,7 +12,7 @@ export type Cell = { value: string; expr?: string; unit?: string };
 
 export type Block =
   | { kind: "inputs"; items: CardInput[] }
-  | { kind: "app"; title: string; html: string }
+  | { kind: "app"; title: string; html: string; surface?: "ui" }
   | { kind: "fields"; items: CardField[] }
   | { kind: "stats"; items: Stat[] }
   | { kind: "steps"; items: Array<{ title: string; detail?: string }> }
@@ -455,18 +455,20 @@ export function cardSpans(text: string): CardSpan[] {
   let masked = text;
   const plainCode = codeRanges(text);
 
-  for (const m of text.matchAll(/<app[\s>]/g)) {
-    if (plainCode.some(([a, b]) => m.index >= a && m.index < b) || masked.slice(m.index, m.index + 4) !== "<app") continue;
-    const close = text.indexOf("</app>", m.index);
+  for (const m of text.matchAll(/<(app|ui)[\s>]/g)) {
+    const open = `<${m[1]}`;
+
+    if (plainCode.some(([a, b]) => m.index >= a && m.index < b) || masked.slice(m.index, m.index + open.length) !== open) continue;
+    const close = text.indexOf(`</${m[1]}>`, m.index);
     const end = close < 0 ? text.length : close;
 
-    masked = masked.slice(0, m.index + 4) + " ".repeat(Math.max(0, end - m.index - 4)) + masked.slice(end);
+    masked = masked.slice(0, m.index + open.length) + " ".repeat(Math.max(0, end - m.index - open.length)) + masked.slice(end);
   }
   const code = codeRanges(masked);
   const spans: CardSpan[] = [];
   let at = 0;
 
-  for (const m of masked.matchAll(/<(card|app)[\s>]|(?<=^|\n)<diagram>/g)) {
+  for (const m of masked.matchAll(/<(card|app|ui)[\s>]|(?<=^|\n)<diagram>/g)) {
     if (m.index < at || code.some(([a, b]) => m.index >= a && m.index < b)) continue;
 
     if (!m[1]) {
@@ -475,7 +477,7 @@ export function cardSpans(text: string): CardSpan[] {
       spans.push({ tag: "card", ...span });
       continue;
     }
-    const tag = m[1] as "card" | "app";
+    const tag = m[1] as CardSpan["tag"];
     const close = text.indexOf(`</${tag}>`, m.index);
 
     at = close < 0 ? text.length : close + tag.length + 3;
@@ -485,7 +487,7 @@ export function cardSpans(text: string): CardSpan[] {
   return spans;
 }
 
-export type CardSpan = { tag: "card" | "app"; start: number; end: number; closed: boolean; bare?: { bodyEnd: number } };
+export type CardSpan = { tag: "card" | "app" | "ui"; start: number; end: number; closed: boolean; bare?: { bodyEnd: number } };
 
 function bareDiagram(text: string, start: number): Omit<CardSpan, "tag"> {
   const close = text.indexOf("</diagram>", start);
@@ -504,13 +506,13 @@ function bareDiagram(text: string, start: number): Omit<CardSpan, "tag"> {
   }
 }
 
-function parseApp(source: string, closed: boolean): Card | undefined {
-  const head = new RegExp(String.raw`^<app${ATTRS}\s*>`).exec(source);
+function parseApp(source: string, closed: boolean, tag: "app" | "ui"): Card | undefined {
+  const head = new RegExp(String.raw`^<${tag}${ATTRS}\s*>`).exec(source);
 
   if (!head) return undefined;
-  const html = source.slice(head[0].length).replace(/<\/app>$/, "").trim();
+  const html = source.slice(head[0].length).replace(new RegExp(`</${tag}>$`), "").trim();
 
-  return { key: digest(html), title: "", blocks: [{ kind: "app", title: str(attrsOf(head[1]!).title) ?? "小程序", html }], buttons: [], closed, numbers: new Set(), values: new Map(), formulas: false };
+  return { key: digest(html), title: "", blocks: [{ kind: "app", title: str(attrsOf(head[1]!).title) ?? (tag === "ui" ? "界面" : "小程序"), html, ...(tag === "ui" ? { surface: "ui" as const } : {}) }], buttons: [], closed, numbers: new Set(), values: new Map(), formulas: false };
 }
 
 export function splitAnswer(text: string): AnswerPart[] {
@@ -521,7 +523,7 @@ export function splitAnswer(text: string): AnswerPart[] {
     parts.push({ prose: text.slice(at, span.start) });
     const body = span.bare ? `<card>\n${text.slice(span.start, span.bare.bodyEnd)}` : text.slice(span.start, span.closed ? span.end - span.tag.length - 3 : span.end);
 
-    parts.push({ card: span.tag === "app" ? parseApp(body, span.closed) : parseCard(body, span.closed) });
+    parts.push({ card: span.tag === "card" ? parseCard(body, span.closed) : parseApp(body, span.closed, span.tag) });
     at = span.end;
   }
 
@@ -595,7 +597,7 @@ export function answerMarkdown(text: string, sources?: AnswerSourceMap): string 
       case "checks": return b.items.map((c) => `- [ ] ${t(c.text)}${c.note ? `（${t(c.note)}）` : ""}`).join("\n");
       case "callout": return `> ${t(b.text)}`;
       case "inputs": return b.items.map((v) => `- ${v.label}：${showValue(v.value, v.unit)}`).join("\n");
-      case "app": return `（小程序：${b.title}）`;
+      case "app": return b.surface === "ui" ? `（界面：${b.title}）` : `（小程序：${b.title}）`;
       case "fields": return b.items.map((f) => `- ${f.label}：${f.value || "（待填）"}${f.options ? `（可选：${f.options.join(" / ")}）` : ""}`).join("\n");
       case "diagram": return [`\`\`\`mermaid\n${b.source}\n\`\`\``, ...Object.entries(b.cites).map(([node, cite]) => { const c = resolveDiagramCite(cite, sources); return c ? (!("text" in cite) ? `- ${diagramLabel(b.source, node)}：${c.url ? `[查看原文](${c.url})` : c.from ?? "已读取的页面"}` : `- ${diagramLabel(b.source, node)}：“${c.text}”${c.from ? `（${c.from}）` : ""}`) : `- ${diagramLabel(b.source, node)}：来源未能核对`; })].join("\n");
     }

@@ -56,6 +56,7 @@ const READ_TOOLS = new Set([
   "dialog_info",
   "describe_target",
   "read_attachment",
+  "answer_ui_guide",
 ]);
 
 function methodOf(params?: Record<string, unknown>): string {

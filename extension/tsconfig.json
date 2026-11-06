@@ -21,6 +21,9 @@
       ]
     }
   },
+  "exclude": [
+    "src/vendor/openui/**"
+  ],
   "include": [
     "src/**/*.ts",
     "src/**/*.d.ts",

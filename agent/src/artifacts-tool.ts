@@ -2,6 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 import type { AgentUiEvent } from "../../shared/protocol.js";
+import { ANSWER_UI_GUIDE } from "./answer-ui-guide.js";
 import { defineTool } from "./define-tool.js";
 
 const ARTIFACT_MAX_CHARS = 256_000;
@@ -147,6 +148,16 @@ export function saveFileFromProgram(store: ArtifactStore, params: SaveFileParams
 type ArtifactsToolOptions = { emit: (event: AgentUiEvent) => void;  store?: ArtifactStore };
 
 type Command = "create" | "update" | "rewrite" | "get" | "delete";
+
+export function createAnswerUiGuideTool(): ToolDefinition {
+  return defineTool({
+    name: "answer_ui_guide",
+    label: "Interface language",
+    description: "Returns the language for writing an interactive answer in <ui>…</ui>. Call it once in a conversation, before the first <ui>.",
+    parameters: Type.Object({}),
+    execute: async () => ({ content: [{ type: "text", text: ANSWER_UI_GUIDE }], details: {} }),
+  });
+}
 
 export function createArtifactsTool(opts: ArtifactsToolOptions): ToolDefinition {
   const store = opts.store ?? createArtifactStore(opts.emit);
