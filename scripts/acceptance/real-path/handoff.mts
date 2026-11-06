@@ -53,15 +53,24 @@ const STEER = '下次自行去邮箱里获取就行了，不需要问我。';
 const VERDICT = JSON.stringify({ correction: true, reusable: true, about: 'site', rule: '以后在这个网站要确认码时，我都自己去你打开的邮箱里取，不问你', evidence: '下次自行去邮箱里获取就行了', replaces: null, personalEvidence: '' });
 
 const payloads: string[] = [];
+const taskRoute = {match:`"message":"${STEER}","clauses":`,steps:[{text:''}]};
 
 const model = await startScriptedModel([
+  taskRoute,
   { match: '"userMessage":"下次自行去邮箱里获取就行了，不需要问我。","recentTurns":[]', steps: [{ text: VERDICT }] },
   { match: '[HANDOFF BOUNDARY]', steps: [{ tool: { name: 'click', args: { target: '#claim' } } }, { text: '已领取 $30。' }] },
   { match: GOAL, steps: [{ tool: { name: 'tabs', args: { action: 'active' } } }, { tool: { name: 'snapshot', args: {} } },
     { tool: { name: 'fill', args: { target: '#acct', value: '测试账号' } } }, { tool: { name: 'hand_to_user', args: { ask: ASK, targets: ['#card', '#exp', '#cvc', '#save', '#does-not-exist'] } } }, { text: '（不该走到这一步）' }] },
   { match: GOAL2, steps: [{ tool: { name: 'tabs', args: { action: 'active' } } }, { tool: { name: 'snapshot', args: {} } },
     { tool: { name: 'hand_to_user', args: { ask: ASK2, targets: ['#card', '#save'] } } }, { text: '（不该走到这一步）' }] },
-], undefined, p => { if (p.tools?.length) payloads.push(JSON.stringify(p.messages)); });
+], undefined, p => {
+  if (p.tools?.length) payloads.push(JSON.stringify(p.messages));
+  const content=p.messages?.at(-1)?.content;
+  if (typeof content === 'string' && content.startsWith('{"message":') && content.includes('"clauses":')) {
+    const input=JSON.parse(content);
+    if (input.tasks?.length===1) taskRoute.steps=[{text:JSON.stringify({steps:[{action:'steer',taskId:input.tasks[0].id}]})}];
+  }
+});
 
 const rp = await launchRealPath();
 
