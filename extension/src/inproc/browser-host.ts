@@ -15,6 +15,7 @@ import { listArtifacts, writeArtifact, deleteArtifact } from "../shared/durable-
 import { openPiSession } from "./pi-session-idb.js";
 import { openDurableStorage } from "./durable-storage.js";
 import { IdbDocument } from "./document-idb.js";
+import { TaskRecordStore } from '@sideagent/agent/browser-core';
 import { pushedMiniApps, pushedSelfUse, pushedTranslationStyle, pushedContinuation, receiveCoreSettings } from "../shared/core-settings.js";
 import { credentialContents, modelConfig } from "../settings/connections.js";
 
@@ -48,7 +49,7 @@ type Inbound = ClientMessage
 interface InprocHostDeps {
   createRuntime: typeof createModelRuntime;
   sessionData?: (id: string) => Promise<{ session: SessionLogPort; files?: ArtifactPersistence }>;
-  document?: (name: "memories" | "pending-memory" | "tasks" | "habits" | "site-notes" | "style-signals" | "learned-operations") => DocumentPersistence;
+  document?: (name: "memories" | "pending-memory" | "tasks" | "habits" | "site-notes" | "style-signals" | "learned-operations" | "task-records") => DocumentPersistence;
   onConnect: (listener: (port: chrome.runtime.Port) => void) => void;
 }
 
@@ -116,6 +117,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const siteNotes = new SiteNotesStore(document("site-notes"));
     const learnedOperations = new LearnedOperationStore(document("learned-operations"));
     pendingCore = openConversationStore(log).then(store => startHostCore({
+      taskRecords: new TaskRecordStore(document('task-records')),
       continuationEnabled: pushedContinuation,
       siteNotes,
       store,

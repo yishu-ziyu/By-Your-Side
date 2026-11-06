@@ -2,7 +2,8 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isTaskActionRequest, isTaskReceipt, type TaskActionRequest, type TaskReceipt } from '../../shared/task-actions.js';
-import type { PageContext } from '../../shared/protocol.js';
+import { parseClientMessage, type PageContext } from '../../shared/protocol.js';
+import { attachmentRecoveryKey } from './task-recovery.js';
 
 export interface QueuedTask {
   request: TaskActionRequest;
@@ -20,6 +21,7 @@ const STOPPED = '扩展后台重启，这件事停下了，还没做完。';
 export interface TaskQueuePersistence {
   load(): readonly unknown[];
   save(jobs: QueuedTask[]): void;
+  flush?(): Promise<void>;
 }
 
 const QUEUE_STATES: ReadonlyArray<QueuedTask['state']> = ['queued', 'suspended', 'starting', 'running', 'completed', 'cancelled', 'failed', 'unknown'];
@@ -33,6 +35,7 @@ function isQueuedTask(value: unknown): value is QueuedTask {
 }
 
 export class TaskQueue {
+  async persisted(): Promise<void> { await this.options.persist?.flush?.(); }
   private readonly jobs = new Map<string, QueuedTask>();
   private pumping = false;
   private repump = false;
@@ -81,10 +84,12 @@ export class TaskQueue {
 
     if (job.state === 'queued') {
       job.state = 'suspended';
+      job.receipt.taskState = 'interrupted';
       job.receipt = { ...job.receipt, status: 'queued', message: '连接已重启，这项待办尚未启动；原要求已保留，明确继续后才重新安排。', updatedAt };
     }
     else if (['starting', 'running'].includes(job.state)) {
       job.state = 'unknown';
+      job.receipt.taskState = 'interrupted';
       job.receipt = job.request.originConversationId && job.request.source === 'text'
         ? { ...job.receipt, status: 'unknown', message: STOPPED, updatedAt }
         : { ...job.receipt, status: 'unknown', message: '连接已重启，这项要求已保留；请核对后重新安排，不会自动重做。', updatedAt };
@@ -144,6 +149,9 @@ export class TaskQueue {
 
     const base: TaskReceipt = { requestId: request.requestId, conversationId: request.conversationId, originConversationId: request.originConversationId, source: request.source, action: 'start', runId: null, text: request.text ?? '', targetTitle: title, status: 'queued', message: `已排队：${title}`, updatedAt: Date.now() };
 
+    base.taskState = 'queued';
+    if (request.taskId) base.taskId = request.taskId;
+
     if (this.list().filter(j => j.state === 'queued' || j.state === 'suspended').length >= this.options.maxWaiting) {
       return { ...base, status: 'rejected', message: '待办已满，这项要求尚未接收；可以先取消一项待办。' };
     }
@@ -166,16 +174,16 @@ export class TaskQueue {
   cancel(id: string): TaskReceipt | undefined {
     const job = this.get(id);
 
-    if (!job || !['queued', 'suspended'].includes(job.state)) {
+    if (!job || !(['queued', 'suspended'].includes(job.state) || job.state === 'starting' && !job.receipt.runId)) {
       return;
     }
 
-    this.update(job, { state: 'cancelled', receipt: { ...job.receipt, action: 'abort', status: 'applied', message: `已取消待办：${job.title}`, updatedAt: Date.now() } });
+    this.update(job, { state: 'cancelled', receipt: { ...job.receipt, taskState:'cancelled', action: 'abort', status: 'applied', message: `已取消待办：${job.title}`, updatedAt: Date.now() } });
     this.options.changed(job);
 
     return job.receipt;
   }
-  revise(id: string, text: string): TaskReceipt | undefined {
+  revise(id: string, text: string, input?: Pick<TaskActionRequest,'attachments'|'pages'|'context'>): TaskReceipt | undefined {
     const job = this.get(id);
 
     if (!job || !['queued', 'suspended'].includes(job.state)) {
@@ -188,7 +196,12 @@ export class TaskQueue {
       throw Error('待办要求过长，修改未保存。');
     }
 
-    this.update(job, { request: { ...job.request, text: updated }, receipt: { ...job.receipt, text: updated, message: `待办已更新：${job.title}`, updatedAt: Date.now() } });
+    const attachments = [...new Map([...(job.request.attachments??[]),...(input?.attachments??[])].map(attachment=>[attachmentRecoveryKey(attachment),attachment])).values()];
+    const pages = [...new Map([...(job.request.pages??[]),...(input?.pages??[]),...(input?.context?[input.context]:[])].map(page=>[`${page.tabId}:${page.url}`,page])).values()];
+    if (attachments.length > 16 || pages.length > 8) throw new Error('待办材料已达到保留上限，修改未保存。');
+    const request = {...job.request,text:updated,...(attachments.length?{attachments}:{}),...(pages.length?{pages}:{})};
+    if (!parseClientMessage(JSON.stringify({type:'task_action',conversationId:request.conversationId,request}))) throw new Error('补充材料无效，修改未保存。');
+    this.update(job, { request, receipt: { ...job.receipt, text: updated, message: `待办已更新：${job.title}`, updatedAt: Date.now() } });
     this.options.changed(job);
 
     return job.receipt;
@@ -205,7 +218,7 @@ export class TaskQueue {
 
     for (const job of this.jobs.values()) {
       if (job.state === 'queued') {
-        const change: Partial<QueuedTask> = { state: 'suspended', receipt: { ...job.receipt, message: '连接断开，这项待办尚未启动；明确继续后才重新安排。', updatedAt: Date.now() } };
+        const change: Partial<QueuedTask> = { state: 'suspended', receipt: { ...job.receipt, taskState:'interrupted', message: '连接断开，这项待办尚未启动；明确继续后才重新安排。', updatedAt: Date.now() } };
 
         try {
           this.update(job, change);
@@ -233,7 +246,7 @@ export class TaskQueue {
     const nextRequest = { ...job.request };
 
     if (job.request.context && context) nextRequest.context = context;
-    this.update(job, { state: 'queued', request: nextRequest, receipt: { ...job.receipt, status: 'queued', message: `已重新排队：${job.title}`, updatedAt: Date.now() } });
+    this.update(job, { state: 'queued', request: nextRequest, receipt: { ...job.receipt, taskState:'queued', status: 'queued', message: `已重新排队：${job.title}`, updatedAt: Date.now() } });
     this.options.changed(job);
 
     return job.receipt;
@@ -248,6 +261,27 @@ export class TaskQueue {
         : { ...job.receipt, status: 'failed', message: outcome.failed, updatedAt: Date.now() };
     if (receipt.status === job.receipt.status && receipt.message === job.receipt.message && receipt.result?.text === job.receipt.result?.text) return;
     this.update(job, { receipt });
+    this.options.changed(job);
+  }
+
+  applyControl(id: string, receipt: TaskReceipt): void {
+    const job = this.get(id);
+    if (!job || !['accepted','applied','queued'].includes(receipt.status)) return;
+    const next = {...job.receipt,taskId:receipt.taskId ?? job.receipt.taskId,runId:receipt.runId,updatedAt:receipt.updatedAt};
+    if (receipt.action === 'abort') {
+      delete next.result;
+      next.taskState = 'cancelled'; next.action = 'abort'; next.status = 'applied'; next.message = '已取消';
+      this.update(job,{state:'cancelled',receipt:next});
+    } else if (receipt.action === 'steer') {
+      delete next.result;
+      next.action = job.receipt.action === 'pause' ? 'pause' : 'start'; next.status = next.action === 'pause' ? 'applied' : job.state === 'queued' ? 'queued' : 'accepted'; next.message = receipt.message;
+      this.update(job,{receipt:next});
+    } else if (receipt.action === 'pause' || receipt.action === 'resume') {
+      next.taskState = receipt.action === 'pause' ? 'paused' : 'running';
+      next.action = receipt.action === 'pause' ? 'pause' : 'start';
+      next.status = receipt.action === 'pause' ? 'applied' : 'accepted'; next.message = receipt.message;
+      this.update(job,{receipt:next});
+    } else return;
     this.options.changed(job);
   }
 
@@ -295,10 +329,21 @@ export class TaskQueue {
           break;
         }
 
+        try { await this.persisted(); }
+        catch {
+          this.update(job,{state:'unknown',receipt:{...job.receipt,status:'unknown',message:'任务未能保存，没有启动；请核对后继续。',updatedAt:Date.now()}});
+          this.options.changed(job);
+          break;
+        }
+        if (job.state !== 'queued' || this.options.enabled?.() === false) continue;
         this.update(job, { state: 'starting' });
 
         try {
-          job.receipt = await this.options.execute(job.request);
+          await this.persisted();
+          if (this.get(job.request.conversationId)?.state !== 'starting' || this.options.enabled?.() === false) continue;
+          const receipt = await this.options.execute(job.request);
+          if (this.get(job.request.conversationId)?.state === 'cancelled') continue;
+          job.receipt = receipt;
 
           if (this.get(job.request.conversationId)?.state === 'starting') {
             if (job.receipt.status === 'accepted') {
@@ -311,8 +356,13 @@ export class TaskQueue {
           }
         }
         catch {
-          job.state = 'unknown';
-          job.receipt = { ...job.receipt, status: 'unknown', message: '任务启动结果尚无法确认，不会自动重做。', updatedAt: Date.now() };
+          if (this.get(job.request.conversationId)?.state !== 'cancelled') {
+            job.state = 'unknown';
+            job.receipt = { ...job.receipt, status: 'unknown', message: '任务启动结果尚无法确认，不会自动重做。', updatedAt: Date.now() };
+          }
+          this.save(job);
+          this.options.changed(job);
+          break;
         }
 
         this.save(job);

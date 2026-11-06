@@ -21,6 +21,7 @@ export { useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useStyleSi
 export { InProcessLock, type DocumentPersistence } from "./document-persistence.js";
 
 export { TaskHistoryStore } from "./task-history.js";
+export { TaskRecordStore } from './task-record-store.js';
 
 export { SiteNotesStore } from "./site-notes.js";
 
