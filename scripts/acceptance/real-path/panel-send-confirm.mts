@@ -53,7 +53,7 @@ const hook = `(() => {
         window.__confirmationHookConnected = true;
         return {
           name: port.name,
-          postMessage: port.postMessage.bind(port),
+          postMessage: message => { (window.__confirmationPosts ??= []).push(message); port.postMessage(message); },
           disconnect: port.disconnect.bind(port),
           onDisconnect: port.onDisconnect,
           onMessage: { addListener(listener) { port.onMessage.addListener(message => {
@@ -253,20 +253,26 @@ try {
   await ready(panel);
   const back6 = await liveCard(panel);
   check("p6 切回原会话：恢复同一张待确认卡", back6.id === c6.id, { before: c6, after: back6 });
+  await rp.evaluate(panel, `(() => { window.__confirmationEvents = []; for (const type of ['mousedown','mouseup','click']) document.addEventListener(type, event => { if (!window.__heldConfirmationButton) return; const target = event.target; window.__confirmationEvents.push({type,trusted:event.isTrusted,target:target.className,button:target.closest?.('.send-confirm-no')===window.__heldConfirmationButton}); }, true); return true; })()`);
   const heldButton = await rp.evaluate(panel, `(() => {
     const button = document.querySelector('[data-send-confirm="${back6.id}"] .send-confirm-no');
     window.__heldConfirmationButton = button;
     const r = button.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2, armed: typeof window.__replayConfirmation === 'function' && window.__confirmationPending.includes('${back6.id}') };
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, transform: getComputedStyle(document.querySelector(".composer-dock-wrap")).transform, armed: typeof window.__replayConfirmation === 'function' && window.__confirmationPending.includes('${back6.id}') };
   })()`) as { x: number; y: number; armed: boolean };
   if (!heldButton.armed) throw new Error("确认同步实验没有收到真实待确认状态：" + JSON.stringify(await rp.evaluate(panel, "({installed:window.__confirmationHook,connected:window.__confirmationHookConnected,pending:window.__confirmationPending})")));
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: heldButton.x, y: heldButton.y }, panel);
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: heldButton.x, y: heldButton.y, button: "left", clickCount: 1 }, panel);
   const keptButton = await rp.evaluate(panel, "window.__replayConfirmation(); window.__heldConfirmationButton.isConnected");
+  await sleep(150);
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: heldButton.x, y: heldButton.y, button: "left", clickCount: 1 }, panel);
+  const clickTrace = await rp.evaluate(panel, `({events:window.__confirmationEvents,posts:window.__confirmationPosts??[],connected:window.__heldConfirmationButton.isConnected,rect:window.__heldConfirmationButton.getBoundingClientRect().toJSON(),start:${JSON.stringify(heldButton)}})`) as { events: Array<{ type: string; trusted: boolean; button: boolean }>; posts: Array<{ id: string; choice: string }> };
+  check("p6 按下和松开都命中取消，后台恰好收到一次取消", clickTrace.events.filter(event => event.button && event.trusted).map(event => event.type).join(",") === "mousedown,mouseup,click" && clickTrace.posts.filter(post => post.id === back6.id && post.choice === "decline").length === 1, clickTrace);
   check("p6 按住按钮时收到重复同步：保留按钮，不能吞掉这次点击", keptButton === true, { keptButton: keptButton as Json });
   const done6 = await settledCard(panel, DECLINED_LINE);
   check("p6 切回来后选择先不发：没有发送，原会话卡收成结果", sent() === before6 && !("timedOut" in done6), { sent: sent(), before: before6, done6 } as Json);
+  await rp.screenshot(panel, join(out, "p6-result.png"));
+  await sleep(300);
 } catch (error) {
   check("流程完成", false, String(error));
   const target = (await rp.targets()).find(target => target.url.includes("/sidepanel.html"));
