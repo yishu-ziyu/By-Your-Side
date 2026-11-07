@@ -38,6 +38,7 @@
     "kimi:keep": "NODE_USE_ENV_PROXY=1 node scripts/maintenance/kimi-login.mjs --install",
     "lines": "node scripts/maintenance/lines.mjs",
     "dev:flow": "node scripts/maintenance/dev-pipeline.mjs",
+    "dev:atlas": "node scripts/maintenance/dev-atlas.mjs",
     "accept:report": "node scripts/maintenance/acceptance-report.mjs",
     "logs": "node scripts/maintenance/logs.mjs",
     "memory:report": "node scripts/maintenance/memory-report.mjs",

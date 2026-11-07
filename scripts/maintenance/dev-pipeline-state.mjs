@@ -7,7 +7,7 @@ export const object = value => !!value && typeof value === "object" && !Array.is
 export const slug = value => typeof value === "string" && /^[a-z0-9][a-z0-9-]{0,70}$/.test(value);
 export const commit = value => typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
 export const text = value => typeof value === "string" && value.trim().length > 0 && value.length <= 6000;
-const protectedFile = file => file === ".dev-pipeline-task.json" || file === ".github/workflows/dev-pipeline.yml" || /^scripts\/maintenance\/(dev-pipeline(?:-state|-ci)?|acceptance-report|check-[^/]+|comments)\.mjs$/.test(file);
+const protectedFile = file => file.startsWith("scripts/maintenance/dev-atlas/") || file === ".dev-pipeline-task.json" || file === ".github/workflows/dev-pipeline.yml" || /^scripts\/maintenance\/(dev-pipeline(?:-state|-ci)?|dev-atlas|acceptance-report|check-[^/]+|comments)\.mjs$/.test(file);
 
 export function within(root, path) {
   const rel = relative(resolve(root), resolve(path));

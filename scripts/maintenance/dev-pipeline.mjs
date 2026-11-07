@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
+import { startAtlas, syncAtlas, atlasURL } from "./dev-atlas.mjs";
 import { mediaDigest } from "./acceptance-report.mjs";
 import { commit, digest, directory, json, lock, object, planSchema, reviewSchema, save, slug, validatePlan, within, workerSchema } from "./dev-pipeline-state.mjs";
 
@@ -313,6 +314,7 @@ async function publish(runId, taskId) {
 }
 
 async function collect(runId, taskId) {
+  console.log(`交互地图：${await startAtlas(home)}`);
   const { dir } = await load(runId);
   await lock(join(dir, "run.lock"), async () => {
     const { snapshot, state } = await load(runId);
@@ -320,11 +322,11 @@ async function collect(runId, taskId) {
     if (state.planDigest !== digest(JSON.stringify(planned))) throw new Error("任务单被修改");
     const task = planned.tasks.find(task => task.id === taskId), row = state.tasks[taskId];
     if (!task || !row?.pr) throw new Error("任务还没有 PR");
-    if (row.phase === "published") { console.log(row.pr); return; }
     const runs = JSON.parse(command("gh", ["api", `repos/${snapshot.repo}/actions/runs`, "--method", "GET", "-f", `branch=${row.branch}`, "-f", "per_page=30"])).workflow_runs;
     const found = runs.find(run => run.head_sha === row.commit && run.path?.split("@")[0] === ".github/workflows/dev-pipeline.yml" && run.event === "pull_request");
     const ci = found ? { databaseId: found.id, workflowId: found.workflow_id, attempt: found.run_attempt, status: found.status, conclusion: found.conclusion, url: found.html_url } : null;
-    if (!ci || ci.status !== "completed") { console.log(`${taskId}：CI 尚未完成`); return; }
+    if (!ci || ci.status !== "completed") { row.phase = "awaiting-ci"; await saveState(dir, state); console.log(`${taskId}：CI 尚未完成`); return; }
+    if (row.phase === "published" && row.atlasPublished === atlasURL && row.ci?.databaseId === ci.databaseId && row.ci?.attempt === ci.attempt) { await syncAtlas(home); console.log(`${row.pr}\n${atlasURL}`); return; }
     interruptedMessage(); verifyBranch(row);
     const pr = JSON.parse(command("gh", ["pr", "view", row.pr, "--json", "headRefOid,body,statusCheckRollup,isDraft"]));
     if (pr.headRefOid !== row.commit) throw new Error("PR 已变化，不能使用旧报告");
@@ -345,8 +347,13 @@ async function collect(runId, taskId) {
     }
     const sameCases = JSON.stringify([...task.cases].sort()) === JSON.stringify([...(receipt.cases ?? [])].sort());
     if (receipt.commit !== row.commit || receipt.controllerCommit !== (row.controllerCommit ?? snapshot.base) || receipt.runId !== ci.databaseId || receipt.runAttempt !== ci.attempt || !sameCases || !["pass", "fail"].includes(receipt.status)) throw new Error("CI 交回的版本、尝试、用例范围或状态不符");
+    if (row.ci && row.ci.cacheKey !== cacheKey) {
+      row.previousCI ??= [];
+      row.previousCI.push({ commit: row.commit, controllerCommit: row.controllerCommit ?? snapshot.base, ci: row.ci });
+    }
     row.ci = { ...ci, cacheKey, directory: target, receipt: join(target, "verification.json") };
     if (ci.conclusion !== "success" || receipt.status !== "pass") {
+      if (!pr.isDraft) command("gh", ["pr", "ready", row.pr, "--undo"]);
       row.phase = "needs-repair"; row.error = receipt.error ?? "CI 检查或验收未通过";
       await saveState(dir, state); console.log(`${taskId}：未通过，保留草稿，${ci.url}`); return;
     }
@@ -385,11 +392,13 @@ async function collect(runId, taskId) {
     interruptedMessage(); verifyBranch(row);
     const latest = JSON.parse(command("gh", ["pr", "view", row.pr, "--json", "headRefOid,body,isDraft"]));
     if (latest.headRefOid !== row.commit) throw new Error("证据复核期间 PR 已变化，保留草稿并重新验收");
-    if (digest(latest.body.trim()) === row.bodyHash) {
+    const priorBody = await readFile(join(dir, taskId, "pr-body-final.md"), "utf8").catch(error => { if (error.code === "ENOENT") return ""; throw error; });
+    if (digest(latest.body.trim()) === row.bodyHash || priorBody.trim() === latest.body.trim()) {
       const sources = task.sourceIds.map(id => snapshot.sources.find(source => source.id === id));
-      const body = `${task.goal}\n\n来源：${sources.map(source => `[${source.id}](${source.url})`).join("，")}。\n\n验证：独立代码审查通过；${receipt.checks.map(check => `${check.name} ${check.passed ? "通过" : "未通过"}`).join("，")}。${task.cases.length ? "已对报告中的截图做独立抽样复核。" : "本次没有浏览器截图或录屏验收。"}\n\n提交：\`${row.commit}\`；控制器：\`${receipt.controllerCommit}\`；构建：\`${receipt.buildSha256}\`。\n\n[验收报告与证据](${row.report.url})\n\n${row.visualReview?.summary ?? "范围仅限所列检查，其他路径未验证。"}\n`;
+      const body = `${task.goal}\n\n来源：${sources.map(source => `[${source.id}](${source.url})`).join("，")}。\n\n验证：独立代码审查通过；${receipt.checks.map(check => `${check.name} ${check.passed ? "通过" : "未通过"}`).join("，")}。${task.cases.length ? "已对报告中的截图做独立抽样复核。" : "本次没有浏览器截图或录屏验收。"}\n\n提交：\`${row.commit}\`；控制器：\`${receipt.controllerCommit}\`；构建：\`${receipt.buildSha256}\`。\n\n[打开本机交互地图](${atlasURL}) · [下载证据备份](${row.report.url})\n\n${row.visualReview?.summary ?? "范围仅限所列检查，其他路径未验证。"}\n`;
       const file = join(dir, taskId, "pr-body-final.md"); await writeFile(file, body);
       command("gh", ["pr", "edit", row.pr, "--body-file", file]);
+      row.bodyHash = digest(body.trim());
     }
     interruptedMessage();
     if (latest.isDraft) command("gh", ["pr", "ready", row.pr]);
@@ -400,9 +409,11 @@ async function collect(runId, taskId) {
       throw new Error("交付期间 PR 已更新，撤回本次就绪标记");
     }
     row.phase = "published";
+    row.atlasPublished = atlasURL;
     await saveState(dir, state);
     await event(dir, "published", { taskId, pr: row.pr, report: row.report.url, commit: row.commit });
-    console.log(`${row.pr}\n${row.report.url}`);
+    await syncAtlas(home);
+    console.log(`${row.pr}\n${atlasURL}`);
   });
 }
 
