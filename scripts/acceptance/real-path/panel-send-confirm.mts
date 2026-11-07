@@ -35,6 +35,7 @@ const clickSend = { tool: { name: "click", args: { target: "#send", label: "发�
 const ASK = { p1: "案例P1：把草稿发出去。", p2: "案例P2：把草稿发出去。", p3: "案例P3：把草稿发出去。", p4: "案例P4：把草稿发出去。", p5: "案例P5：把草稿发出去。", p6: "案例P6：把草稿发出去。" };
 
 const model = await startScriptedModel([
+  ...Object.values(ASK).map(message => ({ match: JSON.stringify({ message }).slice(0, -1) + ',"clauses":', steps: [{ text: JSON.stringify({ steps: [{ action: "start", taskId: null }] }) }] })),
   { match: '"goalPage"', steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
   ...Object.entries(ASK).map(([key, match]) => ({ match, steps: [clickSend, { text: `${key.toUpperCase()} 完成。` }] })),
 ]);
@@ -48,13 +49,14 @@ const check = (name: string, pass: boolean, actual: Json) => { checks.push({ nam
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
   await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/` }, work);
-  const panel = await rp.attach(await rp.openSidePanel());
+  let panel = await rp.attach(await rp.openSidePanel());
   const items = { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
   const ready = (session: string) => until(async () => await rp.evaluate(session, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false'), 60_000, "侧栏就绪");
   await ready(panel);
 
   const firstPanelTarget = (await rp.targets()).find(t => t.url.includes("/sidepanel.html"))!.targetId;
+  const firstWindow = Number(await rp.evaluate(panel, 'chrome.windows.getCurrent().then(w => w.id)'));
   const otherWindow = Number(await rp.evaluate(panel, 'chrome.windows.create({ url: "about:blank", focused: false }).then(w => w.id)'));
   const opened = await rp.evaluate(panel, `chrome.sidePanel.open({ windowId: ${otherWindow} }).then(() => "opened", e => "error: " + e.message)`, { userGesture: true });
 
@@ -62,6 +64,7 @@ try {
   const panel2 = await rp.attach((await until(async () => (await rp.targets()).find(t => t.url.includes("/sidepanel.html") && t.targetId !== firstPanelTarget), 15_000, "二号侧栏出现")).targetId);
   await ready(panel2);
   await rp.cdp.send("Page.bringToFront", {}, work);
+  await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
 
   type DomNode = { nodeName: string; nodeValue?: string; backendNodeId: number; attributes?: string[]; children?: DomNode[]; shadowRoots?: DomNode[] };
 
@@ -97,6 +100,15 @@ try {
   await ask(ASK.p1);
   await until(async () => await pageBox(), 30_000, "网页圈选提示", 100);
   await sleep(1200);
+  panel = await until(async () => {
+    for (const target of (await rp.targets()).filter(target => target.url.startsWith(`chrome-extension://${rp.extensionId}/sidepanel.html`))) {
+      const session = await rp.attach(target.targetId);
+      const windowId = await rp.evaluate(session, 'globalThis.chrome?.windows?.getCurrent().then(w => w.id)').catch(() => undefined);
+      if (windowId === firstWindow) return session;
+      await rp.detach(session);
+    }
+    return undefined;
+  }, 15_000, "确认卡所在窗口的侧栏");
   await rp.screenshot(panel, join(out, "p1-panel-waiting.png"));
   const c1 = await liveCard(panel);
   const c1b = await liveCard(panel2);
@@ -204,12 +216,22 @@ try {
   await rp.click(panel, `#conversation-menu [data-conversation-id="${original6}"]`);
   const selected6 = await until(async () => await rp.evaluate(panel, `document.querySelector("#conversation-menu [aria-checked=true]")?.dataset.conversationId === ${JSON.stringify(original6)} || undefined`), 10_000, "切回原会话").then(() => true, () => false);
   check("p6 点菜单切回原会话", selected6, menu6);
+  await ready(panel);
   const back6 = await liveCard(panel);
   check("p6 切回原会话：恢复同一张待确认卡", back6.id === c6.id, { before: c6, after: back6 });
   await press(panel, back6.id, "no");
   const done6 = await settledCard(panel, DECLINED_LINE);
   check("p6 切回来后选择先不发：没有发送，原会话卡收成结果", sent() === before6 && !("timedOut" in done6), { sent: sent(), before: before6, done6 } as Json);
-} catch (error) { check("流程完成", false, String(error)); } finally {
+} catch (error) {
+  check("流程完成", false, String(error));
+  const target = (await rp.targets()).find(target => target.url.includes("/sidepanel.html"));
+  if (target) {
+    const session = await rp.attach(target.targetId);
+    await rp.screenshot(session, join(out, "failure.png"));
+    console.log("失败时侧栏", await rp.evaluate(session, 'document.body.innerText'));
+  }
+  console.log("模型请求", JSON.stringify(model.requests));
+} finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, posts, notCovered: ["真实网站、真模型", "2 分钟没理（产品没有缩短等待的开关）", "扩展后台重启时卡收成「这次确认已经结束」"] }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));
 }

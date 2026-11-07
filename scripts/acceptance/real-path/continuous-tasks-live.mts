@@ -15,8 +15,11 @@ try{
   await rp.evaluate(panel,`chrome.storage.local.set(${JSON.stringify(modelStorageItems(plan))}).then(()=>true)`);
   await until(async()=>await rp.evaluate(panel,'document.querySelector("#conversation-new")?.getAttribute("aria-busy")==="false" && document.querySelector("#send-btn")?.disabled===false')||undefined,60_000,'侧栏与模型就绪');
   const say=async(s:string)=>{
-    await rp.click(panel,'#input');
-    await until(async()=>await rp.evaluate(panel,'document.activeElement?.id==="input"')||undefined,5_000,'输入框获得焦点');
+    await until(async()=>{
+      if(await rp.evaluate(panel,'document.activeElement?.id==="input"'))return true;
+      await rp.click(panel,'#input');
+      return await rp.evaluate(panel,'document.activeElement?.id==="input"')||undefined;
+    },5_000,'输入框获得焦点');
     await rp.typeText(panel,s);
     assert.equal(await rp.evaluate(panel,'document.querySelector("#input").value'),s,'输入完整落入输入框');
     await rp.pressEnter(panel);
