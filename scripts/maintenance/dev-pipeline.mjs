@@ -28,6 +28,18 @@ async function event(runDir, type, data = {}) {
   await appendFile(join(runDir, "events.jsonl"), JSON.stringify({ at: new Date().toISOString(), type, ...data }) + "\n", { mode: 0o600 });
 }
 
+async function saveState(dir, state) {
+  const phases = Object.values(state.tasks).map(row => row.phase);
+  if (phases.length) state.phase = phases.some(phase => ["implementing", "reviewing"].includes(phase)) ? "running"
+    : phases.some(phase => ["awaiting-ci", "reviewing-evidence"].includes(phase)) ? "awaiting-ci"
+    : phases.some(phase => ["blocked", "needs-repair"].includes(phase)) ? "needs-repair"
+    : phases.includes("needs-decision") ? "needs-decision"
+    : phases.includes("pending") ? "planned"
+    : phases.includes("reviewed") ? "reviewed"
+    : phases.includes("cancelled") ? "cancelled" : "finished";
+  await save(join(dir, "state.json"), state);
+}
+
 async function processRun(bin, parameters, { cwd, log, input = "", timeout = 900_000, env = {}, agentEnvironment = false }) {
   interruptedMessage();
   const output = createWriteStream(log, { flags: "w", mode: 0o600 });
@@ -142,7 +154,7 @@ async function plan(runId) {
     state.phase = "planned";
     state.planDigest = digest(JSON.stringify(validated));
     for (const task of validated.tasks) state.tasks[task.id] = { phase: task.needsDecision ? "needs-decision" : "pending", attempts: 0 };
-    await save(join(dir, "state.json"), state);
+    await saveState(dir, state);
     await event(dir, "planned", { tasks: validated.tasks.map(task => ({ id: task.id, needsDecision: task.needsDecision })) });
     console.log(JSON.stringify(validated, null, 2));
   });
@@ -171,7 +183,7 @@ async function executeTask(task, context) {
   row.branch = `pipeline/${snapshot.runId}-${task.id}`;
   row.base = base; row.baseBranch = dependency?.branch ?? snapshot.baseBranch;
   row.machine = hostname();
-  await save(join(dir, "state.json"), state);
+  await saveState(dir, state);
   await event(dir, "task_started", { taskId: task.id, base, branch: row.branch });
   try {
     command(process.execPath, [join(repo, "scripts/maintenance/task.mjs"), row.branch, `--base=${base}`]);
@@ -186,7 +198,7 @@ async function executeTask(task, context) {
     git(["add", "--", ...changed], worktree);
     git(["commit", "-m", `${task.kind === "bug" ? "fix" : "chore"}: ${task.title.replace(/[\r\n]/g, " ")}`, "-m", `${task.goal}\n\n自动开发任务 ${snapshot.runId}/${task.id}。独立审查和验收结果见交付报告；尚未据此宣称通过。`], worktree);
     row.commit = git(["rev-parse", "HEAD"], worktree); row.phase = "reviewing";
-    await save(join(dir, "state.json"), state);
+    await saveState(dir, state);
     row.review = await agent(taskDir, "review", worktree, `独立只读审查 ${base}..${row.commit} 的实际差异。不要相信执行者的完成声明。核查用户目标、隐私与凭据、提示注入、子代理行为和缓存是否被改变；验收有没有被放宽；是否越界或破坏并行任务。任务范围以此任务单为准。只在没有阻断问题时 approved=true；findings 只列阻断问题。\n${JSON.stringify(task)}`, reviewSchema);
     if (typeof row.review.approved !== "boolean" || !Array.isArray(row.review.findings) || !row.review.approved || row.review.findings.length) throw new Error("独立审查没有通过");
     if (git(["rev-parse", "HEAD"], worktree) !== row.commit || git(["status", "--porcelain"], worktree)) throw new Error("审查期间版本发生变化");
@@ -198,7 +210,7 @@ async function executeTask(task, context) {
   } finally {
     row.finishedAt = new Date().toISOString();
     await event(dir, "task_finished", { taskId: task.id, phase: row.phase, commit: row.commit, error: row.error });
-    await save(join(dir, "state.json"), state);
+    await saveState(dir, state);
     console.log(`${task.id}：${row.phase}${row.error ? ` — ${row.error}` : ""}`);
   }
 }
@@ -231,7 +243,7 @@ async function run(runId) {
     }
     for (const task of planned.tasks) if (state.tasks[task.id].phase === "pending" && task.dependsOn.some(id => ["blocked", "no-change", "needs-repair"].includes(state.tasks[id].phase))) state.tasks[task.id] = { ...state.tasks[task.id], phase: "blocked", error: "依赖未完成" };
     state.phase = interrupted ? "cancelled" : "finished";
-    await save(join(dir, "state.json"), state);
+    await saveState(dir, state);
     console.log(`任务结果：${join(dir, "state.json")}`);
     if (interrupted) process.exitCode = 130;
     else if (Object.values(state.tasks).some(row => ["blocked", "needs-repair"].includes(row.phase))) process.exitCode = 1;
@@ -247,7 +259,7 @@ async function approve(runId, taskId) {
     if (!task || row?.phase !== "needs-decision") throw new Error("没有待确认的对应任务");
     row.approval = { at: new Date().toISOString(), taskDigest: digest(JSON.stringify(task)) };
     row.phase = "pending";
-    await save(join(dir, "state.json"), state);
+    await saveState(dir, state);
     await event(dir, "approved", { taskId, taskDigest: row.approval.taskDigest });
   });
 }
@@ -269,7 +281,8 @@ async function publish(runId, taskId) {
     if (row.pr) { console.log(row.pr); return; }
     if (row.phase !== "reviewed" || row.review?.approved !== true || row.review.findings?.length) throw new Error("独立审查未通过，不发布");
     verifyBranch(row); interruptedMessage();
-    const manifest = { runId, taskId, controllerCommit: snapshot.base, reviewedCommit: row.reviewedCommit, title: task.title, cases: task.cases, acceptance: task.acceptance };
+    row.controllerCommit ??= snapshot.base;
+    const manifest = { runId, taskId, controllerCommit: row.controllerCommit, reviewedCommit: row.reviewedCommit, title: task.title, cases: task.cases, acceptance: task.acceptance };
     if (!row.manifestCommit) {
       await save(join(row.worktree, ".dev-pipeline-task.json"), manifest);
       git(["add", "--", ".dev-pipeline-task.json"], row.worktree);
@@ -277,7 +290,7 @@ async function publish(runId, taskId) {
       row.commit = git(["rev-parse", "HEAD"], row.worktree);
       row.manifestCommit = row.commit;
       row.manifestHash = digest(JSON.stringify(manifest));
-      await save(join(dir, "state.json"), state);
+      await saveState(dir, state);
     } else if (row.manifestHash !== digest(JSON.stringify(await json(join(row.worktree, ".dev-pipeline-task.json"))))) throw new Error("CI 任务单已变化");
     const sources = task.sourceIds.map(id => snapshot.sources.find(source => source.id === id));
     const body = `${task.goal}\n\n${row.worker.summary}\n\n来源：${sources.map(source => `[${source.id}](${source.url})`).join("，")}。\n\n独立代码审查通过；临时 CI 机器上的代码检查、用户路径验收和图文录屏报告尚未完成。验收前保持草稿。\n提交：\`${row.commit}\`。\n\n${row.worker.limitations?.length ? `未验证：${row.worker.limitations.join("；")}` : "本次仅覆盖任务单中的范围。"}\n`;
@@ -293,7 +306,7 @@ async function publish(runId, taskId) {
     const pr = JSON.parse(command("gh", ["pr", "view", row.pr, "--json", "headRefOid"]));
     if (pr.headRefOid !== row.commit) throw new Error("PR 提交与任务提交不一致");
     row.phase = "awaiting-ci";
-    await save(join(dir, "state.json"), state);
+    await saveState(dir, state);
     await event(dir, "draft_published", { taskId, pr: row.pr, commit: row.commit });
     console.log(row.pr);
   });
@@ -320,7 +333,7 @@ async function collect(runId, taskId) {
     const artifact = artifacts.artifacts.find(item => item.name === artifactName && !item.expired);
     if (!artifact) {
       row.phase = "needs-repair"; row.ci = ci; row.error = "本次 CI 尝试没有可下载的验收产物";
-      await save(join(dir, "state.json"), state); console.log(`${taskId}：${row.error}，保留草稿，${ci.url}`); return;
+      await saveState(dir, state); console.log(`${taskId}：${row.error}，保留草稿，${ci.url}`); return;
     }
     const cacheKey = `${ci.databaseId}:${ci.attempt}:${artifact.id}`;
     const target = row.ci?.cacheKey === cacheKey && row.ci.directory ? row.ci.directory : await directory(join(dir, taskId, `ci-${ci.databaseId}-${ci.attempt}-${artifact.id}-${Date.now()}`));
@@ -331,11 +344,11 @@ async function collect(runId, taskId) {
       receipt = await json(join(target, "verification.json"));
     }
     const sameCases = JSON.stringify([...task.cases].sort()) === JSON.stringify([...(receipt.cases ?? [])].sort());
-    if (receipt.commit !== row.commit || receipt.controllerCommit !== snapshot.base || receipt.runId !== ci.databaseId || receipt.runAttempt !== ci.attempt || !sameCases || !["pass", "fail"].includes(receipt.status)) throw new Error("CI 交回的版本、尝试、用例范围或状态不符");
+    if (receipt.commit !== row.commit || receipt.controllerCommit !== (row.controllerCommit ?? snapshot.base) || receipt.runId !== ci.databaseId || receipt.runAttempt !== ci.attempt || !sameCases || !["pass", "fail"].includes(receipt.status)) throw new Error("CI 交回的版本、尝试、用例范围或状态不符");
     row.ci = { ...ci, cacheKey, directory: target, receipt: join(target, "verification.json") };
     if (ci.conclusion !== "success" || receipt.status !== "pass") {
       row.phase = "needs-repair"; row.error = receipt.error ?? "CI 检查或验收未通过";
-      await save(join(dir, "state.json"), state); console.log(`${taskId}：未通过，保留草稿，${ci.url}`); return;
+      await saveState(dir, state); console.log(`${taskId}：未通过，保留草稿，${ci.url}`); return;
     }
     if (!/^[a-f0-9]{64}$/.test(receipt.buildSha256 ?? "")) throw new Error("CI 缺少实际构建指纹");
     let reportManifest;
@@ -353,7 +366,7 @@ async function collect(runId, taskId) {
     const quality = pr.statusCheckRollup.find(check => check.name === "quality");
     if (ci.conclusion !== "success" || receipt.status !== "pass" || !quality || quality.conclusion !== "SUCCESS") {
       row.phase = quality?.status === "IN_PROGRESS" ? "awaiting-ci" : "needs-repair";
-      await save(join(dir, "state.json"), state);
+      await saveState(dir, state);
       console.log(`${taskId}：${row.phase}，${ci.url}`); return;
     }
     row.report = { html: join(target, "report/index.html"), url: `https://github.com/${snapshot.repo}/actions/runs/${ci.databaseId}/artifacts/${artifact.id}`, bytes: artifact.size_in_bytes };
@@ -361,19 +374,20 @@ async function collect(runId, taskId) {
       const images = [];
       for (const item of reportManifest.cases) for (const media of item.media ?? []) if (media.kind === "image" && images.length < 4) images.push(within(target, await realpath(join(target, "report", media.file))));
       if (!images.length) throw new Error("没有可独立复核的截图");
-      row.phase = "reviewing-evidence"; await save(join(dir, "state.json"), state);
+      row.phase = "reviewing-evidence"; await saveState(dir, state);
       row.visualReview = await agent(join(dir, taskId), "visual-review", row.worktree, `只读复核所附真实验收截图和报告文件 ${join(target, "report/manifest.json")}。任务标准：${JSON.stringify(task.acceptance)}。检查截图是否有可确认的严重显示错误、错误页面、明显与声明不符；不要以截图推断不可见的动态动作、计时或未测试路径。模型脚本与真实模型、单次验收与统计收益要区分。findings 只列有证据的阻断问题，无法判断的限制写 summary。没有阻断问题时 approved=true。不要执行代码或打开其他应用。`, reviewSchema, false, images);
       row.visualReviewFor = receipt.reportManifestSha256;
-      await save(join(dir, "state.json"), state);
+      await saveState(dir, state);
     }
     if (reportManifest && (row.visualReview?.approved !== true || !Array.isArray(row.visualReview.findings) || row.visualReview.findings.length)) {
-      row.phase = "needs-repair"; await save(join(dir, "state.json"), state); console.log(`${taskId}：证据复核未通过，保留草稿`); return;
+      row.phase = "needs-repair"; await saveState(dir, state); console.log(`${taskId}：证据复核未通过，保留草稿`); return;
     }
     interruptedMessage(); verifyBranch(row);
     const latest = JSON.parse(command("gh", ["pr", "view", row.pr, "--json", "headRefOid,body,isDraft"]));
     if (latest.headRefOid !== row.commit) throw new Error("证据复核期间 PR 已变化，保留草稿并重新验收");
     if (digest(latest.body.trim()) === row.bodyHash) {
-      const body = latest.body.replace("临时 CI 机器上的代码检查、用户路径验收和图文录屏报告尚未完成。验收前保持草稿。", task.cases.length ? "临时 CI 机器上的代码检查、任务单内验收及截图独立复核通过。" : "临时 CI 机器上的代码检查通过；本次没有浏览器截图或录屏验收。") + `\n\n[验收报告与证据](${row.report.url})\n构建指纹：\`${receipt.buildSha256}\`。\n`;
+      const sources = task.sourceIds.map(id => snapshot.sources.find(source => source.id === id));
+      const body = `${task.goal}\n\n来源：${sources.map(source => `[${source.id}](${source.url})`).join("，")}。\n\n验证：独立代码审查通过；${receipt.checks.map(check => `${check.name} ${check.passed ? "通过" : "未通过"}`).join("，")}。${task.cases.length ? "已对报告中的截图做独立抽样复核。" : "本次没有浏览器截图或录屏验收。"}\n\n提交：\`${row.commit}\`；控制器：\`${receipt.controllerCommit}\`；构建：\`${receipt.buildSha256}\`。\n\n[验收报告与证据](${row.report.url})\n\n${row.visualReview?.summary ?? "范围仅限所列检查，其他路径未验证。"}\n`;
       const file = join(dir, taskId, "pr-body-final.md"); await writeFile(file, body);
       command("gh", ["pr", "edit", row.pr, "--body-file", file]);
     }
@@ -382,11 +396,11 @@ async function collect(runId, taskId) {
     const readyHead = JSON.parse(command("gh", ["pr", "view", row.pr, "--json", "headRefOid"])).headRefOid;
     if (readyHead !== row.commit) {
       if (latest.isDraft) command("gh", ["pr", "ready", row.pr, "--undo"]);
-      row.phase = "needs-repair"; await save(join(dir, "state.json"), state);
+      row.phase = "needs-repair"; await saveState(dir, state);
       throw new Error("交付期间 PR 已更新，撤回本次就绪标记");
     }
     row.phase = "published";
-    await save(join(dir, "state.json"), state);
+    await saveState(dir, state);
     await event(dir, "published", { taskId, pr: row.pr, report: row.report.url, commit: row.commit });
     console.log(`${row.pr}\n${row.report.url}`);
   });
@@ -412,6 +426,51 @@ async function waitForCI(runId) {
   return false;
 }
 
+async function refreshCI(runId, taskId) {
+  const { dir } = await load(runId);
+  await lock(join(dir, "run.lock"), async () => {
+    const { snapshot, state } = await load(runId);
+    const planned = validatePlan(await json(join(dir, "plan.json")), snapshot);
+    const task = planned.tasks.find(task => task.id === taskId), row = state.tasks[taskId];
+    if (!task || !row?.pr || !["needs-repair", "awaiting-ci"].includes(row.phase)) throw new Error("没有待重新验收的草稿任务");
+    if (state.planDigest !== digest(JSON.stringify(planned)) || git(["status", "--porcelain"])) throw new Error("任务单或控制器工作区已变化");
+    const controllerCommit = git(["rev-parse", "HEAD"]);
+    if (controllerCommit === (row.controllerCommit ?? snapshot.base)) throw new Error("控制器没有变化；先分析原因，不重复提交同一验收");
+    git(["merge-base", "--is-ancestor", snapshot.base, controllerCommit]);
+    if (git(["diff", "--name-only", snapshot.base, controllerCommit, "--", ...task.files])) throw new Error("任务文件的基线已变化，需要重新拆解与审查");
+    verifyBranch(row); interruptedMessage();
+    const pr = JSON.parse(command("gh", ["pr", "view", row.pr, "--json", "headRefOid,body,isDraft,state"]));
+    if (pr.state !== "OPEN" || !pr.isDraft || pr.headRefOid !== row.commit) throw new Error("PR 已变化或不再是待验收草稿");
+    if (git(["diff", "--name-only", row.reviewedCommit, row.commit], row.worktree) !== ".dev-pipeline-task.json") throw new Error("候选代码变化超过控制器生成的任务单");
+    const oldCommit = row.commit;
+    const manifest = await json(join(row.worktree, ".dev-pipeline-task.json"));
+    if (digest(JSON.stringify(manifest)) !== row.manifestHash) throw new Error("原任务单已被修改");
+    row.previousCI ??= [];
+    row.previousCI.push({ commit: oldCommit, controllerCommit: row.controllerCommit ?? snapshot.base, ci: row.ci, error: row.error });
+    manifest.controllerCommit = controllerCommit;
+    await save(join(row.worktree, ".dev-pipeline-task.json"), manifest);
+    git(["add", "--", ".dev-pipeline-task.json"], row.worktree);
+    git(["commit", "--only", "-m", "ci: revalidate unchanged candidate with corrected controller", "--", ".dev-pipeline-task.json"], row.worktree);
+    row.commit = git(["rev-parse", "HEAD"], row.worktree); row.manifestCommit = row.commit;
+    row.controllerCommit = controllerCommit; row.manifestHash = digest(JSON.stringify(manifest));
+    row.phase = "awaiting-ci";
+    delete row.error; delete row.ci; delete row.report; delete row.visualReview; delete row.visualReviewFor;
+    await saveState(dir, state);
+    interruptedMessage(); verifyBranch(row);
+    git(["push", "origin", `${row.commit}:refs/heads/${row.branch}`], row.worktree);
+    if (git(["ls-remote", "--heads", "origin", `refs/heads/${row.branch}`], row.worktree).split(/\s/)[0] !== row.commit) throw new Error("远端不是重新验收的指定提交");
+    if (digest(pr.body.trim()) === row.bodyHash) {
+      const body = pr.body.replace(`提交：\`${oldCommit}\``, `提交：\`${row.commit}\``);
+      const path = join(dir, taskId, "pr-body.md"); await writeFile(path, body);
+      interruptedMessage(); command("gh", ["pr", "edit", row.pr, "--body-file", path]);
+      row.bodyHash = digest(body.trim());
+    }
+    await event(dir, "ci_controller_refreshed", { taskId, commit: row.commit, controllerCommit });
+    await saveState(dir, state);
+    console.log(`${row.pr}：候选代码不变，重新核对修正后的验收控制器`);
+  });
+}
+
 async function main() {
   await directory(home);
   if (args[0] === "scan") await scan();
@@ -421,6 +480,7 @@ async function main() {
   else if (args[0] === "publish") await publish(args[1], args[2]);
   else if (args[0] === "collect") await collect(args[1], args[2]);
   else if (args[0] === "wait") await waitForCI(args[1]);
+  else if (args[0] === "refresh-ci") await refreshCI(args[1], args[2]);
   else if (args[0] === "status") console.log(JSON.stringify((await load(args[1])).state, null, 2));
   else if (args[0] === "cycle") {
     const id = await scan(); await plan(id);
@@ -436,7 +496,7 @@ async function main() {
       }
     }
   }
-  else console.log("用法：npm run dev:flow -- scan | plan <运行> [--source=issue:编号] [--focus=要求] | approve <运行> <任务> | run <运行> [--jobs=2] | status <运行> | publish <运行> <任务> | collect <运行> <任务> | wait <运行> | cycle --source=issue:编号 --publish\n巡检只读；拆解标出需要决策的任务，用户确认后才可 approve；执行使用独立工作树和受限 Agent；先发布草稿，在临时 CI 机器验收；collect 核对同一提交、用例和构建报告后标记可审阅。不会自动设置定时任务或合并 PR。");
+  else console.log("用法：npm run dev:flow -- scan | plan <运行> [--source=issue:编号] [--focus=要求] | approve <运行> <任务> | run <运行> [--jobs=2] | status <运行> | publish <运行> <任务> | collect <运行> <任务> | wait <运行> | refresh-ci <运行> <任务> | cycle --source=issue:编号 --publish\n巡检只读；拆解标出需要决策的任务，用户确认后才可 approve；执行使用独立工作树和受限 Agent；先发布草稿，在临时 CI 机器验收；collect 核对同一提交、用例和构建报告后标记可审阅。不会自动设置定时任务或合并 PR。");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(error.message); if (!interrupted) process.exitCode = 1; });

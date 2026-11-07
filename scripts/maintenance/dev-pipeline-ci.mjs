@@ -51,8 +51,7 @@ try {
     if (changed.some(file => /^(shared|agent\/src)\//.test(file))) run("architecture", "npm", ["run", "check:architecture"]);
     if (receipt.checks.every(check => check.passed) && task.cases.length) {
       const suite = join(repo, "out/acceptance/real-path");
-      await mkdir(suite, { recursive: true });
-      const before = new Set(await readdir(suite));
+      const before = new Set(await readdir(suite).catch(error => { if (error.code === "ENOENT") return []; throw error; }));
       run("acceptance", "npx", ["--no-install", "tsx", "scripts/acceptance/real-path/run-all.mts", `--only=${task.cases.join(",")}`, "--jobs=1"], { SIDEAGENT_ACCEPTANCE_DIST: join(repo, "extension/dist"), SIDEAGENT_RECORD: "1" });
       const summaries = (await readdir(suite)).filter(file => /^summary-.*\.json$/.test(file) && !before.has(file));
       if (summaries.length !== 1) throw new Error("本轮没有交回唯一的验收摘要");
