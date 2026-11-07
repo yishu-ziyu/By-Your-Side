@@ -24,7 +24,7 @@ const posts: Array<{ path: string; at: number }> = [];
 let orderReads = 0;
 const site = createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/api/orders") { orderReads += 1; res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ orders: [{ id: 7, item: "季度报表打印" }] })); return; }
-  if (req.method === "POST") { for await (const _ of req) {  } posts.push({ path: req.url ?? "", at: Date.now() }); if (req.url === "/api/send-error") { res.writeHead(503).end("service unavailable"); return; } res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
+  if (req.method === "POST") { req.setEncoding("utf8"); for await (const _ of req) {  } posts.push({ path: req.url ?? "", at: Date.now() }); if (req.url === "/api/send-error") { res.writeHead(503).end("service unavailable"); return; } res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 const sendPosts = () => posts.filter(p => p.path !== "/save").length;

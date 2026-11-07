@@ -213,12 +213,15 @@ export class TaskQueue {
       this.update(job, { receipt: { ...job.receipt, runId } });
     }
   }
+  private suspendedChange(job: QueuedTask): Partial<QueuedTask> {
+    return { state: 'suspended', receipt: { ...job.receipt, taskState:'interrupted', message: '连接断开，这项待办尚未启动；明确继续后才重新安排。', updatedAt: Date.now() } };
+  }
   suspendPending(): void {
     let failed = false;
 
     for (const job of this.jobs.values()) {
       if (job.state === 'queued') {
-        const change: Partial<QueuedTask> = { state: 'suspended', receipt: { ...job.receipt, taskState:'interrupted', message: '连接断开，这项待办尚未启动；明确继续后才重新安排。', updatedAt: Date.now() } };
+        const change = this.suspendedChange(job);
 
         try {
           this.update(job, change);
@@ -340,7 +343,12 @@ export class TaskQueue {
 
         try {
           await this.persisted();
-          if (this.get(job.request.conversationId)?.state !== 'starting' || this.options.enabled?.() === false) continue;
+          if (this.get(job.request.conversationId)?.state !== 'starting') continue;
+          if (this.options.enabled?.() === false) {
+            this.update(job, this.suspendedChange(job));
+            this.options.changed(job);
+            continue;
+          }
           const receipt = await this.options.execute(job.request);
           if (this.get(job.request.conversationId)?.state === 'cancelled') continue;
           job.receipt = receipt;

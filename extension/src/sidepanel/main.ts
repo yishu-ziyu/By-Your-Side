@@ -1868,9 +1868,9 @@ function applyHandoffPhase(phase: "leaving" | "user" | "rereading" | "agent"): v
   const banner = document.getElementById("handoff-banner");
 
   if (!banner) return;
-  banner.hidden = phase === "leaving" || phase === "agent";
+  banner.hidden = phase === "agent";
   banner.dataset.phase = phase;
-  banner.textContent = phase === "user" ? (handoffCard?.dataset.choice === "true" ? "等你选择 · 助手在旁边等" : "你在操作 · 助手在旁边等") : phase === "rereading" ? "助手先重读页面" : "";
+  banner.textContent = phase === "user" ? (handoffCard?.dataset.choice === "true" ? "等你选择 · 助手在旁边等" : "你在操作 · 助手在旁边等") : phase === "rereading" ? "助手先重读页面" : phase === "leaving" ? "正在暂停助手" : "";
   document.getElementById("composer")?.classList.toggle("you-operating", phase === "user");
   taskBar.setHandoffShown(phase === "user");
 }
@@ -2770,6 +2770,7 @@ function renderTaskStrip(): void {
 function setSessionState(sessionId: string, state: AgentRunState): void {
   sessionRun.set(sessionId, state);
   const flags = panelLive(sessionRun.values(), teamView);
+  const stopping = teamView?.phase === "draining";
   running = flags.running;
 
   if (flags.userHasPage !== lastUserHasPage) {
@@ -2779,9 +2780,11 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
     if (!flags.userHasPage) collapseHandoffCard(!running);
     const phase = document.getElementById("handoff-banner")?.dataset.phase;
 
-    if (flags.userHasPage && phase !== "user" && phase !== "leaving") applyHandoffPhase("user");
+    if (flags.userHasPage && phase !== "user" && phase !== "leaving") applyHandoffPhase(stopping ? "leaving" : "user");
     else if (!flags.userHasPage && phase === "user") applyHandoffPhase("agent");
   } else if (!flags.live) collapseHandoffCard(true);
+
+  if (flags.userHasPage && !stopping && document.getElementById("handoff-banner")?.dataset.phase === "leaving") applyHandoffPhase("user");
 
   takeoverBtn.hidden = !flags.takeoverVisible && !flags.userHasPage;
   translateBtn.hidden = !takeoverBtn.hidden;
@@ -2790,7 +2793,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   takeoverBtn.disabled = handingOver;
   const handback = handoffCard?.querySelector<HTMLButtonElement>(".btn-primary");
   if (handback) handback.disabled = !flags.userHasPage || handingOver;
-  takeoverBtn.textContent = flags.userHasPage ? "交还" : "接管";
+  takeoverBtn.textContent = stopping ? "接管中" : flags.userHasPage ? "交还" : "接管";
   takeoverBtn.title = flags.userHasPage ? "交还：助手先重读页面，再接着做。" : "接管：助手暂停，由你操作页面。操作完，点「交还」。";
   steerRibbon.setRunning(running && !flags.userHasPage);
 

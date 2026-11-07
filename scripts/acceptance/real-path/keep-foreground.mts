@@ -22,7 +22,7 @@ document.querySelector('#f').addEventListener('submit', e => { e.preventDefault(
 const posts: Array<{ path: string; body: string }> = [];
 
 const site = createServer(async (req, res) => {
-  if (req.method === "POST") { let body = ""; for await (const part of req) body += part; posts.push({ path: req.url ?? "", body }); res.end("ok"); return; }
+  if (req.method === "POST") { let body = ""; req.setEncoding("utf8"); for await (const part of req) body += part; posts.push({ path: req.url ?? "", body }); res.end("ok"); return; }
   const title = req.url === "/mine" ? "我的页面" : req.url === "/opened" ? "助手开的页" : req.url === "/popup" ? "说明页" : null;
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(title ? `<!doctype html><meta charset="utf-8"><title>${title}</title><h1>${title}</h1>` : FORM);
 });

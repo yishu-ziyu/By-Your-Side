@@ -145,7 +145,7 @@ export function downloadNote(d:NavigationDownload,tab:'stays'|'closed'='stays'):
   return `${head}: Chrome has not reported it finished yet, so it is not saved yet.`;
 }
 
-export async function waitForInteractive(tabId:number,timeoutMs:number,options:{previousDocumentId?:string;requestedUrl?:string;dispatch?:()=>Promise<unknown>}={}):Promise<PageReadiness> {
+export async function waitForInteractive(tabId:number,timeoutMs:number,options:{previousDocumentId?:string;requestedUrl?:string;dispatch?:()=>Promise<unknown>;cancelled?:()=>boolean}={}):Promise<PageReadiness> {
   const {previousDocumentId}=options;
   const started=Date.now();let stopped=false;
   let timer:ReturnType<typeof setTimeout>|undefined;
@@ -239,7 +239,17 @@ export async function waitForInteractive(tabId:number,timeoutMs:number,options:{
   try{
     await options.dispatch?.();
 
-    return await Promise.race([poll(),download,loaded,timeout]);
+    const cancel=new Promise<never>((_resolve,reject)=>{
+      const check=()=>{
+        if(stopped||!options.cancelled)return;
+
+        if(options.cancelled())reject(new Error("用户接管了页面或任务已停止，这次打开网页已停下。"));
+        else setTimeout(check,100);
+      };
+      check();
+    });
+
+    return await Promise.race([poll(),download,loaded,timeout,cancel]);
   }
   finally{stopped=true;
 

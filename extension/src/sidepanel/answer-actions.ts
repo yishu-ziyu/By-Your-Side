@@ -52,7 +52,7 @@ async function copyAnswerText(answer: HTMLElement): Promise<void> {
 }
 
 async function copyAnswerMarkdown(answer: HTMLElement): Promise<void> {
-  if (isShortened(answer)) return writeClipboard(visibleMarkdown(answerBody(answer)));
+  if (isShortened(answer) || answer.querySelector(".gc-num")) return writeClipboard(visibleMarkdown(answerBody(answer)));
   await writeClipboard(answer.dataset.markdown ? answerMarkdown(answer.dataset.markdown, sourceExcerpts).trim() : answerPlainText(answerBody(answer)));
 }
 
