@@ -955,214 +955,241 @@ function upgradeMemoryEntries(value: unknown): value is MemoryEntry[] {
   return true;
 }
 
-export function parseServerMessage(raw: string): ServerMessage | null {
-  try {
-    const msg = JSON.parse(raw) as ServerMessage;
+type ServerOf<T extends ServerMessage["type"]> = Extract<ServerMessage, { type: T }>;
+type AgentEventMessage = ServerOf<"agent_event">;
+type AgentEventOf<K extends AgentEventMessage["event"]["kind"]> = AgentEventMessage & { event: Extract<AgentEventMessage["event"], { kind: K }> };
 
-    if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
+// WHY: 这几种消息自己把关，历来不走通用的 sessionId 检查；并入下面的表会改变它们的接收范围。
+const SELF_CHECKED_SERVER: { [T in ServerMessage["type"]]?: (msg: ServerOf<T>) => boolean } = {
+  reading_event: (msg) => isReadingEvent(msg),
+  reading_route_result: (msg) => isReadingRouteResult(msg),
+  browse_habit_result: (msg) => isBrowseHabitResult(msg),
+  task_control: (msg) => validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)&&(msg.ask===undefined||typeof msg.ask==='string'&&msg.ask.length<=200)&&(msg.targets===undefined||Array.isArray(msg.targets)&&msg.targets.length<=6&&msg.targets.every(t=>typeof t==='string'&&t.length<=200)),
+  task_control_ack: (msg) => validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean',
+  voice: (msg) => isVoiceServerMessage(msg),
+  nudge_result: (msg) => isNudgeResult(msg),
+  nudge_validation: (msg) => isNudgeResult(msg),
+};
 
-    if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
-
-    if(msg.runId!==undefined&&msg.runId!==null&&!taskId(msg.runId))return null;
-
-    if(msg.epochs!==undefined&&(!msg.epochs||typeof msg.epochs!=='object'||Array.isArray(msg.epochs)||!Object.entries(msg.epochs).every(([id,n])=>validOptionalSessionId(id)&&Number.isSafeInteger(n)&&n>=0)))return null;
-
-    if (msg.type === 'reading_event') return isReadingEvent(msg) ? msg : null;
-
-    if (msg.type === 'reading_route_result') return isReadingRouteResult(msg) ? msg : null;
-
-    if (msg.type === 'nudge_result' || msg.type === 'nudge_validation') return isNudgeResult(msg) ? msg : null;
-
-    if (msg.type === 'browse_habit_result') return isBrowseHabitResult(msg) ? msg : null;
-
-    if(msg.type==='task_control')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)&&(msg.ask===undefined||typeof msg.ask==='string'&&msg.ask.length<=200)&&(msg.targets===undefined||Array.isArray(msg.targets)&&msg.targets.length<=6&&msg.targets.every(t=>typeof t==='string'&&t.length<=200))?msg:null;
-
-    if(msg.type==='task_control_ack')return validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean'?msg:null;
-
-    if (msg.type === "voice") return isVoiceServerMessage(msg) ? msg : null;
-
-    if(msg.type==='agent_event'&&msg.event?.kind==='notice'&&msg.event.plan!==undefined){
+const AGENT_EVENT_CHECKS: { [K in AgentEventMessage["event"]["kind"]]?: (msg: AgentEventOf<K>) => boolean } = {
+  notice: (msg) => {
+    if(msg.event.plan!==undefined){
       const p=msg.event.plan;
 
-      if(!p||!validRequestId(p.id)||p.conversationId!==msg.conversationId||!Number.isFinite(p.updatedAt)||!Array.isArray(p.steps)||p.steps.length<1||p.steps.length>3||!p.steps.every(s=>s&&typeof s.action==='string'&&typeof s.text==='string'&&s.text.length<=12000&&validConversationId(s.targetId)&&(s.targetTitle===undefined||typeof s.targetTitle==='string'&&s.targetTitle.length<=120)&&['pending','complete','unexecuted'].includes(s.status)&&(s.receipt===undefined||isTaskReceipt(s.receipt)&&s.receipt.conversationId===s.targetId)))return null;
+      if(!p||!validRequestId(p.id)||p.conversationId!==msg.conversationId||!Number.isFinite(p.updatedAt)||!Array.isArray(p.steps)||p.steps.length<1||p.steps.length>3||!p.steps.every(s=>s&&typeof s.action==='string'&&typeof s.text==='string'&&s.text.length<=12000&&validConversationId(s.targetId)&&(s.targetTitle===undefined||typeof s.targetTitle==='string'&&s.targetTitle.length<=120)&&['pending','complete','unexecuted'].includes(s.status)&&(s.receipt===undefined||isTaskReceipt(s.receipt)&&s.receipt.conversationId===s.targetId)))return false;
     }
 
-    if (msg.type === "agent_event" && msg.event?.kind === "context_usage") {
+    if (msg.event.receipt !== undefined
+      && (!isTaskReceipt(msg.event.receipt) || (msg.event.receipt.conversationId !== msg.conversationId && msg.event.receipt.originConversationId !== msg.conversationId))) return false;
+
+    if (msg.event.receipt?.newConversationRequest) {
+      const input = msg.event.receipt.newConversationRequest;
+
+      if (input.context !== undefined && !isPageContext(input.context)) return false;
+
+      if (input.attachments !== undefined && (!Array.isArray(input.attachments) || !input.attachments.every(isAttachment))) return false;
+    }
+
+    return true;
+  },
+  context_usage: (msg) => {
       const { used, window, model } = msg.event;
 
-      if (!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(window) || window <= 0 || typeof model !== "string" || !model || model.length > 200) return null;
-    }
+      if (!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(window) || window <= 0 || typeof model !== "string" || !model || model.length > 200) return false;
 
-    if (msg.type === "agent_event" && msg.event?.kind === "user_delivery") {
-      if (!isUserDelivery(msg.event.delivery)) return null;
+    return true;
+  },
+  user_delivery: (msg) => {
+      if (!isUserDelivery(msg.event.delivery)) return false;
 
-      if (msg.conversationId === undefined || msg.event.delivery.conversationId !== msg.conversationId) return null;
-    }
+      if (msg.conversationId === undefined || msg.event.delivery.conversationId !== msg.conversationId) return false;
 
-    if (msg.type === 'agent_event' && msg.event?.kind === 'user_delivery_stream') {
+    return true;
+  },
+  user_delivery_stream: (msg) => {
       const s = msg.event.stream;
 
       if (!msg.conversationId || !s || !validRequestId(s.id) || (s.runId !== null && !validRequestId(s.runId))
         || !['ack','finding','reply'].includes(s.kind) || !['streaming','cancelled'].includes(s.phase)
-        || typeof s.text !== 'string' || s.text.length > 2000) return null;
-    }
+        || typeof s.text !== 'string' || s.text.length > 2000) return false;
 
-    if (msg.type === "agent_event" && msg.event?.kind === "notice" && msg.event.receipt !== undefined
-      && (!isTaskReceipt(msg.event.receipt) || (msg.event.receipt.conversationId !== msg.conversationId && msg.event.receipt.originConversationId !== msg.conversationId))) return null;
+    return true;
+  },
+  worker_task: (msg) => {
+      const e = msg.event;
 
-    if (msg.type === 'agent_event' && msg.event?.kind === 'notice' && msg.event.receipt?.newConversationRequest) {
-      const input = msg.event.receipt.newConversationRequest;
+      if (!msg.sessionId || isLeadSession(msg.sessionId)) return false;
 
-      if (input.context !== undefined && !isPageContext(input.context)) return null;
+      if (![e.task, e.output].every((v) => typeof v === "string" && v.trim().length > 0 && v.length <= 80)) return false;
 
-      if (input.attachments !== undefined && (!Array.isArray(input.attachments) || !input.attachments.every(isAttachment))) return null;
-    }
+      if (e.spawnToolCallId !== undefined && !validRequestId(e.spawnToolCallId)) return false;
 
-    if (msg.type === "agent_event" && msg.event?.kind === "error" && msg.event.modelConnection !== undefined) {
+    return true;
+  },
+  execution_feedback: (msg) => {
+      if (!isExecutionFeedback(msg.event.feedback)) return false;
+
+    return true;
+  },
+  memory_ask: (msg) => {
+      const event = msg.event;
+
+      if (!validMemoryId(event.askId) || !validMemoryText(event.rule) || !isMemoryScope(event.scope)) return false;
+
+      if (event.replaces !== undefined && (!event.replaces || !validMemoryId(event.replaces.id) || !validMemoryText(event.replaces.text))) return false;
+
+      if (event.hostname !== undefined && (typeof event.hostname !== "string" || normalizeMemoryHostname(event.hostname) !== event.hostname)) return false;
+
+      if (event.outcome !== undefined && !["remembered", "already", "once", "closed"].includes(event.outcome)) return false;
+
+      if (event.habit !== undefined && event.habit !== true) return false;
+
+      if (event.evidence !== undefined && !(Array.isArray(event.evidence) && event.evidence.length <= 14 && event.evidence.every(line => typeof line === "string" && line.length <= 300))) return false;
+
+      if (event.learned !== undefined && (!isMemoryEntry(event.learned) || event.learned.kind !== "method" || event.learned.status !== "active")) return false;
+
+    return true;
+  },
+  site_notes: (msg) => {
+      const event = msg.event;
+
+      if (typeof event.host !== "string" || !event.host || event.host.length > 253 || (event.title !== undefined && (typeof event.title !== "string" || event.title.length > 80))) return false;
+
+      if (!Array.isArray(event.notes) || !event.notes.length || event.notes.length > 3 || !event.notes.every(note => typeof note === "string" && note.length > 0 && note.length <= 200)) return false;
+
+    return true;
+  },
+  memory: (msg) => {
+      const event = msg.event;
+
+      if (!["saved", "used", "updated", "forgotten"].includes(event.action) || !upgradeMemoryEntries(event.entries)) return false;
+
+      if (event.message !== undefined && typeof event.message !== "string") return false;
+
+      if (event.rev !== undefined && !(Number.isInteger(event.rev) && event.rev >= 0)) return false;
+
+      if (event.tasks !== undefined && (!Array.isArray(event.tasks) || !event.tasks.every(isTaskHistoryEntry))) return false;
+
+      if (event.hostname !== undefined && (typeof event.hostname !== "string" || normalizeMemoryHostname(event.hostname) !== event.hostname)) return false;
+
+      if (event.replaced !== undefined && !upgradeMemoryEntries(event.replaced)) return false;
+
+    return true;
+  },
+  error: (msg) => {
+    if (msg.event.modelConnection !== undefined) {
       const c = msg.event.modelConnection;
       if (!c || typeof c.provider !== "string" || !c.provider || c.provider.length > 200 || typeof c.modelId !== "string" || !c.modelId || c.modelId.length > 300 || !validRequestId(c.runId) || (c.endpointHash !== undefined && (typeof c.endpointHash !== "string" || !/^[a-f0-9]{64}$/.test(c.endpointHash))) || (c.provider === "custom" && !c.endpointHash)) delete msg.event.modelConnection;
     }
 
-    if (msg.type === "model_key_save_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean")) return null;
+    return true;
+  },
+};
 
-    if (msg.type === "model_key_test_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean"
-      && (msg.ms === undefined || Number.isFinite(msg.ms)) && (msg.reason === undefined || isShortText(msg.reason)) && (msg.detail === undefined || isShortText(msg.detail)))) return null;
+const SERVER_CHECKS: { [T in ServerMessage["type"]]?: (msg: ServerOf<T>) => boolean } = {
+  model_key_save_result: (msg) => validRequestId(msg.requestId) && typeof msg.ok === "boolean",
+  model_key_test_result: (msg) => validRequestId(msg.requestId) && typeof msg.ok === "boolean" && (msg.ms === undefined || Number.isFinite(msg.ms)) && (msg.reason === undefined || isShortText(msg.reason)) && (msg.detail === undefined || isShortText(msg.detail)),
+  site_note_delete_result: (msg) => validRequestId(msg.requestId) && typeof msg.ok === "boolean" && (msg.error === undefined || isShortText(msg.error)),
+  site_note_list_result: (msg) => validRequestId(msg.requestId) && typeof msg.ok === "boolean" && (msg.error === undefined || isShortText(msg.error)) && (msg.notes === undefined || Array.isArray(msg.notes) && msg.notes.length <= 1000 && msg.notes.every((n: unknown) => { const v = n as { host?: unknown; text?: unknown; runId?: unknown } | null; return !!v && typeof v.host === "string" && normalizeMemoryHostname(v.host) === v.host && typeof v.text === "string" && v.text.length > 0 && v.text.length <= 200 && typeof v.runId === "string" && v.runId.length > 0 && v.runId.length <= 200; })),
+  skill_operation_run_result: (msg) => validRequestId(msg.requestId) && typeof msg.ok === "boolean" && (msg.result === undefined || isLearnedOperationResult(msg.result)) && (msg.error === undefined || isShortText(msg.error)) && (msg.ok ? !!msg.result : typeof msg.error === "string" && !!msg.error),
+  status: (msg) => isAgentRunState(msg.state),
+  task_view: (msg) => isTaskView(msg.view),
+  conversation_list: (msg) => Array.isArray(msg.conversations) && msg.conversations.every(isConversationSummary),
+  tool_call: (msg) => (!(msg.programId !== undefined && !validRequestId(msg.programId))) && (!(msg.programDeadline !== undefined && (!Number.isSafeInteger(msg.programDeadline) || msg.programDeadline < 0 || !msg.programId))),
+  conversation_updated: (msg) => isConversationSummary(msg.conversation),
+  conversation_created: (msg) => isConversationSummary(msg.conversation) && validRequestId(msg.requestId),
+  skill_operations_result: (msg) => {
+      if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return false;
 
-    if (msg.type === "site_note_delete_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean" && (msg.error === undefined || isShortText(msg.error)))) return null;
-    if (msg.type === "site_note_list_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean" && (msg.error === undefined || isShortText(msg.error)) && (msg.notes === undefined || Array.isArray(msg.notes) && msg.notes.length <= 1000 && msg.notes.every((n: unknown) => { const v = n as { host?: unknown; text?: unknown; runId?: unknown } | null; return !!v && typeof v.host === "string" && normalizeMemoryHostname(v.host) === v.host && typeof v.text === "string" && v.text.length > 0 && v.text.length <= 200 && typeof v.runId === "string" && v.runId.length > 0 && v.runId.length <= 200; })))) return null;
+      if (msg.operations !== undefined && (!Array.isArray(msg.operations) || !msg.operations.every(isSkillOperationSummary))) return false;
 
-    if (msg.type === "skill_operations_result") {
-      if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return null;
+      if (msg.error !== undefined && !isShortText(msg.error)) return false;
 
-      if (msg.operations !== undefined && (!Array.isArray(msg.operations) || !msg.operations.every(isSkillOperationSummary))) return null;
+    return true;
+  },
+  task_history_result: (msg) => {
+      if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return false;
 
-      if (msg.error !== undefined && !isShortText(msg.error)) return null;
-    }
+      if (msg.tasks !== undefined && (!Array.isArray(msg.tasks) || !msg.tasks.every(isTaskHistoryEntry))) return false;
 
-    if (msg.type === "skill_operation_run_result" && !(validRequestId(msg.requestId) && typeof msg.ok === "boolean"
-      && (msg.result === undefined || isLearnedOperationResult(msg.result)) && (msg.error === undefined || isShortText(msg.error))
-      && (msg.ok ? !!msg.result : typeof msg.error === "string" && !!msg.error))) return null;
+      if (msg.error !== undefined && !isShortText(msg.error)) return false;
 
-    if (msg.type === "task_history_result") {
-      if (!validRequestId(msg.requestId) || (msg.ok !== true && msg.ok !== false)) return null;
+    return true;
+  },
+  memory_result: (msg) => {
+      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget", "restore", "ask", "site", "unforget"].includes(msg.action)) return false;
 
-      if (msg.tasks !== undefined && (!Array.isArray(msg.tasks) || !msg.tasks.every(isTaskHistoryEntry))) return null;
+      if (msg.entries !== undefined && !upgradeMemoryEntries(msg.entries)) return false;
 
-      if (msg.error !== undefined && !isShortText(msg.error)) return null;
-    }
-
-    if (msg.type === "memory_result") {
-      if (!validRequestId(msg.requestId) || typeof msg.ok !== "boolean" || !["list", "update", "forget", "restore", "ask", "site", "unforget"].includes(msg.action)) return null;
-
-      if (msg.entries !== undefined && !upgradeMemoryEntries(msg.entries)) return null;
-
-      if (msg.entry !== undefined && !isStoredMemoryEntry(msg.entry)) return null;
+      if (msg.entry !== undefined && !isStoredMemoryEntry(msg.entry)) return false;
 
       if (msg.entry !== undefined) msg.entry = upgradeMemoryEntry(msg.entry);
 
-      if (msg.deletedId !== undefined && !validMemoryId(msg.deletedId)) return null;
+      if (msg.deletedId !== undefined && !validMemoryId(msg.deletedId)) return false;
 
-      if (msg.error !== undefined && typeof msg.error !== "string") return null;
+      if (msg.error !== undefined && typeof msg.error !== "string") return false;
 
-      if (msg.rev !== undefined && !(Number.isInteger(msg.rev) && msg.rev >= 0)) return null;
+      if (msg.rev !== undefined && !(Number.isInteger(msg.rev) && msg.rev >= 0)) return false;
 
-      if (msg.alreadySaved !== undefined && (msg.alreadySaved !== true || msg.action !== "ask" || !msg.entry)) return null;
+      if (msg.alreadySaved !== undefined && (msg.alreadySaved !== true || msg.action !== "ask" || !msg.entry)) return false;
 
-      if (msg.askClosed !== undefined && (msg.askClosed !== true || msg.action !== "ask" || msg.ok)) return null;
+      if (msg.askClosed !== undefined && (msg.askClosed !== true || msg.action !== "ask" || msg.ok)) return false;
 
-      if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId) || (msg.action === "restore" && !msg.entries?.length) || (msg.action === "site" && !msg.entry) || (msg.action === "unforget" && !msg.entries?.length))) return null;
+      if (msg.ok && ((msg.action === "list" && !msg.entries) || (msg.action === "update" && !msg.entry) || (msg.action === "forget" && !msg.deletedId) || (msg.action === "restore" && !msg.entries?.length) || (msg.action === "site" && !msg.entry) || (msg.action === "unforget" && !msg.entries?.length))) return false;
 
-      if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return null;
-    }
+      if (!msg.ok && (typeof msg.error !== "string" || !msg.error)) return false;
 
-    if (msg.type === "agent_event" && msg.event?.kind === "worker_task") {
-      const e = msg.event;
+    return true;
+  },
+  control_result: (msg) => {
+      if (!validRequestId(msg.requestId)) return false;
 
-      if (!msg.sessionId || isLeadSession(msg.sessionId)) return null;
+      if (msg.action !== "takeover" && msg.action !== "handback") return false;
 
-      if (![e.task, e.output].every((v) => typeof v === "string" && v.trim().length > 0 && v.length <= 80)) return null;
+      if (typeof msg.ok !== "boolean" || !isAgentRunState(msg.state)) return false;
 
-      if (e.spawnToolCallId !== undefined && !validRequestId(e.spawnToolCallId)) return null;
-    }
+      if (msg.reason !== undefined && typeof msg.reason !== "string") return false;
 
-    if (msg.type === "agent_event" && msg.event?.kind === "execution_feedback") {
-      if (!isExecutionFeedback(msg.event.feedback)) return null;
-    }
+      if (msg.team !== undefined && !isTeamView(msg.team)) return false;
 
-    if (msg.type === "agent_event" && msg.event?.kind === "memory_ask") {
-      const event = msg.event;
+    return true;
+  },
+  team_status: (msg) => {
+      if (msg.team !== null && !isTeamView(msg.team)) return false;
 
-      if (!validMemoryId(event.askId) || !validMemoryText(event.rule) || !isMemoryScope(event.scope)) return null;
+    return true;
+  },
+};
 
-      if (event.replaces !== undefined && (!event.replaces || !validMemoryId(event.replaces.id) || !validMemoryText(event.replaces.text))) return null;
+function validServerEnvelope(msg: ServerMessage): boolean {
+  if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return false;
 
-      if (event.hostname !== undefined && (typeof event.hostname !== "string" || normalizeMemoryHostname(event.hostname) !== event.hostname)) return null;
+  if (msg.runId !== undefined && msg.runId !== null && !taskId(msg.runId)) return false;
 
-      if (event.outcome !== undefined && !["remembered", "already", "once", "closed"].includes(event.outcome)) return null;
+  if(msg.epochs!==undefined&&(!msg.epochs||typeof msg.epochs!=='object'||Array.isArray(msg.epochs)||!Object.entries(msg.epochs).every(([id,n])=>validOptionalSessionId(id)&&Number.isSafeInteger(n)&&n>=0)))return false;
 
-      if (event.habit !== undefined && event.habit !== true) return null;
+  return true;
+}
 
-      if (event.evidence !== undefined && !(Array.isArray(event.evidence) && event.evidence.length <= 14 && event.evidence.every(line => typeof line === "string" && line.length <= 300))) return null;
+// WHY: 类型名来自外部消息，"constructor" 这样的名字会从原型链查到函数，只能认表里自己的项。
+function checkFor(table: object, key: unknown): ((msg: never) => boolean) | undefined {
+  return typeof key === "string" && Object.hasOwn(table, key) ? (table as Record<string, (msg: never) => boolean>)[key] : undefined;
+}
 
-      if (event.learned !== undefined && (!isMemoryEntry(event.learned) || event.learned.kind !== "method" || event.learned.status !== "active")) return null;
-    }
+export function parseServerMessage(raw: string): ServerMessage | null {
+  try {
+    const msg = JSON.parse(raw) as ServerMessage;
 
-    if (msg.type === "agent_event" && msg.event?.kind === "site_notes") {
-      const event = msg.event;
+    if (!msg || typeof msg !== "object" || typeof msg.type !== "string" || !validServerEnvelope(msg)) return null;
+    const self = checkFor(SELF_CHECKED_SERVER, msg.type);
 
-      if (typeof event.host !== "string" || !event.host || event.host.length > 253 || (event.title !== undefined && (typeof event.title !== "string" || event.title.length > 80))) return null;
+    if (self) return self(msg as never) ? msg : null;
 
-      if (!Array.isArray(event.notes) || !event.notes.length || event.notes.length > 3 || !event.notes.every(note => typeof note === "string" && note.length > 0 && note.length <= 200)) return null;
-    }
-
-    if (msg.type === "agent_event" && msg.event?.kind === "memory") {
-      const event = msg.event;
-
-      if (!["saved", "used", "updated", "forgotten"].includes(event.action) || !upgradeMemoryEntries(event.entries)) return null;
-
-      if (event.message !== undefined && typeof event.message !== "string") return null;
-
-      if (event.rev !== undefined && !(Number.isInteger(event.rev) && event.rev >= 0)) return null;
-
-      if (event.tasks !== undefined && (!Array.isArray(event.tasks) || !event.tasks.every(isTaskHistoryEntry))) return null;
-
-      if (event.hostname !== undefined && (typeof event.hostname !== "string" || normalizeMemoryHostname(event.hostname) !== event.hostname)) return null;
-
-      if (event.replaced !== undefined && !upgradeMemoryEntries(event.replaced)) return null;
-    }
+    if (msg.type === "agent_event" && !(checkFor(AGENT_EVENT_CHECKS, msg.event?.kind)?.(msg as never) ?? true)) return null;
 
     if ("sessionId" in msg && !validOptionalSessionId((msg as { sessionId?: unknown }).sessionId)) return null;
 
-    if ((msg.type === "conversation_created" || msg.type === "conversation_updated") && !isConversationSummary(msg.conversation)) return null;
-
-    if (msg.type === "conversation_created" && !validRequestId(msg.requestId)) return null;
-
-    if (msg.type === "conversation_list" && (!Array.isArray(msg.conversations) || !msg.conversations.every(isConversationSummary))) return null;
-
-    if (msg.type === "tool_call" && msg.programId !== undefined && !validRequestId(msg.programId)) return null;
-    if (msg.type === "tool_call" && msg.programDeadline !== undefined && (!Number.isSafeInteger(msg.programDeadline) || msg.programDeadline < 0 || !msg.programId)) return null;
-
-    if (msg.type === "status" && !isAgentRunState(msg.state)) return null;
-
-    if (msg.type === "task_view" && !isTaskView(msg.view)) return null;
-
-    if (msg.type === "control_result") {
-      if (!validRequestId(msg.requestId)) return null;
-
-      if (msg.action !== "takeover" && msg.action !== "handback") return null;
-
-      if (typeof msg.ok !== "boolean" || !isAgentRunState(msg.state)) return null;
-
-      if (msg.reason !== undefined && typeof msg.reason !== "string") return null;
-
-      if (msg.team !== undefined && !isTeamView(msg.team)) return null;
-    }
-
-    if (msg.type === "team_status") {
-      if (msg.team !== null && !isTeamView(msg.team)) return null;
-    }
-
-    return msg;
+    return checkFor(SERVER_CHECKS, msg.type)?.(msg as never) ?? true ? msg : null;
   } catch {
     return null;
   }
