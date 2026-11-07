@@ -24,7 +24,7 @@ window.chatApi = { send: text => fetch('/api/send', { method: 'POST', headers: {
 
 const posts: Array<{ path: string; at: number }> = [];
 const site = createServer(async (req, res) => {
-  if (req.method === "POST") { for await (const _ of req) {  } posts.push({ path: req.url ?? "", at: Date.now() }); res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
+  if (req.method === "POST") { req.setEncoding("utf8"); for await (const _ of req) {  } posts.push({ path: req.url ?? "", at: Date.now() }); res.writeHead(req.url === "/send-native" ? 303 : 200, req.url === "/send-native" ? { location: "/" } : {}).end("ok"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));

@@ -22,7 +22,7 @@ const hits: string[] = [];
 
 const site = createServer(async (req, res) => {
   if (req.url === "/moved") { hits.push(`${req.method} /moved`); res.writeHead(302, { location: "/done" }).end(); return; }
-  if (req.method === "POST") { let body = ""; for await (const part of req) body += part; bookings.push(body); res.end("ok"); return; }
+  if (req.method === "POST") { let body = ""; req.setEncoding("utf8"); for await (const part of req) body += part; bookings.push(body); res.end("ok"); return; }
   hits.push(req.url ?? "");
   if (req.url === "/missing" || req.url === "/gone-api") { res.writeHead(404, { "content-type": "text/plain" }).end("not found"); return; }
   if (req.url === "/empty") { res.writeHead(204).end(); return; }
