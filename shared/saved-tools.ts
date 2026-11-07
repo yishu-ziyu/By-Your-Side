@@ -10,7 +10,15 @@ export interface ToolCaptionsReply { status: ToolCaptionStatus; message: string;
 
 export type ToolPageRequest =
   | { type: typeof TOOL_PAGE_MESSAGE; action: "captions"; tabId: number; url: string; documentId: string }
-  | { type: typeof TOOL_PAGE_MESSAGE; action: "seek"; tabId: number; url: string; documentId: string; seconds: number };
+  | { type: typeof TOOL_PAGE_MESSAGE; action: "seek"; tabId: number; url: string; documentId: string; seconds: number }
+  | { type: typeof TOOL_PAGE_MESSAGE; action: "read"; tabId: number; url: string; documentId: string }
+  | { type: typeof TOOL_PAGE_MESSAGE; action: "jump"; tabId: number; url: string; documentId: string; section: number };
+
+export interface ToolPageSection { index: number; level: number; text: string }
+
+export interface ToolPageContent { title: string; text: string; sections: ToolPageSection[] }
+
+export const toolTouchesPage = (html: string): boolean => /bys\.page\.(seek|jump)/.test(html);
 
 export const appMarkup = (tool: Pick<SavedTool, "name" | "html">): string => `<app title="${tool.name.replace(/["<>]/g, "")}">${tool.html}</app>`;
 

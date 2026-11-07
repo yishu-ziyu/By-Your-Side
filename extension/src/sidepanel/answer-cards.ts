@@ -7,7 +7,7 @@ import { keepOpenedImages } from "../shared/answer-html.js";
 import { captureCitationContext, clearFailure, noteFailure } from "./sonar-citations.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
 import { answerUiNet } from "./answer-ui-net.js";
-import { TOOL_PAGE_MESSAGE, siteOf, type ToolCaptionsReply } from "../../../shared/saved-tools.js";
+import { TOOL_PAGE_MESSAGE, siteOf, type ToolCaptionsReply, toolTouchesPage, type ToolPageContent, type ToolPageSection } from "../../../shared/saved-tools.js";
 import { removeTool, saveTool, savedToolWith } from "./saved-tools.js";
 import { isPageElementSource, type PageElementSource } from "../../../shared/protocol.js";
 
@@ -889,7 +889,7 @@ function toolFoot(box: HTMLElement, html: string, title: string, site: string): 
     return el;
   };
   const line = (text: string) => { const el = document.createElement("span"); el.textContent = text; return el; };
-  const canSeek = html.includes("bys.page.seek");
+  const canSeek = toolTouchesPage(html);
   const paint = () => {
     holder.dataset.mode = savedToolWith(html) ? "saved" : "idle";
 
@@ -1039,15 +1039,16 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
     });
     return true;
   };
-  const askPage = async (id: number, op: unknown, seconds: unknown, userClicked: boolean) => {
+  let sections: ToolPageSection[] = [];
+  const askPage = async (id: number, op: unknown, value: unknown, userClicked: boolean) => {
     const tab = await appPage();
 
     if (!tab || !target || tab.tabId !== target.tabId || tab.url !== target.url || tab.documentId !== target.documentId) { reply(id, false, "页面已经变化，请重新打开工具"); return; }
 
-    if (op === "captions") {
+    if (op === "captions" || op === "read") {
       // WHY: 重开侧栏时历史回答里的工具会重新加载，它们不能自己去读用户此刻打开的页面（读字幕会带登录态请求网站）。
-      if (!fresh && !userClicked) { appBar(box, "这个工具要读当前页面的字幕。", { label: "读取", run: remount }); reply(id, false, "等你点「读取」"); return; }
-      const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, action: "captions", ...tab }) as { ok: boolean; value?: ToolCaptionsReply; error?: string } | undefined;
+      if (!fresh && !userClicked) { appBar(box, op === "read" ? "这个工具要读当前页面。" : "这个工具要读当前页面的字幕。", { label: "读取", run: remount }); reply(id, false, "等你点「读取」"); return; }
+      const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, action: op, ...tab }) as { ok: boolean; value?: ToolCaptionsReply | ToolPageContent; error?: string } | undefined;
 
       if (!result?.ok) { reply(id, false, result?.error ?? "没有读到页面"); return; }
       session = { ...tab, box, remount };
@@ -1057,22 +1058,25 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
 
       if (note) note.textContent = "只读这一页 · 不联网";
 
-      if (site && result.value?.status === "ok") toolFoot(box, decodeURIComponent(box.dataset.app ?? ""), title, site);
+      if (op === "read") sections = (result.value as ToolPageContent | undefined)?.sections ?? [];
+
+      if (site && (op === "read" || (result.value as ToolCaptionsReply | undefined)?.status === "ok")) toolFoot(box, decodeURIComponent(box.dataset.app ?? ""), title, site);
       else box.querySelector(":scope > .gc-app-foot")?.remove();
       reply(id, true, result.value);
 
       return;
     }
 
-    if (op !== "seek" || typeof seconds !== "number") { reply(id, false, "不支持这个操作"); return; }
+    if ((op !== "seek" && op !== "jump") || typeof value !== "number") { reply(id, false, "不支持这个操作"); return; }
 
     // WHY: 程序在沙箱里，它发来的消息说明不了用户点过；只有宿主这边的激活状态才可信，用户没点时不动页面。
     if (!userClicked) { reply(id, false, "只有用户点击时才能操作页面"); return; }
 
     if (!session || session.tabId !== tab.tabId || session.documentId !== tab.documentId || session.url !== tab.url) { reply(id, false, "页面已经换了"); return; }
-    const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, action: "seek", ...tab, seconds }) as { ok: boolean; value?: unknown; error?: string } | undefined;
+    const request = op === "seek" ? { action: "seek", seconds: value } : { action: "jump", section: value };
+    const result = await chrome.runtime.sendMessage({ type: TOOL_PAGE_MESSAGE, ...request, ...tab }) as { ok: boolean; value?: unknown; error?: string } | undefined;
 
-    reply(id, result?.ok === true, result?.ok ? result.value : result?.error ?? "视频没有响应");
+    reply(id, result?.ok === true, result?.ok ? result.value : result?.error ?? "页面没有响应");
   };
   const onMessage = (event: MessageEvent<unknown>) => {
     if (event.source !== frame.contentWindow) return;
@@ -1114,11 +1118,15 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
     } else if (kind === "page" && "id" in data && typeof data.id === "number") {
       const id = data.id;
       const op = "op" in data ? data.op : undefined;
-      const seconds = "seconds" in data ? data.seconds : undefined;
+      const value = "seconds" in data ? data.seconds : undefined;
 
-      if (op === "seek" && typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0) {
-        if (!offerAction(`seek:${seconds}`, `跳到视频 ${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`, "跳转", () => askPage(id, op, seconds, true), () => reply(id, false, "用户取消了跳转"))) reply(id, false, "这个跳转没有获得用户授权");
-      } else void askPage(id, op, seconds, false).catch((error: unknown) => reply(id, false, error instanceof Error ? error.message : String(error)));
+      if (op === "seek" && typeof value === "number" && Number.isFinite(value) && value >= 0) {
+        if (!offerAction(`seek:${value}`, `跳到视频 ${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, "0")}`, "跳转", () => askPage(id, op, value, true), () => reply(id, false, "用户取消了跳转"))) reply(id, false, "这个跳转没有获得用户授权");
+      } else if (op === "jump" && typeof value === "number" && Number.isInteger(value) && value >= 0) {
+        const name = sections.find(section => section.index === value)?.text;
+
+        if (!offerAction(`jump:${value}`, name ? `跳到「${name}」` : "跳到页面这一节", "跳转", () => askPage(id, op, value, true), () => reply(id, false, "用户取消了跳转"))) reply(id, false, "这个跳转没有获得用户授权");
+      } else void askPage(id, op, value, false).catch((error: unknown) => reply(id, false, error instanceof Error ? error.message : String(error)));
     } else if (kind === "error" && "message" in data && typeof data.message === "string" && !failed) {
       failed = true;
       const message = data.message.slice(0, 300);
