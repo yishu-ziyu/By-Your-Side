@@ -16,7 +16,7 @@ const posts: Array<{ body: string; recipient: string; path: string }> = [];
 const initial = "原来的消息";
 const site = createServer(async (req, res) => {
   if (req.method === "POST") {
-    let body = ""; for await (const chunk of req) body += chunk;
+    let body = ""; req.setEncoding("utf8"); for await (const chunk of req) body += chunk;
     if (String(req.headers["content-type"]).startsWith("multipart/form-data")) {
       const field = (name: string) => new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r\\n]*)`).exec(body)?.[1] ?? "";
       posts.push({ body: field("body"), recipient: field("recipient"), path: req.url ?? "" });

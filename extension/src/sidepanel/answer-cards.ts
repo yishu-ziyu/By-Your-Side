@@ -2,7 +2,7 @@ import { resolveDiagramCite, type AnswerSourceMap } from "../../../shared/answer
 import DOMPurify from "dompurify";
 import { isPopout, targetWindowId } from "./target-window.js";
 import { createElement as icon, LayoutGrid, Table2 } from "lucide";
-import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, evaluate, fillRefs, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
+import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, cardSpans, evaluate, fillRefs, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { captureCitationContext, clearFailure, noteFailure } from "./sonar-citations.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
@@ -92,7 +92,7 @@ function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<strin
     case "inputs":
       return `<div class="gc-inputs" data-gc-key="b${i}">${b.items.map((v, j) => keyed(key(j), inputHtml(v))).join("")}</div>`;
     case "stats":
-      return `<div class="gc-stats${wideStats(b.items.map((s) => tidyNumber(s.value))) ? " wide" : ""}" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${t(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(tidyNumber(s.value))}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-stats${wideStats(b.items.map((s) => tidyNumber(s.value))) ? " wide" : ""}" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${t(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id ? ` data-gc-id="${esc(s.id)}"${!s.expr && s.computed !== undefined ? ` data-gc-number="${s.computed}"` : ""}` : ""}>${esc(tidyNumber(s.value))}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
     case "steps":
       return `<ol class="gc-steps" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<li class="gc-step"><span class="num">${j + 1}</span><div><div class="t">${t(s.title)}</div>${s.detail ? `<div class="d">${t(s.detail)}</div>` : ""}</div></li>`)).join("")}${extra}</ol>`;
     case "options":
@@ -111,6 +111,12 @@ function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<strin
       return keyed(`b${i}`, `<div class="gc-diagram" data-diagram="${encodeURIComponent(b.source)}"><div class="gc-diagram-canvas"></div>${list}${missing ? `<div class="gc-diagram-hint">有 ${missing} 处来源未能核对</div>` : ""}</div>`);
     }
   }
+}
+
+function unfinishedAppHtml(tag: "ui" | "app"): string {
+  const label = tag === "ui" ? "界面没有写完" : "小程序没有写完";
+
+  return `<div class="gen-card gen-app-card"><div class="gc-app"><div class="gc-app-wait"><span>${label}</span></div></div></div>`;
 }
 
 function appCardHtml(card: Card, app: Extract<Block, { kind: "app" }>): string {
@@ -324,7 +330,18 @@ export function renderAnswerHtml(text: string, renderProse: (markdown: string) =
   const ref = new RegExp(`\uE000${nonce}([A-Za-z_][\\w-]*)\uE001([^\uE002<]*)\uE002`, "g");
   const refs = (html: string) => html.replace(ref, (_all, id: string, value: string) => `<span data-gc-ref="${esc(id)}">${value}</span>`);
 
-  return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "") : p.card ? cardHtml(p.card, sources) : "")).join("");
+  const spans = cardSpans(text);
+  let spanAt = 0;
+
+  return parts.map((p) => {
+    if ("prose" in p) return p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "";
+    const span = spans[spanAt++];
+
+    if (p.card) return cardHtml(p.card, sources);
+    if (span?.tag === "ui" || span?.tag === "app") return unfinishedAppHtml(span.tag);
+
+    return "";
+  }).join("");
 }
 
 const MERMAID_FENCE = /^```mermaid[ \t]*\n([\s\S]*?)\n```[ \t]*$/gm;
@@ -430,7 +447,19 @@ function syncChildren(to: Element, from: Element): void {
 }
 
 export function dropPlaceholders(root: HTMLElement): void {
-  for (const el of root.querySelectorAll(".gen-card .gc-ph")) el.remove();
+  for (const el of root.querySelectorAll<HTMLElement>(".gen-card .gc-ph")) {
+    // WHY: 回答结束会清掉占位。没闭合的界面只剩这个占位，清掉后用户只看得到文字。
+    if (el.classList.contains("gc-app")) {
+      const label = el.querySelector(".gc-app-wait span");
+
+      if (label) label.textContent = el.querySelector(".gc-app-head") ? "小程序没有写完" : "界面没有写完";
+      el.classList.remove("gc-ph");
+      el.removeAttribute("aria-hidden");
+      continue;
+    }
+
+    el.remove();
+  }
 
   for (const el of root.querySelectorAll(".gen-card .gc-stats, .gen-card .gc-steps, .gen-card .gc-options, .gen-card .gc-checks")) if (!el.children.length) el.remove();
 }
@@ -693,12 +722,20 @@ function clampTo(el: HTMLInputElement, n: number): number {
 
 function recompute(card: HTMLElement): void {
   const vars = new Map([...card.querySelectorAll<HTMLInputElement>(".gc-num[data-gc-var]")].map((el) => [el.dataset.gcVar!, Number(el.value)]));
+  for (const el of card.querySelectorAll<HTMLElement>("[data-gc-id][data-gc-number]")) {
+    const value = Number(el.dataset.gcNumber);
+    if (Number.isFinite(value)) vars.set(el.dataset.gcId!, value);
+  }
   const set = (el: Element, text: string) => { if (el.textContent !== text) el.textContent = text; };
 
   for (const el of card.querySelectorAll<HTMLElement>("[data-gc-expr]")) {
     const n = evaluate(el.dataset.gcExpr!, vars);
 
     set(el, n === undefined ? "—" : showValue(n, el.dataset.gcUnit || undefined));
+    if (el.dataset.gcId) {
+      if (n === undefined) vars.delete(el.dataset.gcId);
+      else vars.set(el.dataset.gcId, n);
+    }
   }
 
   for (const el of card.querySelectorAll<HTMLElement>("[data-gc-formula]")) set(el, showFormula(el.dataset.gcFormula!, vars));
@@ -1143,7 +1180,13 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
 
   new MutationObserver(draw).observe(root, { childList: true, subtree: true });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !(MINI_APPS_KEY in changes)) return;
+    if (area !== "local") return;
+    for (const card of root.querySelectorAll<HTMLElement>(".gen-card[data-gc-card]:has(.gc-num)")) {
+      const slot = slotOf(card);
+      const saved = slot ? changes[STATE_PREFIX + slot]?.newValue : undefined;
+      if (isCardState(saved) && !pendingSaves.has(card)) apply(card, saved);
+    }
+    if (!(MINI_APPS_KEY in changes)) return;
     miniAppsOn = Promise.resolve(isMiniAppsOn(changes[MINI_APPS_KEY]!.newValue));
 
     for (const [box, release] of mountedApps) {

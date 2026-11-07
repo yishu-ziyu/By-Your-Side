@@ -83,7 +83,7 @@ function calc(expression: string): number | undefined {
 
       return fn(...args);
     }
-    const m = /^\d+(?:\.\d+)?|^\.\d+/.exec(t.slice(i));
+    const m = /^(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?/i.exec(t.slice(i));
 
     if (!m) throw new Error("number");
     i += m[0].length;
@@ -138,13 +138,13 @@ function calc(expression: string): number | undefined {
   try {
     const v = ternary();
 
-    return i === t.length && Number.isFinite(v) ? Math.round(v * 100) / 100 : undefined;
+    return i === t.length && Number.isFinite(v) ? v : undefined;
   } catch {
     return undefined;
   }
 }
 
-const NAME = /[A-Za-z_]\w*/g;
+const NAME = /(?<![\d.])[A-Za-z_]\w*/g;
 
 export function evaluate(expression: string, vars: ReadonlyMap<string, number>): number | undefined {
   let unknown = false;
@@ -180,7 +180,7 @@ function withUnit(value: string, unit: string | undefined): string {
   return CURRENCY.test(unit) ? `${unit}${value}` : unit === "%" ? `${value}%` : `${value} ${unit}`;
 }
 
-const MAX_INPUTS = 2;
+const MAX_INPUTS = 6;
 
 const MAX_FIELDS = 6;
 
@@ -266,20 +266,23 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   let picked = false;
   let primary = false;
   const resolve = (raw: string, unit?: string): { value: string; computed?: number; formula?: string; expr?: string; unit?: string } => {
-    if (!raw.startsWith("=")) return { value: withUnit(raw, unit) };
+    if (!raw.startsWith("=")) {
+      const constant = /^-?[\d,]+(?:\.\d+)?$/.test(raw.trim()) ? Number(raw.replace(/,/g, "")) : undefined;
+      return { value: withUnit(raw, unit), ...(constant !== undefined && Number.isFinite(constant) ? { computed: constant } : {}) };
+    }
+    card.formulas = true;
     const symbol = /[¥￥$€£]/.exec(raw)?.[0];
     const expression = raw.slice(1).replace(/[¥￥$€£]/g, "").replace(/\s*元\s*$/, "");
     const live = usesVars(expression, vars);
     const n = live ? evaluate(expression, vars) : calc(expression);
     unit ??= symbol ?? (/元\s*$/.test(raw) ? "元" : undefined);
 
-    if (n === undefined) return { value: withUnit(raw.slice(1).trim(), unit === symbol ? undefined : unit) };
+    if (n === undefined) return { value: "—", expr: expression, unit };
     card.numbers.add(String(n));
+    card.numbers.add(plain(formatNumber(n)));
     const formula = live ? showFormula(expression, vars) : /[-+*/×÷−^?(]/.test(expression.replace(/^\s*-/, "")) ? prettyFormula(expression) : undefined;
 
-    if (formula) card.formulas = true;
-
-    return { value: withUnit(formatNumber(n), unit), computed: n, formula, ...(live ? { expr: expression.replace(/\s+/g, ""), unit } : {}) };
+    return { value: withUnit(formatNumber(n), unit), computed: n, formula, expr: expression.replace(/\s+/g, ""), unit };
   };
   const last = () => card.blocks.at(-1);
   const group = <K extends Block["kind"]>(kind: K, make: () => Extract<Block, { kind: K }>): Extract<Block, { kind: K }> => {
@@ -358,12 +361,14 @@ function parseCard(source: string, closed: boolean): Card | undefined {
       if (!label || !raw) continue;
       const v = resolve(raw, str(a.unit));
 
-      if (raw.startsWith("=") && v.computed === undefined) continue;
       const stat: Stat = { id: inputs.has(str(a.id) ?? "") ? undefined : str(a.id), label, value: v.value, formula: v.formula, computed: v.computed, note: str(a.note), expr: v.expr, unit: v.unit, from: rowSource(a.tab, [raw]) };
 
       if (str(a.tag) && !tagged) { stat.tag = str(a.tag); tagged = true; }
 
-      if (stat.id) card.values.set(stat.id, stat.value);
+      if (stat.id) {
+        card.values.set(stat.id, stat.value);
+        if (v.computed !== undefined) vars.set(stat.id, v.computed);
+      }
       group("stats", () => ({ kind: "stats", items: [] })).items.push(stat);
     } else if (tag === "step") {
       const title = str(a.title);
@@ -532,7 +537,7 @@ export function splitAnswer(text: string): AnswerPart[] {
   return parts;
 }
 
-const outsideCode = (text: string, edit: (prose: string) => string) => text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\n]*\))/).map((part, i) => (i % 2 ? part : edit(part))).join("");
+const outsideCode = (text: string, edit: (prose: string) => string, omitCode = false) => text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`|\[[^\]\n]*\]\([^)\n]*\))/).map((part, i) => (i % 2 ? omitCode ? "" : part : edit(part))).join("");
 
 export function resolveProse(prose: string, cards: Card[], mark = (value: string, _id: string) => value): string {
   const values = new Map(cards.flatMap((c) => [...c.values]).reverse());
@@ -567,13 +572,57 @@ export function fillRefs(text: string, values: ReadonlyMap<string, string>, mark
   return out + text.slice(at);
 }
 
+export function interfaceIssue(text: string): { evidence: string; correction: string } | null {
+  const spans = cardSpans(text);
+  let at = 0;
+
+  for (const part of splitAnswer(text)) {
+    if (!("card" in part)) continue;
+    const span = spans[at++];
+
+    if (!span || span.tag === "card" || part.card?.closed) continue;
+    const name = span.tag === "ui" ? "interface" : "mini app";
+
+    return { evidence: text.slice(span.start, span.end).slice(0, 120), correction: `The ${name} block is unfinished, so it disappears and the user only sees the surrounding text. Finish the unfinished interface block: close it with </${span.tag}>, keep one conclusion sentence outside, and do not leave the program in the prose.` };
+  }
+
+  return null;
+}
+
+export function calculationIssue(text: string): { evidence: string; correction: string } | null {
+  const parts = splitAnswer(text);
+  const cards = parts.flatMap(part => "card" in part && part.card?.closed && part.card.formulas ? [part.card] : []);
+  const stats = cards.flatMap(card => card.blocks.flatMap(block => block.kind === "stats" ? block.items : []));
+  const broken = stats.find(stat => stat.expr && stat.computed === undefined);
+  if (broken) return { evidence: broken.label, correction: `The host cannot evaluate the formula for ${JSON.stringify(broken.label)}: ${JSON.stringify(broken.expr)}. Rewrite it using numeric inputs or earlier stat ids, + - * / ^, comparisons and ternary, min, max, abs, floor, ceil or round. No other functions are available. Use {=id} for computed values in prose. Keep the user's inputs and units; correct the formula rather than supplying a hardcoded result.` };
+  const inputs = new Set(cards.flatMap(card => card.blocks.flatMap(block => block.kind === "inputs" ? block.items.map(input => input.value) : block.kind === "stats" ? block.items.filter(stat => !stat.expr).map(stat => Number(stat.value.replace(/[^0-9.-]/g, ""))) : [])));
+  for (const part of parts) {
+    if (!("prose" in part)) continue;
+    const prose = outsideCode(part.prose, value => value.replace(/\{=[A-Za-z_][\w-]*\}/g, ""), true);
+    for (const stat of stats) {
+      if (!stat.expr || stat.computed === undefined || !stat.unit) continue;
+      const unit = stat.unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const number = "(-?\\d[\\d,]*(?:\\.\\d+)?)";
+      const pattern = new RegExp(CURRENCY.test(stat.unit) ? `${unit}\\s*${number}` : `${number}\\s*${unit}`, "g");
+      for (const found of prose.matchAll(pattern)) {
+        if (inputs.has(Number(found[1]!.replace(/,/g, "")))) continue;
+        return { evidence: found[0], correction: `The prose contains an independent numeric value ${JSON.stringify(found[0])} outside the calculation. Give the corresponding formula stat an id and reference it with {=id}, such as {=${stat.id ?? "result"}}, so changing inputs updates the conclusion too. Do not recalculate or hardcode the prose value. If it is a given fact rather than a computed result, put it in a non-formula stat and reference that id; do not turn a fixed source fact into an editable input.` };
+      }
+    }
+  }
+  return null;
+}
+
 export function answerSpeech(text: string): string {
   if (!MAY_HAVE_CARD.test(text) && !text.includes("{=")) return text;
   const parts = splitAnswer(text);
   const cards = parts.flatMap((p) => ("card" in p && p.card ? [p.card] : []));
   const prose = parts.map((p) => ("prose" in p ? resolveProse(p.prose, cards) : "")).join("").replace(/\n{3,}/g, "\n\n").trim();
 
-  return prose || cards.map((c) => c.title).filter(Boolean).join("；");
+  return prose || cards.map(card => {
+    const results = card.formulas ? card.blocks.flatMap(block => block.kind === "stats" ? block.items.filter(stat => stat.computed !== undefined).map(stat => `${stat.label} ${stat.value}`) : []) : [];
+    return [card.title, ...results].filter(Boolean).join("；");
+  }).filter(Boolean).join("；");
 }
 
 export function diagramLabel(source: string, node: string): string {
