@@ -1,0 +1,19 @@
+{
+  "runId": "20261107082145-925be9c7",
+  "taskId": "compact-pr-evidence",
+  "controllerCommit": "0dbd47c9250f161e7b948214c33abcdec3c992dc",
+  "reviewedCommit": "0f52f50300b3fc2b3df144d1efbea01b6418fd01",
+  "title": "精简 PR 验收证据并提供报告下载入口",
+  "cases": [
+    "open-in-front"
+  ],
+  "acceptance": [
+    "测试开始前安装并确认 ffmpeg、ffprobe 可执行；保留 SIDEAGENT_RECORD=1，使成功与失败用例都能生成可播放成片。",
+    "测试结束后无论成功或失败，都尝试从本轮准确对应的 summary 调用现有 accept:report，生成 index.html、report.md、manifest.json 和真实媒体；核对当前实际测试提交，不误用 PR 头提交替代 checkout 的测试提交。",
+    "报告生成和上传分别使用始终执行条件；报告返回失败或证据不完整状态时，仍上传已经生成的报告。测试未产生摘要时，在 step summary 明确报告未生成及原因，不伪造通过或完整证据。",
+    "上传使用明确白名单，仅包含精简报告及其媒体、逐例结果和必要诊断材料；不上传整个 out/，排除逐帧 frames、norm、临时构建、模型请求和私有 Agent 日志。",
+    "step summary 提供实际上传产物的下载入口，说明解压后打开 index.html；上传失败或没有产物时明确显示，不能留下假下载链接。",
+    "在隔离真实浏览器中运行 open-in-front，下载并解压产物，确认 HTML、Markdown、逐例结果可审阅，截图可打开、成功用例成片可播放，报告提交与构建来源一致；记录精简产物实际大小并核对压缩包无排除材料。",
+    "复核失败路径仍保留报告和必要诊断材料；Key cases 原始非零退出仍体现为测试失败，不使用吞错或 continue-on-error 掩盖。保留全部原有断言、PR_CASES 范围和非强制合并政策。"
+  ]
+}
