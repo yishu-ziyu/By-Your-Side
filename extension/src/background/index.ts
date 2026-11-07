@@ -2159,12 +2159,15 @@ async function readMentionedPages(entry: PanelHistoryEntry, pages: PageContext[]
 
 async function attachPageContext<T extends Extract<ClientMessage, { type: "user_message" | "steer" }>>(
   msg: T,
+  windowId?: number,
 ): Promise<T> {
   try {
-    const { tab } = msg.context ? {tab:{id:msg.context.tabId,title:msg.context.title,url:msg.context.url}} : await getActiveTab();
+    const { tab } = msg.context ? {tab:{id:msg.context.tabId,title:msg.context.title,url:msg.context.url}}
+      : windowId === undefined ? await getActiveTab()
+      : { tab: (await chrome.tabs.query({ active: true, windowId }))[0] };
     const selection = msg.context?.selection;
 
-    const page = tab
+    const page = tab && typeof tab.id === "number"
       ? { tabId: tab.id, title: tab.title ?? "", url: tab.url ?? "" }
       : msg.context
         ? { tabId: msg.context.tabId, title: msg.context.title, url: msg.context.url }
@@ -2323,7 +2326,7 @@ function attachPanel(port: chrome.runtime.Port) {
 
           void stopTrailReplay(key());
 
-          void attachPageContext(client).then((enriched) => {
+          void attachPageContext(client, panelWindow.get(port)).then((enriched) => {
             const mentioned = wireClient.type === "task_action" ? wireClient.request.pages : undefined;
             if (entry.item.kind === "user" && (enriched.context || mentioned?.length)) {
               const { title, url, selection } = enriched.context ?? { title: "", url: "", selection: undefined };
@@ -2358,7 +2361,7 @@ function attachPanel(port: chrome.runtime.Port) {
         }
 
         if (client.type === "warm_up") {
-          void attachPageContext({ type: "user_message", text: "", context: client.context }).then((enriched) => {
+          void attachPageContext({ type: "user_message", text: "", context: client.context }, panelWindow.get(port)).then((enriched) => {
             uplink.sendClientMessage({ ...client, ...(enriched.context ? { context: enriched.context } : {}) });
           });
           break;
