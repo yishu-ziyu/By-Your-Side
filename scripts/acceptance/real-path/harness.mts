@@ -126,6 +126,14 @@ function browserControls(cdp: ReturnType<typeof createCdp>, id: string) {
       "真侧栏出现",
     );
 
+    const session = await attach(panel.targetId);
+
+    try {
+      await until(async () => await evaluate(session, 'document.readyState === "complete" && !!globalThis.chrome?.storage?.local && document.querySelector("#conversation-new")?.disabled === false && document.querySelector("#send-btn")?.disabled === false'), 60_000, "侧栏加载并连接就绪");
+    } finally {
+      await detach(session);
+    }
+
     return panel.targetId;
   };
 
