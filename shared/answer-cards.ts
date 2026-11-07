@@ -266,7 +266,10 @@ function parseCard(source: string, closed: boolean): Card | undefined {
   let picked = false;
   let primary = false;
   const resolve = (raw: string, unit?: string): { value: string; computed?: number; formula?: string; expr?: string; unit?: string } => {
-    if (!raw.startsWith("=")) return { value: withUnit(raw, unit) };
+    if (!raw.startsWith("=")) {
+      const constant = /^-?[\d,]+(?:\.\d+)?$/.test(raw.trim()) ? Number(raw.replace(/,/g, "")) : undefined;
+      return { value: withUnit(raw, unit), ...(constant !== undefined && Number.isFinite(constant) ? { computed: constant } : {}) };
+    }
     card.formulas = true;
     const symbol = /[¥￥$€£]/.exec(raw)?.[0];
     const expression = raw.slice(1).replace(/[¥￥$€£]/g, "").replace(/\s*元\s*$/, "");
@@ -586,7 +589,7 @@ export function calculationIssue(text: string): { evidence: string; correction: 
       const pattern = new RegExp(CURRENCY.test(stat.unit) ? `${unit}\\s*${number}` : `${number}\\s*${unit}`, "g");
       for (const found of prose.matchAll(pattern)) {
         if (inputs.has(Number(found[1]!.replace(/,/g, "")))) continue;
-        return { evidence: found[0], correction: `The prose contains an independent numeric value ${JSON.stringify(found[0])} outside the calculation. Give the corresponding formula stat an id and reference it with {=id}, such as {=${stat.id ?? "result"}}, so changing inputs updates the conclusion too. Do not recalculate or hardcode the prose value. If it is a given input, represent that input and reference its id instead.` };
+        return { evidence: found[0], correction: `The prose contains an independent numeric value ${JSON.stringify(found[0])} outside the calculation. Give the corresponding formula stat an id and reference it with {=id}, such as {=${stat.id ?? "result"}}, so changing inputs updates the conclusion too. Do not recalculate or hardcode the prose value. If it is a given fact rather than a computed result, put it in a non-formula stat and reference that id; do not turn a fixed source fact into an editable input.` };
       }
     }
   }

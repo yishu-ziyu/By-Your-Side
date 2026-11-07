@@ -18,8 +18,8 @@ const ANSWER = `按 {=months} 算，一共花 {=total}。共 {=months} 个月，
 <input id="months" label="月数" value="12" min="1" max="20" unit="个月" />
 <input id="people" label="人数" value="2" min="1" max="50" unit="人" />
 <stat label="Notion" value="=68*months" unit="¥" note="月付" />
-<stat label="Duolingo" value="398" unit="¥" />
-<stat id="total" label="合计" value="=68*months+398" unit="¥" />
+<stat id="annual" label="Duolingo" value="398" unit="¥" />
+<stat id="total" label="合计" value="=68*months+annual" unit="¥" />
 <stat label="每人（{=people}）" value="=total/people" unit="¥" note="{=total} 由 {=people}分" />
 <option name="Notion 年付" value="=48*months" unit="¥" why="折合每月 48" />
 <table cols="订阅|费用"><tr cells="Notion|=68*months" /><tr cells="Duolingo|398" /></table>

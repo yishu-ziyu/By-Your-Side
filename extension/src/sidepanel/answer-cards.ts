@@ -92,7 +92,7 @@ function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<strin
     case "inputs":
       return `<div class="gc-inputs" data-gc-key="b${i}">${b.items.map((v, j) => keyed(key(j), inputHtml(v))).join("")}</div>`;
     case "stats":
-      return `<div class="gc-stats${wideStats(b.items.map((s) => tidyNumber(s.value))) ? " wide" : ""}" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${t(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id && s.expr ? ` data-gc-id="${esc(s.id)}"` : ""}>${esc(tidyNumber(s.value))}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-stats${wideStats(b.items.map((s) => tidyNumber(s.value))) ? " wide" : ""}" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${t(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id ? ` data-gc-id="${esc(s.id)}"${!s.expr && s.computed !== undefined ? ` data-gc-number="${s.computed}"` : ""}` : ""}>${esc(tidyNumber(s.value))}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
     case "steps":
       return `<ol class="gc-steps" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<li class="gc-step"><span class="num">${j + 1}</span><div><div class="t">${t(s.title)}</div>${s.detail ? `<div class="d">${t(s.detail)}</div>` : ""}</div></li>`)).join("")}${extra}</ol>`;
     case "options":
@@ -693,6 +693,10 @@ function clampTo(el: HTMLInputElement, n: number): number {
 
 function recompute(card: HTMLElement): void {
   const vars = new Map([...card.querySelectorAll<HTMLInputElement>(".gc-num[data-gc-var]")].map((el) => [el.dataset.gcVar!, Number(el.value)]));
+  for (const el of card.querySelectorAll<HTMLElement>("[data-gc-id][data-gc-number]")) {
+    const value = Number(el.dataset.gcNumber);
+    if (Number.isFinite(value)) vars.set(el.dataset.gcId!, value);
+  }
   const set = (el: Element, text: string) => { if (el.textContent !== text) el.textContent = text; };
 
   for (const el of card.querySelectorAll<HTMLElement>("[data-gc-expr]")) {
