@@ -286,8 +286,15 @@ function toSpec(props: z.infer<typeof chartProps>): Spec | null {
   const rows = ((Array.isArray(props.data) ? props.data : []) as unknown[]).filter((r): r is Row => !!r && typeof r === "object" && !Array.isArray(r));
   const first = rows[0];
   if (!first) return null;
-  const x = (props.x && props.x in first ? props.x : null) ?? Object.keys(first).find((k) => (props.type === "scatter" ? typeof first[k] === "number" : typeof first[k] === "string")) ?? Object.keys(first)[0];
-  const series = (props.series?.length ? props.series.filter((s) => typeof s === "string") : Object.keys(first).filter((k) => k !== x && typeof first[k] === "number")).slice(0, 8);
+  const scatter = props.type === "scatter";
+  const numeric = (key: string) => rows.some((row) => row[key] !== "" && row[key] != null && Number.isFinite(Number(row[key])));
+  const keys = Object.keys(first);
+  const named = (props.series ?? []).filter((s) => typeof s === "string" && numeric(s));
+  // WHY: 模型可能把类目键和数值键写反。按写的画出来是一张没有柱子的空图，看着像真结果，所以按数据实际的类型纠正。
+  const swapped = !scatter && !named.length && !!props.series?.length;
+  const x = (!swapped && props.x && props.x in first ? props.x : null) ?? keys.find((k) => (scatter ? numeric(k) : !numeric(k))) ?? keys[0];
+  const series = (named.length ? named : keys.filter((k) => k !== x && numeric(k))).slice(0, 8);
+  if (!series.length) return null;
   const type = (["bar", "line", "area", "pie", "donut", "scatter"] as const).includes(props.type) ? props.type : "bar";
   return {
     type,
