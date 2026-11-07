@@ -165,6 +165,7 @@ await cp(path.join(root, "assets/cast"), path.join(dist, "cast"), { recursive: t
 await cp(path.join(root, "assets/voices"), path.join(dist, "voices"), { recursive: true });
 
 await cp(path.join(root, "assets/orbs"), path.join(dist, "orbs"), { recursive: true });
+await cp(path.join(root, "assets/demo"), path.join(dist, "demo"), { recursive: true });
 
 await cp(path.join(root, "assets/fonts"), path.join(dist, "fonts"), { recursive: true });
 

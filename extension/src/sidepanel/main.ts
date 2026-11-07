@@ -328,6 +328,7 @@ app.innerHTML = `
     <p id="starter-title">说说你想完成什么</p>
     <p id="starter-sub"></p>
     <button type="button" id="starter-connect">连接模型</button>
+    <video id="starter-demo" src="demo/fill-a-form.webm" poster="demo/fill-a-form.jpg" muted loop playsinline preload="metadata" aria-label="演示：说一句话，助手把预约表单填好，提交前留给你核对"></video>
   </section>
   <div class="composer-dock-wrap">
     <div id="attach-menu" class="action-menu-popover" role="menu" aria-label="添加与设置" hidden>
@@ -773,6 +774,21 @@ const proactiveCard = installProactiveCard({
     inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
   },
 });
+
+const starterDemo = document.getElementById("starter-demo") as HTMLVideoElement;
+
+function syncStarterDemo(): void {
+  const shown = starterDemo.offsetParent !== null && !document.hidden && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (shown) void starterDemo.play().catch(() => {});
+  else starterDemo.pause();
+}
+
+starterDemo.addEventListener("loadedmetadata", syncStarterDemo);
+starterDemo.addEventListener("error", () => starterDemo.remove());
+document.addEventListener("visibilitychange", syncStarterDemo);
+matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", syncStarterDemo);
+new ResizeObserver(syncStarterDemo).observe(document.getElementById("starter")!);
 
 function updateStarterVisibility(): void {
   app.classList.toggle("starter-ready", starterReady());
