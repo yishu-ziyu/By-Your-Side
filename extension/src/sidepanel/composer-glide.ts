@@ -26,6 +26,13 @@ export function mountComposerGlide(app: HTMLElement, dock: HTMLElement, starter:
   };
 
   const settle = () => {
+    // WHY: 确认按钮移动会让按下与松开落在不同元素上，吞掉用户的确认或取消。
+    if (dock.querySelector("#confirm-dock:not([hidden])")) {
+      glide?.cancel();
+      glide = null;
+      remember();
+      return;
+    }
     if (viewport() !== lastViewport) {
       glide?.cancel();
       glide = null;
@@ -69,6 +76,8 @@ export function mountComposerGlide(app: HTMLElement, dock: HTMLElement, starter:
 
   const observer = new MutationObserver(settle);
   for (const el of watch) observer.observe(el, { attributes: true, attributeFilter: ["class", "hidden"], childList: true, subtree: el.id === "messages" });
+  const confirmation = dock.querySelector("#confirm-dock");
+  if (confirmation) observer.observe(confirmation, { attributes: true, attributeFilter: ["hidden"], childList: true });
   new ResizeObserver(remember).observe(dock);
   new ResizeObserver(remember).observe(app);
   arm();

@@ -40,7 +40,7 @@ function isSendConfirmView(v: unknown): v is SendConfirmView {
     && OPTIONAL_NUM.every(key => o[key] === undefined || (typeof o[key] === "number" && Number.isFinite(o[key])));
 }
 
-interface Card { view: SendConfirmView; el: HTMLElement; answering: boolean; announced?: boolean; warned?: boolean; armedAt?: number; tick?: number }
+interface Card { view: SendConfirmView; el: HTMLElement; answering: boolean; announced?: boolean; warned?: boolean; armedAt?: number; tick?: number; rendered?: string }
 
 const cards = new Map<string, Card>();
 
@@ -163,6 +163,10 @@ function paint(card: Card): void {
   }
 
   const live = pending.has(view.id);
+  const rendered = JSON.stringify([view, live, card.answering]);
+  // WHY: 重复同步会在按下和松开之间换掉按钮，让一次可信点击消失。
+  if (card.rendered === rendered && el.childElementCount) { place(card, live); return; }
+  card.rendered = rendered;
   el.dataset.sendConfirm = view.id;
   el.dataset.state = live ? "open" : "checking";
   el.replaceChildren();

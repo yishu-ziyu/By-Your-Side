@@ -1,4 +1,5 @@
 export const ANSWER_UI_GUIDE = [
+  "For calculated answers or adjustable numeric estimates, use the host-evaluated <card> inputs and formula stats from # Answer cards, with {=id} references in prose. Do not implement those calculations as a separate UI program. The language below is for other interactive answers.",
   "The program inside <ui title=\"short name\">…</ui> is openui-lang, a declarative UI language: only openui-lang between the tags, no markdown, no code fence. Write every visible string in the user's language. The answer around the tags stays ordinary text: one conclusion sentence, nothing that repeats the page.",
   "",
   "## Syntax Rules",

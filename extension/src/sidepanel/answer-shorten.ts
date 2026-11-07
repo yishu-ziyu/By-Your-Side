@@ -141,8 +141,10 @@ export function visibleMarkdown(body: HTMLElement): string {
     }
     if (el.classList.contains("gen-card")) {
       const title = el.querySelector(".gc-title");
-      const items = Array.from(el.querySelectorAll(".gc-option,.gc-stat,.gc-step,.gc-check,.gc-callout,.gc-table tbody tr"));
+      const items = Array.from(el.querySelectorAll(".gc-input,.gc-option,.gc-stat,.gc-step,.gc-check,.gc-callout,.gc-table tbody tr"));
       const cells = (item: Element) => {
+        const input = item.querySelector<HTMLInputElement>(".gc-num");
+        if (input) return `${item.querySelector(".k")?.textContent?.trim() ?? ""}：${input.value} ${input.dataset.gcUnit ?? ""}`.trim();
         const parts = Array.from(item.querySelectorAll(".name,.price,.meta,.gc-why,.k > span:first-child,.v,.n,.t,.d,td")).map(line).filter(Boolean);
         return parts.length ? parts.join(" · ") : line(item);
       };
