@@ -190,10 +190,9 @@ export async function ensureAttached(tabId: number): Promise<void> {
       }
     }
 
-    if (!(await chrome.tabs.get(tabId).then(t => t.active, () => true))) {
-      await withTimeout(chrome.debugger.sendCommand({ tabId }, "Page.setWebLifecycleState", { state: "active" }), 1500, "lifecycle").catch(() => undefined);
-      await withTimeout(chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }), 1500, "focus emulation").catch(() => undefined);
-    }
+    // WHY: 窗口被别的窗口挡住时标签页仍算活动，但翻页后渲染暂停，点击会被静默丢掉；不能只给非活动标签唤醒。
+    await withTimeout(chrome.debugger.sendCommand({ tabId }, "Page.setWebLifecycleState", { state: "active" }), 1500, "lifecycle").catch(() => undefined);
+    await withTimeout(chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }), 1500, "focus emulation").catch(() => undefined);
     attached.add(tabId);
     scheduleIdleDetach();
     void enableNetworkCapture(tabId, { mode: "late" });
