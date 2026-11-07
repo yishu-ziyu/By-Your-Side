@@ -24,14 +24,14 @@ export async function importReport(home, report, metadata = {}) {
   const raw = await readFile(join(source, "manifest.json"));
   if (raw.length > 2_000_000) throw new Error("报告清单过大");
   const m = JSON.parse(raw);
-  if (m.schemaVersion !== 1 || !revision(m.source?.commit) || !sha(m.source?.buildSha256) || m.source.dirty !== false || m.source.expectedCommit !== m.source.commit || !Array.isArray(m.cases) || m.cases.length > 250) throw new Error("报告版本或来源无效");
+  if (m.schemaVersion !== 1 || !revision(m.source?.commit) || !sha(m.source?.buildSha256) || m.source.dirty !== false || typeof m.source.startedAt !== "string" || !Number.isFinite(Date.parse(m.source.startedAt)) || m.source.expectedCommit !== m.source.commit || !Array.isArray(m.cases) || m.cases.length > 250) throw new Error("报告版本或来源无效");
   if (metadata.receipt && (metadata.receipt.reportManifestSha256 !== digest(raw) || metadata.receipt.commit !== m.source.commit || metadata.receipt.buildSha256 !== m.source.buildSha256 || JSON.stringify([...metadata.receipt.cases].sort()) !== JSON.stringify(m.cases.map(c => c.name).sort()))) throw new Error("报告与验收记录不一致");
   const id = digest(raw);
   await mkdir(join(output, "records"), { recursive: true });
   const record = join(output, "records", `${id}.json`);
   const rows = [];
   for (const c of m.cases) {
-    if (!slug(c.name) || !["pass", "fail", "not-run"].includes(c.status) || !Array.isArray(c.media)) throw new Error("报告用例无效");
+    if (!slug(c.name) || !["pass", "fail", "not-run"].includes(c.status) || !Array.isArray(c.media) || c.media.length > 1000 || !Number.isFinite(c.seconds) || c.seconds < 0) throw new Error("报告用例无效");
     const media = [];
     for (const item of c.media) {
       const extension = extname(item.file ?? "").toLowerCase();
