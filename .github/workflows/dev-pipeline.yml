@@ -1,0 +1,98 @@
+name: Development pipeline
+on:
+  pull_request:
+concurrency:
+  group: development-pipeline-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  pipeline-verify:
+    if: startsWith(github.head_ref, 'pipeline/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: candidate
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: candidate/.node-version
+          cache: npm
+          cache-dependency-path: candidate/package-lock.json
+      - id: task
+        name: Read controller revision
+        working-directory: candidate
+        run: |
+          test -f .dev-pipeline-task.json && test ! -L .dev-pipeline-task.json
+          node --input-type=module -e '
+            import {readFileSync, appendFileSync} from "node:fs";
+            const task=JSON.parse(readFileSync(".dev-pipeline-task.json","utf8"));
+            if(!/^[a-f0-9]{40}$/.test(task.controllerCommit)) throw new Error("Invalid controller revision");
+            appendFileSync(process.env.GITHUB_OUTPUT, "revision="+task.controllerCommit+"\n");
+          '
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: control
+          ref: ${{ steps.task.outputs.revision }}
+          persist-credentials: false
+      - name: Install trusted browser tooling
+        working-directory: control
+        run: npm ci --ignore-scripts --no-audit --no-fund && chmod -R go-w .
+      - name: Isolate candidate execution from the controller
+        run: |
+          test -d candidate/.git && test ! -L candidate/.git
+          test ! -e candidate/out && test ! -L candidate/out
+          sudo useradd --create-home --shell /bin/bash bys-worker
+          sudo chown -R bys-worker:bys-worker candidate
+          sudo chown -R "$(id -u):$(id -g)" candidate/.git
+          sudo chmod -R go-w candidate/.git
+          sudo chown "$(id -u):$(id -g)" candidate candidate/.dev-pipeline-task.json
+          sudo chmod 1777 candidate
+          sudo chmod 644 candidate/.dev-pipeline-task.json
+          sudo mkdir -p candidate/out
+          sudo chown "$(id -u):$(id -g)" candidate/out
+          sudo chmod 1777 candidate/out
+          mkdir -p candidate/out/dev-pipeline-ci
+          chmod 755 candidate/out/dev-pipeline-ci
+          current="$GITHUB_WORKSPACE"
+          while [ "$current" != / ]; do
+            sudo chmod o+x "$current"
+            current=$(dirname "$current")
+          done
+          sudo -u bys-worker env HOME=/home/bys-worker git config --global --add safe.directory "$GITHUB_WORKSPACE/candidate"
+          mkdir -p control/out
+          printf 'unchanged' > control/out/controller-boundary
+          sudo -u bys-worker env PATH="$PATH" node -e 'try { require("node:fs").writeFileSync(process.argv[1], "changed"); process.exit(1); } catch(e) { if(e.code!=="EACCES") throw e; }' "$GITHUB_WORKSPACE/control/out/controller-boundary"
+          if sudo -u bys-worker sudo -n true 2>/dev/null; then exit 1; fi
+      - name: Install candidate dependencies without controller permissions
+        working-directory: candidate
+        run: sudo -u bys-worker env PATH="$PATH" HOME=/home/bys-worker GIT_OPTIONAL_LOCKS=0 npm ci --no-audit --no-fund
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: /tmp/bys-browsers
+          key: pipeline-chromium-${{ runner.os }}-${{ hashFiles('candidate/package-lock.json') }}
+      - name: Prepare isolated browser and recording
+        working-directory: control
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/bys-browsers
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          chmod -R a+rX,go-w /tmp/bys-browsers
+          echo "EGO_ACCEPTANCE_CHROME=$(find /tmp/bys-browsers -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
+      - name: Independent checks and report
+        env:
+          BYS_PIPELINE_EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha }}
+        run: node control/scripts/maintenance/dev-pipeline-ci.mjs "$GITHUB_WORKSPACE/candidate"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dev-pipeline-report-${{ github.run_attempt }}
+          path: candidate/out/dev-pipeline-ci/
+          if-no-files-found: warn
+          retention-days: 7

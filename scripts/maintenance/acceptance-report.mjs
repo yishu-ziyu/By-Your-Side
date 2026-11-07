@@ -1,6 +1,8 @@
 import { copyFile, lstat, mkdir, open, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
 
 const IMAGE = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif"]);
 const STATUS = new Set(["pass", "fail", "not-run"]);
@@ -11,6 +13,12 @@ const url = (value) => value.split(sep).map(encodeURIComponent).join("/");
 const inside = (root, path) => path === root || (!relative(root, path).startsWith(`..${sep}`) && relative(root, path) !== ".." && !isAbsolute(relative(root, path)));
 const absent = (error) => error?.code === "ENOENT";
 const label = (status) => ({ pass: "通过", fail: "未通过", "not-run": "未运行", incomplete: "证据不完整" })[status];
+
+export async function mediaDigest(path) {
+  const hash = createHash("sha256");
+  for await (const bytes of createReadStream(path)) hash.update(bytes);
+  return hash.digest("hex");
+}
 
 async function safePath(repo, root, value) {
   const path = isAbsolute(value) ? resolve(value) : resolve(repo, value);
@@ -63,7 +71,7 @@ async function collectMedia(repo, root, path, files, depth = 0) {
         : extension === ".avif" ? ascii.slice(4, 8) === "ftyp" && /avif|avis/.test(ascii.slice(8))
         : ascii.slice(4, 8) === "ftyp";
       if (!valid) throw new Error(`证据不是有效媒体文件：${relative(repo, safe)}`);
-      files.set(await realpath(safe), { path: safe, kind, extension });
+      files.set(await realpath(safe), { path: safe, kind, extension, sha256: await mediaDigest(safe) });
     }
   }
   if (files.size > 500) throw new Error("单个用例媒体超过 500 项");
@@ -86,7 +94,7 @@ function parseResults(summary) {
   return selected.map((name) => summary.results.find((row) => row.name === name));
 }
 
-export async function createAcceptanceReport({ repo, summary: summaryPath, output, title = "验收报告", expectedCommit }) {
+export async function createAcceptanceReport({ repo, summary: summaryPath, output, title = "验收报告", expectedCommit, expectedCases, expectedBuildSha256 }) {
   if (typeof repo !== "string" || !isAbsolute(repo) || typeof summaryPath !== "string" || !isAbsolute(summaryPath) || typeof output !== "string" || !isAbsolute(output)) throw new Error("repo、summary、output 必须是绝对路径");
   if (typeof title !== "string") throw new Error("title 必须是文字");
   if (expectedCommit !== undefined && (typeof expectedCommit !== "string" || !SHA.test(expectedCommit))) throw new Error("期望版本必须为 40 位 commit");
@@ -95,6 +103,8 @@ export async function createAcceptanceReport({ repo, summary: summaryPath, outpu
   await safePath(repo, root, output);
   const data = JSON.parse(await readFile(summaryPath, "utf8"));
   const selected = parseResults(data);
+  if (expectedCases !== undefined && (!Array.isArray(expectedCases) || expectedCases.some(name => typeof name !== "string") || new Set(expectedCases).size !== expectedCases.length || JSON.stringify([...expectedCases].sort()) !== JSON.stringify(selected.map(row => row.name).sort()))) throw new Error("报告用例范围与任务单不一致");
+  if (expectedBuildSha256 !== undefined && (!SHA256.test(expectedBuildSha256) || data.buildSha256 !== expectedBuildSha256)) throw new Error("报告构建指纹与本轮实际构建不一致");
   const issues = [];
   const commit = typeof data.commit === "string" && SHA.test(data.commit) ? data.commit.toLowerCase() : null;
   if (expectedCommit && commit && commit !== expectedCommit.toLowerCase()) throw new Error(`构建版本不符：期望 ${expectedCommit}，摘要为 ${commit}`);
@@ -123,7 +133,7 @@ export async function createAcceptanceReport({ repo, summary: summaryPath, outpu
         if (isAbsolute(path) || /^out[\\/]/.test(path) || /^(?:\.\.?[\\/])/.test(path)) await collectMedia(repo, root, path, files);
       }
     }
-    const media = [...files.values()].map((file, index) => ({ kind: file.kind, source: relative(repo, file.path), file: join("assets", row.name, `${String(index + 1).padStart(3, "0")}${file.extension}`), path: file.path }));
+    const media = [...files.values()].map((file, index) => ({ kind: file.kind, source: relative(repo, file.path), file: join("assets", row.name, `${String(index + 1).padStart(3, "0")}${file.extension}`), path: file.path, sha256: file.sha256 }));
     const missingImage = !media.some((file) => file.kind === "image");
     const missingVideo = !media.some((file) => file.kind === "video");
     if (missingImage) caseIssues.push("缺少截图");

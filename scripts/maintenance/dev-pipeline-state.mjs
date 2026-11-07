@@ -7,6 +7,7 @@ export const object = value => !!value && typeof value === "object" && !Array.is
 export const slug = value => typeof value === "string" && /^[a-z0-9][a-z0-9-]{0,70}$/.test(value);
 export const commit = value => typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
 export const text = value => typeof value === "string" && value.trim().length > 0 && value.length <= 6000;
+const protectedFile = file => file === ".dev-pipeline-task.json" || file === ".github/workflows/dev-pipeline.yml" || /^scripts\/maintenance\/(dev-pipeline(?:-state|-ci)?|acceptance-report|check-[^/]+|comments)\.mjs$/.test(file);
 
 export function within(root, path) {
   const rel = relative(resolve(root), resolve(path));
@@ -77,7 +78,9 @@ export function validatePlan(plan, snapshot) {
     }
     if (!task.sourceIds.length || task.sourceIds.some(id => !sources.has(id))) throw new Error("任务缺少真实来源");
     if (!task.files.length || task.files.length > 12 || task.files.some(file => isAbsolute(file) || file.split(/[\\/]/).some((part, index) => !part || part === "." || part === ".." || part.startsWith(".") && !(index === 0 && part === ".github")) || /[\\*?\0\r\n]/.test(file))) throw new Error("改动文件范围无效；使用明确的仓库相对文件名");
-    if (!task.acceptance.length || task.cases.some(name => !cases.has(name))) throw new Error("验收标准或用例不存在");
+    if (task.files.some(protectedFile)) throw new Error("执行任务不能修改流水线控制器或验收判定器");
+    if (task.files.some(file => /^(out|dist|node_modules|extension\/dist|agent\/dist)\//.test(file) || file.split("/").includes("node_modules"))) throw new Error("任务不能修改生成目录或共享依赖");
+    if (!task.acceptance.length || task.cases.some(name => !cases.has(name) && !(slug(name) && task.files.includes(`scripts/acceptance/real-path/${name}.mts`)))) throw new Error("验收标准或用例不存在");
     if (task.files.some(file => /^(extension\/src|agent\/src|shared)\//.test(file)) && !task.cases.length) throw new Error("产品改动必须指定相关真实路径用例");
     if (task.dependsOn.length > 1 || task.dependsOn.some(id => !ids.has(id))) throw new Error("依赖必须指向前面的单个任务");
     if (!["bug", "chore", "feature"].includes(task.kind) || typeof task.needsDecision !== "boolean" || typeof task.decision !== "string") throw new Error("任务类型或决策状态无效");

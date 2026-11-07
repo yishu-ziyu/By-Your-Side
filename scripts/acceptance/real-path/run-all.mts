@@ -21,7 +21,7 @@ const cases = (await readdir(HERE))
   .map((file) => file.replace(/\.mts$/, ""))
   .sort();
 
-const missing = core ? CORE.filter((name) => !cases.includes(name)) : [];
+const missing = only ? [...only].filter((name) => !cases.includes(name)) : [];
 
 const jobsArg = process.argv.find((arg) => arg.startsWith("--jobs="));
 const JOBS = 2;
@@ -98,7 +98,7 @@ const summary = {
   dirty: dirty || git(["status", "--porcelain"]) !== "" || git(["rev-parse", "HEAD"]) !== commit,
   startedAt,
   logDir,
-  selectedCases: cases.filter(name => !only || only.has(name)),
+  selectedCases: only ? [...only].sort() : cases,
   buildSha256: createHash("sha256").update(await readFile(join(dist, "background.js"))).digest("hex"),
   runKind: core ? "core" : only ? "filtered" : "full",
   jobs,
