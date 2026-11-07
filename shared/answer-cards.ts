@@ -572,6 +572,23 @@ export function fillRefs(text: string, values: ReadonlyMap<string, string>, mark
   return out + text.slice(at);
 }
 
+export function interfaceIssue(text: string): { evidence: string; correction: string } | null {
+  const spans = cardSpans(text);
+  let at = 0;
+
+  for (const part of splitAnswer(text)) {
+    if (!("card" in part)) continue;
+    const span = spans[at++];
+
+    if (!span || span.tag === "card" || part.card?.closed) continue;
+    const name = span.tag === "ui" ? "interface" : "mini app";
+
+    return { evidence: text.slice(span.start, span.end).slice(0, 120), correction: `The ${name} block is unfinished, so it disappears and the user only sees the surrounding text. Finish the unfinished interface block: close it with </${span.tag}>, keep one conclusion sentence outside, and do not leave the program in the prose.` };
+  }
+
+  return null;
+}
+
 export function calculationIssue(text: string): { evidence: string; correction: string } | null {
   const parts = splitAnswer(text);
   const cards = parts.flatMap(part => "card" in part && part.card?.closed && part.card.formulas ? [part.card] : []);
