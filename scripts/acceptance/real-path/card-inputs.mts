@@ -18,9 +18,9 @@ const ANSWER = `按 {=months} 算，一共花 {=total}。共 {=months} 个月，
 <input id="months" label="月数" value="12" min="1" max="20" unit="个月" />
 <input id="people" label="人数" value="2" min="1" max="50" unit="人" />
 <stat label="Notion" value="=68*months" unit="¥" note="月付" />
-<stat label="Duolingo" value="398" unit="¥" />
-<stat id="total" label="合计" value="=68*months+398" unit="¥" />
-<stat label="每人（{=people}）" value="=(68*months+398)/people" unit="¥" note="{=total} 由 {=people}分" />
+<stat id="annual" label="Duolingo" value="398" unit="¥" />
+<stat id="total" label="合计" value="=68*months+annual" unit="¥" />
+<stat label="每人（{=people}）" value="=total/people" unit="¥" note="{=total} 由 {=people}分" />
 <option name="Notion 年付" value="=48*months" unit="¥" why="折合每月 48" />
 <table cols="订阅|费用"><tr cells="Notion|=68*months" /><tr cells="Duolingo|398" /></table>
 <checklist><check text="取消 Calm" /><check text="Notion 改年付" /></checklist>
@@ -110,6 +110,16 @@ try {
   assert.ok(after.evidence.includes("¥1,350"), `R2: evidence face recomputed: ${after.evidence}`);
   assert.ok(after.prose.includes("按 14 个月 算，一共花 ¥1,350"), `R2: prose {=months} {=total} recomputed: ${after.prose}`);
   assert.ok(after.notes[3]?.startsWith("¥1,350 由 2 人分"), `R2: note follows the input: ${after.notes[3]}`);
+  await rp.evaluate(panel, `(() => { window.__copied = ""; navigator.clipboard.writeText = async (text) => { window.__copied = text; }; return true; })()`);
+  await rp.click(panel, "#messages .msg.assistant .answer-command-btn");
+  await until(async () => await rp.evaluate(panel, `!![...document.querySelectorAll("#answer-command-menu .answer-command-item")].find(el => el.textContent.includes("复制为 Markdown"))`), 5000, "复制菜单");
+  await rp.evaluate(panel, `(() => { [...document.querySelectorAll("#answer-command-menu .answer-command-item")].find(el => el.textContent.includes("复制为 Markdown")).id = "copy-current-calculation"; return true; })()`);
+  await rp.click(panel, "#copy-current-calculation");
+  const copied = await until(async () => await rp.evaluate(panel, "window.__copied || undefined"), 5000, "复制当前结果") as string;
+  evidence.copied = copied;
+  assert.ok(copied.includes("¥1,350"), `复制必须使用修改后的计算结果：${copied}`);
+  assert.ok(!copied.includes("¥1,214"), "复制不能回到默认值");
+
 
   const months = '.gen-card .gc-num[data-gc-var="months"]';
   const typeInto = async (text: string) => {
