@@ -54,7 +54,7 @@ let lastFirst = "VERDICT-DONE";
 const proxy = createServer(async (req, res) => {
   let body = "";
 
-  for await (const c of req) body += c;
+  req.setEncoding("utf8"); for await (const c of req) body += c;
 
   if (req.method === "POST" && (req.url ?? "").endsWith("/chat/completions")) {
     const payload = JSON.parse(body) as { messages?: ChatMessage[]; tools?: unknown[] };

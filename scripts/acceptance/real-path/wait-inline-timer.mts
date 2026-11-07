@@ -44,7 +44,7 @@ const modelOrigin = new URL(model.baseUrl).origin;
 const relay = createServer(async (req, res) => {
   try {
     const parts: Buffer[] = [];
-    for await (const part of req) parts.push(part as Buffer);
+    req.setEncoding("utf8"); for await (const part of req) parts.push(part as Buffer);
     let body = Buffer.concat(parts).toString("utf8");
     if (req.method === "POST" && body.includes(GOAL_CHECK_PREFIX)) {
       const again = reverifyContinue(body);

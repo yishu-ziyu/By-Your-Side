@@ -97,6 +97,9 @@ function json(res: ServerResponse, step: TextStep | { tool: ToolCall } | { tools
 async function body(req: IncomingMessage): Promise<string> {
   let text = "";
 
+  // WHY: 请求体跨网络分块时，一个中文字可能被切开；不设编码逐块转字符串会变成乱码，规则匹配随请求长度时好时坏。
+  req.setEncoding("utf8");
+
   for await (const part of req) text += part;
 
   return text;

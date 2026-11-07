@@ -27,7 +27,7 @@ let claims = 0;
 const site = createServer((q, r) => {
   if (q.method !== 'POST') return void r.writeHead(200, { 'content-type': 'text/html;charset=utf-8' }).end(html);
   let body = '';
-  q.on('data', c => { body += c; });
+  q.setEncoding('utf8'); q.on('data', c => { body += c; });
   q.on('end', () => {
     posts.push({ path: q.url ?? '', body, at: Date.now() });
 

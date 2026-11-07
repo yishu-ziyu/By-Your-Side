@@ -24,7 +24,7 @@ const PAGE = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>留
 const posts: string[] = [];
 
 const site = createServer(async (req, res) => {
-  if (req.method === "POST") { for await (const _ of req) {  } posts.push(req.url ?? ""); res.end("ok"); return; }
+  if (req.method === "POST") { req.setEncoding("utf8"); for await (const _ of req) {  } posts.push(req.url ?? ""); res.end("ok"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(PAGE);
 });
 

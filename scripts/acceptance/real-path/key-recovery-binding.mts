@@ -21,7 +21,7 @@ await mkdir(out, { recursive: true });
 const model = await startScriptedModel([{ match: "凭据隔离检查", steps: [{ text: "凭据隔离检查完成。" }] }]);
 const seen: Array<{ target: string; key: string; task: boolean; cookie: boolean }> = [];
 const front = (target: string) => createServer(async (req, res) => {
-  let body = ""; for await (const chunk of req) body += chunk;
+  let body = ""; req.setEncoding("utf8"); for await (const chunk of req) body += chunk;
   const key = String(req.headers.authorization ?? "");
   const task = /"tools"\s*:\s*\[\s*\{/.test(body);
   seen.push({ target, key, task, cookie: !!req.headers.cookie });

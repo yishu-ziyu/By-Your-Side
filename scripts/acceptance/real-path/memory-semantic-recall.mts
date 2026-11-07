@@ -34,7 +34,7 @@ const upstream = await startScriptedModel([
 const requests: string[] = [];
 const proxy = createServer(async (req, res) => {
   let body = "";
-  for await (const chunk of req) body += chunk;
+  req.setEncoding("utf8"); for await (const chunk of req) body += chunk;
   if (req.method === "POST" && (req.url ?? "").endsWith("/chat/completions")) {
     const payload = JSON.parse(body) as { messages?: Array<{ role: string; content?: string | Array<{ text?: string }> }>; tools?: unknown[] };
     const text = (content: (typeof payload.messages)[number]["content"]) => Array.isArray(content) ? content.map(part => part.text ?? "").join("") : content ?? "";

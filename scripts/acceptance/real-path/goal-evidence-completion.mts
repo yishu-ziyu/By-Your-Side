@@ -42,7 +42,7 @@ const textOf = (content: any): string => typeof content === 'string' ? content :
 const checks: any[] = [];
 const proxy = createServer(async (req, res) => {
   try {
-    let body = ''; for await (const chunk of req) body += chunk;
+    let body = ''; req.setEncoding("utf8"); for await (const chunk of req) body += chunk;
     if (req.method === 'POST' && body.includes("You check whether a browser assistant has finished the user's goal")) {
       const payload = JSON.parse(body);
       const input = JSON.parse(textOf(payload.messages.filter((message: any) => message.role === 'user').at(-1).content));

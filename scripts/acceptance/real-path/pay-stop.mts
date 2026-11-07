@@ -37,7 +37,7 @@ const posts: Array<{ path: string; at: number }> = [];
 let frameLoads = 0;
 
 const site = createServer(async (req, res) => {
-  if (req.method === "POST") { for await (const _ of req) {  } posts.push({ path: req.url ?? "", at: Date.now() }); res.end("ok"); return; }
+  if (req.method === "POST") { req.setEncoding("utf8"); for await (const _ of req) {  } posts.push({ path: req.url ?? "", at: Date.now() }); res.end("ok"); return; }
   if (req.url === "/frame") frameLoads++;
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(req.url === "/frame" ? FRAME_PAGE : PAGE);
 });

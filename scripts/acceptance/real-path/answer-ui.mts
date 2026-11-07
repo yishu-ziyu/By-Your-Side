@@ -143,10 +143,9 @@ try {
   await until(async () => {
     const text = await panelText();
     const repairs = model.requests.filter(request => request.rule === "unfinished interface block").length;
-    return repairs === 1 && !text.includes("正在做界面") ? text : undefined;
-  }, 60_000, "没写完的界面补完并留在回答里");
+    return repairs === 1 && text.includes("西湖边走走就好") && !text.includes("正在做界面") ? text : undefined;
+  }, 60_000, "没写完的界面补完，结论留在回答里");
   const repairedText = await panelText();
-  assert.ok(repairedText.includes("西湖边走走就好"), "结论还在");
   assert.ok(!repairedText.includes("root = Text") && !repairedText.includes("正在做界面"), `界面没有消失，程序也不露出：${repairedText.slice(0, 300)}`);
   evidence.interfaceRepairs = 1;
   await until(async () => (await frameText()).includes("西湖") || undefined, 20_000, "补完的界面画出来");

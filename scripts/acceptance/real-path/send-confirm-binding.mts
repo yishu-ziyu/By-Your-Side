@@ -16,7 +16,7 @@ const posts: Array<{ body: string; recipient: string; note?: string; at: number 
 const initial = "甲".repeat(140);
 const site = createServer(async (req, res) => {
   if (req.method === "POST") {
-    let body = ""; for await (const chunk of req) body += chunk;
+    let body = ""; req.setEncoding("utf8"); for await (const chunk of req) body += chunk;
     posts.push({ ...JSON.parse(body), at: Date.now() }); res.end("ok"); return;
   }
   const extra = req.url?.includes("multi=1") ? '<textarea aria-label="附注">附注原文</textarea>' : "";

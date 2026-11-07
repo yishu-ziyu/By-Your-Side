@@ -42,7 +42,7 @@ const site = createServer(async (req, res) => {
   }
   if (product && req.method === "POST") {
     const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    req.setEncoding("utf8"); for await (const chunk of req) chunks.push(Buffer.from(chunk));
     const entry = { fields: JSON.parse(decodeURIComponent(String(req.headers["x-fields"]))) as Record<string, string>, sku: String(req.headers["x-sku"]), name: decodeURIComponent(String(req.headers["x-name"])), filename: String(req.headers["x-filename"]), sha256: hash(Buffer.concat(chunks)) };
     received.push(entry);
     res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });

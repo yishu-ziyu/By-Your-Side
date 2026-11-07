@@ -1,3 +1,4 @@
+import { SideCallError } from "./side-judgment.js";
 import { realtimeBrowserError, validateRealtimeBrowserTool, type RealtimeBrowserCall } from './realtime-browser-tools.js';
 import type { VoiceInputContext } from '../../shared/voice.js';
 import {isMerged, TaskQueue} from "./task-queue.js";
@@ -145,7 +146,12 @@ export class ConversationManager {
     if (!session || !request.text?.trim() || request.taskId || request.forkedFrom) return null;
     const catalog = await this.taskCatalog(origin);
     if (!catalog.some(task => !['completed','cancelled','failed'].includes(task.state))) return null;
-    const steps = await session.routeTaskInput(request.text, catalog);
+    let steps: Awaited<ReturnType<typeof session.routeTaskInput>>;
+    try { steps = await session.routeTaskInput(request.text, catalog); }
+    catch (error) {
+      if (error instanceof SideCallError) return null;
+      throw error;
+    }
     if (!stillCurrent()) throw new TaskActionRejected('要求已变化，这条没有执行。');
     if (steps[0]?.action === 'chat') return {chat:true};
     if (steps[0]?.action === 'clarify') {

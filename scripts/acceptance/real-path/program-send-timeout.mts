@@ -12,7 +12,7 @@ const page = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>团
 <script>document.querySelector('#f').addEventListener('submit', e => { e.preventDefault(); fetch('/send', {method:'POST',body:document.querySelector('#draft').value}); });</script></body></html>`;
 const posts: number[] = [];
 const site = createServer(async (req, res) => {
-  if (req.method === "POST") { for await (const _ of req) {} posts.push(Date.now()); res.end("ok"); return; }
+  if (req.method === "POST") { req.setEncoding("utf8"); for await (const _ of req) {} posts.push(Date.now()); res.end("ok"); return; }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(page);
 });
 await new Promise<void>(done => site.listen(0, "127.0.0.1", done));
