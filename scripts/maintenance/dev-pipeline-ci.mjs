@@ -20,7 +20,7 @@ function run(name, bin, args, env = {}) {
   const started = Date.now();
   try {
     const environment = { PATH: process.env.PATH, HOME: "/home/bys-worker", GIT_OPTIONAL_LOCKS: "0", CI: "true", EGO_ACCEPTANCE_CHROME: process.env.EGO_ACCEPTANCE_CHROME, ...env };
-    const result = spawnSync("sudo", ["-u", "bys-worker", "--", "env", ...Object.entries(environment).filter(([, value]) => value !== undefined).map(([key, value]) => `${key}=${value}`), bin, ...args], { cwd: repo, stdio: ["ignore", file, file], timeout: 600_000 });
+    const result = spawnSync("sudo", ["-u", "bys-worker", "--", "env", "-i", ...Object.entries(environment).filter(([, value]) => value !== undefined).map(([key, value]) => `${key}=${value}`), bin, ...args], { cwd: repo, stdio: ["ignore", file, file], timeout: 600_000 });
     const check = { name, exitCode: result.status, signal: result.signal, seconds: Math.round((Date.now() - started) / 1000), passed: result.status === 0 && !result.error };
     receipt.checks.push(check);
     console.log(`${name}: ${check.passed ? "PASS" : "FAIL"}`);
