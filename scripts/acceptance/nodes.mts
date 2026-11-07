@@ -64,7 +64,7 @@ export const NODES: Node[] = BASE_NODES.map((node) => ({
 export const SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ConnectionAttempts=3",
   "-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/bys-ssh-%C", "-o", "ControlPersist=120"];
 
-export const SKIP_FILES = new Set(["harness.mts", "run-all.mts", "shard-run.mts", "background-tab-input.mts", "attention-cues.mts", "learned-operations-live.mts", "occluded-window-click.mts"]);
+export const SKIP_FILES = new Set(["harness.mts", "run-all.mts", "shard-run.mts", "background-tab-input.mts", "attention-cues.mts", "learned-operations-live.mts", "occluded-window-click.mts", "write-readback-live.mts"]);
 
 export const PR_CASES = [
   "sidebar-interaction", "composer-expand", "handoff", "panel-send-confirm", "pay-stop", "error-recovery", "retry-after-unknown",

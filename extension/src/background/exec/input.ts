@@ -36,7 +36,7 @@ import { regrade, submitProbeInPage, typeIntoField, typingWritten, TypingInterru
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite, UserChangedFieldError } from "../fill-undo.js";
-import type { EffectReport, PageAppeared } from "../../../../shared/effect.js";
+import { UNSAVED_FIELDS_ALERT, type EffectReport, type PageAppeared } from "../../../../shared/effect.js";
 import { CdpObjectArg, callDom, callOnBackendNode, ensureCursor, ensureDomOps, notExecuted, type DispatchGuard } from "./page-call.js";
 import {
   pointInElementRect,
@@ -1869,7 +1869,7 @@ async function clickTarget(params: ClickParams, sessionId: string, clock: Return
 
     if (sendConfirmed) clicked.sendConfirmed = true;
     // WHY: 脚本里的连续点击不读新页面，不多等；单独的点击工具马上要读新页面，页面画完才读得到内容。
-    if (effect?.documentChanged && !newTab && params.awaitPage) await waitForQuietDom(tabId);
+    if (effect?.documentChanged && !newTab) await noteFieldsNotSaved(tabId, sessionId, effect, !!params.awaitPage);
     clock.mark("pageQuiet");
     await rememberActionTarget(tabId, target, name);
     clicked.timing = clock.phases;
@@ -2187,6 +2187,8 @@ export async function fill(
   const copyProof = copied !== undefined && copiedTarget ? { ...copiedTarget, sha256: await textSha256(copied), chars: [...copied].length, ...(range ? { range } : {}), ...(requestedRange ? { requestedRange } : {}) } : undefined;
   const data = copied === undefined ? written : { ...written, source: sourceSummary(copied), ...(copyProof ? { copyProof } : {}), ...(written.readback ? { readback: withoutText(written.readback) } : {}) };
 
+  rememberFilled(data.readback, sessionId, value);
+
   if (!params.submit) return data;
 
   if (data.typing === "failed" || data.readback?.match === "not_held" || data.readback?.match === "different") {
@@ -2194,6 +2196,28 @@ export async function fill(
   }
 
   return { ...data, submit: await submitAfterFill(params, sessionId, beforeDispatch) };
+}
+
+const filledFields = new Map<string, { name: string; value: string }[]>();
+
+function rememberFilled(readback: FieldReadback | undefined, sessionId: string, value: string): void {
+  if (!readback?.name || readback.sensitive || readback.match !== "same" || !value) return;
+  const fields = (filledFields.get(sessionId) ?? []).filter(field => field.name !== readback.name);
+  filledFields.set(sessionId, [...fields, { name: readback.name, value }].slice(-20));
+}
+
+async function noteFieldsNotSaved(tabId: number, sessionId: string, effect: EffectReport, awaitPage: boolean): Promise<void> {
+  const fields = filledFields.get(sessionId);
+  if (awaitPage || fields?.length) await waitForQuietDom(tabId);
+  if (!fields?.length) return;
+  filledFields.delete(sessionId);
+  const changed = await callDom(tabId, (wanted: { name: string; value: string }[]) => {
+    const controls = [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input:not([type=password]):not([type=hidden]), textarea")];
+    const nameOf = (el: HTMLInputElement | HTMLTextAreaElement) => [el.getAttribute("aria-label"), el.labels?.[0]?.innerText, el.placeholder].map(text => text?.trim()).filter(Boolean);
+    return wanted.flatMap(({ name, value }) => controls.some(el => nameOf(el).includes(name) && el.value && el.value !== value) ? [name] : []);
+  }, [fields]).catch(() => [] as string[]);
+  // WHY: 网站可能显示“保存成功”却没存上。新页面同名栏里不是刚填的值是确凿事实；不回显旧值，它可能是用户的隐私。
+  if (changed.length) effect.alerts.push(`after this page change, the field(s) ${changed.map(name => JSON.stringify(name)).join(", ")} ${UNSAVED_FIELDS_ALERT}, so the change may not have been saved; do not report it as saved unless you confirm it where the result shows`);
 }
 
 const SOURCE_EDGE_CHARS = 20;
