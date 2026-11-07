@@ -35,7 +35,7 @@ import { waitForQuietDom } from "./page-readiness.js";
 import { regrade, submitProbeInPage, typeIntoField, typingWritten, TypingInterrupted, type PageRun } from "./fill-typing.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
-import { beforeWrite } from "../fill-undo.js";
+import { beforeWrite, UserChangedFieldError } from "../fill-undo.js";
 import type { EffectReport, PageAppeared } from "../../../../shared/effect.js";
 import { CdpObjectArg, callDom, callOnBackendNode, ensureCursor, ensureDomOps, notExecuted, type DispatchGuard } from "./page-call.js";
 import {
@@ -102,6 +102,15 @@ function buttonsMaskFor(sessionId: string): number {
 
 class FillRefused extends Error {
   readonly executionFact = "not_executed" as const;
+}
+
+async function trackWrite(...args: Parameters<typeof beforeWrite>): ReturnType<typeof beforeWrite> {
+  try {
+    return await beforeWrite(...args);
+  } catch (error) {
+    if (error instanceof UserChangedFieldError) throw new FillRefused(error.message);
+    throw error;
+  }
 }
 
 function isDebuggerUnavailable(error: unknown): boolean {
@@ -1688,7 +1697,7 @@ async function clickTarget(params: ClickParams, sessionId: string, clock: Return
       cdpMouseMoved = true;
       heldOf(sessionId).pointer = [x, y];
       const effectPending = beginEffect(tabId, { point: [x, y] });
-      const undoPending = beforeWrite(sessionId, tabId, { point: [x, y] });
+      const undoPending = trackWrite(sessionId, tabId, { point: [x, y] });
 
       if (!force) {
         if (target) {
@@ -2333,7 +2342,7 @@ async function fillField(
     if (backendNodeId !== undefined) {
       try {
         await beforeDispatch?.();
-        const undo = await beforeWrite(sessionId, tabId, { backendNodeId }, true);
+        const undo = await trackWrite(sessionId, tabId, { backendNodeId }, true, { value: params.value });
         const run: PageRun = (fn, args) => callOnBackendNode(tabId, backendNodeId, `function(...a) { return (${fn.toString()}).call(this, null, ...a); }`, args, undefined, params.expectedDocumentId, beforeDispatch);
         const { range, select, typing } = await writeField(tabId, run, () => fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch), params.value, beforeDispatch);
         await undo.done();
@@ -2366,7 +2375,7 @@ async function fillField(
     }
 
     await ensureDomOps(tabId, beforeDispatch);
-    const undo = await beforeWrite(sessionId, tabId, { target: params.target }, true);
+    const undo = await trackWrite(sessionId, tabId, { target: params.target }, true, { value: params.value });
 
     await beforeDispatch?.();
     const run: PageRun = (fn, args) => callDom(tabId, fn as (...a: unknown[]) => unknown, [params.target, ...args], params.expectedDocumentId, beforeDispatch) as never;
@@ -2475,7 +2484,7 @@ async function selectOptions(
   if (backendNodeId !== undefined) {
     try {
       await beforeDispatch?.();
-      const undo = await beforeWrite(sessionId, tabId, { backendNodeId });
+      const undo = await trackWrite(sessionId, tabId, { backendNodeId }, true);
       const result = await callOnBackendNode<{ selected: string[]; labels: string[] }>(
         tabId,
         backendNodeId,
@@ -2528,7 +2537,7 @@ async function selectOptions(
   }
 
   await ensureDomOps(tabId, beforeDispatch);
-  const undo = await beforeWrite(sessionId, tabId, { target: params.target });
+  const undo = await trackWrite(sessionId, tabId, { target: params.target }, true);
 
   await beforeDispatch?.();
   const selected = await callDom(
@@ -2638,7 +2647,7 @@ export async function typeText(
   if (tab.id == null) throw new Error("工作标签页无效");
   await beforeDispatch?.();
   await beforeDispatch?.();
-  const undo = await beforeWrite(sessionId, tab.id, { focused: true }, true);
+  const undo = await trackWrite(sessionId, tab.id, { focused: true }, true);
   await callDom(tab.id, function prepareEditableCaret() {
     let active = document.activeElement as HTMLElement | null;
     while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement as HTMLElement;
