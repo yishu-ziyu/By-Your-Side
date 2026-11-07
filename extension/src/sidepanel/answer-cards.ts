@@ -2,7 +2,7 @@ import { resolveDiagramCite, type AnswerSourceMap } from "../../../shared/answer
 import DOMPurify from "dompurify";
 import { isPopout, targetWindowId } from "./target-window.js";
 import { createElement as icon, LayoutGrid, Table2 } from "lucide";
-import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, evaluate, fillRefs, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
+import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, cardSpans, evaluate, fillRefs, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { captureCitationContext, clearFailure, noteFailure } from "./sonar-citations.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
@@ -111,6 +111,12 @@ function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<strin
       return keyed(`b${i}`, `<div class="gc-diagram" data-diagram="${encodeURIComponent(b.source)}"><div class="gc-diagram-canvas"></div>${list}${missing ? `<div class="gc-diagram-hint">有 ${missing} 处来源未能核对</div>` : ""}</div>`);
     }
   }
+}
+
+function unfinishedAppHtml(tag: "ui" | "app"): string {
+  const label = tag === "ui" ? "界面没有写完" : "小程序没有写完";
+
+  return `<div class="gen-card gen-app-card"><div class="gc-app"><div class="gc-app-wait"><span>${label}</span></div></div></div>`;
 }
 
 function appCardHtml(card: Card, app: Extract<Block, { kind: "app" }>): string {
@@ -324,7 +330,18 @@ export function renderAnswerHtml(text: string, renderProse: (markdown: string) =
   const ref = new RegExp(`\uE000${nonce}([A-Za-z_][\\w-]*)\uE001([^\uE002<]*)\uE002`, "g");
   const refs = (html: string) => html.replace(ref, (_all, id: string, value: string) => `<span data-gc-ref="${esc(id)}">${value}</span>`);
 
-  return parts.map((p) => ("prose" in p ? (p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "") : p.card ? cardHtml(p.card, sources) : "")).join("");
+  const spans = cardSpans(text);
+  let spanAt = 0;
+
+  return parts.map((p) => {
+    if ("prose" in p) return p.prose.trim() ? refs(withMermaidDiagrams(resolveProse(p.prose, cards, bold), renderProse)) : "";
+    const span = spans[spanAt++];
+
+    if (p.card) return cardHtml(p.card, sources);
+    if (span?.tag === "ui" || span?.tag === "app") return unfinishedAppHtml(span.tag);
+
+    return "";
+  }).join("");
 }
 
 const MERMAID_FENCE = /^```mermaid[ \t]*\n([\s\S]*?)\n```[ \t]*$/gm;
@@ -430,7 +447,19 @@ function syncChildren(to: Element, from: Element): void {
 }
 
 export function dropPlaceholders(root: HTMLElement): void {
-  for (const el of root.querySelectorAll(".gen-card .gc-ph")) el.remove();
+  for (const el of root.querySelectorAll<HTMLElement>(".gen-card .gc-ph")) {
+    // WHY: 回答结束会清掉占位。没闭合的界面只剩这个占位，清掉后用户只看得到文字。
+    if (el.classList.contains("gc-app")) {
+      const label = el.querySelector(".gc-app-wait span");
+
+      if (label) label.textContent = el.querySelector(".gc-app-head") ? "小程序没有写完" : "界面没有写完";
+      el.classList.remove("gc-ph");
+      el.removeAttribute("aria-hidden");
+      continue;
+    }
+
+    el.remove();
+  }
 
   for (const el of root.querySelectorAll(".gen-card .gc-stats, .gen-card .gc-steps, .gen-card .gc-options, .gen-card .gc-checks")) if (!el.children.length) el.remove();
 }

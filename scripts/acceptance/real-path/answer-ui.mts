@@ -28,8 +28,15 @@ map = Map([MapMarker("杭州萧山机场", 30.2295, 120.4344), MapMarker("深圳
 live = Button("查 JD5290 实时状态", @ToAssistant("查 JD5290 实时状态"))
 </ui>`;
 
+const OPEN_UI = `西湖边走走就好。
+<ui title="杭州两天">
+root = Text("西湖")
+`;
+const CLOSED_UI = `${OPEN_UI}</ui>`;
 const model = await startScriptedModel([
+  { match: "unfinished interface block", steps: [{ text: CLOSED_UI }] },
   { match: "查 JD5290 实时状态", steps: [{ text: "已查：JD5290 准点。" }] },
+  { match: "周末界面", steps: [{ text: OPEN_UI, chunkDelayMs: 20 }] },
   { match: "航班", steps: [{ text: FLIGHT, chunkDelayMs: 10 }] },
 ]);
 
@@ -125,6 +132,25 @@ try {
   await until(async () => (await frameText()).includes("合计 2040 元") || undefined, 30_000, "重开侧栏后状态还在");
   await sleep(500);
   await rp.screenshot(panel, join(artifacts, "4-restored.png"));
+
+  await rp.click(panel, "#conversation-new");
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===true') || undefined, 10_000, "正在开新会话").catch(() => undefined);
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#messages")?.innerText.includes("JD5290")') || undefined, 60_000, "新会话就绪");
+  await rp.evaluate(panel, `(() => { const el = document.querySelector("#input"); el.focus(); el.value = "周末界面"; el.dispatchEvent(new Event("input", { bubbles: true })); return el.value; })()`);
+  await rp.click(panel, "#send-btn");
+  await until(async () => await rp.evaluate(panel, '[...document.querySelectorAll("#messages .msg.user")].some(m => m.textContent.includes("周末界面"))') || undefined, 15_000, "新问题已发出");
+  const panelText = async () => String(await rp.evaluate(panel, 'document.querySelector("#messages")?.innerText ?? ""'));
+  await until(async () => {
+    const text = await panelText();
+    const repairs = model.requests.filter(request => request.rule === "unfinished interface block").length;
+    return repairs === 1 && !text.includes("正在做界面") ? text : undefined;
+  }, 60_000, "没写完的界面补完并留在回答里");
+  const repairedText = await panelText();
+  assert.ok(repairedText.includes("西湖边走走就好"), "结论还在");
+  assert.ok(!repairedText.includes("root = Text") && !repairedText.includes("正在做界面"), `界面没有消失，程序也不露出：${repairedText.slice(0, 300)}`);
+  evidence.interfaceRepairs = 1;
+  await until(async () => (await frameText()).includes("西湖") || undefined, 20_000, "补完的界面画出来");
+  await rp.screenshot(panel, join(artifacts, "5-repaired.png"));
 } catch (caught) {
   evidence.iframeTargets = (await rp.targets()).filter(t => t.type === "iframe").map(t => t.url);
   evidence.stuck = await rp.evaluate(panel, `document.querySelector("#messages")?.innerText.slice(0, 700)`).catch((e: unknown) => String(e));
