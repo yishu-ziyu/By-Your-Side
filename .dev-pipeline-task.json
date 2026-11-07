@@ -1,7 +1,7 @@
 {
   "runId": "20261107082145-925be9c7",
   "taskId": "compact-pr-evidence",
-  "controllerCommit": "d08ef210bd5ebfcd23a855fe7952f238eb5f5cb5",
+  "controllerCommit": "8f02e362f4c6caa663646127abae20615eea9dc8",
   "reviewedCommit": "0f52f50300b3fc2b3df144d1efbea01b6418fd01",
   "title": "精简 PR 验收证据并提供报告下载入口",
   "cases": [
