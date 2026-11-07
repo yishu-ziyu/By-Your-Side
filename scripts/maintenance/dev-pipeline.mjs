@@ -211,7 +211,8 @@ async function run(runId) {
     if (state.repo !== repo || snapshot.dirty || git(["status", "--porcelain"]) || git(["rev-parse", "HEAD"]) !== snapshot.base) throw new Error("巡检后代码已变化或未提交；请在原工作目录的干净版本重新巡检");
     if (state.planDigest !== digest(JSON.stringify(planned))) throw new Error("任务单被修改，需要重新拆解");
     interruptedMessage();
-    const prs = JSON.parse(command("gh", ["pr", "list", "--state", "open", "--limit", "100", "--json", "url,body"]));
+    const owned = new Set(Object.values(state.tasks).map(row => row.pr).filter(Boolean));
+    const prs = JSON.parse(command("gh", ["pr", "list", "--state", "open", "--limit", "100", "--json", "url,body"])).filter(pr => !owned.has(pr.url));
     const claimed = await claims(runId, prs);
     if (planned.tasks.some(task => task.sourceIds.some(id => claimed.has(id) || prs.some(pr => pr.body.includes(snapshot.sources.find(source => source.id === id).url))))) throw new Error("来源已有执行任务或未合并 PR，先复核现有工作");
     const active = new Map();
@@ -233,6 +234,7 @@ async function run(runId) {
     await save(join(dir, "state.json"), state);
     console.log(`任务结果：${join(dir, "state.json")}`);
     if (interrupted) process.exitCode = 130;
+    else if (Object.values(state.tasks).some(row => ["blocked", "needs-repair"].includes(row.phase))) process.exitCode = 1;
   }));
 }
 
@@ -316,7 +318,10 @@ async function collect(runId, taskId) {
     const artifacts = JSON.parse(command("gh", ["api", `repos/${snapshot.repo}/actions/runs/${ci.databaseId}/artifacts`]));
     const artifactName = `dev-pipeline-report-${ci.attempt}`;
     const artifact = artifacts.artifacts.find(item => item.name === artifactName && !item.expired);
-    if (!artifact) throw new Error("本次 CI 尝试没有可下载的验收产物");
+    if (!artifact) {
+      row.phase = "needs-repair"; row.ci = ci; row.error = "本次 CI 尝试没有可下载的验收产物";
+      await save(join(dir, "state.json"), state); console.log(`${taskId}：${row.error}，保留草稿，${ci.url}`); return;
+    }
     const cacheKey = `${ci.databaseId}:${ci.attempt}:${artifact.id}`;
     const target = row.ci?.cacheKey === cacheKey && row.ci.directory ? row.ci.directory : await directory(join(dir, taskId, `ci-${ci.databaseId}-${ci.attempt}-${artifact.id}-${Date.now()}`));
     let receipt;
@@ -387,6 +392,26 @@ async function collect(runId, taskId) {
   });
 }
 
+async function waitForCI(runId) {
+  const minutes = Number(option("timeout-minutes") ?? 20);
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 30) throw new Error("等待时限需为 1–30 分钟");
+  const until = Date.now() + minutes * 60_000;
+  while (!interrupted && Date.now() < until) {
+    const { state } = await load(runId);
+    const waiting = Object.entries(state.tasks).filter(([, row]) => ["awaiting-ci", "reviewing-evidence"].includes(row.phase));
+    if (!waiting.length) {
+      if (Object.values(state.tasks).some(row => ["needs-repair", "blocked", "cancelled"].includes(row.phase))) process.exitCode = 1;
+      return true;
+    }
+    for (const [id] of waiting) { interruptedMessage(); await collect(runId, id); }
+    if (Object.values((await load(runId)).state.tasks).some(row => ["awaiting-ci", "reviewing-evidence"].includes(row.phase))) await new Promise(resolveWait => setTimeout(resolveWait, 15_000));
+  }
+  if (interrupted) return false;
+  console.log("等待时限已到，尚未完成的 CI 保持原状态，PR 仍为草稿；可用 wait 或 collect 继续核对。");
+  process.exitCode = 2;
+  return false;
+}
+
 async function main() {
   await directory(home);
   if (args[0] === "scan") await scan();
@@ -395,12 +420,23 @@ async function main() {
   else if (args[0] === "approve") await approve(args[1], args[2]);
   else if (args[0] === "publish") await publish(args[1], args[2]);
   else if (args[0] === "collect") await collect(args[1], args[2]);
+  else if (args[0] === "wait") await waitForCI(args[1]);
   else if (args[0] === "status") console.log(JSON.stringify((await load(args[1])).state, null, 2));
   else if (args[0] === "cycle") {
-    const id = await scan(); await plan(id); await run(id);
-    if (argv.includes("--publish") && !interrupted) for (const [task, row] of Object.entries((await load(id)).state.tasks)) if (row.phase === "reviewed") { interruptedMessage(); await publish(id, task); }
+    const id = await scan(); await plan(id);
+    for (let round = 0; round < 3 && !interrupted; round++) {
+      await run(id);
+      if (!argv.includes("--publish") || interrupted) break;
+      for (const [task, row] of Object.entries((await load(id)).state.tasks)) if (row.phase === "reviewed") { interruptedMessage(); await publish(id, task); }
+      if (argv.includes("--no-wait") || !await waitForCI(id)) break;
+      const tasks = Object.values((await load(id)).state.tasks);
+      if (!tasks.some(row => row.phase === "pending")) {
+        process.exitCode = tasks.every(row => ["published", "no-change"].includes(row.phase)) ? 0 : 1;
+        break;
+      }
+    }
   }
-  else console.log("用法：npm run dev:flow -- scan | plan <运行> [--source=issue:编号] [--focus=要求] | approve <运行> <任务> | run <运行> [--jobs=2] | status <运行> | publish <运行> <任务> | collect <运行> <任务>\n巡检只读；拆解标出需要决策的任务，用户确认后才可 approve；执行使用独立工作树和受限 Agent；先发布草稿，在临时 CI 机器验收；collect 核对同一提交、用例和构建报告后标记可审阅。不会自动设置定时任务或合并 PR。");
+  else console.log("用法：npm run dev:flow -- scan | plan <运行> [--source=issue:编号] [--focus=要求] | approve <运行> <任务> | run <运行> [--jobs=2] | status <运行> | publish <运行> <任务> | collect <运行> <任务> | wait <运行> | cycle --source=issue:编号 --publish\n巡检只读；拆解标出需要决策的任务，用户确认后才可 approve；执行使用独立工作树和受限 Agent；先发布草稿，在临时 CI 机器验收；collect 核对同一提交、用例和构建报告后标记可审阅。不会自动设置定时任务或合并 PR。");
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(error.message); if (!interrupted) process.exitCode = 1; });
