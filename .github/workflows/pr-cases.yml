@@ -34,14 +34,132 @@ jobs:
           exit 1
       - name: Locate Chrome for Testing
         run: echo "EGO_ACCEPTANCE_CHROME=$(find ~/.cache/ms-playwright -type f -name chrome -path '*chrome-linux*' | head -1)" >> "$GITHUB_ENV"
+      - name: Install recording tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version
+          ffprobe -version
+      - name: Record test source
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/pr-cases-commit"
+          python3 - <<'PYTHON'
+          import json, os, time
+          from pathlib import Path
+          root = Path('out/acceptance/real-path')
+          state = {'started': time.time(), 'summaries': [str(p) for p in root.glob('summary-*.json')]}
+          (Path(os.environ['RUNNER_TEMP']) / 'pr-cases-before.json').write_text(json.dumps(state))
+          PYTHON
       - name: Key cases
         run: npx tsx scripts/acceptance/real-path/run-all.mts --pr
         env:
           SIDEAGENT_RECORD: "1"
-      - if: always()
+      - name: Generate review report
+        id: report
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, re, shutil, subprocess, sys
+          from pathlib import Path
+          repo = Path.cwd()
+          root = repo / 'out/acceptance/real-path'
+          output = repo / 'out/pr-cases-report'
+          temp = Path(os.environ['RUNNER_TEMP'])
+          def note(text):
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+                  stream.write(text + '\n\n')
+          if not (temp / 'pr-cases-before.json').is_file():
+              note('报告未生成：测试准备未完成，没有本轮摘要来源记录。')
+              sys.exit(1)
+          before = json.loads((temp / 'pr-cases-before.json').read_text())
+          summaries = [p for p in root.glob('summary-*.json') if str(p.relative_to(repo)) not in before['summaries']]
+          if len(summaries) != 1:
+              note(f'报告未生成：本轮新增摘要数量为 {len(summaries)}，无法唯一确定测试结果。')
+              sys.exit(1)
+          summary = summaries[0]
+          data = json.loads(summary.read_text())
+          commit = (temp / 'pr-cases-commit').read_text().strip()
+          if data.get('commit') != commit:
+              note('报告未生成：摘要提交与实际 checkout 的测试提交不一致。')
+              sys.exit(1)
+          # WHY: Only newly created summaries from this test invocation may supply report evidence.
+          from datetime import datetime
+          if datetime.fromisoformat(data['startedAt'].replace('Z', '+00:00')).timestamp() < before['started']:
+              note('报告未生成：摘要运行时间早于本轮测试。')
+              sys.exit(1)
+          result = subprocess.run(['npm', 'run', 'accept:report', '--', '--summary', str(summary), '--out', str(output), '--commit', commit])
+          diagnostics = output / 'diagnostics'
+          diagnostics.mkdir(parents=True, exist_ok=True)
+          shutil.copyfile(summary, diagnostics / 'summary.json')
+          logdir = Path(data['logDir']).resolve()
+          if not logdir.is_relative_to(root.resolve()):
+              note('诊断材料未复制：日志目录超出验收目录。')
+              sys.exit(1)
+          for row in data['results']:
+              if row['status'] == 'not-run' or not re.fullmatch(r'[a-zA-Z0-9_-]+', row['name']):
+                  continue
+              log = logdir / (row['name'] + '.log')
+              if not log.is_file() or log.is_symlink():
+                  continue
+              shutil.copyfile(log, diagnostics / log.name)
+              for line in log.read_text().splitlines():
+                  match = re.match(r'^\s*证据：\s*(.+?)\s*$', re.sub(r'\x1b\[[0-9;]*m', '', line))
+                  if not match:
+                      continue
+                  evidence = Path(match[1])
+                  evidence = (repo / evidence).resolve()
+                  if not evidence.is_relative_to(root.resolve()):
+                      continue
+                  for name in ('result.json', 'summary.json'):
+                      source = evidence / name
+                      if source.is_file() and not source.is_symlink() and source.stat().st_mtime >= before['started']:
+                          target = diagnostics / row['name'] / name
+                          target.parent.mkdir(parents=True, exist_ok=True)
+                          shutil.copyfile(source, target)
+          manifest = output / 'manifest.json'
+          status = json.loads(manifest.read_text())['status'] if manifest.is_file() else '未生成完整报告'
+          note(f'报告状态：{status}；报告生成器退出码：{result.returncode}。测试结果保持 Key cases 原始状态。')
+          sys.exit(result.returncode)
+          PYTHON
+      - name: Upload review evidence
+        id: evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pr-cases-evidence-${{ github.run_attempt }}
-          path: out/
-          if-no-files-found: ignore
+          path: |
+            out/pr-cases-report/index.html
+            out/pr-cases-report/report.md
+            out/pr-cases-report/manifest.json
+            out/pr-cases-report/assets/**/*.png
+            out/pr-cases-report/assets/**/*.jpg
+            out/pr-cases-report/assets/**/*.jpeg
+            out/pr-cases-report/assets/**/*.webp
+            out/pr-cases-report/assets/**/*.gif
+            out/pr-cases-report/assets/**/*.avif
+            out/pr-cases-report/assets/**/*.mp4
+            out/pr-cases-report/diagnostics/summary.json
+            out/pr-cases-report/diagnostics/*.log
+            out/pr-cases-report/diagnostics/*/result.json
+            out/pr-cases-report/diagnostics/*/summary.json
+          if-no-files-found: error
           retention-days: 7
+      - name: Evidence download
+        if: always()
+        env:
+          UPLOAD_OUTCOME: ${{ steps.evidence.outcome }}
+          ARTIFACT_URL: ${{ steps.evidence.outputs.artifact-url }}
+          ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+        run: |
+          if [ "$UPLOAD_OUTCOME" = success ] && [ -n "$ARTIFACT_ID" ] && [ -n "$ARTIFACT_URL" ]; then
+            echo "[下载本轮验收材料]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+            if [ -f out/pr-cases-report/index.html ]; then
+              echo "解压后打开 index.html；report.md、manifest.json 和 diagnostics 中的逐例结果可供复核。" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "报告未生成完整 HTML；下载内容仅含已生成的报告材料或诊断，不能视为完整证据。" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "验收材料上传失败或没有产物，没有可用下载入口。" >> "$GITHUB_STEP_SUMMARY"
+          fi
