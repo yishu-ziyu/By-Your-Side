@@ -269,20 +269,76 @@ const viewOf = (conversationId: string): FillUndoView | null => {
 
 const emit = (conversationId: string) => watchers.get(conversationId)?.(viewOf(conversationId));
 
+type Remembered = Entry & { tabId: number; documentId: string };
+
+const writeHistory = new Map<string, Map<string, Remembered>>();
+
+const historyKey = (tabId: number, documentId: string, token: string) => `${tabId}\t${documentId}\t${token}`;
+
+function historyOf(conversationId: string): Map<string, Remembered> {
+  let map = writeHistory.get(conversationId);
+  if (!map) { map = new Map(); writeHistory.set(conversationId, map); }
+  return map;
+}
+
+function copyEntry(entry: Entry): Entry {
+  return { ...entry, before: { ...entry.before }, after: { ...entry.after } };
+}
+
+function rememberEntry(conversationId: string, tabId: number, documentId: string, entry: Entry): void {
+  historyOf(conversationId).set(historyKey(tabId, documentId, entry.token), { ...copyEntry(entry), tabId, documentId });
+}
+
+function snapshotLedger(conversationId: string, ledger: Ledger): void {
+  for (const [tabId, tab] of ledger.tabs) {
+    for (const entry of tab.entries.values()) rememberEntry(conversationId, tabId, tab.documentId, entry);
+  }
+}
+
+function conversationOf(ledger: Ledger): string | undefined {
+  for (const [id, item] of ledgers) if (item === ledger) return id;
+}
+
+function forgetHistory(conversationId: string | undefined, tabId: number, tokens: readonly string[], documentId?: string): void {
+  if (!conversationId) return;
+  const map = writeHistory.get(conversationId);
+  if (!map) return;
+  for (const [key, item] of [...map]) {
+    if (item.tabId !== tabId) continue;
+    if (documentId && item.documentId !== documentId) continue;
+    if (tokens.length && !tokens.includes(item.token)) continue;
+    map.delete(key);
+  }
+}
+
+function rememberedWrite(conversationId: string, tabId: number, documentId: string, token: string): Entry | undefined {
+  const tab = ledgers.get(conversationId)?.tabs.get(tabId);
+  if (tab && tab.documentId === documentId) {
+    const known = tab.entries.get(token);
+    if (known) return known;
+  }
+  return writeHistory.get(conversationId)?.get(historyKey(tabId, documentId, token));
+}
+
 function closeEntries(ledger: Ledger, tabId: number, reason: Closed["reason"], tokens?: readonly string[], documentId?: string): boolean {
   let changed = false;
   const tab = ledger.tabs.get(tabId);
+  const dropped: string[] = [];
 
   if (tab && (!documentId || tab.documentId === documentId)) {
     for (const entry of [...tab.entries.values()]) {
       if (tokens && !tokens.includes(entry.token)) continue;
       tab.entries.delete(entry.token);
       ledger.closed.push({ token: entry.token, name: entry.name, reason, tabId, documentId: tab.documentId });
+      dropped.push(entry.token);
       changed = true;
     }
   }
 
+  if (dropped.length) forgetHistory(conversationOf(ledger), tabId, dropped, tab?.documentId ?? documentId);
+
   if (reason === "submitted" && tokens) {
+    forgetHistory(conversationOf(ledger), tabId, tokens, documentId);
     for (const closed of ledger.closed) {
       if (closed.tabId === tabId && closed.reason === "page_changed" && tokens.includes(closed.token) && (!documentId || closed.documentId === documentId)) { closed.reason = "submitted"; changed = true; }
     }
@@ -299,6 +355,8 @@ function forgetEntries(ledger: Ledger, tabId: number, tokens: readonly string[],
     for (const token of tokens) changed = tab.entries.delete(token) || changed;
   }
 
+  forgetHistory(conversationOf(ledger), tabId, tokens, documentId ?? tab?.documentId);
+
   const kept = ledger.closed.filter((closed) => !(closed.tabId === tabId && closed.reason === "page_changed" && tokens.includes(closed.token) && (!documentId || closed.documentId === documentId)));
 
   if (kept.length !== ledger.closed.length) { ledger.closed = kept; changed = true; }
@@ -308,7 +366,18 @@ function forgetEntries(ledger: Ledger, tabId: number, tokens: readonly string[],
 
 const NOOP = { done: async () => {} };
 
-export async function beforeWrite(sessionKey: string, tabId: number, where: UndoWhere, write = false): Promise<{ done(): Promise<void> }> {
+export class UserChangedFieldError extends Error {
+  readonly field: string;
+
+  constructor(field: string) {
+    const name = field || "未命名的栏";
+    super(`「${name}」在助手上次填写后被改过，本次写入未生效。撤回不得覆盖用户后来的修改，请说明冲突。`);
+    this.name = "UserChangedFieldError";
+    this.field = name;
+  }
+}
+
+export async function beforeWrite(sessionKey: string, tabId: number, where: UndoWhere, write = false, next?: UndoState): Promise<{ done(): Promise<void> }> {
   const { conversationId } = parseExecutionKey(sessionKey);
   const probe = await probeInPage(tabId, where);
 
@@ -316,6 +385,17 @@ export async function beforeWrite(sessionKey: string, tabId: number, where: Undo
   const doc = await readCurrentDocument(tabId).catch(() => null);
 
   if (!doc) return NOOP;
+
+  if (write && probe.token) {
+    const known = rememberedWrite(conversationId, tabId, doc.documentId, probe.token);
+    if (known) {
+      const live = probe.state ?? await byToken<UndoState>(tabId, "read", known);
+      if (live && JSON.stringify(live) !== JSON.stringify(known.after)) {
+        const restoringSnapshot = next === undefined || JSON.stringify(next) === JSON.stringify(known.before);
+        if (restoringSnapshot) throw new UserChangedFieldError(known.name || probe.name);
+      }
+    }
+  }
 
   return {
     async done() {
@@ -346,9 +426,16 @@ export async function beforeWrite(sessionKey: string, tabId: number, where: Undo
         if (after && known) {
           known.after = after;
 
-          if (JSON.stringify(known.before) === JSON.stringify(after)) tab.entries.delete(probe.token);
+          if (JSON.stringify(known.before) === JSON.stringify(after)) {
+            tab.entries.delete(probe.token);
+            forgetHistory(conversationId, tabId, [probe.token], doc.documentId);
+          } else {
+            rememberEntry(conversationId, tabId, doc.documentId, known);
+          }
         } else if (after && probe.state && JSON.stringify(after) !== JSON.stringify(probe.state)) {
-          tab.entries.set(probe.token, { ...draft, after });
+          const recorded = { ...draft, after };
+          tab.entries.set(probe.token, recorded);
+          rememberEntry(conversationId, tabId, doc.documentId, recorded);
         }
       }
 
@@ -399,8 +486,10 @@ export async function restoreFills(conversationId: string): Promise<void> {
     for (const { tabId, entry } of restored) {
       const now = await byToken<UndoState>(tabId, "read", entry);
 
-      if (now && JSON.stringify(now) === JSON.stringify(entry.before)) kept.push(nameOf(entry));
-      else skipped.push({ field: nameOf(entry), reason: "failed" });
+      if (now && JSON.stringify(now) === JSON.stringify(entry.before)) {
+        kept.push(nameOf(entry));
+        forgetHistory(conversationId, tabId, [entry.token], ledger.tabs.get(tabId)?.documentId);
+      } else skipped.push({ field: nameOf(entry), reason: "failed" });
     }
 
     ledger.result = { state: "restored", restored: kept, skipped, notes: [...ledger.notes], unavailable: ledger.closed.map(nameOf) };
@@ -419,6 +508,8 @@ export function watchFillUndo(conversationId: string, onView: (view: FillUndoVie
 export const fillUndoView = viewOf;
 
 export function resetFillUndo(conversationId: string): void {
+  const ledger = ledgers.get(conversationId);
+  if (ledger) snapshotLedger(conversationId, ledger);
   if (!ledgers.delete(conversationId)) return;
   emit(conversationId);
 }

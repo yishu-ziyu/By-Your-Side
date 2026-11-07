@@ -122,6 +122,7 @@ export function plainDownloadError(code: string | null | undefined): string {
 }
 
 const TOOL_ERROR_REASONS: Array<[RegExp, string]> = [
+  [/上次填写后被改过|撤回不得覆盖用户后来的修改/, "你后来改过，没动"],
   [/结果未知|量不到位置|是否送达无法确认/, "结果未知"],
   [/fetch 请求失败|Failed to fetch|ERR_(NAME_NOT_RESOLVED|CONNECTION_REFUSED|CONNECTION_TIMED_OUT|CONNECTION_RESET|ADDRESS_UNREACHABLE|INTERNET_DISCONNECTED|NETWORK_FAILED)/, "连不上这个地址"],
   [/timed out|超时/i, "这一步超时了"],
