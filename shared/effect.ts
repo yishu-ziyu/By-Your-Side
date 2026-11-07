@@ -234,11 +234,15 @@ export function downloadEvidence(downloads: readonly EffectDownload[], pageUrl: 
   });
 }
 
+export const UNSAVED_FIELDS_ALERT = "show a value different from what you filled";
+
 export function formatEffectReport(report: EffectReport | undefined, action = "click"): string {
   if (!report) return "";
   const detail = [...report.evidence, ...report.weak].join("; ");
 
-  if (report.changed) return ` Page reacted: ${detail}.`;
+  const alerts = report.alerts.length ? ` Warning: ${report.alerts.join("; ")}.` : "";
+
+  if (report.changed) return ` Page reacted: ${detail}.${alerts}`;
 
   const tail = report.volatile
     ? ` The page itself keeps changing, but nothing was attributable to this ${action}`
