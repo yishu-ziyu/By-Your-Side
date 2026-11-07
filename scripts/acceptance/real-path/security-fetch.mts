@@ -12,7 +12,7 @@ const received: Array<{ path: string; body: string; tag: string }> = [];
 const site = createServer(async (req, res) => {
   if (req.method === "POST") {
     let body = "";
-    for await (const part of req) body += part;
+    req.setEncoding("utf8"); for await (const part of req) body += part;
     received.push({ path: req.url ?? "", body, tag: String(req.headers["x-test-tag"] ?? "") });
     if (req.url === "/find/redirect") { res.writeHead(307, { location: "/other" }).end(); return; }
     res.end("已保存测试内容");

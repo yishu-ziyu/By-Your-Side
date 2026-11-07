@@ -34,7 +34,7 @@ const requests: Array<{ id: string; n: number; nudged: boolean; tools: boolean; 
 const main = createServer(async (req, res) => {
   let raw = "";
 
-  for await (const chunk of req) raw += chunk;
+  req.setEncoding("utf8"); for await (const chunk of req) raw += chunk;
 
   if (req.method !== "POST") { res.end("ok");
 
