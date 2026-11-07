@@ -16,6 +16,7 @@ try {
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } })}).then(()=>true)`);
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "侧栏就绪");
   const video = 'document.querySelector("#starter-demo")';
+  const before = await rp.evaluate(panel, 'document.querySelector("#input").getBoundingClientRect().top') as number;
   const read = () => rp.evaluate(panel, `(()=>{const v=${video},i=document.querySelector("#input").getBoundingClientRect();if(!v)return null;const r=v.getBoundingClientRect();return {w:r.width,h:r.height,bottom:r.bottom,inputTop:i.top,time:v.currentTime,paused:v.paused,muted:v.muted,shown:v.offsetParent!==null,poster:v.poster.endsWith(".jpg")}})()`) as Promise<{ w: number; h: number; bottom: number; inputTop: number; time: number; paused: boolean; muted: boolean; shown: boolean; poster: boolean } | null>;
   const first = await until(async () => { const v = await read(); return v?.shown && v.h > 80 && !v.paused ? v : undefined; }, 15_000, "空白会话里演示在播放");
   await sleep(1200);
@@ -24,6 +25,8 @@ try {
   assert.ok(later.time !== first.time, "画面在动");
   assert.ok(later.muted, "没有声音");
   assert.ok(later.bottom <= later.inputTop, "不挡输入框");
+  evidence.inputMoved = Math.abs(later.inputTop - before);
+  assert.ok(Math.abs(later.inputTop - before) < 60, `连上模型前后输入框不大幅跳动：${before} → ${later.inputTop}`);
   await rp.screenshot(panel, join(out, "1-empty.png"));
   await rp.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }, panel);
   await until(async () => (await read())?.paused || undefined, 5_000, "减少动态效果时停下");
