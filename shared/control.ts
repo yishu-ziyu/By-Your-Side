@@ -396,35 +396,49 @@ export class ControlGate {
     }
   }
 
-  async beginTakeover(): Promise<{ generation: number; superseded: boolean }> {
+  async beginTakeover(limitMs?: number): Promise<{ generation: number; superseded: boolean; stillBusy?: boolean }> {
     if (this.owner === "user") {
       return { generation: this.generation, superseded: false };
     }
 
     this.draining = true;
     const gen = ++this.generation;
-    await Promise.allSettled([...this.inflight.values()].map((entry) => entry.settled));
+    const settled = await this.stepsSettled([...this.inflight.values()], limitMs);
 
     if (this.generation !== gen) {
       return { generation: this.generation, superseded: true };
     }
 
-    return { generation: gen, superseded: false };
+    return { generation: gen, superseded: false, stillBusy: !settled };
   }
 
-  async drainSessions(sessionIds: Iterable<string>, limitMs: number): Promise<boolean> {
-    const ids = new Set([...sessionIds].map(sessionKey));
-    const pending = [...this.inflight.values()].filter((entry) => ids.has(entry.sessionId) && entry.name !== "wait_event").map((entry) => entry.settled);
+  hasRunningStep(sessionIds?: Iterable<string>): boolean {
+    const ids = sessionIds && new Set([...sessionIds].map(sessionKey));
+
+    return [...this.inflight.values()].some((entry) => entry.name !== "wait_event" && (!ids || ids.has(entry.sessionId)));
+  }
+
+  private async stepsSettled(entries: Array<{ settled: Promise<unknown>; name: ToolName }>, limitMs?: number): Promise<boolean> {
+    const pending = entries.filter((entry) => entry.name !== "wait_event").map((entry) => entry.settled);
 
     if (!pending.length) return true;
+    const all = Promise.allSettled(pending).then(() => true as const);
+
+    if (limitMs === undefined) return await all;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const limit = new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), limitMs); });
 
     try {
-      return await Promise.race([Promise.allSettled(pending).then(() => true as const), limit]);
+      return await Promise.race([all, limit]);
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async drainSessions(sessionIds: Iterable<string>, limitMs: number): Promise<boolean> {
+    const ids = new Set([...sessionIds].map(sessionKey));
+
+    return await this.stepsSettled([...this.inflight.values()].filter((entry) => ids.has(entry.sessionId)), limitMs);
   }
 
   commitTakeover(generation: number, sessionIds?: string[]): boolean {
@@ -433,10 +447,9 @@ export class ControlGate {
     if (!this.draining || this.generation !== generation) return false;
     this.owner = "user";
     this.draining = false;
+    this.sessionBlocked.clear();
 
     if (sessionIds) {
-      this.sessionBlocked.clear();
-
       for (const id of sessionIds) this.sessionBlocked.set(sessionKey(id), true);
     }
 
@@ -480,7 +493,6 @@ export class ControlGate {
     this.generation += 1;
     this.owner = "agent";
     this.draining = false;
-    this.inflight.clear();
     this.sessionBlocked.clear();
 
     return { generation: this.generation, settled };
@@ -795,7 +807,7 @@ export function teamOwnerBanner(team: TeamView): {
   const paused = n - restored;
 
   if (team.phase === "draining") {
-    return { status: "正在暂停全队", sub: `${n} 个`, action: "请稍候", actionEnabled: false };
+    return { status: "正在暂停助手", sub: "", action: "请稍候", actionEnabled: false };
   }
 
   if (team.phase === "user") {
