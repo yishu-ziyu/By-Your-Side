@@ -961,6 +961,12 @@ function teamBannerView() {
 
 const isWorkingTabId = (tabId: number | undefined): tabId is number => typeof tabId === "number";
 
+function clearTeam(): void {
+  team.clear();
+  persistControl();
+  broadcastVisibleServer({ type: "team_status", team: null });
+}
+
 function emitTeam(): void {
   const view = team.view();
 
@@ -1110,7 +1116,7 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
 
       if (pending?.action === "takeover") {
         cancelTakeover(pending);
-        team.clear();
+        clearTeam();
       }
 
       emitNotice(
@@ -1243,7 +1249,7 @@ function failPendingControl(requestId: string, reason: string): void {
 
   if (pending.action === "takeover") {
     cancelTakeover(pending);
-    team.clear();
+    clearTeam();
     emitLocalStatus(pending.fallbackStatus);
     void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
   } else {
@@ -1264,7 +1270,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
   if (!msg.ok) {
     if (pending.action === "takeover") {
       cancelTakeover(pending);
-      team.clear();
+      clearTeam();
       emitLocalStatus(msg.state === "running" ? "running" : "idle");
       void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
     } else {
@@ -1298,7 +1304,7 @@ function handleControlResult(msg: Extract<ServerMessage, { type: "control_result
 
     if (msg.state !== "user" || (pending.pageTabId == null && !gate.commitTakeover(pending.generation, memberIds))) {
       cancelTakeover(pending);
-      team.clear();
+      clearTeam();
       emitLocalStatus(pending.fallbackStatus);
       void hideControlBannersForOwner(conversationId, pending.pageTabId != null ? [pending.pageTabId] : []);
       emitNotice("接管没有完成。页面控制没有改变。", "error");
@@ -1430,35 +1436,38 @@ return;}
     } else if (msg.type === "model_info") {
       lastModelInfo = msg;
     } else if (msg.type === "team_status") {
+      const incoming = msg.team;
+
+      if (!incoming) return;
       const acc = acceptIncomingTeam({
-        incoming: msg.team,
+        incoming,
         local: team.view(),
         pendingRequestId: pendingControl?.requestId ?? null,
         resultRequestId: null,
       });
 
       if (!acc.accept) return;
-      team.hydrate(msg.team);
+      team.hydrate(incoming);
 
       if (acc.restoreUser && (gate.isDraining || pendingControl?.action === "takeover") && !gate.isUser()) {
-        const ids = msg.team.members.map((m) => m.sessionId);
+        const ids = incoming.members.map((m) => m.sessionId);
         const gen = pendingControl?.action === "takeover" ? pendingControl.generation : gate.gen;
 
         if (gate.commitTakeover(gen, ids) || gate.isUser()) {
           if (pendingControl?.action === "takeover") clearPendingControl(pendingControl.requestId);
 
-          for (const m of msg.team.members) statusBySession.set(m.sessionId, "user");
+          for (const m of incoming.members) statusBySession.set(m.sessionId, "user");
           emitLocalStatus("user");
           void showUserControlGuarded();
         }
       }
 
-      if (msg.team.phase === "restoring" || msg.team.phase === "partial" || msg.team.phase === "restored") {
-        const progress = reconcileTeamProgress(gate, msg.team);
+      if (incoming.phase === "restoring" || incoming.phase === "partial" || incoming.phase === "restored") {
+        const progress = reconcileTeamProgress(gate, incoming);
 
         for (const [sessionId, memberState] of progress.statuses) statusBySession.set(sessionId, memberState);
 
-        for (const member of msg.team.members) if (member.phase === "restored" && member.tabId != null) setSessionClaimBlocked(member.sessionId, false);
+        for (const member of incoming.members) if (member.phase === "restored" && member.tabId != null) setSessionClaimBlocked(member.sessionId, false);
 
         lastStatus = aggregateRunState(statusBySession.values());
         persistControl();
@@ -1799,6 +1808,8 @@ async function stopRunningLoad(sessionIds: string[], tabId: number | undefined):
 async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wholeTask=false,ask?:string,targets?:string[]): Promise<void> {
   await controlReady;
 
+  const joined = !!takeoverInProgress;
+
   while (takeoverInProgress) await takeoverInProgress.settled;
 
   if (pendingControl) {
@@ -1806,6 +1817,9 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
     return;
   }
+
+  // WHY: 一次点击同时走面板和服务端两条路；前一条失败时用户已被告知，这条再试一遍会让侧栏又卡一轮。
+  if (joined && !gate.isUser() && team.view()?.phase !== "user") return;
 
   handoffAsk = ask ?? null;
 
@@ -1855,6 +1869,7 @@ async function stopThenRequestTakeover(members: ActiveMemberInput[], targetTabId
   team.snapshotAndFreeze(members);
   team.beginDrain();
   emitTeam();
+  persistControl();
 
   if (ask && targetTabId != null) await bringForwardForUser(targetTabId, "hand_to_user");
   const shown = showUserControlGuarded();
@@ -1873,7 +1888,7 @@ async function stopThenRequestTakeover(members: ActiveMemberInput[], targetTabId
   if ("stillBusy" in result && result.stillBusy) emitNotice(STEP_STILL_RUNNING);
 
   if (result.superseded) {
-    team.clear();
+    clearTeam();
 
     return;
   }
@@ -2568,12 +2583,10 @@ function syncPanel(rawPort: chrome.runtime.Port, afterSeq?: number) {
         port.postMessage({ kind: "history", entries: panelHistory.since(afterSeq ?? 0), replay: true } satisfies BgToPanel);
         port.postMessage({ kind: "server", msg: { type: "status", state: lastStatus } } satisfies BgToPanel);
 
-        if (team.view()) {
-          const status: Extract<ServerMessage, { type: "team_status" }> = { type: "team_status", team: team.view()! };
+        const status: Extract<ServerMessage, { type: "team_status" }> = { type: "team_status", team: team.view() };
 
-          if (epochRunId) status.runId = epochRunId;
-          port.postMessage({ kind: "server", msg: status } satisfies BgToPanel);
-        }
+        if (epochRunId) status.runId = epochRunId;
+        port.postMessage({ kind: "server", msg: status } satisfies BgToPanel);
 
         const lastView = lastTaskViews.get(conversationId);
 
