@@ -42,7 +42,7 @@ const bridge = (state: string | null, maxHeight: number) => `<script>
     },
     say(text) { post({ kind: "draft", text: String(text ?? "").slice(0, 500) }); },
     send(text) { post({ kind: "send", text: String(text ?? "").slice(0, 3000) }); },
-    page: Object.freeze({ captions: () => ask("captions"), seek: (seconds) => ask("seek", Number(seconds)) }),
+    page: Object.freeze({ captions: () => ask("captions"), read: () => ask("read"), seek: (seconds) => ask("seek", Number(seconds)), jump: (section) => ask("jump", Number(section)) }),
   });
   const fail = (message) => post({ kind: "error", message: String(message).slice(0, 300) });
   addEventListener("error", (e) => { if (!/^ResizeObserver loop/.test(e.message)) fail(e.message || "脚本出错"); });
