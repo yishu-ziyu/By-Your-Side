@@ -393,7 +393,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
       reason?: string;
       team?: TeamView;
     }
-  | { type: "team_status"; team: TeamView }
+  | { type: "team_status"; team: TeamView | null }
   | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string; programDeadline?: number;  sdkId?: string }
   | { type: "agent_event"; event: AgentUiEvent; sessionId?: string });
 
@@ -1159,7 +1159,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
 
     if (msg.type === "team_status") {
-      if (!isTeamView(msg.team)) return null;
+      if (msg.team !== null && !isTeamView(msg.team)) return null;
     }
 
     return msg;

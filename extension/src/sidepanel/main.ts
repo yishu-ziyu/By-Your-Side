@@ -2784,7 +2784,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
     else if (!flags.userHasPage && phase === "user") applyHandoffPhase("agent");
   } else if (!flags.live) collapseHandoffCard(true);
 
-  if (flags.userHasPage && !stopping && document.getElementById("handoff-banner")?.dataset.phase === "leaving") applyHandoffPhase("user");
+  if (!stopping && document.getElementById("handoff-banner")?.dataset.phase === "leaving") applyHandoffPhase(flags.userHasPage ? "user" : "agent");
 
   takeoverBtn.hidden = !flags.takeoverVisible && !flags.userHasPage;
   translateBtn.hidden = !takeoverBtn.hidden;
@@ -4685,6 +4685,7 @@ function handleServerMessage(raw: string): void {
       if (msg.view.conversationId === selectedConversationId) taskBar.updateView(msg.view);
       break;
     case "team_status":
+      if (msg.team === null) { setTeamView(null); break; }
       noteRunStarted(conversations.get(selectedConversationId)?.runId);
       applyTeamStatus(msg.team, msg.runId);
       break;
