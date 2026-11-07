@@ -90,6 +90,9 @@ export async function createAcceptanceReport({ repo, summary: summaryPath, outpu
   if (typeof repo !== "string" || !isAbsolute(repo) || typeof summaryPath !== "string" || !isAbsolute(summaryPath) || typeof output !== "string" || !isAbsolute(output)) throw new Error("repo、summary、output 必须是绝对路径");
   if (typeof title !== "string") throw new Error("title 必须是文字");
   if (expectedCommit !== undefined && (typeof expectedCommit !== "string" || !SHA.test(expectedCommit))) throw new Error("期望版本必须为 40 位 commit");
+  const root = await realpath(join(repo, "out"));
+  await safePath(repo, root, summaryPath);
+  await safePath(repo, root, output);
   const data = JSON.parse(await readFile(summaryPath, "utf8"));
   const selected = parseResults(data);
   const issues = [];
@@ -101,7 +104,6 @@ export async function createAcceptanceReport({ repo, summary: summaryPath, outpu
   if (typeof data.buildSha256 !== "string" || !SHA256.test(data.buildSha256)) issues.push("摘要缺少有效构建 SHA-256");
   if (!Array.isArray(data.selectedCases)) issues.push("摘要缺少明确选中用例，范围仅从已有结果推断");
   if (!selected.length) issues.push("没有选中验收用例");
-  const root = await realpath(join(repo, "out"));
   let logDir = null;
   if (typeof data.logDir === "string" && data.logDir) logDir = await safePath(repo, root, data.logDir);
   else issues.push("摘要缺少日志目录，无法查找媒体证据");

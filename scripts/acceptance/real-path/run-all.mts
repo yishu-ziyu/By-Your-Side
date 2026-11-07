@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { mkdir, mkdtemp, open, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { REPO } from "./harness.mts";
 import { CORE_CASES, PR_CASES, SKIP_FILES as SKIP } from "../nodes.mts";
@@ -34,6 +35,10 @@ if (missing.length) {
 const outDir = join(REPO, "out/acceptance/real-path");
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+const startedAt = new Date().toISOString();
+const git = (args: string[]) => { try { return execFileSync("git", args, { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return null; } };
+const commit = git(["rev-parse", "HEAD"]);
+const dirty = git(["status", "--porcelain"]) !== "";
 
 const logDir = join(outDir, `logs-${stamp}`);
 
@@ -89,6 +94,12 @@ await Promise.all(Array.from({ length: jobs }, async () => {
 results.sort((a, b) => a.name.localeCompare(b.name));
 
 const summary = {
+  commit,
+  dirty: dirty || git(["status", "--porcelain"]) !== "" || git(["rev-parse", "HEAD"]) !== commit,
+  startedAt,
+  logDir,
+  selectedCases: cases.filter(name => !only || only.has(name)),
+  buildSha256: createHash("sha256").update(await readFile(join(dist, "background.js"))).digest("hex"),
   runKind: core ? "core" : only ? "filtered" : "full",
   jobs,
   wallSeconds: Math.round((Date.now() - suiteStarted) / 1000),
