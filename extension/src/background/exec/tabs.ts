@@ -64,7 +64,7 @@ export async function openTab(
 
   try{await ensureAttached(tab.id);}catch{}
 
-  const opened=params.url?await retryTransientErrorPage(tab.id,params.url,await waitForInteractive(tab.id,10_000,{requestedUrl:params.url}),10_000,cancelled):undefined;
+  const opened=params.url?await retryTransientErrorPage(tab.id,params.url,await waitForInteractive(tab.id,10_000,{requestedUrl:params.url,cancelled}),10_000,cancelled):undefined;
   const ready=opened?.ready;
   const retry=opened?.retry?{retry:opened.retry}:{};
 
