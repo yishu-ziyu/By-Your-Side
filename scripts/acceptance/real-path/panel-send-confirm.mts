@@ -216,6 +216,7 @@ try {
   await rp.click(panel, `#conversation-menu [data-conversation-id="${original6}"]`);
   const selected6 = await until(async () => await rp.evaluate(panel, `document.querySelector("#conversation-menu [aria-checked=true]")?.dataset.conversationId === ${JSON.stringify(original6)} || undefined`), 10_000, "切回原会话").then(() => true, () => false);
   check("p6 点菜单切回原会话", selected6, menu6);
+  await ready(panel);
   const back6 = await liveCard(panel);
   check("p6 切回原会话：恢复同一张待确认卡", back6.id === c6.id, { before: c6, after: back6 });
   await press(panel, back6.id, "no");
