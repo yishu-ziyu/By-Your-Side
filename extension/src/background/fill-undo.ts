@@ -20,7 +20,13 @@ interface Closed { token: string; name: string; reason: "submitted" | "page_chan
 
 interface TabLedger { documentId: string; entries: Map<string, Entry> }
 
-interface Ledger { tabs: Map<number, TabLedger>; closed: Closed[]; notes: Set<FillUndoNote>; untracked: Set<string>; result?: FillUndoView; restoring?: boolean }
+interface Guarded { tabId: number; documentId: string; token: string; name: string; after: UndoState; turns: number }
+
+interface Ledger { tabs: Map<number, TabLedger>; closed: Closed[]; notes: Set<FillUndoNote>; untracked: Set<string>; guard: Guarded[]; result?: FillUndoView; restoring?: boolean }
+
+export class FillConflict extends Error {
+  readonly executionFact = "not_executed" as const;
+}
 
 const ledgers = new Map<string, Ledger>();
 const watchers = new Map<string, (view: FillUndoView | null) => void>();
@@ -269,8 +275,34 @@ const viewOf = (conversationId: string): FillUndoView | null => {
 
 const emit = (conversationId: string) => watchers.get(conversationId)?.(viewOf(conversationId));
 
+function dropGuard(ledger: Ledger, tabId: number, tokens?: readonly string[], documentId?: string): boolean {
+  const next = ledger.guard.filter(guard => {
+    if (guard.tabId !== tabId) return true;
+    if (documentId !== undefined && guard.documentId !== documentId) return true;
+    if (tokens !== undefined && !tokens.includes(guard.token)) return true;
+
+    return false;
+  });
+  const changed = next.length !== ledger.guard.length;
+  ledger.guard = next;
+
+  return changed;
+}
+
+function rememberedWrite(conversationId: string, tabId: number, documentId: string, token: string): { name: string; after: UndoState } | undefined {
+  const ledger = ledgers.get(conversationId);
+
+  if (!ledger) return undefined;
+  const tab = ledger.tabs.get(tabId);
+  const open = tab && tab.documentId === documentId ? tab.entries.get(token) : undefined;
+
+  if (open) return open;
+
+  return ledger.guard.find(guard => guard.tabId === tabId && guard.documentId === documentId && guard.token === token);
+}
+
 function closeEntries(ledger: Ledger, tabId: number, reason: Closed["reason"], tokens?: readonly string[], documentId?: string): boolean {
-  let changed = false;
+  let changed = dropGuard(ledger, tabId, tokens, documentId);
   const tab = ledger.tabs.get(tabId);
 
   if (tab && (!documentId || tab.documentId === documentId)) {
@@ -293,7 +325,7 @@ function closeEntries(ledger: Ledger, tabId: number, reason: Closed["reason"], t
 
 function forgetEntries(ledger: Ledger, tabId: number, tokens: readonly string[], documentId?: string): boolean {
   const tab = ledger.tabs.get(tabId);
-  let changed = false;
+  let changed = dropGuard(ledger, tabId, tokens, documentId);
 
   if (tab && (!documentId || tab.documentId === documentId)) {
     for (const token of tokens) changed = tab.entries.delete(token) || changed;
@@ -316,12 +348,17 @@ export async function beforeWrite(sessionKey: string, tabId: number, where: Undo
   const doc = await readCurrentDocument(tabId).catch(() => null);
 
   if (!doc) return NOOP;
+  const remembered = write && probe.token && probe.state ? rememberedWrite(conversationId, tabId, doc.documentId, probe.token) : undefined;
+
+  if (remembered && JSON.stringify(remembered.after) !== JSON.stringify(probe.state)) {
+    throw new FillConflict(`「${nameOf(remembered)}」在助手上次填写之后被改过了，这次没有写入。撤回不能覆盖用户后来的修改，请说明这个冲突，不要把旧值写回去。`);
+  }
 
   return {
     async done() {
       let ledger = ledgers.get(conversationId);
 
-      if (!ledger) { ledger = { tabs: new Map(), closed: [], notes: new Set(), untracked: new Set() }; ledgers.set(conversationId, ledger); }
+      if (!ledger) { ledger = { tabs: new Map(), closed: [], notes: new Set(), untracked: new Set(), guard: [] }; ledgers.set(conversationId, ledger); }
 
       if (ledger.result) { ledger.result = undefined; ledger.closed = []; ledger.notes.clear(); ledger.untracked.clear(); }
 
@@ -344,11 +381,21 @@ export async function beforeWrite(sessionKey: string, tabId: number, where: Undo
         const after = await byToken<UndoState>(tabId, "read", draft);
 
         if (after && known) {
-          known.after = after;
+          const alreadyDifferent = probe.state != null && JSON.stringify(probe.state) !== JSON.stringify(known.after);
+          const actionChanged = JSON.stringify(after) !== JSON.stringify(probe.state);
 
-          if (JSON.stringify(known.before) === JSON.stringify(after)) tab.entries.delete(probe.token);
+          if (!(alreadyDifferent && !actionChanged)) {
+            known.after = after;
+
+            if (JSON.stringify(known.before) === JSON.stringify(after)) tab.entries.delete(probe.token);
+          }
         } else if (after && probe.state && JSON.stringify(after) !== JSON.stringify(probe.state)) {
           tab.entries.set(probe.token, { ...draft, after });
+        }
+
+        if (write && after && (known || (probe.state && JSON.stringify(after) !== JSON.stringify(probe.state)))) {
+          ledger.guard = ledger.guard.filter(guard => !(guard.tabId === tabId && guard.token === probe.token));
+          ledger.guard.push({ tabId, documentId: doc.documentId, token: probe.token, name: known?.name || probe.name, after, turns: 1 });
         }
       }
 
@@ -399,8 +446,10 @@ export async function restoreFills(conversationId: string): Promise<void> {
     for (const { tabId, entry } of restored) {
       const now = await byToken<UndoState>(tabId, "read", entry);
 
-      if (now && JSON.stringify(now) === JSON.stringify(entry.before)) kept.push(nameOf(entry));
-      else skipped.push({ field: nameOf(entry), reason: "failed" });
+      if (now && JSON.stringify(now) === JSON.stringify(entry.before)) {
+        kept.push(nameOf(entry));
+        ledger.guard = ledger.guard.filter(guard => !(guard.tabId === tabId && guard.token === entry.token));
+      } else skipped.push({ field: nameOf(entry), reason: "failed" });
     }
 
     ledger.result = { state: "restored", restored: kept, skipped, notes: [...ledger.notes], unavailable: ledger.closed.map(nameOf) };
@@ -418,8 +467,18 @@ export function watchFillUndo(conversationId: string, onView: (view: FillUndoVie
 
 export const fillUndoView = viewOf;
 
-export function resetFillUndo(conversationId: string): void {
-  if (!ledgers.delete(conversationId)) return;
+export function resetFillUndo(conversationId: string, mode: "turn" | "run" = "turn"): void {
+  const ledger = ledgers.get(conversationId);
+
+  if (!ledger) return;
+  // WHY: 用户发下一句时会清掉撤回按钮，模型却常接着用填写把旧值写回去。上一轮写下的值还要留到这句，写入前才能认出用户已经改过；再下一句才放开，避免这栏永远不能再填。
+  if (mode === "turn") ledger.guard = ledger.guard.flatMap(guard => guard.turns > 0 ? [{ ...guard, turns: guard.turns - 1 }] : []);
+  ledger.tabs.clear();
+  ledger.closed = [];
+  ledger.notes.clear();
+  ledger.untracked.clear();
+  ledger.result = undefined;
+  ledger.restoring = false;
   emit(conversationId);
 }
 
@@ -428,7 +487,7 @@ export function noteFillUndoRun(conversationId: string, runId: string | null | u
   const previous = runs.get(conversationId);
   runs.set(conversationId, runId);
 
-  if (previous && previous !== runId) resetFillUndo(conversationId);
+  if (previous && previous !== runId) resetFillUndo(conversationId, "run");
 }
 
 chrome.tabs.onUpdated.addListener((tabId, change) => {

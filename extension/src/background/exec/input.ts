@@ -35,7 +35,7 @@ import { waitForQuietDom } from "./page-readiness.js";
 import { regrade, submitProbeInPage, typeIntoField, typingWritten, TypingInterrupted, type PageRun } from "./fill-typing.js";
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
-import { beforeWrite } from "../fill-undo.js";
+import { beforeWrite, FillConflict } from "../fill-undo.js";
 import type { EffectReport, PageAppeared } from "../../../../shared/effect.js";
 import { CdpObjectArg, callDom, callOnBackendNode, ensureCursor, ensureDomOps, notExecuted, type DispatchGuard } from "./page-call.js";
 import {
@@ -102,6 +102,17 @@ function buttonsMaskFor(sessionId: string): number {
 
 class FillRefused extends Error {
   readonly executionFact = "not_executed" as const;
+}
+
+async function refuseChangedField(sessionId: string, tabId: number, where: { backendNodeId: number } | { target: string } | { focused: true }, beforeDispatch?: DispatchGuard): Promise<Awaited<ReturnType<typeof beforeWrite>>> {
+  if ("target" in where) await ensureDomOps(tabId, beforeDispatch);
+
+  try {
+    return await beforeWrite(sessionId, tabId, where, true);
+  } catch (error) {
+    if (error instanceof FillConflict) throw new FillRefused(error.message);
+    throw error;
+  }
 }
 
 function isDebuggerUnavailable(error: unknown): boolean {
@@ -2278,6 +2289,8 @@ async function fillField(
     throw notExecuted(new Error('原 AX 对象身份无法核对，填写未执行。'));
   }
 
+  await refuseChangedField(sessionId, tabId, backendNodeId !== undefined ? { backendNodeId } : { target: params.target }, beforeDispatch);
+
   const copiedTarget = async () => {
     if (params.readbackMax === undefined) return undefined;
     const identity = await copyTargetIdentity({ tabId, target: params.target }, sessionId).catch(() => null);
@@ -2333,7 +2346,7 @@ async function fillField(
     if (backendNodeId !== undefined) {
       try {
         await beforeDispatch?.();
-        const undo = await beforeWrite(sessionId, tabId, { backendNodeId }, true);
+        const undo = await refuseChangedField(sessionId, tabId, { backendNodeId }, beforeDispatch);
         const run: PageRun = (fn, args) => callOnBackendNode(tabId, backendNodeId, `function(...a) { return (${fn.toString()}).call(this, null, ...a); }`, args, undefined, params.expectedDocumentId, beforeDispatch);
         const { range, select, typing } = await writeField(tabId, run, () => fillBackendNode(tabId, backendNodeId, params.value, params.expectedDocumentId, beforeDispatch), params.value, beforeDispatch);
         await undo.done();
@@ -2357,6 +2370,7 @@ async function fillField(
 
         return { ...filled, ...(refound ? { refound } : {}), copiedTarget: await copiedTarget() };
       } catch (e) {
+        if (e instanceof FillConflict) throw new FillRefused(e.message);
         if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
           const reason = `ref @${ref} 填充失败（${oneLine(e)}）`;
 
@@ -2366,7 +2380,7 @@ async function fillField(
     }
 
     await ensureDomOps(tabId, beforeDispatch);
-    const undo = await beforeWrite(sessionId, tabId, { target: params.target }, true);
+    const undo = await refuseChangedField(sessionId, tabId, { target: params.target }, beforeDispatch);
 
     await beforeDispatch?.();
     const run: PageRun = (fn, args) => callDom(tabId, fn as (...a: unknown[]) => unknown, [params.target, ...args], params.expectedDocumentId, beforeDispatch) as never;
@@ -2419,8 +2433,9 @@ async function fillField(
 
     return { ...filledResult(filled.range, await readBackField(tabId, { target: params.target }, params.value, "replace", params.readbackMax), "select" in filled && filled.select === true), ...(typing === "failed" ? { typing } : {}), copiedTarget: await copiedTarget() };
   } catch (error) {
-    await endCursorAction(tabId, cid, actionId, error instanceof FillRefused ? "failed" : "unknown");
-    throw error;
+    const refused = error instanceof FillConflict ? new FillRefused(error.message) : error;
+    await endCursorAction(tabId, cid, actionId, refused instanceof FillRefused ? "failed" : "unknown");
+    throw refused;
   }
 }
 
@@ -2638,7 +2653,7 @@ export async function typeText(
   if (tab.id == null) throw new Error("工作标签页无效");
   await beforeDispatch?.();
   await beforeDispatch?.();
-  const undo = await beforeWrite(sessionId, tab.id, { focused: true }, true);
+  const undo = await refuseChangedField(sessionId, tab.id, { focused: true }, beforeDispatch);
   await callDom(tab.id, function prepareEditableCaret() {
     let active = document.activeElement as HTMLElement | null;
     while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement as HTMLElement;
