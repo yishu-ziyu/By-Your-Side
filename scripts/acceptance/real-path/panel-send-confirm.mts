@@ -1,10 +1,12 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until, type Json } from "./harness.mts";
 import { startScriptedModel } from "./scripted-model.mts";
 
 requireHeadless();
+const syncOnly = process.argv.includes("--case=sync");
 
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-panel-send-confirm`);
 
@@ -40,7 +42,37 @@ const model = await startScriptedModel([
   ...Object.entries(ASK).map(([key, match]) => ({ match, steps: [clickSend, { text: `${key.toUpperCase()} 完成。` }] })),
 ]);
 
-const rp = await launchRealPath();
+const hook = `(() => {
+    const install = () => {
+      if (!globalThis.chrome?.runtime?.connect) { setTimeout(install, 0); return; }
+      const connect = chrome.runtime.connect.bind(chrome.runtime);
+      window.__confirmationHook = true;
+      chrome.runtime.connect = (...args) => {
+        const port = connect(...args);
+        if (port.name !== "send-confirm-panel") return port;
+        window.__confirmationHookConnected = true;
+        return {
+          name: port.name,
+          postMessage: port.postMessage.bind(port),
+          disconnect: port.disconnect.bind(port),
+          onDisconnect: port.onDisconnect,
+          onMessage: { addListener(listener) { port.onMessage.addListener(message => {
+            window.__replayConfirmation = () => listener(message);
+            window.__confirmationPending = message.pending;
+            listener(message);
+          }); } },
+        };
+      };
+    };
+    install();
+  })()`;
+const prepared = process.env.SIDEAGENT_ACCEPTANCE_DIST;
+if (!prepared) throw new Error("请通过 npm run lab 运行确认验收，以复用冻结构建");
+const instrumented = await mkdtemp(join(tmpdir(), "bys-confirmation-sync-"));
+await cp(prepared, instrumented, { recursive: true });
+const panelScript = join(instrumented, "sidepanel.js");
+await writeFile(panelScript, `${hook};\n${await readFile(panelScript, "utf8")}`);
+const rp = await launchRealPath({ dist: instrumented });
 
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 
@@ -130,6 +162,7 @@ try {
   await answered("P1 完成。");
   await rp.screenshot(panel, join(out, "p1-panel-done.png"));
 
+  if (!syncOnly) {
   await ask(ASK.p2);
   const c2 = await liveCard(panel);
   await rp.screenshot(panel, join(out, "p2-panel-card.png"));
@@ -197,10 +230,11 @@ try {
   const lines5 = (await rp.evaluate(panel, `window.__lines[${JSON.stringify(c5.id)}] ?? []`)) as string[];
   check("p5 键盘确认：恰好 1 条；执行以前卡上写「你确认了发送」，执行以后才写「已发送」", sent() - before5 === 1 && !("timedOut" in done5) && lines5[0] === "你确认了发送" && lines5.at(-1) === SENT_LINE, { sentDelta: sent() - before5, lines5, done5 } as Json);
 
-  const original6 = String(await rp.evaluate(panel, 'document.querySelector("#conversation-menu [aria-checked=true]")?.dataset.conversationId ?? ""'));
+  }
   const before6 = sent();
   await ask(ASK.p6);
   const c6 = await liveCard(panel);
+  const original6 = String(await rp.evaluate(panel, 'document.querySelector("#conversation-menu [aria-checked=true]")?.dataset.conversationId ?? ""'));
   await rp.click(panel, "#conversation-new");
   await until(async () => await rp.evaluate(panel, `document.querySelector("#conversation-menu [aria-checked=true]")?.dataset.conversationId !== ${JSON.stringify(original6)}`), 10_000, "切到新会话");
   const away6 = await rp.evaluate(panel, `(() => ({ visible: [...document.querySelectorAll(".send-confirm")].filter(c => c.getClientRects().length > 0).length, dockHidden: document.querySelector("#confirm-dock")?.hidden ?? true }))()`) as { visible: number; dockHidden: boolean };
@@ -219,7 +253,18 @@ try {
   await ready(panel);
   const back6 = await liveCard(panel);
   check("p6 切回原会话：恢复同一张待确认卡", back6.id === c6.id, { before: c6, after: back6 });
-  await press(panel, back6.id, "no");
+  const heldButton = await rp.evaluate(panel, `(() => {
+    const button = document.querySelector('[data-send-confirm="${back6.id}"] .send-confirm-no');
+    window.__heldConfirmationButton = button;
+    const r = button.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, armed: typeof window.__replayConfirmation === 'function' && window.__confirmationPending.includes('${back6.id}') };
+  })()`) as { x: number; y: number; armed: boolean };
+  if (!heldButton.armed) throw new Error("确认同步实验没有收到真实待确认状态：" + JSON.stringify(await rp.evaluate(panel, "({installed:window.__confirmationHook,connected:window.__confirmationHookConnected,pending:window.__confirmationPending})")));
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: heldButton.x, y: heldButton.y }, panel);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: heldButton.x, y: heldButton.y, button: "left", clickCount: 1 }, panel);
+  const keptButton = await rp.evaluate(panel, "window.__replayConfirmation(); window.__heldConfirmationButton.isConnected");
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: heldButton.x, y: heldButton.y, button: "left", clickCount: 1 }, panel);
+  check("p6 按住按钮时收到重复同步：保留按钮，不能吞掉这次点击", keptButton === true, { keptButton: keptButton as Json });
   const done6 = await settledCard(panel, DECLINED_LINE);
   check("p6 切回来后选择先不发：没有发送，原会话卡收成结果", sent() === before6 && !("timedOut" in done6), { sent: sent(), before: before6, done6 } as Json);
 } catch (error) {
@@ -232,8 +277,8 @@ try {
   }
   console.log("模型请求", JSON.stringify(model.requests));
 } finally {
-  await writeFile(join(out, "result.json"), JSON.stringify({ checks, posts, notCovered: ["真实网站、真模型", "2 分钟没理（产品没有缩短等待的开关）", "扩展后台重启时卡收成「这次确认已经结束」"] }, null, 2));
-  await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(done => site.close(() => done()));
+  await writeFile(join(out, "result.json"), JSON.stringify({ checks, posts, instrumentation: "实际待确认端口消息在按下和松开之间重放一次", notCovered: ["真实网站、真模型", "2 分钟没理（产品没有缩短等待的开关）", "扩展后台重启时卡收成「这次确认已经结束」"] }, null, 2));
+  await rp.close(); await rp.remove(); await rm(instrumented, { recursive: true }); await model.close(); await new Promise<void>(done => site.close(() => done()));
 }
 
 console.log(`证据：${out}`);

@@ -699,6 +699,10 @@ function recompute(card: HTMLElement): void {
     const n = evaluate(el.dataset.gcExpr!, vars);
 
     set(el, n === undefined ? "—" : showValue(n, el.dataset.gcUnit || undefined));
+    if (el.dataset.gcId) {
+      if (n === undefined) vars.delete(el.dataset.gcId);
+      else vars.set(el.dataset.gcId, n);
+    }
   }
 
   for (const el of card.querySelectorAll<HTMLElement>("[data-gc-formula]")) set(el, showFormula(el.dataset.gcFormula!, vars));
@@ -1143,7 +1147,13 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
 
   new MutationObserver(draw).observe(root, { childList: true, subtree: true });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !(MINI_APPS_KEY in changes)) return;
+    if (area !== "local") return;
+    for (const card of root.querySelectorAll<HTMLElement>(".gen-card[data-gc-card]:has(.gc-num)")) {
+      const slot = slotOf(card);
+      const saved = slot ? changes[STATE_PREFIX + slot]?.newValue : undefined;
+      if (isCardState(saved) && !pendingSaves.has(card)) apply(card, saved);
+    }
+    if (!(MINI_APPS_KEY in changes)) return;
     miniAppsOn = Promise.resolve(isMiniAppsOn(changes[MINI_APPS_KEY]!.newValue));
 
     for (const [box, release] of mountedApps) {
