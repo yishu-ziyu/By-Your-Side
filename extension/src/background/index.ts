@@ -28,7 +28,7 @@ import { createPttVoice } from "./ptt-voice.js";
 import { LEAD_SESSION_ID, isLeadSession, normalizeSessionId, validConversationId } from "../../../shared/protocol.js";
 import type { TaskActionRequest } from "../../../shared/task-actions.js";
 import { LEAD_COLOR, displayColor, displayNameFor } from "../../../shared/cast.js";
-import { ControlGate, TeamControl, aggregateRunState, acceptIncomingTeam, applyControlSnapshot, applyMemberGates, mergeActiveMembersForTakeover, onUplinkLostDuringControl, prepareMemberHandback, reconcileTeamProgress, shouldRestoreUserControlBanner, snapshotControl, teamOwnerBanner, type TeamMemberActivity, toTeamMemberHandback, uplinkLostWhileHeld } from "../../../shared/control.js";
+import { ControlGate, TeamControl, aggregateRunState, acceptIncomingTeam, applyControlSnapshot, applyMemberGates, mergeActiveMembersForTakeover, onUplinkLostDuringControl, prepareMemberHandback, reconcileTeamProgress, type ActiveMemberInput, shouldRestoreUserControlBanner, snapshotControl, teamOwnerBanner, type TeamMemberActivity, toTeamMemberHandback, uplinkLostWhileHeld } from "../../../shared/control.js";
 import { isWriteTool, WRITE_TOOL_SET } from "../../../shared/effect-policy.js";
 import { dimPage, glowPage } from "./page-glow.js";
 import { PANEL_PORT_NAME, parseRedeliver, type BgToPanel, type ConnState, type PanelToBg, type TransportKind } from "../relay.js";
@@ -56,7 +56,7 @@ import { network } from "./exec/network.js";
 import { videoCaptions } from "./exec/video-captions.js";
 import { screenshot } from "./exec/screenshot.js";
 import { oneLine } from "./util.js";
-import { detachSoon } from "./debugger.js";
+import { detachSoon, sendCommand } from "./debugger.js";
 import { describeTarget } from "./route-target.js";
 import { isMarkActionId, markActionUserText } from "../shared/mark-actions.js";
 import { bringForwardForUser } from "./foreground.js";
@@ -879,6 +879,7 @@ const gate = new ControlGate();
 let team = new TeamControl();
 const CONTROL_STORE = `controlGate:${conversationId}`;
 const CONTROL_TIMEOUT_MS = 10_000;
+const STEP_STILL_RUNNING = "助手手上的一步超过 10 秒还没结束，这一页可能还会被它改动。";
 let controlRequestSeq = 0;
 let handbackCaptureSeq = 0;
 let handbackCapture: { token: number; generation: number; tabId: number } | null = null;
@@ -901,6 +902,18 @@ type PendingControl =
     };
 
 let pendingControl: PendingControl | null = null;
+let takeoverInProgress: { settled: Promise<void>; finish: () => void } | null = null;
+
+function markTakeoverStarted(): void {
+  let finish = () => {};
+  const settled = new Promise<void>((resolve) => { finish = resolve; });
+  takeoverInProgress = { settled, finish };
+}
+
+function finishTakeover(): void {
+  takeoverInProgress?.finish();
+  takeoverInProgress = null;
+}
 
 function cancelTakeover(pending: Extract<PendingControl, {action:"takeover"}>) {
  if (pending.pageTabId != null) {
@@ -1217,6 +1230,8 @@ function clearPendingControl(requestId: string): PendingControl | null {
   const pending = pendingControl;
   pendingControl = null;
   pending.timeout.clear();
+
+  if (pending.action === "takeover") finishTakeover();
 
   return pending;
 }
@@ -1766,13 +1781,25 @@ function emitLocalStatus(state: AgentRunState): void {
 async function drainPage(sessionIds: string[]): Promise<{ generation: number; superseded: boolean }> {
   const generation = gate.gen;
 
-  if (!await gate.drainSessions(sessionIds, CONTROL_TIMEOUT_MS)) emitNotice("助手手上的一步超过 10 秒还没结束，这一页可能还会被它改动。");
+  if (!await gate.drainSessions(sessionIds, CONTROL_TIMEOUT_MS)) emitNotice(STEP_STILL_RUNNING);
 
   return { generation, superseded: gate.gen !== generation };
 }
 
+async function stopRunningLoad(sessionIds: string[], tabId: number | undefined): Promise<void> {
+  if (!gate.hasRunningStep(tabId != null ? sessionIds : undefined)) return;
+  const target = tabId ?? await getWorkingTabId();
+
+  if (target == null) return;
+
+  // WHY: chrome.tabs has no way to cancel a pending navigation; without this the in-flight step moves the page after the user owns it.
+  try { await sendCommand(target, "Page.stopLoading"); } catch { }
+}
+
 async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wholeTask=false,ask?:string,targets?:string[]): Promise<void> {
   await controlReady;
+
+  while (takeoverInProgress) await takeoverInProgress.settled;
 
   if (pendingControl) {
     emitNotice(`正在${pendingControl.action === "takeover" ? "接管" : "交还"}，请稍候。`);
@@ -1782,7 +1809,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
   handoffAsk = ask ?? null;
 
-  if (gate.isUser()) {
+  if (gate.isUser() || team.view()?.phase === "user") {
     void showUserControlGuarded();
     emitLocalStatus("user");
     emitTeam();
@@ -1814,8 +1841,16 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
     return;
   }
 
-  const fallbackStatus = lastStatus;
+  markTakeoverStarted();
 
+  try {
+    await stopThenRequestTakeover(members, targetTabId, lastStatus, remoteRequestId, ask, targets);
+  } finally {
+    if ((pendingControl as PendingControl | null)?.action !== "takeover") finishTakeover();
+  }
+}
+
+async function stopThenRequestTakeover(members: ActiveMemberInput[], targetTabId: number | undefined, fallbackStatus: AgentRunState, remoteRequestId?: string, ask?: string, targets?: string[]): Promise<void> {
   void stopTrailReplay(key());
   team.snapshotAndFreeze(members);
   team.beginDrain();
@@ -1830,7 +1865,12 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
 
     if (owner) void shown.then(() => showHandoffMarks(tabId, targets, key(owner.sessionId))).catch(() => {});
   }
-  const result = targetTabId != null ? await drainPage(members.map(m => m.sessionId)) : await gate.beginTakeover();
+  const sessionIds = members.map(m => m.sessionId);
+  const draining = targetTabId != null ? drainPage(sessionIds) : gate.beginTakeover(CONTROL_TIMEOUT_MS);
+  await stopRunningLoad(sessionIds, targetTabId);
+  const result = await draining;
+
+  if ("stillBusy" in result && result.stillBusy) emitNotice(STEP_STILL_RUNNING);
 
   if (result.superseded) {
     team.clear();
@@ -1871,6 +1911,10 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
     const pending = clearPendingControl(requestId);
 
     if (pending?.action === "takeover" && pending.pageTabId == null) gate.commitTakeover(result.generation);
+
+    for (const m of members) team.markDrained(m.sessionId);
+    team.commitUser(team.view()?.generation ?? 1);
+    emitTeam();
     emitLocalStatus("user");
     emitHandoffPhase("user");
     emitNotice("已接管。助手没有连接，不会再改页面。");
@@ -1882,6 +1926,12 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
 
   if (handbackCapture) {
     emitNotice("正在读原任务的页面…");
+
+    return;
+  }
+
+  if (takeoverInProgress && !pendingControl) {
+    emitNotice("正在接管，请稍候。");
 
     return;
   }
@@ -2101,7 +2151,7 @@ return;}
     if(request.action==='pause')await handleTakeover(request.tabId,request.requestId,request.scope!=='page',request.ask,request.targets);else await handleHandback(request.requestId);
 
     if(remoteControl===current&&pendingControl?.requestId!==request.requestId){
-      if(request.action==='pause'&&gate.isUser())finishRemoteControl(true);
+      if(request.action==='pause'&&(gate.isUser()||team.view()?.phase==='user'))finishRemoteControl(true);
       else if(request.action==='resume'&&team.view()?.members.some(m=>m.phase==='restoring'))return;
       else if(request.action==='resume'&&team.view()?.phase==='restored')finishRemoteControl(true);
       else finishRemoteControl(false,'页面控制没有改变。');

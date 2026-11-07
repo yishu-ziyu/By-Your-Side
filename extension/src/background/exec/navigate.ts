@@ -37,7 +37,7 @@ export async function navigate(
   await beforeDispatch?.();
   beforeDispatch?.checkNow?.();
   const tabId = tab.id;
-  const {ready,retry}=await retryTransientErrorPage(tabId,url,await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url })}),timeoutMs,cancelled);
+  const {ready,retry}=await retryTransientErrorPage(tabId,url,await waitForInteractive(tabId,timeoutMs,{previousDocumentId:before?.documentId,requestedUrl:url,dispatch:()=>chrome.tabs.update(tabId, { url }),cancelled}),timeoutMs,cancelled);
 
   if (settlesContent(ready.readiness)) { ready.quietMs = await waitForQuietDom(tabId); ready.waitMs += ready.quietMs; }
 
