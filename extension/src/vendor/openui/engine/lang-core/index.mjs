@@ -2440,6 +2440,8 @@ function parseExpression(tokens) {
 * Handles all token types: identifiers, literals, operators,
 * state variables ($name), dot access, ternary.
 */
+// WHY: models write object keys in the user's language ({型号: "R50i"}); ASCII-only identifiers silently dropped those rows, so charts and tables drew empty.
+const LETTER = /\p{L}/u;
 function tokenize(src) {
 	const tokens = [];
 	let i = 0;
@@ -2675,9 +2677,9 @@ function tokenize(src) {
 			});
 			continue;
 		}
-		if (c >= "a" && c <= "z" || c >= "A" && c <= "Z" || c === "_") {
+		if (c >= "a" && c <= "z" || c >= "A" && c <= "Z" || c === "_" || LETTER.test(c)) {
 			const start = i;
-			while (i < n && (src[i] >= "a" && src[i] <= "z" || src[i] >= "A" && src[i] <= "Z" || src[i] >= "0" && src[i] <= "9" || src[i] === "_")) i++;
+			while (i < n && (src[i] >= "a" && src[i] <= "z" || src[i] >= "A" && src[i] <= "Z" || src[i] >= "0" && src[i] <= "9" || src[i] === "_" || LETTER.test(src[i]))) i++;
 			const word = src.slice(start, i);
 			if (word === "true") {
 				tokens.push({ t: 10 });
