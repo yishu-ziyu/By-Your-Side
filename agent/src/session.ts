@@ -1,4 +1,5 @@
 import { calculationIssue, interfaceIssue } from "../../shared/answer-cards.js";
+import { programIssue } from "../../shared/ui-program.js";
 import { UNSAVED_FIELDS_ALERT } from "../../shared/effect.js";
 import { untranslatedReadingWords, isReadingTranslationRepair } from './reading-translation.js';
 import { AnswerSources, citationEvidence } from "./answer-sources.js";
@@ -3054,7 +3055,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
     if (snapshot?.runId && this.savedOpenRun === snapshot.runId) return false;
     const reply = this.runReplyText(messages);
-    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(reply) && !defersWork(reply) && !citationEvidence(reply, this.quoteSources.records).items.length && !calculationIssue(reply) && !interfaceIssue(reply))) return false;
+    if (!snapshot?.runId || (this.toolUseRun !== snapshot.runId && !asksUser(reply) && !defersWork(reply) && !citationEvidence(reply, this.quoteSources.records).items.length && !calculationIssue(reply) && !interfaceIssue(reply) && !programIssue(reply))) return false;
 
     return this.continuePolicy.mayCheck(snapshot.runId);
   }
@@ -3335,6 +3336,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         const headers = opencodeSessionHeaders(model, sessionId);
         const calculation = calculationIssue(lastReply);
         const unfinishedInterface = interfaceIssue(lastReply);
+        const brokenInterface = unfinishedInterface ? null : programIssue(lastReply);
         const unsaved = !this.unsavedChecked.has(runId ?? "") && unsavedFieldsSeen(event.messages);
         if (unsaved) {
           this.unsavedChecked.add(runId ?? "");
@@ -3346,6 +3348,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         } else if (unfinishedInterface) {
           verdict = { status: "continue", remaining: "把没写完的界面补完", verificationSubject: "answer", verifiedByHost: true, evidence: unfinishedInterface.evidence, finding: "界面没有写完", correction: unfinishedInterface.correction };
           recordHostGoalCheck(model, checkInput, "interface_contract", verdict, newCheck(undefined, checkStarted), unfinishedInterface);
+        } else if (brokenInterface) {
+          verdict = { status: "continue", remaining: "修好界面程序", verificationSubject: "answer", verifiedByHost: true, evidence: brokenInterface.evidence, finding: "界面程序有错，显示出来会缺内容", correction: brokenInterface.correction };
+          recordHostGoalCheck(model, checkInput, "interface_program", verdict, newCheck(undefined, checkStarted), brokenInterface);
         } else verdict = await checkGoal(this.sideHost()!, model, checkInput, AbortSignal.timeout(20_000), headers, newCheck(undefined, checkStarted));
         if (verdict.status === 'continue') {
           const reverified = await this.reverifyGoal(verdict, checkInput, model, headers, newCheck(rootCheckId ?? undefined), { runId, tabId, pageText, endedOn, pageMissing: page === null, current });
