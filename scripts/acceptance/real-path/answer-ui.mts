@@ -19,12 +19,13 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const FLIGHT = `杭州回深圳最合适的是 7 月 18 日的 JD5290。
 <ui title="杭州到深圳的航班">
-root = Col([title, Row([IconButton("minus", @Set($people, @Clamp($people - 1, 1, 9)), "减少"), Text("人数 " + $people, "md"), IconButton("plus", @Set($people, @Clamp($people + 1, 1, 9)), "增加")], 3), total, chart, swapped, map, live])
+root = Col([title, Row([IconButton("minus", @Set($people, @Clamp($people - 1, 1, 9)), "减少"), Text("人数 " + $people, "md"), IconButton("plus", @Set($people, @Clamp($people + 1, 1, 9)), "增加")], 3), total, chart, swapped, cn, map, live])
 $people = 2
 title = Title("杭州到深圳的航班", "lg")
 total = Text("合计 " + ($people * 680) + " 元", "md", null, "semibold")
 chart = Chart("bar", [{key: "JD5290", value: 680}, {key: "GJ8627", value: 540}], "key", ["value"])
 swapped = Chart("bar", [{name: "甲楼", height: 828}, {name: "乙楼", height: 600}], "height", ["name"])
+cn = Chart("bar", [{机场: "萧山", 航班: 31}, {机场: "宝安", 航班: 27}], "机场", ["航班"])
 map = Map([MapMarker("杭州萧山机场", 30.2295, 120.4344), MapMarker("深圳宝安机场", 22.6393, 113.8107)], true)
 live = Button("查 JD5290 实时状态", @ToAssistant("查 JD5290 实时状态"))
 </ui>`;
@@ -100,6 +101,8 @@ try {
   evidence.chart = await inFrame<number>(`document.querySelectorAll("svg").length`);
   const swappedChart = await inFrame<boolean>(`[...document.querySelectorAll("figure.iui-chart svg")].some(svg => svg.textContent.includes("甲楼") && svg.textContent.includes("乙楼") && [...svg.querySelectorAll("rect, path")].some(bar => { const r = bar.getBoundingClientRect(); return r.height > 20 && r.width > 5; }))`);
   assert.ok(swappedChart, "类目和数值写反时，图表仍按名字画出柱子");
+  const cnChart = await inFrame<boolean>(`[...document.querySelectorAll("figure.iui-chart svg")].some(svg => svg.textContent.includes("萧山") && svg.textContent.includes("宝安") && [...svg.querySelectorAll("rect, path")].some(bar => { const r = bar.getBoundingClientRect(); return r.height > 20 && r.width > 5; }))`);
+  assert.ok(cnChart, "数据字段名是中文时，图表照样画出柱子");
   const tiles = await until(async () => { const n = await inFrame<number>(`document.querySelectorAll(".leaflet-tile[src^='data:']").length`); return n > 0 ? n : undefined; }, 20_000, "底图由侧栏代取").catch(() => 0);
 
   evidence.tiles = tiles;
