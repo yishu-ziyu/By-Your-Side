@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { runLibraryAction } from "../vendor/openui/lib/actions";
 import { library } from "../vendor/openui/lib/library";
 
-type Program = { html: string; state: string | null; maxHeight?: number };
+type Program = { html: string; state?: string | null; maxHeight?: number; streaming?: boolean };
 
 const post = (kind: string, data: Record<string, unknown> = {}) => parent.postMessage({ miniApp: kind, ...data }, "*");
 
@@ -73,20 +73,30 @@ function followTheme(): void {
   dark.addEventListener("change", apply);
 }
 
-let started = false;
+let root: ReturnType<typeof createRoot> | undefined;
+let initialState: Record<string, unknown> | undefined;
+let streaming = false;
 
 addEventListener("message", (event: MessageEvent<Program>) => {
-  if (event.source !== parent || started || typeof event.data?.html !== "string") return;
-  started = true;
-  followTheme();
-  createRoot(document.getElementById("root")!).render(<Renderer response={event.data.html} library={library} onAction={onAction} onError={onError} onStateUpdate={saveState} initialState={parseState(event.data.state)} />);
-  watchHeight(event.data.maxHeight ?? 720);
+  if (event.source !== parent || typeof event.data?.html !== "string") return;
+  if (root && !streaming) return;
+  if (!root) initialState = parseState(event.data.state ?? null);
+  streaming = event.data.streaming === true;
+  const first = !root;
+
+  if (!root) {
+    followTheme();
+    root = createRoot(document.getElementById("root")!);
+  }
+  root.render(<Renderer response={event.data.html} isStreaming={streaming} library={library} onAction={onAction} onError={onError} onStateUpdate={saveState} initialState={initialState} />);
+  if (first) watchHeight(event.data.maxHeight ?? 720);
 });
 
 // WHY: 浏览器在布局来不及跟上时会报这条，界面其实正常；当成出错会让用户看到假的故障。
 const BENIGN_ERROR = /^ResizeObserver loop/;
 
-addEventListener("error", (event) => { if (!failed && !BENIGN_ERROR.test(event.message)) { failed = true; post("error", { message: String(event.message).slice(0, 300) }); } });
+// WHY: 写到一半的程序里组件参数常常还不全，那时候报的错等写完会消失。
+addEventListener("error", (event) => { if (!failed && !streaming && !BENIGN_ERROR.test(event.message)) { failed = true; post("error", { message: String(event.message).slice(0, 300) }); } });
 
 // WHY: 沙箱不许弹窗，链接点了没反应；只能交给侧栏开标签页，由侧栏查用户是否真的点了。
 document.addEventListener("click", (event) => {
