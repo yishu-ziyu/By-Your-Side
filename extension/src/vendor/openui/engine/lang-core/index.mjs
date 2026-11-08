@@ -3626,6 +3626,17 @@ function buildResult(stmtMap, typedStmts, wasIncomplete, stmtCount, cat, rootNam
 		reason: root ? "fallback" : "missing"
 	});
 	const orphaned = entry ? [...unreached] : [];
+	// WHY: a name that is used but never defined renders as nothing, so a whole interface can come out blank with no error. Once the program is complete, say which names are missing.
+	const missing = [...new Set(unres)];
+	if (missing.length && !wasIncomplete) {
+		const dollar = missing.filter((name) => stmtMap.has(`$${name}`));
+		errors.push({
+			code: "unresolved-name",
+			component: "",
+			path: "",
+			message: `Used but never defined: ${missing.slice(0, 8).join(", ")}.${dollar.length ? ` They are defined as ${dollar.slice(0, 8).map((name) => `$${name}`).join(", ")}; only state values start with $, so name components without it.` : " Define each one as name = ...."}`
+		});
+	}
 	return {
 		root,
 		...rootExpression ? { rootExpression } : {},
