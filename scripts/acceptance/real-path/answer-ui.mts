@@ -36,6 +36,8 @@ root = Text("西湖")
 `;
 const CLOSED_UI = `${OPEN_UI}</ui>`;
 const model = await startScriptedModel([
+  { match: "defined as $title", steps: [{ text: `看这里。\n<ui title="前缀">\nroot = Col([title])\ntitle = Text("断桥残雪")\n</ui>` }] },
+  { match: "straight double quotes", steps: [{ text: `看这里。\n<ui title="引号">\nroot = Col([a])\na = Text("平湖秋月")\n</ui>` }] },
   { match: "unfinished interface block", steps: [{ text: CLOSED_UI }] },
   { match: "查 JD5290 实时状态", steps: [{ text: "已查：JD5290 准点。" }] },
   { match: "周末界面", steps: [{ text: OPEN_UI, chunkDelayMs: 20 }] },
@@ -168,14 +170,18 @@ try {
   evidence.interfaceRepairs = 1;
   await until(async () => (await frameText()).includes("西湖") || undefined, 20_000, "补完的界面画出来");
 
-  await rp.evaluate(panel, `(() => { const el = document.querySelector("#input"); el.focus(); el.value = "弯引号"; el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
-  await rp.click(panel, "#send-btn");
-  const bar = await until(async () => { const t = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .gc-app-bar:not([hidden])")].map(b => b.innerText).join(" ")`)); return t.includes("界面出错了") ? t : undefined; }, 30_000, "程序里有看不懂的字时明说出错，而不是悄悄画少");
-  evidence.strayBar = bar;
+  const ask = async (text: string) => {
+    await rp.evaluate(panel, `(() => { const el = document.querySelector("#input"); el.focus(); el.value = ${JSON.stringify(text)}; el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+    await rp.click(panel, "#send-btn");
+  };
+  for (const [question, repair, fixed] of [["弯引号", "straight double quotes", "平湖秋月"], ["前缀", "defined as $title", "断桥残雪"]] as const) {
+    await ask(question);
+    await until(async () => (await frameText()).includes(fixed) || undefined, 45_000, `界面程序有错（${question}）时后台交回模型修好，用户看到修好的界面`);
+    assert.equal(model.requests.filter(request => request.rule === repair).length, 1, `${question}：只修一次`);
+    const bars = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].at(-1).querySelector(".gc-app-bar:not([hidden])")?.innerText ?? ""`));
+    assert.ok(!bars.includes("界面出错了"), `${question}：修好后不再提示出错`);
+  }
 
-  await rp.evaluate(panel, `(() => { const el = document.querySelector("#input"); el.focus(); el.value = "前缀"; el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
-  await rp.click(panel, "#send-btn");
-  await until(async () => Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .gc-app-bar:not([hidden])")].filter(b => b.innerText.includes("界面出错了")).length`)) >= 2 || undefined, 30_000, "引用了没定义的名字时明说出错，而不是画一块空白");
   await rp.screenshot(panel, join(artifacts, "5-repaired.png"));
 } catch (caught) {
   evidence.iframeTargets = (await rp.targets()).filter(t => t.type === "iframe").map(t => t.url);
