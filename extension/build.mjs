@@ -1,6 +1,7 @@
 import * as esbuild from "esbuild";
 import { execFileSync } from "node:child_process";
-import { copyFile, cp, mkdir, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,6 +46,14 @@ await esbuild.build({
 
 const openui = path.join(root, "src/vendor/openui/engine");
 
+const openuiAlias = {
+  "@openuidev/lang-core": path.join(root, "../shared/vendor/openui-lang-core/index.mjs"),
+  "@openuidev/react-lang": path.join(openui, "react-lang/index.mjs"),
+  "@openuidev/observability": path.join(openui, "observability/index.mjs"),
+  "@openuidev/devtools": path.join(openui, "absent.mjs"),
+  "ci-info": path.join(openui, "absent.mjs"),
+};
+
 // WHY: 沙箱的内容安全策略不许加载样式文件，只许内联 <style>，所以样式打进脚本里写入页面。
 const inlineStyles = {
   name: "inline-styles",
@@ -67,16 +76,27 @@ await esbuild.build({
   entryPoints: { "answer-ui-sandbox": "src/sidepanel/answer-ui-sandbox.tsx" },
   jsx: "automatic",
   define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" },
-  alias: {
-    "@openuidev/lang-core": path.join(openui, "lang-core/index.mjs"),
-    "@openuidev/react-lang": path.join(openui, "react-lang/index.mjs"),
-    "@openuidev/observability": path.join(openui, "observability/index.mjs"),
-    "@openuidev/devtools": path.join(openui, "absent.mjs"),
-    "ci-info": path.join(openui, "absent.mjs"),
-    "react-dom/client": path.join(root, "../node_modules/react-dom/client.js"),
-  },
+  alias: { ...openuiAlias, "react-dom/client": path.join(root, "../node_modules/react-dom/client.js") },
   plugins: [inlineStyles],
 });
+
+// WHY: the agent checks interface programs before the user sees them, and it must judge them by the same components the panel renders.
+// The schema is generated from the panel's library on every build so the two cannot drift; leaflet and katex only matter when drawing.
+{
+  const tmp = path.join(os.tmpdir(), `bys-answer-ui-schema-${process.pid}.mjs`);
+  const stub = { name: "draw-only", setup(build) { build.onResolve({ filter: /^(leaflet|katex)$/ }, () => ({ path: path.join(openui, "absent.mjs") })); } };
+  await esbuild.build({
+    entryPoints: [path.join(root, "src/vendor/openui/lib/library.ts")], bundle: true, platform: "node", format: "esm", outfile: tmp, jsx: "automatic", logLevel: "error",
+    loader: { ".css": "empty", ".woff2": "empty", ".woff": "empty", ".ttf": "empty", ".png": "empty", ".svg": "empty" },
+    define: { "process.env.NODE_ENV": '"production"' }, alias: openuiAlias, plugins: [stub],
+  });
+  Object.assign(globalThis, { addEventListener() {}, removeEventListener() {} });
+  const { library } = await import(`${tmp}?${Date.now()}`);
+  await rm(tmp, { force: true });
+  const file = path.join(root, "../shared/answer-ui-schema.ts");
+  const next = `export const ANSWER_UI_SCHEMA = ${JSON.stringify(library.toJSONSchema())} as const;\n`;
+  if ((await readFile(file, "utf8").catch(() => "")) !== next) await writeFile(file, next);
+}
 
 execFileSync(process.execPath, [path.join(root, "../node_modules/tsx/dist/cli.mjs"), path.join(root, "../scripts/voice/export-realtime-tools.mts")], { stdio: "ignore" });
 
