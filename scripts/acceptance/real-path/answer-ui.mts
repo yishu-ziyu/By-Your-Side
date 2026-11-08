@@ -39,6 +39,7 @@ const model = await startScriptedModel([
   { match: "unfinished interface block", steps: [{ text: CLOSED_UI }] },
   { match: "查 JD5290 实时状态", steps: [{ text: "已查：JD5290 准点。" }] },
   { match: "周末界面", steps: [{ text: OPEN_UI, chunkDelayMs: 20 }] },
+  { match: "前缀", steps: [{ text: `看这里。\n<ui title="前缀">\nroot = Col([title])\n$title = Text("西湖")\n</ui>` }] },
   { match: "弯引号", steps: [{ text: `看这里。\n<ui title="引号">\nroot = Col([a])\na = Text(“西湖”)\n</ui>` }] },
   { match: "航班", steps: [{ text: FLIGHT, pieces: [{ text: FLIGHT.slice(0, FLIGHT.indexOf("chart = ")) }, { text: FLIGHT.slice(FLIGHT.indexOf("chart = ")), delayMs: 3_000 }] }] },
 ]);
@@ -171,6 +172,10 @@ try {
   await rp.click(panel, "#send-btn");
   const bar = await until(async () => { const t = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .gc-app-bar:not([hidden])")].map(b => b.innerText).join(" ")`)); return t.includes("界面出错了") ? t : undefined; }, 30_000, "程序里有看不懂的字时明说出错，而不是悄悄画少");
   evidence.strayBar = bar;
+
+  await rp.evaluate(panel, `(() => { const el = document.querySelector("#input"); el.focus(); el.value = "前缀"; el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+  await rp.click(panel, "#send-btn");
+  await until(async () => Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .gc-app-bar:not([hidden])")].filter(b => b.innerText.includes("界面出错了")).length`)) >= 2 || undefined, 30_000, "引用了没定义的名字时明说出错，而不是画一块空白");
   await rp.screenshot(panel, join(artifacts, "5-repaired.png"));
 } catch (caught) {
   evidence.iframeTargets = (await rp.targets()).filter(t => t.type === "iframe").map(t => t.url);
