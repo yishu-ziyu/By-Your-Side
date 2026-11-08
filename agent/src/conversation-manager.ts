@@ -184,10 +184,14 @@ export class ConversationManager {
       }
       if (!target) throw new TaskActionRejected('任务归属不明确，未执行。');
       const current = await this.taskRecords.get(target.id);
-      if (!current || current.revision !== target.revision || current.controlVersion !== target.controlVersion) throw new TaskActionRejected('原任务刚刚变化，请重新说明这项修改。');
+      const handoff = current ? this.pendingHandoffs.get(current.executionConversationId) : undefined;
+      const handedToUser = step.action === 'steer' && current?.state === 'paused' && current.runId === target.runId
+        && handoff?.runId === target.runId && handoff?.version === current.controlVersion
+        && handoff?.version === this.controlVersions.get(current.executionConversationId);
+      if (!current || current.runId !== target.runId || current.revision !== target.revision || (current.controlVersion !== target.controlVersion && !handedToUser)) throw new TaskActionRejected('原任务刚刚变化，请重新说明这项修改。');
       const receipt = await this.dispatchTaskAction({requestId,taskId:target.id,conversationId:target.executionConversationId,
         ...(target.executionConversationId !== origin ? {originConversationId:origin} : {}),source:request.source,action:step.action,
-        expectedRunId:target.runId,expectedControlVersion:target.controlVersion,text:step.text,
+        expectedRunId:current.runId,expectedControlVersion:current.controlVersion,text:step.text,
         context:target.executionConversationId === origin ? request.context : undefined,
         pages:request.pages?.length?request.pages:request.context?[request.context]:undefined,attachments:request.attachments},stillCurrent);
       receipts.push(receipt);
