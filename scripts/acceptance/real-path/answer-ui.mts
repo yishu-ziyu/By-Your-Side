@@ -38,7 +38,7 @@ const model = await startScriptedModel([
   { match: "unfinished interface block", steps: [{ text: CLOSED_UI }] },
   { match: "查 JD5290 实时状态", steps: [{ text: "已查：JD5290 准点。" }] },
   { match: "周末界面", steps: [{ text: OPEN_UI, chunkDelayMs: 20 }] },
-  { match: "航班", steps: [{ text: FLIGHT, chunkDelayMs: 10 }] },
+  { match: "航班", steps: [{ text: FLIGHT, pieces: [{ text: FLIGHT.slice(0, FLIGHT.indexOf("chart = ")) }, { text: FLIGHT.slice(FLIGHT.indexOf("chart = ")), delayMs: 3_000 }] }] },
 ]);
 
 const rp = await launchRealPath();
@@ -85,7 +85,15 @@ try {
   await rp.typeText(panel, "航班");
   await rp.pressEnter(panel);
   await until(async () => await rp.evaluate(panel, `!!document.querySelector("iframe.gc-app-iframe")`) || undefined, 60_000, "回答里出现界面");
-  await until(async () => (await frameText()).includes("合计 1360 元") || undefined, 20_000, "界面画出来");
+  await until(async () => (await frameText()).includes("合计 1360 元") || undefined, 2_500, "界面边写边画");
+  const writing = await rp.evaluate(panel, `!!document.querySelector("#messages .gc-app[data-app-live]")`) as boolean;
+  evidence.drawnWhileWriting = writing;
+  assert.ok(writing, "前半段画出来时程序还没写完");
+  await inFrame(`(window.__firstFrame = true)`);
+  await rp.screenshot(panel, join(artifacts, "0-writing.png"));
+  await until(async () => (await inFrame<number>(`document.querySelectorAll(".iui-map-pin").length`)) === 2 || undefined, 20_000, "界面写完");
+  assert.equal(await inFrame<boolean>(`window.__firstFrame === true`), true, "写完时画框接着画，不重新加载");
+  assert.equal(await rp.evaluate(panel, `document.querySelectorAll("#messages iframe.gc-app-iframe").length`), 1, "只有一个界面");
   const leaked = await rp.evaluate(panel, `document.querySelector("#messages").innerText`) as string;
 
   assert.ok(!/<\/?ui|@ToAssistant|MapMarker/.test(leaked), `程序文字不露出：${leaked.slice(0, 200)}`);
