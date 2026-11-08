@@ -4,6 +4,7 @@ import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod/v4";
 import { inline } from "./markdown";
 import { cx } from "./style";
+import { formatNumber } from "../locale";
 
 const NUMERIC = /^[-+−]?[$€£¥₹]?\s?\d[\d,]*(\.\d+)?\s?(%|[kKmMbB]|bn)?$/;
 const isElement = (value: unknown) => !!value && typeof value === "object" && (value as { type?: unknown }).type === "element";
@@ -24,7 +25,7 @@ export const Table = defineComponent({
       return cells.length > 0 && cells.every((v) => typeof v === "number" || (typeof v === "string" && NUMERIC.test(v.trim())));
     });
     const cell = (value: unknown) =>
-      isElement(value) ? renderNode(value) : typeof value === "number" ? value.toLocaleString("en-US", { maximumFractionDigits: 2 }) : inline(String(value ?? ""));
+      isElement(value) ? renderNode(value) : typeof value === "number" ? formatNumber(value, { maximumFractionDigits: 2 }) : inline(String(value ?? ""));
     return (
       <div className="iui-table-scroll">
         <table className="iui-table">
