@@ -13,6 +13,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent
 import { z } from "zod/v4";
 import { Glyph } from "./glyph";
 import { bg, children, color, onColor, cx, option, radius, radiusSchema, space, textOf, toOption, type Option } from "./style";
+import { formatNumber } from "../locale";
 
 type Plan = Parameters<ReturnType<typeof useTriggerAction>>[2];
 
@@ -34,7 +35,7 @@ function useFieldName(label: unknown, statementId?: string) {
 
 const numberText = (value: unknown) => {
   if (typeof value !== "number" || !Number.isFinite(value)) return "";
-  return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return formatNumber(value, { maximumFractionDigits: 2 });
 };
 
 function Field({ label, children: content }: { label?: string; children: ReactNode }) {

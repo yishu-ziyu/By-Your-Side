@@ -2710,10 +2710,18 @@ function tokenize(src) {
 			});
 			continue;
 		}
+		if (strayChars && !/\s/.test(c)) strayChars.push(c);
 		i++;
 	}
 	tokens.push({ t: 13 });
 	return tokens;
+}
+// WHY: the tokenizer drops characters it cannot read (curly quotes, full-width punctuation outside strings), and with them whole keys or arguments; the result still renders, just emptier. Report them so the program gets fixed instead of shown wrong.
+let strayChars = null;
+function withStrays(collected, result) {
+	if (!collected.length || !result.root && !result.rootExpression) return result;
+	const shown = [...new Set(collected)].slice(0, 8).join(" ");
+	return { ...result, meta: { ...result.meta, errors: [...result.meta.errors, { code: "unknown-character", component: "", path: "", message: `Characters outside strings were ignored: ${shown}. Put visible text in straight double quotes and use ASCII punctuation in the program.` }] } };
 }
 //#endregion
 //#region src/parser/validation.ts
@@ -3745,14 +3753,16 @@ function parse(input, cat, rootName) {
 	const trimmed = preprocess(input);
 	if (!trimmed) return emptyResult();
 	const { text, wasIncomplete } = autoClose(trimmed);
+	const strays = strayChars = [];
 	const stmts = split(tokenize(text));
+	strayChars = null;
 	if (!stmts.length) return emptyResult(wasIncomplete);
 	const stmtMap = /* @__PURE__ */ new Map();
 	for (const s of stmts) {
 		const stmt = classifyStatement(s, parseExpression(s.tokens));
 		stmtMap.set(s.id, stmt);
 	}
-	return buildResult(stmtMap, [...stmtMap.values()], wasIncomplete, stmtMap.size, cat, rootName);
+	return withStrays(strays, buildResult(stmtMap, [...stmtMap.values()], wasIncomplete, stmtMap.size, cat, rootName));
 }
 function createStreamParser(cat, rootName) {
 	let buf = "";
@@ -3760,10 +3770,14 @@ function createStreamParser(cat, rootName) {
 	let completedEnd = 0;
 	const completedStmtMap = /* @__PURE__ */ new Map();
 	let completedCount = 0;
+	let completedStrays = [];
 	function addStmt(text) {
 		const t = text.trim();
 		if (!t) return;
-		for (const s of split(tokenize(t))) {
+		strayChars = completedStrays;
+		const parts = split(tokenize(t));
+		strayChars = null;
+		for (const s of parts) {
 			const stmt = classifyStatement(s, parseExpression(s.tokens));
 			completedStmtMap.set(s.id, stmt);
 			completedCount++;
@@ -3775,6 +3789,7 @@ function createStreamParser(cat, rootName) {
 			completedEnd = 0;
 			completedStmtMap.clear();
 			completedCount = 0;
+			completedStrays = [];
 		}
 		cleaned = next;
 	}
@@ -3821,13 +3836,15 @@ function createStreamParser(cat, rootName) {
 		const pendingText = cleaned.slice(pendingStart).trim();
 		if (!pendingText) {
 			if (completedCount === 0) return emptyResult();
-			return buildResult(completedStmtMap, [...completedStmtMap.values()], false, completedCount, cat, rootName);
+			return withStrays(completedStrays, buildResult(completedStmtMap, [...completedStmtMap.values()], false, completedCount, cat, rootName));
 		}
 		const { text: closed, wasIncomplete } = autoClose(pendingText);
+		const strays = strayChars = [...completedStrays];
 		const stmts = split(tokenize(closed));
+		strayChars = null;
 		if (!stmts.length) {
 			if (completedCount === 0) return emptyResult(wasIncomplete);
-			return buildResult(completedStmtMap, [...completedStmtMap.values()], wasIncomplete, completedCount, cat, rootName);
+			return withStrays(strays, buildResult(completedStmtMap, [...completedStmtMap.values()], wasIncomplete, completedCount, cat, rootName));
 		}
 		const allStmtMap = new Map(completedStmtMap);
 		const pendingStmts = /* @__PURE__ */ new Set();
@@ -3839,10 +3856,10 @@ function createStreamParser(cat, rootName) {
 		}
 		const tail = complete ? void 0 : /\$\w+$/.exec(buf)?.[0];
 		const tailName = tail && pendingText.endsWith(tail) && !new RegExp(`\\${tail}(?!\\w)`).test(pendingText.slice(0, -tail.length)) ? tail : void 0;
-		return buildResult(allStmtMap, [...allStmtMap.values()], wasIncomplete, completedCount + stmts.length, cat, rootName, tailName ? {
+		return withStrays(strays, buildResult(allStmtMap, [...allStmtMap.values()], wasIncomplete, completedCount + stmts.length, cat, rootName, tailName ? {
 			name: tailName,
 			stmts: pendingStmts
-		} : void 0);
+		} : void 0));
 	}
 	function reset() {
 		buf = "";

@@ -23,7 +23,7 @@ root = Col([title, Row([IconButton("minus", @Set($people, @Clamp($people - 1, 1,
 $people = 2
 title = Title("杭州到深圳的航班", "lg")
 total = Text("合计 " + ($people * 680) + " 元", "md", null, "semibold")
-chart = Chart("bar", [{key: "JD5290", value: 680}, {key: "GJ8627", value: 540}], "key", ["value"])
+chart = Chart("bar", [{key: "JD5290", value: 680}, {key: "GJ8627", value: 540}], "key", ["value"], "currency")
 swapped = Chart("bar", [{name: "甲楼", height: 828}, {name: "乙楼", height: 600}], "height", ["name"])
 cn = Chart("bar", [{机场: "萧山", 航班: 31}, {机场: "宝安", 航班: 27}], "机场", ["航班"])
 map = Map([MapMarker("杭州萧山机场", 30.2295, 120.4344), MapMarker("深圳宝安机场", 22.6393, 113.8107)], true)
@@ -39,6 +39,7 @@ const model = await startScriptedModel([
   { match: "unfinished interface block", steps: [{ text: CLOSED_UI }] },
   { match: "查 JD5290 实时状态", steps: [{ text: "已查：JD5290 准点。" }] },
   { match: "周末界面", steps: [{ text: OPEN_UI, chunkDelayMs: 20 }] },
+  { match: "弯引号", steps: [{ text: `看这里。\n<ui title="引号">\nroot = Col([a])\na = Text(“西湖”)\n</ui>` }] },
   { match: "航班", steps: [{ text: FLIGHT, pieces: [{ text: FLIGHT.slice(0, FLIGHT.indexOf("chart = ")) }, { text: FLIGHT.slice(FLIGHT.indexOf("chart = ")), delayMs: 3_000 }] }] },
 ]);
 
@@ -103,6 +104,8 @@ try {
   assert.ok(swappedChart, "类目和数值写反时，图表仍按名字画出柱子");
   const cnChart = await inFrame<boolean>(`[...document.querySelectorAll("figure.iui-chart svg")].some(svg => svg.textContent.includes("萧山") && svg.textContent.includes("宝安") && [...svg.querySelectorAll("rect, path")].some(bar => { const r = bar.getBoundingClientRect(); return r.height > 20 && r.width > 5; }))`);
   assert.ok(cnChart, "数据字段名是中文时，图表照样画出柱子");
+  const ticks = await inFrame<string>(`[...document.querySelectorAll("figure.iui-chart svg text")].map(t => t.textContent).join(" ")`);
+  assert.ok(!ticks.includes("$"), `没写币种时不替模型选美元：${ticks.slice(0, 120)}`);
   const tiles = await until(async () => { const n = await inFrame<number>(`document.querySelectorAll(".leaflet-tile[src^='data:']").length`); return n > 0 ? n : undefined; }, 20_000, "底图由侧栏代取").catch(() => 0);
 
   evidence.tiles = tiles;
@@ -163,6 +166,11 @@ try {
   assert.ok(!repairedText.includes("root = Text") && !repairedText.includes("正在做界面"), `界面没有消失，程序也不露出：${repairedText.slice(0, 300)}`);
   evidence.interfaceRepairs = 1;
   await until(async () => (await frameText()).includes("西湖") || undefined, 20_000, "补完的界面画出来");
+
+  await rp.evaluate(panel, `(() => { const el = document.querySelector("#input"); el.focus(); el.value = "弯引号"; el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+  await rp.click(panel, "#send-btn");
+  const bar = await until(async () => { const t = String(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .gc-app-bar:not([hidden])")].map(b => b.innerText).join(" ")`)); return t.includes("界面出错了") ? t : undefined; }, 30_000, "程序里有看不懂的字时明说出错，而不是悄悄画少");
+  evidence.strayBar = bar;
   await rp.screenshot(panel, join(artifacts, "5-repaired.png"));
 } catch (caught) {
   evidence.iframeTargets = (await rp.targets()).filter(t => t.type === "iframe").map(t => t.url);
