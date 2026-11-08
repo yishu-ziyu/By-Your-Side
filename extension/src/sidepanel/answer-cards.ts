@@ -121,7 +121,7 @@ function unfinishedAppHtml(tag: "ui" | "app"): string {
 
 function appCardHtml(card: Card, app: Extract<Block, { kind: "app" }>): string {
   if (app.surface === "ui") {
-    if (!card.closed) return `<div class="gen-card gen-app-card">${keyed("app", `<div class="gc-app gc-ph" aria-hidden="true"><div class="gc-app-wait">${BAR}<span>正在做界面…</span></div></div>`)}</div>`;
+    if (!card.closed) return `<div class="gen-card gen-app-card"><div class="gc-app" data-gc-key="app" data-app-live data-app="${encodeURIComponent(app.html)}" data-app-title="${esc(app.title)}" data-app-surface="ui"><div class="gc-app-frame"></div><div class="gc-app-wait">${BAR}<span>正在做界面…</span></div><div class="gc-app-bar" hidden></div></div></div>`;
 
     return `<div class="gen-card gen-app-card" data-gc-card="${card.key}">${keyed("app", `<div class="gc-app" data-app="${encodeURIComponent(app.html)}" data-app-title="${esc(app.title)}" data-app-surface="ui"><div class="gc-app-frame"></div><div class="gc-app-bar" hidden></div></div>`)}</div>`;
   }
@@ -382,6 +382,8 @@ function same(a: Node, b: Node): boolean {
 
   if (!(a instanceof Element) || !(b instanceof Element)) return true;
 
+  if (a.hasAttribute("data-app-live")) return a.tagName === b.tagName && a.getAttribute("data-gc-key") === b.getAttribute("data-gc-key");
+
   return a.tagName === b.tagName && a.getAttribute("data-gc-key") === b.getAttribute("data-gc-key") && a.getAttribute("data-gc-sig") === b.getAttribute("data-gc-sig");
 }
 
@@ -437,6 +439,12 @@ function syncChildren(to: Element, from: Element): void {
     }
 
     if (old instanceof Element && node instanceof Element) {
+      // WHY: 边写边画的界面框里是已经加载的画框；换掉子节点会重载画框，画面闪一下又从头画。
+      if (old.hasAttribute("data-app-live")) {
+        syncAttributes(old, node);
+        if (!old.hasAttribute("data-app-live")) old.querySelector(":scope > .gc-app-wait")?.remove();
+        return;
+      }
       if (node.hasAttribute("data-gc-sig")) return;
       syncAttributes(old, node);
       syncChildren(old, node);
@@ -447,6 +455,8 @@ function syncChildren(to: Element, from: Element): void {
 }
 
 export function dropPlaceholders(root: HTMLElement): void {
+  for (const el of root.querySelectorAll<HTMLElement>(".gen-card .gc-app[data-app-live]")) el.outerHTML = `<div class="gc-app"><div class="gc-app-wait"><span>界面没有写完</span></div></div>`;
+
   for (const el of root.querySelectorAll<HTMLElement>(".gen-card .gc-ph")) {
     // WHY: 回答结束会清掉占位。没闭合的界面只剩这个占位，清掉后用户只看得到文字。
     if (el.classList.contains("gc-app")) {
@@ -1088,7 +1098,7 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
 
     if (kind === "ready" && !ready) {
       ready = true;
-      frame.contentWindow?.postMessage({ html: decodeURIComponent(box.dataset.app ?? ""), state: appStates.get(card) ?? null, maxHeight: maxHeight() }, "*");
+      frame.contentWindow?.postMessage({ html: decodeURIComponent(box.dataset.app ?? ""), state: appStates.get(card) ?? null, maxHeight: maxHeight(), streaming: box.hasAttribute("data-app-live") }, "*");
     } else if (kind === "height" && "h" in data && typeof data.h === "number") {
       // WHY: 只增不减。搜索把列表变短时框如果跟着缩，清空搜索后下面的「保存」会被挤出可见区。
       shownHeight = Math.max(shownHeight, Math.min(maxHeight(), Math.max(APP_MIN_HEIGHT, data.h)));
@@ -1137,8 +1147,15 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
     }
   };
 
+  const growing = new MutationObserver(() => {
+    if (ready) frame.contentWindow?.postMessage({ html: decodeURIComponent(box.dataset.app ?? ""), streaming: box.hasAttribute("data-app-live") }, "*");
+    if (!box.hasAttribute("data-app-live")) growing.disconnect();
+  });
+
+  if (box.hasAttribute("data-app-live")) growing.observe(box, { attributes: true, attributeFilter: ["data-app", "data-app-live"] });
   window.addEventListener("message", onMessage);
   mountedApps.set(box, () => {
+    growing.disconnect();
     window.removeEventListener("message", onMessage);
 
     if (session) pageSessions.delete(session);
