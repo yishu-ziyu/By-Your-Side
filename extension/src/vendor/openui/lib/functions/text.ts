@@ -1,27 +1,12 @@
 import { defineFunction } from "@openuidev/react-lang";
 import { z } from "zod/v4";
 import { list, MAX_ITEMS, read } from "./shared";
-
-const LOCALE = "en-US";
-
-function currencyCode(code: string | undefined): string {
-  const upper = (code ?? "USD").toUpperCase();
-  return /^[A-Z]{3}$/.test(upper) ? upper : "USD";
-}
-
-/** Formats with Intl; an unknown currency code falls back to USD instead of throwing. */
-function format(value: number, options: Intl.NumberFormatOptions): string {
-  try {
-    return value.toLocaleString(LOCALE, options);
-  } catch {
-    return value.toLocaleString(LOCALE, { ...options, currency: "USD" });
-  }
-}
+import { formatNumber } from "../locale";
 
 export const Format = defineFunction({
   name: "Format",
   description:
-    'Number as text: "number" 12,345.6, "currency" $12,345.68 (currency is a code like "EUR"), "percent" 45 -> 45%, "compact" 1.2M ($1.2M with a currency)',
+    'Number as text: "number" 12,345.6, "currency" 12,345.68 with the symbol of currency (a code like "CNY"; without one no symbol is shown), "percent" 45 -> 45%, "compact" 1.2M (with a currency, its symbol); separators follow the viewer language',
   params: z.object({
     value: z.number(),
     kind: z.enum(["number", "currency", "percent", "compact"]).optional(),
@@ -39,17 +24,13 @@ export const Format = defineFunction({
         : { minimumFractionDigits: fallbackMin && d, maximumFractionDigits: d };
     switch (kind) {
       case "currency":
-        return format(value, { style: "currency", currency: currencyCode(currency), ...digits(2, 2) });
+        return formatNumber(value, { style: "currency", ...digits(2, 2) }, currency);
       case "percent":
-        return `${format(value, digits(1))}%`;
+        return `${formatNumber(value, digits(1))}%`;
       case "compact":
-        return format(value, {
-          notation: "compact",
-          ...digits(1),
-          ...(currency ? { style: "currency", currency: currencyCode(currency) } : {}),
-        });
+        return formatNumber(value, { notation: "compact", ...digits(1), ...(currency ? { style: "currency" as const } : {}) }, currency);
       default:
-        return format(value, digits(2));
+        return formatNumber(value, digits(2));
     }
   },
 });
