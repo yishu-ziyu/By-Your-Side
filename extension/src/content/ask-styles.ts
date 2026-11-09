@@ -107,6 +107,7 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .bar { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .bar button { width: 26px; height: 26px; padding: 0; border-radius: 8px; }
 .bar button svg { width: 16px; height: 16px; stroke-width: 1.75; color: var(--ink-fg); }
+.bar .ask { width: 32px; background: var(--ink-raised); }
 .bar .ask svg { color: var(--pen); stroke-width: 2; }
 .bar .dismiss svg { color: var(--ink-mute); }
 .sep { width: 1px; height: 16px; margin: 0; background: var(--ink-rule); flex: none; }
@@ -172,7 +173,6 @@ button.depth[aria-pressed="true"] { color: var(--pen); background: var(--ink-hov
 .foot button.icon { width: 28px; padding: 0; color:var(--ink-mute); }
 .foot .handoff { gap: 6px; padding: 0 10px; border: 1px solid var(--ink-rule); background: var(--ink-raised); color: var(--ink-fg-2); font-weight: 500; }
 .foot .handoff svg { width: 14px; height: 14px; }
-.pins { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 textarea { resize: none; flex: 1; min-width: 0; height: 34px; max-height: 100px; padding: 7px 6px 6px; border: 0; background: transparent; outline: none; line-height: 20px; font-size: 14px; color: var(--ink-fg); }
 textarea::placeholder { color: var(--ink-mute); }
 button.send { width: 32px; padding: 0; border-radius: 50%; background: var(--pen); }
@@ -193,9 +193,6 @@ button.send svg { color: var(--on-pen); width: 15px; height: 15px; stroke-width:
 .menu-row button[data-prompt] { flex: 1; }
 .menu-glyph { display: grid; place-items: center; width: 18px; height: 18px; margin-right: 2px; color: var(--ink-mute); }
 .menu-glyph svg { width: 15px; height: 15px; stroke-width: 1.75; }
-.menu .pin { width: 28px; padding: 0; justify-content: center; opacity: 0; }
-.menu-row:hover .pin, .menu .pin:focus-visible, .menu .pin[aria-pressed="true"] { opacity: 1; }
-.menu .pin[aria-pressed="true"] svg { color: var(--pen); fill: var(--pen-soft); }
 .menu .menu-action { gap: 8px; }
 .menu-action-icon { display: grid; place-items: center; width: 18px; color: var(--ink-mute); }
 .menu-action-icon svg { width: 15px; height: 15px; }
