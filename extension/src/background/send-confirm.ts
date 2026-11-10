@@ -142,10 +142,7 @@ chrome.runtime.onConnect.addListener(port => {
 
   if (port.sender?.id !== chrome.runtime.id || !isPanelUrl(port.sender.url)) { port.disconnect(); return; }
   panelPorts.add(port);
-  port.onDisconnect.addListener(() => {
-    panelPorts.delete(port);
-    if (panelPorts.size === 0) for (const answer of [...panelAnswers.values()]) answer("decline");
-  });
+  port.onDisconnect.addListener(() => { panelPorts.delete(port); });
   port.onMessage.addListener((message: { id?: unknown; choice?: unknown }) => {
     if (typeof message?.id !== "string" || (message.choice !== "send" && message.choice !== "decline")) return;
     panelAnswers.get(message.id)?.(message.choice);
