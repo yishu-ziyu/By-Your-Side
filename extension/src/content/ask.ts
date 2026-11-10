@@ -13,7 +13,7 @@ import { extensionAlive } from "./alive.js";
 import { createElement as icon, ArrowUp, Square, X, PanelRight, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
-import { READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, READING_KINDS, READING_KIND_SELECTION_LIMIT, type ReadingKind, type ReadingSource } from '../../../shared/reading.js';
+import { isReadingTranslation, READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, READING_KINDS, READING_KIND_SELECTION_LIMIT, type ReadingKind, type ReadingSource } from '../../../shared/reading.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
@@ -22,6 +22,7 @@ import { createReadAloud } from './read-aloud.js';
 import { CHART_QUESTION, parseSelectionTable, renderSelectionChart } from './selection-chart.js';
 import { EVENT_QUESTION, parseSelectionEvent, renderSelectionEvent } from './selection-event.js';
 import { syncColorTone } from '../shared/color-tone.js';
+import { inPageNote, installPageNotes, NOTE_HIGHLIGHT } from './page-notes.js';
 
 const HOST = 'data-sideagent-ask';
 
@@ -60,6 +61,10 @@ export function selectionSnapshot(): SelectionSnapshot | null {
   }
 
   if (isEditableTarget(selection.anchorNode?.parentElement ?? null) || isEditableTarget(selection.focusNode?.parentElement ?? null)) {
+    return null;
+  }
+
+  if (inPageNote(selection.anchorNode) || inPageNote(selection.focusNode)) {
     return null;
   }
 
@@ -337,6 +342,7 @@ function boot(): void {
   el('.menu-transfer-icon').append(icon(PanelRight));
   for (const [index, glyph] of [...root.querySelectorAll('.menu-glyph')].entries()) glyph.append(icon(PROMPT_ICONS[PROMPTS[index]!.id]));
 
+  const notes = installPageNotes({ blockOf: contentBlockOf, gutterBlank: (block, region) => gutterBlank(host, block, region), fade: fadeNewWords, wake: (kept, range) => void wake(kept, range).catch(err => report(plainError(err, '这一步没有成功，请再试一次。'))) });
   const surface = el('.surface');
   const bar = el('.bar');
   const barTip = el('.bar-tip');
@@ -467,7 +473,8 @@ function boot(): void {
   }).Highlight;
 
   const highlightStyle = document.createElement('style');
-  highlightStyle.textContent = `::highlight(${highlightName}) { background: rgba(242, 196, 56, .46); color: inherit; }`;
+  const markInk = 'rgba(242, 196, 56, .46)';
+  highlightStyle.textContent = `::highlight(${highlightName}) { background: ${markInk}; color: inherit; } ::highlight(${NOTE_HIGHLIGHT}) { text-decoration: underline; text-decoration-color: ${markInk}; text-decoration-thickness: 3px; text-underline-offset: 3px; }`;
   document.documentElement.append(highlightStyle);
 
   const report = (message = '', informational = false) => {
@@ -668,13 +675,15 @@ function boot(): void {
 
   function hide(): void {
     const restoreFocus = Boolean(root.activeElement);
+    const shown = visible && expanded;
     rememberDraft();
     hideBarTip();
     closeMenu();
     visible = false;
     surface.hidden = true;
     link.hidden = true;
-    restore.hidden = !record?.turns.length;
+    const kept = shown && !!record && !record.turns.some(turn => CONTEXT_ACTIONS.some(action => action.attach && action.question === turn.question)) && notes.keep(record, snapshot?.range ?? null);
+    restore.hidden = kept || !record?.turns.length;
     highlights?.delete(highlightName);
     candidate = null;
     dismissOnUp = false;
@@ -1411,6 +1420,53 @@ function boot(): void {
     }
   }
 
+  async function inPage(question: string): Promise<boolean> {
+    const target = snapshot;
+
+    if (!target?.range || !notes.fits(target.range)) return false;
+    const opened = await rpc('reading_open', { source: target.source });
+
+    if (!notes.reveal(opened.record.threadId)) {
+      const sent = await rpc('reading_send', { threadId: opened.record.threadId, question, depth: 'fast' });
+
+      if (!notes.keep(sent.record, target.range)) return false;
+    }
+
+    selectionVersion++;
+    snapshot = null;
+    hide();
+    getSelection()?.removeAllRanges();
+
+    return true;
+  }
+
+  async function wake(kept: ReadingRecord, range: Range): Promise<void> {
+    if (visible) hide();
+    const threadId = kept.threadId;
+    const restored = await rpc('reading_get', { threadId }).catch(() => null);
+
+    if (!restored?.record) {
+      selectionVersion++;
+      snapshot = { source: kept.source, range, rect: range.getBoundingClientRect() };
+      await openReading();
+
+      return;
+    }
+
+    record = restored.record;
+    const latest = [...record!.turns].reverse().find(turn => turn.source)?.source;
+    selectionVersion++;
+    snapshot = { source: latest ? { ...record!.source, ...latest } : record!.source, range, rect: range.getBoundingClientRect() };
+    expanded = true;
+    pinned = false;
+    side = null;
+    manualPos = null;
+    notes.sleep(threadId);
+    render();
+    show();
+    highlight();
+  }
+
   function typed(question: string, depth: 'fast' | 'deep' = typedDepth): Promise<void> {
     const next = candidate;
 
@@ -1460,6 +1516,8 @@ function boot(): void {
 
       if (quick) {
         closeMenu();
+
+        if (!expanded && isReadingTranslation(quick) && await inPage(quick)) return;
 
         if (!expanded) await openReading();
         await typed(quick, 'fast');
@@ -1739,6 +1797,7 @@ function boot(): void {
     }
 
     listening.abort();
+    notes.dispose();
     resizes.disconnect();
     clearInterval(navigationTimer);
 
@@ -1868,6 +1927,7 @@ function boot(): void {
     resize = null;
     hide();
     restore.hidden = true;
+    notes.clear();
   };
 
   window.addEventListener('popstate', navigation, { signal });
@@ -1880,6 +1940,8 @@ function boot(): void {
     if (raw?.type === 'reading_update' && raw.record?.threadId === record?.threadId) {
       update(raw.record);
     }
+
+    if (raw?.type === 'reading_update' && raw.record) notes.update(raw.record);
 
     if (raw?.type === 'ask-open' || raw?.type === 'ask-hotkey') {
       snapshot = selectionSnapshot();
