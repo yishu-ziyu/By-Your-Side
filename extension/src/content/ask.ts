@@ -133,7 +133,7 @@ const CONTEXT_ACTIONS: Array<{ label: string; icon: typeof ChartColumn; question
     attach: source => {
       const event = parseSelectionEvent(source.text);
 
-      return event ? renderSelectionEvent(event, source) : null;
+      return event ? { ...renderSelectionEvent(event, source), replacesQuote: true } : null;
     },
   },
 ];
