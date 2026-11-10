@@ -10,7 +10,7 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Pin, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText, ChartColumn } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
@@ -19,6 +19,7 @@ import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
 import { selectionSurrounding } from './selection-context.js';
 import { createReadAloud } from './read-aloud.js';
+import { CHART_QUESTION, parseSelectionTable, renderSelectionChart } from './selection-chart.js';
 import { syncColorTone } from '../shared/color-tone.js';
 
 const HOST = 'data-sideagent-ask';
@@ -109,7 +110,9 @@ const PROMPT_ICONS = {
 
 const QUICK_QUESTIONS = PROMPTS.filter(prompt => ['example', 'why', 'evidence'].includes(prompt.id));
 
-const PINS_KEY = 'reading_bar_pins';
+const CONTEXT_ACTIONS = [
+  { label: '画成图', icon: ChartColumn, question: CHART_QUESTION, fits: (text: string) => parseSelectionTable(text) !== null },
+];
 
 const MULTI_CLICK_MS = 420;
 
@@ -243,7 +246,7 @@ function boot(): void {
   for (const type of ['keydown', 'keypress', 'keyup'] as const) host.addEventListener(type, event => event.stopPropagation());
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
-      <div class="bar" role="toolbar" aria-label="划词"><button class="icon ask" data-act="ask" data-tip="问这段" aria-label="问这段"></button><button class="icon" data-act="explain" data-tip="解释" aria-label="解释"></button><button class="icon" data-act="read" data-tip="朗读" aria-label="朗读" hidden></button><span class="pins"></span><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><span class="sep" aria-hidden="true"></span><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
+      <div class="bar" role="toolbar" aria-label="划词"><button class="icon ctx" hidden></button><button class="icon ask" data-act="ask" data-tip="问这段" aria-label="问这段"></button><button class="icon" data-act="explain" data-tip="解释" aria-label="解释"></button><button class="icon" data-prompt="translate" data-tip="翻译" aria-label="翻译"></button><span class="sep" aria-hidden="true"></span><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
       <div class="bar-tip" id="toolbar-tip" role="tooltip" hidden></div>
       <div class="head" hidden><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
@@ -254,7 +257,7 @@ function boot(): void {
       <div class="resize" title="拖动调整大小，双击恢复" aria-hidden="true"></div>
       <span class="tail" aria-hidden="true"></span>
     </section>
-    <div class="menu" role="menu" aria-label="更多问法" hidden><button class="menu-action" role="menuitem" data-act="copy-selection"><span class="menu-action-icon menu-copy-icon" aria-hidden="true"></span>复制所选文字</button><div class="rule" role="separator"></div><div class="menu-label">更多问法</div>${PROMPTS.map(prompt => `<div class="menu-row"><span class="menu-glyph" aria-hidden="true"></span><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button><button class="icon small pin" data-pin="${prompt.id}" aria-pressed="false" aria-label="固定到工具条" title="固定到工具条"></button></div>`).join('')}<div class="rule" role="separator"></div><button class="menu-action" role="menuitem" data-act="transfer"><span class="menu-action-icon menu-transfer-icon" aria-hidden="true"></span>在侧栏打开</button><div class="rule" role="separator"></div><div class="menu-label">自动显示</div><button role="menuitem" class="dim" data-act="mute-page">此页不再自动显示</button><button role="menuitem" class="dim" data-act="mute-all">所有网页不再自动显示</button></div>
+    <div class="menu" role="menu" aria-label="更多问法" hidden><button class="menu-action" role="menuitem" data-act="copy-selection"><span class="menu-action-icon menu-copy-icon" aria-hidden="true"></span>复制所选文字</button><button class="menu-action" role="menuitem" data-act="read-selection" hidden><span class="menu-action-icon menu-read-icon" aria-hidden="true"></span>朗读所选文字</button><div class="rule" role="separator"></div><div class="menu-label">更多问法</div>${PROMPTS.map(prompt => `<div class="menu-row"><span class="menu-glyph" aria-hidden="true"></span><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button></div>`).join('')}<div class="rule" role="separator"></div><button class="menu-action" role="menuitem" data-act="transfer"><span class="menu-action-icon menu-transfer-icon" aria-hidden="true"></span>在侧栏打开</button><div class="rule" role="separator"></div><div class="menu-label">自动显示</div><button role="menuitem" class="dim" data-act="mute-page">此页不再自动显示</button><button role="menuitem" class="dim" data-act="mute-all">所有网页不再自动显示</button></div>
     <div class="menu answer-menu" role="menu" aria-label="更多回答操作" hidden><button role="menuitem" data-act="deep">用深度回答重答</button><button role="menuitem" data-act="details">收起回答</button></div>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
   document.documentElement.append(host);
@@ -262,7 +265,7 @@ function boot(): void {
 
   el('[data-act="ask"]').append(icon(MessageCircleQuestion));
   el('[data-act="explain"]').append(icon(Lightbulb));
-  el('[data-act="read"]').append(icon(Volume2));
+  el('[data-prompt="translate"]').append(icon(Languages));
   el('[data-act="more"]').append(icon(Ellipsis));
   el('[data-act="close"]').append(icon(X));
   el('[data-act="answer-more"]').append(icon(Ellipsis));
@@ -273,9 +276,9 @@ function boot(): void {
   el('[data-act="copy"]').append(Object.assign(document.createElement('span'), { className: 'copy-label', textContent: '复制' }));
   el('[data-act="speak"]').prepend(icon(Volume2));
   el('.menu-copy-icon').append(icon(Copy));
+  el('.menu-read-icon').append(icon(Volume2));
   el('.menu-transfer-icon').append(icon(PanelRight));
   for (const [index, glyph] of [...root.querySelectorAll('.menu-glyph')].entries()) glyph.append(icon(PROMPT_ICONS[PROMPTS[index]!.id]));
-  for (const pin of root.querySelectorAll('[data-pin]')) pin.append(icon(Pin));
 
   const surface = el('.surface');
   const bar = el('.bar');
@@ -334,7 +337,6 @@ function boot(): void {
 
   const drafts = new Map<string, string>();
   let typedDepth: 'fast' | 'deep' = 'fast';
-  let pins: string[] = [];
   let aloudEnabled = false;
   let pinned = false;
 
@@ -730,9 +732,10 @@ function boot(): void {
     }
   }
 
-  const questionLabel = (question: string) => question === EXPLAIN_PROMPT ? '解释这段文字' : PROMPTS.find(prompt => prompt.question === question)?.label ?? question;
-  const preset = (question: string) => question === EXPLAIN_PROMPT || PROMPTS.some(prompt => prompt.question === question);
-  const actionName = (question: string) => question === EXPLAIN_PROMPT ? '解释' : PROMPTS.find(prompt => prompt.question === question)?.label ?? '问这段';
+  const named = (question: string) => [...PROMPTS, ...CONTEXT_ACTIONS].find(prompt => prompt.question === question)?.label;
+  const questionLabel = (question: string) => question === EXPLAIN_PROMPT ? '解释这段文字' : named(question) ?? question;
+  const preset = (question: string) => question === EXPLAIN_PROMPT || named(question) !== undefined;
+  const actionName = (question: string) => question === EXPLAIN_PROMPT ? '解释' : named(question) ?? '问这段';
 
   function metaButton(label: string, act: string, turn: number): HTMLButtonElement {
     const button = document.createElement('button');
@@ -758,13 +761,23 @@ function boot(): void {
     const hasAnswer = turns.some(turn => turn.answer.trim());
     el('.foot').hidden = !expanded || !hasAnswer;
     for (const action of ['copy', 'handoff']) el(`[data-act="${action}"]`).hidden = !hasAnswer;
-    el('[data-act="read"]').hidden = !aloudEnabled;
+    el('[data-act="read-selection"]').hidden = !aloudEnabled;
     el('[data-act="speak"]').hidden = !hasAnswer || !aloudEnabled;
     answerMore.hidden = !hasAnswer;
     messages.hidden = !answering;
     surface.classList.toggle('live', turns.some(turn => turn.state === 'pending' || turn.state === 'streaming') || waiting);
     el('.composer').hidden = !expanded;
     el('.chips').hidden = !composing;
+    const fitting = expanded || !snapshot ? undefined : CONTEXT_ACTIONS.find(action => action.fits(snapshot!.source.text));
+    const ctx = el('.ctx');
+    ctx.hidden = !fitting;
+    el('.bar').classList.toggle('has-ctx', !!fitting);
+
+    if (fitting && ctx.dataset.ask !== fitting.question) {
+      ctx.dataset.ask = fitting.question;
+      ctx.setAttribute('aria-label', fitting.label);
+      ctx.replaceChildren(icon(fitting.icon), fitting.label);
+    }
 
     if (!expanded) {
       position();
@@ -802,12 +815,14 @@ function boot(): void {
         const meta = document.createElement('div');
         meta.className = 'meta';
         wrapper.append(question, summary, node, meta);
+        const table = turn.question === CHART_QUESTION ? parseSelectionTable(sourceOf(index)) : null;
+        if (table) wrapper.insertBefore(renderSelectionChart(table), summary);
         messages.append(wrapper);
         answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: true, text: '', words: 0 });
       }
 
       const item = answers[index]!;
-      const showsSource = index === 0 || (several && !!turn.source);
+      const showsSource = !item.turn.querySelector(':scope > .chart') && (index === 0 || (several && !!turn.source));
       setSourceQuote(item.turn, showsSource ? sources[index]! : '', index);
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
@@ -940,29 +955,6 @@ function boot(): void {
     const far = rect.bottom < -innerHeight || rect.top > innerHeight * 2;
     element.scrollIntoView({ block: 'center', behavior: far ? 'auto' : 'smooth' });
   }
-
-  function renderPins(): void {
-    hideBarTip();
-    el('.pins').replaceChildren(...PROMPTS.filter(prompt => pins.includes(prompt.id)).map(prompt => {
-      const button = document.createElement('button');
-      button.className = 'icon';
-      button.dataset.prompt = prompt.id;
-      button.dataset.tip = prompt.label;
-      button.setAttribute('aria-label', prompt.label);
-      button.append(icon(PROMPT_ICONS[prompt.id]));
-
-      return button;
-    }));
-
-    for (const pin of root.querySelectorAll<HTMLElement>('[data-pin]')) {
-      const on = pins.includes(pin.dataset.pin!);
-      pin.setAttribute('aria-pressed', String(on));
-      pin.setAttribute('aria-label', on ? '从工具条移除' : '固定到工具条');
-      pin.title = on ? '从工具条移除' : '固定到工具条';
-    }
-    if (visible && !expanded) position();
-  }
-
 
   function sourceOf(index: number): string {
     const turns = record?.turns ?? [];
@@ -1376,7 +1368,7 @@ function boot(): void {
   bar.addEventListener('focusout', hideBarTip);
 
   root.addEventListener('click', event => {
-    const target = (event.target as Element).closest<HTMLElement>('[data-act],[data-ask],[data-prompt],[data-pin]');
+    const target = (event.target as Element).closest<HTMLElement>('[data-act],[data-ask],[data-prompt]');
 
     if (!target) {
       return;
@@ -1385,15 +1377,10 @@ function boot(): void {
     hideBarTip();
     const action = target.dataset.act;
     const quick = target.dataset.ask ?? PROMPTS.find(prompt => prompt.id === target.dataset.prompt)?.question;
-    const pin = target.dataset.pin;
-
     void (async () => {
       report();
 
-      if (pin) {
-        await chrome.storage.local.set({ [PINS_KEY]: pins.includes(pin) ? pins.filter(id => id !== pin) : [...pins, pin] });
-      }
-      else if (quick) {
+      if (quick) {
         closeMenu();
 
         if (!expanded) await openReading();
@@ -1415,7 +1402,7 @@ function boot(): void {
         if (answerMenu.hidden) openMenu(answerMore, answerMenu);
         else closeMenu();
       }
-      else if (action === 'read') {
+      else if (action === 'read-selection') {
         const current = snapshot;
         hide();
 
@@ -1572,14 +1559,9 @@ function boot(): void {
 
   const applyAloudSetting = (on: boolean) => {
     aloudEnabled = on;
-    el('[data-act="read"]').hidden = !on;
+    el('[data-act="read-selection"]').hidden = !on;
     if (!on) el('[data-act="speak"]').hidden = true;
     if (visible) render();
-  };
-
-  const applyPins = (value: unknown) => {
-    pins = Array.isArray(value) ? value.filter((id): id is string => PROMPTS.some(prompt => prompt.id === id)) : [];
-    renderPins();
   };
 
   const applyCardSize = (value: unknown) => {
@@ -1598,10 +1580,9 @@ function boot(): void {
     }
   };
 
-  void chrome.storage.local.get([SELECTION_BAR_KEY, READING_ALOUD_KEY, PINS_KEY, READING_CARD_SIZE_KEY]).then(stored => {
+  void chrome.storage.local.get([SELECTION_BAR_KEY, READING_ALOUD_KEY, READING_CARD_SIZE_KEY]).then(stored => {
     applyBarSetting(isSelectionBarOff(stored[SELECTION_BAR_KEY]));
     applyAloudSetting(isReadingAloudOn(stored[READING_ALOUD_KEY]));
-    applyPins(stored[PINS_KEY]);
     applyCardSize(stored[READING_CARD_SIZE_KEY]);
   }).catch(() => {
   });
@@ -1615,7 +1596,6 @@ function boot(): void {
     }
 
     if (area === 'local' && READING_ALOUD_KEY in changes) applyAloudSetting(isReadingAloudOn(changes[READING_ALOUD_KEY]!.newValue));
-    if (area === 'local' && PINS_KEY in changes) applyPins(changes[PINS_KEY]!.newValue);
     if (area === 'local' && READING_CARD_SIZE_KEY in changes) applyCardSize(changes[READING_CARD_SIZE_KEY]!.newValue);
   });
 

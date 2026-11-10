@@ -51,9 +51,13 @@ const SIDE = article(`
 const STEAL = BLANK.replace("</body>", `<textarea id="site-box" style="position:fixed;left:16px;right:16px;bottom:16px;height:40px"></textarea>
 <script>document.addEventListener("keydown", (e) => { const a = document.activeElement; if (a && (a.matches("input,textarea") || a.isContentEditable)) return; document.querySelector("#site-box").focus(); });</script></body>`);
 
+const TABLE = BLANK.replace("<h1>灯塔日志</h1>", `<h1>灯塔日志</h1>
+  <table id="stats" style="border-collapse:collapse;margin:0 0 20px;font:15px/1.6 -apple-system,sans-serif"><thead><tr><th>年份</th><th>风暴次数</th><th>沉船</th></tr></thead><tbody>
+  <tr><td>1901</td><td>12</td><td>3</td></tr><tr><td>1902</td><td>18</td><td>5</td></tr><tr><td>1903</td><td>9</td><td>1</td></tr><tr><td>1904</td><td>24</td><td>8</td></tr></tbody></table>`).replace("</style>", "th,td{padding:4px 28px 4px 0;text-align:left}</style>");
+
 const site = createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(path === "/side" ? SIDE : path === "/steal" ? STEAL : BLANK);
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(path === "/side" ? SIDE : path === "/steal" ? STEAL : path === "/table" ? TABLE : BLANK);
 });
 
 await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
@@ -67,6 +71,7 @@ const model = await startScriptedModel([
   { match: "这里是什么意思", steps: [{ text: "已收到这处提问。" }] },
   { match: FOLLOW_UP, steps: [{ text: FOLLOW_ANSWER }] },
   { match: "解释这段选中的文字", steps: [{ text: EXPLAIN_ANSWER }] },
+  { match: "这张表里的数字", steps: [{ text: "1904 年风暴最多，沉船也最多。" }] },
   { match: "翻译成中文", steps: [{ text: "灯塔看守人用紫色墨水记下每一场风暴。" }] },
 ], undefined, (payload) => {
   const body = payload as { model?: string; reasoning_effort?: unknown; messages?: Array<{ role?: string; content?: unknown }> };
@@ -229,9 +234,9 @@ try {
 
   await selectMarker("/blank", 1280);
   const defaultBar = await inCard<string[]>(`function(){return [...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]')).map(b=>b.textContent.trim()||b.getAttribute('aria-label'))}`);
-  check("工具条默认显示「问这段」，不出现朗读", defaultBar.includes("问这段") && !defaultBar.includes("朗读"), defaultBar);
-  const barLayout = await inCard<{ text: number; named: boolean; sized: boolean; tips: boolean }>(`function(){const bs=[...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]'));const tipButtons=bs.filter(b=>b.dataset.tip);return {text:bs.reduce((n,b)=>n+(b.textContent?.trim()?1:0),0),named:bs.every(b=>!!b.querySelector('svg')&&!!b.getAttribute('aria-label')),sized:bs.every(b=>b.offsetWidth===26&&b.offsetHeight===26),tips:tipButtons.every(b=>b.dataset.tip===b.getAttribute('aria-label'))}}`);
-  check("工具条保持纯图标，所有动作保留可访问名称", barLayout.text === 0 && barLayout.named && barLayout.sized && barLayout.tips, barLayout);
+  check("工具条第一层是问、解释、翻译、更多、关闭，不出现朗读", JSON.stringify(defaultBar) === JSON.stringify(["问这段","解释","翻译","更多问法","关闭"]), defaultBar);
+  const barLayout = await inCard<{ text: number; named: boolean; primary: boolean; sized: boolean; tips: boolean }>(`function(){const bs=[...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]'));const ask=this.querySelector('.bar [data-act="ask"]');const tipButtons=bs.filter(b=>b.dataset.tip);return {text:bs.reduce((n,b)=>n+(b.textContent?.trim()?1:0),0),named:bs.every(b=>!!b.querySelector('svg')&&!!b.getAttribute('aria-label')),primary:getComputedStyle(ask).backgroundColor!=='rgba(0, 0, 0, 0)',sized:ask.offsetWidth===32&&ask.offsetHeight===26&&bs.filter(b=>b!==ask).every(b=>b.offsetWidth===26&&b.offsetHeight===26),tips:tipButtons.every(b=>b.dataset.tip===b.getAttribute('aria-label'))}}`);
+  check("工具条保持纯图标，问这段有唯一主色，所有动作保留可访问名称", barLayout.text === 0 && barLayout.named && barLayout.primary && barLayout.sized && barLayout.tips, barLayout);
   await inCard<boolean>(`function(){this.querySelector('[data-act="explain"]').focus();return true}`);
   await sleep(180);
   const explainTip = await inCard<{ text: string; bg: string }>(`function(){const t=this.querySelector('.bar-tip');return {text:t.hidden?'':t.textContent??'',bg:getComputedStyle(t).backgroundColor}}`);
@@ -320,10 +325,10 @@ try {
   const light = (look.bg.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number).every((v) => v > 230);
   check("回答窗：标题是「解释」，不重复问题行，原文常显，默认底栏没有朗读", look.title === "解释" && !look.asked && !look.quote && look.source && ["复制", "继续聊天"].every((label) => look.foot.includes(label)) && !look.foot.includes("朗读"), look);
   await rp.evaluate(panel, `chrome.storage.local.set({reading_aloud:true}).then(()=>true)`);
-  const optInAloud = await until(() => inCard<{read:boolean;speak:boolean}>(`function(){return {read:!this.querySelector('[data-act="read"]')?.hidden,speak:!this.querySelector('[data-act="speak"]')?.hidden}}`).then((state) => state.read && state.speak ? state : undefined), 5_000, "设置开启后出现朗读");
-  check("用户主动开启后，工具条和回答卡出现朗读", optInAloud.read && optInAloud.speak, optInAloud);
+  const optInAloud = await until(() => inCard<{barRead:boolean;menuRead:boolean;speak:boolean}>(`function(){return {barRead:!!this.querySelector('.bar [data-act="read"]'),menuRead:!this.querySelector('.menu [data-act="read-selection"]')?.hidden,speak:!this.querySelector('[data-act="speak"]')?.hidden}}`).then((state) => state.menuRead && state.speak ? state : undefined), 5_000, "设置开启后朗读进入更多菜单");
+  check("用户主动开启后，朗读只出现在更多菜单和回答卡", !optInAloud.barRead && optInAloud.menuRead && optInAloud.speak, optInAloud);
   await rp.evaluate(panel, `chrome.storage.local.set({reading_aloud:false}).then(()=>true)`);
-  await until(async () => !(await inCard<boolean>(`function(){return !this.querySelector('[data-act="read"]')?.hidden}`)) || undefined, 5_000, "设置关闭后隐藏朗读");
+  await until(async () => (await inCard<boolean>(`function(){return !!this.querySelector('.menu [data-act="read-selection"]')?.hidden}`)) || undefined, 5_000, "设置关闭后隐藏更多菜单里的朗读");
   check("纸色：卡片是浅色底", light, look.bg);
   const hierarchy = await inCard<{ repeated: boolean; iconsNamed: boolean }>(`function(){return {repeated:/快速回答|用深度模型重答/.test(this.querySelector('.meta')?.textContent??''),iconsNamed:[...this.querySelectorAll('.foot button.icon')].every(b=>!!b.title&&!!b.getAttribute('aria-label')&&!!b.querySelector('svg'))}}`);
   check("阅读操作一行，图标保留名称，深度重答不挤在正文下", !hierarchy.repeated && hierarchy.iconsNamed, hierarchy);
@@ -367,22 +372,45 @@ try {
 
   await selectMarker("/blank", 1280);
   await click(await until(() => pointOf('[data-act="more"]'), 5_000, "更多"));
-  const menuCopy = await inCard<string>(`function(){return this.querySelector('.menu [data-act="copy-selection"]')?.textContent?.trim()??''}`);
-  check("复制收进更多菜单", menuCopy === "复制所选文字", { menuCopy });
-  await click(await until(() => pointOf('[data-pin="translate"]'), 5_000, "图钉"));
+  const menu = await inCard<{copy:string;pins:number;readHidden:boolean}>(`function(){const m=this.querySelector('.menu');return {copy:m?.querySelector('[data-act="copy-selection"]')?.textContent?.trim()??'',pins:m?.querySelectorAll('[data-pin]').length??0,readHidden:!!m?.querySelector('[data-act="read-selection"]')?.hidden}}`);
+  check("复制和固定问法入口收进更多，没有重复的图钉控件", menu.copy === "复制所选文字" && menu.pins === 0 && menu.readHidden, menu);
   await sleep(300);
   await shot("3-menu");
+  await click(await until(() => pointOf('[data-act="more"]'), 5_000, "收起更多"));
   await rp.evaluate(work, "getSelection().removeAllRanges()");
   await selectMarker("/blank", 1280);
   const bar = await inCard<string[]>(`function(){return [...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]')).map(b=>b.textContent.trim()||b.getAttribute('aria-label'))}`);
-  await shot("4-pinned-bar");
-  check("工具条保留更多、关闭，钉上的「翻译」出现在工具条上", ["更多问法", "关闭", "翻译"].every((label) => bar.includes(label)), bar);
+  await shot("4-primary-bar");
+  check("翻译始终在第一层，更多和关闭保留", ["翻译", "更多问法", "关闭"].every((label) => bar.includes(label)), bar);
   const asked = seen.length;
   await click(await until(() => pointOf('.bar [data-prompt="translate"]'), 5_000, "工具条上的翻译"));
   await until(() => seen.length > asked || undefined, 20_000, "翻译请求");
   await sleep(300);
   const translated = await inCard<string>(`function(){return this.querySelector('.head .title')?.textContent??''}`);
   check("点工具条上的翻译：发出翻译提问，标题是「翻译」", translated === "翻译" && seen.at(-1)!.user.includes("翻译"), { title: translated, user: seen.at(-1)!.user.slice(0, 120) });
+
+  await selectMarker("/table", 1280);
+  const ordinary = await inCard<boolean>(`function(){return this.querySelector('.bar .ctx').hidden}`);
+  const cells = await rp.evaluate(work, `(() => { const a = document.querySelector("#stats th").getBoundingClientRect(), b = document.querySelector("#stats tr:last-child td:last-child").getBoundingClientRect(); return { x1: a.left + 2, y1: a.top + a.height / 2, x2: b.left + 12, y2: b.top + b.height / 2 }; })()`) as { x1: number; y1: number; x2: number; y2: number };
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: cells.x1, y: cells.y1, button: "left", clickCount: 1 }, work);
+  for (let i = 1; i <= 8; i++) await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: cells.x1 + ((cells.x2 - cells.x1) * i) / 8, y: cells.y1 + ((cells.y2 - cells.y1) * i) / 8, button: "left", buttons: 1 }, work);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: cells.x2, y: cells.y2, button: "left", clickCount: 1 }, work);
+  const chartButton = await until(() => pointOf('.bar .ctx'), 5_000, "画成图");
+  const tableBar = await inCard<{ first: string; askPrimary: boolean }>(`function(){const bs=[...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]'));return {first:bs[0].textContent.trim(),askPrimary:getComputedStyle(this.querySelector('.bar .ask')).backgroundColor!=='rgba(0, 0, 0, 0)'}}`);
+  await shot("4b-table-bar");
+  check("选中表格：第一个按钮变成「画成图」并成为唯一主色；选普通句子时不出现", ordinary && tableBar.first === "画成图" && !tableBar.askPrimary, { ordinary, ...tableBar });
+  const beforeChart = seen.length;
+  await click(chartButton);
+  await until(() => seen.length > beforeChart || undefined, 20_000, "图表提问");
+  await until(async () => (await inCard<string>(`function(){return this.querySelector(".answer")?.textContent??""}`)).includes("1904") ? true : undefined, 20_000, "图表说明写完");
+  await sleep(700);
+  const chart = await inCard<{ title: string; tabs: string[]; values: string[]; heights: number[]; quote: boolean }>(`function(){const c=this.querySelector('.turn > .chart');return {title:this.querySelector('.head .title')?.textContent??'',tabs:[...(c?.querySelectorAll('.seg button')??[])].map(b=>b.textContent),values:[...(c?.querySelectorAll('.plot b')??[])].map(b=>b.textContent),heights:[...(c?.querySelectorAll('.plot i')??[])].map(i=>i.offsetHeight),quote:!!this.querySelector('.turn > .source')}}`);
+  await shot("4c-table-chart");
+  check("点「画成图」：卡片里是按表格数字画的柱子，最高的是 1904 年，不再重复引用原表", chart.title === "画成图" && JSON.stringify(chart.tabs) === JSON.stringify(["风暴次数", "沉船"]) && JSON.stringify(chart.values) === JSON.stringify(["12", "18", "9", "24"]) && chart.heights[3] === Math.max(...chart.heights) && chart.heights[2] < chart.heights[0] && !chart.quote, chart);
+  await click((await pointOf('.seg button:nth-child(2)'))!);
+  await sleep(700);
+  const second = await inCard<string[]>(`function(){return [...this.querySelectorAll('.plot b')].map(b=>b.textContent)}`);
+  check("切到另一列：柱子换成那一列的数字", JSON.stringify(second) === JSON.stringify(["3", "5", "1", "8"]), second);
 
   await selectMarker("/blank", 1280);
   await click(await until(() => pointOf('.bar [data-act="dismiss"]'), 5_000, "关闭"));
@@ -454,10 +482,9 @@ try {
   await shot("8-reset");
   check("双击右下角：回到默认大小", Math.abs(reset.card.width - 450) < 2, { card: reset.card });
 
-  await rp.evaluate(panel, `chrome.storage.local.set({reading_bar_pins:['translate','define','example','why','evidence']}).then(()=>true)`);
   await selectMarker("/blank", 360);
-  const narrowControls = await inCard<{ask:boolean;more:boolean;close:boolean}>(`function(){const visible=(selector)=>{const e=this.querySelector(selector),r=e?.getBoundingClientRect();return !!r&&r.width>0&&r.left>=0&&r.right<=innerWidth};return {ask:visible('[data-act="ask"]'),more:visible('[data-act="more"]'),close:visible('[data-act="dismiss"]')}}`);
-  check("窄窗口钉选多个常用动作时，问、更多和关闭仍可见", narrowControls.ask && narrowControls.more && narrowControls.close, narrowControls);
+  const narrowControls = await inCard<{ask:boolean;explain:boolean;translate:boolean;more:boolean;close:boolean}>(`function(){const visible=(selector)=>{const e=this.querySelector(selector),r=e?.getBoundingClientRect();return !!r&&r.width>0&&r.left>=0&&r.right<=innerWidth};return {ask:visible('[data-act="ask"]'),explain:visible('[data-act="explain"]'),translate:visible('[data-prompt="translate"]'),more:visible('[data-act="more"]'),close:visible('[data-act="dismiss"]')}}`);
+  check("窄窗口第一层动作完整可见", Object.values(narrowControls).every(Boolean), narrowControls);
 } catch (error) {
   if (!String(error).includes("live-done")) console.error(error);
   if (!String(error).includes("live-done")) check("流程完成", false, String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 1500));
