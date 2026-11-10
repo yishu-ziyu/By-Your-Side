@@ -10,10 +10,10 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText, ChartColumn, CalendarPlus } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText, ChartColumn, CalendarPlus, MapPin, SearchCheck } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
-import { READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
+import { READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, READING_KINDS, READING_KIND_SELECTION_LIMIT, type ReadingKind, type ReadingSource } from '../../../shared/reading.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
@@ -117,7 +117,15 @@ interface ContextAttachment {
   settle?(answer: string | null): void;
 }
 
-const CONTEXT_ACTIONS: Array<{ label: string; icon: typeof ChartColumn; question: string; fits(text: string): boolean; attach(source: { text: string; title: string; url: string }): ContextAttachment | null }> = [
+const ROUTE_QUESTION = '查一下去这个地址怎么走：打开地图查路线，告诉我最方便的走法和大概要多久。';
+
+const CHECK_QUESTION = '查证这句话：上网找原始出处和相反的说法，说清哪部分站得住、哪部分没有依据，并给出来源。';
+
+const JUDGE_DELAY_MS = 250;
+
+const JUDGED_LIMIT = 50;
+
+const CONTEXT_ACTIONS: Array<{ label: string; icon: typeof ChartColumn; question: string; fits(text: string, kind: ReadingKind): boolean; attach?(source: { text: string; title: string; url: string }): ContextAttachment | null }> = [
   {
     label: '画成图', icon: ChartColumn, question: CHART_QUESTION,
     fits: text => parseSelectionTable(text) !== null,
@@ -136,6 +144,8 @@ const CONTEXT_ACTIONS: Array<{ label: string; icon: typeof ChartColumn; question
       return event ? { ...renderSelectionEvent(event, source), replacesQuote: true } : null;
     },
   },
+  { label: '查路线', icon: MapPin, question: ROUTE_QUESTION, fits: (_text, kind) => kind === 'address' },
+  { label: '查证', icon: SearchCheck, question: CHECK_QUESTION, fits: (_text, kind) => kind === 'claim' },
 ];
 
 const MULTI_CLICK_MS = 420;
@@ -333,6 +343,8 @@ function boot(): void {
   let barTipTimer: ReturnType<typeof setTimeout> | undefined;
   let barTipTarget: HTMLElement | null = null;
   let snapshot: SelectionSnapshot | null = null;
+  const judged = new Map<string, ReadingKind>();
+  let judging = 0;
   let record: ReadingRecord | undefined;
   let opening: Promise<void> | null = null;
   let expanded = false;
@@ -793,7 +805,7 @@ function boot(): void {
     surface.classList.toggle('live', turns.some(turn => turn.state === 'pending' || turn.state === 'streaming') || waiting);
     el('.composer').hidden = !expanded;
     el('.chips').hidden = !composing;
-    const fitting = expanded || !snapshot ? undefined : CONTEXT_ACTIONS.find(action => action.fits(snapshot!.source.text));
+    const fitting = expanded || !snapshot ? undefined : CONTEXT_ACTIONS.find(action => action.fits(snapshot!.source.text, judged.get(snapshot!.source.text) ?? 'none'));
     const ctx = el('.ctx');
     ctx.hidden = !fitting;
     el('.bar').classList.toggle('has-ctx', !!fitting);
@@ -840,7 +852,7 @@ function boot(): void {
         const meta = document.createElement('div');
         meta.className = 'meta';
         wrapper.append(question, summary, node, meta);
-        const extra = CONTEXT_ACTIONS.find(action => action.question === turn.question)?.attach({ text: sourceOf(index), title: record!.source.title, url: record!.source.url }) ?? undefined;
+        const extra = CONTEXT_ACTIONS.find(action => action.question === turn.question)?.attach?.({ text: sourceOf(index), title: record!.source.title, url: record!.source.url }) ?? undefined;
         if (extra) wrapper.insertBefore(extra.element, summary);
         messages.append(wrapper);
         answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: true, text: '', words: 0, extra });
@@ -1630,6 +1642,20 @@ function boot(): void {
     if (area === 'local' && READING_CARD_SIZE_KEY in changes) applyCardSize(changes[READING_CARD_SIZE_KEY]!.newValue);
   });
 
+  function judge(target: SelectionSnapshot): void {
+    clearTimeout(judging);
+    const text = target.source.text;
+
+    if (text.length > READING_KIND_SELECTION_LIMIT || judged.has(text) || CONTEXT_ACTIONS.some(action => action.fits(text, 'none'))) return;
+    judging = window.setTimeout(() => {
+      void rpc('reading_kind', { text }).then(result => {
+        if (judged.size >= JUDGED_LIMIT) judged.delete(judged.keys().next().value!);
+        judged.set(text, READING_KINDS.find(kind => kind === result.kind) ?? 'none');
+        if (snapshot === target && visible && !expanded) render();
+      }, () => {});
+    }, JUDGE_DELAY_MS);
+  }
+
   function changedSelection(keyboard = false): void {
     const next = selectionSnapshot();
 
@@ -1665,6 +1691,7 @@ function boot(): void {
     report();
     render();
     show(keyboard);
+    judge(next);
   }
 
   const listening = new AbortController();

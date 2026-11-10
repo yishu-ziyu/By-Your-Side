@@ -1,4 +1,5 @@
 import { SideCallError } from "./side-judgment.js";
+import type { ReadingKind } from "../../shared/reading.js";
 import { realtimeBrowserError, validateRealtimeBrowserTool, type RealtimeBrowserCall } from './realtime-browser-tools.js';
 import type { VoiceInputContext } from '../../shared/voice.js';
 import {isMerged, TaskQueue} from "./task-queue.js";
@@ -1908,6 +1909,17 @@ return receipt;
     if (message.type === 'reading_import') {
       await this.get(normalizeConversationId(message.conversationId))?.runtime.session.importReading(message.transcript);
 
+      return;
+    }
+
+    if (message.type === 'reading_kind') {
+      let kind: ReadingKind = 'none';
+      try {
+        const id = normalizeConversationId(message.conversationId);
+        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        kind = await entry?.runtime.session.judgeReadingKind(message.selection) ?? 'none';
+      } catch { kind = 'none'; }
+      this.emit({ type: 'reading_kind_result', requestId: message.requestId, kind });
       return;
     }
 

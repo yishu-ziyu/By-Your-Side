@@ -261,6 +261,10 @@ const transport = new Uplink({
  onServerMessage(msg) {
    if (skillPackages.receive(msg)) return;
 
+   if (msg.type === "reading_kind_result") { reading.judged(msg);
+
+ return; }
+
    if (msg.type === "reading_route_result") { reading.routed(msg);
 
  return; }
