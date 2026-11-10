@@ -11,7 +11,7 @@ const PLOT_HEIGHT = 104;
 
 const SCALE: Record<string, number> = { 万: 1e4, 亿: 1e8, k: 1e3, K: 1e3, m: 1e6, M: 1e6 };
 
-const NUMBER = new RegExp(`^[¥$€£]?\\s*(-?\\d[\\d,]*(?:\\.\\d+)?)\\s*([%${Object.keys(SCALE).join('')}])?$`);
+const NUMBER = new RegExp(`^[¥$€£]?\\s*(-?\\d[\\d,]*(?:\\.\\d+)?)\\s*([%${Object.keys(SCALE).join('')}])?\\s*[^\\d\\s]{0,3}$`);
 
 function numberOf(cell: string): number | null {
   const match = NUMBER.exec(cell.trim());
