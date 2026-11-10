@@ -1,7 +1,7 @@
 import { answerMarkdown } from '../../../shared/answer-cards.js';
 import type { PageContext } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
-import { isReadingTranslation, isReadingTranscript, isReadingTurnSource, READING_ANSWER_LIMIT, READING_ROUTE_SELECTION_LIMIT, READING_TURN_LIMIT, type ReadingEvent, type ReadingRoute, type ReadingRouteResult, type ReadingSource, type ReadingTurnSource } from '../../../shared/reading.js';
+import { isReadingTranslation, isReadingTranscript, isReadingTurnSource, READING_ANSWER_LIMIT, READING_KIND_SELECTION_LIMIT, READING_ROUTE_SELECTION_LIMIT, READING_TURN_LIMIT, type ReadingEvent, type ReadingKind, type ReadingKindResult, type ReadingRoute, type ReadingRouteResult, type ReadingSource, type ReadingTurnSource } from '../../../shared/reading.js';
 import type { ClientMessage, ServerMessage } from '../../../shared/protocol.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import type { PttVoice } from './ptt-capsule.js';
@@ -13,6 +13,8 @@ import { createTraceSink } from '../shared/trace-store.js';
 const STORE = 'readingRecords';
 
 const ROUTE_WAIT_MS = 12_000;
+
+const KIND_WAIT_MS = 7_000;
 
 const PREFETCH_MS = ROUTE_WAIT_MS + 8_000;
 
@@ -78,6 +80,19 @@ export function installReading(deps: Dependencies) {
   let opening = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const routes = new Map<string, (route: ReadingRoute) => void>();
+  const kinds = new Map<string, (kind: ReadingKind) => void>();
+
+  const judgeKind = (selection: string): Promise<ReadingKind> => {
+    const requestId = crypto.randomUUID();
+
+    return new Promise(resolve => {
+      const done = (kind: ReadingKind) => { clearTimeout(wait); kinds.delete(requestId); resolve(kind); };
+      const wait = setTimeout(() => done('none'), KIND_WAIT_MS);
+      kinds.set(requestId, done);
+
+      if (!selection.trim() || !deps.send({type: 'reading_kind', requestId, conversationId: deps.selected(), selection: selection.slice(0, READING_KIND_SELECTION_LIMIT)})) done('none');
+    });
+  };
   let speaking: { threadId: string; requestId: string; said: number; busy: boolean } | null = null;
   let voiced: ReadingRecord | null = null;
   let prefetched: { threadId: string; requestId: string; key: string; latest?: ReadingEvent; timer: ReturnType<typeof setTimeout>; at: number; decide: (route: ReadingRoute | null) => void } | null = null;
@@ -321,6 +336,8 @@ export function installReading(deps: Dependencies) {
 
       if (record && !owned(record)) record = undefined;
 
+      if (raw.type === 'reading_kind') return {ok: true, kind: await judgeKind(typeof raw.text === 'string' ? raw.text : '')};
+
       if (raw.type === 'reading_get') return {ok: true, record};
 
       if (raw.type === 'reading_leave') { for (const r of records.values()) if (ownedDocument(r) && !agentTurn(r)) stop(r);
@@ -494,6 +511,7 @@ export function installReading(deps: Dependencies) {
       });
     },
     routed(result: ReadingRouteResult) { routes.get(result.requestId)?.(result.route); },
+    judged(result: ReadingKindResult) { kinds.get(result.requestId)?.(result.kind); },
     resumeOnOpen: (id: string) => opening || [...records.values()].some(r => r.transferredConversationId === id),
     receive(event: ReadingEvent) {
       void ready.then(() => {
