@@ -423,7 +423,7 @@ export type AgentUiEvent =
   | { kind: "agent_start"; deliveryMode?: "explicit" }
   | { kind: "agent_end" }
   | { kind: "run_stopped" }
-  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable";  pageRead?: boolean; remaining?: string; correction?: string;  finding?: string;  gate?: boolean;  held?: boolean;  step?: { at: number; of: number }; }
+  | { kind: "goal_check"; status: "done" | "needs_user" | "continue" | "open" | "blocked" | "checking" | "unavailable";  pageRead?: boolean; remaining?: string; correction?: string;  finding?: string;  held?: boolean;  step?: { at: number; of: number }; }
   | { kind: "user_delivery"; delivery: UserDelivery }
   | { kind: "artifact"; action: "saved" | "deleted"; filename: string; content?: string; encoding?: "base64" }
   | { kind: "user_delivery_stream"; stream: import('./voice.js').UserDeliveryStream }

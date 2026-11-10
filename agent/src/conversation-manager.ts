@@ -947,7 +947,6 @@ return { kind: "silent" };}
   siteNotes?: SiteNotesStore;
   private readonly thinkingPreferences = new Map<string, import('../../shared/protocol.js').ThinkingLevel | null>();
 
-  private readonly goalCheckPending = new Set<string>();
   private readonly goalContinuing = new Set<string>();
 
   private async yieldGoalContinues(except: string, full: () => boolean): Promise<void> {
@@ -1289,7 +1288,7 @@ return;}
   private async dispatchExecutionAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
 
-    if (request.action !== 'status') this.entries.get(request.conversationId)?.runtime.session.settleAnswerGate();
+    if (request.action !== 'status' && this.entries.get(request.conversationId)?.runtime.session.settleAnswerGate() && request.action === 'steer') request = { ...request, action: 'start' };
 
     if (['start', 'steer', 'abort'].includes(request.action)) this.goalContinuing.delete(request.conversationId);
 
@@ -1724,16 +1723,14 @@ return receipt;
       if(carriesIdentity&&scoped.type!=='task_control'&&!freshDisplayCall)scoped.runId=progressSnapshot.runId;
       this.emit(scoped);
 
-      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_start') { this.goalCheckPending.delete(id); this.taskQueue.resumeSeparate(id); }
-
-      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check' && message.event.status === 'checking') this.goalCheckPending.add(id);
+      if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_start') this.taskQueue.resumeSeparate(id);
 
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'goal_check' && message.event.status === 'continue') this.goalContinuing.add(id);
 
       if (message.type === 'agent_event' && isLeadSession(message.sessionId) && message.event.kind === 'agent_end') this.goalContinuing.delete(id);
 
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && isLeadSession(message.sessionId) && !progressSnapshot.continuation) {
-        void this.fulfillOwedDelivery(id).then(async()=>{ if (!this.goalCheckPending.has(id)) this.recordTaskHistory(id); await this.relaySeparateAnswer(id); }).catch(()=>this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'结果尚未保存并交付，请核对原任务。'}}));
+        void this.fulfillOwedDelivery(id).then(async()=>{ this.recordTaskHistory(id); await this.relaySeparateAnswer(id); }).catch(()=>this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'结果尚未保存并交付，请核对原任务。'}}));
 
         try{this.taskQueue.finish(id,progress.snapshot().state==='aborted'?'cancelled':progress.snapshot().state==='error'?'failed':'completed');}catch{this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:'任务结束状态未能保存，请核对已有结果。'}});}
 
@@ -1746,7 +1743,7 @@ return receipt;
       if (message.type === 'agent_event' && message.event.kind === 'agent_end' && progressSnapshot.continuation) this.pumpTasks();
       if (message.type === 'agent_event' && message.event.kind === 'error' && progressSnapshot.continuation) void this.observers.get(id)?.settled('unavailable').catch(error => console.error('[continuation] failure checkpoint unavailable', error));
 
-      if (message.type === 'agent_event' && message.event.kind === 'goal_check' && message.event.status !== 'continue' && message.event.status !== 'checking' && isLeadSession(message.sessionId) && progress.snapshot().state === 'idle') { this.goalCheckPending.delete(id); this.recordTaskHistory(id); }
+      if (message.type === 'agent_event' && message.event.kind === 'goal_check' && message.event.status !== 'continue' && message.event.status !== 'checking' && isLeadSession(message.sessionId) && progress.snapshot().state === 'idle') this.recordTaskHistory(id);
 
       if (message.type === 'agent_event' && message.event.kind === 'agent_start') this.emit({type:'conversation_updated',conversationId:id,conversation:{...summary}});
 
