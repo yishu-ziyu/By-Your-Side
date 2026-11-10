@@ -55,7 +55,8 @@ const STEAL = BLANK.replace("</body>", `<textarea id="site-box" style="position:
 const TABLE = BLANK.replace("<h1>灯塔日志</h1>", `<h1>灯塔日志</h1>
   <table id="stats" style="border-collapse:collapse;margin:0 0 20px;font:15px/1.6 -apple-system,sans-serif"><thead><tr><th>年份</th><th>风暴次数</th><th>沉船</th></tr></thead><tbody>
   <tr><td>1901</td><td>12</td><td>3</td></tr><tr><td>1902</td><td>18</td><td>5</td></tr><tr><td>1903</td><td>9</td><td>1</td></tr><tr><td>1904</td><td>24</td><td>8</td></tr></tbody></table>
-  <p>灯塔的开放日定在 <span id="open-day">1905 年 6 月 3 日 14:00</span>，镇上的人都可以上塔。</p>`).replace("</style>", "th,td{padding:4px 28px 4px 0;text-align:left}</style>");
+  <p>灯塔的开放日定在 <span id="open-day">1905 年 6 月 3 日 14:00</span>，镇上的人都可以上塔。</p>
+  <p>灯塔在 <span id="place">北岬镇海堤路 7 号</span>。<span id="claim">镇志上说它是全国最老的灯塔。</span></p>`).replace("</style>", "th,td{padding:4px 28px 4px 0;text-align:left}</style>");
 
 const site = createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
@@ -68,19 +69,24 @@ const port = siteAddress(site).port;
 type Seen = { model: string; depth: string | null; user: string; reasoning: unknown };
 
 const seen: Seen[] = [];
+const KIND_CALL = '{"selection":"';
 
 const model = await startScriptedModel([
   { match: "这里是什么意思", steps: [{ text: "已收到这处提问。" }] },
   { match: FOLLOW_UP, steps: [{ text: FOLLOW_ANSWER }] },
   { match: "解释这段选中的文字", steps: [{ text: EXPLAIN_ANSWER }] },
+  { match: "怎么走", steps: [{ text: "从镇中心沿海堤路步行十分钟。" }] },
   { match: "对应的是什么活动", steps: [{ text: "灯塔开放日" }] },
   { match: "这张表里的数字", steps: [{ text: "1904 年风暴最多，沉船也最多。" }] },
   { match: "翻译成中文", steps: [{ text: "灯塔看守人用紫色墨水记下每一场风暴。" }] },
+  { match: KIND_CALL + "北岬镇海堤路 7 号", steps: [{ text: '{"kind":"address"}' }] },
+  { match: KIND_CALL + "镇志上说它是全国最老的灯塔。", steps: [{ text: '{"kind":"claim"}' }] },
+  { match: KIND_CALL, steps: [{ text: '{"kind":"none"}' }] },
 ], undefined, (payload) => {
   const body = payload as { model?: string; reasoning_effort?: unknown; messages?: Array<{ role?: string; content?: unknown }> };
   const user = (body.messages ?? []).filter((message) => message.role === "user").map((message) => typeof message.content === "string" ? message.content : "").join("\n");
 
-  if (!user.includes(MARKER) && !user.includes("解释这段选中的文字") && !user.includes("这里是什么意思")) return;
+  if (user.startsWith(KIND_CALL) || (!user.includes(MARKER) && !user.includes("解释这段选中的文字") && !user.includes("这里是什么意思"))) return;
   const depth = user.match(/"depth":"(fast|deep)"/)?.[1] ?? null;
   seen.push({ model: body.model ?? "", depth, user, reasoning: body.reasoning_effort ?? null });
 });
@@ -436,7 +442,33 @@ try {
   const savedNote = await inCard<string>(`function(){return this.querySelector('.event .saved')?.textContent??''}`);
   check("点「加入日历」：下载的日程文件里是这个名称和时间，卡片说明下一步", file.includes("SUMMARY:灯塔开放日") && file.includes("DTSTART:19050603T140000") && file.includes("DTEND:19050603T150000") && savedNote.includes("已下载"), { savedNote, file: file.slice(0, 400) });
 
+  await click((await pointOf('[data-act="close"]'))!);
+  await sleep(300);
+  const dragOver = async (selector: string) => {
+    const r = await rp.evaluate(work, `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x1: r.left + 1, x2: r.right - 1, y: r.top + r.height / 2 }; })()`) as { x1: number; x2: number; y: number };
+    await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: r.x1, y: r.y, button: "left", clickCount: 1 }, work);
+    for (let i = 1; i <= 8; i++) await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: r.x1 + ((r.x2 - r.x1) * i) / 8, y: r.y, button: "left", buttons: 1 }, work);
+    await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: r.x2, y: r.y, button: "left", clickCount: 1 }, work);
+  };
+  const firstButton = () => inCard<string>(`function(){const b=[...this.querySelectorAll('.bar button')].find(b=>!b.closest('[hidden]'));return b?.textContent.trim()||b?.getAttribute('aria-label')||''}`);
+  await dragOver("#claim");
+  await until(async () => (await firstButton()) === "查证" || undefined, 10_000, "查证");
+  await shot("4f-claim-bar");
+  await rp.evaluate(work, "getSelection().removeAllRanges()");
+  await click(await until(() => pointOf('.bar [data-act="dismiss"]'), 5_000, "关闭"));
+  await dragOver("#place");
+  const routeButton = await until(async () => (await firstButton()) === "查路线" ? pointOf('.bar .ctx') : undefined, 10_000, "查路线");
+  await shot("4g-address-bar");
+  const judgedBefore = seen.length;
+  await click(routeButton!);
+  await until(() => seen.length > judgedBefore || undefined, 20_000, "查路线提问");
+  await sleep(400);
+  const routeTitle = await inCard<string>(`function(){return this.querySelector('.head .title')?.textContent??''}`);
+  check("选中论断出「查证」，选中地址出「查路线」；点「查路线」发出查路线的提问", routeTitle === "查路线" && seen.at(-1)!.user.includes("怎么走"), { routeTitle, user: seen.at(-1)!.user.slice(0, 120) });
+
   await selectMarker("/blank", 1280);
+  await sleep(900);
+  check("选中普通句子：判断后第一个按钮仍是「问这段」", (await firstButton()) === "问这段", await firstButton());
   await click(await until(() => pointOf('.bar [data-act="dismiss"]'), 5_000, "关闭"));
   await sleep(300);
   check("工具条上的 × 收起工具条", await inCard<boolean>(`function(){return this.querySelector('.surface').hidden}`), null);

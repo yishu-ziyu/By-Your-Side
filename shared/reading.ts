@@ -59,13 +59,22 @@ export type ReadingRoute = 'reading' | 'task';
 
 export const READING_ROUTE_SELECTION_LIMIT = 600;
 
+export const READING_KINDS = ['address', 'claim', 'none'] as const;
+
+export type ReadingKind = typeof READING_KINDS[number];
+
+export const READING_KIND_SELECTION_LIMIT = 300;
+
 export type ReadingClientMessage =
   | { type: 'reading_request'; requestId: string; transcript: ReadingTranscript }
   | { type: 'reading_cancel'; requestId: string; threadId: string }
   | { type: 'reading_import'; requestId: string; transcript: ReadingTranscript }
-  | { type: 'reading_route'; requestId: string; utterance: string; selection: string; asked?: string };
+  | { type: 'reading_route'; requestId: string; utterance: string; selection: string; asked?: string }
+  | { type: 'reading_kind'; requestId: string; selection: string };
 
 export interface ReadingRouteResult { type: 'reading_route_result'; requestId: string; route: ReadingRoute }
+
+export interface ReadingKindResult { type: 'reading_kind_result'; requestId: string; kind: ReadingKind }
 
 export interface ReadingEvent {
   type: 'reading_event'; requestId: string; threadId: string;
@@ -110,6 +119,8 @@ export function isReadingClientMessage(v: ReadingClientMessage): boolean {
 
   if (v.type === 'reading_import') return isReadingTranscript(v.transcript);
 
+  if (v.type === 'reading_kind') return string(v.selection, READING_KIND_SELECTION_LIMIT) && !!v.selection.trim();
+
   if (v.type === 'reading_route') return string(v.utterance, 2000) && !!v.utterance.trim() && string(v.selection, READING_ROUTE_SELECTION_LIMIT) && (v.asked === undefined || string(v.asked, 2000));
 
   return isReadingTranscript(v.transcript) && v.transcript.turns.length > 0
@@ -118,6 +129,10 @@ export function isReadingClientMessage(v: ReadingClientMessage): boolean {
 
 export function isReadingRouteResult(v: ReadingRouteResult): boolean {
   return id(v.requestId) && (v.route === 'reading' || v.route === 'task');
+}
+
+export function isReadingKindResult(v: ReadingKindResult): boolean {
+  return id(v.requestId) && READING_KINDS.includes(v.kind);
 }
 
 export function isReadingEvent(v: ReadingEvent): boolean {

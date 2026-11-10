@@ -1,4 +1,4 @@
-import { isReadingClientMessage, isReadingEvent, isReadingRouteResult, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingRouteResult, type ReadingTranscript } from "./reading.js";
+import { isReadingClientMessage, isReadingEvent, isReadingKindResult, isReadingRouteResult, isReadingTranscript, type ReadingClientMessage, type ReadingEvent, type ReadingKindResult, type ReadingRouteResult, type ReadingTranscript } from "./reading.js";
 import { isNudgeClientMessage, isNudgeResult, type NudgeClientMessage, type NudgeResult } from "./nudge.js";
 import { isBrowseHabitClientMessage, isBrowseHabitResult, type BrowseHabitClientMessage, type BrowseHabitResult } from "./browse-habits.js";
 import { isExecutionFeedback } from "./execution-feedback.js";
@@ -363,6 +363,7 @@ export interface HostFeatures { memory: boolean }
 export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number>;runId?:string|null} & (
   | ReadingEvent
   | ReadingRouteResult
+  | ReadingKindResult
   | NudgeResult
   | BrowseHabitResult
   | {type:'task_control';requestId:string;action:'pause'|'resume'|'abort';runId:string;scope?:'task'|'page';tabId?:number;ask?:string;targets?:string[]}
@@ -787,7 +788,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
 
-    if (msg.type === "reading_request" || msg.type === "reading_cancel" || msg.type === "reading_route" || msg.type === "reading_import") return isReadingClientMessage(msg) ? msg : null;
+    if (msg.type === "reading_request" || msg.type === "reading_cancel" || msg.type === "reading_route" || msg.type === "reading_kind" || msg.type === "reading_import") return isReadingClientMessage(msg) ? msg : null;
 
     if (msg.type === "nudge_request" || msg.type === "nudge_validate") return isNudgeClientMessage(msg) ? msg : null;
 
@@ -963,6 +964,7 @@ type AgentEventOf<K extends AgentEventMessage["event"]["kind"]> = AgentEventMess
 const SELF_CHECKED_SERVER: { [T in ServerMessage["type"]]?: (msg: ServerOf<T>) => boolean } = {
   reading_event: (msg) => isReadingEvent(msg),
   reading_route_result: (msg) => isReadingRouteResult(msg),
+  reading_kind_result: (msg) => isReadingKindResult(msg),
   browse_habit_result: (msg) => isBrowseHabitResult(msg),
   task_control: (msg) => validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&(msg.scope===undefined||msg.scope==='task'||msg.scope==='page')&&(msg.tabId===undefined||Number.isSafeInteger(msg.tabId)&&msg.tabId>0)&&(msg.ask===undefined||typeof msg.ask==='string'&&msg.ask.length<=200)&&(msg.targets===undefined||Array.isArray(msg.targets)&&msg.targets.length<=6&&msg.targets.every(t=>typeof t==='string'&&t.length<=200)),
   task_control_ack: (msg) => validRequestId(msg.requestId)&&msg.action==='abort'&&typeof msg.ok==='boolean',
