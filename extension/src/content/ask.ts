@@ -10,7 +10,7 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText, ChartColumn, CalendarPlus, MapPin, SearchCheck } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, READING_KINDS, READING_KIND_SELECTION_LIMIT, type ReadingKind, type ReadingSource } from '../../../shared/reading.js';
@@ -82,7 +82,7 @@ export function selectionSnapshot(): SelectionSnapshot | null {
   return { source: { text, surrounding, location: selectionLocation(range), truncated: raw.length > READING_SELECTION_LIMIT, tabId: 0, title: document.title, url: location.href }, range, rect };
 }
 
-const CARD_WIDTH = 450;
+const CARD_WIDTH = 400;
 
 const CARD_MIN_WIDTH = 320;
 const CARD_MIN_HEIGHT = 240;
@@ -90,6 +90,7 @@ const CARD_MIN_HEIGHT = 240;
 const PLACE_MARGIN = 12;
 
 const BESIDE_GAP = 40;
+const LINK_INSET = 10;
 
 const LENS_GAP = 6;
 
@@ -125,9 +126,9 @@ const JUDGE_DELAY_MS = 250;
 
 const JUDGED_LIMIT = 50;
 
-const CONTEXT_ACTIONS: Array<{ label: string; icon: typeof ChartColumn; question: string; fits(text: string, kind: ReadingKind): boolean; attach?(source: { text: string; title: string; url: string }): ContextAttachment | null }> = [
+const CONTEXT_ACTIONS: Array<{ label: string; question: string; fits(text: string, kind: ReadingKind): boolean; attach?(source: { text: string; title: string; url: string }): ContextAttachment | null }> = [
   {
-    label: '画成图', icon: ChartColumn, question: CHART_QUESTION,
+    label: '画成图', question: CHART_QUESTION,
     fits: text => parseSelectionTable(text) !== null,
     attach: source => {
       const table = parseSelectionTable(source.text);
@@ -136,7 +137,7 @@ const CONTEXT_ACTIONS: Array<{ label: string; icon: typeof ChartColumn; question
     },
   },
   {
-    label: '加日程', icon: CalendarPlus, question: EVENT_QUESTION,
+    label: '加日程', question: EVENT_QUESTION,
     fits: text => parseSelectionEvent(text) !== null,
     attach: source => {
       const event = parseSelectionEvent(source.text);
@@ -144,8 +145,8 @@ const CONTEXT_ACTIONS: Array<{ label: string; icon: typeof ChartColumn; question
       return event ? { ...renderSelectionEvent(event, source), replacesQuote: true } : null;
     },
   },
-  { label: '查路线', icon: MapPin, question: ROUTE_QUESTION, fits: (_text, kind) => kind === 'address' },
-  { label: '查证', icon: SearchCheck, question: CHECK_QUESTION, fits: (_text, kind) => kind === 'claim' },
+  { label: '查路线', question: ROUTE_QUESTION, fits: (_text, kind) => kind === 'address' },
+  { label: '查证', question: CHECK_QUESTION, fits: (_text, kind) => kind === 'claim' },
 ];
 
 const MULTI_CLICK_MS = 420;
@@ -208,6 +209,30 @@ function gutterBlank(host: HTMLElement, block: Element, region: { left: number; 
 const BOOTED = '__sideagentContentAlive';
 
 const WORDS = new Intl.Segmenter('zh', { granularity: 'word' });
+
+function markLead(block: Element, length: number): void {
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  const text = block.textContent ?? '';
+  let left = length + text.length - text.trimStart().length;
+
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const size = node.textContent!.length;
+
+    if (left <= size) {
+      const range = document.createRange();
+      range.setStart(block, 0);
+      range.setEnd(node, left);
+      const lead = document.createElement('span');
+      lead.className = 'lead';
+      lead.append(range.extractContents());
+      range.insertNode(lead);
+
+      return;
+    }
+
+    left -= size;
+  }
+}
 
 function fadeNewWords(root: HTMLElement, shown: number): number {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -280,7 +305,7 @@ function boot(): void {
   for (const type of ['keydown', 'keypress', 'keyup'] as const) host.addEventListener(type, event => event.stopPropagation());
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
-      <div class="bar" role="toolbar" aria-label="划词"><button class="icon ctx" hidden></button><button class="icon ask" data-act="ask" data-tip="问这段" aria-label="问这段"></button><button class="icon" data-act="explain" data-tip="解释" aria-label="解释"></button><button class="icon" data-prompt="translate" data-tip="翻译" aria-label="翻译"></button><span class="sep" aria-hidden="true"></span><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
+      <div class="bar" role="toolbar" aria-label="划词"><button class="ctx" hidden></button><button class="ask" data-act="ask">问这段</button><button data-act="explain">解释</button><button data-prompt="translate">翻译</button><span class="sep" aria-hidden="true"></span><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
       <div class="bar-tip" id="toolbar-tip" role="tooltip" hidden></div>
       <div class="head" hidden><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
@@ -293,13 +318,11 @@ function boot(): void {
     </section>
     <div class="menu" role="menu" aria-label="更多问法" hidden><button class="menu-action" role="menuitem" data-act="copy-selection"><span class="menu-action-icon menu-copy-icon" aria-hidden="true"></span>复制所选文字</button><button class="menu-action" role="menuitem" data-act="read-selection" hidden><span class="menu-action-icon menu-read-icon" aria-hidden="true"></span>朗读所选文字</button><div class="rule" role="separator"></div><div class="menu-label">更多问法</div>${PROMPTS.map(prompt => `<div class="menu-row"><span class="menu-glyph" aria-hidden="true"></span><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button></div>`).join('')}<div class="rule" role="separator"></div><button class="menu-action" role="menuitem" data-act="transfer"><span class="menu-action-icon menu-transfer-icon" aria-hidden="true"></span>在侧栏打开</button><div class="rule" role="separator"></div><div class="menu-label">自动显示</div><button role="menuitem" class="dim" data-act="mute-page">此页不再自动显示</button><button role="menuitem" class="dim" data-act="mute-all">所有网页不再自动显示</button></div>
     <div class="menu answer-menu" role="menu" aria-label="更多回答操作" hidden><button role="menuitem" data-act="deep">用深度回答重答</button><button role="menuitem" data-act="details">收起回答</button></div>
+    <div class="link" aria-hidden="true" hidden></div>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
   document.documentElement.append(host);
   const el = <T extends Element = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
 
-  el('[data-act="ask"]').append(icon(MessageCircleQuestion));
-  el('[data-act="explain"]').append(icon(Lightbulb));
-  el('[data-prompt="translate"]').append(icon(Languages));
   el('[data-act="more"]').append(icon(Ellipsis));
   el('[data-act="close"]').append(icon(X));
   el('[data-act="answer-more"]').append(icon(Ellipsis));
@@ -319,6 +342,7 @@ function boot(): void {
   const barTip = el('.bar-tip');
   const head = el('.head');
   const resizeHandle = el('.resize');
+  const link = el('.link');
   head.addEventListener('pointerdown', startDrag);
   head.addEventListener('pointermove', moveDrag);
   head.addEventListener('pointerup', endDrag);
@@ -498,6 +522,7 @@ function boot(): void {
     }
 
     const margin = PLACE_MARGIN;
+    link.hidden = true;
 
     if (manualPos) {
       delete surface.dataset.tail;
@@ -570,10 +595,19 @@ function boot(): void {
     const box = surface.getBoundingClientRect();
 
     if (beside && blockRect) {
+      const top = clamp(first.top - 6, margin, innerHeight - box.height - margin);
       surface.style.left = `${blockRect.right + BESIDE_GAP}px`;
-      surface.style.top = `${clamp(first.top - 6, margin, innerHeight - box.height - margin)}px`;
+      surface.style.top = `${top}px`;
       surface.style.setProperty('--origin', 'left top');
       surface.dataset.place = 'beside';
+      const lineY = first.top + first.height / 2;
+
+      if (lineY > top + LINK_INSET && lineY < top + box.height - LINK_INSET) {
+        link.hidden = false;
+        link.style.left = `${blockRect.right + LINK_INSET}px`;
+        link.style.top = `${lineY}px`;
+        link.style.width = `${BESIDE_GAP - LINK_INSET}px`;
+      }
 
       return;
     }
@@ -639,6 +673,7 @@ function boot(): void {
     closeMenu();
     visible = false;
     surface.hidden = true;
+    link.hidden = true;
     restore.hidden = !record?.turns.length;
     highlights?.delete(highlightName);
     candidate = null;
@@ -812,8 +847,7 @@ function boot(): void {
 
     if (fitting && ctx.dataset.ask !== fitting.question) {
       ctx.dataset.ask = fitting.question;
-      ctx.setAttribute('aria-label', fitting.label);
-      ctx.replaceChildren(icon(fitting.icon), fitting.label);
+      ctx.textContent = fitting.label;
     }
 
     if (!expanded) {
@@ -896,6 +930,7 @@ function boot(): void {
       const hasMoreText = summaryText.length > summaryLimit;
       const done = turn.state === 'done';
       const hasDetails = done && (item.node.childElementCount > 1 || hasMoreText || Boolean(first && first.tagName !== 'P'));
+      if (first?.tagName === 'P' && sentenceEnd >= 0 && sentenceEnd < 100 && (hasMoreText || item.node.childElementCount > 1) && !first.querySelector('.lead')) markLead(first, sentenceEnd + 1);
       item.summary.textContent = summaryText.slice(0, summaryLimit) + (hasMoreText && summaryLimit === 100 ? '…' : '');
       item.summary.hidden = !hasDetails || item.detailed;
       item.node.hidden = hasDetails && !item.detailed;
