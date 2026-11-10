@@ -350,7 +350,7 @@ export function installReading(deps: Dependencies) {
         if (!isReadingTranscript({threadId: 'validate', source, turns: []})) throw new Error('选中的文字太长，或读不出来。');
         record = [...records.values()].find(r => owned(r) && r.source.text === source.text && r.source.location === source.location && r.source.surrounding === source.surrounding);
 
-        for (const r of records.values()) if (owned(r) && r.threadId !== record?.threadId) stop(r);
+        for (const r of records.values()) if (owned(r) && r.threadId !== record?.threadId && agentTurn(r)) stop(r);
 
         if (!record) {
           if (records.size >= 16) {
