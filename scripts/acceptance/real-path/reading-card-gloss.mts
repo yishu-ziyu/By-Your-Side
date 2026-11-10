@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { launchRealPath, requireHeadless, REPO, siteAddress, sleep, until, type Json } from "./harness.mts";
 import { configureViaSettings, DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "./inproc-config.mts";
@@ -53,7 +54,8 @@ const STEAL = BLANK.replace("</body>", `<textarea id="site-box" style="position:
 
 const TABLE = BLANK.replace("<h1>灯塔日志</h1>", `<h1>灯塔日志</h1>
   <table id="stats" style="border-collapse:collapse;margin:0 0 20px;font:15px/1.6 -apple-system,sans-serif"><thead><tr><th>年份</th><th>风暴次数</th><th>沉船</th></tr></thead><tbody>
-  <tr><td>1901</td><td>12</td><td>3</td></tr><tr><td>1902</td><td>18</td><td>5</td></tr><tr><td>1903</td><td>9</td><td>1</td></tr><tr><td>1904</td><td>24</td><td>8</td></tr></tbody></table>`).replace("</style>", "th,td{padding:4px 28px 4px 0;text-align:left}</style>");
+  <tr><td>1901</td><td>12</td><td>3</td></tr><tr><td>1902</td><td>18</td><td>5</td></tr><tr><td>1903</td><td>9</td><td>1</td></tr><tr><td>1904</td><td>24</td><td>8</td></tr></tbody></table>
+  <p>灯塔的开放日定在 <span id="open-day">1905 年 6 月 3 日 14:00</span>，镇上的人都可以上塔。</p>`).replace("</style>", "th,td{padding:4px 28px 4px 0;text-align:left}</style>");
 
 const site = createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
@@ -71,6 +73,7 @@ const model = await startScriptedModel([
   { match: "这里是什么意思", steps: [{ text: "已收到这处提问。" }] },
   { match: FOLLOW_UP, steps: [{ text: FOLLOW_ANSWER }] },
   { match: "解释这段选中的文字", steps: [{ text: EXPLAIN_ANSWER }] },
+  { match: "对应的是什么活动", steps: [{ text: "灯塔开放日" }] },
   { match: "这张表里的数字", steps: [{ text: "1904 年风暴最多，沉船也最多。" }] },
   { match: "翻译成中文", steps: [{ text: "灯塔看守人用紫色墨水记下每一场风暴。" }] },
 ], undefined, (payload) => {
@@ -411,6 +414,27 @@ try {
   await sleep(700);
   const second = await inCard<string[]>(`function(){return [...this.querySelectorAll('.plot b')].map(b=>b.textContent)}`);
   check("切到另一列：柱子换成那一列的数字", JSON.stringify(second) === JSON.stringify(["3", "5", "1", "8"]), second);
+
+  await click((await pointOf('[data-act="close"]'))!);
+  await sleep(300);
+  const downloads = join(out, "downloads");
+  mkdirSync(downloads, { recursive: true });
+  await rp.cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
+  const openDay = await rp.evaluate(work, `(() => { const r = document.querySelector("#open-day").getBoundingClientRect(); return { x1: r.left + 1, y1: r.top + r.height / 2, x2: r.right - 1, y2: r.top + r.height / 2 }; })()`) as { x1: number; y1: number; x2: number; y2: number };
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: openDay.x1, y: openDay.y1, button: "left", clickCount: 1 }, work);
+  for (let i = 1; i <= 8; i++) await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: openDay.x1 + ((openDay.x2 - openDay.x1) * i) / 8, y: openDay.y1, button: "left", buttons: 1 }, work);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: openDay.x2, y: openDay.y2, button: "left", clickCount: 1 }, work);
+  const eventButton = await until(() => pointOf('.bar .ctx'), 5_000, "加日程");
+  const eventLabel = await inCard<string>(`function(){return this.querySelector('.bar .ctx').textContent.trim()}`);
+  await shot("4d-date-bar");
+  await click(eventButton);
+  const draft = await until(() => inCard<{ title: string; when: string }>(`function(){return {title:this.querySelector('.event input')?.value??'',when:this.querySelector('.event .when')?.textContent??''}}`).then((state) => state.title ? state : undefined), 20_000, "活动名称填好");
+  await shot("4e-date-draft");
+  check("选中日期：第一个按钮变成「加日程」，卡片里是填好名称和时间的日程", eventLabel === "加日程" && draft.title === "灯塔开放日" && draft.when.includes("6月3日") && draft.when.includes("14:00"), { eventLabel, ...draft });
+  await click((await pointOf('.event .go'))!);
+  const file = await until(() => { const name = readdirSync(downloads).find((entry) => entry.endsWith(".ics")); return name ? readFileSync(join(downloads, name), "utf8") : undefined; }, 10_000, "日程文件");
+  const savedNote = await inCard<string>(`function(){return this.querySelector('.event .saved')?.textContent??''}`);
+  check("点「加入日历」：下载的日程文件里是这个名称和时间，卡片说明下一步", file.includes("SUMMARY:灯塔开放日") && file.includes("DTSTART:19050603T140000") && file.includes("DTEND:19050603T150000") && savedNote.includes("已下载"), { savedNote, file: file.slice(0, 400) });
 
   await selectMarker("/blank", 1280);
   await click(await until(() => pointOf('.bar [data-act="dismiss"]'), 5_000, "关闭"));
