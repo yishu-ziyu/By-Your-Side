@@ -173,6 +173,15 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .plot i { display: block; flex: none; width: 100%; height: 0; border-radius: var(--r-small) var(--r-small) 0 0; background: var(--pen); opacity: .85; transition: height .5s var(--ease-out); }
 .plot b { font-weight: 500; color: var(--ink-fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .plot span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event { display: grid; gap: 8px; }
+.event input { height: 34px; padding: 0 10px; border: 0; border-radius: var(--r-inner); outline: none; background: var(--sider-fill); font: inherit; font-size: var(--t-body); color: var(--ink-fg); }
+.event input::placeholder { color: var(--ink-mute); }
+.event input:focus-visible { box-shadow: 0 0 0 2px var(--pen-soft); }
+.event .when { font-size: var(--t-ui); color: var(--ink-fg-2); }
+.event .go { justify-self: start; padding: 0 14px; background: var(--pen); color: var(--on-pen); }
+@media (hover: hover) and (pointer: fine) { .event .go:not(:disabled):hover { background: var(--pen); filter: brightness(1.1); } }
+.event .saved { font-size: var(--t-meta); color: var(--ink-mute); }
+.event .saved:empty { display: none; }
 .status.err { color: var(--warn); }
 .tag { color: var(--ink-fg-2); }
 
