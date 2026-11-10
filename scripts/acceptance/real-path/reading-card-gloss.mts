@@ -51,9 +51,13 @@ const SIDE = article(`
 const STEAL = BLANK.replace("</body>", `<textarea id="site-box" style="position:fixed;left:16px;right:16px;bottom:16px;height:40px"></textarea>
 <script>document.addEventListener("keydown", (e) => { const a = document.activeElement; if (a && (a.matches("input,textarea") || a.isContentEditable)) return; document.querySelector("#site-box").focus(); });</script></body>`);
 
+const TABLE = BLANK.replace("<h1>灯塔日志</h1>", `<h1>灯塔日志</h1>
+  <table id="stats" style="border-collapse:collapse;margin:0 0 20px;font:15px/1.6 -apple-system,sans-serif"><thead><tr><th>年份</th><th>风暴次数</th><th>沉船</th></tr></thead><tbody>
+  <tr><td>1901</td><td>12</td><td>3</td></tr><tr><td>1902</td><td>18</td><td>5</td></tr><tr><td>1903</td><td>9</td><td>1</td></tr><tr><td>1904</td><td>24</td><td>8</td></tr></tbody></table>`).replace("</style>", "th,td{padding:4px 28px 4px 0;text-align:left}</style>");
+
 const site = createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(path === "/side" ? SIDE : path === "/steal" ? STEAL : BLANK);
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(path === "/side" ? SIDE : path === "/steal" ? STEAL : path === "/table" ? TABLE : BLANK);
 });
 
 await new Promise<void>((done) => site.listen(0, "127.0.0.1", done));
@@ -67,6 +71,7 @@ const model = await startScriptedModel([
   { match: "这里是什么意思", steps: [{ text: "已收到这处提问。" }] },
   { match: FOLLOW_UP, steps: [{ text: FOLLOW_ANSWER }] },
   { match: "解释这段选中的文字", steps: [{ text: EXPLAIN_ANSWER }] },
+  { match: "这张表里的数字", steps: [{ text: "1904 年风暴最多，沉船也最多。" }] },
   { match: "翻译成中文", steps: [{ text: "灯塔看守人用紫色墨水记下每一场风暴。" }] },
 ], undefined, (payload) => {
   const body = payload as { model?: string; reasoning_effort?: unknown; messages?: Array<{ role?: string; content?: unknown }> };
@@ -383,6 +388,29 @@ try {
   await sleep(300);
   const translated = await inCard<string>(`function(){return this.querySelector('.head .title')?.textContent??''}`);
   check("点工具条上的翻译：发出翻译提问，标题是「翻译」", translated === "翻译" && seen.at(-1)!.user.includes("翻译"), { title: translated, user: seen.at(-1)!.user.slice(0, 120) });
+
+  await selectMarker("/table", 1280);
+  const ordinary = await inCard<boolean>(`function(){return this.querySelector('.bar .ctx').hidden}`);
+  const cells = await rp.evaluate(work, `(() => { const a = document.querySelector("#stats th").getBoundingClientRect(), b = document.querySelector("#stats tr:last-child td:last-child").getBoundingClientRect(); return { x1: a.left + 2, y1: a.top + a.height / 2, x2: b.left + 12, y2: b.top + b.height / 2 }; })()`) as { x1: number; y1: number; x2: number; y2: number };
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: cells.x1, y: cells.y1, button: "left", clickCount: 1 }, work);
+  for (let i = 1; i <= 8; i++) await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: cells.x1 + ((cells.x2 - cells.x1) * i) / 8, y: cells.y1 + ((cells.y2 - cells.y1) * i) / 8, button: "left", buttons: 1 }, work);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: cells.x2, y: cells.y2, button: "left", clickCount: 1 }, work);
+  const chartButton = await until(() => pointOf('.bar .ctx'), 5_000, "画成图");
+  const tableBar = await inCard<{ first: string; askPrimary: boolean }>(`function(){const bs=[...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]'));return {first:bs[0].textContent.trim(),askPrimary:getComputedStyle(this.querySelector('.bar .ask')).backgroundColor!=='rgba(0, 0, 0, 0)'}}`);
+  await shot("4b-table-bar");
+  check("选中表格：第一个按钮变成「画成图」并成为唯一主色；选普通句子时不出现", ordinary && tableBar.first === "画成图" && !tableBar.askPrimary, { ordinary, ...tableBar });
+  const beforeChart = seen.length;
+  await click(chartButton);
+  await until(() => seen.length > beforeChart || undefined, 20_000, "图表提问");
+  await until(async () => (await inCard<string>(`function(){return this.querySelector(".answer")?.textContent??""}`)).includes("1904") ? true : undefined, 20_000, "图表说明写完");
+  await sleep(700);
+  const chart = await inCard<{ title: string; tabs: string[]; values: string[]; heights: number[]; quote: boolean }>(`function(){const c=this.querySelector('.turn > .chart');return {title:this.querySelector('.head .title')?.textContent??'',tabs:[...(c?.querySelectorAll('.seg button')??[])].map(b=>b.textContent),values:[...(c?.querySelectorAll('.plot b')??[])].map(b=>b.textContent),heights:[...(c?.querySelectorAll('.plot i')??[])].map(i=>i.offsetHeight),quote:!!this.querySelector('.turn > .source')}}`);
+  await shot("4c-table-chart");
+  check("点「画成图」：卡片里是按表格数字画的柱子，最高的是 1904 年，不再重复引用原表", chart.title === "画成图" && JSON.stringify(chart.tabs) === JSON.stringify(["风暴次数", "沉船"]) && JSON.stringify(chart.values) === JSON.stringify(["12", "18", "9", "24"]) && chart.heights[3] === Math.max(...chart.heights) && chart.heights[2] < chart.heights[0] && !chart.quote, chart);
+  await click((await pointOf('.seg button:nth-child(2)'))!);
+  await sleep(700);
+  const second = await inCard<string[]>(`function(){return [...this.querySelectorAll('.plot b')].map(b=>b.textContent)}`);
+  check("切到另一列：柱子换成那一列的数字", JSON.stringify(second) === JSON.stringify(["3", "5", "1", "8"]), second);
 
   await selectMarker("/blank", 1280);
   await click(await until(() => pointOf('.bar [data-act="dismiss"]'), 5_000, "关闭"));

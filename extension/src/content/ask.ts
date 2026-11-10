@@ -10,7 +10,7 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText, ChartColumn } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
@@ -19,6 +19,7 @@ import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
 import { selectionSurrounding } from './selection-context.js';
 import { createReadAloud } from './read-aloud.js';
+import { CHART_QUESTION, parseSelectionTable, renderSelectionChart } from './selection-chart.js';
 import { syncColorTone } from '../shared/color-tone.js';
 
 const HOST = 'data-sideagent-ask';
@@ -108,6 +109,10 @@ const PROMPT_ICONS = {
 };
 
 const QUICK_QUESTIONS = PROMPTS.filter(prompt => ['example', 'why', 'evidence'].includes(prompt.id));
+
+const CONTEXT_ACTIONS = [
+  { label: '画成图', icon: ChartColumn, question: CHART_QUESTION, fits: (text: string) => parseSelectionTable(text) !== null },
+];
 
 const MULTI_CLICK_MS = 420;
 
@@ -241,7 +246,7 @@ function boot(): void {
   for (const type of ['keydown', 'keypress', 'keyup'] as const) host.addEventListener(type, event => event.stopPropagation());
   root.innerHTML = `<style>${ASK_STYLES}</style>
     <section class="surface" role="dialog" aria-label="划词阅读" hidden>
-      <div class="bar" role="toolbar" aria-label="划词"><button class="icon ask" data-act="ask" data-tip="问这段" aria-label="问这段"></button><button class="icon" data-act="explain" data-tip="解释" aria-label="解释"></button><button class="icon" data-prompt="translate" data-tip="翻译" aria-label="翻译"></button><span class="sep" aria-hidden="true"></span><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
+      <div class="bar" role="toolbar" aria-label="划词"><button class="icon ctx" hidden></button><button class="icon ask" data-act="ask" data-tip="问这段" aria-label="问这段"></button><button class="icon" data-act="explain" data-tip="解释" aria-label="解释"></button><button class="icon" data-prompt="translate" data-tip="翻译" aria-label="翻译"></button><span class="sep" aria-hidden="true"></span><button class="icon more" data-act="more" data-tip="更多问法" aria-label="更多问法" aria-haspopup="menu" aria-expanded="false"></button><button class="icon dismiss" data-act="dismiss" data-tip="关闭" aria-label="关闭"></button></div>
       <div class="bar-tip" id="toolbar-tip" role="tooltip" hidden></div>
       <div class="head" hidden><strong class="title"></strong><button class="icon small" data-act="close" aria-label="收起" title="收起"></button></div>
       <div class="messages" tabindex="0" aria-label="阅读问答" hidden></div>
@@ -727,9 +732,10 @@ function boot(): void {
     }
   }
 
-  const questionLabel = (question: string) => question === EXPLAIN_PROMPT ? '解释这段文字' : PROMPTS.find(prompt => prompt.question === question)?.label ?? question;
-  const preset = (question: string) => question === EXPLAIN_PROMPT || PROMPTS.some(prompt => prompt.question === question);
-  const actionName = (question: string) => question === EXPLAIN_PROMPT ? '解释' : PROMPTS.find(prompt => prompt.question === question)?.label ?? '问这段';
+  const named = (question: string) => [...PROMPTS, ...CONTEXT_ACTIONS].find(prompt => prompt.question === question)?.label;
+  const questionLabel = (question: string) => question === EXPLAIN_PROMPT ? '解释这段文字' : named(question) ?? question;
+  const preset = (question: string) => question === EXPLAIN_PROMPT || named(question) !== undefined;
+  const actionName = (question: string) => question === EXPLAIN_PROMPT ? '解释' : named(question) ?? '问这段';
 
   function metaButton(label: string, act: string, turn: number): HTMLButtonElement {
     const button = document.createElement('button');
@@ -762,6 +768,16 @@ function boot(): void {
     surface.classList.toggle('live', turns.some(turn => turn.state === 'pending' || turn.state === 'streaming') || waiting);
     el('.composer').hidden = !expanded;
     el('.chips').hidden = !composing;
+    const fitting = expanded || !snapshot ? undefined : CONTEXT_ACTIONS.find(action => action.fits(snapshot!.source.text));
+    const ctx = el('.ctx');
+    ctx.hidden = !fitting;
+    el('.bar').classList.toggle('has-ctx', !!fitting);
+
+    if (fitting && ctx.dataset.ask !== fitting.question) {
+      ctx.dataset.ask = fitting.question;
+      ctx.setAttribute('aria-label', fitting.label);
+      ctx.replaceChildren(icon(fitting.icon), fitting.label);
+    }
 
     if (!expanded) {
       position();
@@ -799,12 +815,14 @@ function boot(): void {
         const meta = document.createElement('div');
         meta.className = 'meta';
         wrapper.append(question, summary, node, meta);
+        const table = turn.question === CHART_QUESTION ? parseSelectionTable(sourceOf(index)) : null;
+        if (table) wrapper.insertBefore(renderSelectionChart(table), summary);
         messages.append(wrapper);
         answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: true, text: '', words: 0 });
       }
 
       const item = answers[index]!;
-      const showsSource = index === 0 || (several && !!turn.source);
+      const showsSource = !item.turn.querySelector(':scope > .chart') && (index === 0 || (several && !!turn.source));
       setSourceQuote(item.turn, showsSource ? sources[index]! : '', index);
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
