@@ -244,14 +244,14 @@ try {
   await selectMarker("/blank", 1280);
   const defaultBar = await inCard<string[]>(`function(){return [...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]')).map(b=>b.textContent.trim()||b.getAttribute('aria-label'))}`);
   check("工具条第一层是问、解释、翻译、更多、关闭，不出现朗读", JSON.stringify(defaultBar) === JSON.stringify(["问这段","解释","翻译","更多问法","关闭"]), defaultBar);
-  const barLayout = await inCard<{ text: number; named: boolean; primary: boolean; sized: boolean; tips: boolean }>(`function(){const bs=[...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]'));const ask=this.querySelector('.bar [data-act="ask"]');const tipButtons=bs.filter(b=>b.dataset.tip);return {text:bs.reduce((n,b)=>n+(b.textContent?.trim()?1:0),0),named:bs.every(b=>!!b.querySelector('svg')&&!!b.getAttribute('aria-label')),primary:getComputedStyle(ask).backgroundColor!=='rgba(0, 0, 0, 0)',sized:ask.offsetWidth===32&&ask.offsetHeight===26&&bs.filter(b=>b!==ask).every(b=>b.offsetWidth===26&&b.offsetHeight===26),tips:tipButtons.every(b=>b.dataset.tip===b.getAttribute('aria-label'))}}`);
-  check("工具条保持纯图标，问这段有唯一主色，所有动作保留可访问名称", barLayout.text === 0 && barLayout.named && barLayout.primary && barLayout.sized && barLayout.tips, barLayout);
-  await inCard<boolean>(`function(){this.querySelector('[data-act="explain"]').focus();return true}`);
+  const barLayout = await inCard<{ words: boolean; icons: boolean; primary: boolean }>(`function(){const bs=[...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]'));const ask=this.querySelector('.bar [data-act="ask"]');const plain=this.querySelector('.bar [data-act="explain"]');const words=bs.filter(b=>!b.classList.contains('icon'));const icons=bs.filter(b=>b.classList.contains('icon'));return {words:words.length===3&&words.every(b=>!!b.textContent.trim()&&!b.querySelector('svg')&&b.offsetHeight===26),icons:icons.length===2&&icons.every(b=>!!b.querySelector('svg')&&!!b.getAttribute('aria-label')&&b.dataset.tip===b.getAttribute('aria-label')&&b.offsetWidth===26),primary:getComputedStyle(ask).backgroundColor!=='rgba(0, 0, 0, 0)'&&getComputedStyle(plain).backgroundColor==='rgba(0, 0, 0, 0)'}}`);
+  check("工具条直接写名字不配图标，问这段有唯一主色，更多和关闭是带名称的图标", barLayout.words && barLayout.icons && barLayout.primary, barLayout);
+  await inCard<boolean>(`function(){this.querySelector('.bar [data-act="more"]').focus();return true}`);
   await sleep(180);
   const explainTip = await inCard<{ text: string; bg: string }>(`function(){const t=this.querySelector('.bar-tip');return {text:t.hidden?'':t.textContent??'',bg:getComputedStyle(t).backgroundColor}}`);
-  check("键盘聚焦图标动作时出现黑底动作名", explainTip.text === "解释" && explainTip.bg === "rgb(21, 26, 32)", explainTip);
+  check("键盘聚焦图标动作时出现黑底动作名", explainTip.text === "更多问法" && explainTip.bg === "rgb(21, 26, 32)", explainTip);
   await shot("toolbar-tooltip");
-  await inCard<boolean>(`function(){this.querySelector('[data-act="explain"]').blur();return true}`);
+  await inCard<boolean>(`function(){this.querySelector('.bar [data-act="more"]').blur();return true}`);
   const selectBank = async (id: string) => {
     const box = await rp.evaluate(work, `(() => {const e=document.querySelector(${JSON.stringify(id)}); e.scrollIntoView({block:"center"}); const r=e.getBoundingClientRect(); return {x:r.x, y:r.y+r.height/2, w:r.width};})()`) as {x:number;y:number;w:number};
     await drag({x:box.x+1,y:box.y}, {x:box.x+box.w-1,y:box.y});
@@ -339,6 +339,8 @@ try {
   await rp.evaluate(panel, `chrome.storage.local.set({reading_aloud:false}).then(()=>true)`);
   await until(async () => (await inCard<boolean>(`function(){return !!this.querySelector('.menu [data-act="read-selection"]')?.hidden}`)) || undefined, 5_000, "设置关闭后隐藏更多菜单里的朗读");
   check("纸色：卡片是浅色底", light, look.bg);
+  const gloss = await inCard<{ lead: string; link: boolean }>(`function(){return {lead:this.querySelector('.answer .lead')?.textContent??'',link:!this.querySelector('.link').hidden}}`);
+  check("批注：第一句结论铺底，细线连回被问的那行", gloss.lead === "紫色染料能保存几十年。" && gloss.link, gloss);
   const hierarchy = await inCard<{ repeated: boolean; iconsNamed: boolean }>(`function(){return {repeated:/快速回答|用深度模型重答/.test(this.querySelector('.meta')?.textContent??''),iconsNamed:[...this.querySelectorAll('.foot button.icon')].every(b=>!!b.title&&!!b.getAttribute('aria-label')&&!!b.querySelector('svg'))}}`);
   check("阅读操作一行，图标保留名称，深度重答不挤在正文下", !hierarchy.repeated && hierarchy.iconsNamed, hierarchy);
   await click((await pointOf('[data-act="answer-more"]'))!);
@@ -536,7 +538,7 @@ try {
   await sleep(250);
   const reset = await scene();
   await shot("8-reset");
-  check("双击右下角：回到默认大小", Math.abs(reset.card.width - 450) < 2, { card: reset.card });
+  check("双击右下角：回到默认大小", Math.abs(reset.card.width - 400) < 2, { card: reset.card });
 
   await selectMarker("/blank", 360);
   const narrowControls = await inCard<{ask:boolean;explain:boolean;translate:boolean;more:boolean;close:boolean}>(`function(){const visible=(selector)=>{const e=this.querySelector(selector),r=e?.getBoundingClientRect();return !!r&&r.width>0&&r.left>=0&&r.right<=innerWidth};return {ask:visible('[data-act="ask"]'),explain:visible('[data-act="explain"]'),translate:visible('[data-prompt="translate"]'),more:visible('[data-act="more"]'),close:visible('[data-act="dismiss"]')}}`);

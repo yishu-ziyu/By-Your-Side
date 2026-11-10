@@ -26,10 +26,7 @@ export const PAPER_TOKENS = `
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
   --ease-word: cubic-bezier(.37, .55, .86, .88);
-  --sider-layer: #fff;
   --sider-fill: rgb(114 118 139 / .06);
-  --sider-fill-hover: rgb(114 118 139 / .12);
-  --sider-line: rgb(114 118 139 / .16);
   /* 和网页上那段字的黄色标记同一种黄：卡里的引用和页面上的标记一眼对得上。 */
   --mark: rgba(232, 180, 30, .9);
 }
@@ -62,10 +59,7 @@ export const PAPER_TOKENS = `
     --warn: #eb9284;
     --shadow: 0 0 0 1px var(--ring), 0 12px 32px -6px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .2);
     --shadow-bar: 0 0 0 1px var(--ring), 0 4px 16px rgb(0 0 0 / .48), 0 2px 8px -4px rgb(0 0 0 / .72), 0 8px 32px 8px rgb(0 0 0 / .24);
-    --sider-layer: #1e1f2b;
     --sider-fill: rgb(114 118 139 / .12);
-    --sider-fill-hover: rgb(114 118 139 / .24);
-    --sider-line: rgb(114 118 139 / .32);
   }
   :host([data-tone="warm"]) {
     --ink: #2b2822;
@@ -104,15 +98,12 @@ button.icon { width: 32px; padding: 0; }
 button.icon.small { width: 24px; height: 24px; border-radius: var(--r-small); }
 button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 
-.bar { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.bar button { width: 26px; height: 26px; padding: 0; border-radius: 8px; }
+.bar { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.bar button { height: 26px; padding: 0 8px; border-radius: 8px; font-size: var(--t-meta); color: var(--ink-fg); }
+.bar button.icon { width: 26px; padding: 0; }
 .bar button svg { width: 16px; height: 16px; stroke-width: 1.75; color: var(--ink-fg); }
-.bar .ask { width: 32px; background: var(--ink-raised); }
-.bar .ask svg { color: var(--pen); stroke-width: 2; }
-.bar .ctx { width: auto; padding: 0 9px 0 7px; gap: 5px; background: var(--ink-raised); color: var(--pen); font-size: var(--t-meta); font-weight: 500; }
-.bar .ctx svg { color: var(--pen); stroke-width: 2; }
-.bar.has-ctx .ask { width: 26px; background: transparent; }
-.bar.has-ctx .ask svg { color: var(--ink-fg); stroke-width: 1.75; }
+.bar .ask, .bar .ctx { background: var(--ink-raised); color: var(--pen); font-weight: 500; }
+.bar.has-ctx .ask { background: transparent; color: var(--ink-fg); font-weight: 400; }
 .bar .dismiss svg { color: var(--ink-mute); }
 .sep { width: 1px; height: 16px; margin: 0; background: var(--ink-rule); flex: none; }
 .bar .more[aria-expanded="true"] { background: var(--ink-hover); }
@@ -134,7 +125,6 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .head { display: flex; align-items: center; gap: 7px; height: 42px; padding: 0 8px 0 9px; border-bottom: 1px solid var(--ink-rule); font-size: var(--t-meta); color: var(--ink-mute); cursor: grab; user-select: none; touch-action: none; }
 .surface.dragging .head { cursor: grabbing; }
 .head .title { flex: 1; min-width: 0; font-size: var(--t-ui); font-weight: 600; color: var(--ink-fg); }
-.turn > .source { margin-bottom: 6px; padding-left: 8px; box-shadow: inset 2px 0 0 var(--mark); font-size: var(--t-meta); line-height: 1.5; color: var(--ink-fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-pending .question { color: var(--ink-fg-2); }
 .question svg { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; stroke-width: 2; color: var(--ink-mute); }
 .messages { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-hover) transparent; padding: 15px 16px 12px; max-height: min(430px, 52vh); }
@@ -206,14 +196,14 @@ button.send svg { color: var(--on-pen); width: 15px; height: 15px; stroke-width:
 .error { font-size: var(--t-meta); color: var(--warn); padding: 4px 12px 6px; overflow-wrap: anywhere; }
 .error.info { color: var(--ink-mute); }
 
-.menu { position: fixed; pointer-events: auto; width: 248px; padding: 5px; border: 1px solid var(--ink-rule); background: var(--ink); border-radius: var(--r-outer); box-shadow: var(--shadow); display: flex; flex-direction: column; animation: pop-in .18s var(--ease-out); }
-.menu button { justify-content: flex-start; width: 100%; height: 36px; padding: 0 9px; border-radius: 8px; }
+.menu { position: fixed; pointer-events: auto; width: 248px; padding: 5px; border: 1px solid var(--ink-rule); background: var(--ink); border-radius: var(--r-inner); box-shadow: var(--shadow); display: flex; flex-direction: column; animation: pop-in .18s var(--ease-out); }
+.menu button { justify-content: flex-start; width: 100%; height: 36px; padding: 0 9px; border-radius: var(--r-small); }
 .menu button.dim { color: var(--ink-mute); }
 .menu button.dim:hover { color: var(--ink-fg); }
 .menu-label { padding: 6px 9px 3px; font-size: var(--t-tiny); color: var(--ink-mute); }
 .menu-row { display: flex; align-items: center; }
-.menu-row button[data-prompt] { flex: 1; }
-.menu-glyph { display: grid; place-items: center; width: 18px; height: 18px; margin-right: 2px; color: var(--ink-mute); }
+.menu-row button[data-prompt] { flex: 1; padding-left: 8px; }
+.menu-glyph { display: grid; place-items: center; width: 18px; height: 18px; margin-left: 9px; color: var(--ink-mute); }
 .menu-glyph svg { width: 15px; height: 15px; stroke-width: 1.75; }
 .menu .menu-action { gap: 8px; }
 .menu-action-icon { display: grid; place-items: center; width: 18px; color: var(--ink-mute); }
@@ -234,34 +224,41 @@ button.send svg { color: var(--on-pen); width: 15px; height: 15px; stroke-width:
 .reader-label { padding: 0 8px; color: var(--ink-fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reader-rate { min-width: 46px; font-variant-numeric: tabular-nums; color: var(--ink-fg-2); }
 @keyframes reader-enter { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%); } }
-/* 回答卡按 Sider 5.35.3 划词结果窗的打包样式对齐（宽 450、圆角 16、标题 18 粗、正文 14/1.65、底栏 20 内边距）；多保留了追问输入框。 */
-.surface.expanded { width: 450px; border: 0; border-radius: 16px; background: var(--sider-layer); box-shadow: var(--shadow-bar); }
+/* 回答卡是写在原文旁的一条批注：小号动作名、一行引用、首句结论铺上和页面标记同一种黄，排在正文旁边时用细线连回被问的那行。 */
+.surface.expanded { width: 400px; border: 0; border-radius: var(--r-inner); }
 .surface.enter { animation: card-in .3s ease-in-out; }
 .surface.morph { animation: card-morph .3s ease-in-out; }
 @keyframes card-in { from { opacity: 0; } }
 @keyframes card-morph { from { opacity: .85; } }
-.surface .head { height: auto; padding: 16px 16px 16px 20px; border-bottom: 0; gap: 12px; }
-.surface .head .title { font-size: 18px; font-weight: 700; line-height: 1.4; }
-.surface .head button.icon.small { width: 26px; height: 26px; border-radius: 8px; }
-.surface .messages { padding: 0 16px 0 20px; }
+.surface .head { height: auto; padding: 12px 10px 6px 16px; border-bottom: 0; gap: 8px; }
+.surface .head .title { font-size: var(--t-meta); line-height: 1.5; color: var(--pen); }
+.surface .messages { padding: 0 16px; }
 .surface:not(.resized) .messages { max-height: 250px; }
 .surface:not(.resized) .messages:has(.chart) { max-height: 340px; }
-.surface .turn > .source { display: -webkit-box; width: 100%; height: auto; margin: 0 0 12px; padding: 6px; border-radius: 8px; box-shadow: none; background: var(--sider-fill); font-size: 14px; line-height: 1.65; color: var(--ink-fg-2); white-space: normal; text-align: left; -webkit-line-clamp: 3; -webkit-box-orient: vertical; max-height: calc(1.65em * 3 + 12px); overflow: hidden; }
+.surface .turn > .source { display: block; width: 100%; height: auto; margin: 0 0 8px; padding: 0 0 0 8px; border-radius: 0; background: none; box-shadow: inset 2px 0 0 var(--mark); font-size: var(--t-meta); line-height: 1.5; color: var(--ink-mute); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .surface .answer, .surface .answer-summary { font-size: 14px; line-height: 1.65; letter-spacing: 0; }
-.surface .answer.thinking::before { background: var(--ink-fg); }
+.surface .answer:has(.lead) { color: var(--ink-fg-2); }
+.surface .answer .lead { padding: 2px 0; background: color-mix(in srgb, var(--mark) 34%, transparent); color: var(--ink-fg); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .surface .meta .status:not(.err) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* 卡片比内容高时（用户拉大过），空白留在回答和底栏之间，底栏始终贴底。 */
-.surface .foot { margin-top: auto; min-height: 0; padding: 14px 20px 10px; gap: 6px; }
-.surface .foot .handoff { order: -1; height: 32px; padding: 0 12px; gap: 8px; border: 0; border-radius: 8px; background: var(--sider-fill); color: var(--pen); font-size: 14px; font-weight: 400; }
-.surface .foot .handoff:hover { background: var(--sider-fill-hover); }
-.surface .foot button.icon { width: 32px; height: 32px; border-radius: 8px; }
-.surface .foot button.icon[data-act="copy"] { order: 2; width: auto; height: 32px; padding: 0 12px; gap: 6px; border-radius: 6px; background: var(--sider-fill); color: var(--ink-fg); font-size: 14px; }
-.surface .foot [data-act="copy"] svg { display: none; }
-.surface .foot [data-act="copy"]::after { content: "↵"; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: var(--sider-line); color: var(--ink-mute); font-size: 11px; }
-.surface .foot [data-act="copy"][data-copied] .copy-label { font-size: 0; }
-.surface .foot [data-act="copy"][data-copied] .copy-label::before { content: "已复制"; font-size: 14px; }
+.surface .foot { margin-top: auto; min-height: 0; padding: 8px 10px 4px 16px; }
+.surface .foot .handoff { order: -1; height: 26px; margin-left: -8px; padding: 0 8px; border: 0; border-radius: var(--r-small); background: transparent; color: var(--pen); font-weight: 400; }
+.surface .foot .handoff:hover { background: var(--ink-hover); }
+.surface .foot .handoff svg { color: var(--pen); }
+.surface .foot button.icon { width: 26px; height: 26px; border-radius: var(--r-small); }
+.surface .foot .copy-label { display: none; }
+.surface .foot button.icon[data-copied] { width: auto; padding: 0 6px; gap: 4px; color: var(--ink-fg-2); }
+.surface .foot [data-copied] .copy-label { display: inline; font-size: 0; }
+.surface .foot [data-copied] .copy-label::before { content: "已复制"; font-size: var(--t-meta); }
 .surface.live .foot { display: none; }
 .surface.live .composer { margin-top: auto; }
-.surface .composer { margin: 0 20px 16px; border: 0; border-radius: 8px; background: var(--sider-fill); }
+.surface .composer { margin: 4px 12px 12px; background: transparent; transition: border-color .15s; }
+.surface .composer:focus-within { border-color: var(--pen-soft); }
+.surface button.depth { border: 0; background: transparent; }
+.surface button.send { width: 28px; height: 28px; margin: 0 1px 3px 0; }
+.surface:not(:hover) .resize::before { opacity: 0; }
+.link { position: fixed; height: 1px; background: var(--pen-soft); pointer-events: none; }
+.link::before { content: ""; position: absolute; left: -2px; top: -2px; width: 5px; height: 5px; border-radius: 50%; background: var(--pen); }
+.surface.receding ~ .link { opacity: .28; }
 @media (prefers-reduced-motion: reduce) { .surface.enter, .surface.morph, .menu, .reader, .bar-tip, .answer .fresh, .answer.thinking::before { animation: none; } button, .surface, .surface.glide, .plot i { transition: none; } }
 `;
