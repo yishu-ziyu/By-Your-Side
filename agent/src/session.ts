@@ -3125,7 +3125,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
   private async checkGoalAfterDelivery(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): Promise<void> {
     const check = this.windDown;
     const letGo = () => { if (this.windDown === check) this.settleRun(); };
-    const timer = setTimeout(() => { if (this.windDown === check && check.phase === 'checking' && check.held) { this.runTrace.record("goal_gate", { released: "timeout" }); this.showAnswer(); } }, GOAL_GATE_WAIT_MS);
+    const timer = setTimeout(() => { if (this.windDown === check && check.phase === 'checking' && check.held) { this.runTrace.record("goal_gate", { released: "timeout" }); this.showAnswer(); this.deliverUnsentFinalText(event); } }, GOAL_GATE_WAIT_MS);
 
     const correlation = this.runTrace.traceCorrelation();
     this.runTrace.recordAt(correlation, "goal_check_span", { phase: "start" });

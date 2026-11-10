@@ -8,8 +8,9 @@ requireHeadless();
 const out=join(REPO,'out/acceptance/real-path',`${new Date().toISOString().replace(/[:.]/g,'-')}-run-wind-down`);await mkdir(out,{recursive:true});
 const CHECK_MS=5000,FOLLOW='顺便说声谢谢',THANKS='不客气。';
 const evidence:unknown[]=[];let failure='';
-for(const mode of ['continue','reply']){
- const task=mode==='continue'?'把青松填到名称栏。':'读出资料名称。';
+for(const mode of ['continue','reply','held']){
+ const task=mode==='continue'?'把青松填到名称栏。':mode==='held'?'1. 读出资料名称 2. 读出页面标题':'读出资料名称。';
+ const checkMs=mode==='held'?9000:CHECK_MS;
  const first=mode==='continue'?'名称栏还没填，剩下的是把青松填写进去。':'资料名称是青松。';
  const final='已把青松填到名称栏。';
  const site=createServer((_req,res)=>{res.writeHead(200,{'content-type':'text/html;charset=utf-8'}).end('<title>整理资料</title><p>资料名称：青松</p><input id="name" aria-label="名称">');});
@@ -18,7 +19,7 @@ for(const mode of ['continue','reply']){
  const model=await startScriptedModel([
   {match:'USER REQUEST:',steps:[{text:'{"problems":[]}'}]},
   {match:`"lastReply":"${final}`,steps:[{text:'{"status":"done","remaining":null}'}]},
-  {match:'"lastReply"',steps:[{text:JSON.stringify(verdict),delayMs:CHECK_MS}]},
+  {match:'"lastReply"',steps:[{text:JSON.stringify(verdict),delayMs:checkMs}]},
   {match:'[GOAL CHECK]',steps:[{tool:{name:'fill',args:{target:'#name',value:'青松',label:'名称'}}},{text:final}]},
   {match:FOLLOW,steps:[{text:THANKS}]},
   {match:task,steps:[{tool:{name:'navigate',args:{url}}},{text:first}]},
@@ -32,6 +33,18 @@ for(const mode of ['continue','reply']){
   const text=()=>rp.evaluate(panel,`document.querySelector('#messages').textContent`) as Promise<string>;
   const traces=()=>rp.evaluate(panel,`new Promise(r=>{const o=indexedDB.open('sideagent-diagnostics');o.onsuccess=()=>{const db=o.result;const q=db.transaction('trace-lines').objectStore('trace-lines').getAll();q.onsuccess=()=>{r(q.result.map(x=>JSON.parse(x.line)));db.close();};};o.onerror=()=>r([]);})`) as Promise<Array<{type:string;data:{status?:string}}>>;
   await rp.click(panel,'#input');await rp.typeText(panel,task);await rp.pressEnter(panel);
+  if(mode==='held'){
+   await until(async()=>model.requests.some(r=>r.rule==='"lastReply"')||undefined,60000,'check started');
+   const answers=()=>rp.evaluate(panel,`[...document.querySelectorAll('.msg.assistant[data-delivery-id]')].map(m=>m.textContent).join(' ')`) as Promise<string>;
+   await sleep(2500);
+   assert.ok(!(await answers()).includes(first),'with several asks the answer waits for the check');
+   await until(async()=>(await answers()).includes(first)||undefined,7000,'the answer is released after six seconds without a verdict');
+   const state={checked:(await traces()).some(t=>t.type==='goal_check'&&t.data.status==='done'),running:await rp.evaluate(panel,`document.querySelector('#status-pill').classList.contains('running')`)};
+   evidence.push({mode,...state});
+   assert.deepEqual(state,{checked:false,running:true},'the answer comes out before the verdict and the run is still open');
+   await rp.screenshot(panel,join(out,`${mode}-settled.png`));
+   continue;
+  }
   await until(async()=>(await text()).includes(first)||undefined,60000,'first answer shown');
   await sleep(1500);
   await rp.screenshot(panel,join(out,`${mode}-during-check.png`));
