@@ -104,6 +104,12 @@ function withVoiceHistory(text: string, history?: VoiceConversationContext['rece
 
 type SteerOutcome={kind:'model'};
 
+type WindDown =
+  | { phase: 'working'; held: AgentUiEvent[]; fallback: (() => void) | null }
+  | { phase: 'checking'; held: AgentUiEvent[] | null; finish: () => void }
+  | { phase: 'continuing'; finish: () => void; fallback: (() => void) | null }
+  | { phase: 'settled' };
+
 type CorrectionRecord = {
   id:string;input:string|null;text:string;attachments?:Attachment[];
 };
@@ -529,8 +535,10 @@ if(required.includes(key))candidates.set(key,attachment);
     this.emitGatedUiEvent(event);
   }
   private emitGatedUiEvent(event: AgentUiEvent): void {
-    if (this.holdsAnswer(event)) {
-      this.answerHold.events.push(event);
+    const held = this.heldAnswers();
+
+    if (held && this.holdsAnswer(event)) {
+      held.push(event);
 
       return;
     }
@@ -538,10 +546,12 @@ if(required.includes(key))candidates.set(key,attachment);
     this.passVoiceGate(event);
   }
 
-  private answerHold: { events: AgentUiEvent[]; settled: boolean; finish?: () => void } = { events: [], settled: false };
+  private windDown: WindDown = { phase: 'settled' };
   private spokenAsk = false;
-  private continueFinish: (() => void) | null = null;
-  private keptAnswer: (() => void) | null = null;
+
+  private heldAnswers(): AgentUiEvent[] | null {
+    return this.windDown.phase === 'working' || this.windDown.phase === 'checking' ? this.windDown.held : null;
+  }
 
   private severalAsksNow(): boolean {
     const snapshot = this.conversationSnapshot();
@@ -553,28 +563,42 @@ if(required.includes(key))candidates.set(key,attachment);
   private holdsAnswer(event: AgentUiEvent): boolean {
     const kind = event.kind === 'user_delivery' ? event.delivery.kind : event.kind === 'user_delivery_stream' ? event.stream.kind : null;
 
-    if (!kind || kind === 'ack' || this.answerHold.settled || this.memberId) return false;
+    if (!kind || kind === 'ack' || this.memberId) return false;
 
     return this.spokenAsk || this.severalAsksNow();
   }
 
-  private releaseAnswer(): void {
-    const { events, finish } = this.answerHold;
-    this.answerHold = { events: [], settled: true };
+  private showAnswer(): void {
+    const state = this.windDown;
+
+    if (state.phase !== 'working' && state.phase !== 'checking') return;
+    const events = state.held ?? [];
+
+    if (state.phase === 'working') state.held = [];
+    else state.held = null;
 
     for (const event of events) this.passVoiceGate(event);
-    finish?.();
   }
 
-  settleAnswerGate(): void {
-    if (this.answerHold.finish && !this.answerHold.settled) {
-      this.runTrace.record("goal_gate", { released: "user_action" });
-      this.releaseAnswer();
-    }
+  private settleRun(): void {
+    const state = this.windDown;
+
+    this.showAnswer();
+    this.windDown = { phase: 'settled' };
+
+    if (state.phase === 'checking') state.finish();
+  }
+
+  settleAnswerGate(): boolean {
+    if (this.windDown.phase !== 'checking') return false;
+    this.runTrace.record("goal_gate", { released: "user_action" });
+    this.settleRun();
+
+    return true;
   }
 
   private heldDelivery(): UserDelivery | null {
-    for (const event of [...this.answerHold.events].reverse()) if (event.kind === 'user_delivery') return event.delivery;
+    for (const event of [...this.heldAnswers() ?? []].reverse()) if (event.kind === 'user_delivery') return event.delivery;
 
     return null;
   }
@@ -2953,10 +2977,12 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         }
         case "agent_start":
           this.starting = null;
-          this.continueFinish = null;
+          {
+            const fallback = this.windDown.phase === 'continuing' ? this.windDown.fallback : null;
 
-          if (this.answerHold.events.length || this.answerHold.finish) this.releaseAnswer();
-          this.answerHold = { events: [], settled: false };
+            if (this.windDown.phase !== 'continuing') this.settleRun();
+            this.windDown = { phase: 'working', held: [], fallback };
+          }
 
           if (
             this.handbackPromptEpoch !== null &&
@@ -2985,7 +3011,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           if (event.willRetry) break;
           if (this.sourcePreparationOnly && !this.expectedStoppedAgentEnd && !this.hold.isHeld() && this.conversationSnapshot()?.continuation?.state !== 'WAITING_CONDITION'
             && !this.deliveredResultThisRun && !finalAssistantText(event.messages)) {
-            this.answerHold = { events: [], settled: true };
+            this.windDown = { phase: 'settled' };
             setStatus('idle');
             emit({ kind: 'error', message: '没有读到同一页面的完整正文，也未登记有效等待条件；分析尚未开始。' });
             emit({ kind: 'agent_end' });
@@ -2993,8 +3019,9 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           }
 
           {
-            const kept = this.keptAnswer;
-            this.keptAnswer = null;
+            const kept = this.windDown.phase === 'working' ? this.windDown.fallback : null;
+
+            if (this.windDown.phase === 'working') this.windDown.fallback = null;
             const answered = !this.expectedStoppedAgentEnd && !this.pendingToolFailure && !this.hold.isHeld() && !lastAssistantError(event.messages)
               && (this.deliveredResultThisRun || !!finalAssistantText(event.messages));
 
@@ -3005,18 +3032,21 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
           {
             const checkGoal = this.goalCheckEligible(event.messages);
-            const gate = checkGoal && !this.answerHold.settled && (this.spokenAsk || this.severalAsksNow());
 
-            if (checkGoal) emit({ kind: "goal_check", status: "checking", ...(gate ? { gate: true } : {}) });
+            if (checkGoal) {
+              emit({ kind: "goal_check", status: "checking" });
+              this.windDown = { phase: 'checking', held: this.heldAnswers() ?? [], finish: () => this.finishAgentEnd(event) };
 
-            if (gate) {
-              this.answerHold.finish = () => this.finishAgentEnd(event);
+              if (!this.spokenAsk && !this.severalAsksNow()) {
+                this.showAnswer();
+                this.deliverUnsentFinalText(event);
+              }
             } else {
-              this.releaseAnswer();
+              this.settleRun();
               this.finishAgentEnd(event);
             }
 
-            void (checkGoal ? this.checkGoalAfterDelivery(event, gate) : Promise.resolve()).then(() => this.checkFactsAfterDelivery(event));
+            void (checkGoal ? this.checkGoalAfterDelivery(event) : Promise.resolve()).then(() => this.checkFactsAfterDelivery(event));
           }
 
           break;
@@ -3092,18 +3122,18 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     this.savedOpenRun = null;
     this.steers += 1;
   }
-  private async checkGoalAfterDelivery(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>, gate = false): Promise<void> {
-    const hold = this.answerHold;
-    const letGo = () => { if (this.answerHold === hold && !hold.settled) this.releaseAnswer(); };
-    const timer = gate ? setTimeout(() => { if (this.answerHold === hold && !hold.settled) { this.runTrace.record("goal_gate", { released: "timeout" }); letGo(); } }, GOAL_GATE_WAIT_MS) : null;
+  private async checkGoalAfterDelivery(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): Promise<void> {
+    const check = this.windDown;
+    const letGo = () => { if (this.windDown === check) this.settleRun(); };
+    const timer = setTimeout(() => { if (this.windDown === check && check.phase === 'checking' && check.held) { this.runTrace.record("goal_gate", { released: "timeout" }); this.showAnswer(); this.deliverUnsentFinalText(event); } }, GOAL_GATE_WAIT_MS);
 
     const correlation = this.runTrace.traceCorrelation();
     this.runTrace.recordAt(correlation, "goal_check_span", { phase: "start" });
 
     try {
-      await this.checkGoalThenAct(event, gate, letGo);
+      await this.checkGoalThenAct(event, letGo);
     } finally {
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
       letGo();
       this.runTrace.recordAt(correlation, "goal_check_span", { phase: "end" });
     }
@@ -3251,9 +3281,15 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     return { verdict, retryFingerprint };
   }
 
-  private async checkGoalThenAct(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>, gate: boolean, letGo: () => void): Promise<void> {
+  private async checkGoalThenAct(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>, letGo: () => void): Promise<void> {
     const { emit } = this.callbacks;
-    const hold = this.answerHold;
+    const check = this.windDown;
+    const answerHeld = () => this.windDown === check && check.phase === 'checking' && !!check.held;
+    const conclude = (result?: Extract<AgentUiEvent, { kind: "goal_check" }>) => {
+      if (this.windDown === check) this.showAnswer();
+      if (result) emit(result);
+      letGo();
+    };
     const runId = this.deliveryRunId();
     const epoch = this.controlEpoch;
     const delegationVersion = this.conversationSnapshot()?.continuation;
@@ -3310,7 +3346,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       pageRead = page ? { ok: true, tabId, url: String(page.url ?? ""), chars: String(page.text ?? "").length } : { ok: false, tabId, ...(readError ? { error: readError } : {}) };
 
-      if (this.deliveryRunId() === runId) emit({ kind: "goal_check", status: "checking", pageRead: true, ...(gate && this.answerHold === hold && !hold.settled ? { gate: true } : {}) });
+      if (this.deliveryRunId() === runId) emit({ kind: "goal_check", status: "checking", pageRead: true });
 
       const lastReply = this.runReplyText(event.messages);
       const pageText = page ? String(page.text ?? "") : "";
@@ -3382,17 +3418,16 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       const sameRun = this.deliveryRunId() === runId, sameEpoch = epoch === this.controlEpoch, held = this.hold.isHeld();
       this.runTrace.recordAt(checkCorrelation, "goal_continue_skipped", { verdict: unfinished?.status ?? null, sameRun, sameEpoch, held, streaming: !!this.session?.isStreaming, continuation: this.conversationSnapshot()?.continuation?.state ?? null });
       flushChecks();
-      letGo();
-      if (!sameRun) return;
-      if (unfinished?.status === "continue" && sameEpoch && !held) emit({ kind: "goal_check", status: "open", ...(unfinished.remaining ? { remaining: unfinished.remaining } : {}), ...(unfinished.finding ? { finding: unfinished.finding } : {}) });
-      else emit({ kind: "goal_check", status: "unavailable" });
+      if (!sameRun) conclude();
+      else if (unfinished?.status === "continue" && sameEpoch && !held) conclude({ kind: "goal_check", status: "open", ...(unfinished.remaining ? { remaining: unfinished.remaining } : {}), ...(unfinished.finding ? { finding: unfinished.finding } : {}) });
+      else conclude({ kind: "goal_check", status: "unavailable" });
     };
 
     if (!current()) { abandon(); return; }
     if (copyPolicyUnavailable) emit({ kind: 'notice', message: '原样搬运要求暂时无法判断，复制结果没有完成独立核对。' });
     if (verdict?.status === "done") this.goalLedger.confirmGoal(snapshot?.recoveryInput?.requirements ?? []);
 
-    if (!verdict) { letGo(); emit({ kind: "goal_check", status: "unavailable" }); }
+    if (!verdict) conclude({ kind: "goal_check", status: "unavailable" });
 
     const movedTo = verdict?.status === "continue" && endedOn && tabId !== null ? await this.tabMovedFrom(endedOn, tabId) : null;
 
@@ -3405,7 +3440,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       for (let waited = 0; session.isStreaming && waited < 3_000; waited += 50) await new Promise(done => setTimeout(done, 50));
 
-      if (!current() || session.isStreaming) { abandon(); return; }
+      if (!current() || session.isStreaming || this.windDown !== check || check.phase !== 'checking') { abandon(); return; }
       const attempt = this.continuePolicy.started(runId, retryFingerprint, pageNow);
       const continuing: Extract<AgentUiEvent, { kind: "goal_check" }> = { kind: "goal_check", status: "continue" };
 
@@ -3415,16 +3450,16 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
       if (verdict.finding) continuing.finding = verdict.finding;
 
-      if (this.answerHold === hold && !hold.settled) {
-        this.continueFinish = hold.finish ?? null;
-        const dropped = hold.events;
+      const dropped = check.held;
+      let fallback: (() => void) | null = null;
+
+      if (dropped) {
         const finalText = !this.deliveredResultThisRun && !lastAssistantError(event.messages) ? finalAssistantText(event.messages) : "";
-        this.keptAnswer = () => {
+        fallback = () => {
           for (const kept of dropped) this.emitGatedUiEvent(kept);
           if (dropped.some(kept => kept.kind === "user_delivery" && kept.delivery.kind !== "ack")) this.deliveredResultThisRun = true;
           if (finalText) this.deliverFinalText(finalText);
         };
-        this.answerHold = { events: [], settled: true };
         this.runTrace.record("goal_gate", { released: "continue" });
         continuing.held = true;
         const items = verdict.items ?? [];
@@ -3432,6 +3467,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
 
         if (items.length >= 2 && at >= 0) continuing.step = { at: at + 1, of: items.length };
       }
+      const pending: WindDown = { phase: 'continuing', finish: check.finish, fallback };
+      this.windDown = pending;
       emit(continuing);
       this.callbacks.setStatus('running');
       flushChecks({ attempt, progressVersion: this.noProgressPolicy?.progressVersion ?? 0 });
@@ -3439,13 +3476,11 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       this.deliveredResultThisRun = false;
       void session.prompt(continuation.prompt)
         .catch(error => {
-          if (this.deliveryRunId() === runId && !session.isStreaming) this.callbacks.setStatus(this.hold.isHeld() ? 'user' : 'idle');
-          const finish = this.continueFinish;
-          const kept = this.keptAnswer;
-          this.continueFinish = null;
-          this.keptAnswer = null;
-          kept?.();
-          finish?.();
+          if (this.windDown === pending) {
+            this.windDown = { phase: 'settled' };
+            fallback?.();
+            check.finish();
+          }
           this.emitError(error);
         });
 
@@ -3467,9 +3502,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       if (verdict.remaining) settled.remaining = verdict.remaining;
       if (settled.status === "open" && verdict.verificationSubject === "answer" && verdict.finding) settled.finding = verdict.finding;
 
-      if (this.answerHold === hold && !hold.settled) this.runTrace.record("goal_gate", { released: "verdict" });
-      letGo();
-      emit(settled);
+      if (answerHeld()) this.runTrace.record("goal_gate", { released: "verdict" });
+      conclude(settled);
       if (verdict.cause === 'copy_changed' || verdict.cause === 'copy_unverified') emit({ kind: "notice", message: verdict.cause === 'copy_changed' ? "核对发现：复制后的内容已变化，尚未确认符合你的要求。" : "复制结果暂时无法核对，不能确认已完成。" });
       flushChecks({ ...(movedTo ? { pageMovedTo: movedTo } : {}), ...(continuation && "overBudget" in continuation ? { overBudget: true } : {}) });
     }
@@ -3510,6 +3544,13 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     }
   }
 
+  private deliverUnsentFinalText(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): void {
+    if (!this.sendOptions || this.deliveredResultThisRun || lastAssistantError(event.messages)) return;
+    const finalText = finalAssistantText(event.messages);
+
+    if (finalText) this.deliverFinalText(finalText);
+  }
+
   private finishAgentEnd(event: Extract<Parameters<Parameters<AgentLoop["subscribe"]>[0]>[0], { type: "agent_end" }>): void {
     const { emit, setStatus } = this.callbacks;
     const correctionsCleared = this.hold.isHeld() || this.abandonUnconsumedCorrections("ended");
@@ -3526,11 +3567,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       this.emitGatedUiEvent({kind:"user_delivery",delivery:toolFailure});
     }
 
-    if (!toolFailure && !stoppedByUser && !this.hold.isHeld() && this.sendOptions && !this.deliveredResultThisRun && !lastAssistantError(event.messages)) {
-      const finalText = finalAssistantText(event.messages);
-
-      if (finalText) this.deliverFinalText(finalText);
-    }
+    if (!toolFailure && !stoppedByUser && !this.hold.isHeld()) this.deliverUnsentFinalText(event);
 
     emit({ kind: "agent_end" });
 

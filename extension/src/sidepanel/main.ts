@@ -4019,7 +4019,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       goalStep = ev.status === "continue" ? ev.step ?? null : null;
 
       resumeEntry.holdForCheck(ev.status === "checking");
-      if (ev.status === "checking" && ev.gate && currentRun) setRunTitle(currentRun, "正在对一遍还有没有没做的", true, "think");
+      if (ev.status === "checking" && currentRun) setRunTitle(currentRun, "正在对一遍还有没有没做的", true, "think");
       const checked = currentRun ?? lastRun;
 
       if (checked) {
@@ -4030,6 +4030,8 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if (ev.status === "open" && !resumeCardShown()) addMsg("msg notice", checkNoteForUser(ev.finding, ev.remaining));
 
       if (ev.status === "continue" && !ev.held) {
+        closeBlocks();
+        finishRun();
         supersedeAnswer(checked?.answer ? checked : null);
         const anchor = document.createElement("div");
         anchor.className = "redo-anchor";
