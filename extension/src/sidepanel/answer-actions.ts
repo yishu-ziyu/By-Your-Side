@@ -10,7 +10,7 @@ import { isShortened, visibleBody, visibleMarkdown } from "./answer-shorten.js";
 import { bindMotionIcon, setMotionIcon } from "./motion-icon.js";
 import { uiEvent } from "./ui-trace.js";
 
-const CHROME = ".gc-actions,.gc-faces,.gc-evidence,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
+const CHROME = ".gc-actions,.gc-faces,.gc-evidence,.gc-chart,.answer-actions,.answer-panel,.fill-undo-result,.source-fav,.answer-sources,.citation-row,.memory-used-toggle,.memory-used-line,.memory-used-cite-row";
 
 function resultCommandShortcut(): string {
   return /Mac/i.test(navigator.platform) ? "⇧⌘K" : "Ctrl+Shift+K";
@@ -26,6 +26,7 @@ export interface ResultAction {
 
 function answerBody(answer: HTMLElement): HTMLElement {
   const body = visibleBody(answer, CHROME);
+  for (const card of body.querySelectorAll('.gen-card[data-face="chart"]')) card.removeAttribute("data-face");
   imagePlaceholdersAsText(body);
 
   return body;

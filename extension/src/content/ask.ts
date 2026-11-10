@@ -20,7 +20,7 @@ import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
 import { selectionSurrounding } from './selection-context.js';
 import { createReadAloud } from './read-aloud.js';
-import { CHART_QUESTION, parseSelectionTable, renderSelectionChart } from './selection-chart.js';
+import { CHART_QUESTION, parseSelectionTable, renderSelectionChart } from '../shared/table-chart.js';
 import { EVENT_QUESTION, parseSelectionEvent, renderSelectionEvent } from './selection-event.js';
 import { syncColorTone } from '../shared/color-tone.js';
 import { inPageNote, installPageNotes, NOTE_HIGHLIGHT } from './page-notes.js';

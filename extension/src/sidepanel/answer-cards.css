@@ -131,7 +131,9 @@
   border-radius: var(--r-tail); background: var(--content-bg); box-shadow: 0 0 0 1px var(--well-outline);
   transform: translateX(0); transition: transform var(--d-state) var(--e-move); pointer-events: none;
 }
-.gen-card[data-face="evidence"] > .gc-faces::before { transform: translateX(calc(var(--gc-face-width) + var(--gc-face-gap))); }
+.gc-faces:has(> .gc-face:nth-child(2)[aria-pressed="true"])::before { transform: translateX(calc(var(--gc-face-width) + var(--gc-face-gap))); }
+.gc-faces:has(> .gc-face:nth-child(3)[aria-pressed="true"])::before { transform: translateX(calc(2 * (var(--gc-face-width) + var(--gc-face-gap)))); }
+.gen-card:has(> .gc-faces > .gc-face:nth-child(3)) > .gc-head.has-faces { padding-right: 96px; }
 .gc-face {
   position: relative; display: inline-flex; align-items: center; justify-content: center; width: var(--gc-face-width); height: var(--gc-face-height); padding: 0;
   border: 0; border-radius: var(--r-tail); background: transparent; color: var(--text-tertiary); cursor: pointer;
@@ -140,7 +142,17 @@
 .gc-face:hover { color: var(--text-primary); }
 .gc-face[aria-pressed="true"] { color: var(--text-primary); }
 .gc-face:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.gen-card[data-face="evidence"] > .gc-body, .gen-card[data-face="evidence"] > .gc-foot { display: none; }
+.gen-card:is([data-face="evidence"], [data-face="chart"]) > .gc-body, .gen-card[data-face="evidence"] > .gc-foot { display: none; }
+.gc-chart { padding: 10px 14px var(--s-3); animation: gcContentIn var(--d-state) var(--e-enter) both; }
+.gc-chart .chart { margin: 0; }
+.gc-chart .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--s-2); background: var(--well); }
+.gc-chart .seg button { height: 22px; padding: 0 var(--s-2); border: 0; border-radius: var(--r-tail); background: transparent; font: inherit; font-size: var(--fs-micro); color: var(--text-tertiary); cursor: pointer; }
+.gc-chart .seg button[aria-pressed="true"] { background: var(--content-bg); color: var(--text-primary); box-shadow: 0 0 0 1px var(--well-outline); }
+.gc-chart .plot { display: flex; align-items: flex-end; gap: 10px; height: 150px; margin-top: var(--s-2); overflow-x: auto; scrollbar-width: none; }
+.gc-chart .plot div { flex: 1 0 28px; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: var(--s-1); font-size: var(--fs-micro); color: var(--text-tertiary); }
+.gc-chart .plot i { display: block; flex: none; width: 100%; height: 0; border-radius: var(--r-tail) var(--r-tail) 0 0; background: var(--accent); opacity: .85; transition: height var(--d-state) var(--e-move); }
+.gc-chart .plot b { font-weight: 500; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gc-chart .plot span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gc-evidence { padding: 10px 14px var(--s-3); box-sizing: border-box; animation: gcContentIn var(--d-state) var(--e-enter) both; }
 .gen-card[data-face="answer"] > .gc-body { animation: gcContentIn var(--d-state) var(--e-enter) both; }
 .msg.assistant.markdown .gc-evidence table { display: table; width: 100%; margin: 0; border-collapse: collapse; font-size: var(--fs-micro); line-height: 1.45; font-variant-numeric: tabular-nums; }
@@ -191,8 +203,8 @@
 @keyframes gcContentIn { from { opacity: 0; } to { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .gc-btn, .gc-face, .gc-faces::before { transition: none; }
-  .gc-evidence, .gen-card[data-face] > .gc-body, .gc-quote { animation: none; }
+  .gc-btn, .gc-face, .gc-faces::before, .gc-chart .plot i { transition: none; }
+  .gc-evidence, .gc-chart, .gen-card[data-face] > .gc-body, .gc-quote { animation: none; }
   .gc-ph { animation-duration: 0s; }
   .gc-in { animation: none; }
   .gc-btn:active { transform: none; }

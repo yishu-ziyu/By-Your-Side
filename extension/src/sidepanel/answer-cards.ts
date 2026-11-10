@@ -1,7 +1,8 @@
 import { resolveDiagramCite, type AnswerSourceMap } from "../../../shared/answer-source.js";
 import DOMPurify from "dompurify";
 import { isPopout, targetWindowId } from "./target-window.js";
-import { createElement as icon, LayoutGrid, Table2 } from "lucide";
+import { ChartColumn, createElement as icon, LayoutGrid, Table2 } from "lucide";
+import { parseSelectionTable, renderSelectionChart, type SelectionTable } from "../shared/table-chart.js";
 import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, cardSpans, evaluate, fillRefs, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { captureCitationContext, clearFailure, noteFailure } from "./sonar-citations.js";
@@ -158,10 +159,13 @@ function cardHtml(card: Card, sources?: AnswerSourceMap): string {
   const shared = rows.every((r) => r.source === rows[0]?.source);
   const sourceCell = (r: (typeof rows)[number], i: number) => (shared && i > 0 ? "" : `<td class="s"${shared ? ` rowspan="${rows.length}"` : ""}>${r.source ? esc(r.source) : "—"}</td>`);
   const evidence = rows.length ? keyed("ev", `<div class="gc-evidence" hidden><table><thead><tr><th>项</th><th>结果</th><th>怎么算</th><th>出处</th></tr></thead><tbody>${rows.map((r, i) => `<tr><td>${textHtml(r.label, card.values)}${r.tab ? `<button type="button" class="gc-btn gc-point" data-card-tab="${esc(r.tab)}">指给我看</button>` : ""}</td>${cellHtml(r, "td", ' class="r"')}<td class="f">${r.formula ? formulaHtml(r.formula, r.expr) : "—"}</td>${sourceCell(r, i)}</tr>`).join("")}</tbody></table></div>`) : "";
-  const faces = rows.length ? keyed("faces", `<div class="gc-faces" role="group" aria-label="结论 / 依据">${FACE_BUTTONS}</div>`) : "";
+  const charted = card.closed && card.blocks.some((b) => b.kind === "table" && parseSelectionTable([b.cols, ...b.rows.map((r) => r.cells.map((c) => c.value))].map((row) => row.join("\t")).join("\n")));
+  const chart = charted ? '<div class="gc-chart" data-gc-key="chart" data-gc-sig="chart" hidden></div>' : "";
+  const shown = FACES.filter((f) => f.face === "answer" || (f.face === "chart" ? charted : rows.length > 0));
+  const faces = shown.length > 1 ? keyed("faces", `<div class="gc-faces" role="group" aria-label="${shown.map((f) => f.label).join(" / ")}">${shown.map((f) => `<button type="button" class="gc-face" data-face="${f.face}" aria-pressed="${f.face === "answer"}" title="${f.label}" aria-label="${f.label}">${svg(f.glyph)}</button>`).join("")}</div>`) : "";
   const head = card.title ? `<div class="gc-head${faces ? " has-faces" : ""}"><div class="gc-title">${textHtml(card.title, card.values)}</div>${card.sub ? `<div class="gc-sub">${textHtml(card.sub, card.values)}</div>` : ""}</div>` : faces ? '<div class="gc-head has-faces" data-gc-key="head"></div>' : "";
 
-  return `<div class="gen-card"${card.closed ? ` data-gc-card="${card.key}"` : ""}>${head}${body ? `<div class="gc-body" data-gc-key="body">${body}</div>` : ""}${evidence}${buttons ? `<div class="gc-actions">${buttons}</div>` : ""}${card.source && card.closed ? `<div class="gc-foot">${esc(card.source)}</div>` : ""}${faces}</div>`;
+  return `<div class="gen-card"${card.closed ? ` data-gc-card="${card.key}"` : ""}>${head}${body ? `<div class="gc-body" data-gc-key="body">${body}</div>` : ""}${chart}${evidence}${buttons ? `<div class="gc-actions">${buttons}</div>` : ""}${card.source && card.closed ? `<div class="gc-foot">${esc(card.source)}</div>` : ""}${faces}</div>`;
 }
 
 const svg = (node: Parameters<typeof icon>[0]) => {
@@ -173,7 +177,7 @@ const svg = (node: Parameters<typeof icon>[0]) => {
   return el.outerHTML;
 };
 
-const FACE_BUTTONS = `<button type="button" class="gc-face" data-face="answer" aria-pressed="true" title="结论" aria-label="结论">${svg(LayoutGrid)}</button><button type="button" class="gc-face" data-face="evidence" aria-pressed="false" title="依据" aria-label="依据">${svg(Table2)}</button>`;
+const FACES = [{ face: "answer", label: "结论", glyph: LayoutGrid }, { face: "chart", label: "图表", glyph: ChartColumn }, { face: "evidence", label: "依据", glyph: Table2 }] as const;
 
 type Engine = typeof import("./diagram-engine.js");
 
@@ -407,15 +411,38 @@ function syncAttributes(to: Element, from: Element): void {
 function showFace(card: HTMLElement, face: string): void {
   const body = card.querySelector<HTMLElement>(":scope > .gc-body");
   const evidence = card.querySelector<HTMLElement>(":scope > .gc-evidence");
+  const chart = card.querySelector<HTMLElement>(":scope > .gc-chart");
   const foot = card.querySelector<HTMLElement>(":scope > .gc-foot");
+  const buttons = [...card.querySelectorAll<HTMLElement>(":scope > .gc-faces .gc-face")];
 
-  if (!evidence) return;
+  if (!buttons.some((b) => b.dataset.face === face)) {
+    delete card.dataset.face;
 
-  if (face === "evidence" && card.dataset.face !== "evidence" && body) evidence.style.minHeight = `${body.offsetHeight + (foot?.offsetHeight ?? 0)}px`;
+    return;
+  }
+
+  if (face === "evidence" && card.dataset.face !== "evidence" && body && evidence) evidence.style.minHeight = `${body.offsetHeight + (foot?.offsetHeight ?? 0)}px`;
   card.dataset.face = face;
-  evidence.hidden = face !== "evidence";
+  if (evidence) evidence.hidden = face !== "evidence";
 
-  for (const b of card.querySelectorAll<HTMLElement>(":scope > .gc-faces .gc-face")) b.setAttribute("aria-pressed", String(b.dataset.face === face));
+  if (chart) {
+    const table = face === "chart" ? chartTable(card) : null;
+
+    chart.hidden = !table;
+    chart.replaceChildren(...(table ? [renderSelectionChart(table)] : []));
+  }
+
+  for (const b of buttons) b.setAttribute("aria-pressed", String(b.dataset.face === face));
+}
+
+function chartTable(card: HTMLElement): SelectionTable | null {
+  for (const table of card.querySelectorAll(":scope > .gc-body .gc-table")) {
+    const parsed = parseSelectionTable([...table.querySelectorAll("tr")].map((row) => [...row.querySelectorAll("th,td")].map((cell) => (cell.textContent ?? "").replace(/\s+/g, " ").trim()).join("\t")).join("\n"));
+
+    if (parsed) return parsed;
+  }
+
+  return null;
 }
 
 function syncChildren(to: Element, from: Element): void {
@@ -496,8 +523,7 @@ export function patchAnswer(root: HTMLElement, html: string): void {
       syncChildren(old, node);
 
       if (old instanceof HTMLElement && old.dataset.face) {
-        if (old.querySelector(":scope > .gc-evidence")) showFace(old, old.dataset.face);
-        else delete old.dataset.face;
+        showFace(old, old.dataset.face);
       }
       want.push(old);
     } else {
