@@ -134,7 +134,7 @@ const JUDGED_LIMIT = 50;
 
 const CONTEXT_ACTIONS: Array<{ label: string; question: string; fits(text: string, kind: ReadingKind): boolean; attach?(source: { text: string; title: string; url: string }): ContextAttachment | null }> = [
   {
-    label: '画成图', question: CHART_QUESTION,
+    label: '生成图表', question: CHART_QUESTION,
     fits: text => parseSelectionTable(text) !== null,
     attach: source => {
       const table = parseSelectionTable(source.text);
