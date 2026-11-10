@@ -443,6 +443,8 @@ try {
     speechBeforePress.length > 0 && speechBeforePress.every((t) => plain(before.turns[0]!.answer).includes(plain(t).slice(0, 12))),
     { firstAudioAfterReleaseMs: firstAudio.at - ask.upAt, requests: speechBeforePress.map((t) => t.slice(0, 40)), stateAtPress: oldStateAtPress });
   record.answers = { first: (await card()).turns[0]?.answer ?? '' };
+  let p2 = "";
+
   if (!firstOnly && !routesOnly) {
   const example = await holdAndSay("example");
   await sleep(300);
@@ -515,7 +517,7 @@ try {
   else check("跟字（缩放）：浏览器缩放到 125% 再回到 100%，BYS 仍对着标黄那段，卡片没收起", null, { reason: `缩放没生效：${String(zoomed)}` });
 
   const beforeHere = await card();
-  const p2 = await selectParagraph(P2);
+  p2 = await selectParagraph(P2);
   const here = await holdAndSay("here");
   listenCheck("我问的是这里", here, p2);
   const turn = beforeHere.turns.length;

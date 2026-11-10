@@ -161,6 +161,35 @@ try {
     return String((await rp.cdp.send("DOM.resolveNode", { backendNodeId: shadow.backendNodeId }, work)).object.objectId);
   };
 
+  const noteShadow = (node: DomNode, kind: string): DomNode | null => {
+    const at = (node.attributes ?? []).indexOf("data-sideagent-note");
+
+    if (at >= 0 && node.attributes![at + 1] === kind && node.shadowRoots?.length) return node.shadowRoots[0]!;
+
+    for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
+      const hit = noteShadow(child, kind);
+
+      if (hit) return hit;
+    }
+
+    return null;
+  };
+
+  type NoteState = { text: string; label: string; previous: string; shown: boolean; box: Box; ask: { x: number; y: number } };
+
+  const noteOf = async (kind: string): Promise<NoteState | null> => {
+    const { root } = await rp.cdp.send("DOM.getDocument", { depth: -1, pierce: true }, work) as { root: DomNode };
+    const shadow = noteShadow(root, kind);
+
+    if (!shadow) return null;
+    const objectId = String((await rp.cdp.send("DOM.resolveNode", { backendNodeId: shadow.backendNodeId }, work)).object.objectId);
+    const reply = await rp.cdp.send("Runtime.callFunctionOn", { objectId, returnByValue: true, functionDeclaration: `function(){const n=this.querySelector('.note'),b=n.getBoundingClientRect(),a=this.querySelector('[data-act="ask"]').getBoundingClientRect();return {text:this.querySelector('.text')?.textContent??'',label:this.querySelector('.label')?.textContent??'',previous:this.host.previousElementSibling?.id??'',shown:getComputedStyle(this.host).display!=='none',box:{left:b.left,right:b.right,top:b.top,bottom:b.bottom,width:b.width,height:b.height},ask:{x:a.x+a.width/2,y:a.y+a.height/2}}}` }, work);
+
+    if (reply.exceptionDetails) throw new Error(reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text);
+
+    return reply.result.value as NoteState;
+  };
+
   const inCard = async <T,>(fn: string): Promise<T> => {
     const reply = await rp.cdp.send("Runtime.callFunctionOn", { objectId: await shadowId(), functionDeclaration: fn, returnByValue: true }, work);
 
@@ -397,8 +426,25 @@ try {
   await click(await until(() => pointOf('.bar [data-prompt="translate"]'), 5_000, "工具条上的翻译"));
   await until(() => seen.length > asked || undefined, 20_000, "翻译请求");
   await sleep(300);
-  const translated = await inCard<string>(`function(){return this.querySelector('.head .title')?.textContent??''}`);
-  check("点工具条上的翻译：发出翻译提问，标题是「翻译」", translated === "翻译" && seen.at(-1)!.user.includes("翻译"), { title: translated, user: seen.at(-1)!.user.slice(0, 120) });
+  const translation = await until(async () => { const note = await noteOf("below"); return note?.text.includes("每一场风暴") ? note : undefined; }, 20_000, "译文写进页面");
+  const afterNote = Number(await rp.evaluate(work, `document.querySelector("#para").nextElementSibling.nextElementSibling.getBoundingClientRect().top`));
+  const cardOpen = await inCard<boolean>(`function(){const s=this.querySelector('.surface');return !s.hidden&&s.classList.contains('expanded')}`);
+  await shot("4a-translation-in-page");
+  check("点工具条上的翻译：译文直接长在这段原文下面，把后文往下推，不弹卡片", translation.text.trim() === "灯塔看守人用紫色墨水记下每一场风暴。" && translation.previous === "para" && translation.box.height > 10 && afterNote >= translation.box.bottom - 1 && !cardOpen && seen.at(-1)!.user.includes("翻译"), { translation, afterNote, cardOpen });
+  await openReading("/blank", 1280);
+  await click({ x: 1100, y: 760 });
+  const settled = await until(async () => { const note = await noteOf("margin"); return note?.text.includes("几十年") ? note : undefined; }, 10_000, "卡片关掉后答案留在页边");
+  const settledPage = await rp.evaluate(work, `(() => { const b = document.querySelector("#para").getBoundingClientRect(); return { right: b.right, top: b.top, bottom: b.bottom }; })()`) as { right: number; top: number; bottom: number };
+  const afterClose = await inCard<{ card: boolean; restore: boolean }>(`function(){return {card:!this.querySelector('.surface').hidden,restore:!this.querySelector('.restore').hidden}}`);
+  await shot("4a-settled-note");
+  check("关掉回答卡：答案留在这段原文旁的页边，不再缩到右下角的「继续阅读」", settled.label.startsWith("The lighth") && settled.box.left >= settledPage.right && settled.box.top >= settledPage.top - 2 && settled.box.top <= settledPage.bottom && !afterClose.card && !afterClose.restore, { settled, settledPage, afterClose });
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: settled.box.left + 20, y: settled.box.top + 20 }, work);
+  await sleep(250);
+  await shot("4a-note-hover");
+  await click(settled.ask);
+  const woken = await until(async () => { const title = await inCard<string>(`function(){const s=this.querySelector('.surface');return !s.hidden&&s.classList.contains('expanded')?this.querySelector('.head .title')?.textContent??'':''}`); return title || undefined; }, 10_000, "从页边批注回到卡片");
+  const asleep = await noteOf("margin");
+  check("点页边批注上的「继续问」：回到这段问答的卡片，页边那条先让开", woken === "解释" && asleep?.shown === false, { woken, shown: asleep?.shown });
 
   await selectMarker("/table", 1280);
   const ordinary = await inCard<boolean>(`function(){return this.querySelector('.bar .ctx').hidden}`);
