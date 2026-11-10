@@ -10,7 +10,7 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText, ChartColumn } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Lightbulb, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, MessageCircleQuestion, Languages, SpellCheck, CircleHelp, BookOpenText, ChartColumn, CalendarPlus } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, type ReadingSource } from '../../../shared/reading.js';
@@ -20,6 +20,7 @@ import { ASK_STYLES } from './ask-styles.js';
 import { selectionSurrounding } from './selection-context.js';
 import { createReadAloud } from './read-aloud.js';
 import { CHART_QUESTION, parseSelectionTable, renderSelectionChart } from './selection-chart.js';
+import { EVENT_QUESTION, parseSelectionEvent, renderSelectionEvent } from './selection-event.js';
 import { syncColorTone } from '../shared/color-tone.js';
 
 const HOST = 'data-sideagent-ask';
@@ -110,8 +111,31 @@ const PROMPT_ICONS = {
 
 const QUICK_QUESTIONS = PROMPTS.filter(prompt => ['example', 'why', 'evidence'].includes(prompt.id));
 
-const CONTEXT_ACTIONS = [
-  { label: '画成图', icon: ChartColumn, question: CHART_QUESTION, fits: (text: string) => parseSelectionTable(text) !== null },
+interface ContextAttachment {
+  element: HTMLElement;
+  replacesQuote?: boolean;
+  settle?(answer: string | null): void;
+}
+
+const CONTEXT_ACTIONS: Array<{ label: string; icon: typeof ChartColumn; question: string; fits(text: string): boolean; attach(source: { text: string; title: string; url: string }): ContextAttachment | null }> = [
+  {
+    label: '画成图', icon: ChartColumn, question: CHART_QUESTION,
+    fits: text => parseSelectionTable(text) !== null,
+    attach: source => {
+      const table = parseSelectionTable(source.text);
+
+      return table ? { element: renderSelectionChart(table), replacesQuote: true } : null;
+    },
+  },
+  {
+    label: '加日程', icon: CalendarPlus, question: EVENT_QUESTION,
+    fits: text => parseSelectionEvent(text) !== null,
+    attach: source => {
+      const event = parseSelectionEvent(source.text);
+
+      return event ? renderSelectionEvent(event, source) : null;
+    },
+  },
 ];
 
 const MULTI_CLICK_MS = 420;
@@ -331,6 +355,7 @@ function boot(): void {
     detailed: boolean;
     text: string;
     words: number;
+    extra?: ContextAttachment;
   }> = [];
 
   const deepTurns = new Set<number>();
@@ -815,14 +840,14 @@ function boot(): void {
         const meta = document.createElement('div');
         meta.className = 'meta';
         wrapper.append(question, summary, node, meta);
-        const table = turn.question === CHART_QUESTION ? parseSelectionTable(sourceOf(index)) : null;
-        if (table) wrapper.insertBefore(renderSelectionChart(table), summary);
+        const extra = CONTEXT_ACTIONS.find(action => action.question === turn.question)?.attach({ text: sourceOf(index), title: record!.source.title, url: record!.source.url }) ?? undefined;
+        if (extra) wrapper.insertBefore(extra.element, summary);
         messages.append(wrapper);
-        answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: true, text: '', words: 0 });
+        answers.push({ turn: wrapper, question, node, summary, meta, metaKey: '', detailed: true, text: '', words: 0, extra });
       }
 
       const item = answers[index]!;
-      const showsSource = !item.turn.querySelector(':scope > .chart') && (index === 0 || (several && !!turn.source));
+      const showsSource = !item.extra?.replacesQuote && (index === 0 || (several && !!turn.source));
       setSourceQuote(item.turn, showsSource ? sources[index]! : '', index);
       const fixed = corrected.includes(index);
       item.question.replaceChildren(...turn.spoken ? [icon(Mic, { 'aria-label': '说的' })] : [], questionLabel(turn.question));
@@ -862,6 +887,12 @@ function boot(): void {
       item.summary.textContent = summaryText.slice(0, summaryLimit) + (hasMoreText && summaryLimit === 100 ? '…' : '');
       item.summary.hidden = !hasDetails || item.detailed;
       item.node.hidden = hasDetails && !item.detailed;
+
+      if (item.extra?.settle) {
+        item.node.hidden = true;
+        item.summary.hidden = true;
+        item.extra.settle(turn.state === 'done' ? turn.answer : turn.state === 'error' || turn.state === 'stopped' ? '' : null);
+      }
 
       const deep = deepTurns.has(index) || (index === lastIndex && record?.depth === 'deep');
       const metaKey = [turn.state, turn.error ?? '', turn.agent ?? '', turn.step ?? '', hasDetails, item.detailed, interrupted, deep, index === lastIndex, sending].join('|');
