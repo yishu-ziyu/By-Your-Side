@@ -1,3 +1,4 @@
+import { autoUpdate, computePosition, flip, inline, offset, shift, size } from "@floating-ui/dom";
 import { plainError } from "../../../shared/user-facing.js";
 import { installDragFeed } from "./drag-feed.js";
 import { installGhostHud } from "./ghost-hud.js";
@@ -415,16 +416,20 @@ function boot(): void {
   }
 
   function placeBarTip(target: HTMLElement): void {
-    const targetRect = target.getBoundingClientRect();
-    const tipRect = barTip.getBoundingClientRect();
-    const center = targetRect.left + targetRect.width / 2;
-    const left = clamp(center - tipRect.width / 2, 8, Math.max(8, innerWidth - tipRect.width - 8));
-    const above = targetRect.top - tipRect.height - 9 >= 8;
-
-    barTip.style.left = `${left}px`;
-    barTip.style.top = `${above ? targetRect.top - tipRect.height - 9 : targetRect.bottom + 9}px`;
-    barTip.style.setProperty('--tip-x', `${clamp(center - left, 12, Math.max(12, tipRect.width - 12))}px`);
-    barTip.dataset.side = above ? 'top' : 'bottom';
+    void computePosition(target, barTip, {
+      strategy: 'fixed',
+      placement: 'top',
+      middleware: [offset(9), flip({ padding: 8 }), shift({ padding: 8 })],
+    }).then(({ x, y, placement }) => {
+      if (barTipTarget !== target || barTip.hidden) return;
+      const targetRect = target.getBoundingClientRect();
+      const tipRect = barTip.getBoundingClientRect();
+      const center = targetRect.left + targetRect.width / 2;
+      barTip.style.left = `${x}px`;
+      barTip.style.top = `${y}px`;
+      barTip.style.setProperty('--tip-x', `${clamp(center - x, 12, Math.max(12, tipRect.width - 12))}px`);
+      barTip.dataset.side = placement.startsWith('top') ? 'top' : 'bottom';
+    });
   }
 
   function showBarTip(target: HTMLElement, immediate = false): void {
@@ -499,7 +504,11 @@ function boot(): void {
     }
   };
 
+  let stopMenuPosition: (() => void) | undefined;
+
   function closeMenu(): void {
+    stopMenuPosition?.();
+    stopMenuPosition = undefined;
     menu.hidden = true;
     answerMenu.hidden = true;
     more.setAttribute('aria-expanded', 'false');
@@ -508,13 +517,28 @@ function boot(): void {
 
   function openMenu(button = more, sheet = menu): void {
     closeMenu();
-    const anchor = button.getBoundingClientRect();
     sheet.hidden = false;
-    const box = sheet.getBoundingClientRect();
-    const below = anchor.bottom + 8 + box.height <= innerHeight - PLACE_MARGIN;
-    sheet.style.left = `${clamp(anchor.right - box.width, PLACE_MARGIN, innerWidth - box.width - PLACE_MARGIN)}px`;
-    sheet.style.top = `${below ? anchor.bottom + 8 : Math.max(PLACE_MARGIN, anchor.top - 8 - box.height)}px`;
     button.setAttribute('aria-expanded', 'true');
+    stopMenuPosition = autoUpdate(button, sheet, () => {
+      void computePosition(button, sheet, {
+        strategy: 'fixed',
+        placement: 'bottom-end',
+        middleware: [
+          offset(8),
+          flip({ fallbackPlacements: ['top-end', 'bottom-start', 'top-start'] }),
+          shift({ padding: PLACE_MARGIN }),
+          size({
+            apply({ availableHeight }) {
+              sheet.style.maxHeight = `${Math.max(120, availableHeight)}px`;
+              sheet.style.overflowY = 'auto';
+            },
+          }),
+        ],
+      }).then(({ x, y }) => {
+        sheet.style.left = `${x}px`;
+        sheet.style.top = `${y}px`;
+      });
+    });
   }
 
   function animate(name: 'enter' | 'morph'): void {
@@ -523,11 +547,11 @@ function boot(): void {
     surface.classList.add(name);
   }
 
-  function position(): void {
-    if (!visible) {
-      return;
-    }
+  let cardPositionVersion = 0;
 
+  function position(): void {
+    if (!visible) return;
+    const version = ++cardPositionVersion;
     const margin = PLACE_MARGIN;
     link.hidden = true;
 
@@ -540,7 +564,6 @@ function boot(): void {
       manualPos.top = clamp(manualPos.top, margin, Math.max(margin, innerHeight - box.height - margin));
       surface.style.left = `${manualPos.left}px`;
       surface.style.top = `${manualPos.top}px`;
-
       return;
     }
 
@@ -550,7 +573,6 @@ function boot(): void {
       const box = surface.getBoundingClientRect();
       surface.style.left = `${clamp(box.left, margin, Math.max(margin, innerWidth - box.width - margin))}px`;
       surface.style.top = `${clamp(box.top, margin, Math.max(margin, innerHeight - box.height - margin))}px`;
-
       return;
     }
 
@@ -559,30 +581,44 @@ function boot(): void {
     const lines = live ? [...live.getClientRects()].filter(line => line.width > 0 && line.height > 0) : [];
     const first = lines[0] ?? r;
     const last = lines.at(-1) ?? r;
+    const reference = { getBoundingClientRect: () => r, getClientRects: () => lines.length ? lines : [r] };
 
     if (!expanded || (!record?.turns.length && voice?.phase !== 'released')) {
       surface.style.maxHeight = '';
       const box = surface.getBoundingClientRect();
       const above = first.top - LENS_GAP - box.height >= margin;
-      const anchor = above ? first : last;
-      const center = anchor.left + anchor.width / 2;
-      const left = clamp(center - box.width / 2, margin, innerWidth - box.width - margin);
-      const top = above ? first.top - LENS_GAP - box.height : clamp(last.bottom + LENS_GAP, margin, innerHeight - box.height - margin);
-      surface.style.left = `${left}px`;
-      surface.style.top = `${top}px`;
-      surface.dataset.place = 'lens';
-      surface.dataset.tail = above ? 'down' : 'up';
-      surface.style.setProperty('--tail-x', `${clamp(center - left, 18, box.width - 18)}px`);
-      surface.style.setProperty('--origin', `${clamp(center - left, 18, box.width - 18)}px ${above ? 'bottom' : 'top'}`);
-
+      void computePosition(reference, surface, {
+        strategy: 'fixed',
+        placement: above ? 'top' : 'bottom',
+        middleware: [inline(), offset(LENS_GAP), shift({ padding: margin, crossAxis: true })],
+      }).then(({ x, y }) => {
+        if (version !== cardPositionVersion) return;
+        const line = above ? first : last;
+        const center = line.left + line.width / 2;
+        surface.style.left = `${x}px`;
+        surface.style.top = `${y}px`;
+        surface.dataset.place = 'lens';
+        surface.dataset.tail = above ? 'down' : 'up';
+        surface.style.setProperty('--tail-x', `${clamp(center - x, 18, box.width - 18)}px`);
+        surface.style.setProperty('--origin', `${clamp(center - x, 18, box.width - 18)}px ${above ? 'bottom' : 'top'}`);
+      });
       return;
     }
 
     delete surface.dataset.tail;
-
     pinned = r.bottom < 0 || r.top > innerHeight;
 
-    const block = pinned ? null : contentBlockOf(anchor.range);
+    if (pinned) {
+      if (!manualSize) surface.style.maxHeight = `${Math.min(innerHeight - margin * 2, 540)}px`;
+      const box = surface.getBoundingClientRect();
+      surface.dataset.place = 'dock';
+      surface.style.left = `${innerWidth - box.width - margin}px`;
+      surface.style.top = `${margin}px`;
+      surface.style.setProperty('--origin', 'right top');
+      return;
+    }
+
+    const block = contentBlockOf(anchor.range);
     const blockRect = block?.getBoundingClientRect();
     const cardWidth = surface.getBoundingClientRect().width || CARD_WIDTH;
     const roomy = !!blockRect && innerWidth - blockRect.right >= cardWidth + BESIDE_GAP + margin;
@@ -592,11 +628,11 @@ function boot(): void {
       top: Math.max(0, Math.min(blockRect.top, r.top)),
       bottom: Math.min(innerHeight, Math.max(blockRect.bottom, r.top + Math.min(540, innerHeight - margin * 2))),
     } : null;
-    const beside = !pinned && !!besideRegion && !!block && gutterBlank(host, block, besideRegion);
+    const beside = !!besideRegion && !!block && gutterBlank(host, block, besideRegion);
     const room = { above: r.top - margin - 8, below: innerHeight - r.bottom - margin - 8 };
     side ??= room.below >= 220 || room.below >= room.above ? 'below' : 'above';
     if (!manualSize) {
-      const cap = beside ? innerHeight - margin * 2 : pinned ? 540 : Math.max(220, room[side]);
+      const cap = beside ? innerHeight - margin * 2 : Math.max(220, room[side]);
       surface.style.maxHeight = `${Math.min(innerHeight - margin * 2, cap)}px`;
     }
     const box = surface.getBoundingClientRect();
@@ -615,17 +651,33 @@ function boot(): void {
         link.style.top = `${lineY}px`;
         link.style.width = `${BESIDE_GAP - LINK_INSET}px`;
       }
-
       return;
     }
 
-    surface.dataset.place = pinned ? 'dock' : 'float';
-    const left = pinned ? innerWidth - box.width - margin : clamp(r.left + r.width / 2 - box.width / 2, margin, innerWidth - box.width - margin);
-    const bottomLimit = innerHeight - box.height - margin;
-    const top = pinned ? margin : side === 'below' ? clamp(r.bottom + LENS_GAP, margin, bottomLimit) : clamp(r.top - box.height - LENS_GAP, margin, bottomLimit);
-    surface.style.left = `${left}px`;
-    surface.style.top = `${top}px`;
-    surface.style.setProperty('--origin', pinned ? 'right top' : side === 'above' ? 'bottom center' : 'top center');
+    surface.dataset.place = 'float';
+    void computePosition(reference, surface, {
+      strategy: 'fixed',
+      placement: side === 'below' ? 'bottom' : 'top',
+      middleware: [
+        inline(),
+        offset(LENS_GAP),
+        flip({ fallbackPlacements: [side === 'below' ? 'top' : 'bottom'] }),
+        shift({ padding: margin }),
+        size({
+          apply({ availableHeight }) {
+            if (version !== cardPositionVersion || manualSize) return;
+            surface.style.maxHeight = `${Math.min(innerHeight - margin * 2, Math.max(220, availableHeight))}px`;
+          },
+        }),
+      ],
+    }).then(({ x, y, placement }) => {
+      if (version !== cardPositionVersion) return;
+      side = placement.startsWith('top') ? 'above' : 'below';
+      const height = surface.getBoundingClientRect().height;
+      surface.style.left = `${x}px`;
+      surface.style.top = `${clamp(y, margin, Math.max(margin, innerHeight - height - margin))}px`;
+      surface.style.setProperty('--origin', side === 'above' ? 'bottom center' : 'top center');
+    });
   }
 
   function applyManualSize(): void {
@@ -679,6 +731,7 @@ function boot(): void {
     rememberDraft();
     hideBarTip();
     closeMenu();
+    cardPositionVersion++;
     visible = false;
     surface.hidden = true;
     link.hidden = true;
@@ -1796,6 +1849,8 @@ function boot(): void {
       return false;
     }
 
+    closeMenu();
+    cardPositionVersion++;
     listening.abort();
     notes.dispose();
     resizes.disconnect();
