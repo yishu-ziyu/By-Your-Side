@@ -452,10 +452,10 @@ try {
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: cells.x1, y: cells.y1, button: "left", clickCount: 1 }, work);
   for (let i = 1; i <= 8; i++) await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: cells.x1 + ((cells.x2 - cells.x1) * i) / 8, y: cells.y1 + ((cells.y2 - cells.y1) * i) / 8, button: "left", buttons: 1 }, work);
   await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: cells.x2, y: cells.y2, button: "left", clickCount: 1 }, work);
-  const chartButton = await until(() => pointOf('.bar .ctx'), 5_000, "画成图");
+  const chartButton = await until(() => pointOf('.bar .ctx'), 5_000, "生成图表");
   const tableBar = await inCard<{ first: string; askPrimary: boolean }>(`function(){const bs=[...this.querySelectorAll('.bar button')].filter(b=>!b.closest('[hidden]'));return {first:bs[0].textContent.trim(),askPrimary:getComputedStyle(this.querySelector('.bar .ask')).backgroundColor!=='rgba(0, 0, 0, 0)'}}`);
   await shot("4b-table-bar");
-  check("选中表格：第一个按钮变成「画成图」并成为唯一主色；选普通句子时不出现", ordinary && tableBar.first === "画成图" && !tableBar.askPrimary, { ordinary, ...tableBar });
+  check("选中表格：第一个按钮变成「生成图表」并成为唯一主色；选普通句子时不出现", ordinary && tableBar.first === "生成图表" && !tableBar.askPrimary, { ordinary, ...tableBar });
   const beforeChart = seen.length;
   await click(chartButton);
   await until(() => seen.length > beforeChart || undefined, 20_000, "图表提问");
@@ -463,7 +463,7 @@ try {
   await sleep(700);
   const chart = await inCard<{ title: string; tabs: string[]; values: string[]; heights: number[]; quote: boolean }>(`function(){const c=this.querySelector('.turn > .chart');return {title:this.querySelector('.head .title')?.textContent??'',tabs:[...(c?.querySelectorAll('.seg button')??[])].map(b=>b.textContent),values:[...(c?.querySelectorAll('.plot b')??[])].map(b=>b.textContent),heights:[...(c?.querySelectorAll('.plot i')??[])].map(i=>i.offsetHeight),quote:!!this.querySelector('.turn > .source')}}`);
   await shot("4c-table-chart");
-  check("点「画成图」：卡片里是按表格数字画的柱子，最高的是 1904 年，不再重复引用原表", chart.title === "画成图" && JSON.stringify(chart.tabs) === JSON.stringify(["风暴次数", "沉船"]) && JSON.stringify(chart.values) === JSON.stringify(["12", "18", "9", "24"]) && chart.heights[3] === Math.max(...chart.heights) && chart.heights[2] < chart.heights[0] && !chart.quote, chart);
+  check("点「生成图表」：卡片里是按表格数字画的柱子，最高的是 1904 年，不再重复引用原表", chart.title === "生成图表" && JSON.stringify(chart.tabs) === JSON.stringify(["风暴次数", "沉船"]) && JSON.stringify(chart.values) === JSON.stringify(["12", "18", "9", "24"]) && chart.heights[3] === Math.max(...chart.heights) && chart.heights[2] < chart.heights[0] && !chart.quote, chart);
   await click((await pointOf('.seg button:nth-child(2)'))!);
   await sleep(700);
   const second = await inCard<string[]>(`function(){return [...this.querySelectorAll('.plot b')].map(b=>b.textContent)}`);
