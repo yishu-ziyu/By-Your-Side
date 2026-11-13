@@ -11,7 +11,7 @@ const artifacts = join(REPO, "out/acceptance/real-path", `${new Date().toISOStri
 
 await mkdir(artifacts, { recursive: true });
 
-const SECRET = { ccNumber: "4242424242424242", csc: "9081", cardNumber: "5555444433331111", pin: "8642", toggled: "ZQtoggle7731" };
+const SECRET = { ccNumber: "4242424242424242", csc: "ZQcsc9081", cardNumber: "5555444433331111", pin: "ZQpin8642", toggled: "ZQtoggle7731" };
 const PLAIN = "PLAINZQ7777";
 
 const site = createServer((_req, res) => {

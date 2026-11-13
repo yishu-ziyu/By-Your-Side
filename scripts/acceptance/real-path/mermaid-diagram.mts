@@ -86,16 +86,16 @@ try {
   await rp.click(panel, "#input");
   await rp.typeText(panel, ASK);
   await rp.pressEnter(panel);
-  await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes("另一种图"))`) || undefined, 60_000, "回答出现");
+  await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].some(m => m.textContent.includes("另一种图"))`) || undefined, 60_000, "回答出现");
   await until(async () => await rp.evaluate(panel, ready), 60_000, "这一轮结束");
   type Seen = { svgs: string[]; code: string | null; pres: string[] };
-  const read = `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); return { svgs: [...a.querySelectorAll(".gc-diagram svg")].map(s => s.textContent), code: a.querySelector(".gc-diagram-code")?.textContent ?? null, pres: [...a.querySelectorAll("pre code")].filter(c => !c.closest(".gc-diagram-code")).map(c => c.className + ":" + c.textContent.trim()) }; })()`;
+  const read = `(() => { const a = [...document.querySelectorAll("#messages .msg.assistant")].at(-1); return { svgs: [...a.querySelectorAll(".gc-diagram svg")].map(s => s.textContent), code: a.querySelector(".gc-diagram-code")?.textContent ?? null, pres: [...a.querySelectorAll("pre code")].filter(c => !c.closest(".gc-diagram-code")).map(c => c.className + ":" + c.textContent.trim()) }; })()`;
   const seen = await until(async () => {
     const state = await rp.evaluate(panel, read) as Seen;
     return state.svgs.length >= 5 ? state : null;
   }, 15_000, "图画出来").catch(async () => await rp.evaluate(panel, read) as Seen);
   await rp.screenshot(panel, join(out, "answer.png"));
-  await rp.evaluate(panel, `(() => { const figures = [...document.querySelectorAll(".msg.assistant .gc-diagram")]; figures.find(f => f.textContent.includes("阿金库尔") || f.querySelector("svg")?.textContent.includes("阿金库尔"))?.scrollIntoView({ block: "start" }); return true; })()`);
+  await rp.evaluate(panel, `(() => { const figures = [...document.querySelectorAll("#messages .msg.assistant .gc-diagram")]; figures.find(f => f.textContent.includes("阿金库尔") || f.querySelector("svg")?.textContent.includes("阿金库尔"))?.scrollIntoView({ block: "start" }); return true; })()`);
   await rp.screenshot(panel, join(out, "timeline.png"));
   const drawn = (text: string) => seen.svgs.some(svg => svg.includes(text));
   check("a flowchart 画成了图，图里有节点文字", drawn("迁都平安京") && drawn("苏联原子弹"), seen.svgs.map(s => s.slice(0, 60)));

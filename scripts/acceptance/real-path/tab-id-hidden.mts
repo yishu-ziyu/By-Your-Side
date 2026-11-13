@@ -34,9 +34,9 @@ try {
   await rp.click(panel, "#input");
   await rp.typeText(panel, ASK);
   await rp.pressEnter(panel);
-  await until(async () => await rp.evaluate(panel, `!!document.querySelector(".msg.assistant .gen-card .gc-foot")`) || undefined, 60_000, "回答和卡片出现");
+  await until(async () => await rp.evaluate(panel, `!!document.querySelector("#messages .msg.assistant .gen-card .gc-foot")`) || undefined, 60_000, "回答和卡片出现");
   await until(async () => await rp.evaluate(panel, ready), 60_000, "这一轮结束");
-  const seen = await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll(".msg.assistant")].at(-1); return { text: a.innerText, foot: a.querySelector(".gc-foot")?.innerText ?? "", button: a.querySelector("[data-card-tab]")?.getAttribute("data-card-tab") ?? null }; })()`) as { text: string; foot: string; button: string | null };
+  const seen = await rp.evaluate(panel, `(() => { const a = [...document.querySelectorAll("#messages .msg.assistant")].at(-1); return { text: a.innerText, foot: a.querySelector(".gc-foot")?.innerText ?? "", button: a.querySelector("[data-card-tab]")?.getAttribute("data-card-tab") ?? null }; })()`) as { text: string; foot: string; button: string | null };
   await rp.screenshot(panel, join(out, "answer.png"));
   const leaked = ["29979731", "29979739", String(workTab)].filter(n => seen.text.includes(n));
   check("a 正文、卡片出处和表格里都看不到标签页编号", leaked.length === 0 && seen.foot.includes("维基百科"), { leaked, foot: seen.foot });
@@ -46,7 +46,7 @@ try {
   check("e 去掉编号后不留空格和「（编号 ）」", seen.text.includes("页面在新标签页里") && !/（编号\s*）/.test(seen.text), { text: seen.text.slice(0, 160) });
   check("b 「切到…看」按钮仍带着那一页的编号", seen.button === String(workTab), { button: seen.button, workTab });
   await rp.evaluate(panel, `chrome.tabs.create({ url: "about:blank#other", active: true }).then(() => true)`);
-  await rp.click(panel, ".msg.assistant [data-card-tab]");
+  await rp.click(panel, "#messages .msg.assistant [data-card-tab]");
   const active = await until(async () => { const id = await rp.evaluate(panel, `chrome.tabs.query({ active: true, currentWindow: true }).then(t => t[0]?.id ?? 0)`) as number; return id === workTab ? id : null; }, 10_000, "切到那一页");
   check("b 点按钮真的切到那一页", active === workTab, { active, workTab, work: work.targetId });
   await live.close();
