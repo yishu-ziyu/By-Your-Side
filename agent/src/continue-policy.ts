@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { HELD_BY_OTHER_TASK_ERROR } from "../../shared/control.js";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
-import { emailStepIsNext, gaveUpWithoutChange, type GoalVerdict } from "./goal-check.js";
+import { emailStepIsNext, gaveUpWithoutChange, type GoalVerdict } from "./goal-verdict.js";
 
 const GOAL_CONTINUE_MAX = 3;
 const GOAL_CONTINUE_WITHIN_MS = 2 * 60_000;
