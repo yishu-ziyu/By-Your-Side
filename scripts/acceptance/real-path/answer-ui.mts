@@ -58,7 +58,7 @@ try {
   await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && document.querySelector("#conversation-new")?.disabled===false') || undefined, 60_000, "侧栏就绪");
   const userCount = () => rp.evaluate(panel, `document.querySelectorAll("#messages .msg.user").length`) as Promise<number>;
   const sessions = new Map<string, string>();
-  const inFrame = async <T,>(expression: string): Promise<T> => {
+  const inFrame = async <T,>(expression: string, timeoutMs = 30_000): Promise<T> => {
     const frame = (await rp.targets()).findLast(t => t.type === "iframe" && t.url.includes("answer-ui.html"));
 
     if (!frame) throw new Error("没有界面框架");
@@ -66,9 +66,14 @@ try {
 
     sessions.set(frame.targetId, session);
 
-    return await rp.evaluate(session, expression) as T;
+    try {
+      return await rp.evaluate(session, expression, { timeoutMs }) as T;
+    } catch (caught) {
+      sessions.delete(frame.targetId);
+      throw caught;
+    }
   };
-  const frameText = () => inFrame<string>("document.body.innerText").catch((e: unknown) => { evidence.frameError = String(e); return ""; });
+  const frameText = () => inFrame<string>("document.body.innerText", 3_000).catch((e: unknown) => { evidence.frameError = String(e); return ""; });
   const clickButton = async (selector: string) => {
     const inside = await inFrame<{ x: number; y: number }>(`(() => { const r = ${selector}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     const box = await rp.evaluate(panel, `(() => {
@@ -148,7 +153,9 @@ try {
   await until(async () => (await rp.evaluate(panel, `document.querySelector("#messages").innerText`) as string).includes("JD5290 准点") || undefined, 30_000, "助手接着答");
   await rp.screenshot(panel, join(artifacts, "3-handed-back.png"));
 
+  sessions.clear();
   await rp.cdp.send("Page.reload", {}, panel);
+  await until(async () => await rp.evaluate(panel, 'document.readyState === "complete" && document.querySelector("#send-btn")?.disabled === false && !!document.querySelector("#messages iframe.gc-app-iframe")') || undefined, 30_000, "重开侧栏后页面就绪");
   await until(async () => (await frameText()).includes("合计 2040 元") || undefined, 30_000, "重开侧栏后状态还在");
   await sleep(500);
   await rp.screenshot(panel, join(artifacts, "4-restored.png"));

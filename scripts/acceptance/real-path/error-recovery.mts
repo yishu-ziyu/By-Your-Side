@@ -93,9 +93,16 @@ try {
     await rp.pressEnter(panel);
   };
 
+  let receipts = 0;
+
   const recovered = async (name: keyof typeof CASES, receipt: RegExp) => {
     await until(async () => (await text()).includes(CASES[name].answer) || undefined, 60_000, `${name} answer visible`);
-    await until(async () => receipt.test(String(await rp.evaluate(panel, '[...document.querySelectorAll(".error-receipt")].at(-1)?.textContent ?? ""'))) || undefined, 10_000, `${name} receipt`);
+    const targetReceipts = receipts + 1;
+    await until(async () => {
+      const items = await rp.evaluate(panel, '[...document.querySelectorAll(".error-receipt")].map(e => e.textContent ?? "")') as string[];
+      return items.length >= targetReceipts && receipt.test(items.at(-1) ?? "") ? true : undefined;
+    }, 10_000, `${name} receipt`);
+    receipts = targetReceipts;
     assert.equal(await userBubbles(CASES[name].ask), 1, `${name}: the user did not have to resend`);
     assert.equal(await visible(".error-card"), false, `${name}: the error card is gone after recovery`);
     const receiptBeforeAnswer = await rp.evaluate(panel, `(() => {
