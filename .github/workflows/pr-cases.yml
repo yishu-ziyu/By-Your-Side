@@ -124,7 +124,17 @@ jobs:
                           target.parent.mkdir(parents=True, exist_ok=True)
                           shutil.copyfile(source, target)
           manifest = output / 'manifest.json'
-          status = json.loads(manifest.read_text())['status'] if manifest.is_file() else '未生成完整报告'
+          manifest_data = json.loads(manifest.read_text()) if manifest.is_file() else None
+          if manifest_data:
+              assets_root = (output / 'assets').resolve()
+              for entry in manifest_data.get('cases', []):
+                  if entry.get('status') == 'pass' and not entry.get('issues'):
+                      for media in entry.get('media', []):
+                          if media.get('kind') == 'video':
+                              target = (output / media['file']).resolve()
+                              if target.is_relative_to(assets_root) and target.is_file():
+                                  target.unlink()
+          status = manifest_data['status'] if manifest_data else '未生成完整报告'
           note(f'报告状态：{status}；报告生成器退出码：{result.returncode}。测试结果保持 Key cases 原始状态。')
           sys.exit(result.returncode)
           PYTHON
