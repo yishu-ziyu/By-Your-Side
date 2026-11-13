@@ -780,6 +780,106 @@ function isModelConnectionTarget(value: unknown): value is ModelConnectionTarget
   try { return ["http:", "https:"].includes(new URL(target.baseUrl).protocol); } catch { return false; }
 }
 
+type ClientOf<T extends ClientMessage["type"]> = Extract<ClientMessage, { type: T }>;
+
+const SELF_CHECKED_CLIENT: { [T in ClientMessage["type"]]?: (msg: ClientOf<T>) => boolean } = {
+  reading_request: isReadingClientMessage,
+  reading_cancel: isReadingClientMessage,
+  reading_route: isReadingClientMessage,
+  reading_kind: isReadingClientMessage,
+  reading_import: isReadingClientMessage,
+  nudge_request: isNudgeClientMessage,
+  nudge_validate: isNudgeClientMessage,
+  browse_habit_request: isBrowseHabitClientMessage,
+  browse_habit_ask: isBrowseHabitClientMessage,
+};
+
+type MemoryClientType = Extract<ClientMessage["type"], `memory_${string}`>;
+
+const MEMORY_CLIENT_CHECKS: { [T in MemoryClientType]: (msg: ClientOf<T>) => boolean } = {
+  memory_list: () => true,
+  memory_unforget: (msg) => Array.isArray(msg.entries) && msg.entries.length > 0 && msg.entries.length <= 100 && msg.entries.every(isMemoryEntry),
+  memory_site: (msg) => typeof msg.hostname === "string" && normalizeMemoryHostname(msg.hostname) === msg.hostname && typeof msg.off === "boolean" && validMemoryId(msg.id) && validMemoryVersion(msg.expectedVersion),
+  memory_ask_answer: (msg) => validMemoryId(msg.askId) && (msg.answer === "remember" || msg.answer === "once") && (msg.text === undefined || (typeof msg.text === "string" && msg.text.length <= MEMORY_TEXT_MAX)),
+  memory_update: (msg) => validMemoryId(msg.id) && validMemoryVersion(msg.expectedVersion) && validMemoryText(msg.text) && isMemoryScope(msg.scope),
+  memory_forget: (msg) => validMemoryId(msg.id) && validMemoryVersion(msg.expectedVersion),
+  memory_restore: (msg) => validMemoryId(msg.id) && validMemoryVersion(msg.expectedVersion),
+};
+
+function validUserTurnMessage(msg: ClientOf<"user_message" | "steer">): boolean {
+  if (msg.context !== undefined && !isPageContext(msg.context)) return false;
+  if (msg.spoken !== undefined && msg.spoken !== true) return false;
+  if (msg.attachments !== undefined && (!Array.isArray(msg.attachments) || !msg.attachments.every(isAttachment))) return false;
+
+  return true;
+}
+
+const CLIENT_CHECKS: { [T in ClientMessage["type"]]?: (msg: ClientOf<T>) => boolean } = {
+  conversation_create: (msg) => (msg.reading === undefined || isReadingTranscript(msg.reading)) && validRequestId(msg.requestId) && (msg.title === undefined || (typeof msg.title === "string" && msg.title.length <= 120)),
+  voice: (msg) => {
+    if (!isVoiceClientMessage(msg)) return false;
+    if ((msg.command.kind === "commit" || msg.command.kind === "input_context") && msg.command.input !== undefined) {
+      const input = msg.command.input;
+      if (input?.observation !== undefined && (!input.observation || !validRequestId(input.observation.token) || !Number.isSafeInteger(input.observation.tabId))) return false;
+      if (!input || typeof input !== "object" || Array.isArray(input) || (input.context !== undefined && !isPageContext(input.context)) || (input.attachments !== undefined && (!Array.isArray(input.attachments) || !input.attachments.every(isAttachment)))) return false;
+    }
+
+    return true;
+  },
+  task_action: (msg) => {
+    const r = msg.request;
+
+    return isTaskActionRequest(r) && r.conversationId === msg.conversationId
+      && (r.context === undefined || isPageContext(r.context))
+      && (r.pages === undefined || (Array.isArray(r.pages) && r.pages.length <= 8 && r.pages.every(isPageContext)))
+      && (r.attachments === undefined || (Array.isArray(r.attachments) && r.attachments.every(isAttachment)));
+  },
+  task_receipt_query: (msg) => validRequestId(msg.requestId),
+  task_view_query: (msg) => validRequestId(msg.requestId),
+  task_control_result: (msg) => validRequestId(msg.requestId) && taskId(msg.runId) && ["pause", "resume", "abort"].includes(msg.action) && typeof msg.ok === "boolean"
+    && (msg.reason === undefined || (typeof msg.reason === "string" && msg.reason.length <= 1000)) && (msg.uncertain === undefined || typeof msg.uncertain === "boolean") && (msg.partial === undefined || typeof msg.partial === "boolean"),
+  abort: (msg) => msg.taskRequestId === undefined || validRequestId(msg.taskRequestId),
+  takeover: (msg) => {
+    if (msg.taskRequestId !== undefined && !validRequestId(msg.taskRequestId)) return false;
+    if (!validRequestId(msg.requestId)) return false;
+    if (msg.members !== undefined) {
+      if (!Array.isArray(msg.members) || msg.members.length === 0 || !msg.members.every(isTeamFrozenMember)) return false;
+      if (msg.groupId !== undefined && (typeof msg.groupId !== "string" || !msg.groupId || msg.groupId.length > 64)) return false;
+      if (msg.generation !== undefined && (typeof msg.generation !== "number" || !Number.isFinite(msg.generation))) return false;
+    }
+
+    return true;
+  },
+  handback: (msg) => {
+    if (msg.taskRequestId !== undefined && !validRequestId(msg.taskRequestId)) return false;
+    if (!validRequestId(msg.requestId)) return false;
+    const members = msg.members;
+    if (members !== undefined) return Array.isArray(members) && members.length > 0 && members.every(isTeamMemberHandback);
+
+    return isPageContext(msg.context) && typeof msg.snapshot === "string";
+  },
+  task_history_list: (msg) => validRequestId(msg.requestId),
+  skill_operations_list: (msg) => validRequestId(msg.requestId),
+  site_note_delete: (msg) => validRequestId(msg.requestId) && typeof msg.host === "string" && normalizeMemoryHostname(msg.host) === msg.host && typeof msg.text === "string" && msg.text.length > 0 && msg.text.length <= 200 && typeof msg.runId === "string" && msg.runId.length > 0 && msg.runId.length <= 200,
+  site_note_list: (msg) => validRequestId(msg.requestId),
+  skill_operation_delete: (msg) => validRequestId(msg.requestId) && validMemoryId(msg.id),
+  skill_operation_run: (msg) => validRequestId(msg.requestId) && validMemoryId(msg.id) && isJsonObject(msg.input) && JSON.stringify(msg.input).length <= 16_384
+    && (msg.tabId === undefined || (Number.isSafeInteger(msg.tabId) && msg.tabId >= 0)),
+  task_history_forget: (msg) => validRequestId(msg.requestId) && (msg.id === null || validMemoryId(msg.id)),
+  task_history_site: (msg) => validRequestId(msg.requestId) && validMemoryId(msg.id) && typeof msg.hostname === "string" && normalizeMemoryHostname(msg.hostname) === msg.hostname && typeof msg.off === "boolean",
+  task_history_restore: (msg) => validRequestId(msg.requestId) && isTaskHistoryEntry(msg.task),
+  conversation_list: (msg) => msg.requestId === undefined || validRequestId(msg.requestId),
+  set_model: (msg) => typeof msg.model === "string" && Boolean(msg.model),
+  set_thinking: (msg) => typeof msg.model === "string" && msg.model.includes("/") && msg.model.length <= 240 && (msg.level === null || isThinkingLevel(msg.level)) && (msg.restore === undefined || msg.restore === true),
+  retry_after_error: (msg) => (msg.auto === undefined || msg.auto === true) && (msg.target === undefined || (isModelConnectionTarget(msg.target) && validRequestId(msg.expectedRunId) && validRequestId(msg.keySaveRequestId))) && (msg.expectedRunId === undefined || validRequestId(msg.expectedRunId)),
+  model_key_test: (msg) => validRequestId(msg.requestId) && typeof msg.key === "string" && Boolean(msg.key.trim()) && msg.key.length <= 4096 && isModelConnectionTarget(msg.target) && validRequestId(msg.expectedRunId),
+  model_key_save: (msg) => validRequestId(msg.requestId) && typeof msg.key === "string" && Boolean(msg.key.trim()) && msg.key.length <= 4096 && isModelConnectionTarget(msg.target) && validRequestId(msg.expectedRunId) && typeof msg.roles === "string" && msg.roles.length <= 8192 && typeof msg.connection === "string" && msg.connection.length <= 4096 && typeof msg.credentialHash === "string" && /^[a-f0-9]{64}$/.test(msg.credentialHash),
+  model_key_cancel: (msg) => validRequestId(msg.requestId),
+  user_message: validUserTurnMessage,
+  steer: validUserTurnMessage,
+  page_translate: (msg) => msg.context === undefined || isPageContext(msg.context),
+};
+
 export function parseClientMessage(raw: string): ClientMessage | null {
   try {
     const msg = JSON.parse(raw) as ClientMessage;
@@ -787,149 +887,17 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return null;
 
     if (msg.conversationId !== undefined && !validConversationId(msg.conversationId)) return null;
+    const self = checkFor(SELF_CHECKED_CLIENT, msg.type);
 
-    if (msg.type === "reading_request" || msg.type === "reading_cancel" || msg.type === "reading_route" || msg.type === "reading_kind" || msg.type === "reading_import") return isReadingClientMessage(msg) ? msg : null;
-
-    if (msg.type === "nudge_request" || msg.type === "nudge_validate") return isNudgeClientMessage(msg) ? msg : null;
-
-    if (msg.type === "browse_habit_request" || msg.type === "browse_habit_ask") return isBrowseHabitClientMessage(msg) ? msg : null;
-
-    if (msg.type === "conversation_create" && msg.reading !== undefined && !isReadingTranscript(msg.reading)) return null;
-
-    if (msg.type === "voice") {
-      if(!isVoiceClientMessage(msg))return null;
-
-      if((msg.command.kind==='commit'||msg.command.kind==='input_context')&&msg.command.input!==undefined){
-        const input=msg.command.input;
-
-        if(input?.observation!==undefined&&(!input.observation||!validRequestId(input.observation.token)||!Number.isSafeInteger(input.observation.tabId)))return null;
-
-        if(!input||typeof input!=='object'||Array.isArray(input)||(input.context!==undefined&&!isPageContext(input.context))||(input.attachments!==undefined&&(!Array.isArray(input.attachments)||!input.attachments.every(isAttachment))))return null;
-      }
-
-      return msg;
-    }
-
-    if (msg.type === "task_action") {
-      const r = msg.request;
-
-      return isTaskActionRequest(r) && r.conversationId === msg.conversationId
-        && (r.context === undefined || isPageContext(r.context))
-        && (r.pages === undefined || Array.isArray(r.pages) && r.pages.length <= 8 && r.pages.every(isPageContext))
-        && (r.attachments === undefined || Array.isArray(r.attachments) && r.attachments.every(isAttachment)) ? msg : null;
-    }
-
-    if (msg.type === "task_receipt_query") return validRequestId(msg.requestId) ? msg : null;
-
-    if (msg.type === "task_view_query") return validRequestId(msg.requestId) ? msg : null;
-
-    if(msg.type==='task_control_result')return validRequestId(msg.requestId)&&taskId(msg.runId)&&['pause','resume','abort'].includes(msg.action)&&typeof msg.ok==='boolean'
-      &&(msg.reason===undefined||typeof msg.reason==='string'&&msg.reason.length<=1000)&&(msg.uncertain===undefined||typeof msg.uncertain==='boolean')&&(msg.partial===undefined||typeof msg.partial==='boolean')?msg:null;
-
-    if((msg.type==='takeover'||msg.type==='handback'||msg.type==='abort')&&msg.taskRequestId!==undefined&&!validRequestId(msg.taskRequestId))return null;
+    if (self) return self(msg as never) ? msg : null;
 
     if (msg.type.startsWith("memory_")) {
-      if (msg.type !== "memory_list" && msg.type !== "memory_update" && msg.type !== "memory_forget" && msg.type !== "memory_restore" && msg.type !== "memory_ask_answer" && msg.type !== "memory_site" && msg.type !== "memory_unforget") return null;
+      const mem = checkFor(MEMORY_CLIENT_CHECKS, msg.type);
 
-      if (!validRequestId(msg.requestId)) return null;
-
-      if (msg.type === "memory_unforget") return Array.isArray(msg.entries) && msg.entries.length > 0 && msg.entries.length <= 100 && msg.entries.every(isMemoryEntry) ? msg : null;
-
-      if (msg.type === "memory_site" && !(typeof msg.hostname === "string" && normalizeMemoryHostname(msg.hostname) === msg.hostname && typeof msg.off === "boolean")) return null;
-
-      if (msg.type === "memory_ask_answer" && !(validMemoryId(msg.askId) && (msg.answer === "remember" || msg.answer === "once") && (msg.text === undefined || (typeof msg.text === "string" && msg.text.length <= MEMORY_TEXT_MAX)))) return null;
-
-      if (msg.type !== "memory_list" && msg.type !== "memory_ask_answer" && (!validMemoryId(msg.id) || !validMemoryVersion(msg.expectedVersion))) return null;
-
-      if (msg.type === "memory_update" && (!validMemoryText(msg.text) || !isMemoryScope(msg.scope))) return null;
+      return mem && validRequestId((msg as { requestId?: unknown }).requestId) && mem(msg as never) ? msg : null;
     }
 
-    if (msg.type === "task_history_list" && !validRequestId(msg.requestId)) return null;
-
-    if (msg.type === "skill_operations_list" && !validRequestId(msg.requestId)) return null;
-
-    if (msg.type === "site_note_delete" && !(validRequestId(msg.requestId) && typeof msg.host === "string" && normalizeMemoryHostname(msg.host) === msg.host && typeof msg.text === "string" && msg.text.length > 0 && msg.text.length <= 200 && typeof msg.runId === "string" && msg.runId.length > 0 && msg.runId.length <= 200)) return null;
-    if (msg.type === "site_note_list" && !validRequestId(msg.requestId)) return null;
-
-    if (msg.type === "skill_operation_delete" && !(validRequestId(msg.requestId) && validMemoryId(msg.id))) return null;
-
-    if (msg.type === "skill_operation_run" && !(validRequestId(msg.requestId) && validMemoryId(msg.id) && isJsonObject(msg.input) && JSON.stringify(msg.input).length <= 16_384
-      && (msg.tabId === undefined || Number.isSafeInteger(msg.tabId) && msg.tabId >= 0))) return null;
-
-    if (msg.type === "task_history_forget" && (!validRequestId(msg.requestId) || (msg.id !== null && !validMemoryId(msg.id)))) return null;
-
-    if (msg.type === "task_history_site" && !(validRequestId(msg.requestId) && validMemoryId(msg.id) && typeof msg.hostname === "string" && normalizeMemoryHostname(msg.hostname) === msg.hostname && typeof msg.off === "boolean")) return null;
-
-    if (msg.type === "task_history_restore" && !(validRequestId(msg.requestId) && isTaskHistoryEntry(msg.task))) return null;
-
-    if (msg.type === "conversation_create" && (!validRequestId(msg.requestId) || (msg.title !== undefined && (typeof msg.title !== "string" || msg.title.length > 120)))) return null;
-
-    if (msg.type === "conversation_list" && msg.requestId !== undefined && !validRequestId(msg.requestId)) return null;
-
-    if (msg.type === "set_model" && (typeof msg.model !== "string" || !msg.model)) return null;
-
-    if (msg.type === "set_thinking" && (typeof msg.model !== "string" || !msg.model.includes("/") || msg.model.length > 240 || !(msg.level === null || isThinkingLevel(msg.level)) || msg.restore !== undefined && msg.restore !== true)) return null;
-
-    if (msg.type === "retry_after_error" && (msg.auto !== undefined && msg.auto !== true || msg.target !== undefined && (!isModelConnectionTarget(msg.target) || !validRequestId(msg.expectedRunId) || !validRequestId(msg.keySaveRequestId)) || msg.expectedRunId !== undefined && !validRequestId(msg.expectedRunId))) return null;
-
-    if (msg.type === "model_key_test" && (!validRequestId(msg.requestId) || typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096 || !isModelConnectionTarget(msg.target) || !validRequestId(msg.expectedRunId))) return null;
-
-    if (msg.type === "model_key_save" && (!validRequestId(msg.requestId) || typeof msg.key !== "string" || !msg.key.trim() || msg.key.length > 4096 || !isModelConnectionTarget(msg.target) || !validRequestId(msg.expectedRunId) || typeof msg.roles !== "string" || msg.roles.length > 8192 || typeof msg.connection !== "string" || msg.connection.length > 4096 || typeof msg.credentialHash !== "string" || !/^[a-f0-9]{64}$/.test(msg.credentialHash))) return null;
-
-    if (msg.type === "model_key_cancel" && !validRequestId(msg.requestId)) return null;
-
-    if (
-      (msg.type === "user_message" || msg.type === "steer") &&
-      msg.context !== undefined &&
-      !isPageContext(msg.context)
-    ) {
-      return null;
-    }
-
-    if ((msg.type === "user_message" || msg.type === "steer") && msg.spoken !== undefined && msg.spoken !== true) return null;
-
-    if (
-      (msg.type === "user_message" || msg.type === "steer") &&
-      msg.attachments !== undefined &&
-      (!Array.isArray(msg.attachments) || !msg.attachments.every(isAttachment))
-    ) {
-      return null;
-    }
-
-    if (msg.type === "page_translate" && msg.context !== undefined && !isPageContext(msg.context)) return null;
-
-    if (msg.type === "takeover") {
-      if (!validRequestId(msg.requestId)) return null;
-
-      if (msg.members !== undefined) {
-        if (!Array.isArray(msg.members) || msg.members.length === 0 || !msg.members.every(isTeamFrozenMember)) {
-          return null;
-        }
-
-        if (msg.groupId !== undefined && (typeof msg.groupId !== "string" || !msg.groupId || msg.groupId.length > 64)) {
-          return null;
-        }
-
-        if (msg.generation !== undefined && (typeof msg.generation !== "number" || !Number.isFinite(msg.generation))) {
-          return null;
-        }
-      }
-    }
-
-    if (msg.type === "handback") {
-      if (!validRequestId(msg.requestId)) return null;
-      const members = msg.members;
-
-      if (members !== undefined) {
-        if (!Array.isArray(members) || members.length === 0 || !members.every(isTeamMemberHandback)) return null;
-      } else {
-        if (!isPageContext(msg.context)) return null;
-
-        if (typeof msg.snapshot !== "string") return null;
-      }
-    }
-
-    return msg;
+    return (checkFor(CLIENT_CHECKS, msg.type)?.(msg as never) ?? true) ? msg : null;
   } catch {
     return null;
   }
