@@ -42,7 +42,18 @@ const check = (item: string, pass: boolean, detail: Json) => {
   console.log(`${pass ? "PASS" : "FAIL"} ${item}: ${JSON.stringify(detail)}`);
 };
 
-const model = await startScriptedModel(rules);
+const seenPrompts: Array<{ hasTools: boolean; lastUser: string }> = [];
+
+const model = await startScriptedModel(rules, undefined, (payload) => {
+  const lastUserMessage = [...(payload.messages ?? [])].reverse().find((message) => message.role === "user");
+  const rawContent = lastUserMessage?.content;
+  const lastUser = typeof rawContent === "string"
+    ? rawContent
+    : Array.isArray(rawContent)
+      ? rawContent.map((part) => part.text ?? "").join("")
+      : "";
+  seenPrompts.push({ hasTools: Array.isArray(payload.tools) && payload.tools.length > 0, lastUser });
+});
 
 let rp: Awaited<ReturnType<typeof launchRealPath>> | null = null;
 
@@ -129,7 +140,7 @@ try {
   await rp.click(settings, "#model-save");
   await until(async () => String(await rp!.evaluate(settings, `document.querySelector('#model-status').textContent`)).startsWith("已保存") || undefined, 10_000, "模型保存");
   await useSavedSettingsModel(rp, settings, 'custom', 'demo-model');
-  const afterSave = model.requests.length;
+  const promptsBeforeCite = seenPrompts.length;
   await rp.cdp.send("Target.closeTarget", { targetId: settingsTarget.targetId });
   await sleep(600);
 
@@ -205,8 +216,10 @@ try {
     }
   }
   await until(async () => await rp!.evaluate(panel, `!document.querySelector('#ask-cite').hidden`) || undefined, 5000, "选区转入引用");
+  await sleep(300);
   const cite = await rp.evaluate(panel, `({ text:document.querySelector('#ask-cite-text').textContent, host:document.querySelector('#ask-cite-host').textContent, focus:document.activeElement.id })`);
-  check("划词转入保留原文、站点和输入焦点且不发模型请求", cite.text === "米娅负责编辑。" && cite.host.startsWith('127.0.0.1') && cite.focus === 'input' && model.requests.length === afterSave, cite);
+  const unexpectedPrompts = seenPrompts.slice(promptsBeforeCite).filter((entry) => entry.hasTools || !/^\s*\{"selection":/.test(entry.lastUser));
+  check("划词转入保留原文、站点和输入焦点且不发提问请求", cite.text === "米娅负责编辑。" && cite.host.startsWith('127.0.0.1') && cite.focus === 'input' && unexpectedPrompts.length === 0, { ...cite, unexpectedPrompts });
   await rp.typeText(panel, "引用草稿");
   await rp.screenshot(panel, join(artifacts, "selection-cite.png"));
   await rp.click(panel, "#materials-tray-root .mt-item[data-kind='selection'] .mt-item-remove");

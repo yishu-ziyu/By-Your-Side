@@ -53,6 +53,7 @@ import { HELD_BY_OTHER_TASK_ERROR } from "../../shared/control.js";
 import { TaskRecordStore } from './task-record-store.js';
 import type { TaskRecord } from '../../shared/task-record.js';
 import { InProcessLock } from './document-persistence.js';
+import { normalizeStaleTextSteer } from './text-task-routing.js';
 
 type Runtime = Awaited<ReturnType<typeof createConversationRuntime>>;
 
@@ -1286,10 +1287,21 @@ return;}
     }
   }
 
+  private normalizeTextRequest(request: TaskActionRequest): TaskActionRequest {
+    const entry = this.entries.get(request.conversationId);
+    return normalizeStaleTextSteer({
+      request,
+      snapshot: this.getTaskProgress(request.conversationId) ?? null,
+      streaming: entry?.runtime.session.isStreaming() ?? false,
+      held: entry?.runtime.session.isHeld() ?? false,
+      settleChecking: () => entry?.runtime.session.settleAnswerGate() ?? false,
+    });
+  }
+
   private async dispatchExecutionAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
 
-    if (request.action !== 'status' && this.entries.get(request.conversationId)?.runtime.session.settleAnswerGate() && request.action === 'steer') request = { ...request, action: 'start' };
+    request = this.normalizeTextRequest(request);
 
     if (['start', 'steer', 'abort'].includes(request.action)) this.goalContinuing.delete(request.conversationId);
 
@@ -1333,10 +1345,11 @@ return receipt;
       if (!entry || !snapshot) throw new TaskActionRejected('目标会话不可用，操作未执行。');
 
       if (entry.summary.checkpoint === 'unavailable') throw new TaskActionRejected(TASK_CHECKPOINT_UNAVAILABLE);
-      const continuation=originalRequest.source==='text'?continuationInput(originalRequest.text??''):null;
+      const settledRequest = this.normalizeTextRequest(originalRequest);
+      const continuation=settledRequest.source==='text'?continuationInput(settledRequest.text??''):null;
       const explicitAmendment=!!continuation?.amendment&&!!snapshot.runId&&!!snapshot.recoveryInput;
 
-      let request = originalRequest.source === 'text' && originalRequest.action === 'start' && !originalRequest.forkedFrom
+      let request = settledRequest.source === 'text' && settledRequest.action === 'start' && !settledRequest.forkedFrom
         && continuation
         && (snapshot.state === 'interrupted' || ['idle','error'].includes(snapshot.state) && (projectTaskView(snapshot).resumable||explicitAmendment))
         ? { ...originalRequest, action: 'resume' as const } : originalRequest;
@@ -1347,7 +1360,8 @@ return receipt;
         else if (['暂停','暂停关注'].includes(command)) request = { ...originalRequest, action: 'pause' };
         else if (continuation) request = continuation.amendment ? { ...originalRequest, action: 'steer', text: continuation.amendment } : { ...originalRequest, action: 'resume' };
       }
-      if (request===originalRequest&&await this.continuesOpenTask(originalRequest,snapshot,entry))request={...originalRequest,action:'steer' as const};
+      if (request===originalRequest) request = settledRequest;
+      if (request===settledRequest&&await this.continuesOpenTask(settledRequest,snapshot,entry))request={...settledRequest,action:'steer' as const};
 
       if (request.expectedRunId !== (snapshot.runId??null))throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
 
@@ -1552,7 +1566,7 @@ return receipt;
           else entry.runtime.session.startTask(request.text??'',request.context,request.attachments);
         }catch(error){this.pendingStarts.delete(request.conversationId);throw error;}
 
-        return {status:'accepted',runId:entry.summary.runId??null,message:`已接收新任务：${request.text??'使用所选资料'}`};
+        return {action:'start' as const,status:'accepted',runId:entry.summary.runId??null,message:`已接收新任务：${request.text??'使用所选资料'}`};
       }
 
       if(request.action==='pause'||request.action==='resume'||request.action==='abort'){
@@ -2105,8 +2119,9 @@ return;}
         let lock = this.routingLocks.get(id);
         if (!lock) { lock = new InProcessLock(); this.routingLocks.set(id,lock); }
         await lock.run(async () => {
-          const routed = await this.coordinateInput(request);
-          if (routed === null) { await this.dispatchTaskAction(request); return; }
+          const normalized = this.normalizeTextRequest(request);
+          const routed = await this.coordinateInput(normalized);
+          if (routed === null) { await this.dispatchTaskAction(normalized); return; }
           if (routed.question) this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:routed.question}});
           if (routed.chat) await this.answerSourcedChat(id,request.text??'',this.getTaskProgress(id)!,()=>true,session);
         });

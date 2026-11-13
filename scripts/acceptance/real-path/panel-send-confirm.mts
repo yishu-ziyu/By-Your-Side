@@ -121,6 +121,8 @@ try {
 
   const answered = (text: string) => until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll(".msg.assistant")].some(m => m.textContent.includes(${JSON.stringify(text)}))`)) as boolean, 60_000, `回答「${text}」`);
 
+  const idle = async () => { await until(async () => !(await rp.evaluate(panel, 'document.querySelector("#send-btn")?.classList.contains("stopping")')), 15_000, "侧栏回到空闲", 50); await sleep(200); };
+
   const ask = async (text: string) => { await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel); };
 
   const press = (session: string, id: string, which: "yes" | "no") => rp.click(session, `[data-send-confirm="${id}"] .send-confirm-${which}`);
@@ -160,6 +162,7 @@ try {
   const box1 = await pageBox();
   check("p1 侧栏点「发送」：恰好 1 条，网页圈选收起，两个侧栏的卡都收成「你确认过，已发送」", sent() === 1 && !box1 && !("timedOut" in done1) && !("timedOut" in done1b), { sent: sent(), pageBox: box1?.text ?? null, done1, done1b } as Json);
   await answered("P1 完成。");
+  await idle();
   await rp.screenshot(panel, join(out, "p1-panel-done.png"));
 
   if (!syncOnly) {
@@ -169,6 +172,7 @@ try {
   await press(panel, c2.id, "no");
   const done2 = await settledCard(panel, DECLINED_LINE);
   await answered("P2 完成。");
+  await idle();
   const box2 = await pageBox();
   check("p2 侧栏点「先不发」：0 条，草稿还在，网页圈选收起，卡收成一行", sent() === 1 && (await draft()) === DRAFT && !box2 && !("timedOut" in done2), { sent: sent(), draft: await draft(), pageBox: box2?.text ?? null, done2 } as Json);
 
@@ -183,6 +187,7 @@ try {
   const box3 = await pageBox();
   check("p3 网页上按 Esc：不发送，网页圈选收起，两个侧栏的卡都收成一行、没有按钮", sent() === 1 && !box3 && !("timedOut" in done3) && !("timedOut" in done3b), { sent: sent(), done3, done3b } as Json);
   await answered("P3 完成。");
+  await idle();
 
   await ask(ASK.p4);
   await liveCard(panel);
@@ -197,6 +202,7 @@ try {
   if (c4) { await sleep(1000); await press(panel, c4.id, "yes"); }
   await until(async () => sent() >= 2, 10_000, "重开后确认，服务器收到发送").catch(() => {});
   await answered("P4 完成。").catch(() => {});
+  await idle().catch(() => {});
   check("p4 重开后在侧栏点「发送」：恰好 1 条", sent() === 2, { sent: sent() });
   await rp.cdp.send("Page.reload", {}, panel);
   await sleep(500);
@@ -213,8 +219,16 @@ try {
   document.addEventListener("click", e => { if (e.target.closest?.(".send-confirm-yes")) window.__yesClick = performance.now(); }, true); return true; })()`);
   const before5 = sent();
   await ask(ASK.p5);
-  const c5 = await until(async () => { const c = await card(panel); return c?.buttons.includes("发送") ? c : null; }, 30_000, "p5 卡出现", 20);
-  await press(panel, c5.id, "yes");
+  const c5 = await until(async () => await rp.evaluate(panel, `(() => {
+    const card = [...document.querySelectorAll(".send-confirm")].at(-1);
+    const button = card?.querySelector(".send-confirm-yes");
+    if (!card || !button) return null;
+    const rect = button.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? { id: card.dataset.sendConfirm, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null;
+  })()`) as { id: string; x: number; y: number } | null, 30_000, "p5 卡出现", 20);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c5.x, y: c5.y }, panel);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: c5.x, y: c5.y, button: "left", clickCount: 1 }, panel);
+  await rp.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: c5.x, y: c5.y, button: "left", clickCount: 1 }, panel);
   const early5 = Number(await rp.evaluate(panel, `window.__yesClick - window.__arm[${JSON.stringify(c5.id)}]`));
   await sleep(1200);
   check("p5 卡上「发送」露出来 300 毫秒内就点：不发，卡还能点", early5 < 300 && sent() === before5 && !!(await card(panel))?.buttons.includes("发送"), { early5, sentDelta: sent() - before5 });
@@ -223,10 +237,12 @@ try {
   const space = { key: " ", code: "Space", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 };
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyDown", text: " ", ...space }, panel);
   await rp.cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...space }, panel);
-  await sleep(1200);
+  await until(async () => sent() >= before5 + 1, 5_000, "键盘确认后服务器收到发送").catch(() => {});
+  await sleep(600);
   check("p5 明确聚焦确认后按回车：只发送一次，随后空格不重复发送", focused === true && sent() === before5 + 1, { focused: focused as Json, sentDelta: sent() - before5 });
   const done5 = await settledCard(panel, SENT_LINE);
   await answered("P5 完成。").catch(() => {});
+  await idle().catch(() => {});
   const lines5 = (await rp.evaluate(panel, `window.__lines[${JSON.stringify(c5.id)}] ?? []`)) as string[];
   check("p5 键盘确认：恰好 1 条；执行以前卡上写「你确认了发送」，执行以后才写「已发送」", sent() - before5 === 1 && !("timedOut" in done5) && lines5[0] === "你确认了发送" && lines5.at(-1) === SENT_LINE, { sentDelta: sent() - before5, lines5, done5 } as Json);
 
