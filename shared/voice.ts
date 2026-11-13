@@ -97,6 +97,7 @@ export interface TaskProgressSnapshot {
   startedAt: number | null;
   runId?: string | null;
   restartRecovery?: boolean;
+  checking?: boolean;
   interruptionReason?: 'host_restart' | 'connection_lost' | 'manual_continuation';
   recoveryInput?:TaskRecoveryInput;
   continuation?: TaskContinuation;
@@ -448,6 +449,7 @@ export function isTaskProgressSnapshot(v: unknown): v is TaskProgressSnapshot {
     && (s.goal === null || typeof s.goal === "string" && s.goal.length <= 600) && (s.startedAt === null || Number.isFinite(s.startedAt))
     && (s.runId === undefined || s.runId === null || id(s.runId))
     && (s.restartRecovery === undefined || typeof s.restartRecovery === "boolean")
+    && (s.checking === undefined || typeof s.checking === "boolean")
     && (s.interruptionReason === undefined || ['host_restart','connection_lost','manual_continuation'].includes(s.interruptionReason))
     && (s.recoveryInput === undefined || isTaskRecoveryInput(s.recoveryInput))
     && (s.continuation === undefined || isTaskContinuation(s.continuation))

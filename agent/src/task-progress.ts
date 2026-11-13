@@ -135,6 +135,7 @@ export class TaskProgress {
   private foldedResults: { count: number; recent: string[] } = { count: 0, recent: [] };
   private goalCheck: NonNullable<TaskProgressSnapshot["goalCheck"]> | null = null;
   private hostContinuation = false;
+  private checking: false | "answered" | "held" = false;
   answerSources(): UserDeliverySourceRef[] { return this.turnSources.map((source) => ({ ...source })); }
   private noteRunSource(url: string, title?: string): void {
     const inTurn = this.turnSources.find((source) => source.url === url);
@@ -219,7 +220,9 @@ export class TaskProgress {
     this.foldedResults = folded && Number.isSafeInteger(folded.count) && Array.isArray(folded.recent)
       ? { count: folded.count, recent: folded.recent.filter((text): text is string => typeof text === "string").slice(-8) } : { count: 0, recent: [] };
     this.aborted = snapshot.state === "aborted";
-    this.interrupted = !!this.runId && !!this.goal && snapshot.continuation?.state !== 'WAITING_CONDITION' && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
+    const checkingEnded = snapshot.checking === true;
+    this.checking = false;
+    this.interrupted = !checkingEnded && !!this.runId && !!this.goal && snapshot.continuation?.state !== 'WAITING_CONDITION' && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
     this.restartRecovery = snapshot.restartRecovery === true || this.interrupted;
     this.interruptionReason=this.interrupted?(snapshot.interruptionReason??'host_restart'):undefined;
     this.lifecycleFrozen=false;
@@ -332,7 +335,7 @@ return;}
   }
   visitedUrls(): string[] { return [...(this.startUrl ? [this.startUrl] : []), ...this.runSources.map(source => source.url)]; }
   visitedPages(): Array<{ url: string; title?: string }> { return [...(this.goalPage ? [this.goalPage] : []), ...this.runSources].map(({ url, title }) => (title ? { url, title } : { url })); }
-  abort(): void { this.aborted = true; this.interrupted = false; this.restartRecovery = false;
+  abort(): void { this.aborted = true; this.checking = false; this.interrupted = false; this.restartRecovery = false;
     if (this.continuation && !['COMPLETED','STOPPED','FAILED'].includes(this.continuation.state)) this.continuation = {
       ...this.continuation, state: 'STOPPED', stopReason: '用户停止', controlVersion: this.continuation.controlVersion + 1,
       activeMs: this.continuation.activeMs + (this.continuation.segmentStartedAt === null ? 0 : this.clock() - this.continuation.segmentStartedAt),
@@ -385,6 +388,7 @@ return;}
     if (e.kind === "agent_start") {
       if(this.interrupted&&lead){this.ledger.beginRun(this.runId);this.failureLimit=false;}
 
+      this.checking = false;
       this.interrupted = false;
       this.startedAt ??= this.clock();
       this.runId ??= randomUUID();
@@ -399,17 +403,28 @@ return;}
         this.hostContinuation = false;
       }
     } else if (e.kind === "goal_check") {
-      if (lead && e.status !== "checking" && e.status !== "unavailable") { this.goalCheck = { status: e.status, remaining: e.remaining ?? null, at: this.clock() }; this.hostContinuation = e.status === "continue"; }
+      if (lead) {
+        if (e.status === "checking") {
+          this.checking = e.held ? "held" : "answered";
+          if (!e.held && !this.latestResult && this.turnText.trim() && this.runId) {
+            this.latestResult = { runId: this.runId, text: this.turnText.trim().slice(0, 6000), observedAt: this.clock(), source: "assistant_output" };
+          }
+        } else {
+          this.checking = false;
+          if (e.status !== "unavailable") { this.goalCheck = { status: e.status, remaining: e.remaining ?? null, at: this.clock() }; this.hostContinuation = e.status === "continue"; }
+        }
+      }
     } else if (e.kind === "artifact") {
       if (lead && e.action === "saved" && this.goalCheck && this.goalCheck.status !== "done") this.goalCheck = null;
     } else if (e.kind === "user_delivery") {
+      if (lead && this.checking === "held" && e.delivery.runId === this.runId) this.checking = "answered";
       if (lead && this.ledger.record(e.delivery)) {
         this.pushTurn("assistant", deliveryTextWithNote(e.delivery));
 
         if(!this.aborted&&e.delivery.runId===this.runId&&e.delivery.kind==='finding'&&e.delivery.facts?.outcome==='complete')this.goals.recordAnswerDelivery(e.delivery.id,e.delivery.composedAt);
       }
     } else if (e.kind === "agent_end") {
-      if (lead) this.hostContinuation = false;
+      if (lead) { this.hostContinuation = false; this.checking = false; }
 
       if (this.members.get(member) !== "paused" && this.members.get(member) !== "error") end("idle");
 
@@ -423,6 +438,7 @@ return;}
         this.turnText = "";
       }
     } else if (e.kind === "error") {
+      if (lead) this.checking = false;
       if (this.interrupted) { this.turnText = "";
 
  if (lead) this.latestResult = null;
@@ -574,6 +590,7 @@ if(page)this.recoveryInput.page=page;
       results: this.results.list(), executionState: this.results.state(), resultState: this.results.state() };
 
     if (this.continuation) snapshot.continuation = structuredClone(this.continuation);
+    if (this.checking === "answered") snapshot.checking = true;
     if (this.restartRecovery) snapshot.restartRecovery = true;
 
     if (this.interrupted) snapshot.interruptionReason = this.interruptionReason;

@@ -3049,10 +3049,11 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             const checkGoal = this.goalCheckEligible(event.messages);
 
             if (checkGoal) {
-              emit({ kind: "goal_check", status: "checking" });
+              const heldNow = this.spokenAsk || this.severalAsksNow();
               this.windDown = { phase: 'checking', held: this.heldAnswers() ?? [], finish: () => this.finishAgentEnd(event) };
+              emit({ kind: "goal_check", status: "checking", ...(heldNow ? { held: true } : {}) });
 
-              if (!this.spokenAsk && !this.severalAsksNow()) {
+              if (!heldNow) {
                 this.showAnswer();
                 this.deliverUnsentFinalText(event);
               }

@@ -1811,7 +1811,7 @@ return receipt;
         restoredInterrupted=restoredSnapshot.state==='interrupted';
 
         if(restoredInterrupted){summary.state='idle';summary.checkpoint='interrupted';summary.updatedAt=Date.now();}
-        else delete summary.checkpoint;
+        else { if (summary.state === 'running') summary.state = 'idle'; delete summary.checkpoint; }
       }
       else if (summary.checkpoint !== 'unavailable') delete summary.checkpoint;
       runtime.session.bindTaskResults?.({
