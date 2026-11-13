@@ -153,12 +153,11 @@ try {
   let from = toolTexts.length;
   await ask(ASK.a);
   await until(async () => count("/pay") > 0 || (await payNote()), 30_000, "提示或付款请求", 100);
-  await sleep(1500);
-  const noteA = await payNote();
-  check("a 助手点付款按钮：服务器 /pay 0 条，网页提示写网站和按钮名、圈出按钮", count("/pay") === 0 && !!noteA?.text.includes(`${siteHost} · 「${PAY_LABEL}」 这一步要你自己点`) && !!noteA.ok && noteA.ring, { pay: count("/pay"), note: noteA });
-  await rp.screenshot(work, join(out, "a-page.png"));
   await answered("A 完成。");
   await idle();
+  const noteA = await until(async () => await payNote(), 5_000, "付款拦截提示稳定可读", 100).catch(() => null);
+  check("a 助手点付款按钮：服务器 /pay 0 条，网页提示写网站和按钮名、圈出按钮", count("/pay") === 0 && !!noteA?.text.includes(`${siteHost} · 「${PAY_LABEL}」 这一步要你自己点`) && !!noteA.ok && noteA.ring, { pay: count("/pay"), note: noteA });
+  await rp.screenshot(work, join(out, "a-page.png"));
   const toolA = toolTexts.slice(from);
   const runA = await lastRun();
   const textA = String(await rp.evaluate(panel, 'document.querySelector("#messages").textContent'));
