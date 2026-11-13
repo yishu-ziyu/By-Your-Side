@@ -412,114 +412,13 @@ return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:nul
     const short=normalizeSpeech(text);
     const control=route?.resumeReadOnly?undefined:this.controlConfirmations.get(id);
 
-    const consumeConfirmation=()=>{
-      if(route?.resumeReadOnly)return;
-
-      if(!stillCurrent())throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
-
-      if(this.controlConfirmations.get(id)===control)this.controlConfirmations.delete(id);
-
-      if(this.voiceConfirmations.get(id)===pending)this.voiceConfirmations.delete(id);
-
-      if(pending)this.voicePlans.update(id,pending.id,{proposal:{...pending,expiresAt:0}});
-    };
-
-    if(route&&((control?.voiceId===route.voiceId&&route.turn<=control.turn)||(pending?.voiceId===route.voiceId&&route.turn<=pending.turn))){
-      route.onInputDecision?.(false);
-
-      return {kind:'clarify',message:'这句回应已过期，当前待确认要求保持不变。'};
-    }
-
-    if(control&&route&&control.voiceId===route.voiceId&&route.turn>control.turn&&Date.now()<control.expiresAt){
-      if(isControlReject(text)){consumeConfirmation();route.onInputDecision?.(false);
-
-return {kind:'clarify',message:'好，那我不动它。'};}
-
-      if(isControlConfirm(text)){
-        route.onInputDecision?.(false);
-
-        if(!stillCurrent())throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
-        consumeConfirmation();
-
-        const receipt=await this.dispatchTaskAction({
-          requestId: route.requestId,
-          conversationId: id,
-          source: 'voice',
-          action: control.action,
-          expectedRunId: control.expectedRunId,
-          expectedControlVersion: control.expectedControlVersion,
-          text: control.text,
-          ...(control.action === 'steer' ? {
-            ...(control.context ? {context: control.context} : {}),
-            ...(control.attachments ? {attachments: control.attachments} : {}),
-          } : {}),
-        },stillCurrent);
-
-        return receipt.action==='steer'
-          ?{kind:'steer',ok:receipt.status==='accepted'||receipt.status==='applied',status:receipt.status,message:receipt.message,receipts:[receipt]}
-          :{kind:'action',ok:receipt.status==='accepted'||receipt.status==='applied',status:receipt.status,message:receipt.message,receipts:[receipt]};
-      }
-    }
-
-    if(pending&&route&&pending.voiceId===route.voiceId&&route.turn>pending.turn&&Date.now()<pending.expiresAt){
-      const openReply=short.replace(/(?:另开会话|另开|开吧)$/, '');
-
-      if(isControlConfirm(text)||short==='同意'||(openReply!==short&&(!openReply||isControlConfirm(openReply)))){
-        route.onInputDecision?.(false);
-
-        if(!stillCurrent())throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
-        consumeConfirmation();
-        const entry=await this.create(pending.conversationId,pending.text.slice(0,36));
-        this.emit({type:'conversation_updated',conversationId:entry.summary.id,conversation:{...entry.summary}});
-        const receipt=await this.dispatchTaskAction({requestId:route.requestId,conversationId:entry.summary.id,originConversationId:id,source:'voice',action:'start',expectedRunId:null,text:pending.text,...pending.input},stillCurrent);
-
-        return {kind:'action',ok:receipt.status==='accepted',status:receipt.status,message:receipt.message,receipts:[receipt]};
-      }
-
-      if(isControlReject(text)||/^(不另开|不要另开会话)$/.test(short)){consumeConfirmation();route.onInputDecision?.(false);
-
-return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};}
-    }
-
-    if(route&&!route.resumeReadOnly&&(
-      (control&&(control.voiceId!==route.voiceId||Date.now()>=control.expiresAt))||
-      (pending&&(pending.voiceId!==route.voiceId||Date.now()>=pending.expiresAt))
-    ))consumeConfirmation();
-
-    if (route && !route.resumeReadOnly && isControlConfirm(text) && (control || pending || short.includes("确认"))) {
-      consumeConfirmation();
-      route.onInputDecision?.(false);
-
-      return {kind:'clarify',message:control||pending
-        ?'刚才那项操作已失效，我没有执行。请重新说明要做什么。'
-        :'目前没有等待确认的操作，我没有执行新动作。'};
-    }
-
-    if(!route?.resumeReadOnly&&isVoiceSilenceRequest(text)){
-      route?.onInputDecision?.(true);
-
-      return {kind:'silent',quiet:true};
-    }
-
-    if(!route?.resumeReadOnly&&isVoiceBackchannel(text)&&(route?.interruptedSpeech||route?.recentTurns?.some(t=>t.role==='assistant'))){
-      route?.onInputDecision?.(true);
-
-      return {kind:'silent'};
-    }
+    const preplanReply = await this.resolveVoicePreplanReply(id, text, short, stillCurrent, route, control, pending);
+    if (preplanReply) return preplanReply;
 
     route?.reportStage?.('classifying');
 
-    if (route && !route.resumeReadOnly && !pending && !control && (await this.taskRecords.list(id)).length > 1) {
-      const coordinated = await this.coordinateInput({requestId:route.requestId,conversationId:id,source:'voice',action:'steer',expectedRunId:route.runId,text,...route.input},stillCurrent);
-      if (coordinated !== null) {
-        if (coordinated.question) return {kind:'clarify',message:coordinated.question};
-        if (coordinated.chat) return this.answerSourcedChat(id,text,before,stillCurrent,session,route.turn);
-        const receipts=coordinated.receipts??[];
-        const last = receipts.at(-1);
-        return last ? {kind:'action',ok:receipts.every(r=>['accepted','applied','queued'].includes(r.status)),status:last.status,message:receipts.map(r=>r.message).join('；'),receipts}
-          : {kind:'none'};
-      }
-    }
+    const coordinatedReply = await this.tryCoordinateVoiceInput(id, text, before, session, stillCurrent, route, control, pending);
+    if (coordinatedReply) return coordinatedReply;
 
     const prepared=route?.resumeReadOnly
       ?{plan:{steps:[{action:route.resumeReadOnly,target:null,text}]},replyText:null,protocol:'plan' as const}
@@ -538,29 +437,11 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
     if(single?.action==='listen')return {kind:'listening'};
     await route?.awaitInputDecision?.();
 
-    if (!stillCurrent()) {
-      const action=plan.steps.length===1?plan.steps[0]?.action:undefined;
+    if (!stillCurrent()) return this.resolveInterruptedVoicePlan(id, plan, catalog);
 
-      if(action==='observe'&&plan.steps[0]?.target!==null)return {kind:'clarify',message:'页面问答只读取当前页面，请先切到要看的页面。'};
-
-      if(action==='status'){
-        const name=plan.steps[0]?.target;
-        const exact=name?catalog.filter(c=>c.title===name):[];
-        const matches=name?(exact.length?exact:catalog.filter(c=>c.title.includes(name))):catalog.filter(c=>c.id===id);
-
-        if(matches.length!==1)return {kind:'clarify',message:'指定会话不明确，请重新说出完整名称。'};
-
-        return {kind:'none',resumeReadOnly:'status',resumeTargetId:matches[0]!.id};
-      }
-
-      if(action==='listen')return {kind:'listening'};
-
-      if(action==='chat'||action==='observe')return {kind:'none',resumeReadOnly:action};
-      throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
+    if(willStart||plan.steps.some(step=>!['status','observe','silence','clarify','listen'].includes(step.action))){
+      this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
     }
-
-    if(willStart||plan.steps.some(step=>!['status','observe','silence','clarify','listen'].includes(step.action)))consumeConfirmation();
-    const receipts:TaskReceipt[]=[];
 
     if(!route?.resumeReadOnly)this.progress.get(id)?.recordUserTurn(text,route?.requestId);
     const versions=new Map(catalog.map(c=>[c.id,c.controlVersion??0]));
@@ -568,74 +449,263 @@ return {kind:'clarify',message:'没有另开会话，原任务保持原状。'};
     const expected=new Map(catalog.map(c=>[c.id,c.runId]));
     expected.set(id,route?route.runId:before.runId??null);
     const requestId=route?.requestId??randomUUID();
-    const only=plan.steps.length===1?plan.steps[0]:undefined;
+    const singleReply = await this.tryExecuteSingleVoiceStep(id, text, prepared, willStart, requestId, before, versions, session, stillCurrent, route);
+    if (singleReply) return singleReply;
 
-    if(route?.nativeChat && only?.action==='chat') return {kind:'none',nativeChat:true};
+    const resolvedTargets = this.resolveVoicePlanTargets(id, plan.steps, catalog);
+    if (!Array.isArray(resolvedTargets)) return resolvedTargets;
 
-    if(only?.action==='chat'&&route?.pendingDelegation)return {kind:'none',resumeReadOnly:'chat'};
+    return this.executeVoicePlanSteps(id, text, plan, resolvedTargets, requestId, before, versions, expected, stillCurrent, route);
+  }
 
-    if(prepared.replyText&&only?.action==='chat'&&isFactFreeClosedUtterance(text)){
-      if(!stillCurrent())return {kind:'none',resumeReadOnly:'chat'};
+  private consumeVoiceConfirmation(
+    id: string,
+    stillCurrent: () => boolean,
+    route: VoiceRouteContext | undefined,
+    control: ControlConfirmSnapshot | undefined,
+    pending: VoiceProposal | undefined,
+  ): void {
+    if (route?.resumeReadOnly) return;
+    if (!stillCurrent()) throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
+    if (this.controlConfirmations.get(id) === control) this.controlConfirmations.delete(id);
+    if (this.voiceConfirmations.get(id) === pending) this.voiceConfirmations.delete(id);
+    if (pending) this.voicePlans.update(id, pending.id, { proposal: { ...pending, expiresAt: 0 } });
+  }
 
-      return this.deliverVoiceReply(id,prepared.replyText,before,stillCurrent,route?.turn);
+  private async resolveVoiceControlConfirmation(
+    id: string,
+    text: string,
+    stillCurrent: () => boolean,
+    route: VoiceRouteContext | undefined,
+    control: ControlConfirmSnapshot | undefined,
+    pending: VoiceProposal | undefined,
+  ): Promise<VoiceRouteResult | null> {
+    if (!control || !route || control.voiceId !== route.voiceId || route.turn <= control.turn || Date.now() >= control.expiresAt) return null;
+    if (isControlReject(text)) {
+      this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
+      route.onInputDecision?.(false);
+      return { kind: 'clarify', message: '好，那我不动它。' };
     }
+    if (!isControlConfirm(text)) return null;
+    route.onInputDecision?.(false);
+    if (!stillCurrent()) throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
+    this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
+    const receipt = await this.dispatchTaskAction({
+      requestId: route.requestId,
+      conversationId: id,
+      source: 'voice',
+      action: control.action,
+      expectedRunId: control.expectedRunId,
+      expectedControlVersion: control.expectedControlVersion,
+      text: control.text,
+      ...(control.action === 'steer' ? {
+        ...(control.context ? { context: control.context } : {}),
+        ...(control.attachments ? { attachments: control.attachments } : {}),
+      } : {}),
+    }, stillCurrent);
+    const ok = receipt.status === 'accepted' || receipt.status === 'applied';
+    return { kind: receipt.action === 'steer' ? 'steer' : 'action', ok, status: receipt.status, message: receipt.message, receipts: [receipt] };
+  }
 
-    if(route?.resumeReadOnly==='status'){const targetId=route.resumeTargetId??id,target=this.getTaskProgress(targetId);
+  private async resolveVoicePendingProposal(
+    id: string,
+    text: string,
+    short: string,
+    stillCurrent: () => boolean,
+    route: VoiceRouteContext | undefined,
+    control: ControlConfirmSnapshot | undefined,
+    pending: VoiceProposal | undefined,
+  ): Promise<VoiceRouteResult | null> {
+    if (!pending || !route || pending.voiceId !== route.voiceId || route.turn <= pending.turn || Date.now() >= pending.expiresAt) return null;
+    const openReply = short.replace(/(?:另开会话|另开|开吧)$/, ''); // WHY: hardcode-ok 保持重构前原有的语音另开会话确认短语剥离逻辑
+    if (isControlConfirm(text) || short === '同意' || (openReply !== short && (!openReply || isControlConfirm(openReply)))) { // WHY: hardcode-ok 保持重构前原有的语音另开会话确认词判断
+      route.onInputDecision?.(false);
+      if (!stillCurrent()) throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
+      this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
+      const entry = await this.create(pending.conversationId, pending.text.slice(0, 36));
+      this.emit({ type: 'conversation_updated', conversationId: entry.summary.id, conversation: { ...entry.summary } });
+      const receipt = await this.dispatchTaskAction({
+        requestId: route.requestId,
+        conversationId: entry.summary.id,
+        originConversationId: id,
+        source: 'voice',
+        action: 'start',
+        expectedRunId: null,
+        text: pending.text,
+        ...pending.input,
+      }, stillCurrent);
+      return { kind: 'action', ok: receipt.status === 'accepted', status: receipt.status, message: receipt.message, receipts: [receipt] };
+    }
+    if (isControlReject(text) || /^(不另开|不要另开会话)$/.test(short)) { // WHY: hardcode-ok 保持重构前原有的语音拒绝另开会话短语判断
+      this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
+      route.onInputDecision?.(false);
+      return { kind: 'clarify', message: '没有另开会话，原任务保持原状。' };
+    }
+    return null;
+  }
 
-return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,text,target,stillCurrent,this.entries.get(targetId)!.runtime.session,route.turn,'status') : {kind:'clarify',message:'原目标会话已不可用，请重新询问。'};}
+  private async resolveVoicePreplanReply(
+    id: string,
+    text: string,
+    short: string,
+    stillCurrent: () => boolean,
+    route: VoiceRouteContext | undefined,
+    control: ControlConfirmSnapshot | undefined,
+    pending: VoiceProposal | undefined,
+  ): Promise<VoiceRouteResult | null> {
+    if (route && ((control?.voiceId === route.voiceId && route.turn <= control.turn) || (pending?.voiceId === route.voiceId && route.turn <= pending.turn))) {
+      route.onInputDecision?.(false);
+      return { kind: 'clarify', message: '这句回应已过期，当前待确认要求保持不变。' };
+    }
+    const controlReply = await this.resolveVoiceControlConfirmation(id, text, stillCurrent, route, control, pending);
+    if (controlReply) return controlReply;
+    const pendingReply = await this.resolveVoicePendingProposal(id, text, short, stillCurrent, route, control, pending);
+    if (pendingReply) return pendingReply;
+    if (route && !route.resumeReadOnly && (
+      (control && (control.voiceId !== route.voiceId || Date.now() >= control.expiresAt)) ||
+      (pending && (pending.voiceId !== route.voiceId || Date.now() >= pending.expiresAt))
+    )) {
+      this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
+    }
+    if (route && !route.resumeReadOnly && isControlConfirm(text) && (control || pending || short.includes('确认'))) { // WHY: hardcode-ok 保持重构前原有的过期确认兜底判断
+      this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
+      route.onInputDecision?.(false);
+      return {
+        kind: 'clarify',
+        message: control || pending
+          ? '刚才那项操作已失效，我没有执行。请重新说明要做什么。'
+          : '目前没有等待确认的操作，我没有执行新动作。',
+      };
+    }
+    if (!route?.resumeReadOnly && isVoiceSilenceRequest(text)) {
+      route?.onInputDecision?.(true);
+      return { kind: 'silent', quiet: true };
+    }
+    if (!route?.resumeReadOnly && isVoiceBackchannel(text) && (route?.interruptedSpeech || route?.recentTurns?.some(t => t.role === 'assistant'))) {
+      route?.onInputDecision?.(true);
+      return { kind: 'silent' };
+    }
+    return null;
+  }
 
+  private async tryCoordinateVoiceInput(
+    id: string,
+    text: string,
+    before: TaskProgressSnapshot,
+    session: Runtime['session'],
+    stillCurrent: () => boolean,
+    route: VoiceRouteContext | undefined,
+    control: ControlConfirmSnapshot | undefined,
+    pending: VoiceProposal | undefined,
+  ): Promise<VoiceRouteResult | null> {
+    if (!route || route.resumeReadOnly || pending || control || (await this.taskRecords.list(id)).length <= 1) return null;
+    const coordinated = await this.coordinateInput({ requestId: route.requestId, conversationId: id, source: 'voice', action: 'steer', expectedRunId: route.runId, text, ...route.input }, stillCurrent);
+    if (coordinated === null) return null;
+    if (coordinated.question) return { kind: 'clarify', message: coordinated.question };
+    if (coordinated.chat) return this.answerSourcedChat(id, text, before, stillCurrent, session, route.turn);
+    const receipts = coordinated.receipts ?? [];
+    const last = receipts.at(-1);
+    return last
+      ? { kind: 'action', ok: receipts.every(r => ['accepted', 'applied', 'queued'].includes(r.status)), status: last.status, message: receipts.map(r => r.message).join('；'), receipts }
+      : { kind: 'none' };
+  }
+
+  private resolveInterruptedVoicePlan(id: string, plan: VoiceIntentPlan, catalog: VoiceTarget[]): VoiceRouteResult {
+    const action = plan.steps.length === 1 ? plan.steps[0]?.action : undefined;
+    if (action === 'observe' && plan.steps[0]?.target !== null) return { kind: 'clarify', message: '页面问答只读取当前页面，请先切到要看的页面。' };
+    if (action === 'status') {
+      const name = plan.steps[0]?.target;
+      const exact = name ? catalog.filter(c => c.title === name) : [];
+      const matches = name ? (exact.length ? exact : catalog.filter(c => c.title.includes(name))) : catalog.filter(c => c.id === id);
+      if (matches.length !== 1) return { kind: 'clarify', message: '指定会话不明确，请重新说出完整名称。' };
+      return { kind: 'none', resumeReadOnly: 'status', resumeTargetId: matches[0]!.id };
+    }
+    if (action === 'listen') return { kind: 'listening' };
+    if (action === 'chat' || action === 'observe') return { kind: 'none', resumeReadOnly: action };
+    throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
+  }
+
+  private async executeVoiceObservation(
+    id: string,
+    text: string,
+    target: string | null,
+    before: TaskProgressSnapshot,
+    session: Runtime['session'],
+    stillCurrent: () => boolean,
+    route?: VoiceRouteContext,
+  ): Promise<VoiceRouteResult> {
+    if (target !== null) return { kind: 'clarify', message: '这次页面问答只查看你当前选中的浏览器页面，请先切到要看的页面。' };
+    const observation = route?.input?.observation;
+    if (!observation) return { kind: 'none', spokenText: '还没有取得当前浏览器页面，请先打开要看的标签页。' };
+    try {
+      const rpc = this.entries.get(id)!.runtime.rpc;
+      if (!stillCurrent()) throw new Error('本次观察已取消。');
+      route?.reportStage?.('observing');
+      const page = await rpc.call('observe_page', { token: observation.token }, 15000) as { tabId: number; url: string; title: string; text: string; imageBase64: string; documentId: string; capturedAt: number; scope: string };
+      if (!stillCurrent()) throw new Error('本次观察已取消。');
+      if (page?.tabId !== observation.tabId || !page.documentId || page.scope !== 'viewport' || !page.imageBase64 || !Number.isFinite(page.capturedAt)) throw new Error('页面观察来源无效。');
+      const answer = await session.answerVoiceObservation(text, page, stillCurrent);
+      if (!stillCurrent()) throw new Error('本次观察已取消。');
+      const originRun = before.runId ?? null, originControl = this.controlVersions.get(id) ?? 0;
+      const now = this.getTaskProgress(id);
+      if (!now || now.runId !== originRun || (this.controlVersions.get(id) ?? 0) !== originControl) return { kind: 'silent' };
+      const delivery = this.publishDelivery(id, 'reply', answer, text, { runId: originRun, controlVersion: originControl });
+      this.emit({ type: 'agent_event', conversationId: id, event: { kind: 'notice', message: `已查看当前页面：${page.title}\n${answer}` } });
+      const published = this.getTaskProgress(id);
+      return { kind: 'none', resumeReadOnly: 'observe', snapshot: published ?? now, spokenText: delivery?.text ?? answer };
+    } catch {
+      return { kind: 'none', resumeReadOnly: 'observe', spokenText: '这次没有完成当前页面的读取，请稍后再试。' };
+    }
+  }
+
+  private async tryExecuteSingleVoiceStep(
+    id: string,
+    text: string,
+    prepared: { plan: VoiceIntentPlan; replyText: string | null; protocol: 'free_reply' | 'plan' },
+    willStart: boolean,
+    requestId: string,
+    before: TaskProgressSnapshot,
+    versions: Map<string, number>,
+    session: Runtime['session'],
+    stillCurrent: () => boolean,
+    route?: VoiceRouteContext,
+  ): Promise<VoiceRouteResult | null> {
+    const only = prepared.plan.steps.length === 1 ? prepared.plan.steps[0] : undefined;
+    if (route?.nativeChat && only?.action === 'chat') return { kind: 'none', nativeChat: true };
+    if (only?.action === 'chat' && route?.pendingDelegation) return { kind: 'none', resumeReadOnly: 'chat' };
+    if (prepared.replyText && only?.action === 'chat' && isFactFreeClosedUtterance(text)) {
+      if (!stillCurrent()) return { kind: 'none', resumeReadOnly: 'chat' };
+      return this.deliverVoiceReply(id, prepared.replyText, before, stillCurrent, route?.turn);
+    }
+    if (route?.resumeReadOnly === 'status') {
+      const targetId = route.resumeTargetId ?? id, target = this.getTaskProgress(targetId);
+      return target && this.entries.has(targetId)
+        ? this.answerSourcedChat(targetId, text, target, stillCurrent, this.entries.get(targetId)!.runtime.session, route.turn, 'status')
+        : { kind: 'clarify', message: '原目标会话已不可用，请重新询问。' };
+    }
     if (willStart) {
       const inputOptions: UserInputOptions = {
-        ...(single?.action==='chat'?{pageObservation:'on-demand' as const,conversationOnly:true}:{}),
+        ...(only?.action === 'chat' ? { pageObservation: 'on-demand' as const, conversationOnly: true } : {}),
         ...(route?.nativeChat && route.recentTurns?.length ? { voiceHistory: route.recentTurns } : {}),
       };
-      const receipt=await this.dispatchTaskAction({requestId,conversationId:id,source:'voice',action:'start',expectedRunId:before.runId??null,expectedControlVersion:versions.get(id),text,...route?.input},stillCurrent,inputOptions);
-
-      if(route&&!route.resumeReadOnly&&receipt.status==='accepted')this.voicePlans.update(id,route.requestId,{steps:[{action:'start',text,targetId:id,targetTitle:this.entries.get(id)?.summary.title,status:'complete',receipt}]});
-
-      return {kind:'action',ok:receipt.status==='accepted',status:receipt.status,message:receipt.message,receipts:[receipt],awaitDelivery:receipt.status==='accepted',turn:{branch:'read_only',phase:'COMMITTED',protocol:prepared.protocol}};
+      const receipt = await this.dispatchTaskAction({ requestId, conversationId: id, source: 'voice', action: 'start', expectedRunId: before.runId ?? null, expectedControlVersion: versions.get(id), text, ...route?.input }, stillCurrent, inputOptions);
+      if (route && !route.resumeReadOnly && receipt.status === 'accepted') {
+        this.voicePlans.update(id, route.requestId, { steps: [{ action: 'start', text, targetId: id, targetTitle: this.entries.get(id)?.summary.title, status: 'complete', receipt }] });
+      }
+      return { kind: 'action', ok: receipt.status === 'accepted', status: receipt.status, message: receipt.message, receipts: [receipt], awaitDelivery: receipt.status === 'accepted', turn: { branch: 'read_only', phase: 'COMMITTED', protocol: prepared.protocol } };
     }
+    if (only?.action === 'observe') return this.executeVoiceObservation(id, text, only.target, before, session, stillCurrent, route);
+    if (only?.action === 'chat') return this.answerSourcedChat(id, text, before, stillCurrent, session, route?.turn);
+    if (only?.action === 'listen') return { kind: 'listening' };
+    if (only?.action === 'silence') return { kind: 'silent', quiet: true };
+    return null;
+  }
 
-    if(only?.action==='observe'){
-      if(only.target!==null)return {kind:'clarify',message:'这次页面问答只查看你当前选中的浏览器页面，请先切到要看的页面。'};
-      const observation=route?.input?.observation;
-
-      if(!observation)return {kind:'none',spokenText:'还没有取得当前浏览器页面，请先打开要看的标签页。'};
-
-      try{
-        const rpc=this.entries.get(id)!.runtime.rpc;
-
-        if(!stillCurrent())throw new Error('本次观察已取消。');
-        route?.reportStage?.('observing');
-        const page=await rpc.call('observe_page',{token:observation.token},15000) as {tabId:number;url:string;title:string;text:string;imageBase64:string;documentId:string;capturedAt:number;scope:string};
-
-        if(!stillCurrent())throw new Error('本次观察已取消。');
-
-        if(page?.tabId!==observation.tabId||!page.documentId||page.scope!=='viewport'||!page.imageBase64||!Number.isFinite(page.capturedAt))throw new Error('页面观察来源无效。');
-        const answer=await session.answerVoiceObservation(text,page,stillCurrent);
-
-        if(!stillCurrent())throw new Error('本次观察已取消。');
-        const originRun=before.runId??null,originControl=this.controlVersions.get(id)??0;
-        const now=this.getTaskProgress(id);
-
-        if(!now||now.runId!==originRun||(this.controlVersions.get(id)??0)!==originControl)return {kind:'silent'};
-        const delivery=this.publishDelivery(id,'reply',answer,text,{runId:originRun,controlVersion:originControl});
-        this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:`已查看当前页面：${page.title}\n${answer}`}});
-        const published=this.getTaskProgress(id);
-
-        return {kind:'none',resumeReadOnly:'observe',snapshot:published??now,spokenText:delivery?.text??answer};
-      }catch{return {kind:'none',resumeReadOnly:'observe',spokenText:'这次没有完成当前页面的读取，请稍后再试。'};}
-    }
-
-    if(only?.action==='chat')return this.answerSourcedChat(id,text,before,stillCurrent,session,route?.turn);
-
-    if(only?.action==='listen')return {kind:'listening'};
-
-    if(only?.action==='silence')return {kind:'silent',quiet:true};
+  private resolveVoicePlanTargets(id: string, steps: VoiceIntentPlan['steps'], catalog: VoiceTarget[]): string[] | VoiceRouteResult {
     let previousTarget=id;
     const targetIds:string[]=[];
 
-    for(const step of plan.steps){
+    for(const step of steps){
       let targetId=/当前会话|这个会话/.test(step.text)?id:previousTarget;
 
       if(step.target!==null){
@@ -648,7 +718,67 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
 
       targetIds.push(targetId);previousTarget=targetId;
     }
+    return targetIds;
+  }
 
+  private async enqueueBusyVoiceStart(
+    id: string,
+    step: VoiceIntentPlan['steps'][number],
+    index: number,
+    stepCount: number,
+    requestId: string,
+    receipts: TaskReceipt[],
+    journal: VoicePlanStep[],
+    save: () => void,
+    stillCurrent: () => boolean,
+    route?: VoiceRouteContext,
+  ): Promise<VoiceRouteResult | null> {
+    if (!route || !stillCurrent()) throw new TaskActionRejected('请求已变化，未登记新任务。');
+    const target = 'voice-' + createHash('sha256').update(id + ':' + requestId + ':' + index).digest('hex').slice(0, 32);
+    const newPage = /(新(的)?标签页|新(的)?窗口)/.test(step.text); // WHY: hardcode-ok 保持重构前原有的语音新建标签页/窗口意图判断
+    const receipt = this.taskQueue.add({
+      requestId: stepCount === 1 ? requestId : `${requestId}-${index}`,
+      conversationId: target,
+      originConversationId: id,
+      source: 'voice',
+      action: 'start',
+      expectedRunId: null,
+      text: step.text,
+      ...(!newPage && route.input?.context ? { context: route.input.context } : {}),
+      ...(route.input?.attachments ? { attachments: route.input.attachments } : {}),
+    }, step.text.slice(0, 36));
+    await this.taskQueue.persisted();
+    receipts.push(receipt);
+    journal[index]!.targetId = target;
+    journal[index]!.targetTitle = receipt.targetTitle;
+    journal[index]!.status = 'complete';
+    journal[index]!.receipt = receipt;
+    save();
+    if (receipt.status === 'rejected') return { kind: 'action', ok: false, status: receipt.status, message: receipt.message, receipts };
+    await this.taskQueue.pump();
+    const current = this.taskQueue.get(target)!.receipt;
+    receipts[receipts.length - 1] = current;
+    journal[index]!.receipt = current;
+    save();
+    if (!['queued', 'accepted', 'applied'].includes(current.status)) {
+      return { kind: 'action', ok: false, status: current.status, message: current.message, receipts };
+    }
+    return null;
+  }
+
+  private async executeVoicePlanSteps(
+    id: string,
+    text: string,
+    plan: VoiceIntentPlan,
+    targetIds: string[],
+    requestId: string,
+    before: TaskProgressSnapshot,
+    versions: Map<string, number>,
+    expected: Map<string, string | null>,
+    stillCurrent: () => boolean,
+    route?: VoiceRouteContext,
+  ): Promise<VoiceRouteResult> {
+    const receipts: TaskReceipt[] = [];
     const journal:VoicePlanStep[]=plan.steps.map((step,index)=>({action:step.action,text:step.text,targetId:targetIds[index]!,targetTitle:this.entries.get(targetIds[index]!)?.summary.title,status:'unexecuted'}));
     const save=()=>{if(route&&!route.resumeReadOnly)this.voicePlans.update(id,route.requestId,{steps:journal});};
 
@@ -667,45 +797,13 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
       const targetId=targetIds[index]!;
 
       if(step.action==='start'&&targetId===id&&(['running','paused'].includes(before.state)||this.pendingStarts.has(id)||this.runningTasks()>=2)){
-        if(!route||!stillCurrent())throw new TaskActionRejected('请求已变化，未登记新任务。');
-        const target='voice-'+createHash('sha256').update(id+':'+requestId+':'+index).digest('hex').slice(0,32);
-        const newPage=/(新(的)?标签页|新(的)?窗口)/.test(step.text);
-        const receipt=this.taskQueue.add({requestId:plan.steps.length===1?requestId:`${requestId}-${index}`,conversationId:target,originConversationId:id,source:'voice',action:'start',expectedRunId:null,text:step.text,...(!newPage&&route.input?.context?{context:route.input.context}:{}),...(route.input?.attachments?{attachments:route.input.attachments}:{})},step.text.slice(0,36));
-        await this.taskQueue.persisted();
-        receipts.push(receipt);journal[index]!.targetId=target;journal[index]!.targetTitle=receipt.targetTitle;journal[index]!.status='complete';journal[index]!.receipt=receipt;save();
-
-        if(receipt.status==='rejected')return {kind:'action',ok:false,status:receipt.status,message:receipt.message,receipts};
-        await this.taskQueue.pump();
-        const current=this.taskQueue.get(target)!.receipt;
-        receipts[receipts.length-1]=current;journal[index]!.receipt=current;save();
-
-        if(!['queued','accepted','applied'].includes(current.status))return {kind:'action',ok:false,status:current.status,message:current.message,receipts};
+        const busyFailure = await this.enqueueBusyVoiceStart(id, step, index, plan.steps.length, requestId, receipts, journal, save, stillCurrent, route);
+        if (busyFailure) return busyFailure;
         continue;
       }
 
-      const sharesInput=targetId===id||/(当前页面|当前页|所选资料|所选图片|所选内容|所选文字|选中的)/.test(step.text);
-
-      if(['pause','resume','abort'].includes(step.action))route?.reportStage?.('controlling');
-      journal[index]!.status='pending';save();
-      const resumeCheckpoint=step.action==='resume'&&(['interrupted','idle','error'].includes(this.getTaskProgress(targetId)?.state??'')||this.taskQueue.get(targetId)?.state==='suspended');
-      const inputOptions = step.action === 'start' && targetId === id && route?.nativeChat && route.recentTurns?.length ? { voiceHistory: route.recentTurns } : undefined;
-      const receipt=await this.dispatchTaskAction({expectedControlVersion:versions.get(targetId)??0,requestId:plan.steps.length===1?requestId:`${requestId}-${index}`,conversationId:targetId,...(targetId!==id?{originConversationId:id}:{}),source:'voice',action:step.action,expectedRunId:expected.get(targetId)??null,text:step.text,...(((step.action==='start'||step.action==='steer')&&sharesInput||resumeCheckpoint)?{...(route?.input?.context?{context:route.input.context}:{}),...(route?.input?.attachments?{attachments:route.input.attachments}:{})}:{})},stillCurrent,inputOptions);
-      receipts.push(receipt);journal[index]!.status='complete';journal[index]!.receipt=receipt;save();
-
-      if(receipt.status!=='queued'&&receipt.status!=='accepted'&&receipt.status!=='applied') {
-        if(step.action==='start'&&receipt.message.includes('另开会话')&&route&&plan.steps.length===1){
-          const proposal:VoiceProposal={id:route.requestId,conversationId:'voice-'+createHash('sha256').update(id+':'+route.requestId).digest('hex').slice(0,32),voiceId:route.voiceId,turn:route.turn,expiresAt:Date.now()+90000,text:step.text,...(sharesInput?{input:route.input}:{})};
-          this.voiceConfirmations.set(id,proposal);this.voicePlans.update(id,route.requestId,{proposal});
-
-          return {kind:'clarify',message:'当前任务还在执行。要另开会话处理这个新任务吗？'};
-        }
-
-        return {kind:step.action==='steer'?'steer':'action',ok:false,status:receipt.status,message:receipt.message,receipts,turn:{branch:'control',phase:'COMMITTED',protocol:'plan'}};
-      }
-
-      expected.set(targetId,receipt.runId);
-
-      if(['pause','abort'].includes(step.action)||(step.action==='resume'&&!resumeCheckpoint))versions.set(targetId,(versions.get(targetId)??0)+1);
+      const stepFailure = await this.dispatchVoicePlanStep(id, step, step.action, index, plan.steps.length, targetId, requestId, receipts, journal, save, versions, expected, stillCurrent, route);
+      if (stepFailure) return stepFailure;
     }
 
     const last=receipts.at(-1);
@@ -720,6 +818,70 @@ return target && this.entries.has(targetId) ? this.answerSourcedChat(targetId,te
     }
 
     return {kind:receipts.length===1&&last.action==='steer'?'steer':'action',ok:true,status:last.status,message:receipts.map(r=>r.message).join('；'),receipts,turn:{branch:'control',phase:'COMMITTED',protocol:'plan'}};
+  }
+
+  private async dispatchVoicePlanStep(
+    id: string,
+    step: VoiceIntentPlan['steps'][number],
+    action: TaskActionRequest['action'],
+    index: number,
+    stepCount: number,
+    targetId: string,
+    requestId: string,
+    receipts: TaskReceipt[],
+    journal: VoicePlanStep[],
+    save: () => void,
+    versions: Map<string, number>,
+    expected: Map<string, string | null>,
+    stillCurrent: () => boolean,
+    route?: VoiceRouteContext,
+  ): Promise<VoiceRouteResult | null> {
+    const sharesInput = targetId === id || /(当前页面|当前页|所选资料|所选图片|所选内容|所选文字|选中的)/.test(step.text); // WHY: hardcode-ok 保持重构前原有的语音上下文共享判断
+    if (['pause', 'resume', 'abort'].includes(action)) route?.reportStage?.('controlling');
+    journal[index]!.status = 'pending';
+    save();
+    const resumeCheckpoint = action === 'resume' && (['interrupted', 'idle', 'error'].includes(this.getTaskProgress(targetId)?.state ?? '') || this.taskQueue.get(targetId)?.state === 'suspended');
+    const inputOptions = action === 'start' && targetId === id && route?.nativeChat && route.recentTurns?.length ? { voiceHistory: route.recentTurns } : undefined;
+    const receipt = await this.dispatchTaskAction({
+      expectedControlVersion: versions.get(targetId) ?? 0,
+      requestId: stepCount === 1 ? requestId : `${requestId}-${index}`,
+      conversationId: targetId,
+      ...(targetId !== id ? { originConversationId: id } : {}),
+      source: 'voice',
+      action,
+      expectedRunId: expected.get(targetId) ?? null,
+      text: step.text,
+      ...(((action === 'start' || action === 'steer') && sharesInput || resumeCheckpoint) ? {
+        ...(route?.input?.context ? { context: route.input.context } : {}),
+        ...(route?.input?.attachments ? { attachments: route.input.attachments } : {}),
+      } : {}),
+    }, stillCurrent, inputOptions);
+    receipts.push(receipt);
+    journal[index]!.status = 'complete';
+    journal[index]!.receipt = receipt;
+    save();
+    if (receipt.status !== 'queued' && receipt.status !== 'accepted' && receipt.status !== 'applied') {
+      if (action === 'start' && receipt.message.includes('另开会话') && route && stepCount === 1) { // WHY: hardcode-ok 保持重构前原有的另开会话回执识别
+        const proposal: VoiceProposal = {
+          id: route.requestId,
+          conversationId: 'voice-' + createHash('sha256').update(id + ':' + route.requestId).digest('hex').slice(0, 32),
+          voiceId: route.voiceId,
+          turn: route.turn,
+          expiresAt: Date.now() + 90000,
+          text: step.text,
+          ...(sharesInput ? { input: route.input } : {}),
+        };
+        this.voiceConfirmations.set(id, proposal);
+        this.voicePlans.update(id, route.requestId, { proposal });
+        return { kind: 'clarify', message: '当前任务还在执行。要另开会话处理这个新任务吗？' };
+      }
+      return { kind: action === 'steer' ? 'steer' : 'action', ok: false, status: receipt.status, message: receipt.message, receipts, turn: { branch: 'control', phase: 'COMMITTED', protocol: 'plan' } };
+    }
+    expected.set(targetId, receipt.runId);
+    if (['pause', 'abort'].includes(action) || (action === 'resume' && !resumeCheckpoint)) {
+      versions.set(targetId, (versions.get(targetId) ?? 0) + 1);
+    }
+    return null;
   }
 
   async steerFromVoice(id: string, text: string, expectedStartedAt: number | null, route?: VoiceRouteContext, stillCurrent = () => true): Promise<TaskReceipt> {
@@ -1337,329 +1499,399 @@ return receipt;
     const title = request.action==='start'&&currentTitle==='新会话' ? request.text?.trim().slice(0,36)||currentTitle : currentTitle ?? '会话不可用';
     const originalRequest = request;
 
-    const receipt = await this.dispatcher.dispatch(originalRequest,title,async()=>{
-      if (!stillCurrent()) throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
-      const entry = this.entries.get(originalRequest.conversationId);
-      let snapshot = this.getTaskProgress(originalRequest.conversationId);
-
-      if (!entry || !snapshot) throw new TaskActionRejected('目标会话不可用，操作未执行。');
-
-      if (entry.summary.checkpoint === 'unavailable') throw new TaskActionRejected(TASK_CHECKPOINT_UNAVAILABLE);
-      const settledRequest = this.normalizeTextRequest(originalRequest);
-      const continuation=settledRequest.source==='text'?continuationInput(settledRequest.text??''):null;
-      const explicitAmendment=!!continuation?.amendment&&!!snapshot.runId&&!!snapshot.recoveryInput;
-
-      let request = settledRequest.source === 'text' && settledRequest.action === 'start' && !settledRequest.forkedFrom
-        && continuation
-        && (snapshot.state === 'interrupted' || ['idle','error'].includes(snapshot.state) && (projectTaskView(snapshot).resumable||explicitAmendment))
-        ? { ...originalRequest, action: 'resume' as const } : originalRequest;
-
-      if (snapshot.continuation && !['COMPLETED','STOPPED','FAILED'].includes(snapshot.continuation.state) && originalRequest.source === 'text' && originalRequest.action === 'start') {
-        const command = (originalRequest.text ?? '').trim().replace(/[。！!？?\s]/g, '');
-        if (['停止','停止关注','中止','中止关注','取消关注'].includes(command)) request = { ...originalRequest, action: 'abort' };
-        else if (['暂停','暂停关注'].includes(command)) request = { ...originalRequest, action: 'pause' };
-        else if (continuation) request = continuation.amendment ? { ...originalRequest, action: 'steer', text: continuation.amendment } : { ...originalRequest, action: 'resume' };
-      }
-      if (request===originalRequest) request = settledRequest;
-      if (request===settledRequest&&await this.continuesOpenTask(settledRequest,snapshot,entry))request={...settledRequest,action:'steer' as const};
-
-      if (request.expectedRunId !== (snapshot.runId??null))throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
-
-      if(request.expectedControlVersion!==undefined&&request.expectedControlVersion!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('页面归属又变了，旧计划的后续步骤没有执行。');
-
-      const observer = this.observers.get(request.conversationId), delegation = snapshot.continuation;
-      if (observer && delegation && !['COMPLETED','STOPPED','FAILED'].includes(delegation.state) && ['pause','abort','steer','start','resume'].includes(request.action)) {
-        if (request.action === 'pause' || request.action === 'abort') {
-          await observer.control(request.action === 'abort' ? 'stop' : 'pause', request.action === 'abort' ? '用户停止' : '用户暂停');
-          this.controlVersions.set(request.conversationId, (this.controlVersions.get(request.conversationId) ?? 0) + 1);
-          this.queueTaskView(request.conversationId);
-          if (entry.runtime.session.isStreaming()) entry.runtime.session.abort();
-          if (request.action === 'abort') this.progress.get(request.conversationId)!.abort();
-          await this.saveContinuation(request.conversationId);
-          return { status: 'applied', runId: snapshot.runId ?? null, message: request.action === 'abort' ? '关注已停止，已有结果保留。' : '关注已暂停，等待你继续。' };
-        }
-        if (request.action === 'start') throw new TaskActionRejected('原来的网页关注还在进行。要另开会话处理这个新问题吗？', true);
-        if (request.action === 'resume') {
-          if (delegation.state === 'WAITING_CONDITION') return { status: 'applied', runId: snapshot.runId ?? null, message: `仍在关注：${delegation.condition.description}` };
-          if (delegation.state === 'RUNNING' || delegation.state === 'VERIFYING') return { status: 'applied', runId: snapshot.runId ?? null, message: '正在按原委托处理。' };
-          try { await observer.resume(request.context); }
-          catch (error) { throw new TaskActionRejected(error instanceof Error ? error.message : '未能继续关注。'); }
-          this.queueTaskView(request.conversationId);
-          return { status: 'applied', runId: snapshot.runId ?? null, message: '已继续关注，条件满足后自动处理。' };
-        }
-        if (request.action === 'steer' && !entry.runtime.session.isStreaming()) {
-          if (!request.context || request.context.url !== delegation.url) throw new TaskActionRejected('请先回到原委托页面。');
-          await observer.control('revise', '用户修改了原委托');
-          const current = this.progress.get(request.conversationId)!;
-          current.recordRequirement(request.text ?? '', request.context, request.attachments); current.recordUserTurn(request.text ?? '', request.requestId); current.reviseResults();
-          const live = current.snapshot().continuation!;
-          current.setContinuation({ ...live, state: 'RUNNING', processingVersion: live.observedVersion, segmentStartedAt: Date.now() });
-          await this.saveContinuation(request.conversationId);
-          try { await entry.runtime.session.continueCondition(current.snapshot(), true); }
-          catch (error) { await observer.control('pause', error instanceof Error ? error.message : '未能继续原委托'); throw error; }
-          return { status: 'accepted', runId: snapshot.runId ?? null, message: '正在按当前要求继续原委托。' };
-        }
-        if (request.action === 'steer') {
-          await observer.control('revise', '用户修改了目标，旧条件已撤销');
-          const c = this.progress.get(request.conversationId)!.snapshot().continuation!;
-          this.progress.get(request.conversationId)!.setContinuation({ ...c, state: 'RUNNING', segmentStartedAt: Date.now() });
-        }
-        snapshot = this.getTaskProgress(request.conversationId)!;
-      }
-
-      if (request.action === 'status')return {status:'applied',runId:snapshot.runId??null,message:progressSpeech(snapshot)};
-
-      if(!this.connected&&request.action!=='abort')throw new TaskActionRejected('连接尚未恢复，原任务和待办已保留。');
-
-      const amendment=request.action==='resume'&&originalRequest.source==='text'
-        ?continuation?.amendment:undefined;
-
-      if(amendment&&(snapshot.state==='interrupted'||['idle','error'].includes(snapshot.state)&&explicitAmendment)) {
-        const progress=this.progress.get(request.conversationId)!;
-        const rollback=progress.recordRequirement(amendment,undefined,request.attachments);
-
-        try {
-          await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId??null,request.attachments);
-          await entry.runtime.session.persistTaskResults?.(progress.snapshot());
-        } catch(error) { rollback(); throw error; }
-
-        progress.recordUserTurn(originalRequest.text??'',request.requestId);
-        snapshot=progress.snapshot();
-      }
-
-      if (request.action==='steer' && ['idle','error'].includes(snapshot.state) && !entry.runtime.session.isStreaming()) {
-        if (!snapshot.runId || !snapshot.recoveryInput || !request.context?.tabId || !entry.runtime.session.available) throw new TaskActionRejected('续接需要原任务记录、当前页面和可用模型；补充尚未发送。');
-
-        if(this.runningTasks()>=2)throw new TaskActionRejected('当前执行名额已满；这条续接未执行，原任务记录保持不变。');
-        const progress=this.progress.get(request.conversationId)!;
-        const rollback=progress.recordRequirement(request.text??'',request.context,request.attachments);
-
-        try {
-          await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId,request.attachments);
-          await entry.runtime.session.persistTaskResults?.(progress.snapshot());
-        } catch(error) { rollback(); throw error; }
-
-        progress.recordUserTurn(request.text??'',request.requestId);
-        progress.interrupt('manual_continuation');
-        snapshot=progress.snapshot();
-        request={...request,action:'resume'};
-      }
-
-      if(['idle','error'].includes(snapshot.state)&&(projectTaskView(snapshot).resumable||explicitAmendment)
-        &&(request.action==='resume'||request.action==='start'&&isInterruptedResumeText(request.text??''))){
-        if(request.action!=='resume')throw new TaskActionRejected('请继续原任务，不要将未完成事项重新登记为新任务。');
-
-        if(!request.context?.tabId||!entry.runtime.session.available)throw new TaskActionRejected('继续前需要当前页面和可用模型，原任务的未完成记录保持不变。');
-        this.progress.get(request.conversationId)!.interrupt('manual_continuation');
-        snapshot=this.getTaskProgress(request.conversationId)!;
-        this.publishRunIdentity(request.conversationId);
-      }
-
-      if(request.action==='resume'&&snapshot.state==='interrupted'){
-        if(!request.expectedRunId||!snapshot.goal)throw new TaskActionRejected('没有可以接着做的原任务。');
-
-        if(this.checkpointResumes.has(request.conversationId))throw new TaskActionRejected('正在恢复原任务，不用再点继续。');
-
-        if(this.runningTasks()>=2)throw new TaskActionRejected('现在同时做的任务太多，原任务还在，稍后再继续。');
-
-        if(!entry.runtime.session.available)throw new TaskActionRejected('当前模型不可用，原任务还在。');
-
-        this.pendingStarts.add(request.conversationId);
-        this.checkpointResumes.add(request.conversationId);
-        const version=this.controlVersions.get(request.conversationId)??0;
-
-        try{
-          await entry.runtime.session.waitForStop?.();
-          const context = await entry.runtime.session.recoveryContext(snapshot, request.context);
-          const now=this.getTaskProgress(request.conversationId);
-
-          if(!this.connected||!stillCurrent()||!now||now.runId!==snapshot.runId||now.state!=='interrupted'||version!==(this.controlVersions.get(request.conversationId)??0))throw new TaskActionRejected('原任务已取消或变了，没有恢复。');
-          this.taskPages.set(request.conversationId, context.tabId);
-          this.progress.get(request.conversationId)!.prepareResume();
-          await entry.runtime.session.resumeInterruptedTask(snapshot,context,request.attachments,request.pages);
-        }
-        catch(error){this.pendingStarts.delete(request.conversationId);this.checkpointResumes.delete(request.conversationId);throw error;}
-
-        return {action:'resume' as const,status:'accepted',runId:request.expectedRunId,message:'已从检查点继续原任务；先重新读取当前页面，再处理未完成项。'};
-      }
-
-      if(request.action==='pause'&&snapshot.state==='interrupted'){
-        this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
-        this.pendingStarts.delete(request.conversationId);this.checkpointResumes.delete(request.conversationId);
-        this.progress.get(request.conversationId)!.interrupt(snapshot.interruptionReason??'manual_continuation');
-        entry.runtime.session.abort();
-        await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
-
-        return {status:'applied',runId:request.expectedRunId,message:'恢复已停止，原任务仍保留在检查点；没有继续执行。'};
-      }
-
-      if (request.action === 'start') {
-        const reserved=this.taskQueue.get(request.conversationId);
-        const ownsReservation=reserved?.state==='starting'&&reserved.request.requestId===request.requestId;
-
-        if((this.pendingStarts.has(request.conversationId)&&!ownsReservation)||snapshot.state==='running'||entry.runtime.session.isStreaming())throw new TaskActionRejected('当前任务还在执行。要另开会话处理这个新任务吗？', true);
-
-        if(snapshot.state==='paused'||entry.runtime.session.isHeld())throw new TaskActionRejected('页面现在归你。请继续原任务，或另开会话。');
-
-        if(this.runningTasks()-(ownsReservation?1:0)>=2)await this.yieldGoalContinues(request.conversationId,()=>this.runningTasks()-(ownsReservation?1:0)>=2);
-
-        if(this.runningTasks()-(ownsReservation?1:0)>=2)throw new TaskActionRejected('当前执行名额已满，请等待运行中的任务完成。');
-
-        if(request.context?.tabId!==undefined)this.taskPages.set(request.conversationId,request.context.tabId);
-
-        if(!entry.runtime.session.available)throw new TaskActionRejected('当前执行模型不可用，任务未启动。');
-
-        if (request.source === 'text' && !request.attachments?.length && !request.pages?.length && !this.taskQueue.get(request.conversationId)) {
-          const quickReceipt = await this.tryQuickNavSwitch(request, entry);
-
-          if (quickReceipt) return quickReceipt;
-        }
-
-        if (request.forkedFrom) {
-          const source = request.forkedFrom;
-          const original = this.dispatcher.get(source.conversationId, source.requestId);
-
-          if (!original?.newConversationRequest) throw new TaskActionRejected('原请求已变化，请重新确认任务内容。');
-          const proposal = this.voiceConfirmations.get(source.conversationId);
-
-          if (proposal?.id === source.requestId) {
-            this.voiceConfirmations.delete(source.conversationId);
-            this.voicePlans.update(source.conversationId, proposal.id, {proposal:{...proposal,expiresAt:0}});
-          }
-        }
-
-        const targetProgress=this.progress.get(request.conversationId)!;
-        const beforeAccept=targetProgress.snapshot();
-        targetProgress.request(request.text??'',request.context,request.attachments);
-
-        if (inputOptions?.conversationOnly) targetProgress.goals.clear();
-        const acceptedRunId=targetProgress.snapshot().runId??null;
-
-        try{
-          if(entry.runtime.session.persistAcceptedTask)await entry.runtime.session.persistAcceptedTask(targetProgress.snapshot(),request.attachments);
-          else{
-            await entry.runtime.session.persistRecoveryAttachments?.(acceptedRunId,request.attachments);
-            await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
-          }
-          await this.rememberTask(request,targetProgress.snapshot());
-        }catch(error){
-          targetProgress.restoreResults(beforeAccept);
-          throw new TaskActionRejected(`任务未能保存到本地，尚未接收、没有启动：${error instanceof Error?error.message:String(error)}`);
-        }
-
-        const queued = this.taskQueue.get(request.conversationId);
-        if (queued && queued.state !== 'starting' || !stillCurrent() || this.queueClosed) {
-          targetProgress.abort();
-          await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
-          await this.syncTask(request.conversationId,false,targetProgress.snapshot());
-          throw new TaskActionRejected('任务已取消或暂停，没有启动。');
-        }
-        this.taskQueue.bindRun(request.conversationId,acceptedRunId);
-
-        if(entry.summary.title==='新会话')entry.summary.title=title;
-        this.publishRunIdentity(request.conversationId);
-        this.pendingStarts.add(request.conversationId);
-
-        try{
-          const options = request.pages?.length || request.source === 'voice' ? { ...inputOptions, ...(request.pages?.length ? { pages: request.pages } : {}), ...(request.source === 'voice' ? { spoken: true } : {}) } : inputOptions;
-          if(options)entry.runtime.session.startTask(request.text??'',request.context,request.attachments,options);
-          else entry.runtime.session.startTask(request.text??'',request.context,request.attachments);
-        }catch(error){this.pendingStarts.delete(request.conversationId);throw error;}
-
-        return {action:'start' as const,status:'accepted',runId:entry.summary.runId??null,message:`已接收新任务：${request.text??'使用所选资料'}`};
-      }
-
-      if(request.action==='pause'||request.action==='resume'||request.action==='abort'){
-        if(!request.expectedRunId)throw new TaskActionRejected('当前没有可控制的任务。');
-
-        if(request.action==='resume'&&!entry.runtime.session.isHeld()&&!entry.runtime.control.isGroupHeld())throw new TaskActionRejected(snapshot.state==='aborted'?'任务已经中止，不能继续原任务。':'原任务没有暂停，未执行交还。');
-
-        if(request.action!=='resume'&&!['running','paused',...(request.action==='abort'?['aborted','interrupted']:[])].includes(snapshot.state))throw new TaskActionRejected('当前没有正在执行的任务，操作未执行。');
-        this.controlVersions.set(request.conversationId,(this.controlVersions.get(request.conversationId)??0)+1);
-        const result=await this.controls.request(request.conversationId,request.requestId,request.action,request.expectedRunId,request.scope,request.tabId);
-
-        if(!result.ok){
-          if(result.uncertain)throw new Error('Control outcome unknown');
-
-          if(result.partial)throw new TaskActionFailed(result.reason??'部分成员已继续，其余仍暂停。');
-          throw new TaskActionRejected(result.reason??'页面控制没有生效。');
-        }
-
-        if(this.getTaskProgress(request.conversationId)?.runId!==request.expectedRunId)throw new Error('Run changed during control');
-
-        return {status:'applied',runId:request.expectedRunId,message:request.action==='pause'?(request.scope==='page'?'当前页面已接管，你可以操作。':'任务已暂停，页面现在归你。'):request.action==='resume'?'原任务已恢复。':'任务已终止。'};
-      }
-
-      if (request.action !== 'steer') throw new TaskActionRejected('这项调度能力尚未开放。');
-
-      if(snapshot.state==='interrupted'){
-        if(this.checkpointResumes.has(request.conversationId))throw new TaskActionRejected('正在恢复原任务，这条修改还没发送。');
-        const progress=this.progress.get(request.conversationId)!;
-        progress.recordRequirement(request.text??'',undefined,request.attachments);
-        await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId??null,request.attachments);
-        progress.reviseResults();progress.recordUserTurn(request.text??'',request.requestId);
-        await entry.runtime.session.persistTaskResults?.(progress.snapshot());
-
-        return {status:'accepted',runId:snapshot.runId??null,message:'修改已保存到原任务；明确说“继续原任务”后再执行。'};
-      }
-
-      if(entry.runtime.session.isHeld()){
-        const originRun=snapshot.runId;
-        this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
-        await entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
-        entry.runtime.session.queueSteerForResume(request.text??'',request.context,request.attachments,request.pages);
-
-        if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
-          this.progress.get(request.conversationId)?.reviseResults();
-          this.progress.get(request.conversationId)?.recordUserTurn(request.text??'',request.requestId);
-          await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
-        }
-
-        const handoff = this.pendingHandoffs.get(request.conversationId);
-        if (handoff && originRun === handoff.runId && handoff.version === (this.controlVersions.get(request.conversationId) ?? 0)) {
-          this.pendingHandoffs.delete(request.conversationId);
-          this.controlVersions.set(request.conversationId, handoff.version + 1);
-          let reason = '页面控制没有确认';
-          try {
-            const resumed = await this.controls.request(request.conversationId, randomUUID(), 'resume', handoff.runId);
-            if (resumed.ok) return {status:'accepted',runId:originRun,message:'已收到，正在继续原任务。'};
-            reason = resumed.reason ?? reason;
-          } catch (error) { reason = error instanceof Error ? error.message : reason; }
-          return {status:'accepted',runId:originRun,message:`${RESUME_UNCONFIRMED}：${reason}。请先查看当前页面状态。`};
-        }
-
-        return {status:'accepted',runId:originRun??null,message:`修改已保存，继续后生效：${request.text??'所选资料'}`};
-      }
-
-      if (!request.expectedRunId || snapshot.runId !== request.expectedRunId || !['running','idle'].includes(snapshot.state) || !entry.runtime.session.isStreaming()) {
-        throw new TaskActionRejected('原任务已中止或变了，修改没有发送。');
-      }
-
-      if (entry.runtime.session.isHeld()) throw new TaskActionRejected('页面现在归你，请先交还。');
-      const originRun=snapshot.runId;
-      const revokeRequirement=this.progress.get(request.conversationId)!.recordRequirement(request.text??'',request.context,request.attachments);
-      await entry.runtime.session.persistRecoveryAttachments?.(originRun??null,request.attachments);
-
-      try{await entry.runtime.session.steerCurrentTask(request.text!,request.context,request.attachments,{rewrite:request.source==='text',pages:request.pages,spoken:request.source==='voice'||inputOptions?.spoken});}
-      catch(error){
-        if(error instanceof TaskActionRejected){
-          revokeRequirement();
-          await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
-        }
-
-        throw error;
-      }
-
-      if(this.progress.get(request.conversationId)?.snapshot().runId===originRun) {
-        this.progress.get(request.conversationId)?.reviseResults();
-        this.progress.get(request.conversationId)?.recordUserTurn(request.text??'',request.requestId);
-        await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
-      }
-
-      return {status:'accepted',runId:originRun,message:`${request.source==='voice'?'语音修改':'修改'}已送达当前任务：${request.text}`};
-    },{deferredResume:request.action==='resume'&&['interrupted','idle','error'].includes(this.getTaskProgress(request.conversationId)?.state??'')});
+    const receipt = await this.dispatcher.dispatch(
+      originalRequest,
+      title,
+      () => this.executeDispatchedTaskAction(originalRequest, title, stillCurrent, inputOptions),
+      { deferredResume: request.action === 'resume' && ['interrupted', 'idle', 'error'].includes(this.getTaskProgress(request.conversationId)?.state ?? '') },
+    );
 
     return receipt;
+  }
+
+  private async executeDispatchedTaskAction(
+    originalRequest: TaskActionRequest,
+    title: string,
+    stillCurrent: () => boolean,
+    inputOptions?: UserInputOptions,
+  ) {
+    if (!stillCurrent()) throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
+    const entry = this.entries.get(originalRequest.conversationId);
+    const initialSnapshot = this.getTaskProgress(originalRequest.conversationId);
+    if (!entry || !initialSnapshot) throw new TaskActionRejected('目标会话不可用，操作未执行。');
+    if (entry.summary.checkpoint === 'unavailable') throw new TaskActionRejected(TASK_CHECKPOINT_UNAVAILABLE);
+
+    const resolved = await this.resolveDispatchedRequest(originalRequest, entry, initialSnapshot);
+    let request = resolved.request;
+    let snapshot = initialSnapshot;
+
+    const delegated = await this.handleDelegationAction(request, entry, snapshot);
+    if (delegated.receipt) return delegated.receipt;
+    snapshot = delegated.snapshot;
+
+    if (request.action === 'status') return { status: 'applied' as const, runId: snapshot.runId ?? null, message: progressSpeech(snapshot) };
+    if (!this.connected && request.action !== 'abort') throw new TaskActionRejected('连接尚未恢复，原任务和待办已保留。');
+
+    const prepared = await this.prepareCheckpointContinuation(originalRequest, request, resolved.continuation, resolved.explicitAmendment, entry, snapshot);
+    request = prepared.request;
+    snapshot = prepared.snapshot;
+
+    const checkpointReceipt = await this.resumeOrPauseInterruptedTask(request, entry, snapshot, stillCurrent);
+    if (checkpointReceipt) return checkpointReceipt;
+    if (request.action === 'start') return this.startDispatchedTask(request, title, entry, snapshot, stillCurrent, inputOptions);
+    if (request.action === 'pause' || request.action === 'resume' || request.action === 'abort') {
+      return this.controlDispatchedTask(request, request.action, entry, snapshot);
+    }
+    if (request.action !== 'steer') throw new TaskActionRejected('这项调度能力尚未开放。');
+    return this.steerDispatchedTask(request, entry, snapshot, inputOptions);
+  }
+
+  private async resolveDispatchedRequest(
+    originalRequest: TaskActionRequest,
+    entry: ConversationEntry,
+    snapshot: TaskProgressSnapshot,
+  ): Promise<{ request: TaskActionRequest; continuation: { amendment?: string } | null; explicitAmendment: boolean }> {
+    const settledRequest = this.normalizeTextRequest(originalRequest);
+    const continuation = settledRequest.source === 'text' ? continuationInput(settledRequest.text ?? '') : null;
+    const explicitAmendment = !!continuation?.amendment && !!snapshot.runId && !!snapshot.recoveryInput;
+
+    let request = settledRequest.source === 'text' && settledRequest.action === 'start' && !settledRequest.forkedFrom
+      && continuation
+      && (snapshot.state === 'interrupted' || ['idle', 'error'].includes(snapshot.state) && (projectTaskView(snapshot).resumable || explicitAmendment))
+      ? { ...originalRequest, action: 'resume' as const } : originalRequest;
+
+    if (snapshot.continuation && !['COMPLETED', 'STOPPED', 'FAILED'].includes(snapshot.continuation.state) && originalRequest.source === 'text' && originalRequest.action === 'start') {
+      const command = (originalRequest.text ?? '').trim().replace(/[。！!？?\s]/g, '');
+      if (['停止', '停止关注', '中止', '中止关注', '取消关注'].includes(command)) request = { ...originalRequest, action: 'abort' };
+      else if (['暂停', '暂停关注'].includes(command)) request = { ...originalRequest, action: 'pause' };
+      else if (continuation) request = continuation.amendment ? { ...originalRequest, action: 'steer', text: continuation.amendment } : { ...originalRequest, action: 'resume' };
+    }
+    if (request === originalRequest) request = settledRequest;
+    if (request === settledRequest && await this.continuesOpenTask(settledRequest, snapshot, entry)) request = { ...settledRequest, action: 'steer' as const };
+
+    if (request.expectedRunId !== (snapshot.runId ?? null)) throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
+    if (request.expectedControlVersion !== undefined && request.expectedControlVersion !== (this.controlVersions.get(request.conversationId) ?? 0)) {
+      throw new TaskActionRejected('页面归属又变了，旧计划的后续步骤没有执行。');
+    }
+    return { request, continuation, explicitAmendment };
+  }
+
+  private async handleDelegationAction(
+    request: TaskActionRequest,
+    entry: ConversationEntry,
+    snapshot: TaskProgressSnapshot,
+  ): Promise<{ receipt?: { status: 'accepted' | 'applied'; runId: string | null; message: string }; snapshot: TaskProgressSnapshot }> {
+    const observer = this.observers.get(request.conversationId), delegation = snapshot.continuation;
+    if (!observer || !delegation || ['COMPLETED', 'STOPPED', 'FAILED'].includes(delegation.state) || !['pause', 'abort', 'steer', 'start', 'resume'].includes(request.action)) {
+      return { snapshot };
+    }
+    if (request.action === 'pause' || request.action === 'abort') {
+      await observer.control(request.action === 'abort' ? 'stop' : 'pause', request.action === 'abort' ? '用户停止' : '用户暂停');
+      this.controlVersions.set(request.conversationId, (this.controlVersions.get(request.conversationId) ?? 0) + 1);
+      this.queueTaskView(request.conversationId);
+      if (entry.runtime.session.isStreaming()) entry.runtime.session.abort();
+      if (request.action === 'abort') this.progress.get(request.conversationId)!.abort();
+      await this.saveContinuation(request.conversationId);
+      return { snapshot, receipt: { status: 'applied', runId: snapshot.runId ?? null, message: request.action === 'abort' ? '关注已停止，已有结果保留。' : '关注已暂停，等待你继续。' } };
+    }
+    if (request.action === 'start') throw new TaskActionRejected('原来的网页关注还在进行。要另开会话处理这个新问题吗？', true);
+    if (request.action === 'resume') {
+      if (delegation.state === 'WAITING_CONDITION') return { snapshot, receipt: { status: 'applied', runId: snapshot.runId ?? null, message: `仍在关注：${delegation.condition.description}` } };
+      if (delegation.state === 'RUNNING' || delegation.state === 'VERIFYING') return { snapshot, receipt: { status: 'applied', runId: snapshot.runId ?? null, message: '正在按原委托处理。' } };
+      try { await observer.resume(request.context); }
+      catch (error) { throw new TaskActionRejected(error instanceof Error ? error.message : '未能继续关注。'); }
+      this.queueTaskView(request.conversationId);
+      return { snapshot, receipt: { status: 'applied', runId: snapshot.runId ?? null, message: '已继续关注，条件满足后自动处理。' } };
+    }
+    if (request.action === 'steer' && !entry.runtime.session.isStreaming()) {
+      if (!request.context || request.context.url !== delegation.url) throw new TaskActionRejected('请先回到原委托页面。');
+      await observer.control('revise', '用户修改了原委托');
+      const current = this.progress.get(request.conversationId)!;
+      current.recordRequirement(request.text ?? '', request.context, request.attachments);
+      current.recordUserTurn(request.text ?? '', request.requestId);
+      current.reviseResults();
+      const live = current.snapshot().continuation!;
+      current.setContinuation({ ...live, state: 'RUNNING', processingVersion: live.observedVersion, segmentStartedAt: Date.now() });
+      await this.saveContinuation(request.conversationId);
+      try { await entry.runtime.session.continueCondition(current.snapshot(), true); }
+      catch (error) { await observer.control('pause', error instanceof Error ? error.message : '未能继续原委托'); throw error; }
+      return { snapshot, receipt: { status: 'accepted', runId: snapshot.runId ?? null, message: '正在按当前要求继续原委托。' } };
+    }
+    if (request.action === 'steer') {
+      await observer.control('revise', '用户修改了目标，旧条件已撤销');
+      const c = this.progress.get(request.conversationId)!.snapshot().continuation!;
+      this.progress.get(request.conversationId)!.setContinuation({ ...c, state: 'RUNNING', segmentStartedAt: Date.now() });
+    }
+    return { snapshot: this.getTaskProgress(request.conversationId)! };
+  }
+
+  private async prepareCheckpointContinuation(
+    originalRequest: TaskActionRequest,
+    initialRequest: TaskActionRequest,
+    continuation: { amendment?: string } | null,
+    explicitAmendment: boolean,
+    entry: ConversationEntry,
+    initialSnapshot: TaskProgressSnapshot,
+  ): Promise<{ request: TaskActionRequest; snapshot: TaskProgressSnapshot }> {
+    let request = initialRequest;
+    let snapshot = initialSnapshot;
+    const amendment = request.action === 'resume' && originalRequest.source === 'text' ? continuation?.amendment : undefined;
+    if (amendment && (snapshot.state === 'interrupted' || ['idle', 'error'].includes(snapshot.state) && explicitAmendment)) {
+      const progress = this.progress.get(request.conversationId)!;
+      const rollback = progress.recordRequirement(amendment, undefined, request.attachments);
+      try {
+        await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId ?? null, request.attachments);
+        await entry.runtime.session.persistTaskResults?.(progress.snapshot());
+      } catch (error) { rollback(); throw error; }
+      progress.recordUserTurn(originalRequest.text ?? '', request.requestId);
+      snapshot = progress.snapshot();
+    }
+    if (request.action === 'steer' && ['idle', 'error'].includes(snapshot.state) && !entry.runtime.session.isStreaming()) {
+      if (!snapshot.runId || !snapshot.recoveryInput || !request.context?.tabId || !entry.runtime.session.available) {
+        throw new TaskActionRejected('续接需要原任务记录、当前页面和可用模型；补充尚未发送。');
+      }
+      if (this.runningTasks() >= 2) throw new TaskActionRejected('当前执行名额已满；这条续接未执行，原任务记录保持不变。');
+      const progress = this.progress.get(request.conversationId)!;
+      const rollback = progress.recordRequirement(request.text ?? '', request.context, request.attachments);
+      try {
+        await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId, request.attachments);
+        await entry.runtime.session.persistTaskResults?.(progress.snapshot());
+      } catch (error) { rollback(); throw error; }
+      progress.recordUserTurn(request.text ?? '', request.requestId);
+      progress.interrupt('manual_continuation');
+      snapshot = progress.snapshot();
+      request = { ...request, action: 'resume' };
+    }
+    if (['idle', 'error'].includes(snapshot.state) && (projectTaskView(snapshot).resumable || explicitAmendment)
+      && (request.action === 'resume' || request.action === 'start' && isInterruptedResumeText(request.text ?? ''))) {
+      if (request.action !== 'resume') throw new TaskActionRejected('请继续原任务，不要将未完成事项重新登记为新任务。');
+      if (!request.context?.tabId || !entry.runtime.session.available) throw new TaskActionRejected('继续前需要当前页面和可用模型，原任务的未完成记录保持不变。');
+      this.progress.get(request.conversationId)!.interrupt('manual_continuation');
+      snapshot = this.getTaskProgress(request.conversationId)!;
+      this.publishRunIdentity(request.conversationId);
+    }
+    return { request, snapshot };
+  }
+
+  private async resumeOrPauseInterruptedTask(
+    request: TaskActionRequest,
+    entry: ConversationEntry,
+    snapshot: TaskProgressSnapshot,
+    stillCurrent: () => boolean,
+  ) {
+    if (request.action === 'resume' && snapshot.state === 'interrupted') {
+      if (!request.expectedRunId || !snapshot.goal) throw new TaskActionRejected('没有可以接着做的原任务。');
+      if (this.checkpointResumes.has(request.conversationId)) throw new TaskActionRejected('正在恢复原任务，不用再点继续。');
+      if (this.runningTasks() >= 2) throw new TaskActionRejected('现在同时做的任务太多，原任务还在，稍后再继续。');
+      if (!entry.runtime.session.available) throw new TaskActionRejected('当前模型不可用，原任务还在。');
+      this.pendingStarts.add(request.conversationId);
+      this.checkpointResumes.add(request.conversationId);
+      const version = this.controlVersions.get(request.conversationId) ?? 0;
+      try {
+        await entry.runtime.session.waitForStop?.();
+        const context = await entry.runtime.session.recoveryContext(snapshot, request.context);
+        const now = this.getTaskProgress(request.conversationId);
+        if (!this.connected || !stillCurrent() || !now || now.runId !== snapshot.runId || now.state !== 'interrupted' || version !== (this.controlVersions.get(request.conversationId) ?? 0)) {
+          throw new TaskActionRejected('原任务已取消或变了，没有恢复。');
+        }
+        this.taskPages.set(request.conversationId, context.tabId);
+        this.progress.get(request.conversationId)!.prepareResume();
+        await entry.runtime.session.resumeInterruptedTask(snapshot, context, request.attachments, request.pages);
+      } catch (error) {
+        this.pendingStarts.delete(request.conversationId);
+        this.checkpointResumes.delete(request.conversationId);
+        throw error;
+      }
+      return { action: 'resume' as const, status: 'accepted' as const, runId: request.expectedRunId, message: '已从检查点继续原任务；先重新读取当前页面，再处理未完成项。' };
+    }
+    if (request.action === 'pause' && snapshot.state === 'interrupted') {
+      this.controlVersions.set(request.conversationId, (this.controlVersions.get(request.conversationId) ?? 0) + 1);
+      this.pendingStarts.delete(request.conversationId);
+      this.checkpointResumes.delete(request.conversationId);
+      this.progress.get(request.conversationId)!.interrupt(snapshot.interruptionReason ?? 'manual_continuation');
+      entry.runtime.session.abort();
+      await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+      return { status: 'applied' as const, runId: request.expectedRunId, message: '恢复已停止，原任务仍保留在检查点；没有继续执行。' };
+    }
+    return null;
+  }
+
+  private async startDispatchedTask(
+    request: TaskActionRequest,
+    title: string,
+    entry: ConversationEntry,
+    snapshot: TaskProgressSnapshot,
+    stillCurrent: () => boolean,
+    inputOptions?: UserInputOptions,
+  ) {
+    const reserved = this.taskQueue.get(request.conversationId);
+    const ownsReservation = reserved?.state === 'starting' && reserved.request.requestId === request.requestId;
+    if ((this.pendingStarts.has(request.conversationId) && !ownsReservation) || snapshot.state === 'running' || entry.runtime.session.isStreaming()) {
+      throw new TaskActionRejected('当前任务还在执行。要另开会话处理这个新任务吗？', true);
+    }
+    if (snapshot.state === 'paused' || entry.runtime.session.isHeld()) throw new TaskActionRejected('页面现在归你。请继续原任务，或另开会话。');
+    if (this.runningTasks() - (ownsReservation ? 1 : 0) >= 2) {
+      await this.yieldGoalContinues(request.conversationId, () => this.runningTasks() - (ownsReservation ? 1 : 0) >= 2);
+    }
+    if (this.runningTasks() - (ownsReservation ? 1 : 0) >= 2) throw new TaskActionRejected('当前执行名额已满，请等待运行中的任务完成。');
+    if (request.context?.tabId !== undefined) this.taskPages.set(request.conversationId, request.context.tabId);
+    if (!entry.runtime.session.available) throw new TaskActionRejected('当前执行模型不可用，任务未启动。');
+
+    if (request.source === 'text' && !request.attachments?.length && !request.pages?.length && !this.taskQueue.get(request.conversationId)) {
+      const quickReceipt = await this.tryQuickNavSwitch(request, entry);
+      if (quickReceipt) return quickReceipt;
+    }
+
+    if (request.forkedFrom) {
+      const source = request.forkedFrom;
+      const original = this.dispatcher.get(source.conversationId, source.requestId);
+      if (!original?.newConversationRequest) throw new TaskActionRejected('原请求已变化，请重新确认任务内容。');
+      const proposal = this.voiceConfirmations.get(source.conversationId);
+      if (proposal?.id === source.requestId) {
+        this.voiceConfirmations.delete(source.conversationId);
+        this.voicePlans.update(source.conversationId, proposal.id, { proposal: { ...proposal, expiresAt: 0 } });
+      }
+    }
+
+    const targetProgress = this.progress.get(request.conversationId)!;
+    const beforeAccept = targetProgress.snapshot();
+    targetProgress.request(request.text ?? '', request.context, request.attachments);
+    if (inputOptions?.conversationOnly) targetProgress.goals.clear();
+    const acceptedRunId = targetProgress.snapshot().runId ?? null;
+
+    try {
+      if (entry.runtime.session.persistAcceptedTask) await entry.runtime.session.persistAcceptedTask(targetProgress.snapshot(), request.attachments);
+      else {
+        await entry.runtime.session.persistRecoveryAttachments?.(acceptedRunId, request.attachments);
+        await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
+      }
+      await this.rememberTask(request, targetProgress.snapshot());
+    } catch (error) {
+      targetProgress.restoreResults(beforeAccept);
+      throw new TaskActionRejected(`任务未能保存到本地，尚未接收、没有启动：${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    const queued = this.taskQueue.get(request.conversationId);
+    if (queued && queued.state !== 'starting' || !stillCurrent() || this.queueClosed) {
+      targetProgress.abort();
+      await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
+      await this.syncTask(request.conversationId, false, targetProgress.snapshot());
+      throw new TaskActionRejected('任务已取消或暂停，没有启动。');
+    }
+    this.taskQueue.bindRun(request.conversationId, acceptedRunId);
+    if (entry.summary.title === '新会话') entry.summary.title = title; // WHY: hardcode-ok 保持重构前原有的默认会话标题覆盖协议
+    this.publishRunIdentity(request.conversationId);
+    this.pendingStarts.add(request.conversationId);
+
+    try {
+      const options = request.pages?.length || request.source === 'voice'
+        ? { ...inputOptions, ...(request.pages?.length ? { pages: request.pages } : {}), ...(request.source === 'voice' ? { spoken: true } : {}) }
+        : inputOptions;
+      if (options) entry.runtime.session.startTask(request.text ?? '', request.context, request.attachments, options);
+      else entry.runtime.session.startTask(request.text ?? '', request.context, request.attachments);
+    } catch (error) {
+      this.pendingStarts.delete(request.conversationId);
+      throw error;
+    }
+
+    return { action: 'start' as const, status: 'accepted' as const, runId: entry.summary.runId ?? null, message: `已接收新任务：${request.text ?? '使用所选资料'}` };
+  }
+
+  private async controlDispatchedTask(
+    request: TaskActionRequest,
+    action: 'pause' | 'resume' | 'abort',
+    entry: ConversationEntry,
+    snapshot: TaskProgressSnapshot,
+  ) {
+    if (!request.expectedRunId) throw new TaskActionRejected('当前没有可控制的任务。');
+    if (action === 'resume' && !entry.runtime.session.isHeld() && !entry.runtime.control.isGroupHeld()) {
+      throw new TaskActionRejected(snapshot.state === 'aborted' ? '任务已经中止，不能继续原任务。' : '原任务没有暂停，未执行交还。');
+    }
+    if (action !== 'resume' && !['running', 'paused', ...(action === 'abort' ? ['aborted', 'interrupted'] : [])].includes(snapshot.state)) {
+      throw new TaskActionRejected('当前没有正在执行的任务，操作未执行。');
+    }
+    this.controlVersions.set(request.conversationId, (this.controlVersions.get(request.conversationId) ?? 0) + 1);
+    const result = await this.controls.request(request.conversationId, request.requestId, action, request.expectedRunId, request.scope, request.tabId);
+    if (!result.ok) {
+      if (result.uncertain) throw new Error('Control outcome unknown');
+      if (result.partial) throw new TaskActionFailed(result.reason ?? '部分成员已继续，其余仍暂停。');
+      throw new TaskActionRejected(result.reason ?? '页面控制没有生效。');
+    }
+    if (this.getTaskProgress(request.conversationId)?.runId !== request.expectedRunId) throw new Error('Run changed during control');
+    const message = action === 'pause'
+      ? (request.scope === 'page' ? '当前页面已接管，你可以操作。' : '任务已暂停，页面现在归你。')
+      : action === 'resume' ? '原任务已恢复。' : '任务已终止。';
+    return { status: 'applied' as const, runId: request.expectedRunId, message };
+  }
+
+  private async steerDispatchedTask(
+    request: TaskActionRequest,
+    entry: ConversationEntry,
+    snapshot: TaskProgressSnapshot,
+    inputOptions?: UserInputOptions,
+  ) {
+    if (snapshot.state === 'interrupted') {
+      if (this.checkpointResumes.has(request.conversationId)) throw new TaskActionRejected('正在恢复原任务，这条修改还没发送。');
+      const progress = this.progress.get(request.conversationId)!;
+      progress.recordRequirement(request.text ?? '', undefined, request.attachments);
+      await entry.runtime.session.persistRecoveryAttachments?.(snapshot.runId ?? null, request.attachments);
+      progress.reviseResults();
+      progress.recordUserTurn(request.text ?? '', request.requestId);
+      await entry.runtime.session.persistTaskResults?.(progress.snapshot());
+      return { status: 'accepted' as const, runId: snapshot.runId ?? null, message: '修改已保存到原任务；明确说“继续原任务”后再执行。' };
+    }
+
+    if (entry.runtime.session.isHeld()) {
+      const originRun = snapshot.runId;
+      this.progress.get(request.conversationId)!.recordRequirement(request.text ?? '', request.context, request.attachments);
+      await entry.runtime.session.persistRecoveryAttachments?.(originRun ?? null, request.attachments);
+      entry.runtime.session.queueSteerForResume(request.text ?? '', request.context, request.attachments, request.pages);
+      if (this.progress.get(request.conversationId)?.snapshot().runId === originRun) {
+        this.progress.get(request.conversationId)?.reviseResults();
+        this.progress.get(request.conversationId)?.recordUserTurn(request.text ?? '', request.requestId);
+        await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+      }
+      const handoff = this.pendingHandoffs.get(request.conversationId);
+      if (handoff && originRun === handoff.runId && handoff.version === (this.controlVersions.get(request.conversationId) ?? 0)) {
+        this.pendingHandoffs.delete(request.conversationId);
+        this.controlVersions.set(request.conversationId, handoff.version + 1);
+        let reason = '页面控制没有确认';
+        try {
+          const resumed = await this.controls.request(request.conversationId, randomUUID(), 'resume', handoff.runId);
+          if (resumed.ok) return { status: 'accepted' as const, runId: originRun, message: '已收到，正在继续原任务。' };
+          reason = resumed.reason ?? reason;
+        } catch (error) { reason = error instanceof Error ? error.message : reason; }
+        return { status: 'accepted' as const, runId: originRun, message: `${RESUME_UNCONFIRMED}：${reason}。请先查看当前页面状态。` };
+      }
+      return { status: 'accepted' as const, runId: originRun ?? null, message: `修改已保存，继续后生效：${request.text ?? '所选资料'}` };
+    }
+
+    if (!request.expectedRunId || snapshot.runId !== request.expectedRunId || !['running', 'idle'].includes(snapshot.state) || !entry.runtime.session.isStreaming()) {
+      throw new TaskActionRejected('原任务已中止或变了，修改没有发送。');
+    }
+    if (entry.runtime.session.isHeld()) throw new TaskActionRejected('页面现在归你，请先交还。');
+    const originRun = snapshot.runId;
+    const revokeRequirement = this.progress.get(request.conversationId)!.recordRequirement(request.text ?? '', request.context, request.attachments);
+    await entry.runtime.session.persistRecoveryAttachments?.(originRun ?? null, request.attachments);
+    try {
+      await entry.runtime.session.steerCurrentTask(request.text!, request.context, request.attachments, {
+        rewrite: request.source === 'text',
+        pages: request.pages,
+        spoken: request.source === 'voice' || inputOptions?.spoken,
+      });
+    } catch (error) {
+      if (error instanceof TaskActionRejected) {
+        revokeRequirement();
+        await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+      }
+      throw error;
+    }
+    if (this.progress.get(request.conversationId)?.snapshot().runId === originRun) {
+      this.progress.get(request.conversationId)?.reviseResults();
+      this.progress.get(request.conversationId)?.recordUserTurn(request.text ?? '', request.requestId);
+      await entry.runtime.session.persistTaskResults?.(this.progress.get(request.conversationId)!.snapshot());
+    }
+    return { status: 'accepted' as const, runId: originRun, message: `${request.source === 'voice' ? '语音修改' : '修改'}已送达当前任务：${request.text}` };
   }
   list(): ConversationSummary[] { return [...this.entries.values()].map(({ summary }) => ({ ...summary })); }
   private epochs(runtime:Runtime){
@@ -1903,100 +2135,125 @@ return receipt;
   }
 
   async handleMessage(message: ClientMessage): Promise<void> {
+    if (await this.handleReadingOrNudgeMessage(message)) return;
+    if (await this.handleConversationLifecycleMessage(message)) return;
+
+    const id = normalizeConversationId((message as { conversationId?: string }).conversationId);
+    if (await this.handlePreEntryMessage(id, message)) return;
+
+    const entry = this.entries.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+    if (!entry) throw new Error(`CONVERSATION_NOT_FOUND: ${id}`);
+
+    if (entry.summary.checkpoint === 'unavailable' && message.type !== 'task_action' && message.type !== 'task_receipt_query' && message.type !== 'task_view_query') {
+      this.emit({ type: 'agent_event', conversationId: id, event: { kind: 'error', message: TASK_CHECKPOINT_UNAVAILABLE } });
+      return;
+    }
+    if (message.type === 'task_control_result') {
+      this.controls.receive({ ...message, conversationId: id });
+      return;
+    }
+    if (await this.preprocessControlMessage(id, entry, message)) return;
+    if (await this.handleTaskServiceMessage(id, entry, message)) return;
+    if (await this.handleStoreClientMessage(id, entry, message)) return;
+    await this.handleRuntimeTurnMessage(id, entry, message);
+  }
+
+  private async entryOrDefault(conversationId?: string): Promise<ConversationEntry | undefined> {
+    const id = normalizeConversationId(conversationId);
+    return this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+  }
+
+  private async handleReadingOrNudgeMessage(message: ClientMessage): Promise<boolean> {
     if (message.type === 'reading_cancel') { this.reading.cancel(message.threadId, message.requestId);
 
- return; }
+ return true; }
 
     if (message.type === 'reading_request') {
       await this.reading.run(message.requestId, message.transcript, async (transcript, signal, onText) => {
-        const id = normalizeConversationId(message.conversationId);
-        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        const entry = await this.entryOrDefault(message.conversationId);
 
         if (signal.aborted || !entry) throw new Error('阅读请求不可用');
 
         return entry.runtime.session.answerReading(transcript, signal, onText, message.requestId);
       }, event => this.emit(event));
 
-      return;
+      return true;
     }
 
     if (message.type === 'reading_import') {
       await this.get(normalizeConversationId(message.conversationId))?.runtime.session.importReading(message.transcript);
 
-      return;
+      return true;
     }
 
     if (message.type === 'reading_kind') {
       let kind: ReadingKind = 'none';
       try {
-        const id = normalizeConversationId(message.conversationId);
-        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        const entry = await this.entryOrDefault(message.conversationId);
         kind = await entry?.runtime.session.judgeReadingKind(message.selection) ?? 'none';
       } catch { kind = 'none'; }
       this.emit({ type: 'reading_kind_result', requestId: message.requestId, kind });
-      return;
+      return true;
     }
 
     if (message.type === 'reading_route') {
       let route: 'reading' | 'task' = 'task';
       try {
-        const id = normalizeConversationId(message.conversationId);
-        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        const entry = await this.entryOrDefault(message.conversationId);
         route = await entry?.runtime.session.judgeReadingRoute(message) ?? 'task';
       } catch { route = 'task'; }
       this.emit({ type: 'reading_route_result', requestId: message.requestId, route });
-      return;
+      return true;
     }
 
     if (message.type === 'nudge_validate') {
       let valid = false;
       try {
-        const id = normalizeConversationId(message.conversationId);
-        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        const entry = await this.entryOrDefault(message.conversationId);
         valid = await entry?.runtime.session.validateNudgeMemory(message.memory, message.url) ?? false;
       } catch { valid = false; }
       this.emit({ type: 'nudge_validation', requestId: message.requestId, valid });
-      return;
+      return true;
     }
 
     if (message.type === 'browse_habit_ask') {
       try {
-        const id = normalizeConversationId(message.conversationId);
-        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        const entry = await this.entryOrDefault(message.conversationId);
         await entry?.runtime.session.askBrowsing(message.key);
       } catch {  }
 
-      return;
+      return true;
     }
 
     if (message.type === 'browse_habit_request') {
       let habits: BrowseHabit[] = [];
 
       try {
-        const id = normalizeConversationId(message.conversationId);
-        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        const entry = await this.entryOrDefault(message.conversationId);
         habits = await entry?.runtime.session.noticeBrowsing(message.days, message.dismissed) ?? [];
       } catch { habits = []; }
 
       this.emit({ type: 'browse_habit_result', requestId: message.requestId, habits });
 
-      return;
+      return true;
     }
 
     if (message.type === 'nudge_request') {
       let nudge = null;
 
       try {
-        const id = normalizeConversationId(message.conversationId);
-        const entry = this.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
+        const entry = await this.entryOrDefault(message.conversationId);
         nudge = entry ? await entry.runtime.session.judgeNudge(message.context) : null;
       } catch { nudge = null; }
 
       this.emit({ type: 'nudge_result', requestId: message.requestId, nudge });
 
-      return;
+      return true;
     }
+    return false;
+  }
 
+  private async handleConversationLifecycleMessage(message: ClientMessage): Promise<boolean> {
     if (message.type === "conversation_create") {
       let request = this.requests.get(message.requestId);
 
@@ -2020,26 +2277,27 @@ return receipt;
         this.requests.delete(message.requestId);
         this.emit({type: 'reading_event', threadId: message.reading.threadId, requestId: message.requestId, state: 'error', text: '', error: '未能建立侧栏会话，阅读内容已保留，请重试。'});
 
-        return;
+        return true;
       }
 
       this.emit({ type: "conversation_created", requestId: message.requestId, conversationId: entry.summary.id, conversation: { ...entry.summary } });
 
-      return;
+      return true;
     }
 
     if (message.type === "conversation_list") {
       this.emit({ type: "conversation_list", requestId: message.requestId, conversations: this.list() });
       this.replayState(this.emit);
 
-      return;
+      return true;
     }
+    return false;
+  }
 
-    const id = normalizeConversationId(message.conversationId);
-
+  private async handlePreEntryMessage(id: string, message: ClientMessage): Promise<boolean> {
     if(message.type==='task_action'&&message.request.action==='abort'&&message.request.supplement){await this.mergeSeparateAsk(message.request.conversationId,message.request.context);
 
-      return;}
+      return true;}
 
     const stopped=message.type==='task_action'&&message.request.action==='resume'?this.taskQueue.get(message.request.conversationId):undefined;
     if(message.type==='task_action'&&stopped?.state==='unknown'&&stopped.request.originConversationId){
@@ -2047,40 +2305,29 @@ return receipt;
 
       if(!['accepted','applied'].includes(receipt.status))this.emitReceipt({...stopped.receipt,message:`还没做完，没能接着做：${receipt.message}`,updatedAt:Date.now()});
 
-      return;
+      return true;
     }
 
     if(message.type==='task_action'&&['queued','suspended'].includes(this.taskQueue.get(message.request.conversationId)?.state??'')){await this.dispatchTaskAction(message.request);
 
-return;}
+return true;}
 
     if (message.type === "warm_up") {
       this.warmUp(id, message.context, message.connection === true);
 
-      return;
+      return true;
     }
 
     if (message.type === "page_translate") {
       const fallback = this.entries.get(id) ? undefined : await this.ensureDefault();
       (this.entries.get(id) ?? fallback)?.runtime.handleMessage(message);
 
-      return;
+      return true;
     }
+    return false;
+  }
 
-    const entry = this.entries.get(id) ?? (id === DEFAULT_CONVERSATION_ID ? await this.ensureDefault() : undefined);
-
-    if (!entry) throw new Error(`CONVERSATION_NOT_FOUND: ${id}`);
-
-    if (entry.summary.checkpoint === 'unavailable' && message.type !== 'task_action' && message.type !== 'task_receipt_query' && message.type !== 'task_view_query') {
-      this.emit({type:'agent_event',conversationId:id,event:{kind:'error',message:TASK_CHECKPOINT_UNAVAILABLE}});
-
-      return;
-    }
-
-    if(message.type==='task_control_result'){this.controls.receive({...message,conversationId:id});
-
-return;}
-
+  private async preprocessControlMessage(id: string, entry: ConversationEntry, message: ClientMessage): Promise<boolean> {
     if(message.type==='user_message'||message.type==='steer'||message.type==='abort'||message.type==='takeover')entry.runtime.session.settleAnswerGate();
 
     if((message.type==='takeover'||message.type==='handback'||message.type==='abort')&&!message.taskRequestId){
@@ -2098,7 +2345,7 @@ return;}
         if(message.type==='abort')this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:false});
         else this.emit({type:'control_result',conversationId:id,requestId:message.requestId,action:message.type,ok:false,state:entry.summary.state,reason:'控制请求已过期，操作未执行。'});
 
-        return;
+        return true;
       }
 
 
@@ -2108,10 +2355,13 @@ return;}
         try{await entry.runtime.session.waitForStop();this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:true});}
         catch{this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:false});}
 
-        return;
+        return true;
       }
     }
+    return false;
+  }
 
+  private async handleTaskServiceMessage(id: string, entry: ConversationEntry, message: ClientMessage): Promise<boolean> {
     if (message.type === 'task_action') {
       const request=message.request,session=entry.runtime.session;
 
@@ -2125,17 +2375,17 @@ return;}
           if (routed.question) this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:routed.question}});
           if (routed.chat) await this.answerSourcedChat(id,request.text??'',this.getTaskProgress(id)!,()=>true,session);
         });
-        return;
+        return true;
       }
 
       await this.dispatchTaskAction(request);
 
-      return;
+      return true;
     }
 
     if (message.type === 'task_view_query') { this.emitTaskView(id, true);
 
- return; }
+ return true; }
 
     if (message.type === 'task_receipt_query') {
       const receipt = this.taskQueue.list(id).find(j=>j.request.requestId===message.requestId)?.receipt??this.dispatcher.get(id,message.requestId)??this.dispatcher.store.list(id).find(r=>r.requestId===message.requestId);
@@ -2143,23 +2393,26 @@ return;}
       if (receipt) this.emitReceipt(receipt);
       else {const result=this.voicePlans.get(id,message.requestId);this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:result?'这份语音计划的结果见逐步记录；不会自动重做。':'未找到这条请求的结果，请不要自动重发。',...(result?.plan?.steps.length?{plan:result.plan}:{})}});}
 
-      return;
+      return true;
     }
 
     if (message.type === "set_thinking") {
       const current = this.entries.get(id)?.runtime.session;
-      if (!current) return;
+      if (!current) return true;
       current.setThinking(message.model, message.level, message.restore);
       this.thinkingPreferences.set(message.model, message.level);
       for (const entry of this.entries.values()) if (entry.runtime.session !== current) entry.runtime.session.setThinking(message.model,message.level,true);
 
-      return;
+      return true;
     }
+    return false;
+  }
 
+  private async handleStoreClientMessage(id: string, entry: ConversationEntry, message: ClientMessage): Promise<boolean> {
     if (message.type === "memory_list" || message.type === "memory_update" || message.type === "memory_forget" || message.type === "memory_restore" || message.type === "memory_ask_answer" || message.type === "memory_site" || message.type === "memory_unforget") {
       await this.handleMemoryMessage(message, id);
 
-      return;
+      return true;
     }
 
     if (message.type === "task_history_list" || message.type === "task_history_forget" || message.type === "task_history_site" || message.type === "task_history_restore") {
@@ -2177,7 +2430,7 @@ return;}
         this.emit({ type: "task_history_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
       }
 
-      return;
+      return true;
     }
 
     if (message.type === "site_note_delete" || message.type === "site_note_list") {
@@ -2195,7 +2448,7 @@ return;}
         if (message.type === "site_note_list") this.emit({ type: "site_note_list_result", conversationId: id, requestId: message.requestId, ok: false, error: errorText });
         else this.emit({ type: "site_note_delete_result", conversationId: id, requestId: message.requestId, ok: false, error: errorText });
       }
-      return;
+      return true;
     }
 
     if (message.type === "skill_operations_list" || message.type === "skill_operation_delete") {
@@ -2208,7 +2461,7 @@ return;}
         this.emit({ type: "skill_operations_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
       }
 
-      return;
+      return true;
     }
 
     if (message.type === "skill_operation_run") {
@@ -2217,7 +2470,7 @@ return;}
         const operation = await this.learnedOperations.get(message.id);
         if (!operation) {
           this.emit({ type: "skill_operation_run_result", conversationId: id, requestId: message.requestId, ok: true, result: { status: "invalid_input", operationId: message.id, reason: "这个技能已经删除。请在技能管理里移除它的入口。", steps: 0 } });
-          return;
+          return true;
         }
         if (message.tabId !== undefined) await entry.runtime.rpc.call("dialog_info", { tabId: message.tabId });
         const result = await runLearnedOperation(operation, message.input, { call: (name, params) => entry.runtime.rpc.call(name, params) });
@@ -2227,38 +2480,13 @@ return;}
         this.emit({ type: "skill_operation_run_result", conversationId: id, requestId: message.requestId, ok: false, error: error instanceof Error ? error.message : String(error) });
       }
 
-      return;
+      return true;
     }
+    return false;
+  }
 
-    if(message.type==='user_message'){
-      const checkpoint=this.getTaskProgress(id);
-      if (checkpoint?.continuation && !['COMPLETED','STOPPED','FAILED'].includes(checkpoint.continuation.state)) {
-        await this.dispatchTaskAction({ requestId: `continuation-input-${randomUUID()}`, conversationId: id, source: 'text', action: 'start', expectedRunId: checkpoint.runId ?? null, text: message.text, context: message.context, attachments: message.attachments });
-        return;
-      }
-
-      if(checkpoint&&(checkpoint.state==='interrupted'||['idle','error'].includes(checkpoint.state)&&checkpoint.nextStep?.delivery==='partial')&&isInterruptedResumeText(message.text)){
-        const requestId=`restart-${randomUUID()}`;
-        this.progress.get(id)?.recordUserTurn(message.text,requestId);
-        entry.summary.updatedAt=Date.now();
-        this.store?.save(this.list());
-        await this.dispatchTaskAction({requestId,conversationId:id,source:'text',action:'resume',expectedRunId:checkpoint.runId??null,expectedControlVersion:this.controlVersions.get(id)??0,text:message.text,context:message.context,attachments:message.attachments});
-
-        return;
-      }
-
-      if(checkpoint?.state==='interrupted'&&!this.checkpointResumes.has(id)){
-        await this.dispatchTaskAction({requestId:`amend-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:checkpoint.runId??null,text:message.text,context:message.context,attachments:message.attachments});
-
-        return;
-      }
-    }
-
-    if(message.type==='user_message'&&this.checkpointResumes.has(id)&&!entry.runtime.session.isStreaming()){
-      this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:'任务正在启动或恢复，这条要求还没发送；等它开始后再补充。'}});
-
-      return;
-    }
+  private async handleRuntimeTurnMessage(id: string, entry: ConversationEntry, message: ClientMessage): Promise<void> {
+    if (await this.handleUserMessageCheckpoint(id, entry, message)) return;
 
     if(message.type==='user_message'&&!entry.runtime.session.isStreaming()&&!entry.runtime.session.isHeld()&&this.runningTasks()>=2)await this.yieldGoalContinues(id,()=>this.runningTasks()>=2);
 
@@ -2270,7 +2498,7 @@ return;
 
     if(message.type==='user_message'&&message.context?.tabId!==undefined)this.taskPages.set(id,message.context.tabId);
 
-    if (message.type === "user_message" && entry.summary.title === "新会话") entry.summary.title = message.text.trim().slice(0, 36) || "新会话";
+    if (message.type === "user_message" && entry.summary.title === "新会话") entry.summary.title = message.text.trim().slice(0, 36) || "新会话"; // WHY: hardcode-ok 保持重构前原有的默认会话标题覆盖协议
 
     if (message.type === "user_message") {
       const progress = this.progress.get(id);
@@ -2302,6 +2530,39 @@ return;
       this.store?.save(this.list());
       this.emit({ type: "conversation_updated", conversationId: id, conversation: { ...entry.summary } });
     }
+  }
+
+  private async handleUserMessageCheckpoint(id: string, entry: ConversationEntry, message: ClientMessage): Promise<boolean> {
+    if(message.type==='user_message'){
+      const checkpoint=this.getTaskProgress(id);
+      if (checkpoint?.continuation && !['COMPLETED','STOPPED','FAILED'].includes(checkpoint.continuation.state)) {
+        await this.dispatchTaskAction({ requestId: `continuation-input-${randomUUID()}`, conversationId: id, source: 'text', action: 'start', expectedRunId: checkpoint.runId ?? null, text: message.text, context: message.context, attachments: message.attachments });
+        return true;
+      }
+
+      if(checkpoint&&(checkpoint.state==='interrupted'||['idle','error'].includes(checkpoint.state)&&checkpoint.nextStep?.delivery==='partial')&&isInterruptedResumeText(message.text)){
+        const requestId=`restart-${randomUUID()}`;
+        this.progress.get(id)?.recordUserTurn(message.text,requestId);
+        entry.summary.updatedAt=Date.now();
+        this.store?.save(this.list());
+        await this.dispatchTaskAction({requestId,conversationId:id,source:'text',action:'resume',expectedRunId:checkpoint.runId??null,expectedControlVersion:this.controlVersions.get(id)??0,text:message.text,context:message.context,attachments:message.attachments});
+
+        return true;
+      }
+
+      if(checkpoint?.state==='interrupted'&&!this.checkpointResumes.has(id)){
+        await this.dispatchTaskAction({requestId:`amend-${randomUUID()}`,conversationId:id,source:'text',action:'steer',expectedRunId:checkpoint.runId??null,text:message.text,context:message.context,attachments:message.attachments});
+
+        return true;
+      }
+    }
+
+    if(message.type==='user_message'&&this.checkpointResumes.has(id)&&!entry.runtime.session.isStreaming()){
+      this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:'任务正在启动或恢复，这条要求还没发送；等它开始后再补充。'}});
+
+      return true;
+    }
+    return false;
   }
 
   private async handleMemoryMessage(
