@@ -117,6 +117,7 @@ try{
  await sleep(1500);assert.equal(commits,1,'重启不自动重放');
  const recoveryPage=await rp.cdp.send('Target.createTarget',{url:`http://127.0.0.1:${siteAddress(site).port}`});await rp.cdp.send('Target.activateTarget',{targetId:recoveryPage.targetId});await sleep(300);
  await until(async()=>await rp.evaluate(panel,`(()=>{const r=document.querySelector("#resume-entry-root");return !!r&&!r.hidden&&!!r.querySelector(".resume-action")})()`)||undefined,15000,'侧栏出现「继续原任务」');
+ await rp.evaluate(panel,`document.querySelector("#resume-entry-root .resume-action")?.scrollIntoView({block:"center",behavior:"instant"});true`);
  await rp.click(panel,'#resume-entry-root .resume-action');
  await until(async()=>requests.slice(restartOffset).some(r=>r.tools?.length&&JSON.stringify(r.messages).includes('[RESTART CONTINUATION]'))||undefined,30000,'续做材料进入模型');
  await until(async()=>commits===2||undefined,10000,'继续后宿主不拦重做');await until(async()=>(await state()).text?.includes('防重复核对结束')||undefined,30000,'防重复核对结束');
