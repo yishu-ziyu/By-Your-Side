@@ -603,9 +603,9 @@ export function calculationIssue(text: string): { evidence: string; correction: 
       if (!stat.expr || stat.computed === undefined || !stat.unit) continue;
       const unit = stat.unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const number = "(-?\\d[\\d,]*(?:\\.\\d+)?)";
-      const pattern = new RegExp(CURRENCY.test(stat.unit) ? `${unit}\\s*${number}` : `${number}\\s*${unit}`, "g");
+      const pattern = new RegExp(CURRENCY.test(stat.unit) ? `((?:预算|低于|高于|不超过|不到|超过|至少|最多|以内)\\s*(?:是|为)?\\s*)?${unit}\\s*${number}(?!\\d|[.,]\\d|\\s*(?:万|千|亿|[kKwW]|以内|以下|以上|左右|起))` : `()${number}\\s*${unit}`, "g");
       for (const found of prose.matchAll(pattern)) {
-        if (inputs.has(Number(found[1]!.replace(/,/g, "")))) continue;
+        if (found[1] || inputs.has(Number(found[2]!.replace(/,/g, "")))) continue;
         return { evidence: found[0], correction: `The prose contains an independent numeric value ${JSON.stringify(found[0])} outside the calculation. Give the corresponding formula stat an id and reference it with {=id}, such as {=${stat.id ?? "result"}}, so changing inputs updates the conclusion too. Do not recalculate or hardcode the prose value. If it is a given fact rather than a computed result, put it in a non-formula stat and reference that id; do not turn a fixed source fact into an editable input.` };
       }
     }

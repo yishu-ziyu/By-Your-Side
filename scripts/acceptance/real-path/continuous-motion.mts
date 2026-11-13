@@ -16,7 +16,10 @@ const card = `<card title="订阅一年花多少"><input id="months" label="月�
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: '{"status":"done","remaining":"","correction":""}' }] },
   { match: "展示订阅卡片", steps: [{ text: card + "\n核对完成。", chunkDelayMs: 8 }] },
-  { match: "逐项读取订阅", steps: [{ tools: Array.from({ length: 20 }, (_, i) => ({ name: "js", args: { code: `document.querySelector('#item-${i}').textContent`, purpose: `读取第 ${i + 1} 项订阅价格`, readonly: true } })), delayMs: 1500 }, { text: "逐项读取完成。", delayMs: 25_000 }] },
+  { match: "逐项读取订阅", steps: [{ tools: [
+    { name: "navigate", args: { url: `http://127.0.0.1:${siteAddress(site).port}/?note=${encodeURIComponent("核对账单中的地区税费、月付价格和续订条件。".repeat(4))}` } },
+    ...Array.from({ length: 19 }, (_, i) => ({ name: "js", args: { code: `document.querySelector('#item-${i + 1}').textContent`, purpose: `读取第 ${i + 2} 项订阅价格`, readonly: true } })),
+  ], delayMs: 1500 }, { text: "逐项读取完成。", delayMs: 25_000 }] },
 ]);
 const rp = await launchRealPath();
 const checks: Array<{ name: string; pass: boolean; actual: unknown }> = [];
@@ -40,9 +43,14 @@ try {
   await until(async () => await rp.evaluate(panel, '!!document.querySelector(".gc-faces") && !document.querySelector(".msg.assistant.streaming")') || undefined, 30_000, "卡片写完");
   await rp.screenshot(panel, join(out, "1-answer.png"));
   await tap('.gc-face[data-face="evidence"]');
-  await sleep(40);
-  const halfway = await rp.evaluate(panel, 'getComputedStyle(document.querySelector(".gc-faces"),"::before").transform');
-  const offset = Number(String(halfway).match(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([^,]+)/)?.[1]);
+  let halfway = "";
+  let offset = Number.NaN;
+  for (let i = 0; i < 15; i += 1) {
+    halfway = await rp.evaluate(panel, 'getComputedStyle(document.querySelector(".gc-faces"),"::before").transform') as string;
+    offset = Number(String(halfway).match(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([^,]+)/)?.[1]);
+    if (offset > 0 && offset < 26) break;
+    await sleep(15);
+  }
   check("选中背景连续滑向依据", offset > 0 && offset < 26, halfway);
   await sleep(200);
   const selected = await rp.evaluate(panel, '({face:document.querySelector(".gen-card").dataset.face, transform:getComputedStyle(document.querySelector(".gc-faces"),"::before").transform, content:getComputedStyle(document.querySelector(".gc-faces"),"::before").content})') as { face: string; transform: string; content: string };

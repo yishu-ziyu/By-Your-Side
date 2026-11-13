@@ -1995,6 +1995,12 @@ function bindLiveViewport(el: HTMLElement, setPinned: (next: boolean) => void): 
     if (followingLive) return;
     setPinned(isLiveViewportPinned(el.scrollTop, el.scrollHeight, el.clientHeight));
   });
+  const observer = new ResizeObserver(() => {
+    if (!el.isConnected) { observer.disconnect(); return; }
+    el.classList.toggle("overflowing", liveViewportOverflows(el.scrollHeight, el.clientHeight));
+    syncScrollFade(el, el);
+  });
+  observer.observe(el);
 }
 
 function syncScrollFade(el: HTMLElement = messagesEl, frame: HTMLElement = messagesEl.parentElement!): void {
