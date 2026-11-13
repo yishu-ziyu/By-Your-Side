@@ -1,9 +1,6 @@
 {
   "maxSelfCc": 50,
   "legacy": {
-    "agent/src/conversation-manager.ts#executeVoiceInput": 219,
-    "agent/src/conversation-manager.ts#dispatchExecutionAction>dispatch:cb": 217,
-    "agent/src/conversation-manager.ts#handleMessage": 193,
     "extension/src/sidepanel/main.ts#handleAgentEvent": 163,
     "agent/src/task-progress.ts#observe": 162,
     "extension/src/background/exec/read-element.ts#readInPage": 141,
