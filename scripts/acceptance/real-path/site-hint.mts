@@ -50,14 +50,17 @@ try {
   await rp.cdp.send("Page.navigate", { url: "https://excalidraw.com" }, work);
   await until(async () => (await rp.evaluate(work, `!!document.querySelector(".excalidraw canvas")`).catch(() => false)) || undefined, 60_000, "Excalidraw 画布");
   const panel = await rp.attach(await rp.openSidePanel());
+  await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
   const items = { inproc_model_config: { provider: "custom", modelId: "fixture", baseUrl: model.baseUrl }, "inproc_cred:custom": { type: "api_key", key: "local-fixture" } };
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
-  const ready = 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';
+  const ready = 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#conversation-new")?.getAttribute("aria-busy")!=="true" && document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';
   await until(async () => await rp.evaluate(panel, ready), 60_000, "侧栏就绪");
 
   const ask = async (text: string) => {
     await rp.cdp.send("Page.bringToFront", {}, work);
+    await rp.cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true }, panel);
     await rp.click(panel, "#input");
+    await rp.evaluate(panel, 'document.querySelector("#input")?.focus()');
     await rp.typeText(panel, text);
     await rp.pressEnter(panel);
     await until(async () => firstPrompt.has(text) || undefined, 60_000, `模型收到：${text}`, 100);
@@ -73,7 +76,7 @@ try {
   await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/` }, work);
   await until(async () => (await rp.evaluate(work, `document.title === "练习页"`).catch(() => false)) || undefined, 15_000, "练习页");
   await rp.click(panel, "#conversation-new");
-  await sleep(1_500);
+  await until(async () => await rp.evaluate(panel, ready), 30_000, "新会话就绪");
   await ask(OFF_SITE);
   const offSite = firstPrompt.get(OFF_SITE) ?? "";
   check("b 在本机练习页上，模型请求里没有这段做法", offSite.length > 0 && MARKS.every(mark => !offSite.includes(mark)), { found: MARKS.filter(mark => offSite.includes(mark)), promptChars: offSite.length });
