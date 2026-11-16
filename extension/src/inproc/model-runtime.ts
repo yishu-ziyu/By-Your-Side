@@ -245,6 +245,25 @@ const STEPFUN_MODELS = ["step-3.7-flash", "step-3.5-flash-2603", "step-5-preview
 
 const STEPFUN_STEP_PLAN_BASE_URL = "https://api.stepfun.com/step_plan/v1";
 
+const OPENDESIGN_EFFORT = ["low", "high", "max"];
+
+const OPENDESIGN_MODELS: readonly CustomCatalogModel[] = [
+  { id: "claude-haiku-5.5", contextWindow: 1_000_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "deepseek-v4.1-flash", contextWindow: 1_048_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "deepseek-v4.1-flash-eco", contextWindow: 1_048_000, thinking: OPENDESIGN_EFFORT },
+  { id: "deepseek-v4-flash", contextWindow: 1_048_000, thinking: OPENDESIGN_EFFORT },
+  { id: "deepseek-v4-flash-vision-exp", contextWindow: 1_048_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "deepseek-v4-pro", contextWindow: 1_048_000, thinking: OPENDESIGN_EFFORT },
+  { id: "gpt-6-luna", contextWindow: 1_050_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "glm-5.3-flash", contextWindow: 1_048_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "glm-5.3-flashx", contextWindow: 1_000_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "kimi-k2.7-code", contextWindow: 262_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "mimo-v2.6-flash", contextWindow: 1_048_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "mimo-v2.6-pro", contextWindow: 1_048_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "minimax-m3.1-flash", contextWindow: 1_000_000, images: true, thinking: OPENDESIGN_EFFORT },
+  { id: "hy4-preview", contextWindow: 1_048_000, thinking: OPENDESIGN_EFFORT },
+];
+
 export function createModelRuntime(persist: (providerId: string, credential: Credential | undefined) => Promise<void> | void): ModelRuntime {
   const credentials = new MirroredCredentialStore(persist);
   const models = builtinModels({ credentials, authContext: { env: async () => undefined, fileExists: async () => false } });
@@ -256,6 +275,7 @@ export function createModelRuntime(persist: (providerId: string, credential: Cre
   let codexCatalogGeneration = 0;
   models.setProvider(openAICompatible(STEPFUN_PROVIDER_ID, "阶跃星辰", STEPFUN_STEP_PLAN_BASE_URL, STEPFUN_MODELS).provider);
   models.setProvider(openAICompatible("inception", "Inception", "https://api.inceptionlabs.ai/v1", ["mercury-3"]).provider);
+  models.setProvider(openAICompatible("opendesign", "OpenDesign", "https://amr-link.open-design.ai/v1", OPENDESIGN_MODELS).provider);
   const anthropicCatalog = models.getModels("anthropic");
   models.setProvider(commandCodeProvider(COMMANDCODE_FALLBACK, anthropicCatalog));
   const sessionId = crypto.randomUUID();

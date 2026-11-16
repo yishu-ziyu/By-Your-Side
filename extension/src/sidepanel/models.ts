@@ -39,6 +39,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   gemini: "Google",
   inception: "Inception",
+  opendesign: "OpenDesign",
   xai: "xAI",
   commandcode: "Command Code",
   "opencode-go": "OpenCode Go",
