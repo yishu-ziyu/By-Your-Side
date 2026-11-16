@@ -235,7 +235,7 @@ const nudge = installNudge({
 });
 
 installMemoryBackup();
-const browseHabits = installBrowseHabits({ send: message => transport.sendClientMessage(message), selected: () => selectedConversationId });
+const browseHabits = installBrowseHabits({ send: message => transport.sendClientMessage(message), selected: () => selectedConversationId, panelShows: id => [...connectedPanels].some(port => panelConversation(port) === id) });
 
 let conversationSummaries: import("../../../shared/protocol.js").ConversationSummary[] = [];
 
