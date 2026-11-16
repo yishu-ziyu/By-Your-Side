@@ -608,7 +608,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
     const intro = document.createElement("p");
     intro.className = "memory-quiet";
     intro.textContent = browseSeen.on
-      ? `已记下你自己做的 ${browseSeen.recent.length} 步。快速模型每半小时最多归纳一次，同一件事出现在 2 天里就问你要不要记住。`
+      ? `已记下你自己做的 ${browseSeen.recent.length} 步。快速模型每半小时最多归纳一次，同一件事出现在 2 天里，会在侧栏开着时问你要不要记住，一天最多问一条。`
       : `已暂停，暂停期间什么都不记。已记下的 ${browseSeen.recent.length} 步保留。`;
     group.append(heading, intro);
     const feedback = document.createElement("p");

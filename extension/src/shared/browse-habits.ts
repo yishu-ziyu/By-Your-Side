@@ -3,6 +3,7 @@ import { isBrowseHabit, type BrowseHabit } from '../../../shared/browse-habits.j
 export const BROWSE_ON_KEY = 'sideagent_browse_habits';
 export const BROWSE_INDUCE_AFTER_STEPS = 5;
 export const BROWSE_INDUCE_EVERY_MS = 30 * 60_000;
+export const BROWSE_ASK_EVERY_MS = 24 * 60 * 60_000;
 
 export const BROWSE_LOG_KEY = 'sideagent_browse_log';
 
