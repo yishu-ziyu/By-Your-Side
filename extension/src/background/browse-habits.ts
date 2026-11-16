@@ -1,19 +1,19 @@
 import { BROWSE_DAY_LIMIT, BROWSE_LINE_LIMIT, type BrowseDay, type BrowseHabitResult } from '../../../shared/browse-habits.js';
 import type { ClientMessage } from '../../../shared/protocol.js';
 import type { TaskView } from '../../../shared/task-view.js';
-import { BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_EVENT, BROWSE_FOUND_KEY, BROWSE_INDUCE_AFTER_STEPS, BROWSE_INDUCE_EVERY_MS, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, isBrowseStep, localDay, readBrowseEvents, readBrowseFound, readDismissed, type BrowseEvent, type BrowseStep } from '../shared/browse-habits.js';
+import { BROWSE_ASK_EVERY_MS, BROWSE_CONTROL, BROWSE_DISMISSED_KEY, BROWSE_EVENT, BROWSE_FOUND_KEY, BROWSE_INDUCE_AFTER_STEPS, BROWSE_INDUCE_EVERY_MS, BROWSE_LOG_KEY, BROWSE_ON_KEY, isBrowseOn, isBrowseStep, localDay, readBrowseEvents, readBrowseFound, readDismissed, type BrowseEvent, type BrowseStep } from '../shared/browse-habits.js';
 import { watchSelfUse } from '../shared/self-use.js';
 import { debuggerAttached } from './debugger.js';
 import { isPanelUrl } from './target-window.js';
 import { nudgeableUrl } from '../shared/nudge.js';
 
-type Deps = { send: (message: ClientMessage) => boolean; selected: () => string };
+type Deps = { send: (message: ClientMessage) => boolean; selected: () => string; panelShows: (conversationId: string) => boolean };
 
 const MAX_EVENTS = 4000;
 
 const KEEP_MS = BROWSE_DAY_LIMIT * 24 * 60 * 60_000;
 
-type Log = { events: BrowseEvent[]; since: number; lastAt: number };
+type Log = { events: BrowseEvent[]; since: number; lastAt: number; askedAt: number };
 
 function line(step: BrowseStep, url: URL, at: number): string {
   const d = new Date(at);
@@ -38,7 +38,7 @@ export function installBrowseHabits(deps: Deps) {
     const next = queue.then(async () => {
       const stored: unknown = (await chrome.storage.local.get(BROWSE_LOG_KEY))[BROWSE_LOG_KEY];
       const meta = stored && typeof stored === 'object' ? stored as Partial<Log> : {};
-      const log: Log = { events: readBrowseEvents(stored), since: typeof meta.since === 'number' ? meta.since : 0, lastAt: typeof meta.lastAt === 'number' ? meta.lastAt : 0 };
+      const log: Log = { events: readBrowseEvents(stored), since: typeof meta.since === 'number' ? meta.since : 0, lastAt: typeof meta.lastAt === 'number' ? meta.lastAt : 0, askedAt: typeof meta.askedAt === 'number' ? meta.askedAt : 0 };
       const out = await fn(log);
       await chrome.storage.local.set({ [BROWSE_LOG_KEY]: log });
 
@@ -124,7 +124,7 @@ export function installBrowseHabits(deps: Deps) {
     disconnected() { views.clear(); pending.clear(); },
     async receive(result: BrowseHabitResult) {
       if (!pending.has(result.requestId) || !result.habits.length) return;
-      await withLog(async () => {
+      await withLog(async log => {
         const conversationId = pending.get(result.requestId);
 
         if (!conversationId || !pending.delete(result.requestId)) return;
@@ -132,7 +132,12 @@ export function installBrowseHabits(deps: Deps) {
         const kept = result.habits.filter(h => !dismissed.includes(h.key));
         await chrome.storage.local.set({ [BROWSE_FOUND_KEY]: kept });
 
-        for (const habit of kept) if (habit.ready) deps.send({ type: 'browse_habit_ask', requestId: crypto.randomUUID(), conversationId, key: habit.key });
+        const next = kept.find(h => h.ready);
+        const at = Date.now();
+
+        if (!next || at - log.askedAt < BROWSE_ASK_EVERY_MS || !deps.panelShows(conversationId)) return;
+        log.askedAt = at;
+        deps.send({ type: 'browse_habit_ask', requestId: crypto.randomUUID(), conversationId, key: next.key });
       });
     },
   };

@@ -35,8 +35,10 @@ const YESTERDAY = day(-1);
 
 const HABIT = "看项目 README 后打开 Docs 搜 install";
 
+const LATER = ["在 Docs 里搜 guide", "读完 README 回到项目首页"];
+
 const model = await startScriptedModel([
-  { match: "\"known\":", steps: [{ text: JSON.stringify({ habits: [{ key: "demo:readme-docs-install", habit: HABIT, hosts: [HOST], days: [YESTERDAY, TODAY], times: 3 }] }) }] },
+  { match: "\"known\":", steps: [{ text: JSON.stringify({ habits: [{ key: "demo:readme-docs-install", habit: HABIT, hosts: [HOST], days: [YESTERDAY, TODAY], times: 3 }, ...LATER.map((habit, i) => ({ key: `demo:later-${i}`, habit, hosts: [HOST], days: [YESTERDAY, TODAY], times: 2 }))] }) }] },
 ]);
 
 const rp = await launchRealPath({ chromeArgs: [`--host-resolver-rules=MAP ${HOST} 127.0.0.1:${siteAddress(site).port}`, "--no-proxy-server"] });
@@ -50,6 +52,10 @@ let panel = "";
 const inductions = () => model.requests.filter(r => r.rule === "\"known\":").length;
 
 const cards = async () => Number(await rp.evaluate(panel, "document.querySelectorAll('[data-memory-ask]').length"));
+
+const openCards = async () => Number(await rp.evaluate(panel, `document.querySelectorAll('[data-memory-ask][data-state="open"]').length`));
+
+const panelReady = 'document.querySelector("#conversation-new")?.getAttribute("aria-busy") === "false" && document.querySelector("#send-btn")?.disabled === false';
 
 try {
   const blank = await until(async () => (await rp.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "fixture tab");
@@ -115,6 +121,11 @@ try {
   await sleep(300);
   await rp.screenshot(panel, join(artifacts, "habit-ask-card.png"));
   assert.equal(evidence.cardText, `你好像每次都这样做：${HABIT}。要我记住吗？`);
+  await sleep(2500);
+  evidence.cardsAfterInduction = await cards();
+  assert.equal(evidence.cardsAfterInduction, 1, "three habits found at once still ask one thing");
+  const waiting = String(await rp.evaluate(panel, `document.querySelector('[data-memory-group="seen"]')?.textContent ?? ""`));
+  assert.ok(LATER.every(habit => waiting.includes(habit)), "the ones not asked stay in the seen list");
   assert.ok(String(evidence.cardEvidence).includes("来自你自己的浏览"), "the card says where it came from");
 
   evidence.stage = "remember";
@@ -126,6 +137,35 @@ try {
   const saved = (memories?.entries ?? []).filter(e => e.status === "active").map(e => ({ text: e.text, kind: e.kind, scope: e.scope }));
   evidence.memory = saved;
   assert.deepEqual(saved, [{ text: HABIT, kind: "method", scope: { kind: "site", hostname: HOST } }], "remember stores the habit as a site method");
+  const induceAgain = async (n: number, patch: string) => {
+    await rp.evaluate(ext, `chrome.storage.local.get("sideagent_browse_log").then(s => { const log = s.sideagent_browse_log; log.lastAt = 0; log.since = 4; ${patch} return chrome.storage.local.set({ sideagent_browse_log: log }); }).then(() => true)`);
+    await rp.cdp.send("Page.bringToFront", {}, work);
+    await rp.click(work, "#q");
+    await rp.typeText(work, " more");
+    await rp.pressEnter(work);
+    await until(async () => inductions() >= n || undefined, 30_000, `induction ${n}`);
+  };
+
+  evidence.stage = "same day";
+  await induceAgain(3, "");
+  await sleep(3000);
+  evidence.openSameDay = await openCards();
+  assert.equal(evidence.openSameDay, 0, "a second habit is not asked on the same day");
+
+  evidence.stage = "next day";
+  await induceAgain(4, "log.askedAt = 0;");
+  await until(async () => await openCards() === 1 || undefined, 20_000, "next habit asked a day later");
+  evidence.nextCardText = String(await rp.evaluate(panel, `document.querySelector('[data-memory-ask][data-state="open"] .memory-ask-line')?.textContent ?? ""`));
+  assert.ok(LATER.some(habit => evidence.nextCardText === `你好像每次都这样做：${habit}。要我记住吗？`), "the next card asks one of the waiting habits");
+
+  evidence.stage = "reopen";
+  await rp.cdp.send("Page.reload", {}, panel);
+  await until(async () => await rp.evaluate(panel, panelReady) || undefined, 60_000, "sidebar ready after reopen");
+  await until(async () => await cards() > 0 || undefined, 20_000, "answered card replayed");
+  await sleep(1500);
+  await rp.screenshot(panel, join(artifacts, "reopened.png"));
+  evidence.openAfterReopen = await openCards();
+  assert.equal(evidence.openAfterReopen, 0, "an unanswered habit question is not waiting when the panel opens");
   evidence.stage = "done";
 } catch (caught) {
   error = caught instanceof Error ? caught.stack ?? caught.message : String(caught);

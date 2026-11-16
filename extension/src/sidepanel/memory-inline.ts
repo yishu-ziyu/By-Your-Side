@@ -396,6 +396,8 @@ export function mountMemoryInline({ messagesEl, appendToMessages, scrollToEnd, s
   }
 
   function renderMemoryAsk(event: MemoryAskEvent): void {
+    if (!memoryAskCards.has(event.askId) && replaying() && event.evidence && !event.outcome) return;
+
     if (!memoryAskCards.has(event.askId)) {
       const card = createAskCard(event, !replaying());
       memoryAskCards.set(event.askId, card);
