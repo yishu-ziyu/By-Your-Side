@@ -1372,24 +1372,24 @@ export function isPageDocumentIdentity(value: unknown): value is PageDocumentIde
     && typeof identity.url === 'string' && identity.url.length > 0 && identity.url.length <= 4000;
 }
 
+function isPinpointMessage(message: Partial<Extract<PageInteractionMessage, { type: 'PINPOINT_DOM_TARGET' }>>, token: (input: unknown) => input is string): boolean {
+  if (message.action === 'reveal') return isPageElementSource(message.source);
+
+  if (message.action === 'peek') return message.source === null || isPageElementSource(message.source);
+
+  if (message.action === 'identity') return typeof message.url === 'string' && message.url.length > 0 && message.url.length <= 4000;
+
+  return message.action === 'resolve' && token(message.document) && typeof message.url === 'string' && message.url.length <= 4000
+    && typeof message.query === 'string' && message.query.length > 0 && message.query.length <= 200;
+}
+
 export function isPageInteractionMessage(value: unknown): value is PageInteractionMessage {
   if (!value || typeof value !== 'object') return false;
   const message = value as Partial<PageInteractionMessage>;
   const token = (input: unknown): input is string => typeof input === 'string' && input.length > 0 && input.length <= 80;
   const tab = (input: number | undefined) => input !== undefined && Number.isSafeInteger(input) && input > 0;
 
-  if (message.type === 'PINPOINT_DOM_TARGET') {
-    if (!tab(message.tabId)) return false;
-
-    if (message.action === 'reveal') return isPageElementSource(message.source);
-
-    if (message.action === 'peek') return message.source === null || isPageElementSource(message.source);
-
-    if (message.action === 'identity') return typeof message.url === 'string' && message.url.length > 0 && message.url.length <= 4000;
-
-    return message.action === 'resolve' && token(message.document) && typeof message.url === 'string' && message.url.length <= 4000
-      && typeof message.query === 'string' && message.query.length > 0 && message.query.length <= 200;
-  }
+  if (message.type === 'PINPOINT_DOM_TARGET') return tab(message.tabId) && isPinpointMessage(message, token);
 
   if (message.type === 'MEMORY_FIELD_MARK') {
     const memory = message.memory;
