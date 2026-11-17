@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Api, AssistantMessage, Message, Model } from '@earendil-works/pi-ai';
-import { ContextFit, PAGE_OBSERVATION_MARK, RUN_CONTEXT_HEADER, earlierResultText } from './context-fit.js';
+import { ContextFit, PAGE_OBSERVATION_MARK, RUN_CONTEXT_HEADER, earlierResultText, earlierResultContent } from './context-fit.js';
 import { createReadAttachmentTool } from './attached-files.js';
 
 const model = { contextWindow: 1_000_000 } as Model<Api>;
@@ -15,7 +15,7 @@ const run = (id: number): Message[] => [
   answer(`本轮已得结论${id}`, id * 10 + 4),
 ];
 
-test('已结束运行只收拢较早的页面数据，保留最近两轮和用户图片，并能取回原文', () => {
+test('已结束运行收拢较早的页面数据和图片，保留最近两轮，并能取回原文与原图', () => {
   const messages = [1, 2, 3, 4].flatMap(run);
   const before = JSON.stringify(messages);
   const view = new ContextFit().fit(messages, model, 15);
@@ -24,7 +24,10 @@ test('已结束运行只收拢较早的页面数据，保留最近两轮和用�
   assert.match(JSON.stringify(firstResult), /earlier:read-1/);
   assert.ok(!JSON.stringify(firstResult).includes(image.data), '工具截图按需取回');
   assert.ok(JSON.stringify(view[1]).includes('用户原话1'));
-  assert.ok(JSON.stringify(view[1]).includes(image.data), '用户贴图始终保留');
+  assert.ok(!JSON.stringify(view[1]).includes(image.data), '较早用户图按需取回');
+  const imageName = /earlier:image:[a-f0-9]+/.exec(JSON.stringify(view[1]))?.[0];
+  assert.ok(imageName);
+  assert.ok(earlierResultContent(messages, imageName)?.some(part => part.type === 'image' && part.data === image.data));
   assert.ok(!JSON.stringify(view[1]).includes('历史页面'));
   assert.ok(JSON.stringify(view).includes('本轮已得结论1'));
   assert.ok(JSON.stringify(view[0]).includes('原始目标1'));
@@ -34,7 +37,7 @@ test('已结束运行只收拢较早的页面数据，保留最近两轮和用�
   assert.equal(JSON.stringify(messages), before, '原始记录不得改变');
 });
 
-test('窗口压力也不能丢掉用户贴图和原话，随机长度下原始记录保持不变', () => {
+test('未归档运行在窗口压力下仍保留用户贴图和原话，随机长度下原始记录保持不变', () => {
   let seed = 918;
   for (let i = 0; i < 25; i++) {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;

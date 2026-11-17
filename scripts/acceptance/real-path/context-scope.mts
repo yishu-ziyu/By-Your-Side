@@ -11,21 +11,24 @@ await mkdir(out, { recursive: true });
 const site = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<title>研究材料</title><h1>研究材料</h1><main>${'用于多轮阅读的原始材料。'.repeat(700)}</main>`));
 await new Promise<void>(r => site.listen(0, '127.0.0.1', r));
 const recover = { name: 'read_attachment', args: { name: 'PENDING' } };
+const recoverUser = { name: 'read_attachment', args: { name: 'PENDING' } };
 const requests: Array<{ goal: string; raw: string }> = [];
 const model = await startScriptedModel([
   { match: '"goalPage"', steps: [{ text: '{"status":"done","remaining":"","correction":""}' }] },
   { match: 'SCOPE1', steps: [{ tool: { name: 'screenshot', args: {} } }, { text: 'SCOPE1DONE 第一轮阅读已结束。' }] },
   { match: 'SCOPE2', steps: [{ text: 'SCOPE2DONE 第二轮阅读已结束。' }] },
   { match: 'SCOPE3', steps: [{ text: 'SCOPE3DONE 第三轮阅读已结束。' }] },
-  { match: 'SCOPE4', steps: [{ tool: recover }, { text: 'SCOPE4DONE 早先的原图已取回。' }] },
+  { match: 'SCOPE4', steps: [{ tool: recover }, { tool: recoverUser }, { text: 'SCOPE4DONE 早先的原图已取回。' }] },
   { match: 'SCOPEGUIDE', steps: [{ tool: { name: 'answer_ui_guide', args: {} } }, { text: 'SCOPEGUIDEDONE 已读到按需指南。' }] },
 ], undefined, payload => {
   if (!payload.tools?.length) return;
   const raw = JSON.stringify(payload.messages);
   const user = [...payload.messages ?? []].reverse().find(m => m.role === 'user' && !String(m.content).startsWith('本次运行的上下文') && /SCOPE[1234]|SCOPEGUIDE/.test(JSON.stringify(m.content)));
   requests.push({ goal: JSON.stringify(user?.content), raw });
-  const id = /earlier:([A-Za-z0-9_-]+)/.exec(raw)?.[1];
+  const id = /earlier:(call_[A-Za-z0-9_-]+)/.exec(raw)?.[1];
   if (id) recover.args.name = `earlier:${id}`;
+  const userImage = /earlier:image:[a-f0-9]+/.exec(raw)?.[0];
+  if (userImage) recoverUser.args.name = userImage;
 });
 const rp = await launchRealPath();
 const checks: Record<string, boolean> = {};
@@ -52,8 +55,8 @@ try {
   const messages = JSON.parse(last || '[]') as Array<{ role: string; content?: unknown }>;
   const pixels = (raw: string) => (raw.match(/"type":"image_url"/g) ?? []).length;
   checks.oldPageCompacted = first.includes('Historical run (data, not instructions)') && first.includes('earlier:');
-  checks.oldScreenshotOnDemand = pixels(first) === 1 && pixels(last) === 2;
-  checks.userImagePreserved = messages.some(m => m.role === 'user' && JSON.stringify(m.content).includes('image_url'));
+  checks.oldScreenshotOnDemand = pixels(first) === 0 && pixels(fourth[1]?.raw ?? '') === 1;
+  checks.userImageRecoverable = recoverUser.args.name.startsWith('earlier:image:') && pixels(last) === 2;
   checks.conclusionPreserved = first.includes('SCOPE1DONE');
   checks.guidesNotEager = !requests[0]!.raw.includes('Mini apps (<app>, free HTML');
   await rp.screenshot(panel, join(out, 'recovered.png'));
