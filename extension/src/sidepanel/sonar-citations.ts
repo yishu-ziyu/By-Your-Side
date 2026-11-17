@@ -1,4 +1,28 @@
-import { isPageElementSource, isPageDocumentIdentity } from '../../../shared/protocol.js';
+import { isPageElementSource, isPageDocumentIdentity, type PageElementSource } from '../../../shared/protocol.js';
+import { uiEvent } from './ui-trace.js';
+
+const PEEK_DELAY_MS = 120;
+
+let peekTimer: ReturnType<typeof setTimeout> | undefined;
+let peeking: number | null = null;
+
+function peek(source: PageElementSource | null, tabId: number): void {
+  clearTimeout(peekTimer);
+
+  if (!source) {
+    if (peeking === null) return;
+    peeking = null;
+    void chrome.runtime.sendMessage({ type: 'PINPOINT_DOM_TARGET', action: 'peek', source: null, tabId }).catch(() => {});
+
+    return;
+  }
+
+  peekTimer = setTimeout(() => {
+    peeking = tabId;
+    uiEvent('ui_num_cite', { action: 'peek' });
+    void chrome.runtime.sendMessage({ type: 'PINPOINT_DOM_TARGET', action: 'peek', source, tabId }).catch(() => {});
+  }, PEEK_DELAY_MS);
+}
 
 export interface CitationContext { tabId: number; url: string; document: string }
 
@@ -102,6 +126,7 @@ export async function attachSourceCitations(answer: HTMLElement, context: Citati
     const reveal = async () => {
       if (busy) return;
       busy = true;
+      uiEvent('ui_num_cite', { action: 'reveal' });
 
       try {
         const reply = await chrome.runtime.sendMessage({ type: 'PINPOINT_DOM_TARGET', action: 'reveal', source, tabId });
@@ -112,7 +137,9 @@ export async function attachSourceCitations(answer: HTMLElement, context: Citati
       finally { busy = false; }
     };
 
-    mark.onclick = () => void reveal();
+    mark.onclick = () => { clearTimeout(peekTimer); peeking = null; void reveal(); };
+    mark.onmouseenter = mark.onfocus = () => peek(source, tabId);
+    mark.onmouseleave = mark.onblur = () => peek(null, tabId);
     mark.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); void reveal(); } };
   }
 }
