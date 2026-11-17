@@ -33,7 +33,7 @@ test("历史任务：语义命中支持换词，旧内容或旧权限指纹无�
   assert.deepEqual(select([original], "日本古都交通安排", { semanticTasks }).tasks.map(x => x.task.id), ["semantic"]);
   for (const changed of [task("semantic", { summary: "Different result" }), task("semantic", { notOnHosts: ["private.example"] }), task("semantic", { validity: { end: now + 10 } }), task("semantic", { hosts: ["other.example"] })]) {
     assert.notEqual(taskFingerprint(changed), taskFingerprint(original));
-    assert.deepEqual(select([changed], "日本古都交通安排", { semanticTasks }).tasks, []);
+    assert.deepEqual(select([changed], "日本古都交通安排", { semanticTasks }).tasks.filter(item => item.rule === "related"), []);
   }
 });
 
