@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Api, AssistantMessage, Message, Model } from '@earendil-works/pi-ai';
 import { ContextFit, PAGE_OBSERVATION_MARK, RUN_CONTEXT_HEADER, earlierResultText } from './context-fit.js';
+import { createReadAttachmentTool } from './attached-files.js';
 
 const model = { contextWindow: 1_000_000 } as Model<Api>;
 const image = { type: 'image' as const, data: 'aW1hZ2U=', mimeType: 'image/png' };
@@ -46,4 +47,23 @@ test('窗口压力也不能丢掉用户贴图和原话，随机长度下原始�
     assert.ok(JSON.stringify(view[1]).includes(image.data), '用户图片应保持可见');
     assert.equal(JSON.stringify(messages), before);
   }
+});
+
+test('多个页面观察之间和之后的用户补充保持完整，缺少结束边界时不裁剪', () => {
+  const messages = [1, 2, 3, 4].flatMap(run);
+  messages[1] = { role: 'user', timestamp: 11, content: `先看材料\n${PAGE_OBSERVATION_MARK}]\n<page-content>${'页面甲'.repeat(1000)}</page-content>\n不要发送，等我确认。\n${PAGE_OBSERVATION_MARK}]\n<page-content>${'页面乙'.repeat(1000)}</page-content>\n只改我指定的字段。` };
+  const view = new ContextFit().fit(messages, model, 15);
+  assert.ok(JSON.stringify(view[1]).includes('不要发送，等我确认。'));
+  assert.ok(JSON.stringify(view[1]).includes('只改我指定的字段。'));
+  assert.ok(!JSON.stringify(view[1]).includes('页面甲'));
+  assert.ok(!JSON.stringify(view[1]).includes('页面乙'));
+  messages[1] = { role: 'user', timestamp: 11, content: `原话${PAGE_OBSERVATION_MARK}]${'未封闭页面'.repeat(1000)}\n不要发送` };
+  assert.deepEqual(new ContextFit().fit(messages, model, 15)[1], messages[1]);
+});
+
+test('纯文字模型仍可回读带截图的历史工具结果中的原文', async () => {
+  const tool = createReadAttachmentTool(() => [], undefined, () => false, () => [{ type: 'text', text: '订单编号 ABC123' }, image]);
+  const result = await tool.execute('read', { name: 'earlier:order', query: 'ABC123' }, undefined, undefined as never, undefined as never);
+  assert.match(JSON.stringify(result.content), /ABC123/);
+  assert.ok(!JSON.stringify(result.content).includes(image.data));
 });
