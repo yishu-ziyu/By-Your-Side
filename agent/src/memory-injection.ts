@@ -1,13 +1,11 @@
 import type { MemoryEntry } from "../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
-import { ANSWER_FORM_GUIDE, MINI_APP_GUIDE } from "./answer-guides.js";
 import { RUN_CONTEXT_HEADER } from "./context-fit.js";
 import { memoryFingerprint, taskFingerprint } from "./semantic-index.js";
 
 const ITEM_START = "[HOST MEMORY ITEM v1]";
 const ITEM_END = "[/HOST MEMORY ITEM]";
 const TASK_SECTIONS = new Set(["# Tasks you did for this user before", "# Plans and recent events still in effect"]);
-const GUIDE_BOUNDARIES = new Set([ANSWER_FORM_GUIDE.trimStart().split("\n")[0], MINI_APP_GUIDE.trimStart().split("\n")[0]]);
 const MEMORY_LINE = /^- \[memory ([^\s;\]]+) v\d+[;\]]/;
 
 export interface HostMemorySource { kind: "memory" | "task"; id: string; fingerprint: string }
@@ -62,35 +60,11 @@ function sourceOf(line: string): HostMemorySource | null {
   } catch { return null; }
 }
 
-function pluginBoundary(line: string): boolean {
-  return line.startsWith("# ") || (line.startsWith("Today is ") && line.endsWith(" (local time).")) || GUIDE_BOUNDARIES.has(line);
-}
-
-function migrateTaskSections(text: string): string {
-  const lines = text.split("\n");
-  const kept: string[] = [];
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index]!;
-    if (!TASK_SECTIONS.has(line)) { kept.push(line); continue; }
-    let end = index + 1;
-    while (end < lines.length && !pluginBoundary(lines[end]!)) end++;
-    const section = lines.slice(index, end);
-    const blocks: string[] = [];
-    let untracked = false;
-    for (let row = 1; row < section.length; row++) {
-      if (section[row] === ITEM_START && section[row + 2] === ITEM_END && sourceOf(section[row + 1]!)) {
-        blocks.push(section[row]!, section[row + 1]!, ITEM_END);
-        row += 2;
-      } else if (/^- \d{4}-\d{2}-\d{2} \[/.test(section[row]!)) untracked = true;
-    }
-    if (blocks.length) kept.push(...(untracked ? [line, ...blocks] : section));
-    index = end - 1;
-  }
-  return kept.join("\n");
-}
-
 function scrub(text: string, valid: ReadonlySet<string>, legacy: ReadonlySet<string>): string {
-  const lines = migrateTaskSections(text).split("\n");
+  const lines = text.split("\n");
+  if (lines.some(line => TASK_SECTIONS.has(line)) && lines.some(line => /^- \d{4}-\d{2}-\d{2} \[/.test(line))) {
+    return `${text.startsWith(RUN_CONTEXT_HEADER) ? RUN_CONTEXT_HEADER + "\n" : ""}[An older automatic memory snapshot was retired. Current memory is supplied again from the records still permitted for this request.]`;
+  }
   const kept: string[] = [];
   let dropping = false;
   for (let index = 0; index < lines.length; index++) {
