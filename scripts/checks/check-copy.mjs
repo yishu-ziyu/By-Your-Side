@@ -144,7 +144,7 @@ for (const name of await readdir(path.join(repo, 'extension'))) {
 }
 
 if (hits.length) {
-  console.error(`界面用词：${hits.length} 处用了术语表「不再用」的词。确实要用时在那一行写 copy-ok 注释。\n${hits.join('\n')}`);
+  console.error(`界面用词：${hits.length} 处用了术语表「不再用」的词。确实要用时在那一行写 // WHY: copy-ok 原因。\n${hits.join('\n')}`);
   process.exit(1);
 }
 

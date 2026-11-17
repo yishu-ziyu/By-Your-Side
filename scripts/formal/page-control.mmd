@@ -1,0 +1,22 @@
+stateDiagram-v2
+    [*] --> Agent
+    Agent --> Pending: queue / lateResult
+    Pending --> Agent: dispatch [current ticket and permission]
+    Agent --> NewOwner: take
+    Pending --> NewOwner: take
+    NewOwner --> Agent: returnPage / invalidate ticket
+    Agent --> Cancelled: cancel
+    Pending --> Cancelled: cancel
+    NewOwner --> Cancelled: cancel
+    Agent --> Recovering: crash
+    Pending --> Recovering: crash
+    NewOwner --> Recovering: crash
+    Cancelled --> Recovering: crash
+    Recovering --> Agent: reconcile [not cancelled, agent owns page]
+    Recovering --> NewOwner: reconcile [new task owns page]
+    Recovering --> Cancelled: reconcile [cancelled]
+    note right of Recovering
+      Recovery preserves cancellation and ownership by assumption.
+      unsafeRestore deliberately breaks the ownership fence.
+      Already dispatched external effects are outside this model.
+    end note

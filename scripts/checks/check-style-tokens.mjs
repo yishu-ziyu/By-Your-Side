@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const baselineFile = path.join(repo, "scripts/maintenance/style-baseline.json");
+const baselineFile = path.join(repo, "scripts/checks/style-baseline.json");
 const update = process.argv.includes("--update");
 
 const CSS_DIRS = ["extension/src/sidepanel", "extension/src/settings"];

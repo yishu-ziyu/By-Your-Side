@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const baselinePath = path.join(root, "scripts/maintenance/complexity-baseline.json");
+const baselinePath = path.join(root, "scripts/checks/complexity-baseline.json");
 const { transformSync } = createRequire(new URL("../../extension/package.json", import.meta.url))("esbuild");
 
 const MAX_SELF_CC = 50;
