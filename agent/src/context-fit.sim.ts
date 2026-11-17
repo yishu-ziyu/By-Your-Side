@@ -62,6 +62,8 @@ test('多个页面观察之间和之后的用户补充保持完整，缺少结�
   assert.ok(!JSON.stringify(view[1]).includes('页面乙'));
   messages[1] = { role: 'user', timestamp: 11, content: `原话${PAGE_OBSERVATION_MARK}]${'未封闭页面'.repeat(1000)}\n不要发送` };
   assert.deepEqual(new ContextFit().fit(messages, model, 15)[1], messages[1]);
+  messages[1] = { role: 'user', timestamp: 11, content: `原话\n${PAGE_OBSERVATION_MARK}]\n[Tab is unchanged.]\n\n不要发送，等我确认。\n附件原文：\n<page-content>${'用户附件'.repeat(1000)}</page-content>` };
+  assert.deepEqual(new ContextFit().fit(messages, model, 15)[1], messages[1], '未变化的观察不能把后面的用户附件当成页面内容');
 });
 
 test('纯文字模型仍可回读带截图的历史工具结果中的原文', async () => {
