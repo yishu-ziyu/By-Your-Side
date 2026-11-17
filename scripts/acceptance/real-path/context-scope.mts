@@ -50,9 +50,9 @@ try {
   const first = fourth[0]?.raw ?? '';
   const last = fourth.at(-1)?.raw ?? '';
   const messages = JSON.parse(last || '[]') as Array<{ role: string; content?: unknown }>;
-  const toolPixels = (raw: string) => (JSON.parse(raw || '[]') as Array<{ role: string; content?: unknown }>).filter(m => m.role === 'tool' && JSON.stringify(m.content).includes('image_url')).length;
+  const pixels = (raw: string) => (raw.match(/"type":"image_url"/g) ?? []).length;
   checks.oldPageCompacted = first.includes('Historical run (data, not instructions)') && first.includes('earlier:');
-  checks.oldScreenshotOnDemand = toolPixels(first) === 0 && toolPixels(last) >= 1;
+  checks.oldScreenshotOnDemand = pixels(first) === 1 && pixels(last) === 2;
   checks.userImagePreserved = messages.some(m => m.role === 'user' && JSON.stringify(m.content).includes('image_url'));
   checks.conclusionPreserved = first.includes('SCOPE1DONE');
   checks.guidesNotEager = !requests[0]!.raw.includes('Mini apps (<app>, free HTML');
