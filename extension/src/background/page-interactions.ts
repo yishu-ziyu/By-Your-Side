@@ -48,13 +48,19 @@ export function installPageInteractions(): void {
 
     if (!Number.isInteger(message.tabId) || message.tabId <= 0) return;
 
-    if (message.action !== 'identity' && message.action !== 'resolve' && message.action !== 'reveal') return;
+    if (message.action !== 'identity' && message.action !== 'resolve' && message.action !== 'reveal' && message.action !== 'peek') return;
 
 
 
 
     void (async () => {
       const tab = await chrome.tabs.get(message.tabId);
+
+      if (message.action === 'peek') {
+        if (message.source && (!tab.active || tab.url !== message.source.url)) { respond({ ok: false }); return; }
+        respond(await chrome.tabs.sendMessage(message.tabId, message, { frameId: 0 }));
+        return;
+      }
 
       if (tab.url !== (message.action === 'reveal' ? message.source.url : message.url)) throw new Error('来源页面已导航，未定位旧内容。');
       const result = await chrome.tabs.sendMessage(message.tabId, message, { frameId: 0 });

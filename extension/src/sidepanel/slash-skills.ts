@@ -140,7 +140,10 @@ interface SlashSkillsOptions {
   verifiedRequest: (bubble: HTMLElement) => boolean;
 }
 
+export interface PageAction { key: string; label: string; note: string; run: () => void }
+
 interface SlashSkills {
+  pageActions: (url: string | null) => PageAction[];
   handleKeydown: (event: KeyboardEvent) => boolean;
   decorateUserMessage: (bubble: HTMLElement, text: string) => void;
   saveFromText: (text: string) => void;
@@ -757,5 +760,12 @@ export function mountSlashSkills({ composerEl, inputEl, run, runOperation, openT
     bubble.append(btn);
   }
 
-  return { handleKeydown, decorateUserMessage, saveFromText: saveFromMessage };
+  function pageActions(url: string | null): PageAction[] {
+    return [
+      ...savedToolsFor(url).map((tool): PageAction => ({ key: `tool:${tool.id}`, label: tool.name, note: "你存过", run: () => openTool(tool) })),
+      ...skillOperationsFor(url).map((operation): PageAction => ({ key: `operation:${operation.id}`, label: operation.name, note: "直接运行", run: () => startOperation(operation) })),
+    ];
+  }
+
+  return { pageActions, handleKeydown, decorateUserMessage, saveFromText: saveFromMessage };
 }

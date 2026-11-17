@@ -168,6 +168,17 @@ try {
   evidence.replay = await until(async () => { const bars = await rp.evaluate(panel, `[...document.querySelectorAll("#messages .gc-app-bar")].filter(b => !b.hidden).map(b => b.textContent).join("|")`) as string; return bars.includes("读当前页面的字幕") ? bars : undefined; }, 15_000, "历史工具等用户点读取");
   await rp.screenshot(panel, join(artifacts, "8-replay.png"));
 
+  await rp.click(panel, "#conversation-new");
+  const offer = await until(async () => await rp.evaluate(panel, `(() => { const b = document.querySelector("#page-offers .page-offer"); return b && b.getBoundingClientRect().height > 0 ? b.textContent : ""; })()`) || undefined, 8_000, "新会话里输入框上方出现存过的工具") as string;
+  evidence.offer = offer;
+  assert.ok(offer.includes("字幕搜索") && offer.includes("你存过"), `the offer names the saved tool: ${offer}`);
+  await rp.screenshot(panel, join(artifacts, "9-offer.png"));
+  const beforeOffer = requests();
+  await rp.click(panel, "#page-offers .page-offer");
+  evidence.offerOpened = await waitBar("读到 4 句");
+  assert.equal(requests(), beforeOffer, "opening from the offer does not call the model");
+  assert.equal(await rp.evaluate(panel, `(document.querySelector("#page-offers")?.getBoundingClientRect().height ?? 0) === 0`), true, "the offer leaves once the conversation starts");
+
   await rp.evaluate(panel, `chrome.storage.local.set({ sideagent_saved_tools: [] }).then(() => true)`);
   await rp.click(panel, "#input");
   await rp.typeText(panel, "/");

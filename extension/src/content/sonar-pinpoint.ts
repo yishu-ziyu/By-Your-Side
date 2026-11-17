@@ -9,6 +9,8 @@ const SHOW_MS = 1800;
 
 const DRAW_MS = 380;
 
+const PEEK_FADE_MS = 160;
+
 export function installSonarPinpoint(): void {
   let host: HTMLElement | null = null;
   let raf: number | undefined;
@@ -23,6 +25,49 @@ export function installSonarPinpoint(): void {
     host?.remove();
     host = null;
   };
+
+  let peekHost: HTMLElement | null = null;
+  let peekRaf: number | undefined;
+
+  function unpeek(): void {
+    if (peekRaf !== undefined) cancelAnimationFrame(peekRaf);
+    peekRaf = undefined;
+    const leaving = peekHost;
+    peekHost = null;
+
+    if (!leaving) return;
+
+    if (reduced.matches) { leaving.remove();
+
+      return; }
+    leaving.style.opacity = '0';
+    setTimeout(() => leaving.remove(), PEEK_FADE_MS);
+  }
+
+  function showPeek(element: HTMLElement): void {
+    unpeek();
+    const hostEl = document.createElement('div');
+    hostEl.setAttribute(OVERLAY_ATTR, 'cite-peek');
+    hostEl.style.cssText = `position:fixed;inset:0;pointer-events:none;z-index:2147483646;opacity:0;transition:opacity ${PEEK_FADE_MS}ms ease-out`;
+    const shadow = hostEl.attachShadow({ mode: 'closed' });
+    const box = document.createElement('div');
+    box.style.cssText = 'position:absolute;border-radius:6px;background:rgb(234 196 84 / .28);box-shadow:0 0 0 3px rgb(234 196 84 / .28)';
+    shadow.append(box);
+    document.documentElement.append(hostEl);
+    peekHost = hostEl;
+
+    const place = () => {
+      const r = element.getBoundingClientRect();
+      box.style.left = `${r.left - 2}px`;
+      box.style.top = `${r.top - 2}px`;
+      box.style.width = `${r.width + 4}px`;
+      box.style.height = `${r.height + 4}px`;
+      peekRaf = requestAnimationFrame(place);
+    };
+
+    place();
+    requestAnimationFrame(() => { hostEl.style.opacity = '1'; });
+  }
 
   function showCircle(element: HTMLElement): void {
     clear();
@@ -103,7 +148,18 @@ export function installSonarPinpoint(): void {
       return;
     }
 
+    if (message.action === 'peek') {
+      const target = message.source ? resolveSource(message.source) : null;
+
+      if (target) showPeek(target);
+      else unpeek();
+      respond({ ok: !!target || !message.source });
+
+      return;
+    }
+
     if (message.action !== 'reveal') return;
+    unpeek();
     const element = resolveSource(message.source);
 
     if (!element) { respond({ ok: false, error: '原文已变化，请重新核对来源。' });
@@ -114,5 +170,5 @@ export function installSonarPinpoint(): void {
     showCircle(element);
     respond({ ok: true });
   });
-  window.addEventListener('pagehide', clear);
+  window.addEventListener('pagehide', () => { clear(); unpeek(); });
 }
