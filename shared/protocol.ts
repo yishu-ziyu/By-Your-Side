@@ -1328,6 +1328,7 @@ export type PageInteractionMessage =
   | { type: 'PINPOINT_DOM_TARGET'; action: 'identity'; tabId: number; url: string }
   | { type: 'PINPOINT_DOM_TARGET'; action: 'resolve'; query: string; tabId: number; document: string; url: string }
   | { type: 'PINPOINT_DOM_TARGET'; action: 'reveal'; source: PageElementSource; tabId: number }
+  | { type: 'PINPOINT_DOM_TARGET'; action: 'peek'; source: PageElementSource | null; tabId: number }
   | { type: 'VIEWPORT_ACTIVE_SECTION'; action: 'update'; source: PageElementSource; position: number; viewportHeight: number; index: number }
   | { type: 'VIEWPORT_ACTIVE_SECTION'; action: 'track'; tabId: number; mode: MarginaliaMode }
   | { type: 'VIEWPORT_ACTIVE_SECTION'; action: 'track'; enabled: boolean }
@@ -1381,6 +1382,8 @@ export function isPageInteractionMessage(value: unknown): value is PageInteracti
     if (!tab(message.tabId)) return false;
 
     if (message.action === 'reveal') return isPageElementSource(message.source);
+
+    if (message.action === 'peek') return message.source === null || isPageElementSource(message.source);
 
     if (message.action === 'identity') return typeof message.url === 'string' && message.url.length > 0 && message.url.length <= 4000;
 

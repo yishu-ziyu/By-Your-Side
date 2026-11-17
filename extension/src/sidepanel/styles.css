@@ -74,6 +74,8 @@
   --accent-soft: var(--apple-blue-soft);
   --ok: var(--apple-green);
   --warn: var(--apple-orange);
+  --cite-mark: color-mix(in oklab, var(--warn) 16%, transparent);
+  --cite-mark-hover: color-mix(in oklab, var(--warn) 30%, transparent);
   --err: var(--apple-red);
   --err-soft: var(--apple-red-soft);
 
@@ -3037,8 +3039,8 @@ details.run-steps .run-body .chip-icon { display: inline-grid; place-items: cent
 .msg.assistant.markdown a:has(> .source-fav) { text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); text-decoration-thickness: 1px; text-underline-offset: 4px; transition: text-decoration-color var(--m-quick) var(--e-swift); }
 .msg.assistant.markdown a:has(> .source-fav):hover { text-decoration-color: currentColor; }
 .msg.assistant .source-fav { display: inline-block; width: 15px; height: 15px; margin: 0 4px 0 2px; border-radius: var(--s-1); vertical-align: -2px; background: var(--content-subtle); color: var(--text-secondary); font-size: var(--fs-glyph); font-weight: 600; line-height: 15px; text-align: center; text-decoration: none; }
-.msg.assistant .num-cite { text-decoration: underline dotted var(--text-quaternary); text-underline-offset: 4px; cursor: pointer; border-radius: var(--s-1); }
-.msg.assistant .num-cite:hover { text-decoration-color: var(--accent); }
+.msg.assistant .num-cite { padding: 0 calc(var(--s-1) / 2); background: var(--cite-mark); cursor: pointer; border-radius: var(--s-1); transition: background-color var(--d-state) var(--e-move); }
+.msg.assistant .num-cite:hover { background: var(--cite-mark-hover); }
 .msg.assistant .num-cite:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .ai-task-card resume-entry { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; margin: 12px 0 0; padding: 13px 16px 14px; border-radius: var(--r); background: var(--content-subtle); box-shadow: inset 0 0 0 1px var(--well-outline), inset 0 1px 0 var(--well-highlight); }
