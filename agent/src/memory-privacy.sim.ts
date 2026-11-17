@@ -65,7 +65,7 @@ for (const section of ["# Tasks you did for this user before", "# Plans and rece
   for (const mutation of ["forget", "notOnHosts"] as const) {
     test(`旧格式迁移：${section} 在 ${mutation} 后整节退出请求，后续插件不变`, async () => {
       const history = new TaskHistoryStore(document());
-      const task: TaskHistoryEntry = { id: "legacy_private_trip", conversationId: "prior", goal: "Kyoto rail itinerary", revisions: [], hosts: ["travel.example"], outcome: "complete", summary: "Legacy result", done: "PRIVATE_LEGACY_DONE_f312", unfinished: [], startedAt: null, endedAt: Date.now() };
+      const task: TaskHistoryEntry = { id: "legacy_private_trip", conversationId: "prior", goal: "Kyoto rail itinerary\n# A heading inside the saved goal", revisions: [], hosts: ["travel.example"], outcome: "complete", summary: "Legacy result", done: "PRIVATE_LEGACY_DONE_f312", unfinished: [], startedAt: null, endedAt: Date.now() };
       await history.record(task);
       const runtime = new MemoryRuntime(new MemoryStore(document()), "current", () => {}, undefined, { history });
       const host = new ExtensionHost({ factories: [runtime.extension()], allTools: () => [], activeToolNames: () => [], abort: () => {} });
@@ -78,10 +78,10 @@ for (const section of ["# Tasks you did for this user before", "# Plans and rece
       if (mutation === "forget") await history.forget(task.id);
       else await history.setNotHere(task.id, "rail.example", true);
       for (const following of boundaries) {
-        const saved: HookMessage[] = [{ role: "user", content: `${RUN_CONTEXT_HEADER}\n\n${section}\n${formatTaskHistory([task])}\n\n${following}` }, { role: "user", content: `${userText}\n${section}\n${formatTaskHistory([task])}` }];
+        const saved: HookMessage[] = [{ role: "user", content: `${RUN_CONTEXT_HEADER}\n\n${section}\n${formatTaskHistory([task])}\n\n${following}` }, { role: "user", content: `${userText}\n${section}\n${formatTaskHistory([task])}` }, { role: "user", content: `${RUN_CONTEXT_HEADER}\n\n${following}` }];
         const view = await host.context(saved);
         assert.ok(!JSON.stringify(view[0]).includes(task.done!), "旧格式私密 done 不能进入请求");
-        assert.ok(typeof view[0]!.content === "string" && view[0]!.content.includes(following), "后续插件上下文必须完整保留");
+        assert.deepEqual(view[2], saved[2], "当前重新生成的插件上下文必须完整保留");
         assert.deepEqual(view[1], saved[1]);
         assert.ok(JSON.stringify(saved[0]).includes(task.done!));
       }
