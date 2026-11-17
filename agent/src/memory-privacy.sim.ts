@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { ExtensionHost, type HookMessage } from "./extension-host.js";
 import { MemoryRuntime } from "./memory-runtime.js";
 import { MemoryStore } from "./memory-store.js";
-import { TaskHistoryStore } from "./task-history.js";
+import { TaskHistoryStore, formatTaskHistory } from "./task-history.js";
 import { RUN_CONTEXT_HEADER } from "./context-fit.js";
 import { InProcessLock, type DocumentPersistence } from "./document-persistence.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
@@ -60,3 +60,32 @@ test("真实 MemoryRuntime：当前站禁用的长期记忆从旧宿主注入清
   assert.deepEqual(view[1], saved[1]);
   runtime.invalidateUserTurn();
 });
+
+for (const section of ["# Tasks you did for this user before", "# Plans and recent events still in effect"]) {
+  for (const mutation of ["forget", "notOnHosts"] as const) {
+    test(`旧格式迁移：${section} 在 ${mutation} 后整节退出请求，后续插件不变`, async () => {
+      const history = new TaskHistoryStore(document());
+      const task: TaskHistoryEntry = { id: "legacy_private_trip", conversationId: "prior", goal: "Kyoto rail itinerary", revisions: [], hosts: ["travel.example"], outcome: "complete", summary: "Legacy result", done: "PRIVATE_LEGACY_DONE_f312", unfinished: [], startedAt: null, endedAt: Date.now() };
+      await history.record(task);
+      const runtime = new MemoryRuntime(new MemoryStore(document()), "current", () => {}, undefined, { history });
+      const host = new ExtensionHost({ factories: [runtime.extension()], allTools: () => [], activeToolNames: () => [], abort: () => {} });
+      runtime.beginUserTurn("Kyoto itinerary options", page);
+      const boundaries = [
+        'Today is 2026-11-17 (local time).\n{"page":{"url":"https://rail.example/"},"capabilities":{"source":"registered_active_tools","names":[]}}\n\nInteractive answers: choose the form of each answer yourself.\nKEEP_ANSWER_GUIDE',
+        "# Another plugin\nKEEP_OTHER_PLUGIN",
+        "Interactive answers: choose the form of each answer yourself.\nKEEP_ANSWER_GUIDE",
+      ];
+      if (mutation === "forget") await history.forget(task.id);
+      else await history.setNotHere(task.id, "rail.example", true);
+      for (const following of boundaries) {
+        const saved: HookMessage[] = [{ role: "user", content: `${RUN_CONTEXT_HEADER}\n\n${section}\n${formatTaskHistory([task])}\n\n${following}` }, { role: "user", content: `${userText}\n${section}\n${formatTaskHistory([task])}` }];
+        const view = await host.context(saved);
+        assert.ok(!JSON.stringify(view[0]).includes(task.done!), "旧格式私密 done 不能进入请求");
+        assert.ok(typeof view[0]!.content === "string" && view[0]!.content.includes(following), "后续插件上下文必须完整保留");
+        assert.deepEqual(view[1], saved[1]);
+        assert.ok(JSON.stringify(saved[0]).includes(task.done!));
+      }
+      runtime.invalidateUserTurn();
+    });
+  }
+}
