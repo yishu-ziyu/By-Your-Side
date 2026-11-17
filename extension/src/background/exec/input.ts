@@ -1004,6 +1004,56 @@ async function sendNamesAt(tabId: number, x: number, y: number): Promise<{ plate
   catch { return { plate: "", buttons: [], unverified: true }; }
 }
 
+function prePressNotExecuted(message: string): Error {
+  return Object.assign(notExecuted(new Error(message)), { prePressRefused: true as const });
+}
+
+async function assertPointerTargetsSafeBeforePress(
+  tabId: number,
+  x: number,
+  y: number,
+  options: {
+    wasFrame: boolean | undefined;
+    sendConfirmed: boolean;
+    allowSendButton: boolean;
+    sendGuard?: SendGuard;
+  },
+): Promise<void> {
+  if (options.sendConfirmed && options.sendGuard) {
+    await recheckConfirmedSend(options.sendGuard);
+  }
+
+  const current = await sendNamesAt(tabId, x, y);
+  if (current.unverified || Boolean(options.wasFrame) !== Boolean(current.frame)) {
+    throw prePressNotExecuted(options.wasFrame || current.frame
+      ? "内嵌页面的操作目标已变化，未点击；请重新查看页面。"
+      : "无法核对操作目标的最新状态，未点击；请重新查看页面。");
+  }
+
+  const pay = current.buttons.find(isPayLabel);
+  if (pay) await stopBeforePay(tabId, pay, x, y);
+
+  if (options.sendConfirmed || !current.buttons.some(isSendLabel)) return;
+
+  if (!options.allowSendButton) {
+    throw prePressNotExecuted("操作目标已变为发送按钮，不能双击，未点击；请重新查看页面。");
+  }
+
+  if (current.frame) {
+    throw prePressNotExecuted("内嵌页面的操作目标已变为发送按钮，未点击；请重新查看页面。");
+  }
+
+  const sendName = current.buttons.find(isSendLabel) ?? "";
+  if (sendLabelKind(sendName) === "send") {
+    throw prePressNotExecuted("操作目标已变为发送按钮，未点击；请重新查看页面。");
+  }
+
+  const details = await readSendDetails(tabId, x, y).catch((): SendDetails => ({ binding: "unavailable" }));
+  if (details.content || details.binding === "unavailable") {
+    throw prePressNotExecuted("回复内容或发送目标在点击前已变化，未点击；请重新查看页面。");
+  }
+}
+
 function pointInFrame(q: number[] | undefined, width: number | undefined, height: number | undefined, x: number, y: number): [number, number] {
   if (!q || q.length !== 8 || !q.every(Number.isFinite) || typeof width !== "number" || !Number.isFinite(width) || width <= 0 || typeof height !== "number" || !Number.isFinite(height) || height <= 0) throw new Error("无法核对内嵌页面");
   const ax = q[2]! - q[0]!, ay = q[3]! - q[1]!, bx = q[6]! - q[0]!, by = q[7]! - q[1]!;
@@ -1229,6 +1279,8 @@ const HIT_TEST_AT_JS = `function(x, y) {
 }`;
 
 function isPrePressTargetError(e: unknown): boolean {
+  if (e && typeof e === "object" && ("prePressRefused" in e || "heldReason" in e)) return true;
+
   return /覆盖|挡住|已失效|可命中|不可见|不可用|不稳定|未找到目标|视口|坐标|替换|TARGET_GONE/.test(oneLine(e));
 }
 
@@ -1709,14 +1761,12 @@ async function clickTarget(params: ClickParams, sessionId: string, clock: Return
 
       const [effectToken, undoMark] = await Promise.all([effectPending, undoPending]);
       undo = undoMark;
-      if (sendConfirmed && sendGuard) await recheckConfirmedSend(sendGuard);
-      if (frame) {
-        const current = await sendNamesAt(tabId, x, y);
-        if (current.unverified || !current.frame) throw notExecuted(new Error("内嵌页面的操作目标已变化，未点击；请重新查看页面。"));
-        const pay = current.buttons.find(isPayLabel);
-        if (pay) await stopBeforePay(tabId, pay, x, y);
-        if (!sendConfirmed && current.buttons.some(isSendLabel)) throw notExecuted(new Error("内嵌页面的操作目标已变为发送按钮，未点击；请重新查看页面。"));
-      }
+      await assertPointerTargetsSafeBeforePress(tabId, x, y, {
+        wasFrame: frame,
+        sendConfirmed,
+        allowSendButton: true,
+        sendGuard,
+      });
       const dialogWatch = watchDialog(tabId);
       clock.mark("preflight");
 
@@ -1988,13 +2038,11 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
       }
 
       const effectToken = await effectPending;
-      if (frame) {
-        const current = await sendNamesAt(tabId, x, y);
-        if (current.unverified || !current.frame) throw notExecuted(new Error("内嵌页面的操作目标已变化，未点击；请重新查看页面。"));
-        const pay = current.buttons.find(isPayLabel);
-        if (pay) await stopBeforePay(tabId, pay, x, y);
-        if (current.buttons.some(isSendLabel)) throw notExecuted(new Error("内嵌页面的操作目标已变为发送按钮，未点击；请重新查看页面。"));
-      }
+      await assertPointerTargetsSafeBeforePress(tabId, x, y, {
+        wasFrame: frame,
+        sendConfirmed: false,
+        allowSendButton: false,
+      });
       const btnMask = pressedButtonsMask(button);
       await beforeDispatch?.();
       const dialogWatch = watchDialog(tabId);
