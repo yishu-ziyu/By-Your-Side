@@ -21,7 +21,7 @@ const model = await startScriptedModel([
   { match: "核对窗口测试", steps: [{ tool: { name: "snapshot", args: {} } }, { text: ANSWER }] },
   { match: "第二句问候", steps: [{ text: "收到，可以继续新的对话。" }] },
 ], undefined, (payload) => {
-  if (JSON.stringify(payload.messages ?? []).includes('"goalPage"')) sawGoalCheck = true;
+  if (payload.messages?.some((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "")).includes('"goalPage"'))) sawGoalCheck = true;
 });
 
 const out = join(REPO, "out/acceptance/real-path", `${new Date().toISOString().replace(/[:.]/g, "-")}-checking-reload-settle`);
