@@ -70,3 +70,11 @@ test('纯文字模型仍可回读带截图的历史工具结果中的原文', as
   assert.match(JSON.stringify(result.content), /ABC123/);
   assert.ok(!JSON.stringify(result.content).includes(image.data));
 });
+
+test('同一任务连续多轮已有结论时也按已结束轮次收拢，当前运行不受影响', () => {
+  const messages = [1, 2, 3, 4].flatMap(run).map(message => message.role === 'user' && typeof message.content === 'string'
+    ? { ...message, content: message.content.replace(/run-\d/g, 'same-task') } : message);
+  const view = new ContextFit().fit(messages, model, 15);
+  assert.ok(!JSON.stringify(view[2]).includes('页面内容'));
+  assert.deepEqual(view.slice(5), messages.slice(5));
+});
