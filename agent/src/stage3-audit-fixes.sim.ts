@@ -11,11 +11,12 @@ import { VoiceService } from "./voice-service.js";
 
 function createTestConversationManager(options?: {
   onStartTask?: (text: string, context: unknown, options: unknown) => void;
-  proposeVoice?: () => { steps: Array<{ action: string; target: string | null; text: string }> };
+  proposeVoice?: (text: string) => { steps: Array<{ action: string; target: string | null; text: string }> };
 }) {
   const summaries: ConversationSummary[] = [];
   const emitted: ServerMessage[] = [];
   let streaming = false;
+  let held = false;
   let pumpFn: ((msg: ServerMessage) => void) | null = null;
 
   const persistence: ConversationPersistence = {
@@ -33,7 +34,7 @@ function createTestConversationManager(options?: {
         modelName: () => "custom/fixture",
         available: true,
         isStreaming: () => streaming,
-        isHeld: () => false,
+        isHeld: () => held,
         executionEpoch: () => 0,
         setThinking: () => {},
         emitThinkingLevel: () => {},
@@ -51,11 +52,9 @@ function createTestConversationManager(options?: {
         settleAnswerGate: () => {},
         recoveryContext: async (_snapshot: unknown, context: unknown) => context ?? { tabId: 1, url: "https://shop-a.example/checkout", title: "Shop A" },
         resumeInterruptedTask: async () => { streaming = true; },
-        proposeVoiceTurn: async () => ({
-          plan: options?.proposeVoice?.() ?? { steps: [{ action: "chat", target: null, text: "收到" }] },
-          replyText: null,
-          protocol: "plan" as const,
-        }),
+        classifyVoiceInput: async (text: string) => (
+          options?.proposeVoice?.(text) ?? { steps: [{ action: "listen", target: null, text: "" }] }
+        ),
         startTask: (text: string, context: unknown, _attachments: unknown, opts: unknown) => {
           streaming = true;
           options?.onStartTask?.(text, context, opts);
@@ -84,6 +83,7 @@ function createTestConversationManager(options?: {
     manager,
     emitted,
     setStreaming: (next: boolean) => { streaming = next; },
+    setHeld: (next: boolean) => { held = next; },
     emitFromRuntime: (msg: ServerMessage) => { pumpFn?.(msg); },
   };
 }
@@ -163,8 +163,8 @@ test("S3-3: browser_run 前序步骤已执行但后续步骤抛错时不应整�
   };
   let callIndex = 0;
   rpc.call = async (name) => {
-    callIndex += 1;
     if (name === "list_tabs") return { tabs: [{ id: 1, url: "https://example.com/", title: "Ex", working: true }] };
+    callIndex += 1;
     if (callIndex === 1) return { clicked: true, tabId: 1 };
     const err = new Error("pre-press drift blocked");
     (err as Error & { executionFact?: string }).executionFact = "not_executed";
@@ -188,87 +188,93 @@ test("S3-3: browser_run 前序步骤已执行但后续步骤抛错时不应整�
 });
 
 test("S3-7b: 语音另开会话提议在跨轮或收到插话嗯/继续时不再误建新会话", async () => {
-  const harness = createTestConversationManager({
-    proposeVoice: () => ({ steps: [{ action: "start", target: "default", text: "打开另一个网址看看" }] }),
-  });
-  await harness.manager.ensureDefault();
-  await harness.manager.dispatchTaskAction({
-    requestId: "req-main",
-    conversationId: "default",
-    source: "text",
-    action: "start",
-    expectedRunId: null,
-    text: "在当前页继续整理表格",
-    context: { tabId: 1, title: "Sheet", url: "https://sheet.example/" },
-  });
+  const setupProposalHarness = async () => {
+    const h = createTestConversationManager({
+      proposeVoice: (text) => text.includes("打开另一个网址")
+        ? { steps: [{ action: "start", target: null, text }] }
+        : { steps: [{ action: "listen", target: null, text: "" }] },
+    });
+    await h.manager.ensureDefault();
+    await h.manager.dispatchTaskAction({
+      requestId: "req-main",
+      conversationId: "default",
+      source: "text",
+      action: "start",
+      expectedRunId: null,
+      text: "在当前页继续整理表格",
+      context: { tabId: 1, title: "Sheet", url: "https://sheet.example/" },
+    });
+    const runId = h.manager.getTaskProgress("default")?.runId ?? null;
+    h.setStreaming(false);
+    h.emitFromRuntime({ type: "agent_event", conversationId: "default", event: { kind: "agent_end" } });
+    h.emitFromRuntime({ type: "status", conversationId: "default", state: "idle" });
+    h.setHeld(true);
+    const target = { id: "default", title: "Sheet", state: "idle" as const, runId, controlVersion: 0 };
+    const proposeRes = await h.manager.routeVoiceInput("default", "打开另一个网址看看", null, () => true, {
+      requestId: "vr-1",
+      voiceId: "v-prop",
+      turn: 1,
+      runId,
+      targets: [target],
+      controlVersion: 0,
+      onInputDecision: () => {},
+    });
+    assert.equal(proposeRes.kind, "clarify");
+    h.setHeld(false);
+    return { h, runId, target };
+  };
 
-  const baseTarget = { id: "default", title: "Sheet", state: "running" as const, runId: harness.manager.getTaskProgress("default")?.runId ?? null, controlVersion: 0 };
-
-  const proposeRes = await harness.manager.routeVoiceInput("default", "打开另一个网址看看", null, () => true, {
-    requestId: "vr-1",
-    voiceId: "v-prop",
-    turn: 1,
-    runId: baseTarget.runId,
-    targets: [baseTarget],
-    controlVersion: 0,
-  });
-  assert.equal(proposeRes.kind, "clarify");
-
-  const umRes = await harness.manager.routeVoiceInput("default", "嗯", null, () => true, {
+  const h1 = await setupProposalHarness();
+  const umRes = await h1.h.manager.routeVoiceInput("default", "嗯", null, () => true, {
     requestId: "vr-um",
     voiceId: "v-prop",
     turn: 2,
-    runId: baseTarget.runId,
-    targets: [baseTarget],
+    runId: h1.runId,
+    targets: [h1.target],
     controlVersion: 0,
     interruptedSpeech: true,
     onInputDecision: () => {},
   });
   assert.notEqual(umRes.kind, "action", "插话反馈「嗯」不应触发另开会话动作");
+  assert.equal(h1.h.manager.list().length, 1);
 
-  const staleTurnRes = await harness.manager.routeVoiceInput("default", "好的", null, () => true, {
+  const staleTurnRes = await h1.h.manager.routeVoiceInput("default", "好的", null, () => true, {
     requestId: "vr-stale",
     voiceId: "v-prop",
     turn: 3,
-    runId: baseTarget.runId,
-    targets: [baseTarget],
+    runId: h1.runId,
+    targets: [h1.target],
     controlVersion: 0,
     onInputDecision: () => {},
   });
   assert.notEqual(staleTurnRes.kind, "action", "跨越超过一轮后的「好的」不应触发过期另开会话提议");
+  assert.equal(h1.h.manager.list().length, 1);
 
-  const freshHarness = createTestConversationManager({
-    proposeVoice: () => ({ steps: [{ action: "start", target: "default", text: "帮我再查个价格" }] }),
-  });
-  await freshHarness.manager.ensureDefault();
-  await freshHarness.manager.dispatchTaskAction({
-    requestId: "req-main-2",
-    conversationId: "default",
-    source: "text",
-    action: "start",
-    expectedRunId: null,
-    text: "在当前页继续整理表格",
-    context: { tabId: 1, title: "Sheet", url: "https://sheet.example/" },
-  });
-  const baseTarget2 = { id: "default", title: "Sheet", state: "running" as const, runId: freshHarness.manager.getTaskProgress("default")?.runId ?? null, controlVersion: 0 };
-  await freshHarness.manager.routeVoiceInput("default", "帮我再查个价格", null, () => true, {
-    requestId: "vr-p2",
-    voiceId: "v-prop2",
-    turn: 1,
-    runId: baseTarget2.runId,
-    targets: [baseTarget2],
-    controlVersion: 0,
-  });
-  const contRes = await freshHarness.manager.routeVoiceInput("default", "继续", null, () => true, {
+  const h2 = await setupProposalHarness();
+  const contRes = await h2.h.manager.routeVoiceInput("default", "继续", null, () => true, {
     requestId: "vr-cont",
-    voiceId: "v-prop2",
+    voiceId: "v-prop",
     turn: 2,
-    runId: baseTarget2.runId,
-    targets: [baseTarget2],
+    runId: h2.runId,
+    targets: [h2.target],
     controlVersion: 0,
     onInputDecision: () => {},
   });
   assert.notEqual(contRes.kind, "action", "「继续」不应作为另开会话确认词创建新会话");
+  assert.equal(h2.h.manager.list().length, 1);
+
+  const h3 = await setupProposalHarness();
+  const confirmRes = await h3.h.manager.routeVoiceInput("default", "好的，另开会话", null, () => true, {
+    requestId: "vr-yes",
+    voiceId: "v-prop",
+    turn: 2,
+    runId: h3.runId,
+    targets: [h3.target],
+    controlVersion: 0,
+    onInputDecision: () => {},
+  });
+  assert.equal(confirmRes.kind, "action", "紧邻下一轮明确说出「好的，另开会话」仍应正常新建会话");
+  assert.equal(h3.h.manager.list().length, 2);
 });
 
 test("S3-7c: 语音意外断线期间完成的交付在 60 秒内重连就绪后应补播，而冷启动不重播历史", async () => {
