@@ -48,7 +48,7 @@ import { MainEffort, restingEffort, thinkingChoice } from "./main-effort.js";
 import { RunNotStarted, userWaiting, withModelFailover, type AgentLoop, type ModelPort } from "./agent-loop.js";
 import { PiSessionPersistence } from "./pi-session-persistence.js";
 import type { SessionLogPort } from "./session-log.js";
-import { earlierResultText } from "./context-fit.js";
+import { earlierResultContent } from "./context-fit.js";
 import { DurableAgentLoop } from "./durable-loop.js";
 import type { Storage } from "@earendil-works/pi-durable";
 import type { AgentMode, AgentRunState, AgentUiEvent, Attachment, FileAttachment, ImageAttachment, ModelOption, PageContext, TabInfo } from "../../shared/protocol.js";
@@ -848,8 +848,8 @@ if(required.includes(key))candidates.set(key,attachment);
           })] : []),
           ...(sendOptions ? [createSendUserMessageTool(sendOptions)] : []),
           ...(artifactStore ? [createArtifactsTool({ emit: event => callbacks.emit(event), store: artifactStore })] : []),
-          createAnswerUiGuideTool(),
-          createReadAttachmentTool(() => resultHost?.userAttachments() ?? [], file => resultHost?.downloadedOriginal(file), () => resultHost?.modelSeesImages() ?? false, name => earlierResultText(resultHost?.session?.agent.state.messages, name)),
+          createAnswerUiGuideTool(() => productContext?.miniApps?.() ?? Promise.resolve(false)),
+          createReadAttachmentTool(() => resultHost?.userAttachments() ?? [], file => resultHost?.downloadedOriginal(file), () => resultHost?.modelSeesImages() ?? false, name => earlierResultContent(resultHost?.session?.agent.state.messages, name)),
         ];
 
       const restored = options.loop.session ? await PiSessionPersistence.open(options.loop.session) : undefined;

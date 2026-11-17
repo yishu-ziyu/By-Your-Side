@@ -25,30 +25,6 @@ function recordNote(prompt: string): string {
   return `\n\n# Noting something down\nThe user asked to note this down without saying where. Do both: (1) ${flomo}; (2) user_memory {action:"interest",topic:"<what the user is interested in, a short noun phrase>"}. Do (2) even when (1) fails. Report each from its own result: flomo counts only when the method returns status observed; memory counts only when its receipt says 已记住 or 早已记着. When both worked say e.g. "记进 flomo 了，也记住了你对 X 感兴趣"; when one did not, name which one and why (not signed in, refused, unconfirmed). Never just say "记下来了".`;
 }
 
-const ANSWER_FORM_GUIDE = `
-
-Interactive answers: choose the form of each answer yourself.
-- Text only for a quick fact, a piece of writing, code, small talk, or an operation on a web page. Follow a format the user asked for.
-- Calculated answers and adjustable numeric estimates use <card> with <input> and formula <stat> components from # Answer cards. Give each result an id and reference it as {=id} in the conclusion and notes; never calculate or duplicate the result in prose. Define shared results before other formulas that use their ids. The host computes these values for the card, conclusion and speech. Do not implement calculators in <ui> or <app>.
-- Other interactive answers get one conclusion sentence plus <ui title="short name">program</ui>: a list or plan (checklist, schedule), places (a map), and explaining how something works or fits together (a labelled drawing or a stepper). Compose these from maps, charts, tables, checklists, drawings, flashcards and photos.
-- The first time in a conversation, call answer_ui_guide before writing <ui>; it returns the language. Do not mention it.
-- A <ui> works by itself in the user's panel. Give a button @ToAssistant for what it cannot compute, such as live status, a new search or an action in a site: the user's click sends that message to you as a new turn, and you answer it with your real tools.
-- Choose formulas from the user's stated assumptions, with explicit units and valid input bounds. Handle boundary cases such as a zero rate in the formula. A calculation result comes from its formula, never from a separately supplied answer.
-- Only put facts you read or were told into a <ui>. Never invent live data, prices or sources; label estimates and sample values on the page.
-- Answer cards also handle questions with <field>s and rows linked to open tabs. Keep the shared numeric result references when choosing an answer format.
-`;
-
-const MINI_APP_GUIDE = `
-
-Mini apps (<app>, free HTML, for what a <ui> cannot do: a loop-driven game or simulation, or a tool on the current page's video): when the user asks for a tool that works on the video in the current page, an app is the only thing that can do it. An HTML file saved with artifacts runs in a sealed preview that cannot read the page or captions or move the video, so never build such a tool as a file and never say a file can do that. Also when the user needs to try things rather than read an answer — filter or sort many items you read from pages, a small simulation or game, an interactive chart — answer with one conclusion sentence plus <app title="short name">complete HTML</app>. If a card (stats, options, table, inputs, fields) already does it, use the card; one-sentence answers stay plain text.
-- Self-contained: inline <style> and <script>, plain JavaScript, no frameworks. External scripts, styles, fonts, images, requests and navigation are all blocked: put the data you read into the script as a JSON constant.
-- It sits in the sidebar, about 360px wide: design for 320-480px. Colors only from var(--bys-text), var(--bys-muted), var(--bys-border), var(--bys-subtle), var(--bys-accent), var(--bys-good); they follow light and dark mode. Background stays transparent; body already has padding.
-- Start from bys.state (null the first time) and call bys.save(state) whenever the user changes something, so reopening the sidebar restores it. bys.say(text) offers a follow-up the user can put into the input box with one click. bys.send(text) in a button's click handler sends a message to you as a new turn, with the values it needs written in the text; it does nothing without a user click, so never call it on load, on a timer or on input.
-- It must work on first load; the sidebar shows script errors to the user. Keep it under about 8000 characters.
-- Never ask for passwords, card numbers, verification codes or ID numbers inside an app.
-- Tools for a video on the current page (a searchable transcript, jumping to a moment): when the user asks for one, do not read the captions yourself and do not embed them. Write an app that calls await bys.page.captions() on load; it returns {status:"ok"|"none"|"login"|"unavailable", message, title, language, automatic, cues:[{start,end,text}]}, with start and end in seconds. When status is not "ok", show message and nothing else: never invent captions. await bys.page.seek(seconds) moves the video and works only from a user click inside the app, so call it directly in a click handler; catch its rejection and show the error. Show lines in a scrolling list with a fixed max-height of about 300px. The app reads the live page, so it keeps working when the user saves it and reopens it on another video.
-- Tools for an article or any other page (section navigation, filtering what the page lists, a summary view): an app is the only thing that can read the page and move it, so do not say it cannot be done and do not save it as a file. Write an app that calls await bys.page.read() on load; it returns {title, text, sections:[{index, level, text}]}, where text is the visible page text and sections are its headings. Show what was read; when something is missing, say so. await bys.page.jump(section.index) scrolls the page to that heading and works only from a user click inside the app, so call it directly in a click handler; catch its rejection and show the error. Apps cannot change page content. Before you say a tool works, make sure it has what it needs: a video tool on a page with no readable captions will show that, so tell the user instead of saying it is done.`;
-
 export function productSystemPrompt(systemPrompt: string, active: ReadonlySet<string>): string {
   const registration = active.has('record_task_results')
     ? 'record_task_results 只可选记录执行步骤，不声明用户任务完成。改对象或改方法时复用原 pending 项 id 更新，不新增替代槽位。'
@@ -104,6 +80,7 @@ export class ProductContext {
         this.onProjection?.({capabilityVersion:createHash("sha256").update(JSON.stringify(tools.map(t=>({name:t.name,description:t.description,parameters:t.parameters})))).digest("hex").slice(0,16),tools:tools.map(t=>t.name),historyTurns:current?.conversationContext?.recentTurns.length??0,reportSource:current?.conversationContext?.latestResult?.source??null});
 
         const context={
+          page:page?{url:page}:null,
           capabilities:{source:'registered_active_tools',names:tools.map(tool=>tool.name),guidelines:tools.flatMap(tool=>tool.promptGuidelines??[])},
           conversationHistory:this.newTurns(current?.conversationContext?.recentTurns??[]),
           task:current?{runId:current.runId??null,goal:current.goal,state:current.state,successVerified:current.successVerified,resultState:current.resultState,goalPlan:current.goalPlan?.coverage==='verified'?current.goalPlan:undefined,executionState:current.executionState,results:withoutReasons(current.results),nextStep:nextStepIgnoringPlaceholder(current)}:null,
@@ -114,7 +91,7 @@ export class ProductContext {
 
         return {
           systemPrompt:productSystemPrompt(event.systemPrompt,active),
-          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+recordNote(asked)+ANSWER_CARD_REMINDER+(apps?ANSWER_FORM_GUIDE+MINI_APP_GUIDE:'')},
+          message:{customType:'run-context',display:false,content:`Today is ${today()} (local time).\n${JSON.stringify(context)}`+(hint?`\n\n${hint.text}`:'')+(notes??'')+recordNote(asked)+ANSWER_CARD_REMINDER+(apps?'\nInteractive answers may use <ui> or <app> when useful. Before writing one, call answer_ui_guide for the syntax and page-tool contract.':'')},
         };
       });
     };

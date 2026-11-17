@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import type { Attachment, FileAttachment, ImageAttachment } from "../../shared/protocol.js";
 import { wrapPageContent } from "../../shared/untrusted.js";
 import { defineTool } from "./define-tool.js";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 
 const PROMPT_BUDGET = 24_000;
 
@@ -109,7 +110,7 @@ function search(file: Pick<FileAttachment, "name" | "text">, query: string): str
   return `${hits.length} passage(s) in ${file.name} matching ${JSON.stringify(query)}${hits.length === SEARCH_HITS_MAX ? " (first 8 shown; narrow the query for more)" : ""}:\n${wrapPageContent(body, { title: file.name })}`;
 }
 
-export function createReadAttachmentTool(attachments: () => readonly Attachment[], original?: (file: FileAttachment) => string | undefined, seesImages: () => boolean = () => true, earlier?: (name: string) => string | undefined) {
+export function createReadAttachmentTool(attachments: () => readonly Attachment[], original?: (file: FileAttachment) => string | undefined, seesImages: () => boolean = () => true, earlier?: (name: string) => readonly (TextContent | ImageContent)[] | undefined) {
   return defineTool({
     name: "read_attachment",
     label: "Read attached file",
@@ -121,11 +122,14 @@ export function createReadAttachmentTool(attachments: () => readonly Attachment[
       query: Type.Optional(Type.String({ minLength: 1, maxLength: 200, description: "Words to search for instead of reading by offset" })),
     }),
     execute: async (_id, params) => {
-      const earlierText = earlier?.(params.name.trim());
+      const savedContent = earlier?.(params.name.trim());
 
-      if (earlierText !== undefined) {
-        const saved = { name: params.name.trim(), text: earlierText };
-        return { content: [{ type: "text" as const, text: params.query?.trim() ? search(saved, params.query.trim()) : readSlice(saved, params.offset ?? 0, params.maxChars ?? READ_DEFAULT) }], details: undefined };
+      if (savedContent !== undefined) {
+        const saved = { name: params.name.trim(), text: savedContent.filter(part => part.type === "text").map(part => part.text).join("") };
+        const images = savedContent.filter(part => part.type === "image");
+        const visible = seesImages();
+        const note = images.length && !visible ? "\n[The original image is stored, but the current model cannot see images. Only the saved text is available.]" : "";
+        return { content: [{ type: "text" as const, text: (params.query?.trim() ? search(saved, params.query.trim()) : readSlice(saved, params.offset ?? 0, params.maxChars ?? READ_DEFAULT)) + note }, ...(visible ? images : [])], details: undefined };
       }
 
       const all = attachments();

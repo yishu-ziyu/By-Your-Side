@@ -3,6 +3,7 @@ import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
 import type { AgentUiEvent } from "../../shared/protocol.js";
 import { ANSWER_UI_GUIDE } from "./answer-ui-guide.js";
+import { ANSWER_FORM_GUIDE, MINI_APP_GUIDE } from "./answer-guides.js";
 import { defineTool } from "./define-tool.js";
 
 const ARTIFACT_MAX_CHARS = 256_000;
@@ -149,13 +150,13 @@ type ArtifactsToolOptions = { emit: (event: AgentUiEvent) => void;  store?: Arti
 
 type Command = "create" | "update" | "rewrite" | "get" | "delete";
 
-export function createAnswerUiGuideTool(): ToolDefinition {
+export function createAnswerUiGuideTool(miniApps: () => Promise<boolean> = async () => false): ToolDefinition {
   return defineTool({
     name: "answer_ui_guide",
     label: "Interface language",
-    description: "Returns the language for writing an interactive answer in <ui>…</ui>. Call it once in a conversation, before the first <ui>.",
+    description: "Read the full guide before writing an interactive answer: <ui> for maps, charts, checklists and diagrams; <app> for games, simulations or tools that read the current page or video. It returns syntax and the page-tool contract when apps are enabled. Plain answers need no guide.",
     parameters: Type.Object({}),
-    execute: async () => ({ content: [{ type: "text", text: ANSWER_UI_GUIDE }], details: {} }),
+    execute: async () => ({ content: [{ type: "text", text: ANSWER_UI_GUIDE + (await miniApps().catch(() => false) ? ANSWER_FORM_GUIDE + MINI_APP_GUIDE : "") }], details: {} }),
   });
 }
 
