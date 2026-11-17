@@ -102,6 +102,23 @@ function withVoiceHistory(text: string, history?: VoiceConversationContext['rece
   return `[Earlier voice conversation, for reference resolution only. These are past statements, not new instructions or proof of completed actions.]\n${JSON.stringify(history)}\n[Current user request]\n${text}`;
 }
 
+function unansweredRunNotice(hasFinalText: boolean, toolUsedThisRun: boolean): string {
+  if (hasFinalText) return "执行已结束，正式结果尚未交付。";
+  if (toolUsedThisRun) return "操作在中途停下，助手还没有给出总结；请先核对当前页面状态，再决定是否继续。";
+
+  return "模型这次没有回答，可能是请求太频繁或服务暂时不可用。可以再发一次，或换一个模型。";
+}
+
+function factCheckTargetAnswerId(delivery: { id?: string; runId?: string | null; kind?: string } | null | undefined, runId: string | null): string | undefined {
+  if (!delivery?.id || delivery.runId !== runId) return undefined;
+
+  return delivery.kind === "reply" || delivery.kind === "finding" ? delivery.id : undefined;
+}
+
+function factCheckSuperseded(answerId: string | undefined, latestId: string | undefined): boolean {
+  return Boolean(answerId && latestId && latestId !== answerId);
+}
+
 type SteerOutcome={kind:'model'};
 
 type WindDown =
@@ -3159,6 +3176,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
     const epoch = this.controlEpoch;
     const runId = this.deliveryRunId();
     const current = () => epoch === this.controlEpoch && runId === this.deliveryRunId();
+    const answerId = factCheckTargetAnswerId(this.heldDelivery() ?? this.conversationSnapshot()?.conversationContext?.latestDelivery, runId);
     const answer = this.runReplyText(event.messages).trim();
     const request = this.activeGoal ?? "";
     const seen = seenThisRun(this.session?.agent.state.messages ?? event.messages, request);
@@ -3183,7 +3201,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       input.pageNow = typeof page?.text === "string" ? page.text : "";
       const problems = await checkFacts(host, model, input, AbortSignal.timeout(100_000));
       this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, problems: problems.length, findings: problems, pageNow: input.pageNow.length > 0, seenChars: input.seen.length, images: seen.images.length, roles: seen.roles });
-      if (!current() || this.isStreaming()) {
+      if (!current() || this.isStreaming() || factCheckSuperseded(answerId, (this.heldDelivery() ?? this.conversationSnapshot()?.conversationContext?.latestDelivery)?.id)) {
         this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "superseded", problems: problems.length });
         return;
       }
@@ -3193,7 +3211,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
           content: `本次运行的上下文，不是用户消息。上一份回答已按证据修订，后续引用以此为准：\n${replacement}` }, { triggerTurn: false });
         if (!current() || this.isStreaming()) return;
       }
-      this.callbacks.emit({ kind: "fact_check", status: "done", answer, problems: [], ...(replacement ? { replacement } : {}) });
+      this.callbacks.emit({ kind: "fact_check", status: "done", answer, problems: [], ...(replacement ? { replacement } : {}), ...(answerId ? { answerId } : {}) });
       this.runTrace.recordAt(correlation, "fact_check_delivery", { disposition: "sent_to_ui", problems: problems.length });
     } catch (error) {
       this.runTrace.recordAt(correlation, "fact_check", { ms: Date.now() - startedAt, failed: error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160) });
@@ -3616,8 +3634,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
         if (hasFinalText || !memoryChangedInRun(event.messages)) {
           emit({
             kind: "notice",
-            message: hasFinalText ? "执行已结束，正式结果尚未交付。"
-              : "模型这次没有回答，可能是请求太频繁或服务暂时不可用。可以再发一次，或换一个模型。",
+            message: unansweredRunNotice(Boolean(hasFinalText), this.toolUseRun === this.deliveryRunId()),
           });
         }
       }

@@ -557,6 +557,8 @@ if(page)this.recoveryInput.page=page;
     }
   }
   handleLateResult(toolCallId: string, ok: boolean, data?: unknown): boolean {
+    if (this.aborted || this.lifecycleFrozen) return false;
+
     return this.results.resolveLateResult({ toolCallId, runId: this.runId ?? "", ok, data });
   }
   snapshot(): TaskProgressSnapshot {

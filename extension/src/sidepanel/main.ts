@@ -3,7 +3,7 @@ import { createMarginalia } from "./marginalia.js";
 import { installDropzone } from "./dropzone.js";
 import { attachSourceCitations, captureCitationContext, type CitationContext } from "./sonar-citations.js";
 import { attachAnswerSources } from "./answer-sources.js";
-import { renderFactCheck } from "./fact-check-note.js";
+import { factCheckAnswerId, renderFactCheck } from "./fact-check-note.js";
 import { RunOrbActivity, orbStateRuns } from "./run-orb.js";
 import { mountLiveGraph, type LiveGraph } from "./branch-view.js";
 import { reducedMotion } from "./branch-graph.js";
@@ -3906,7 +3906,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         outcome: answer ? "applied" : "answer_missing",
         problems: ev.problems.length,
         documentVisible: !document.hidden,
-        answerId: answer?.dataset.deliveryId ?? null,
+        answerId: factCheckAnswerId(answer, ev),
       }, runId ?? null);
       break;
     }

@@ -9,8 +9,23 @@ function answerFor(start: string, messages: HTMLElement): HTMLElement | null {
   return answers.find((answer) => squash(answer.dataset.markdown ?? answer.textContent ?? "").startsWith(key)) ?? null;
 }
 
-export function renderFactCheck(event: { answer: string; problems: string[]; replacement?: string }, messages: HTMLElement, replaceAnswer?: (answer: HTMLElement, text: string) => void): HTMLElement | null {
-  const answer = answerFor(event.answer, messages);
+function resolveAnswerBubble(event: { answer: string; answerId?: string }, messages: HTMLElement): HTMLElement | null {
+  if (event.answerId) {
+    const answers = [...messages.querySelectorAll<HTMLElement>(".msg.assistant")];
+    const exact = answers.find((el) => el.dataset.deliveryId === event.answerId);
+    if (exact) return exact;
+    if (answers.some((el) => typeof el.dataset.deliveryId === "string" && el.dataset.deliveryId.length > 0)) return null;
+  }
+
+  return answerFor(event.answer, messages);
+}
+
+export function factCheckAnswerId(answer: HTMLElement | null, event: { answerId?: string }): string | null {
+  return answer?.dataset.deliveryId ?? event.answerId ?? null;
+}
+
+export function renderFactCheck(event: { answer: string; problems: string[]; replacement?: string; answerId?: string }, messages: HTMLElement, replaceAnswer?: (answer: HTMLElement, text: string) => void): HTMLElement | null {
+  const answer = resolveAnswerBubble(event, messages);
   if (!answer) return null;
   answer.querySelector(":scope > .fact-check")?.remove();
   if (event.replacement !== undefined) {

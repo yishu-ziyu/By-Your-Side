@@ -83,6 +83,26 @@ function tabOwnerIdle(input: { busy: boolean; snapshot: TaskProgressSnapshot | n
   return !(['running', 'paused', 'interrupted'].includes(snapshot.state) || snapshot.active.length);
 }
 
+function reconcileCancelledRestore(
+  savedState: string | undefined,
+  progress: TaskProgress,
+  summary: ConversationSummary,
+  persist: ((snapshot: TaskProgressSnapshot) => void | Promise<void>) | undefined,
+  restoredInterrupted: boolean,
+): boolean {
+  if (savedState !== 'cancelled') return restoredInterrupted;
+  progress.abort();
+  delete summary.checkpoint;
+  summary.state = 'idle';
+  void persist?.(progress.snapshot());
+
+  return false;
+}
+
+function shouldRestoreContinuation(restoredResults: TaskProgressSnapshot | null | undefined, savedState: string | undefined): boolean {
+  return Boolean(restoredResults?.continuation && savedState !== 'cancelled');
+}
+
 const WARM_UP_INTERVAL_MS = 30_000;
 
 export class ConversationManager {
@@ -1124,6 +1144,7 @@ return { kind: "silent" };}
       this.progress.get(id)?.abort();
       entry.runtime.handleMessage({ type: 'abort' });
       await entry.runtime.session.waitForStop?.().catch(() => {});
+      await this.persistAbortedConversation(id, entry);
       this.emit({ type: 'agent_event', conversationId: id, event: { kind: 'notice', message: '你发了新任务，这条回答不再接着做。回答保持不变。' } });
     }
   }
@@ -2090,7 +2111,7 @@ return receipt;
       this.entries.set(id, entry);
       const savedTask = await this.taskRecords.findExecution(id,progress.snapshot().runId ?? null);
       if (savedTask) this.controlVersions.set(id,Math.max(this.controlVersions.get(id) ?? 0,savedTask.controlVersion));
-      if (savedTask?.state === 'cancelled') progress.abort();
+      restoredInterrupted = reconcileCancelledRestore(savedTask?.state, progress, summary, snapshot => runtime.session.persistTaskResults?.(snapshot), restoredInterrupted);
       const observer = new TaskContinuationObserver({
         rpc: runtime.rpc, enabled: () => this.continuationEnabled() && this.connected && !this.queueClosed,
         snapshot: () => progress.snapshot(), update: value => progress.setContinuation(value),
@@ -2114,7 +2135,7 @@ return receipt;
         return c && !['COMPLETED','STOPPED','FAILED'].includes(c.state) ? { tabId: c.tabId, url: c.url, documentId: c.documentId } : undefined;
       };
       runtime.onWaitForCondition?.(input => observer.register(input));
-      if (restoredResults?.continuation) void observer.restore().catch(error => console.error('[continuation] restore stopped', error));
+      if (shouldRestoreContinuation(restoredResults, savedTask?.state)) void observer.restore().catch(error => console.error('[continuation] restore stopped', error));
       this.store?.save(this.list());
       this.pending.delete(id);
 
@@ -2296,6 +2317,22 @@ return receipt;
     return false;
   }
 
+  private async persistAbortedConversation(id: string, entry: ConversationEntry): Promise<void> {
+    const progress = this.progress.get(id);
+    progress?.abort();
+    this.taskQueue.finish(id, 'cancelled');
+    delete entry.summary.checkpoint;
+    if (entry.summary.state !== 'idle') entry.summary.state = 'idle';
+    entry.summary.updatedAt = Date.now();
+    if (progress) {
+      await entry.runtime.session.persistTaskResults?.(progress.snapshot());
+      await entry.runtime.session.flushPersistence?.();
+      await this.syncTask(id, false, progress.snapshot());
+    }
+    this.store?.save(this.list());
+    this.emit({ type: 'conversation_updated', conversationId: id, conversation: { ...entry.summary } });
+  }
+
   private async handlePreEntryMessage(id: string, message: ClientMessage): Promise<boolean> {
     if(message.type==='task_action'&&message.request.action==='abort'&&message.request.supplement){await this.mergeSeparateAsk(message.request.conversationId,message.request.context);
 
@@ -2354,7 +2391,7 @@ return true;}
       if(message.type==='abort'){
         this.progress.get(id)?.abort();entry.runtime.handleMessage(message);
 
-        try{await entry.runtime.session.waitForStop();this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:true});}
+        try{await entry.runtime.session.waitForStop();await this.persistAbortedConversation(id,entry);this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:true});}
         catch{this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:false});}
 
         return true;
@@ -2539,6 +2576,11 @@ return;
     }
 
     try{entry.runtime.handleMessage(message);}catch(error){this.pendingStarts.delete(id);throw error;}
+
+    if (message.type === 'abort') {
+      await entry.runtime.session.waitForStop?.();
+      await this.persistAbortedConversation(id, entry);
+    }
 
     if (message.type === "user_message") {
       entry.summary.updatedAt = Date.now();

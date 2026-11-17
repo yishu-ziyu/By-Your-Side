@@ -408,7 +408,7 @@ export type AgentUiEvent =
   | { kind: "memory_ask"; askId: string; rule: string; scope: MemoryScope; replaces?: { id: string; text: string }; hostname?: string; outcome?: "remembered" | "already" | "once" | "closed"; learned?: MemoryEntry;  habit?: true;  evidence?: string[];  quotes?: string[] }
   | { kind: "site_notes"; host: string; title?: string; notes: string[] }
   | { kind: "answer_sources"; sources: import("./answer-source.js").AnswerSource[] }
-  | { kind: "fact_check"; status: "done"; answer: string; problems: string[]; replacement?: string }
+  | { kind: "fact_check"; status: "done"; answer: string; problems: string[]; replacement?: string; answerId?: string }
   | { kind: "text_delta"; delta: string }
   | { kind: "thinking_delta"; delta: string }
   | { kind: "tool_start"; toolCallId: string; name: string; params: Record<string, unknown>; detail?: { text: string; href?: string }; valueHash?: string }
