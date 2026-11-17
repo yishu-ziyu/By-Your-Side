@@ -97,6 +97,7 @@ import { createGhostBar } from "./ghost-bar.js";
 import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
 import { mountSlashSkills } from "./slash-skills.js";
+import { mountPageOffers } from "./page-offers.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
@@ -886,7 +887,9 @@ function conversationEmpty(): boolean {
   return !Array.from(messagesEl.children).some((child) => child.id !== "resume-entry-root" || child.childElementCount > 0);
 }
 
-new MutationObserver(() => app.classList.toggle("conversation-empty", conversationEmpty())).observe(messagesEl, { childList: true, subtree: true });
+const pageOffers = mountPageOffers({ composerEl, inputEl, actions: (url) => slashSkills.pageActions(url), ready: () => conversationEmpty() });
+
+new MutationObserver(() => { app.classList.toggle("conversation-empty", conversationEmpty()); pageOffers.sync(); }).observe(messagesEl, { childList: true, subtree: true });
 
 app.classList.toggle("conversation-empty", conversationEmpty());
 
@@ -1471,6 +1474,7 @@ async function refreshActiveTab(): Promise<void> {
       activeTabInfo = { id: tab.id, title: tab.title ?? "", url: tab.url ?? "" };
       ghostBar.setTab(activeTabInfo);
       marginalia.setPage(activeTabInfo);
+      pageOffers.setPage(activeTabInfo.url);
     }
 
 
