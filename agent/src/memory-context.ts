@@ -1,14 +1,18 @@
 import { usableOnHost, withinValidity, type MemoryEntry } from "../../shared/memory.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
-import { isRelevantExperience, isRelevantMemory, isRelevantPastTask } from "./memory-relevance.js";
+import { hostMemoryBlock } from "./memory-injection.js";
+import { formatTaskHistory } from "./task-history.js";
+import { taskFingerprint, type SemanticTaskHit } from "./semantic-index.js";
+import { isRelevantExperience, isRelevantMemory, isRelevantPastTask, isRelatedPastTask } from "./memory-relevance.js";
 
-export type MemoryContextRule = "always" | "site" | "in-validity" | "asked";
+export type MemoryContextRule = "always" | "site" | "in-validity" | "asked" | "related";
 
 const MEMORY_CONTEXT_CAPS = {
   facts: { entries: 40, chars: 4000 },
   inValidity: { entries: 10, chars: 2000 },
   siteTasks: { entries: 3, chars: 2400 },
   askedTasks: { entries: 5, chars: 3000 },
+  relatedTasks: { entries: 2, chars: 1800 },
 } as const;
 
 export const MEMORY_CONTEXT_MAX_CHARS = 9000;
@@ -19,6 +23,7 @@ interface MemoryContextInput {
   hostname: string | null;
   text: string;
   semanticIds?: readonly string[];
+  semanticTasks?: readonly SemanticTaskHit[];
   now: number;
 }
 
@@ -31,7 +36,8 @@ export interface MemoryContextSelection {
 
 const ASKED_ABOUT_PAST = /之前|上次|以前|前几天|昨天|做过|订阅过|买过|填过|earlier|last time|before|previously|did you/i;
 
-export function taskContextChars(task: TaskHistoryEntry): number {
+export function taskContextChars(task: TaskHistoryEntry, withReply = false): number {
+  if (withReply) return hostMemoryBlock({ kind: "task", id: task.id, fingerprint: "0".repeat(64) }, formatTaskHistory([task], true)).length + 1;
   return [task.page ?? "", task.goal, ...task.revisions, ...task.hosts, task.done ?? "", ...task.unfinished].join(" ").length + 40;
 }
 
@@ -110,7 +116,7 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
     for (const task of tasks) {
       if (asked.used >= MEMORY_CONTEXT_CAPS.askedTasks.entries) break;
 
-      if (chosen.has(task.id)) continue;
+      if (chosen.has(task.id) || expiredIds.has(task.id)) continue;
 
       if (take(taskContextChars(task), asked, MEMORY_CONTEXT_CAPS.askedTasks)) { pickedTasks.push({ task, rule: "asked" }); chosen.add(task.id); }
     }
@@ -126,6 +132,22 @@ export function selectMemoryContext(input: MemoryContextInput): MemoryContextSel
 
       if (take(taskContextChars(task), here, MEMORY_CONTEXT_CAPS.siteTasks)) { pickedTasks.push({ task, rule: "site" }); chosen.add(task.id); }
     }
+  }
+
+  const semanticTasks = new Map((input.semanticTasks ?? []).map(hit => [hit.id, hit]));
+  const related = { used: 0, chars: 0 };
+  const candidates = tasks.filter(task => !chosen.has(task.id) && !expiredIds.has(task.id) && (!input.hostname || !task.hosts.includes(input.hostname)))
+    .flatMap(task => {
+      const semantic = semanticTasks.get(task.id);
+      const score = semantic?.fingerprint === taskFingerprint(task) ? semantic.score ?? 1 : 0;
+      const literal = isRelatedPastTask([task.goal, ...task.revisions, task.summary, task.done ?? ""].join("\n"), input.text);
+      if (!score && !literal) return [];
+      const ageDays = Math.max(0, input.now - task.endedAt) / 86400000;
+      return [{ task, score: (score + (literal ? 1 : 0)) * Math.pow(0.5, ageDays / 90) }];
+    }).sort((a, b) => b.score - a.score || b.task.endedAt - a.task.endedAt);
+
+  for (const { task } of candidates) {
+    if (take(taskContextChars(task, true), related, MEMORY_CONTEXT_CAPS.relatedTasks)) pickedTasks.push({ task, rule: "related" });
   }
 
   return { entries: pickedEntries, tasks: pickedTasks, totalChars, skipped };

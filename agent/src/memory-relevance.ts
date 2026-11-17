@@ -61,6 +61,11 @@ export function isRelevantPastTask(memory: string, query: string, forDisplay = f
   return [...subjects(memory)].some(term => asked.has(term));
 }
 
+export function isRelatedPastTask(memory: string, query: string): boolean {
+  const asked = namingTerms(query);
+  return [...namingTerms(memory)].some(term => !ACTION_TERMS.has(term) && asked.has(term));
+}
+
 function namingTerms(text: string): Set<string> {
   const terms = memoryTerms(text);
   const fillerOnly = new Set<string>();

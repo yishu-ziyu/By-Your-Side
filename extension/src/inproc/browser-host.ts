@@ -112,7 +112,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     currentPattern();
     const document = deps.document ?? ((name: string) => new IdbDocument(name));
     const personal = (name: Parameters<typeof document>[0]) => readOnlyWhileSelfUse(document(name));
-    const memoryStore = useSemanticMemory(usePausedMemory(useStyleSignals(useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(personal("memories")), personal("pending-memory")), personal("habits")), personal("style-signals")), pushedSelfUse), new BrowserSemanticMemory());
+    const memoryStore = useSemanticMemory(usePausedMemory(useStyleSignals(useMemoryHabits(usePendingMemoryJudgments(new MemoryStore(personal("memories")), personal("pending-memory")), personal("habits")), personal("style-signals")), pushedSelfUse), new BrowserSemanticMemory(pushedSelfUse));
     const taskHistory = new TaskHistoryStore(personal("tasks"));
     const siteNotes = new SiteNotesStore(document("site-notes"));
     const learnedOperations = new LearnedOperationStore(document("learned-operations"));

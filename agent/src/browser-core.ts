@@ -14,7 +14,9 @@ export { GptLiveSession } from "./gpt-live-session.js";
 
 export { MODEL as REALTIME_VOICE_MODEL } from "./realtime-voice-connection.js";
 
-export { MemoryStore, useSemanticMemory, type MemoryQuery, type SemanticMemoryIndex } from "./memory-store.js";
+export { MemoryStore, useSemanticMemory, type MemoryQuery, type SemanticMemoryIndex, type SemanticMemoryHit } from "./memory-store.js";
+
+export { BackgroundSemanticIndex, type SemanticDocument } from "./semantic-index.js";
 
 export { useMemoryHabits, usePausedMemory, usePendingMemoryJudgments, useStyleSignals } from "./memory-runtime.js";
 

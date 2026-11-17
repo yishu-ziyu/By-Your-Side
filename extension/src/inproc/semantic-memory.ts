@@ -1,7 +1,8 @@
 import { env, pipeline, type FeatureExtractionPipeline } from "@huggingface/transformers";
-import { Memory } from "rememori";
-import type { MemoryQuery, SemanticMemoryIndex } from "@sideagent/agent/browser-core";
+import { IndexedDBStorage, Memory, type StorageAdapter } from "rememori";
+import { BackgroundSemanticIndex, type MemoryQuery, type SemanticDocument, type SemanticMemoryHit, type SemanticMemoryIndex } from "@sideagent/agent/browser-core";
 import type { MemoryEntry } from "../../../shared/memory.js";
+import type { TaskHistoryEntry } from "../../../shared/task-history.js";
 
 const MODEL_ID = "Xenova/multilingual-e5-small";
 const EMBED_TIMEOUT_MS = 1500;
@@ -13,104 +14,96 @@ env.backends.onnx.wasm!.wasmPaths = chrome.runtime.getURL("ort/");
 async function within<T>(promise: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("本地语义计算超时")), EMBED_TIMEOUT_MS); });
-
   try { return await Promise.race([promise, timeout]); }
   finally { if (timer !== undefined) clearTimeout(timer); }
-}
-
-function revisionOf(entries: MemoryEntry[]): string {
-  return JSON.stringify(entries.map(entry => [
-    entry.id, entry.version, entry.text, entry.status, entry.scope, entry.validity,
-    entry.notOnHosts, entry.experience?.topic, entry.createdAt,
-  ]).sort(([a], [b]) => String(a).localeCompare(String(b))));
-}
-
-function indexText(entry: MemoryEntry): string {
-  return entry.experience?.topic ? `${entry.experience.topic}\n${entry.text}` : entry.text;
 }
 
 export class BrowserSemanticMemory implements SemanticMemoryIndex {
   private engine: Promise<Memory> | null = null;
   private extractor: Promise<FeatureExtractionPipeline> | null = null;
-  private revision = "";
-  private syncing: Promise<void> = Promise.resolve();
-
   private ready = false;
+  private readonly background: BackgroundSemanticIndex;
+  private canWrite: () => boolean;
+
+  constructor(private readonly readOnly: () => boolean = () => false) {
+    this.canWrite = () => !this.readOnly();
+    this.background = new BackgroundSemanticIndex({
+      warmup: async () => { await this.model(); if (!this.readOnly()) await this.open(); },
+      replace: (documents, canWrite) => this.replace(documents, canWrite),
+      recall: query => this.recall(query),
+    }, readOnly);
+  }
 
   private model(): Promise<FeatureExtractionPipeline> {
     this.extractor ??= pipeline("feature-extraction", MODEL_ID, { device: "wasm", dtype: "q8" }).then(model => {
       this.ready = true;
       return model;
-    }).catch(error => {
-      this.extractor = null;
-      this.ready = false;
-      throw error;
-    });
-
+    }).catch(error => { this.extractor = null; this.ready = false; throw error; });
     return this.extractor;
   }
 
   private async embed(texts: string[]): Promise<Float32Array[]> {
     const output = await within(this.model().then(extractor => extractor(texts, { pooling: "mean", normalize: true })));
     const rows: unknown = output.tolist();
-
     if (!Array.isArray(rows) || rows.length !== texts.length) throw new Error("本地语义结果数量无效");
-
     return rows.map(row => {
       if (!Array.isArray(row) || !row.every(value => typeof value === "number" && Number.isFinite(value))) throw new Error("本地语义结果格式无效");
-
       return new Float32Array(row);
     });
   }
 
-  private open(): Promise<Memory> {
-    this.engine ??= Memory.open("idb://sideagent-semantic-v1", {
-      extractor: false,
-      minSimilarity: MIN_SIMILARITY,
-      embedder: { embed: texts => this.embed(texts) },
-    }).catch(error => { this.engine = null; throw error; });
+  private assertWritable(): void {
+    if (this.readOnly() || !this.canWrite()) throw new Error("语义索引当前只读或已更新");
+  }
 
+  private open(): Promise<Memory> {
+    if (!this.engine) {
+      const underlying = new IndexedDBStorage("sideagent-semantic-v2");
+      const storage: StorageAdapter = {
+        load: () => underlying.load(), close: () => underlying.close(),
+        append: async record => { this.assertWritable(); await underlying.append(record); },
+        tombstone: async id => { this.assertWritable(); await underlying.tombstone(id); },
+        compact: async records => { this.assertWritable(); await underlying.compact(records); },
+      };
+      this.engine = Memory.open("idb://sideagent-semantic-v2", {
+        storage, extractor: false, minSimilarity: MIN_SIMILARITY,
+        embedder: { embed: texts => this.embed(texts) },
+      }).catch(error => { this.engine = null; throw error; });
+    }
     return this.engine;
   }
 
-  sync(entries: MemoryEntry[]): Promise<void> {
-    const revision = revisionOf(entries);
-
-    if (!this.ready) {
-      void this.model().catch(() => undefined);
-      return Promise.resolve();
+  private async replace(documents: SemanticDocument[], canWrite: () => boolean): Promise<void> {
+    this.canWrite = canWrite;
+    const engine = await this.open();
+    this.assertWritable();
+    await engine.prune({ olderThan: Date.now() + 1 });
+    for (const document of documents) {
+      this.assertWritable();
+      await engine.remember(`passage: ${document.text}`, {
+        createdAt: document.createdAt,
+        meta: { kind: document.kind, memoryId: document.id, version: document.version, fingerprint: document.fingerprint },
+      });
     }
-
-    this.syncing = this.syncing.catch(() => undefined).then(async () => {
-      if (revision === this.revision) return;
-      const engine = await this.open();
-      await engine.prune({ olderThan: Date.now() + 1 });
-
-      for (const entry of entries) {
-        if (entry.status !== "active") continue;
-        await engine.remember(`passage: ${indexText(entry)}`, {
-          createdAt: entry.createdAt,
-          meta: { memoryId: entry.id, version: entry.version },
-        });
-      }
-
-      this.revision = revision;
-    }).catch(error => { this.revision = ""; throw error; });
-
-    return this.syncing;
   }
 
-  async select(query: MemoryQuery): Promise<Array<{ id: string; version: number }>> {
-    if (!this.ready) throw new Error("本地语义模型尚未就绪");
-    const engine = await this.open();
-    const hits = await within(engine.recall(`query: ${query.text}`, { limit: 8, graph: false, minSimilarity: MIN_SIMILARITY }));
+  sync(entries: MemoryEntry[], tasks?: TaskHistoryEntry[]): Promise<void> {
+    return this.background.sync(entries, tasks);
+  }
 
-    return hits.flatMap(hit => {
-      const id = hit.meta.memoryId;
-      const version = hit.meta.version;
+  select(query: MemoryQuery): Promise<SemanticMemoryHit[]> {
+    return this.background.select(query);
+  }
 
-      return typeof id === "string" && typeof version === "number" && Number.isSafeInteger(version) && version > 0
-        ? [{ id, version }]
+  private async recall(query: MemoryQuery): Promise<SemanticMemoryHit[]> {
+    if (!this.ready || (this.readOnly() && !this.engine)) return [];
+    const hits = await within((await this.open()).recall(`query: ${query.text}`, { limit: 16, graph: false, minSimilarity: MIN_SIMILARITY }));
+    return hits.flatMap((hit): SemanticMemoryHit[] => {
+      const { kind, memoryId: id, version, fingerprint } = hit.meta;
+      if (typeof id !== "string" || typeof fingerprint !== "string" || !Number.isFinite(hit.similarity) || hit.similarity < MIN_SIMILARITY) return [];
+      if (kind === "task") return [{ kind, id, fingerprint, score: hit.similarity }];
+      return kind === "memory" && typeof version === "number" && Number.isSafeInteger(version) && version > 0
+        ? [{ kind, id, version, fingerprint, score: hit.similarity }]
         : [];
     });
   }

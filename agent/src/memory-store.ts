@@ -11,6 +11,7 @@ import {
   normalizeMemoryHostname,
   upgradeMemoryEntry,
   usableOnHost,
+  withinValidity,
   validLocalDate,
   validMemoryId,
   validMemoryText,
@@ -25,6 +26,8 @@ import { isRelevantExperience, isRelevantMemory } from "./memory-relevance.js";
 import { parseSavedOpen } from "./saved-opens.js";
 import { placeMemory, sameMemoryScope, validateMemoryDecision, type MemoryDecision } from "./memory-decision.js";
 import type { DocumentPersistence } from "./document-persistence.js";
+import type { TaskHistoryEntry } from "../../shared/task-history.js";
+import { retrieveSemantic, taskFingerprint } from "./semantic-index.js";
 
 interface StoreFile {
   format: typeof MEMORY_FORMAT_VERSION;
@@ -43,9 +46,13 @@ export interface MemoryQuery {
   url?: string;
 }
 
+export type SemanticMemoryHit =
+  | { kind?: "memory"; id: string; version: number; fingerprint?: string; score?: number }
+  | { kind: "task"; id: string; fingerprint: string; score?: number };
+
 export interface SemanticMemoryIndex {
-  sync(entries: MemoryEntry[]): Promise<void>;
-  select(query: MemoryQuery): Promise<Array<{ id: string; version: number }>>;
+  sync(entries: MemoryEntry[], tasks?: TaskHistoryEntry[]): Promise<void>;
+  select(query: MemoryQuery): Promise<SemanticMemoryHit[]>;
 }
 
 const semanticIndexes = new WeakMap<MemoryStore, SemanticMemoryIndex>();
@@ -453,13 +460,21 @@ export class MemoryStore {
 
     if (!index) return cloneEntries(literal);
 
-    try {
-      await index.sync(entries);
-      const semantic = new Map((await index.select(query)).map(hit => [hit.id, hit.version]));
-      return cloneEntries(applicable.filter(entry => isEntryRelevant(entry, query.text) || semantic.get(entry.id) === entry.version));
-    } catch {
-      return cloneEntries(literal);
-    }
+    const semantic = new Map((await retrieveSemantic(index, entries, undefined, query)).flatMap(hit => hit.kind !== "task" ? [[hit.id, hit.version] as const] : []));
+    return cloneEntries(applicable.filter(entry => isEntryRelevant(entry, query.text) || semantic.get(entry.id) === entry.version));
+  }
+
+  async selectContextSemantic(query: MemoryQuery, entries: MemoryEntry[], tasks: TaskHistoryEntry[]): Promise<SemanticMemoryHit[]> {
+    assertQuery(query);
+    const index = semanticIndexes.get(this);
+    if (!index) return [];
+    const hostname = hostnameFromUrl(query.url);
+    const now = Date.now();
+    const memories = new Map(entries.filter(entry => entry.status === "active" && scopeAllows(entry.scope, hostname) && usableOnHost(entry, hostname) && withinValidity(entry.validity, now)).map(entry => [entry.id, entry]));
+    const history = new Map(tasks.filter(task => usableOnHost(task, hostname) && withinValidity(task.validity, now)).map(task => [task.id, task]));
+    return (await retrieveSemantic(index, entries, tasks, query)).filter(hit => hit.kind === "task"
+      ? history.has(hit.id) && taskFingerprint(history.get(hit.id)!) === hit.fingerprint
+      : memories.get(hit.id)?.version === hit.version);
   }
 
   async resolveSelected(selected: Array<{ id: string; version: number }>, query: MemoryQuery): Promise<MemoryEntry[]> {
