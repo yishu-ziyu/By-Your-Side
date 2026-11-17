@@ -88,7 +88,7 @@ const WARM_UP_INTERVAL_MS = 30_000;
 export class ConversationManager {
   taskRecords = new TaskRecordStore();
   private readonly taskRecordLock = new InProcessLock();
-  private readonly routingLocks = new Map<string, InProcessLock>();
+  private readonly inputDispatcher: TaskDispatcher;
   private readonly taskMutations = new Map<string,number>();
 
   private async rememberTask(request: TaskActionRequest, snapshot: TaskProgressSnapshot): Promise<void> {
@@ -143,7 +143,7 @@ export class ConversationManager {
     return (await this.taskRecords.list(origin)).sort((a,b) => b.updatedAt-a.updatedAt).slice(0,12);
   }
 
-  private async coordinateInput(request: TaskActionRequest, stillCurrent = () => true): Promise<{ receipts?: TaskReceipt[]; question?: string; chat?: true } | null> {
+  private async coordinateInput(request: TaskActionRequest, stillCurrent = () => true, internal = false): Promise<{ receipts?: TaskReceipt[]; question?: string; chat?: true } | null> {
     const origin = request.conversationId, session = this.entries.get(origin)?.runtime.session;
     if (!session || !request.text?.trim() || request.taskId || request.forkedFrom) return null;
     const catalog = await this.taskCatalog(origin);
@@ -195,13 +195,13 @@ export class ConversationManager {
         ...(target.executionConversationId !== origin ? {originConversationId:origin} : {}),source:request.source,action:step.action,
         expectedRunId:current.runId,expectedControlVersion:current.controlVersion,text:step.text,
         context:target.executionConversationId === origin ? request.context : undefined,
-        pages:request.pages?.length?request.pages:request.context?[request.context]:undefined,attachments:request.attachments},stillCurrent);
+        pages:request.pages?.length?request.pages:request.context?[request.context]:undefined,attachments:request.attachments},stillCurrent,undefined,internal && target.executionConversationId === origin);
       receipts.push(receipt);
       if (!['accepted','applied','queued'].includes(receipt.status)) break;
       const updated = await this.taskRecords.get(target.id);
       if (updated) Object.assign(target, updated);
     }
-    this.emitReceipt({requestId:request.requestId,conversationId:origin,source:request.source,action:request.action,runId:this.getTaskProgress(origin)?.runId??null,
+    if (!internal) this.emitReceipt({requestId:request.requestId,conversationId:origin,source:request.source,action:request.action,runId:this.getTaskProgress(origin)?.runId??null,
       text:request.text,targetTitle:'任务安排',status:receipts.every(receipt=>['accepted','applied','queued'].includes(receipt.status))?'accepted':'rejected',
       message:receipts.every(receipt=>['accepted','applied','queued'].includes(receipt.status))?'已分派到对应任务。':receipts.map(receipt=>receipt.message).join('；'),updatedAt:Date.now()});
     return {receipts};
@@ -273,7 +273,7 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
     private readonly store?: ConversationPersistence,
     private readonly memoryStore?: MemoryStore,
     readonly dispatcher = new TaskDispatcher(),
-  ) {this.controls=new TaskControlBroker(emit);this.voicePlans=new VoicePlanStore(dispatcher.store.directory?join(dispatcher.store.directory,"voice-plans"):undefined);
+  ) {this.inputDispatcher=new TaskDispatcher(dispatcher.store);this.controls=new TaskControlBroker(emit);this.voicePlans=new VoicePlanStore(dispatcher.store.directory?join(dispatcher.store.directory,"voice-plans"):undefined);
     this.taskQueue=new TaskQueue({directory:dispatcher.store.directory?join(dispatcher.store.directory,'requirements'):undefined,persist:dispatcher.store.directory?undefined:store?.taskQueue,maxRunning:2,maxWaiting:8,
       enabled:()=>this.connected&&!this.queueClosed,
       running:()=>this.runningTasks(),
@@ -1310,6 +1310,7 @@ return;}
   }
 
   private emitReceipt(receipt: TaskReceipt): void {
+    if (this.dispatcher.store.isInternal(receipt)) return;
     for(const id of new Set([receipt.conversationId,...(receipt.originConversationId?[receipt.originConversationId]:[])]))this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:receipt.message,
       ...(receipt.message.startsWith('同一请求编号')?{}:{receipt})}});
   }
@@ -1419,7 +1420,7 @@ return;}
     }
   }
 
-  async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
+  async dispatchTaskAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions, internal = false): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
     const record = request.taskId ? await this.taskRecords.get(request.taskId) : undefined;
     if (record && record.executionConversationId === request.conversationId && request.expectedRunId === null && record.runId !== null && ['running','paused','waiting'].includes(record.state)) request = {...request,expectedRunId:record.runId};
@@ -1429,13 +1430,13 @@ return;}
     const replay = !!this.dispatcher.get(request.conversationId,request.requestId);
     if (mutation) this.taskMutations.set(request.conversationId,(this.taskMutations.get(request.conversationId) ?? 0)+1);
     try {
-      const receipt = await this.dispatchExecutionAction(request,stillCurrent,inputOptions);
+      const receipt = await this.dispatchExecutionAction(request,stillCurrent,inputOptions,internal);
       const accepted = ['accepted','applied','queued'].includes(receipt.status);
       const task = await this.syncTask(request.conversationId,accepted && request.action === 'steer' && !replay);
       const result = { ...receipt, ...(task ? {taskId:task.id,taskState:task.state,targetTitle:task.goal.split('\n')[0]!.slice(0,36)} : {}) };
       if (accepted) this.taskQueue.applyControl(request.conversationId,result);
       if (this.taskQueue.get(request.conversationId)) await this.taskQueue.persisted();
-      this.emitReceipt(result);
+      if (!internal) this.emitReceipt(result);
       return result;
     } finally {
       if (mutation) {
@@ -1460,7 +1461,7 @@ return;}
     });
   }
 
-  private async dispatchExecutionAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions): Promise<TaskReceipt> {
+  private async dispatchExecutionAction(request: TaskActionRequest, stillCurrent = () => true, inputOptions?: UserInputOptions, internal = false): Promise<TaskReceipt> {
     if (!isTaskActionRequest(request)) throw new Error('无效的任务请求');
 
     request = this.normalizeTextRequest(request);
@@ -1488,7 +1489,7 @@ return;}
         if(!result)throw new TaskActionRejected('待办已变化，这条操作未执行。');
 
         return {...result,status:request.action==='steer'?'accepted':request.action==='status'?'applied':result.status};
-      });
+      }, {internal});
 
 if(request.action==='resume'&&receipt.status==='queued')this.pumpTasks();
 
@@ -1503,7 +1504,7 @@ return receipt;
       originalRequest,
       title,
       () => this.executeDispatchedTaskAction(originalRequest, title, stillCurrent, inputOptions),
-      { deferredResume: request.action === 'resume' && ['interrupted', 'idle', 'error'].includes(this.getTaskProgress(request.conversationId)?.state ?? '') },
+      { internal, deferredResume: request.action === 'resume' && ['interrupted', 'idle', 'error'].includes(this.getTaskProgress(request.conversationId)?.state ?? '') },
     );
 
     return receipt;
@@ -1521,7 +1522,7 @@ return receipt;
     if (!entry || !initialSnapshot) throw new TaskActionRejected('目标会话不可用，操作未执行。');
     if (entry.summary.checkpoint === 'unavailable') throw new TaskActionRejected(TASK_CHECKPOINT_UNAVAILABLE);
 
-    const resolved = await this.resolveDispatchedRequest(originalRequest, entry, initialSnapshot);
+    const resolved = await this.resolveDispatchedRequest(originalRequest, entry, initialSnapshot, inputOptions?.conversationOnly);
     let request = resolved.request;
     let snapshot = initialSnapshot;
 
@@ -1550,9 +1551,10 @@ return receipt;
     originalRequest: TaskActionRequest,
     entry: ConversationEntry,
     snapshot: TaskProgressSnapshot,
+    conversationOnly = false,
   ): Promise<{ request: TaskActionRequest; continuation: { amendment?: string } | null; explicitAmendment: boolean }> {
     const settledRequest = this.normalizeTextRequest(originalRequest);
-    const continuation = settledRequest.source === 'text' ? continuationInput(settledRequest.text ?? '') : null;
+    const continuation = !conversationOnly && settledRequest.source === 'text' ? continuationInput(settledRequest.text ?? '') : null;
     const explicitAmendment = !!continuation?.amendment && !!snapshot.runId && !!snapshot.recoveryInput;
 
     let request = settledRequest.source === 'text' && settledRequest.action === 'start' && !settledRequest.forkedFrom
@@ -1560,14 +1562,14 @@ return receipt;
       && (snapshot.state === 'interrupted' || ['idle', 'error'].includes(snapshot.state) && (projectTaskView(snapshot).resumable || explicitAmendment))
       ? { ...originalRequest, action: 'resume' as const } : originalRequest;
 
-    if (snapshot.continuation && !['COMPLETED', 'STOPPED', 'FAILED'].includes(snapshot.continuation.state) && originalRequest.source === 'text' && originalRequest.action === 'start') {
+    if (!conversationOnly && snapshot.continuation && !['COMPLETED', 'STOPPED', 'FAILED'].includes(snapshot.continuation.state) && originalRequest.source === 'text' && originalRequest.action === 'start') {
       const command = (originalRequest.text ?? '').trim().replace(/[。！!？?\s]/g, '');
       if (['停止', '停止关注', '中止', '中止关注', '取消关注'].includes(command)) request = { ...originalRequest, action: 'abort' };
       else if (['暂停', '暂停关注'].includes(command)) request = { ...originalRequest, action: 'pause' };
       else if (continuation) request = continuation.amendment ? { ...originalRequest, action: 'steer', text: continuation.amendment } : { ...originalRequest, action: 'resume' };
     }
     if (request === originalRequest) request = settledRequest;
-    if (request === settledRequest && await this.continuesOpenTask(settledRequest, snapshot, entry)) request = { ...settledRequest, action: 'steer' as const };
+    if (!conversationOnly && request === settledRequest && await this.continuesOpenTask(settledRequest, snapshot, entry)) request = { ...settledRequest, action: 'steer' as const };
 
     if (request.expectedRunId !== (snapshot.runId ?? null)) throw new TaskActionRejected('原任务已停止或发生变化，操作未执行。');
     if (request.expectedControlVersion !== undefined && request.expectedControlVersion !== (this.controlVersions.get(request.conversationId) ?? 0)) {
@@ -1737,7 +1739,7 @@ return receipt;
     if (request.context?.tabId !== undefined) this.taskPages.set(request.conversationId, request.context.tabId);
     if (!entry.runtime.session.available) throw new TaskActionRejected('当前执行模型不可用，任务未启动。');
 
-    if (request.source === 'text' && !request.attachments?.length && !request.pages?.length && !this.taskQueue.get(request.conversationId)) {
+    if (!inputOptions?.conversationOnly && request.source === 'text' && !request.attachments?.length && !request.pages?.length && !this.taskQueue.get(request.conversationId)) {
       const quickReceipt = await this.tryQuickNavSwitch(request, entry);
       if (quickReceipt) return quickReceipt;
     }
@@ -2361,20 +2363,33 @@ return true;}
     return false;
   }
 
+  private async dispatchTextInput(request: TaskActionRequest): Promise<void> {
+    const receipt = await this.inputDispatcher.dispatch(request, '任务安排', async () => {
+      const normalized = { ...this.normalizeTextRequest(request), requestId: `input-${createHash('sha256').update(request.conversationId+':'+request.requestId).digest('hex').slice(0,32)}` };
+      const routed = await this.coordinateInput(normalized, () => true, true);
+      if (routed === null || routed.chat) {
+        const reply = await this.dispatchTaskAction(routed?.chat ? {...normalized, action:'start'} : normalized, () => true,
+          routed?.chat ? {conversationOnly:true, pageObservation:'on-demand'} : undefined, true);
+        return {...reply, requestId:request.requestId, text:request.text??'',
+          ...(reply.newConversationRequest ? {newConversationRequest:{...reply.newConversationRequest,requestId:request.requestId}} : {})};
+      }
+      if (routed.question) {
+        this.emit({type:'agent_event',conversationId:request.conversationId,event:{kind:'notice',message:routed.question}});
+        return {status:'accepted' as const, runId:this.getTaskProgress(request.conversationId)?.runId??null, message:routed.question};
+      }
+      const accepted = routed.receipts?.every(receipt => ['accepted','applied','queued'].includes(receipt.status));
+      return {status:accepted?'accepted' as const:'rejected' as const, runId:this.getTaskProgress(request.conversationId)?.runId??null,
+        message:accepted?'已分派到对应任务。':routed.receipts?.map(receipt=>receipt.message).join('；')??'任务没有分派。'};
+    });
+    this.emitReceipt(receipt);
+  }
+
   private async handleTaskServiceMessage(id: string, entry: ConversationEntry, message: ClientMessage): Promise<boolean> {
     if (message.type === 'task_action') {
-      const request=message.request,session=entry.runtime.session;
+      const request=message.request;
 
       if (request.source === 'text' && ['start','steer'].includes(request.action) && !request.taskId && !request.forkedFrom) {
-        let lock = this.routingLocks.get(id);
-        if (!lock) { lock = new InProcessLock(); this.routingLocks.set(id,lock); }
-        await lock.run(async () => {
-          const normalized = this.normalizeTextRequest(request);
-          const routed = await this.coordinateInput(normalized);
-          if (routed === null) { await this.dispatchTaskAction(normalized); return; }
-          if (routed.question) this.emit({type:'agent_event',conversationId:id,event:{kind:'notice',message:routed.question}});
-          if (routed.chat) await this.answerSourcedChat(id,request.text??'',this.getTaskProgress(id)!,()=>true,session);
-        });
+        await this.dispatchTextInput(request);
         return true;
       }
 

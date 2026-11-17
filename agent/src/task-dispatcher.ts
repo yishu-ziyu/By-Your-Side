@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { isTaskReceipt, type TaskActionRequest, type TaskReceipt } from '../../shared/task-actions.js';
 import { canonicalValue } from './canonical-value.js';
 
-type RecordEntry = { fingerprint: string; pending: boolean; receipt: TaskReceipt };
+type RecordEntry = { fingerprint: string; pending: boolean; receipt: TaskReceipt; internal?: true };
 
 const keyOf = (a: Pick<TaskActionRequest,'conversationId'|'requestId'>) => `${a.conversationId}:${a.requestId}`;
 
@@ -162,12 +162,13 @@ class TaskReceiptStore {
       ? keys.map((key) => this.memory.get(key)).filter((r): r is RecordEntry => !!r)
       : [...this.memory.values()].filter((r) => r.receipt.conversationId===conversationId||r.receipt.originConversationId===conversationId);
 
-    return records.filter(r => isTaskReceipt(r.receipt))
+    return records.filter(r => !r.internal && isTaskReceipt(r.receipt))
       .map(r=>this.receipt(r)).sort((a,b)=>a.updatedAt-b.updatedAt).slice(-5000);
   }
   receipt(record: RecordEntry): TaskReceipt {
     return record.pending ? {...record.receipt,status:'unknown',message:'这条请求的执行结果尚无法确认；不会自动重做。'} : {...record.receipt};
   }
+  isInternal(receipt: TaskReceipt): boolean { return this.memory.get(keyOf(receipt))?.internal === true; }
 }
 
 const CONTROL_ACTIONS = new Set<TaskActionRequest['action']>(['pause','abort','resume']);
@@ -182,7 +183,7 @@ export class TaskDispatcher {
 
 return value?this.store.receipt(value):undefined;
   }
-  dispatch(request:TaskActionRequest, targetTitle:string, execute:()=>Promise<Pick<TaskReceipt,'status'|'message'|'runId'> & Partial<Pick<TaskReceipt,'action'|'diff'>>>, options?:{deferredResume?:boolean}):Promise<TaskReceipt> {
+  dispatch(request:TaskActionRequest, targetTitle:string, execute:()=>Promise<Pick<TaskReceipt,'status'|'message'|'runId'> & Partial<Pick<TaskReceipt,'action'|'diff'>>>, options?:{deferredResume?:boolean; internal?:boolean}):Promise<TaskReceipt> {
     const key=keyOf(request), fingerprint=hash(canonicalValue(request));
     const base:TaskReceipt={requestId:request.requestId,conversationId:request.conversationId,source:request.source,action:request.action,runId:request.expectedRunId,text:request.text??'',targetTitle,status:'unknown',message:'执行结果尚无法确认。',updatedAt:Date.now()};
 
@@ -196,7 +197,7 @@ return value?this.store.receipt(value):undefined;
     const prior=control?controlTail:Promise.all([this.tails.get(conversationId)??Promise.resolve(),controlTail]);
 
     const promise=prior.catch(()=>{}).then(async()=>{
-      const record:RecordEntry={fingerprint,pending:true,receipt:base};
+      const record:RecordEntry={fingerprint,pending:true,receipt:base,...(options?.internal?{internal:true}: {})};
       let existing:RecordEntry|undefined;
 
       try { existing=this.store.read(key); }
@@ -223,7 +224,7 @@ return value?this.store.receipt(value):undefined;
 
  if (error instanceof TaskActionRejected && error.allowNewConversation && request.action === 'start') receipt.newConversationRequest = structuredClone(request); }
 
-      try { this.store.finish(key,{fingerprint,pending:false,receipt}); }
+      try { this.store.finish(key,{...record,pending:false,receipt}); }
       catch { return {...receipt,status:'unknown' as const,message:'请求结果未能保存，执行情况尚无法确认；不会自动重做。'}; }
 
       return receipt;
