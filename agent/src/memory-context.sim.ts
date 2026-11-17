@@ -97,3 +97,23 @@ test("语义检索：sync 和 select 共用 1500ms 上限，超时后返回空�
   assert.deepEqual(await pending, []);
   assert.equal(time, 1500);
 });
+
+test("跨站召回：只有比较等动作相同不能召回无关主题", () => {
+  assert.deepEqual(select([task("bank", { goal: "比较两种信用卡", summary: "信用卡权益差别", done: undefined, hosts: ["bank.example"] })], "比较 MacBook 和 ThinkPad").tasks, []);
+});
+
+test("语义索引：重建中版本变化会继续构建最新快照", async () => {
+  const { BackgroundSemanticIndex } = await import("./semantic-index.js");
+  let release!: () => void;
+  const started: string[][] = [];
+  const index = new BackgroundSemanticIndex({ warmup: async () => {}, recall: async () => [], replace: async (documents, canWrite) => {
+    started.push(documents.map(document => document.id));
+    if (started.length === 1) await new Promise<void>(resolve => { release = resolve; });
+    if (!canWrite()) throw new Error("snapshot changed");
+  } });
+  await index.sync([], [task("snapshotA")]); await flush();
+  assert.equal(started.length, 1);
+  await index.sync([], [task("snapshotB")]);
+  release(); await flush();
+  assert.deepEqual(started, [["snapshotA"], ["snapshotB"]]);
+});
