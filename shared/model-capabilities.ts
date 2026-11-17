@@ -1,4 +1,17 @@
-import { getSupportedThinkingLevels, type Api, type Model, type ModelThinkingLevel, type ThinkingLevelMap } from "@earendil-works/pi-ai";
+import type { Api, Model, ModelThinkingLevel, ThinkingLevelMap } from "@earendil-works/pi-ai";
+
+const EXTENDED_THINKING_LEVELS: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+function supportedThinkingLevels<TApi extends Api>(model: Model<TApi>): ModelThinkingLevel[] {
+  if (!model.reasoning) return ["off"];
+
+  return EXTENDED_THINKING_LEVELS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
+}
 
 interface MeasuredCapability {
   reasoning?: boolean;
@@ -91,7 +104,7 @@ interface ThinkingProfile {
 
 export function thinkingProfile(model: Model<Api>): ThinkingProfile {
   const resolved = withMeasuredCapability(model);
-  const supported = getSupportedThinkingLevels(resolved);
+  const supported = supportedThinkingLevels(resolved);
   const distinct = supported.filter(level => {
     const mapped = resolved.thinkingLevelMap?.[level];
     return !(typeof mapped === 'string' && mapped !== level && supported.some(other => other === mapped));
