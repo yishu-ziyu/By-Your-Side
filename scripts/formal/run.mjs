@@ -19,4 +19,5 @@ const result = spawnSync('npm', ['exec', '--yes', '--package=@informalsystems/qu
 const log = `${result.stdout ?? ''}${result.stderr ?? ''}${result.error ? String(result.error) : ''}`;
 writeFileSync(path.join(output, `${mode}.log`), log);
 process.stdout.write(log);
-process.exitCode = mode === 'negative' ? (result.status === 1 && log.includes('❌ authorizedDispatch') ? 0 : 1) : result.status ?? 1;
+const witnessesReached = ['progressed', 'successorProgressed'].every(name => new RegExp(`${name} was witnessed in [1-9][0-9]* trace`).test(log));
+process.exitCode = mode === 'witness' && !witnessesReached ? 1 : mode === 'negative' ? (result.status === 1 && log.includes('❌ authorizedDispatch') ? 0 : 1) : result.status ?? 1;
