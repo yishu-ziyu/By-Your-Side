@@ -129,6 +129,21 @@ try {
   };
 
   if(citations.length){
+    const peek=async()=>{
+      const {root}=await rp.cdp.send('DOM.getDocument',{depth:-1,pierce:true},work);
+      const walk=(n:any):boolean=>(n.attributes??[]).join(' ').includes('data-sideagent-overlay cite-peek')||[...(n.shadowRoots??[]),...(n.children??[])].some(walk);
+
+      return walk(root);
+    };
+    await rp.evaluate(work,'scrollTo(0,1500)');await sleep(300);
+    const citeAt=await rp.evaluate(panel,'(()=>{const r=document.querySelector(".num-cite").getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()');
+    const citeTint=await rp.evaluate(panel,'getComputedStyle(document.querySelector(".num-cite")).backgroundColor');
+    check('可核对的数字有底色，不只是虚线',!/rgba\(0, 0, 0, 0\)|transparent/.test(citeTint),citeTint);
+    await rp.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',...citeAt,button:'none',buttons:0},panel);await sleep(600);
+    const hoverScroll=await rp.evaluate(work,'scrollY');
+    check('鼠标移到数字上，原网页对应位置先亮起，不滚动',await peek()&&hoverScroll===1500,{hoverScroll});
+    await rp.cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:2,y:2,button:'none',buttons:0},panel);await sleep(500);
+    check('鼠标移开，原网页的亮框消失',!await peek(),null);
     const cell='(()=>{const td=[...document.querySelectorAll("td")].find(t=>t.textContent==="62.4%"),r=td.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()';
     const pageMarks='document.querySelectorAll("[class*=bys-sonar],style").length';
     const marksBefore=await rp.evaluate(work,pageMarks);
