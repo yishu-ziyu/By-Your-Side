@@ -71,7 +71,7 @@ for (const section of ["# Tasks you did for this user before", "# Plans and rece
       const host = new ExtensionHost({ factories: [runtime.extension()], allTools: () => [], activeToolNames: () => [], abort: () => {} });
       runtime.beginUserTurn("Kyoto itinerary options", page);
       const boundaries = [
-        'Today is 2026-11-17 (local time).\n{"page":{"url":"https://rail.example/"},"capabilities":{"source":"registered_active_tools","names":[]}}\n\nInteractive answers: choose the form of each answer yourself.\nKEEP_ANSWER_GUIDE',
+        'Today is 2026-11-17, Tuesday (local time).\n{"page":{"url":"https://rail.example/"},"capabilities":{"source":"registered_active_tools","names":[]}}\n\nInteractive answers: choose the form of each answer yourself.\nKEEP_ANSWER_GUIDE',
         "# Another plugin\nKEEP_OTHER_PLUGIN",
         "Interactive answers: choose the form of each answer yourself.\nKEEP_ANSWER_GUIDE",
       ];

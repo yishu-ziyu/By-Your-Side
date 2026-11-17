@@ -49,6 +49,14 @@ test("历史任务：跨站最多两条且不超过 1800 字符", () => {
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const memory: MemoryEntry = { id: "experience", factId: "experience", version: 1, text: "Rail experience", scope: { kind: "all" }, sourceConversationId: "c_exp", createdAt: now, updatedAt: now, kind: "method", useCount: 0, status: "active", formatVersion: 3, experience: { runId: "run_exp", evidence: ["route checked"] } };
 
+test("语义索引：没有可索引的资料时不启动嵌入模型", async () => {
+  const { BackgroundSemanticIndex } = await import("./semantic-index.js");
+  let starts = 0;
+  const index = new BackgroundSemanticIndex({ warmup: async () => { starts++; }, replace: async () => {}, recall: async () => [] });
+  await index.sync([], []); await flush();
+  assert.equal(starts, 0);
+});
+
 test("语义索引：冷启动不阻塞，历史同步保留经验，self-use 不写索引", async () => {
   const { BackgroundSemanticIndex } = await import("./semantic-index.js");
   let release!: () => void;
