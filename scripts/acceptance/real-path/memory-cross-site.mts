@@ -27,6 +27,7 @@ await new Promise<void>(r => site.listen(0, '127.0.0.1', r));
 const rp = await launchRealPath();
 const checks: Record<string, boolean> = {};
 let panel = '', error: string | null = null;
+let diagnostics: unknown = null;
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === 'about:blank')!.targetId);
   await rp.cdp.send('Page.navigate', { url: `http://127.0.0.1:${siteAddress(site).port}` }, work);
@@ -53,9 +54,15 @@ try {
   checks.revokedAnswer = await rp.evaluate(panel, 'document.querySelector("#messages").innerText.includes("这页未带入已停用的历史任务。")') as boolean;
   await rp.screenshot(panel, join(out, 'disabled.png'));
   assert.ok(Object.values(checks).every(Boolean), JSON.stringify(checks));
-} catch (e) { error = e instanceof Error ? e.stack ?? e.message : String(e); if (panel) await rp.screenshot(panel, join(out, 'failure.png')).catch(() => {}); }
+} catch (e) {
+  error = e instanceof Error ? e.stack ?? e.message : String(e);
+  if (panel) {
+    diagnostics = await rp.evaluate(panel, `new Promise(resolve=>{const r=indexedDB.open('sideagent-diagnostics');r.onerror=()=>resolve(null);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('trace-lines')){db.close();resolve(null);return}const q=db.transaction('trace-lines').objectStore('trace-lines').getAll();q.onsuccess=()=>{resolve(q.result.map(row=>row.line).slice(-80));db.close()};q.onerror=()=>resolve(null)}})`).catch(() => null);
+    await rp.screenshot(panel, join(out, 'failure.png')).catch(() => {});
+  }
+}
 finally {
-  await writeFile(join(out, 'result.json'), JSON.stringify({ status: error ? 'FAIL' : 'PASS', checks, seen, error }, null, 2));
+  await writeFile(join(out, 'result.json'), JSON.stringify({ status: error ? 'FAIL' : 'PASS', checks, seen, error, diagnostics }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); site.closeAllConnections(); site.close();
 }
 console.log(JSON.stringify({ status: error ? 'FAIL' : 'PASS', out, error }));
