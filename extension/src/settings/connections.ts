@@ -1,4 +1,24 @@
-import { CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, modelCredential, type InprocModelConfig } from '../inproc/shared.js';
+import { CUSTOM_ENDPOINT_ENV, CUSTOM_PROVIDER_ID, INPROC_CONFIG_KEY, INPROC_FAST_CONFIG_KEY, INPROC_BACKUP_CONFIG_KEY, INPROC_CREDENTIAL_PREFIX, modelCredential, type InprocModelConfig } from '../inproc/shared.js';
+
+export function sameCustomOrigin(a?: string, b?: string): boolean {
+  if (!a || !b) return false;
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
+export function reusableCustomApiKey(config: InprocModelConfig, previous: unknown, fallbackBaseUrl?: string): string {
+  if (!previous || typeof previous !== 'object' || !('type' in previous) || previous.type !== 'api_key') return '';
+  if (!('key' in previous) || typeof previous.key !== 'string' || !previous.key) return '';
+  const envUrl = 'env' in previous && previous.env && typeof previous.env === 'object'
+    ? (previous.env as Record<string, unknown>)[CUSTOM_ENDPOINT_ENV]
+    : undefined;
+  const savedOriginUrl = typeof envUrl === 'string' && envUrl ? envUrl : fallbackBaseUrl;
+
+  return sameCustomOrigin(config.baseUrl, savedOriginUrl) ? previous.key : '';
+}
 
 export const CONNECTION_PREFIX = 'settings_connection:';
 
@@ -99,7 +119,7 @@ export async function saveConnection(config: InprocModelConfig, key: string, sta
     const previous: unknown = stored[credentialKey];
     let credential: unknown = key ? modelCredential(config, key) : previous;
     if (config.provider === CUSTOM_PROVIDER_ID) {
-      const oldKey = previous && typeof previous === 'object' && 'type' in previous && previous.type === 'api_key' && 'key' in previous && typeof previous.key === 'string' ? previous.key : '';
+      const oldKey = reusableCustomApiKey(config, previous, current?.baseUrl);
       credential = modelCredential(config, key || oldKey);
     }
     if (!credential || typeof credential !== 'object') return false;

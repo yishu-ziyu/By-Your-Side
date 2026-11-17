@@ -136,6 +136,13 @@ const PROGRAM_PAGE_LABEL = "Fresh snapshot of the page the program ended on (no 
 
 const PROGRAM_QUIET_STEPS: ReadonlySet<string> = new Set(["sleep", "wait_for", "check", "assert", "pageInfo", "waitForLoad", "waitForNetworkIdle", "saveFile"]);
 
+function notePartialProgramExecution(
+  endedSteps: readonly { error?: string; name: string }[],
+  note?: (fact: "executed") => void,
+): void {
+  if (endedSteps.some(step => !step.error && !PROGRAM_QUIET_STEPS.has(step.name))) note?.("executed");
+}
+
 function freshSnapshotLabel(page: ToolContract["snapshot"]["data"], readiness?: string): string {
   if (readiness !== "timeout") return "Fresh snapshot of the new page (no separate snapshot needed):";
   const what = page.url ? `tab ${page.tabId} as it is now (${page.url})` : `tab ${page.tabId} as it is now (its address was not confirmed)`;
@@ -607,7 +614,10 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
             return textResult(`${error.message}${done.length ? ` Already finished: ${done.join(", ")}.` : ""}${ended.text}`, { interrupted: true, ...(ended.page ? { page: ended.page } : {}) });
           }
-          if (!(error instanceof ProgramAssertError)) throw new Error(`${error instanceof Error ? error.message : String(error)}${finishedBefore()}${(await endedOn()).text}`, { cause: error });
+          if (!(error instanceof ProgramAssertError)) {
+            notePartialProgramExecution(endedSteps, fact => rpc.noteToolFact?.(id, fact));
+            throw new Error(`${error instanceof Error ? error.message : String(error)}${finishedBefore()}${(await endedOn()).text}`, { cause: error });
+          }
           rpc.noteToolFact?.(id, "executed");
 
           const ended = await endedOn();

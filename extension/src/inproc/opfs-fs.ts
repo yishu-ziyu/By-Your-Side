@@ -34,30 +34,38 @@ export function createOpfsFileSystem(): FileSystem {
   };
   let worker: Worker | undefined;
   let nextId = 0;
-  const pending = new Map<number, (response: OpfsWorkerResponse) => void>();
+  const pending = new Map<number, { resolve: (response: OpfsWorkerResponse) => void; timer: ReturnType<typeof setTimeout> }>();
+  const finishPending = (response: OpfsWorkerResponse) => {
+    const entry = pending.get(response.id);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    pending.delete(response.id);
+    entry.resolve(response);
+  };
+  const failAllPending = (message: string) => {
+    const active = [...pending.entries()];
+    pending.clear();
+    worker?.terminate();
+    worker = undefined;
+    for (const [entryId, entry] of active) {
+      clearTimeout(entry.timer);
+      entry.resolve({ id: entryId, error: { name: "Error", message } });
+    }
+  };
   const write = (path: string, request: Omit<OpfsWorkerRequest, "id" | "path">): R<void> =>
     serial(path, async () => {
       if (!worker) {
         worker = new Worker(chrome.runtime.getURL("opfs-worker.js"), { type: "module" });
-        worker.onmessage = (event: MessageEvent<OpfsWorkerResponse>) => {
-          pending.get(event.data.id)?.(event.data);
-          pending.delete(event.data.id);
-        };
-        worker.onerror = (event) => {
-          for (const [id, resolve] of pending) resolve({ id, error: { name: "Error", message: `opfs worker: ${event.message}` } });
-          pending.clear();
-          worker?.terminate();
-          worker = undefined;
-        };
+        worker.onmessage = (event: MessageEvent<OpfsWorkerResponse>) => finishPending(event.data);
+        worker.onerror = (event) => failAllPending(`opfs worker: ${event.message}`);
       }
       const id = ++nextId;
       const response = await new Promise<OpfsWorkerResponse>((resolve) => {
-        pending.set(id, resolve);
-        worker!.postMessage({ id, path, ...request } satisfies OpfsWorkerRequest);
-        setTimeout(() => {
-          pending.get(id)?.({ id, error: { name: "Error", message: `opfs worker: no reply to ${request.op} ${path}` } });
-          pending.delete(id);
+        const timer = setTimeout(() => {
+          if (pending.has(id)) failAllPending(`opfs worker: no reply to ${request.op} ${path}`);
         }, 15_000);
+        pending.set(id, { resolve, timer });
+        worker!.postMessage({ id, path, ...request } satisfies OpfsWorkerRequest);
       });
       if (!response.error) return ok(undefined);
       console.error("[sideagent] opfs", request.op, path, response.error.name, response.error.message);

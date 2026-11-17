@@ -1,9 +1,20 @@
 import { parseClientMessage, type ClientMessage, type ServerMessage } from "../../../shared/protocol.js";
 import { VoiceObservation } from './voice-observation.js';
-import { GPT_LIVE_MODEL, type VoiceInputContext } from '../../../shared/voice.js';
+import { GPT_LIVE_MODEL, type VoiceEvent, type VoiceInputContext } from '../../../shared/voice.js';
 
 const REATTACH_GRACE_MS = 35_000;
 const DETACHED_BUFFER_MAX = 500;
+
+function stopStateEvent(reason: string): VoiceEvent {
+  if (reason === "new_voice") {
+    return { kind: "state", state: "error", detail: "语音已在另一个窗口开启，这边已结束。", recoverable: false };
+  }
+  if (reason === "selection_changed") {
+    return { kind: "state", state: "error", detail: "已切换会话，语音已结束。", recoverable: false };
+  }
+
+  return { kind: "state", state: "closed" };
+}
 
 export class VoiceRelay {
   private readonly observation = new VoiceObservation();
@@ -244,7 +255,7 @@ export class VoiceRelay {
     this.send({ type: "voice", voiceId, conversationId, command: { kind: "stop" } });
 
     try {
-      lease.port?.postMessage({ kind: "server", conversationId, msg: { type: "voice", voiceId, conversationId, event: { kind: "state", state: "closed" } } });
+      lease.port?.postMessage({ kind: "server", conversationId, msg: { type: "voice", voiceId, conversationId, event: stopStateEvent(reason) } });
     }
     catch {
     }

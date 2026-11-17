@@ -139,7 +139,7 @@ export function renderSettings(): void {
         <span class="row-main"><span id="orb-title" class="row-title">光球</span><span class="row-desc">侧栏首屏和语音里的光球。点一下就换。</span></span>
         <div id="orb-list" class="radio-rows" role="radiogroup" aria-labelledby="orb-title"></div>
       </div>
-</div></section>
+</div><p id="orb-status" class="settings-status" role="status" aria-live="polite"></p></section>
     </div>
     <div class="settings-panel" data-settings-panel="web" hidden>
   <section class="sx" aria-labelledby="selection-title">

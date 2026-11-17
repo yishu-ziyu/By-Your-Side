@@ -29,7 +29,7 @@ import { syncColorScheme, syncColorTone } from "../shared/color-tone.js";
 import { renderSettings } from "./view.js";
 import { mountSettingsNavigation } from "./navigation.js";
 import { mountModelPicker } from "./model-picker.js";
-import { CONNECTION_PREFIX, modelConfig, optionConfig, readConnectionChecks, readConnections, rememberConnections, saveConnection, saveModelRole, updateConnectionCheck, withModelSettings, type ConnectionCheck } from "./connections.js";
+import { CONNECTION_PREFIX, modelConfig, optionConfig, readConnectionChecks, readConnections, rememberConnections, reusableCustomApiKey, saveConnection, saveModelRole, updateConnectionCheck, withModelSettings, type ConnectionCheck } from "./connections.js";
 import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
 
 syncColorTone();
@@ -760,8 +760,12 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
 
   try {
     const savedKey = credentials[value.config.provider];
+    const customFallbackUrl = savedConnections.get(CUSTOM_PROVIDER_ID)?.baseUrl;
+    const probeKey = value.config.provider === CUSTOM_PROVIDER_ID
+      ? value.key || reusableCustomApiKey(value.config, savedKey, customFallbackUrl)
+      : value.key || (savedKey?.type === "api_key" ? savedKey.key ?? "" : "");
     const probeCredentials = value.config.provider === CUSTOM_PROVIDER_ID || value.key
-      ? { ...credentials, [value.config.provider]: modelCredential(value.config, value.key || (savedKey?.type === "api_key" ? savedKey.key ?? "" : "")) }
+      ? { ...credentials, [value.config.provider]: modelCredential(value.config, probeKey) }
       : credentials;
     await probe.credentials.load(probeCredentials);
     await probe.applyCodexCatalog(codexCatalog);
@@ -1379,10 +1383,14 @@ async function reloadSettings(): Promise<void> {
   renderSpeechState(speakToggle.checked);
   renderVoiceModels(stored[INPROC_VOICE_MODEL_KEY]);
   const voice = stored[STEP_VOICE_STORAGE_KEY];
-  renderTimbres(isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE);
-  renderOrbStyles(parseOrbStyle(stored[ORB_STYLE_STORAGE_KEY]));
-  renderPersonas(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]));
-  renderTranslationStyles(parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]));
+  savedTimbre = isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE;
+  savedOrbStyle = parseOrbStyle(stored[ORB_STYLE_STORAGE_KEY]);
+  savedPersona = parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]);
+  savedTranslationStyle = parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]);
+  renderTimbres(savedTimbre);
+  renderOrbStyles(savedOrbStyle);
+  renderPersonas(savedPersona);
+  renderTranslationStyles(savedTranslationStyle);
   $<HTMLInputElement>("edge-entry").checked = !isEdgeEntryOff(stored[EDGE_ENTRY_KEY]);
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
   $<HTMLInputElement>("reading-aloud").checked = isReadingAloudOn(stored[READING_ALOUD_KEY]);
@@ -1419,6 +1427,10 @@ addEventListener("keydown", (event) => {
 const timbreList = $("timbre-list");
 
 const sample = new Audio();
+let savedTimbre = DEFAULT_STEP_VOICE;
+let savedOrbStyle: OrbStyle = "dusk";
+let savedPersona: VoicePersona = parseVoicePersona(undefined);
+let savedTranslationStyle: TranslationStyle = parseTranslationStyle(undefined);
 
 function radioRow(className: string, label: string, checked: boolean, meta = ""): HTMLButtonElement {
   const pick = document.createElement("button");
@@ -1488,8 +1500,17 @@ function renderTimbres(current: string): void {
     const pick = radioRow("timbre-option", voice.label, voice.id === current);
     pick.dataset.voice = voice.id;
     pick.addEventListener("click", () => {
+      const previous = savedTimbre;
+      savedTimbre = voice.id;
       renderTimbres(voice.id);
-      void chrome.storage.local.set({ [STEP_VOICE_STORAGE_KEY]: voice.id });
+      void chrome.storage.local.set({ [STEP_VOICE_STORAGE_KEY]: voice.id }).then(
+        () => setStatus(voiceStatus, "已切换音色，下次语音对话生效。", "ok"),
+        (error) => {
+          savedTimbre = previous;
+          renderTimbres(previous);
+          setStatus(voiceStatus, `没有保存：${plainError(error, "请再试一次")}`, "err");
+        },
+      );
     });
     const listen = document.createElement("button");
     listen.type = "button";
@@ -1507,6 +1528,7 @@ function renderTimbres(current: string): void {
 }
 
 const orbList = $("orb-list");
+const orbStatus = $("orb-status");
 
 function renderOrbStyles(current: OrbStyle): void {
   orbList.replaceChildren(...ORB_STYLES.map((style) => {
@@ -1515,8 +1537,17 @@ function renderOrbStyles(current: OrbStyle): void {
     const pick = radioRow("orb-option", style.label, style.id === current, style.id === "dusk" ? "默认" : undefined);
     pick.dataset.orbStyle = style.id;
     pick.addEventListener("click", () => {
+      const previous = savedOrbStyle;
+      savedOrbStyle = style.id;
       renderOrbStyles(style.id);
-      void chrome.storage.local.set({ [ORB_STYLE_STORAGE_KEY]: style.id });
+      void chrome.storage.local.set({ [ORB_STYLE_STORAGE_KEY]: style.id }).then(
+        () => setStatus(orbStatus, "已切换光球样式。", "ok"),
+        (error) => {
+          savedOrbStyle = previous;
+          renderOrbStyles(previous);
+          setStatus(orbStatus, `没有保存：${plainError(error, "请再试一次")}`, "err");
+        },
+      );
     });
 
     const thumb = style.id === "particles"
@@ -1570,10 +1601,16 @@ function renderPersonas(saved: VoicePersona, picked: VoicePersona["id"] = saved.
 }
 
 async function savePersona(persona: VoicePersona): Promise<void> {
-  await chrome.storage.local.set({ [VOICE_PERSONA_STORAGE_KEY]: persona });
-  if (persona.id === "custom") personaDirty = false;
-  renderPersonas(persona);
-  setStatus(personaStatus, "已保存，下次语音对话生效。", "ok");
+  try {
+    await chrome.storage.local.set({ [VOICE_PERSONA_STORAGE_KEY]: persona });
+    savedPersona = persona;
+    if (persona.id === "custom") personaDirty = false;
+    renderPersonas(persona);
+    setStatus(personaStatus, "已保存，下次语音对话生效。", "ok");
+  } catch (error) {
+    renderPersonas(savedPersona, persona.id === "custom" ? "custom" : savedPersona.id);
+    setStatus(personaStatus, `没有保存：${plainError(error, "请再试一次")}`, "err");
+  }
 }
 
 personaText.addEventListener("input", () => { personaDirty = true; personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`; });
@@ -1625,10 +1662,16 @@ function renderTranslationStyles(saved: TranslationStyle, picked: TranslationSty
 }
 
 async function saveTranslationStyle(style: TranslationStyle): Promise<void> {
-  await chrome.storage.local.set({ [TRANSLATION_STYLE_KEY]: style });
-  if (style.id === "custom") translationDirty = false;
-  renderTranslationStyles(style);
-  setStatus(translationStatus, "已保存，下次翻译起生效。", "ok");
+  try {
+    await chrome.storage.local.set({ [TRANSLATION_STYLE_KEY]: style });
+    savedTranslationStyle = style;
+    if (style.id === "custom") translationDirty = false;
+    renderTranslationStyles(style);
+    setStatus(translationStatus, "已保存，下次翻译起生效。", "ok");
+  } catch (error) {
+    renderTranslationStyles(savedTranslationStyle, style.id === "custom" ? "custom" : savedTranslationStyle.id);
+    setStatus(translationStatus, `没有保存：${plainError(error, "请再试一次")}`, "err");
+  }
 }
 
 translationStyleInput.addEventListener("input", () => { translationDirty = true; translationStyleCount.textContent = `${translationStyleInput.value.length}/${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}`; });

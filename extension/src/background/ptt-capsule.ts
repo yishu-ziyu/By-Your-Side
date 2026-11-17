@@ -167,16 +167,26 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
     }
   };
 
+  const hideOtherTab = (nextTabId: number) => {
+    if (tracked && tracked.tabId !== nextTabId) {
+      clearTimeout(tracked.settle);
+      show(tracked.tabId, null);
+    }
+    if (recordingTab !== null && recordingTab !== nextTabId) show(recordingTab, null);
+  };
+
   return {
     tabId: () => tracked?.tabId ?? recordingTab,
     recording(tabId: number) {
       voice.hush();
+      hideOtherTab(tabId);
 
       if (tracked) clearTimeout(tracked.settle);
       tracked = null; recordingTab = tabId; onChange();
     },
     level(level: number) { if (recordingTab !== null) void chrome.tabs.sendMessage(recordingTab, { type: PTT_LEVEL, level }).catch(() => {}); },
     handedOff(tabId: number, conversationId: string, heard: string, timingId?: string) {
+      hideOtherTab(tabId);
       recordingTab = null;
       const t: Tracked = { tabId, conversationId, heard, sawRun: false, result: null, card: null, utterance: 0, queue: [], ack: ackFor(heard), marked: new Set(), ...timingId ? { timingId } : {} };
       tracked = t;
@@ -186,6 +196,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
       onChange();
     },
     failed(tabId: number, reason: string, heard?: string) {
+      hideOtherTab(tabId);
       recordingTab = null; tracked = null;
       show(tabId, heard ? { phase: 'failed', reason, heard } : { phase: 'failed', reason });
       onChange();

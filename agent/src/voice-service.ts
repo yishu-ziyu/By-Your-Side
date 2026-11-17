@@ -43,8 +43,29 @@ function hasUnresolvedObstacle(snapshot: TaskProgressSnapshot): boolean {
   return projectTaskView(snapshot).outstanding.some(item => item.status === 'unknown' || item.status === 'blocked');
 }
 
+const VOICE_RECONNECT_WINDOW_MS = 60_000;
+
+function initialDeliverySuppression(
+  initial: TaskProgressSnapshot,
+  initialResultId: string,
+  resumed: { startedAt: number } | null,
+): { announcedDeliveries: Set<string>; observed: string } {
+  const initialDelivery = initial.conversationContext?.latestDelivery;
+  const keepMissed = Boolean(
+    resumed
+    && initialDelivery?.id
+    && initialDelivery.status !== 'played'
+    && initialDelivery.composedAt >= resumed.startedAt,
+  );
+  const announcedDeliveries = new Set<string>(!keepMissed && initialDelivery?.id ? [initialDelivery.id] : []);
+  const observed = `${initial.runId}:${initial.state}:${initialResultId}:${keepMissed ? 'none' : initialDelivery?.id ?? 'none'}`;
+
+  return { announcedDeliveries, observed };
+}
+
 export class VoiceService {
   private readonly deliveryOwners = new Map<string, string>();
+  private lastUnexpectedEnd: { conversationId: string; startedAt: number; endedAt: number } | null = null;
   private active: {
     id: string;
     conversationId: string;
@@ -68,7 +89,8 @@ export class VoiceService {
         return;
       }
 
-      this.close();
+      const resumed = this.takeUnexpectedEnd(conversationId);
+      this.close("replaced");
 
       if (!this.snapshot(conversationId)) {
         this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event: { kind: "state", state: "error", detail: "当前会话不可用，请重新选择会话。" } });
@@ -80,15 +102,14 @@ export class VoiceService {
       const initialRes = initial.conversationContext?.latestResult;
       const initialHasResult = !!(initialRes && initialRes.runId === initial.runId && initialRes.text);
       const initialResultId = initialHasResult && initialRes ? `${initialRes.runId}:${initialRes.observedAt}` : 'none';
-      const initialDelivery = initial.conversationContext?.latestDelivery;
-      const announcedDeliveries = new Set<string>(initialDelivery?.id ? [initialDelivery.id] : []);
+      const { announcedDeliveries, observed } = initialDeliverySuppression(initial, initialResultId, resumed);
 
       const requestedVoice = message.command.voice;
       const voice = STEP_VOICES.find(v => v.id === requestedVoice)?.id ?? DEFAULT_STEP_VOICE;
       const persona = voicePersonaText(parseVoicePersona(message.command.persona));
 
       const active = {
-        id: message.voiceId, conversationId, observed: `${initial.runId}:${initial.state}:${initialResultId}:${initialDelivery?.id ?? 'none'}`, startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), boundTasks: new Set<string>(), terminalTasks: new Set<string>(), session: this.createSession({
+        id: message.voiceId, conversationId, observed, startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), boundTasks: new Set<string>(), terminalTasks: new Set<string>(), session: this.createSession({
           voiceId: message.voiceId,
           voice,
           persona,
@@ -106,7 +127,7 @@ export class VoiceService {
           ...(this.dispatchTask && !diag ? { dispatchTask: (request: import('../../shared/task-actions.js').TaskActionRequest, stillCurrent: () => boolean) => this.dispatchTask!(request, () => this.active?.id === message.voiceId && stillCurrent()) } : {}),
           diagnostic: (event, fields) => this.diagnostic?.(event, { voiceId: message.voiceId, conversationId, ...fields }),
           ...(this.route && !diag ? { route: (text: string, startedAt: number | null, stillCurrent: () => boolean, context: VoiceRouteContext) => this.route!(conversationId, text, startedAt, () => this.active?.id === message.voiceId && stillCurrent(), context) } : {}),
-          emit: event => this.emit({ type: "voice", voiceId: message.voiceId, conversationId, event }),
+          emit: event => this.handleSessionEvent(active, conversationId, message.voiceId, event),
           onPlayback: (deliveryId, status) => {
             if (this.active !== active) {
               return;
@@ -156,6 +177,7 @@ export class VoiceService {
 
     if (message.command.kind === "stop") {
       this.diagnostic?.("voice_host_stopped",{voiceId:message.voiceId,conversationId});
+      this.lastUnexpectedEnd = null;
       this.active = null;
     }
   }
@@ -302,8 +324,36 @@ export class VoiceService {
       active.session.notify(snapshot);
     }
   }
+  private takeUnexpectedEnd(conversationId: string): { startedAt: number } | null {
+    const end = this.lastUnexpectedEnd;
+    this.lastUnexpectedEnd = null;
+    if (!end || end.conversationId !== conversationId) return null;
+
+    return Date.now() - end.endedAt <= VOICE_RECONNECT_WINDOW_MS ? { startedAt: end.startedAt } : null;
+  }
+  private handleSessionEvent(
+    active: NonNullable<VoiceService["active"]>,
+    conversationId: string,
+    voiceId: string,
+    event: import("../../shared/voice.js").VoiceEvent,
+  ): void {
+    this.emit({ type: "voice", voiceId, conversationId, event });
+    if (this.active !== active || event.kind !== "state") return;
+    if (event.state === "closed" || (event.state === "error" && event.recoverable)) {
+      this.lastUnexpectedEnd = { conversationId, startedAt: active.startedAt, endedAt: Date.now() };
+      return;
+    }
+    if (event.state === "ready" && this.snapshot(conversationId)?.state === "idle") {
+      this.observe({ type: "status", conversationId, state: "idle" });
+    }
+  }
   close(reason = "closed"): void {
-    if (this.active) this.diagnostic?.("voice_host_closed",{voiceId:this.active.id,reason});
+    if (this.active) {
+      this.diagnostic?.("voice_host_closed",{voiceId:this.active.id,reason});
+      if (reason !== "stop" && reason !== "replaced") {
+        this.lastUnexpectedEnd = { conversationId: this.active.conversationId, startedAt: this.active.startedAt, endedAt: Date.now() };
+      }
+    }
     this.active?.session.close();
     this.active = null;
     this.deliveryOwners.clear();

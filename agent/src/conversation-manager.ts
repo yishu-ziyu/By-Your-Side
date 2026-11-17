@@ -9,7 +9,7 @@ import { ReadingRequests } from "./reading.js";
 import {join} from "node:path";
 import type {UserInputOptions} from "./session.js";
 import {VoicePlanStore,type VoicePlanStep,type VoiceProposal} from "./voice-plan-store.js";
-import {isControlConfirm,isControlReject,type ControlConfirmSnapshot} from "./voice-confirm.js";
+import {isControlConfirm,isControlReject,isProposalConfirm,type ControlConfirmSnapshot} from "./voice-confirm.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   DEFAULT_CONVERSATION_ID, isLeadSession, normalizeConversationId,
@@ -101,6 +101,28 @@ function reconcileCancelledRestore(
 
 function shouldRestoreContinuation(restoredResults: TaskProgressSnapshot | null | undefined, savedState: string | undefined): boolean {
   return Boolean(restoredResults?.continuation && savedState !== 'cancelled');
+}
+
+function hostOfPageUrl(url: string | undefined): string {
+  if (!url) return '';
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return memoryHostOfUrl(url) ?? '';
+  }
+}
+
+function openTaskMatchesRequestSite(request: TaskActionRequest, snapshot: TaskProgressSnapshot, visitedUrls: readonly string[]): boolean {
+  if (continuationInput(request.text ?? '') !== null) return true;
+  const reqHost = hostOfPageUrl(request.context?.url);
+  if (!reqHost) return true;
+  const knownHosts = new Set<string>();
+  for (const url of [snapshot.goalPage?.url, snapshot.continuation?.url, ...visitedUrls]) {
+    const host = hostOfPageUrl(url);
+    if (host) knownHosts.add(host);
+  }
+
+  return knownHosts.size === 0 || knownHosts.has(reqHost);
 }
 
 const WARM_UP_INTERVAL_MS = 30_000;
@@ -536,9 +558,10 @@ return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:nul
     control: ControlConfirmSnapshot | undefined,
     pending: VoiceProposal | undefined,
   ): Promise<VoiceRouteResult | null> {
-    if (!pending || !route || pending.voiceId !== route.voiceId || route.turn <= pending.turn || Date.now() >= pending.expiresAt) return null;
+    if (!pending || !route || pending.voiceId !== route.voiceId || route.turn !== pending.turn + 1 || Date.now() >= pending.expiresAt) return null;
     const openReply = short.replace(/(?:另开会话|另开|开吧)$/, ''); // WHY: hardcode-ok 保持重构前原有的语音另开会话确认短语剥离逻辑
-    if (isControlConfirm(text) || short === '同意' || (openReply !== short && (!openReply || isControlConfirm(openReply)))) { // WHY: hardcode-ok 保持重构前原有的语音另开会话确认词判断
+    const matchedOpen = openReply !== short && (!openReply || isProposalConfirm(openReply, route.interruptedSpeech));
+    if (isProposalConfirm(text, route.interruptedSpeech) || short === '同意' || matchedOpen) { // WHY: hardcode-ok 保持重构前原有的语音另开会话确认词判断
       route.onInputDecision?.(false);
       if (!stillCurrent()) throw new TaskActionRejected('语音已结束或你正在说新指令，本句未发送。');
       this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
@@ -583,9 +606,13 @@ return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:nul
     if (pendingReply) return pendingReply;
     if (route && !route.resumeReadOnly && (
       (control && (control.voiceId !== route.voiceId || Date.now() >= control.expiresAt)) ||
-      (pending && (pending.voiceId !== route.voiceId || Date.now() >= pending.expiresAt))
+      (pending && (pending.voiceId !== route.voiceId || route.turn > pending.turn + 1 || Date.now() >= pending.expiresAt))
     )) {
       this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
+    }
+    if (!route?.resumeReadOnly && isVoiceBackchannel(text) && route?.interruptedSpeech) {
+      route.onInputDecision?.(true);
+      return { kind: 'silent' };
     }
     if (route && !route.resumeReadOnly && isControlConfirm(text) && (control || pending || short.includes('确认'))) { // WHY: hardcode-ok 保持重构前原有的过期确认兜底判断
       this.consumeVoiceConfirmation(id, stillCurrent, route, control, pending);
@@ -1115,6 +1142,7 @@ return { kind: "silent" };}
     if(request.source!=='text'||request.action!=='start'||request.forkedFrom||!request.text?.trim())return false;
 
     if(!['idle','error'].includes(snapshot.state)||!snapshot.runId||!snapshot.goal||!snapshot.recoveryInput||!request.context?.tabId)return false;
+    if(!openTaskMatchesRequestSite(request,snapshot,this.progress.get(request.conversationId)?.visitedUrls()??[]))return false;
     const delegating=!!snapshot.continuation&&!['COMPLETED','STOPPED','FAILED'].includes(snapshot.continuation.state);
     const view=projectTaskView(snapshot);
 

@@ -21,6 +21,15 @@ export function isControlConfirm(text: string): boolean {
   return AFFIRMATIVE.test(normalizeSpeech(text ?? ""));
 }
 
+export function isProposalConfirm(text: string, interruptedSpeech = false): boolean {
+  const short = normalizeSpeech(text ?? "");
+  const bare = short.replace(/[吧啊呀啦嘛哦呗嘞]+$/, ""); // WHY: hardcode-ok 与 AFFIRMATIVE 共用语气词尾，过滤确认词前剥离末尾语气词
+  if (bare === "继续") return false; // WHY: hardcode-ok 「继续」指向延续当前任务，不得确认为另开会话
+  if (interruptedSpeech && /^嗯+$/.test(bare)) return false;
+
+  return AFFIRMATIVE.test(short);
+}
+
 export function isControlReject(text: string): boolean {
   const short = normalizeSpeech(text ?? "");
 

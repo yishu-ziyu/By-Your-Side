@@ -589,7 +589,10 @@ chrome.runtime.onMessage.addListener((raw: Partial<PttCapsuleAction> | Partial<P
 
  if (raw.action === "hush") pttCapsule.hush();
 
- if (raw.action === "stop") controller(pttCapsule.conversationId() ?? conversationForWindow(tab.windowId)).stop();
+ if (raw.action === "stop") {
+  if (pttCapsule.tabId() !== tab.id) return;
+  controller(pttCapsule.conversationId() ?? conversationForWindow(tab.windowId)).stop();
+ }
 
  if (raw.action === "resend" && raw.text) void handOffSpoken(tab, conversationForWindow(tab.windowId), raw.text);
 });
@@ -2689,6 +2692,14 @@ async function importReading(record: ReadingRecord): Promise<void> {
   flushHistory();
 }
 
+const isControllerWorkingOnTab = async (tabId: number): Promise<boolean> => {
+  if (gate.isUser()) return false;
+  if (await getWorkingTabId() === tabId) return true;
+  const active = lastStatus !== "idle" || [...statusBySession.values()].some((state) => state !== "idle");
+
+  return active && (await memberTabIds()).includes(tabId);
+};
+
 return { importReading, isUserHeld: (sid: string) => gate.isSessionBlocked(sid), callbacks, attachPanel, handback: () => requestPanelControl('resume'),
 spoken: async (text: string, context?: PageContext, card?: NudgeCard, typed = false) => {
   const sent = uplink.sendClientMessage(await attachPageContext({ type: lastStatus === "idle" ? "user_message" : "steer", text, context, ...(card || typed ? {} : { spoken: true as const }) }));
@@ -2699,7 +2710,7 @@ spoken: async (text: string, context?: PageContext, card?: NudgeCard, typed = fa
 },
 stop: () => requestPanelControl("abort"),
 notice: emitNotice,
-worksOn: async (tabId: number) => !gate.isUser() && await getWorkingTabId() === tabId,
+worksOn: isControllerWorkingOnTab,
 pauseFromPage: (tabId: number) => { void handleTakeover(tabId); requestPanelControl("pause", tabId); },
 voiceInput:async(input:import('../../../shared/voice.js').VoiceInputContext)=>{const enriched=await attachPageContext({type:'user_message',text:'',context:input.context,attachments:input.attachments});
 
