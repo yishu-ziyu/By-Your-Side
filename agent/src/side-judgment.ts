@@ -70,6 +70,9 @@ const STRICT_JSON = GOAL_CHECK_FORMAT_SUFFIX;
 
 const EMPTY_REPLY_BUDGET_FACTOR = 5;
 
+// WHY: with adaptive thinking (MiniMax) the provider does not add a thinking budget; thinking and the answer share max_tokens, so a short answer budget is spent on thinking and the JSON never arrives.
+const THINKING_ROOM_TOKENS = 2048;
+
 export function isParamRejection(message: string | undefined): boolean {
   if (!message) return false;
 
@@ -182,7 +185,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
     };
 
     let reply: AssistantMessage;
-    const options: SimpleStreamOptions = { maxTokens, signal: attemptSignal };
+    const options: SimpleStreamOptions = { maxTokens: effort === "off" ? maxTokens : maxTokens + THINKING_ROOM_TOKENS, signal: attemptSignal };
 
     if (effort !== "off") options.reasoning = effort;
 
