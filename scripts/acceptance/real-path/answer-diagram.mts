@@ -364,8 +364,18 @@ async function sourceReferences(): Promise<void> {
   const url = `http://127.0.0.1:${address.port}/`;
   const rule: Rule = { match: '来源编号验收', steps: [{ text: '' }] };
   let sourceId = '', hostileId = '', generated = '', initialIds: number | undefined;
+  const checkedNodes = new Map<string, { excerpt: string; openOriginal?: string } | null>();
   const model = await startScriptedModel([{match:'"requests":',steps:[{text:JSON.stringify({scope:whole?'whole':'local'})}]},rule], undefined, payload => {
-    if (!payload.tools?.length) return;
+    if (!payload.tools?.length) {
+      const last = payload.messages?.filter(m => m.role === 'user').at(-1)?.content;
+      const body = typeof last === 'string' ? last : last?.map(p => p.text ?? '').join('') ?? '';
+      if (body.startsWith('{') && body.includes('"sourceCitations"')) {
+        let input;
+        try { input = JSON.parse(body); } catch { return; }
+        for (const item of input.sourceCitations?.items ?? []) checkedNodes.set(item.node, item.onRenderedNodeClick ?? null);
+      }
+      return;
+    }
     const input = (payload.messages ?? []).filter(m => m.role !== 'assistant').map(m => typeof m.content === 'string' ? m.content : (m.content ?? []).map(p => p.text ?? '').join('')).join('\n');
     const hasRead = (payload.messages ?? []).some(m => m.role === 'tool');
     if (hasRead && process.argv.includes('--partial')) {
@@ -431,6 +441,8 @@ async function sourceReferences(): Promise<void> {
     await pressNode(panel, 'A');
     let seen = await browser.evaluate(panel, quote) as {text:string|null;link:string|null;cited:string[];forged:boolean;unverified:boolean;buttons:number};
     check('点击节点显示宿主摘录和原网页入口', !!seen.text?.replace(/^…/,'').startsWith('Evidence stays attached') && seen.text.length <= 101 && seen.link === url, seen);
+    await until(async () => checkedNodes.has('A') || undefined, 12_000, '核对器收到了引用');
+    check('核对器看到的节点点击结果与侧栏实际展示一致', !!seen.text && checkedNodes.get('A')?.excerpt === seen.text && checkedNodes.get('A')?.openOriginal === seen.link && checkedNodes.get('B') === null, { actual: seen.text, expected: checkedNodes.get('A'), missing: checkedNodes.get('B') });
     check('不存在的定位词不采用模型夹带的原文', !seen.cited.includes('B') && !seen.forged && seen.unverified, seen);
     const shortNodes = await browser.evaluate(panel, `['D','E','F','G'].every(id=>document.querySelector('.gc-diagram svg [data-id="'+id+'"]'))`);
     check('短定位验收的正例和负例都显示为节点', shortNodes === true, {shortNodes});
