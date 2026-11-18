@@ -1,6 +1,6 @@
 import { isThinkingLevel, type ThinkingLevel, type ThinkingInfo, type ModelOption } from "../../../shared/protocol.js";
 import { displayName, filterModels, groupModelsByProvider, providerLabel } from "./models.js";
-import { bindMotionIcon } from "./motion-icon.js";
+import { providerIcon } from "../shared/provider-icon.js";
 
 const LEVEL: Record<string, string> = { off: "关", minimal: "最低", low: "低", medium: "中", high: "高", xhigh: "更高", max: "最高" };
 
@@ -20,6 +20,12 @@ const RECENT_KEY = "sideagent.recentModels";
 const FIRST_LEVEL_MAX = 5;
 
 const FIRST_LEVEL_MIN = 3;
+
+const MENU_WIDTH = 280;
+
+const MENU_INSET = 10;
+
+const RAIL_ROOM = 50;
 
 function readRecent(): string[] {
   try {
@@ -87,16 +93,21 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   menu.inert = true;
   menu.innerHTML = `<div class="mm-views"><div class="mm-view mm-main"></div><div class="mm-view mm-all">
     <div class="mm-head"><button type="button" class="mm-back" aria-label="返回">${svg('<path d="m15 18-6-6 6-6"/>')}</button>
-    <label class="mm-search">${svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', 14)}<input type="text" placeholder="搜索全部模型" aria-label="搜索全部模型" autocomplete="off" spellcheck="false"></label></div>
+    <label class="mm-search"><input type="text" placeholder="搜索全部模型" aria-label="搜索全部模型" autocomplete="off" spellcheck="false"></label></div>
     <div class="mm-list" role="group" aria-label="全部模型"></div></div></div>`;
   options.composer.append(menu);
+
+  const rail = document.createElement("div");
+  rail.id = "mm-rail";
+  rail.setAttribute("aria-hidden", "true");
+  options.composer.append(rail);
+  let railFits = false;
+  let jumped: string | undefined;
 
   const main = menu.querySelector<HTMLElement>(".mm-main")!;
   const all = menu.querySelector<HTMLElement>(".mm-all")!;
   const list = menu.querySelector<HTMLElement>(".mm-list")!;
   const search = menu.querySelector<HTMLInputElement>(".mm-search input")!;
-  const searchField = menu.querySelector<HTMLElement>(".mm-search")!;
-  bindMotionIcon(searchField, "search");
 
   let chosen: Record<string, ThinkingLevel> = {};
   let actual: ThinkingInfo | null = null;
@@ -163,6 +174,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     chip.classList.toggle("ringed", Boolean(ring));
     chip.innerHTML = `<span class="think-model"></span>${level ? `<span class="think-sep">·</span><span class="think-level"></span>` : ""}${ring ? `<span class="think-ring" aria-hidden="true"></span>` : ""}${CHEVRON}`;
     chip.querySelector(".think-model")!.textContent = name;
+
+    if (option) chip.prepend(providerIcon(option.provider, providerLabel(option.provider)));
 
     if (ring) chip.querySelector<HTMLElement>(".think-ring")!.style.setProperty("--ctx-fill", used.fraction.toFixed(3));
     const label = `模型：${name}${level ? ` · ${level}` : ""}`;
@@ -237,8 +250,45 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     });
   };
 
+  const listRow = (m: ModelOption) => {
+    const r = row(m);
+    r.querySelector(".mm-desc")!.remove();
+    r.prepend(providerIcon(m.provider, providerLabel(m.provider)));
+
+    return r;
+  };
+
+  const section = (label: string, items: ModelOption[], provider?: string) => {
+    const box = document.createElement("div");
+    box.className = "mm-section";
+    const head = document.createElement("div");
+    head.className = "mm-group";
+
+    if (provider) {
+      box.dataset.provider = provider;
+      head.append(providerIcon(provider, label));
+    }
+    head.append(label);
+    box.append(head, ...items.map(listRow));
+
+    return box;
+  };
+
+  const railButton = (provider: string) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.tabIndex = -1;
+    button.dataset.provider = provider;
+    button.title = providerLabel(provider);
+    button.append(providerIcon(provider, providerLabel(provider)));
+
+    return button;
+  };
+
   const paintAll = () => {
     const hits = filterModels(models, search.value, false);
+    rail.replaceChildren();
+    jumped = undefined;
 
     if (!hits.length) {
       const none = document.createElement("div");
@@ -249,13 +299,13 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
       return;
     }
 
-    list.replaceChildren(...groupModelsByProvider(hits).flatMap((group) => {
-      const label = document.createElement("div");
-      label.className = "mm-group";
-      label.textContent = providerLabel(group.provider);
+    if (search.value.trim()) return list.replaceChildren(...hits.map(listRow));
+    const groups = groupModelsByProvider(hits);
+    const featured = hits.filter((m) => m.featured === true);
+    const top = featured.some((m) => m.id !== current) ? [section("推荐", featured)] : [];
+    list.replaceChildren(...top, ...groups.map((group) => section(providerLabel(group.provider), group.models, group.provider)));
 
-      return [label, ...group.models.map((m) => { const r = row(m); r.querySelector(".mm-desc")!.remove(); return r; })];
-    }));
+    if (groups.length > 1) rail.replaceChildren(...groups.map((group) => railButton(group.provider)));
   };
 
   const rows = () => [...(view === "main" ? main : list).querySelectorAll<HTMLButtonElement>(".mm-row")];
@@ -269,9 +319,28 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
 
   const highlighted = () => rows().findIndex((el) => el.classList.contains("mm-nav"));
 
-  const fit = () => { menu.style.height = `${(view === "main" ? main : all).offsetHeight}px`; };
-
   const isOpen = () => menu.classList.contains("open");
+
+  const syncRail = () => {
+    const sections = [...list.querySelectorAll<HTMLElement>(".mm-section[data-provider]")];
+    const at = jumped ?? sections.filter((el) => el.offsetTop <= list.scrollTop + 2).at(-1)?.dataset.provider;
+    rail.classList.toggle("show", isOpen() && view === "all" && railFits && list.scrollTop > 0 && rail.childElementCount > 0);
+
+    for (const button of rail.querySelectorAll("button")) button.setAttribute("aria-current", String(button.dataset.provider === at));
+  };
+
+  const fit = () => {
+    menu.style.height = `${(view === "main" ? main : all).offsetHeight}px`;
+    rail.style.height = menu.style.height;
+    syncRail();
+  };
+
+  const place = () => {
+    const box = options.composer.getBoundingClientRect();
+    const left = Math.max(MENU_INSET, Math.min(chip.getBoundingClientRect().left - box.left, box.width - MENU_WIDTH - MENU_INSET));
+    options.composer.style.setProperty("--mm-left", `${left}px`);
+    railFits = box.left + left >= RAIL_ROOM;
+  };
 
   const show = (next: "main" | "all", seed?: string) => {
     view = next;
@@ -299,8 +368,10 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     menu.inert = !on;
 
     if (on) {
+      place();
       search.value = "";
       paintAll();
+      list.scrollTop = 0;
       menu.classList.add("mm-instant");
       show("main");
       requestAnimationFrame(() => menu.classList.remove("mm-instant"));
@@ -312,6 +383,8 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
     if (on) showPop(false);
 
     if (on && viaKeyboard) highlight(rows().findIndex((el) => el.getAttribute("aria-checked") === "true"));
+
+    if (!on) syncRail();
 
     if (!on && hadFocus) chip.focus({ preventScroll: true });
   };
@@ -369,7 +442,20 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   });
   menu.addEventListener("pointerleave", () => highlight(null));
 
-  search.addEventListener("input", () => { paintAll(); fit(); highlight(search.value.trim() ? 0 : null); });
+  search.addEventListener("input", () => { paintAll(); list.scrollTop = 0; fit(); highlight(search.value.trim() ? 0 : null); });
+
+  list.addEventListener("scroll", syncRail, { passive: true });
+  for (const type of ["wheel", "pointerdown", "keydown"]) menu.addEventListener(type, () => { jumped = undefined; }, { passive: true });
+  rail.addEventListener("mousedown", (event) => event.preventDefault());
+  rail.addEventListener("click", (event) => {
+    const provider = (event.target as Element).closest<HTMLButtonElement>("button")?.dataset.provider;
+    const target = [...list.querySelectorAll<HTMLElement>(".mm-section")].find((el) => el.dataset.provider === provider);
+
+    jumped = provider;
+    syncRail();
+
+    if (target) list.scrollTo({ top: target.offsetTop, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  });
 
   menu.addEventListener("keydown", (event) => {
     const key = event.key;
@@ -412,7 +498,7 @@ export function mountModelMenu(options: { composer: HTMLElement; after: HTMLElem
   document.addEventListener("click", (event) => {
     const target = event.target as Node;
 
-    if (isOpen() && !menu.contains(target) && !chip.contains(target)) open(false);
+    if (isOpen() && !menu.contains(target) && !chip.contains(target) && !rail.contains(target)) open(false);
   });
 
   const repaint = () => {

@@ -3250,7 +3250,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   #think-chip { padding: 0 4px; }
 }
 
-#think-menu { position: absolute; left: 10px; bottom: calc(100% + 6px); width: min(280px, calc(100% - 20px)); border-radius: var(--r); border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); overflow: hidden; outline: none; opacity: 0; transform: translateY(4px) scale(.96); transform-origin: 24px calc(100% + 18px); pointer-events: none; transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift), height var(--d-state) var(--e-swift); z-index: 20; }
+#think-menu { position: absolute; left: var(--mm-left, 10px); bottom: calc(100% + 6px); width: min(280px, calc(100% - var(--mm-left, 10px) - 10px)); border-radius: var(--r); border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); overflow: hidden; outline: none; opacity: 0; transform: translateY(4px) scale(.96); transform-origin: 24px calc(100% + 18px); pointer-events: none; transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift), height var(--d-state) var(--e-swift); z-index: 20; }
 #think-menu.open { opacity: 1; transform: none; pointer-events: auto; }
 #think-menu.mm-instant { transition: opacity var(--d-micro) var(--e-swift), transform var(--d-state) var(--e-swift); }
 #think-menu .mm-views { display: flex; align-items: flex-start; width: 200%; transition: transform var(--d-state) var(--e-swift); }
@@ -3267,20 +3267,36 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
 #think-menu .mm-row[aria-checked="true"] .mm-check { opacity: 1; transform: none; }
 #think-menu .mm-more .mm-name { color: var(--text-secondary); }
 #think-menu .mm-chev { grid-column: 2; display: grid; justify-items: end; color: var(--text-tertiary); }
-#think-menu .mm-head { display: flex; align-items: center; gap: 6px; padding: 0 0 6px; }
+#think-menu .mm-head { display: flex; align-items: center; gap: 2px; margin: 0 -6px; padding: 0 6px 5px; border-bottom: 1px solid var(--glass-border); }
 #think-menu .mm-back { all: unset; flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--text-secondary); cursor: pointer; }
 #think-menu .mm-back:hover { background: var(--content-subtle); }
 #think-menu .mm-back:focus-visible { outline: 2px solid var(--accent); }
-#think-menu .mm-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border-radius: var(--r-sm); background: var(--content-subtle); color: var(--text-tertiary); }
+#think-menu .mm-search { flex: 1; min-width: 0; display: flex; align-items: center; height: 28px; padding: 0 4px; }
 #think-menu .mm-search input { all: unset; flex: 1; min-width: 0; font-size: var(--fs-ui); color: var(--text-primary); }
 #think-menu .mm-search input::placeholder { color: var(--text-tertiary); }
-#think-menu .mm-list { max-height: min(46vh, 300px); overflow-y: auto; }
-#think-menu .mm-group { padding: 8px 10px 3px; font-size: var(--fs-meta); color: var(--text-tertiary); }
-#think-menu .mm-list .mm-row { padding: 6px 10px; }
+#think-menu .mm-list { position: relative; max-height: min(46vh, 300px); padding-top: 4px; scroll-padding-top: 28px; overflow-y: auto; }
+#think-menu .mm-section { position: relative; }
+#think-menu .mm-section + .mm-section { margin-top: 9px; }
+#think-menu .mm-section + .mm-section::before { content: ""; position: absolute; inset: -5px 0 auto; border-top: 1px solid var(--glass-border); }
+#think-menu .mm-group { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; min-height: 22px; padding: 0 8px; background: var(--content-bg); font-size: var(--fs-meta); color: var(--text-tertiary); }
+#think-menu .mm-group::after { content: ""; position: absolute; inset: 100% 0 auto; height: 8px; background: linear-gradient(var(--content-bg), transparent); pointer-events: none; }
+#think-menu .mm-list .mm-row { grid-template-columns: 14px 1fr 18px; min-height: 28px; padding: 0 8px; }
+#think-menu .mm-list .mm-check { grid-row: 1; grid-column: 3; }
+:is(#think-chip, #think-menu, #mm-rail) .pv { flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; color: var(--text-primary); background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+:is(#think-chip, #think-menu, #mm-rail) .pv-letter { background: none; -webkit-mask: none; mask: none; border-radius: var(--s-1); box-shadow: inset 0 0 0 1px var(--glass-border); font-size: var(--fs-glyph); font-weight: 600; line-height: 1; }
+#think-chip .pv { color: currentColor; }
+@container panel (max-width: 390px) { #think-chip .pv { display: none; } }
+#think-menu .mm-group .pv { width: 12px; height: 12px; color: currentColor; }
+#mm-rail { position: absolute; left: calc(var(--mm-left, 10px) - 48px); bottom: calc(100% + 6px); box-sizing: border-box; width: 38px; display: flex; flex-direction: column; gap: 1px; padding: 4px; overflow-y: auto; scrollbar-width: none; border-radius: var(--r); border: 1px solid var(--glass-border); background: var(--content-bg); box-shadow: var(--popover-shadow); opacity: 0; translate: 8px 0; pointer-events: none; transition: opacity var(--d-state) var(--e-out), translate var(--d-state) var(--e-out); z-index: 20; }
+#mm-rail.show { opacity: 1; translate: 0 0; pointer-events: auto; }
+#mm-rail button { all: unset; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--text-tertiary); cursor: pointer; transition: background var(--m-quick) ease, color var(--m-quick) ease; }
+#mm-rail button .pv { width: 16px; height: 16px; color: currentColor; }
+#mm-rail button:hover, #mm-rail button[aria-current="true"] { background: var(--content-subtle); color: var(--text-primary); }
 #think-menu .mm-none { padding: 18px 10px; text-align: center; font-size: var(--fs-code); color: var(--text-tertiary); }
 @media (prefers-reduced-motion: reduce) {
   #think-menu { transition: opacity var(--d-micro) linear; transform: none; }
   #think-menu .mm-views, #think-chip svg { transition: none; }
+  #mm-rail { translate: none; transition: opacity var(--d-micro) linear; }
   #think-menu.mm-in-all .mm-main { display: none; }
   #think-menu.mm-in-all .mm-views { transform: none; }
   #think-chip .think-swap { animation: none; }

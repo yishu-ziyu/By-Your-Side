@@ -30,7 +30,8 @@ import { renderSettings } from "./view.js";
 import { mountSettingsNavigation } from "./navigation.js";
 import { mountModelPicker } from "./model-picker.js";
 import { CONNECTION_PREFIX, modelConfig, optionConfig, readConnectionChecks, readConnections, rememberConnections, reusableCustomApiKey, saveConnection, saveModelRole, updateConnectionCheck, withModelSettings, type ConnectionCheck } from "./connections.js";
-import { groupEntries, matchEntry, providerIcon, type Entry } from "./providers.js";
+import { groupEntries, matchEntry, type Entry } from "./providers.js";
+import { providerIcon } from "../shared/provider-icon.js";
 
 syncColorTone();
 syncColorScheme();
