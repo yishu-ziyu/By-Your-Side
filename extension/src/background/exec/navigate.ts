@@ -3,7 +3,7 @@ import { ensureAttached } from "../debugger.js";
 import { resolveWorkingTab, setWorkingTab } from "../state.js";
 import { openTab } from "./tabs.js";
 
-import {ERROR_PAGE_NOTE,downloadNote,readCurrentDocument,retryTransientErrorPage,settlesContent,waitForInteractive,waitForQuietDom,type PageReadiness} from "./page-readiness.js";
+import {ERROR_PAGE_NOTE,downloadNote,readCurrentDocument,retryTransientErrorPage,settlesContent,showsErrorPage,waitForInteractive,waitForQuietDom,type PageReadiness} from "./page-readiness.js";
 
 export async function navigate(
   params: {
@@ -91,7 +91,7 @@ async function keepUserPage(
 
   if (!tab.active || !isWebPage(tab.url)) return null;
 
-  if (tab.url === url || tab.url === new URL(url).href) {
+  if ((tab.url === url || tab.url === new URL(url).href) && !await showsErrorPage(tab.id!)) {
     await dispatch();
 
     return { url: tab.url, title: tab.title ?? "", readiness: "complete", waitMs: 0, note: "The user's page already shows this address; it was not reloaded, so their reading position and marks are kept. To reload it (for example to verify a change), navigate again with inPlace:true." };
