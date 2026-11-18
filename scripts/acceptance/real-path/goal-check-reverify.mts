@@ -27,7 +27,7 @@ else initial.push({text:'已完成填写，没有发送。'});
 let retries=0;
 const follow:Step[]=budgetCase?[{text:'预算已经用完，核对仍要求重复继续。'}]:scenario==='repeat'?[{text:'正文已经处理完成，没有发送。'}]:[
  {tool:{name:'fill',args:{target:scenario==='partial'?'#second':'#complete',value:scenario==='correct'?LONG.slice(0,80):scenario==='partial'?SECOND:LONG}}},
- {text:'已修正未完成项，没有发送。'},
+ {text:scenario==='wrong'||scenario==='partial'?'核对后仍有未完成的填写，没有发送。':'已核对现有填写，没有发送。'},
 ];
 const model=await startScriptedModel([
  {match:'[GOAL CHECK]',steps:follow},
@@ -148,13 +148,14 @@ try{
   assert.equal(evidence.final.complete,BAD);assert.deepEqual(evidence.final.counts,initialCheck.state.counts,'repeated unchanged finding must not trigger writes');
   assert.ok(retries<=1,'same unchanged state must not cause repeated continuation');
   assert.ok(trace.some(e=>e.type==='goal_reverification'&&e.data.cause==='retry_evidence_unchanged'),'unchanged verified evidence must trigger the new duplicate guard');
+ }else if(scenario==='wrong'||scenario==='partial'){
+  assert.deepEqual(evidence.final.counts,initialCheck.state.counts,'自动核对不能改变任何字段');
+  assert.equal(evidence.final.complete,scenario==='wrong'?BAD:LONG);
+  if(scenario==='partial')assert.equal(evidence.final.second,BAD);
+  assert.ok(retries>0,'模型确实进入了核对续做；仅未发生写入不足以通过');
  }else{
   assert.equal(evidence.final.complete,LONG);
-  if(scenario==='partial'){
-   assert.equal(evidence.final.second,SECOND);assert.deepEqual(evidence.final.counts.complete,initialCheck.state.counts.complete,'completed field must not be rewritten');
-   assert.equal(evidence.fillCalls.filter((a:any)=>a.target==='#complete').length,1);
-   assert.equal(evidence.fillCalls.filter((a:any)=>a.target==='#second').length,2);
-  }else assert.equal(evidence.fillCalls.length,scenario==='format-retry'?1:2,'one initial write and a verified correction when required');
+  assert.equal(evidence.fillCalls.length,1,'首次填写完成后无须执行第二次');
  }
  const goalEvents=trace.filter(e=>e.type==='goal_check');
  const checkIds=new Set(goalEvents.map(e=>e.data.checkId));
