@@ -5,7 +5,7 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { loadavg } from "node:os";
 import { join, resolve } from "node:path";
 import { REPO, sleep } from "../acceptance/real-path/harness.mts";
-import { type Arm, type Pass, type Verdict, judge, registrationOf, shuffled } from "./climb-rules.mts";
+import { type Arm, type Pass, type Verdict, judge, registrationOf, replayModelArgs, shuffled } from "./climb-rules.mts";
 import { poolOf, type Row } from "./replay-row.mts";
 
 const MAX_LOAD = 20;
@@ -74,12 +74,13 @@ if (!early && reg.scenarios.length) {
     if (Date.now() - started > reg.budgetMin * 60_000) { notes.push(`预算 ${reg.budgetMin} 分钟用完，只跑了 ${pair}/${reg.N} 对`); break; }
     for (const arm of order) {
       await waitForQuietMachine();
-      const args = ["scripts/maintenance/self-use-replay.mts", `--only=${reg.scenarios.join(",")}`, `--label=climb-${reg.name}-${pair + 1}-${arm}`, ...(reg.pool ? [`--pool=${reg.pool}`] : []), ...(reg.model ? [`--model=${reg.model}`] : [])];
-      const { out } = await child(args, { SIDEAGENT_ACCEPTANCE_DIST: dists[arm], SIDEAGENT_BUILD_ROLE: arm, SIDEAGENT_RECORD: "0" }, true);
+      const args = ["scripts/maintenance/self-use-replay.mts", `--only=${reg.scenarios.join(",")}`, `--label=climb-${reg.name}-${pair + 1}-${arm}`, ...(reg.pool ? [`--pool=${reg.pool}`] : []), ...replayModelArgs(reg)];
+      const { code, out } = await child(args, { SIDEAGENT_ACCEPTANCE_DIST: dists[arm], SIDEAGENT_BUILD_ROLE: arm, SIDEAGENT_RECORD: "0" }, true);
+      if (code !== 0) { notes.push(`第 ${pair + 1} 对 ${arm} 回放退出码 ${code ?? "未返回"}`); continue; }
       const report = /报告：(\S+\.md)/.exec(out)?.[1];
       if (!report) { notes.push(`第 ${pair + 1} 对 ${arm} 回放没有出报告`); continue; }
-      const json = JSON.parse(readFileSync(report.replace(/\.md$/, ".json"), "utf8")) as { model: { provider: string; modelId: string }; fastModel: string; rows: Row[] };
-      passes.push({ arm, pair, report, model: `${json.model.provider}/${json.model.modelId}`, fastModel: json.fastModel, rows: json.rows });
+      const json = JSON.parse(readFileSync(report.replace(/\.md$/, ".json"), "utf8")) as { model: { provider: string; modelId: string }; fastModel: string; effort?: string; rows: Row[] };
+      passes.push({ arm, pair, report, model: `${json.model.provider}/${json.model.modelId}`, fastModel: json.fastModel, effort: json.effort, rows: json.rows });
     }
   }
 }
@@ -94,6 +95,7 @@ const report = [
   ``,
   `改前 ${dists.base}；改后 ${dists.cand}${aa ? "（同一份构建：A/A 检验，应当判「证据不足」）" : ""}。场景 ${reg.scenarios.join("、") || "无"}，${reg.N} 对，α=${reg.alpha}，用时 ${minutes} 分钟，登记 ${registrationHash}，尺子 ${rulerHead}${rulerDirty ? "（开跑时回放或验收脚本有未提交的改动）" : ""}。`,
   ``,
+  ...(reg.scenarios.length ? [`回放配置 ${replayModelArgs(reg).join(" ") || "沿用现有回放默认值"}。`, ""] : []),
   ...(allReasons.length ? ["没通过的原因：", ...allReasons.map(r => `- ${r}`), ""] : []),
   ...[...notes, ...judged.lines].map(l => `- ${l}`),
   ``,
