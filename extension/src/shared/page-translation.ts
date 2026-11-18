@@ -11,7 +11,12 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   type Block = {pendingMark?: HTMLElement; families?: FontOverride[]; hadStyles?: Map<HTMLElement, boolean>; id: string; element: HTMLElement; segments: Segment[]; output?: HTMLElement; font?: {value: string; priority: string; hadStyle: boolean; applied: string}};
 
-  type Scope = { url: string; targets: Map<HTMLElement, Array<{ node: Text; original: string }>> };
+  type ParagraphAuthority = {
+    body: HTMLElement; root: Element; ordinals: Set<number>;
+    candidates?: Map<Element, HTMLParagraphElement[]>;
+  };
+
+  type Scope = { url: string; targets: Map<HTMLElement, Array<{ node: Text; original: string }>>; authority?: ParagraphAuthority };
 
   type State = {
     scope?: Scope;
@@ -75,9 +80,14 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     return {document: '', language: command.language ?? '简体中文', mode: 'bilingual', fontSize: null, fontFamily: 'original', translated: 0, remaining: found.length, unsupported: 0, blocks: found};
   }
 
-  if (state && state.url !== documentUrl()) { mutated = true; state.restore(); delete world.__bysTranslation; state = undefined; }
-
-  if (command.document && command.document !== state?.token) throw new Error('网页已变化，这批译文未写入。请在当前页面重新翻译。');
+  const stale = state && state.url !== documentUrl();
+  const constrained = command.scope?.paragraphs !== undefined;
+  const restoreStale = () => { if (state && stale) { mutated = true; state.restore(); delete world.__bysTranslation; state = undefined; } };
+  const checkDocument = () => {
+    if (!constrained) restoreStale();
+    if (command.document && (stale || command.document !== state?.token)) throw new Error('网页已变化，这批译文未写入。请在当前页面重新翻译。');
+  };
+  checkDocument();
   const songti = '"Songti SC", "STSong", "SimSun", serif';
 
   const restoreFamily = (block: Block) => {
@@ -155,11 +165,54 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     return segment?.node === node && node.data === (state?.mode === 'translated' ? segment.translation ?? segment.original : segment.original) ? segment.original : node.data;
   };
 
-  const resolveScope = (): Scope | undefined => {
+  const paragraphRoot = (element: HTMLElement) => {
+    if (element.tagName !== 'P' || element.closest('nav,aside,footer,header,[role="navigation"],[role="complementary"],[role="contentinfo"],[role="banner"]')) return;
+    const parent = element.parentElement;
+    const root = parent?.closest('article,[role="article"]') ?? parent?.closest('main,[role="main"]');
+    return root && document.body.contains(root) ? root : undefined;
+  };
+
+  const paragraphCandidates = () => {
+    const candidates = new Map<Element, HTMLParagraphElement[]>();
+    for (const element of document.body.querySelectorAll('p')) {
+      const root = paragraphRoot(element);
+      if (!root) continue;
+      const group = candidates.get(root);
+      if (group) group.push(element);
+      else candidates.set(root, [element]);
+    }
+    return candidates;
+  };
+
+  const paragraphMismatch = () => new Error('原文段落与授权序号不符，或正文范围不唯一，未写入译文。');
+
+  const verifyParagraphAuthority = (scope: Scope, readNodes: (element: HTMLElement) => Text[] | undefined) => {
+    const authority = scope.authority;
+    if (!authority) return;
+    if (authority.body !== document.body || !authority.root.isConnected) throw paragraphMismatch();
+    const candidates = authority.candidates ??= paragraphCandidates();
+    const isBodyParagraph = (element: HTMLElement) => element.checkVisibility({opacityProperty: true, visibilityProperty: true}) &&
+      readNodes(element)?.some((node, index) => !node.parentElement?.closest('a,[role="link"]') && /[\p{L}\p{N}]/u.test(original(element, node, index)));
+
+    for (const [root, elements] of candidates) {
+      if (root !== authority.root && elements.some(isBodyParagraph)) throw paragraphMismatch();
+    }
+
+    let ordinal = 0, matched = 0;
+    for (const element of candidates.get(authority.root) ?? []) {
+      if (!isBodyParagraph(element) || !authority.ordinals.has(++ordinal)) continue;
+      if (!scope.targets.has(element)) throw paragraphMismatch();
+      if (++matched === authority.ordinals.size) return;
+    }
+    throw paragraphMismatch();
+  };
+
+  const resolveScope = () => {
     if (!command.scope) return undefined;
     if (new URL(command.scope.url).href !== location.href) throw new Error('原文对应的网址已变化，未翻译页面。');
     const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
-    const paragraphs = [...readParagraphs()].map(([element, nodes]) => ({
+    const groups = readParagraphs();
+    const paragraphs = [...groups].map(([element, nodes]) => ({
       element, nodes, text: normalize(nodes.map((node, index) => original(element, node, index)).join('')),
     }));
     const scope: Scope = { url: location.href, targets: new Map() };
@@ -172,17 +225,31 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
       scope.targets.set(element, nodes.map((node, index) => ({ node, original: original(element, node, index) })));
     }
 
-    if (state && (
+    if (state && !stale && (
       command.language && command.language !== state.language ||
       command.mode && command.mode !== state.mode ||
       command.fontSize !== undefined && command.fontSize !== state.fontSize ||
       command.fontFamily && command.fontFamily !== state.fontFamily
     )) throw new Error('局部翻译不能改动已有译文的语言或显示方式，请先还原译文。');
 
-    return scope;
+    return {scope, groups};
   };
 
-  const scope = resolveScope();
+  const prepareScope = () => {
+    const resolved = resolveScope();
+    if (!resolved) return;
+    const {scope, groups} = resolved;
+    const ordinals = command.scope?.paragraphs;
+    if (!ordinals) return scope;
+    const first = scope.targets.keys().next().value;
+    const root = first && paragraphRoot(first);
+    if (!root) throw paragraphMismatch();
+    scope.authority = {body: document.body, root, ordinals: new Set(ordinals)};
+    verifyParagraphAuthority(scope, element => groups.get(element));
+    restoreStale();
+    return scope;
+  };
+  const scope = prepareScope();
   if (command.action === 'begin' && !scope) dropManual();
 
   if (command.action === 'begin' && state && command.language && state.language !== command.language) { clear(); state = undefined; }
@@ -200,12 +267,17 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
  for (const b of owned.blocks.values()) undo(b); owned.blocks.clear(); };
 
     world.__bysTranslation = state;
-    state.observer = new MutationObserver(() => {
+    state.observer = new MutationObserver(records => {
       if (owned.url !== documentUrl()) { owned.restore();
 
  if (world.__bysTranslation === owned) delete world.__bysTranslation;
 
  return; }
+
+      const authority = owned.scope?.authority;
+      const containsParagraph = (node: Node) => node instanceof Element && (node.matches('p') || !!node.querySelector('p'));
+      if (authority && records.some(record => record.type === 'attributes' ||
+        [...record.addedNodes, ...record.removedNodes].some(containsParagraph))) authority.candidates = undefined;
 
       for (const [element, block] of owned.blocks) {
         if (!element.isConnected || block.segments.some(s => !s.node.isConnected || !element.contains(s.node) || s.node.data !== (owned.mode === 'translated' ? s.translation ?? s.original : s.original)) || (owned.mode === 'bilingual' && !!block.output && !block.output.isConnected)) {
@@ -219,10 +291,6 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   const current = state;
 
   const bindScope = () => {
-    if (command.action === 'begin') {
-      if (scope || current.scope) current.token = crypto.randomUUID();
-      current.scope = scope;
-    }
     if (!current.scope) return;
     if (current.scope.url !== location.href) throw new Error('原文对应的网址已变化，未写入译文。');
     const groups = new Map<HTMLElement, Text[]>();
@@ -232,8 +300,22 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
       groups.set(element, nodes);
     }
 
+    if (command.action !== 'begin') verifyParagraphAuthority(current.scope, element => groups.get(element) ?? readParagraphs(element).get(element));
     return groups;
   };
+  const startScope = () => {
+    if (command.action !== 'begin') return;
+    if (scope || current.scope) current.token = crypto.randomUUID();
+    const numbered = Boolean(scope?.authority);
+    if (numbered !== Boolean(current.scope?.authority)) {
+      current.observer.disconnect();
+      current.observer.observe(numbered ? document.documentElement : document.body, {
+        subtree: true, childList: true, characterData: true, ...(numbered && {attributeFilter: ['role']}),
+      });
+    }
+    current.scope = scope;
+  };
+  startScope();
   const scopedGroups = bindScope();
   const inScope = (element: HTMLElement) => current.scope?.targets.has(element) ?? true;
 

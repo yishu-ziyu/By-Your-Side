@@ -23,7 +23,18 @@ export interface TranslationReceipt {
   incompleteReason?: 'page-changing' | 'batch-limit' | 'model-output';
 }
 
-export interface TranslationScope { url: string; quotes: string[] }
+export interface TranslationScope { url: string; quotes: string[]; paragraphs?: number[] }
+
+export const MAX_TRANSLATION_PARAGRAPH = 10_000;
+
+function validateTranslationScope(scope: TranslationScope, action: TranslationCommand['action']): void {
+  if (action !== 'begin' || !scope || typeof scope.url !== 'string' || !URL.canParse(scope.url) || !Array.isArray(scope.quotes) || !scope.quotes.length || scope.quotes.length > 64 || scope.quotes.some(quote => typeof quote !== 'string' || !quote.trim() || quote.length > 12000)) throw new Error('限定翻译需要来源网址和每段原文。');
+
+  const {paragraphs} = scope;
+  if (paragraphs === undefined) return;
+  if (!Array.isArray(paragraphs) || paragraphs.length !== scope.quotes.length || new Set(paragraphs).size !== paragraphs.length ||
+    Array.from(paragraphs).some(n => !Number.isInteger(n) || n < 1 || n > MAX_TRANSLATION_PARAGRAPH)) throw new Error('无效的授权段落序号，未翻译页面。');
+}
 
 export interface TranslationCommand {
   scope?: TranslationScope;
@@ -64,10 +75,7 @@ export function validateTranslationCommand(p: TranslationCommand): void {
 
   if (p.document !== undefined && (typeof p.document !== 'string' || p.document.length > 100)) throw new Error('无效的文档身份');
 
-  if (p.scope !== undefined) {
-    const scope = p.scope;
-    if (p.action !== 'begin' || !scope || typeof scope.url !== 'string' || !URL.canParse(scope.url) || !Array.isArray(scope.quotes) || !scope.quotes.length || scope.quotes.length > 64 || scope.quotes.some(quote => typeof quote !== 'string' || !quote.trim() || quote.length > 12000)) throw new Error('限定翻译需要来源网址和每段原文。');
-  }
+  if (p.scope !== undefined) validateTranslationScope(p.scope, p.action);
 
   if (p.delayMs !== undefined && (p.action !== 'settle' || !Number.isFinite(p.delayMs) || p.delayMs < 0 || p.delayMs > 60_000)) throw new Error('无效的收尾延迟');
 
