@@ -34,6 +34,7 @@ export type SideCallRecord = {
   model: string;
   effort: ModelThinkingLevel;
   attempts: number;
+  usage?: { responses: number; input: number; cacheRead: number; cacheWrite: number; output: number; totalTokens: number };
   ms: number;
   outcome: "ok" | "failed";
   reason?: SideFailureReason;
@@ -136,9 +137,11 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
   let userSuffix = "";
   let lastError: string | undefined;
 
+  const usage = { responses: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, totalTokens: 0 };
   const finish = (outcome: "ok" | "failed", reason?: SideFailureReason) => {
     const line: SideCallRecord = { purpose: spec.purpose, model: modelKey(model), effort, attempts, ms: Date.now() - calledAt, outcome };
 
+    if (usage.responses) line.usage = usage;
     if (reason) line.reason = reason;
 
     if (outcome === "failed" && lastError) line.detail = lastError.slice(0, 160);
@@ -203,6 +206,10 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
       continue;
     }
 
+    if (reply.usage?.totalTokens > 0) {
+      usage.responses += 1;
+      for (const field of ["input", "cacheRead", "cacheWrite", "output", "totalTokens"] as const) usage[field] += reply.usage[field];
+    }
     if (reply.stopReason === "error" || reply.stopReason === "aborted") {
       const aborted = abortReason(attemptSignal);
 
