@@ -166,8 +166,7 @@ const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
 
 const PRE_OBSERVATION_TEXT_MAX = 12_000;
 const AX_TREE_SOURCE_MIN_CHARS = 400;
-const TRANSLATE_INTENT = /翻译|译成|译为|\btranslate\b/i;
-const OTHER_TARGET = /(?:翻译|译)(?:成|为|到)\s*(?!中文|简体|汉语|普通话)[\p{L}]|\binto\s+(?!chinese)[a-z]/iu;
+const WHOLE_PAGE_TRANSLATION = /^(?:请?(?:把(?:这个页面|当前页面|这一页|整页)翻译成(?:简体)?中文|(?:重新)?翻译(?:这个页面|当前页面|这一页|整页))(?:[，,]\s*只保留译文)?[。！!]?|(?:please )?translate (?:this|the current) (?:web)?page (?:to|into) (?:simplified )?chinese[.!]?)$/iu;
 const TRANSLATION_PREFETCH_BLOCKS = 16;
 const TRANSLATION_PREFETCH_LANES = 4;
 const TRANSLATION_PREFETCH_AFTER_MAIN_MS = 100;
@@ -2003,7 +2002,10 @@ return;}
     const tabId = context?.tabId;
     const model = this.translationModel();
 
-    if (!this.rpc || !model || typeof tabId !== "number" || !TRANSLATE_INTENT.test(text) || OTHER_TARGET.test(text)) return;
+    const request = this.activeGoal;
+    if (!this.rpc || !model || typeof tabId !== "number" || context?.selection?.text || !request || !WHOLE_PAGE_TRANSLATION.test(request.trim())) return;
+    // WHY: Attachments, steering and prior voice turns can narrow the scope of an otherwise whole-page command.
+    if (text !== withPageContext(request, context)) return;
     const language = "简体中文";
     const abort = new AbortController();
     this.translationPrefetch = abort;

@@ -27,10 +27,10 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   const world = globalThis as typeof globalThis & {__bysTranslation?: State};
   let state = world.__bysTranslation;
 
-  const readParagraphs = () => {
+  const readParagraphs = (root: HTMLElement = document.body) => {
     const excluded = 'script,style,noscript,textarea,input,select,button,pre,code,svg,canvas,iframe,[contenteditable]:not([contenteditable="false"]),[translate="no"],.notranslate,[data-bys-translation],[hidden],[aria-hidden="true"],[id^="__sideagent"],[id^="sideagent-"]';
     const groups = new Map<HTMLElement, Text[]>();
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let node: Node | null;
 
     while ((node = walker.nextNode())) {
@@ -225,10 +225,11 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     }
     if (!current.scope) return;
     if (current.scope.url !== location.href) throw new Error('原文对应的网址已变化，未写入译文。');
-    const groups = readParagraphs();
+    const groups = new Map<HTMLElement, Text[]>();
     for (const [element, saved] of current.scope.targets) {
-      const nodes = groups.get(element);
+      const nodes = readParagraphs(element).get(element);
       if (!nodes || nodes.length !== saved.length || saved.some((s, i) => s.node !== nodes[i] || original(element, s.node, i) !== s.original)) throw new Error('原文段落已变化，未写入译文。');
+      groups.set(element, nodes);
     }
 
     return groups;
@@ -296,6 +297,13 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   const applyDisplay = () => {
     if (scope || (!command.mode && command.fontSize === undefined && command.fontFamily === undefined)) return;
+    if (current.scope && [...current.blocks.values()].some(b => !inScope(b.element) && b.segments.some(s => s.translation !== undefined))) {
+      const changes = (command.mode !== undefined && command.mode !== current.mode)
+        || (command.fontSize !== undefined && command.fontSize !== current.fontSize)
+        || (command.fontFamily !== undefined && command.fontFamily !== current.fontFamily);
+      if (changes) throw new Error('页面上还有其他范围的译文，无法只切换当前几段的显示方式。');
+      return;
+    }
     for (const block of current.blocks.values()) restoreFont(block);
 
     if (command.fontFamily) current.fontFamily = command.fontFamily;
@@ -341,7 +349,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     current.blocks.set(element, {id, element, segments: nodes.map((node, i) => ({id: `${id}:${i}`, node, original: node.data}))});
   }
 
-  for (const [element, block] of current.blocks) if (!groups.has(element)) { undo(block); current.blocks.delete(element); }
+  for (const [element, block] of current.blocks) if (inScope(element) && !groups.has(element)) { undo(block); current.blocks.delete(element); }
 
   const eligible = [...current.blocks.values()].filter(b => inScope(b.element));
   const pending = eligible.filter(b => !b.segments.every(s => s.translation !== undefined));
