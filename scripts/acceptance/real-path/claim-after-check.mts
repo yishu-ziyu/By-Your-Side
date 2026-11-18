@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { REPO, launchRealPath, requireHeadless, siteAddress, sleep, until } from "./harness.mts";
-import { recheckProbe, reverifyContinue, startScriptedModel } from "./scripted-model.mts";
+import { recheckProbe, reverifyContinue, startScriptedModel, type Rule } from "./scripted-model.mts";
 
 requireHeadless();
 
@@ -60,8 +60,11 @@ const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished th
 
 const toolTexts = new Set<string>();
 
+const repair: Rule = { match: "[GOAL CHECK]", steps: [] };
+let attemptUnlistedFill = false;
+const readThenReply = [{ tool: { name: "snapshot", args: {} } }, { text: FIXED }];
 const model = await startScriptedModel([
-  { match: "[GOAL CHECK]", steps: [{ tool: { name: "snapshot", args: {} } }, { text: FIXED }] },
+  repair,
   { match: CASES.a.ask, steps: [fill("Note"), { text: CASES.a.claim }] },
   { match: CASES.b.ask, steps: [fill("hello world"), { text: CASES.b.claim }] },
   { match: CASES.e.ask, steps: [fill(NOTE_FIRST), { text: CASES.e.claim }] },
@@ -76,6 +79,11 @@ const model = await startScriptedModel([
   { match: "VERDICT-CONTINUE", steps: [{ text: JSON.stringify({ status: "continue", remaining: "填入第一句", correction: CORRECTION, finding: FINDING }) }] },
   { match: "VERDICT-DONE", steps: [{ text: JSON.stringify({ status: "done", remaining: "", correction: "" }) }] },
 ], undefined, payload => {
+  if (payload.tools?.length) {
+    const offersFill = payload.tools.some(tool => typeof tool === "object" && tool !== null && "function" in tool
+      && typeof tool.function === "object" && tool.function !== null && "name" in tool.function && tool.function.name === "fill");
+    repair.steps = offersFill || attemptUnlistedFill ? [fill("unexpected repair write"), ...readThenReply] : readThenReply;
+  }
   for (const m of payload.messages ?? []) {
     const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(p => p.text ?? "").join("") : "";
 
@@ -162,7 +170,7 @@ try {
   };
 
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify(items)}).then(() => true)`);
-  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, "sidebar ready");
 
   const settled = () => until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")') || undefined, 60_000, "previous turn settled", 100);
 
@@ -208,6 +216,11 @@ try {
     fix: s => s.fix.length > 0,
     final: s => s.answers.some(t => t.includes(FIXED)),
   });
+  const repairRequests = model.requests.filter(request => request.rule === repair.match).length;
+  const draftAfterRepair = await rp.evaluate(work, 'document.querySelector("#draft").value');
+  evidence.repairPath = { repairRequests, draft: draftAfterRepair };
+  assert.equal(draftAfterRepair, "Note", "核对完成后草稿里必须仍是首次填写的内容");
+  assert.equal(repairRequests, 2, "用户应在只读核对和回答两轮后看到纠正，不能被多余的填表失败拖住");
   const firstCheck = checks[checksBeforeA]!;
   const releaseMs = firstCheck.releasedAt - a.sentAt;
   const caseA = {
@@ -315,7 +328,10 @@ try {
   verdicts.push({ holdMs: 0, probe: "VERDICT-CONTINUE-BARE" }, { holdMs: 0, probe: "VERDICT-DONE" });
   const fixedBefore = Number(await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant[data-delivery-id]")].filter(m => m.textContent.includes(${JSON.stringify(FIXED)})).length`));
   let sawFixO = false;
+  attemptUnlistedFill = true;
   const o = await runCase("o", s => (sawFixO ||= s.fix.some(t => t.includes("还差"))) && s.answers.filter(t => t.includes(FIXED)).length > fixedBefore, {}, 30_000);
+  attemptUnlistedFill = false;
+  assert.equal(await rp.evaluate(work, 'document.querySelector("#draft").value'), "Note O", "核对时模型即使发出未提供的填表调用，也不能更改网页");
   const fixO = o.samples.flatMap(s => s.fix).filter(t => t.includes("还差")).map(fixHead);
   evidence.o = { fix: [...new Set(fixO)] };
   assert.deepEqual([...new Set(fixO)], ["还差：填入第一句"], `o: without a finding the process line says what is still missing: ${JSON.stringify(fixO)}`);
