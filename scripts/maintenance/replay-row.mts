@@ -20,13 +20,28 @@ export type Row = {
   expect: "pass" | "fail";
   missed: string[];
   answer: string;
+  timing?: {
+    firstFeedbackMs: number | null;
+    finalAnswerMs: number | null;
+    correctCompletionMs: number | null;
+    verifiedMs: number;
+    pauseMs: number | null;
+  };
+  runIds?: string[];
+  usage?: {
+    mainRequests: number;
+    mainResponsesWithUsage: number;
+    mainReportedTokens: number | null;
+    sideAttemptsRecorded: number;
+    sideReportedTokens: null;
+  };
 };
 
 export const noAnswer = (row: Pick<Row, "answer">) => /没给出最后的回答/.test(row.answer);
 
 export const ok = (row: Row) => row.finished && !row.error && !row.cardSaysFailed && !row.changedGoal && !!row.answer.trim() && !noAnswer(row) && row.expect === "pass";
 
-export const outcome = (row: Row) => !row.finished ? "没完成" : row.error ? `报错：${row.error.slice(0, 40)}` : row.cardSaysFailed ? "卡片写没做成" : row.changedGoal ? "换了目标" : noAnswer(row) ? "没给回答就停了" : row.expect === "fail" ? `结果不对：${row.missed.join("；").slice(0, 40)}` : "完成";
+export const outcome = (row: Row) => row.timing?.pauseMs != null ? "等待用户" : !row.finished ? "没完成" : row.error ? `报错：${row.error.slice(0, 40)}` : row.cardSaysFailed ? "卡片写没做成" : row.changedGoal ? "换了目标" : !row.answer.trim() || noAnswer(row) ? "没给回答就停了" : row.expect === "fail" ? `结果不对：${row.missed.join("；").slice(0, 40)}` : "完成";
 
 const strings = (value: unknown) => Array.isArray(value) && value.every(item => typeof item === "string");
 
@@ -78,17 +93,60 @@ function factsOf(value: unknown): GoalFacts | null {
   return value as GoalFacts;
 }
 
-type TraceRecord = { type?: unknown; runId?: unknown; data?: { facts?: unknown; hostFacts?: { goalFacts?: unknown }; status?: unknown } };
+type TraceRecord = {
+  type?: unknown;
+  runId?: unknown;
+  data?: {
+    text?: unknown;
+    phase?: unknown;
+    status?: unknown;
+    facts?: unknown;
+    hostFacts?: { goalFacts?: unknown };
+    attempts?: unknown;
+    message?: { role?: unknown; usage?: { totalTokens?: unknown } };
+  };
+};
 
-export function attribute(rows: Row[], rowRuns: Set<unknown>[], lines: string[], pool: PoolTask[]) {
-  const parsed = lines.flatMap(line => { try { return [JSON.parse(line) as TraceRecord]; } catch { return []; } });
+export function recordsOf(lines: string[]): TraceRecord[] {
+  return lines.flatMap(line => { try { return [JSON.parse(line) as TraceRecord]; } catch { return []; } });
+}
+
+export function turnRuns(records: TraceRecord[], say: string): Set<string> {
+  return new Set(records.flatMap(r => r.type === "run_start" && typeof r.runId === "string" && r.data?.text === say ? [r.runId] : []));
+}
+
+export function checkState(records: TraceRecord[], runs: Set<string>): "pending" | "done" | "truncated" {
+  const open = new Map<string, number>();
+  let truncated = false;
+  for (const { type, runId, data } of records) {
+    if (type === "trace_limit") truncated = true;
+    if (typeof runId !== "string" || !runs.has(runId)) continue;
+    const key = type === "goal_check_span" ? runId + "-span" : runId + "-input";
+    if (type === "goal_check_span" || type === "goal_check_input" || type === "goal_check") {
+      const delta = type === "goal_check_input" || (type === "goal_check_span" && data?.phase === "start") ? 1 : -1;
+      open.set(key, Math.max(0, (open.get(key) ?? 0) + delta));
+    }
+  }
+  return [...open.values()].some(n => n > 0) ? truncated ? "truncated" : "pending" : "done";
+}
+
+export function attribute(rows: Row[], rowRuns: Set<string>[], lines: string[], pool: PoolTask[]) {
+  const parsed = recordsOf(lines);
 
   rows.forEach((row, index) => {
     const task = pool.find(t => t.n === row.n);
+    row.runIds = [...(rowRuns[index] ?? [])];
     if (!rowRuns[index]?.size) { row.error ??= "诊断记录里没有这一句的开始，往返和换目标无法归属"; return; }
-    const mine = parsed.filter(r => rowRuns[index]!.has(r.runId));
+    const mine = parsed.filter(r => typeof r.runId === "string" && rowRuns[index]!.has(r.runId));
     const facts = factsOf(mine.filter(r => r.type === "goal_check").at(-1)?.data?.hostFacts?.goalFacts ?? mine.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
     row.calls = mine.filter(r => r.type === "model_request").length;
+    const tokens = mine.flatMap(r => {
+      const message = r.data?.message;
+      const amount = message?.usage?.totalTokens;
+      return r.type === "message_end" && message?.role === "assistant" && typeof amount === "number" && Number.isFinite(amount) ? [amount] : [];
+    });
+    const sideAttempts = mine.reduce((sum, r) => sum + (r.type === "side_call" && typeof r.data?.attempts === "number" ? r.data.attempts : 0), 0);
+    row.usage = { mainRequests: row.calls, mainResponsesWithUsage: tokens.length, mainReportedTokens: tokens.length ? tokens.reduce((a, b) => a + b, 0) : null, sideAttemptsRecorded: sideAttempts, sideReportedTokens: null };
     row.changedGoal = !!task?.onPage?.includes(row.k) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
     row.verdict = mine.filter(r => r.type === "goal_check").map(r => r.data?.status).filter((s): s is string => typeof s === "string").at(-1) ?? null;
   });
