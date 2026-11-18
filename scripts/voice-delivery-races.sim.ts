@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { VoiceService } from "./voice-service.js";
-import { RealtimeVoiceSession } from "./realtime-voice-session.js";
-import { VoiceRelay } from "../../extension/src/background/voice-relay.js";
-import type { TaskProgressSnapshot } from "../../shared/voice.js";
+import { VoiceService } from "../agent/src/voice-service.js";
+import { RealtimeVoiceSession } from "../agent/src/realtime-voice-session.js";
+import { VoiceRelay } from "../extension/src/background/voice-relay.js";
+import type { TaskProgressSnapshot } from "../shared/voice.js";
 
 const conversationId = "review-conversation";
 const runId = "review-run";
