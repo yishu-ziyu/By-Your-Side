@@ -335,6 +335,7 @@ test("S3-7c: 语音意外断线期间完成的交付在 60 秒内重连就绪后
 
   await service.handle("conv-v", { type: "voice", voiceId: "v-2", command: { kind: "start", reconnectOf: "v-1" } });
   sessions[1]!.emit({ kind: "state", state: "ready", inputMode: "ptt" });
+  await service.handle("conv-v", { type: "voice", voiceId: "v-2", command: { kind: "ready_ack" } });
   assert.equal(sessions[1]!.notifies, 1, "60 秒内重连就绪后应补播断线期间刚完成且未播报的交付");
 
   sessions[1]!.emit({ kind: "state", state: "closed" });
