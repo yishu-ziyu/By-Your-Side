@@ -16,14 +16,24 @@ const paragraphs = ["north station opened in April", "the second instrument on F
 const attempt = (match: string, args: object) => ({
   match, steps: [{ tool: { name: "page_translation", args: { action: "translate", ...args } } }, { text: match + "已处理。" }],
 });
+let holdTranslation: Promise<void> | undefined;
+let releaseTranslation: (() => void) | undefined;
+const hold = () => {
+  holdTranslation = new Promise<void>(resolve => { releaseTranslation = resolve; });
+};
+const release = () => { releaseTranslation?.(); holdTranslation = undefined; };
 const model = await startScriptedModel([
   attempt("只在页面翻译前两段", { scope: scope(paragraphs) }),
   attempt("核对不唯一的段落", { scope: scope(["river rose after midnight", "Shared note."]) }),
   attempt("核对缺少的段落", { scope: scope(["river rose after midnight", "Absent paragraph."]) }),
   attempt("核对另一篇文章", { scope: scope(["river rose after midnight"], url + "-old") }),
   attempt("继续翻译整篇", {}),
+  attempt("核对将要更正的原文", { scope: scope(["The morning observation was provisional."]) }),
+  attempt("处理中途停止的段落", { scope: scope(["The evening reading has just arrived."]) }),
   { match: "还原网页原文", steps: [{ tool: { name: "page_translation", args: { action: "restore" } } }, { text: "还原网页原文已处理。" }] },
-], { delayMs: 100 });
+], { delayMs: 100 }, async payload => {
+  if (payload.messages?.some(m => m.role === "system" && typeof m.content === "string" && m.content.startsWith("Translate the supplied webpage text"))) await holdTranslation;
+});
 const rp = await launchRealPath();
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => {
@@ -38,10 +48,11 @@ try {
   const ready = 'document.querySelector("#conversation-new")?.disabled === false && document.querySelector("#send-btn")?.disabled === false';
   await until(async () => await rp.evaluate(panel, ready), 60000, "侧栏就绪");
   await rp.cdp.send("Page.bringToFront", {}, work);
-  const say = async (text: string) => {
+  const send = async (text: string) => {
     await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel);
-    await until(async () => await rp.evaluate(panel, `${ready} && [...document.querySelectorAll("#messages .msg.assistant")].some(n => n.innerText.includes(${JSON.stringify(text + "已处理。")}))`), 60000, text);
   };
+  const delivered = (text: string) => until(async () => await rp.evaluate(panel, `${ready} && [...document.querySelectorAll("#messages .msg.assistant")].some(n => n.innerText.includes(${JSON.stringify(text + "已处理。")}))`), 60000, text);
+  const say = async (text: string) => { await send(text); await delivered(text); };
   const state = () => rp.evaluate(work, `[...document.querySelectorAll('article [data-bys-translation="true"]')].map(el => el.parentElement.id || el.parentElement.tagName)`) as Promise<string[]>;
   const firstTwo = (ids: string[]) => ids.join(",") === "first,second";
   await rp.evaluate(work, `window.outsideWrites = []; new MutationObserver(records => {
@@ -64,7 +75,29 @@ try {
   await say("还原网页原文");
   const restored = await rp.evaluate(work, "document.querySelector('article').outerHTML");
   check("还原了全部原文、链接和段落结构", restored === page, restored);
+
+  await rp.evaluate(work, 'document.querySelector("#first").textContent = "The morning observation was provisional."');
+  hold();
+  await send("核对将要更正的原文");
+  await until(async () => await rp.evaluate(work, `!!document.querySelector('#first [data-bys-translation="pending"]')`), 15000, "正在处理第一段");
+  await rp.evaluate(work, 'document.querySelector("#first").textContent = "A corrected morning observation."');
+  release();
+  await delivered("核对将要更正的原文");
+  const changed = await rp.evaluate(work, `document.querySelector('#first').textContent === "A corrected morning observation." && !document.querySelector('[data-bys-translation]')`);
+  check("页面改写原文后拒绝迟到的译文", changed === true, changed);
+
+  await rp.evaluate(work, 'document.querySelector("#second").textContent = "The evening reading has just arrived."');
+  hold();
+  await send("处理中途停止的段落");
+  await until(async () => await rp.evaluate(work, `!!document.querySelector('#second [data-bys-translation="pending"]')`), 15000, "正在处理第二段");
+  await rp.click(panel, "#send-btn");
+  release();
+  await until(async () => await rp.evaluate(panel, `${ready} && !document.querySelector("#send-btn").classList.contains("stopping")`), 15000, "已停止");
+  await until(async () => await rp.evaluate(work, `!document.querySelector('[data-bys-translation="pending"]')`), 10000, "已清除占位");
+  const stopped = await rp.evaluate(work, `document.querySelector('#second').textContent === "The evening reading has just arrived." && !document.querySelector('[data-bys-translation]')`);
+  check("用户停止后保留原文并清理占位", stopped === true, stopped);
 } catch (error) { check("流程完成", false, String(error)); } finally {
+  release();
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, passed: checks.length > 0 && checks.every(c => c.pass) }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(resolve => server.close(() => resolve()));
 }
