@@ -1,3 +1,5 @@
+import { Type } from "typebox";
+import type { Message, Tool } from "@earendil-works/pi-ai";
 import { createHash } from "node:crypto";
 import { HELD_BY_OTHER_TASK_ERROR } from "../../shared/control.js";
 import type { TaskProgressSnapshot } from "../../shared/voice.js";
@@ -16,11 +18,34 @@ type RunContext = {
 };
 type Continuation = { prompt: string } | { settle: Exclude<GoalVerdict["status"], "continue">; overBudget?: true };
 
-export function allowsGoalRepairTool(name: string, params: Record<string, unknown>): boolean {
-  if (name === "tabs") return params.action === "list" || params.action === "active";
-  if (name === "artifacts") return params.command === "get";
+const REPAIR_READS = new Set(["snapshot", "read_element", "read_elements", "read_attachment", "answer_ui_guide", "send_user_message"]);
+const REPAIR_COMMANDS = new Map<string, { field: string; values: string[]; argument: string; description: string }>([
+  ["tabs", { field: "action", values: ["list", "active"], argument: "url", description: "List open tabs (url optionally filters by host) or read the active tab." }],
+  ["artifacts", { field: "command", values: ["get"], argument: "filename", description: "Read the named file from this conversation." }],
+]);
 
-  return ["snapshot", "read_element", "read_elements", "read_attachment", "answer_ui_guide", "send_user_message"].includes(name);
+export function allowsGoalRepairTool(name: string, params: Record<string, unknown>): boolean {
+  const command = REPAIR_COMMANDS.get(name);
+  if (!command) return REPAIR_READS.has(name);
+  const value = params[command.field];
+  return typeof value === "string" && command.values.includes(value);
+}
+
+export function goalRepairMessages(messages: Message[], active: readonly string[]): Message[] {
+  const offered = (tool: { name: string }) => active.includes(tool.name) && (REPAIR_READS.has(tool.name) || REPAIR_COMMANDS.has(tool.name));
+  const readDeclaration = (tool: Tool): Tool => {
+    const command = REPAIR_COMMANDS.get(tool.name);
+    if (!command) return tool;
+    const argument = command.argument === "url" ? Type.Optional(Type.String()) : Type.String();
+    const parameters = Type.Object({ [command.field]: Type.String({ enum: command.values }), [command.argument]: argument });
+    return { ...tool, description: command.description, parameters };
+  };
+
+  return messages.map(message => message.role !== "system" ? message : {
+    ...message,
+    ...(message.toolsAdded && { toolsAdded: message.toolsAdded.filter(offered).map(readDeclaration) }),
+    ...(message.toolsRemoved && { toolsRemoved: message.toolsRemoved.filter(offered) }),
+  });
 }
 
 export class ContinuePolicy {

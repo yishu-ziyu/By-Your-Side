@@ -894,6 +894,7 @@ if(required.includes(key))candidates.set(key,attachment);
           resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined, origin: resultHost.modelOrigin() });
           resultHost?.mainRequestStarted();
         },
+        repairingGoal: () => !!resultHost?.goalRepair,
         onModelResponse: status => resultHost?.modelRequestTrace.response(status),
         onModelHedge: ({ type, ...data }) => resultHost?.runTrace.record(type, data),
         onContextFit: data => resultHost?.runTrace.record("context_fit", data),

@@ -11,6 +11,7 @@ import type { AgentSessionEvent, AgentSessionEventListener, PromptOptions, Sessi
 import { RunNotStarted, type AgentLoop } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
 import type { ModelRequestObservation } from "./model-request-trace.js";
+import { goalRepairMessages } from "./continue-policy.js";
 import { ContextFit, RUN_CONTEXT_HEADER } from "./context-fit.js";
 import { streamThrough, type PiAgentLoopOptions } from "./pi-agent-loop.js";
 import type { PiSessionPersistence } from "./pi-session-persistence.js";
@@ -32,6 +33,7 @@ const PROMPT_WARM_TIMEOUT_MS = 15_000;
 const RETRY_MARK = " (network error)";
 
 interface DurableLoopOptions extends PiAgentLoopOptions {
+  repairingGoal?: () => boolean;
   openStorage?: (conversationId: string) => Promise<Storage>;
 }
 
@@ -387,7 +389,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   private async beforeRequest(messages: readonly Message[]): Promise<{ messages: readonly Message[] } | undefined> {
     const next = this.hooks.has("context") ? [...await this.hooks.context(messages as readonly HookMessage[])] as Message[] : [...messages];
-    return { messages: systemFirst(next) };
+    return { messages: systemFirst(this.options.repairingGoal?.() ? goalRepairMessages(next, this.active) : next) };
   }
 
   private async configure(): Promise<void> {
