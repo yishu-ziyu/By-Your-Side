@@ -135,6 +135,10 @@ try {
     assert.ok(!('error' in currentArticle), '有评论文章时仍应能确定当前规范文章的第一段：'+JSON.stringify(currentArticle));
     await ok({action: 'restore'});
 
+    await browser.evaluate(work, `(() => { for (const p of document.querySelectorAll('article:first-of-type p')) { const div=document.createElement('div');div.textContent=p.textContent;p.replaceWith(div); } return true; })()`);
+    const commentOnly = await command({ action: 'begin', scope: { url, quotes: ['Another visible article.'], paragraphs: [1] } });
+    assert.ok('error' in commentOnly, '正文没有 p 元素时不能把评论当成正文第一段');
+    await load();
     const legacy = await ok({ action: 'begin', scope: { url, quotes: [third] } });
     await ok({ action: 'apply', document: legacy.document, translations: await batch(legacy.document) });
     assert.match((await inspect()).third, /中文译文/);

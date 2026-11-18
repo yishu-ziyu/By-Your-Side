@@ -9,7 +9,7 @@ export type StepUsage = { prompt: number; cached?: number };
 
 export type Step = TextStep | { tool: ToolCall; delayMs?: number; usage?: StepUsage } | { tools: ToolCall[]; delayMs?: number; usage?: StepUsage } | { status: number; body: string };
 
-export type Rule = { match: string; steps: Step[]; pageTranslationDestination?: "scoped" | "whole"; pageTranslationParagraphs?: number[]; pageTranslationTargetsMatch?: boolean };
+export type Rule = { match: string; steps: Step[]; pageTranslationDestination?: "scoped" | "whole"; pageTranslationParagraphs?: number[]; pageTranslationPermission?: string; pageTranslationTargetsMatch?: boolean };
 
 type ContentPart = { type?: string; text?: string };
 
@@ -160,7 +160,7 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
       const latest = userRequests.at(-1);
       const rule = rules.find(rule => rule.match === latest);
       const destination = rule?.pageTranslationDestination ?? "none";
-      const step = { text: JSON.stringify({ destination, paragraphs: rule?.pageTranslationParagraphs ?? null, permission: destination === "none" ? "" : latest }) };
+      const step = { text: JSON.stringify({ destination, paragraphs: rule?.pageTranslationParagraphs ?? null, permission: destination === "none" ? "" : rule?.pageTranslationPermission ?? latest }) };
       const record: ModelRequest = { atMs: Date.now() - origin, rule: "page_translation_intent", step: 0, status: 200 };
       requests.push(record);
       if (payload.stream === false) json(res, step, `call_${++calls}`);

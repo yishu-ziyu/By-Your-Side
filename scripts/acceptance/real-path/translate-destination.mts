@@ -18,9 +18,13 @@ const pageAnswer = "前两段已处理。";
 const scope = { url, quotes: ["north station opened in April", "the second instrument on Friday"] };
 const tool = (mode: "translated" | "bilingual") => ({ name: "page_translation", args: { action: "translate", scope, mode } });
 const firstOnly = "只把第一段的译文加在原文旁。";
+const revoke = "撤回『翻译整页』。";
 const protectedRequest = "隐私样例，token=demo；改为只发侧栏。";
 const safeAnswer = "没有修改页面。";
 const model = await startScriptedModel([
+  { match: revoke, pageTranslationDestination: "whole", pageTranslationPermission: "翻译整页", steps: [
+    {tool: {name:"page_translation",args:{action:"translate"}}}, {text:safeAnswer},
+  ] },
   { match: "隐私样例", steps: [{tool: tool("translated")}, {text: safeAnswer}] },
   { match: firstOnly, pageTranslationDestination: "scoped", pageTranslationParagraphs: [1], steps: [
     { tool: {name: "page_translation",args: {action:"translate",scope:{url,quotes:["The river rose after midnight."]}}} }, {text:safeAnswer},
@@ -90,6 +94,9 @@ try {
   rounds.wrongParagraph = await say(firstOnly, safeAnswer);
   const correctTarget = await rp.evaluate(work, "window.articleState().thirdUnchanged");
   check("用户指定第一段时拒绝写入第三段的唯一原文", correctTarget === true, correctTarget);
+  rounds.revoke = await say(revoke, safeAnswer);
+  const afterRevoke = await rp.evaluate(work, "window.articleState().thirdUnchanged");
+  check("撤回消息内引述的旧命令不能授权整页写入", afterRevoke === true, afterRevoke);
   const start = model.requests.length;
   rounds.protected = await say(protectedRequest, safeAnswer);
   const extra = model.requests.slice(start).filter(r => r.rule === "page_translation_intent").length;
