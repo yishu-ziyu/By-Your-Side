@@ -31,7 +31,7 @@ const BROWSER_OAUTH = new Set(["kimi-coding", "github-copilot", "xai", "openai-c
 
 const LOGIN_LABELS = new Map([["kimi-coding", "用 Kimi Code 账号登录"], ["xai", "用 SuperGrok 或 X Premium 登录"]]);
 
-const NEEDS_EXTRA_CONFIG = new Set(["amazon-bedrock", "google-vertex", "azure-openai-responses", "cloudflare-ai-gateway", "cloudflare-workers-ai", "radius"]);
+const NEEDS_EXTRA_CONFIG = new Set(["amazon-bedrock", "google-vertex", "azure", "cloudflare-ai-gateway", "cloudflare-workers-ai", "radius"]);
 
 const RETIRED_JEV_PROVIDER = "typesafe";
 
