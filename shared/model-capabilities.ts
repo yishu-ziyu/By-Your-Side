@@ -62,6 +62,10 @@ export function withMeasuredCapability<TApi extends Api>(model: Model<TApi>): Mo
   if (measured?.reasoning === undefined || !measured.input) return model;
   const resolved: Model<TApi> = { ...model, reasoning: measured.reasoning, thinkingLevelMap: measured.thinkingLevelMap, input: measured.input };
 
+  if (model.provider === "minimax-cn" && model.id === "MiniMax-M3.1-Flash-Preview" && model.api === "anthropic-messages") {
+    resolved.compat = { ...model.compat, forceAdaptiveThinking: true } as Model<TApi>["compat"];
+  }
+
   if (measured.systemRole && model.api === "openai-completions") {
     resolved.compat = { ...model.compat, supportsDeveloperRole: false } as Model<TApi>["compat"];
   }
