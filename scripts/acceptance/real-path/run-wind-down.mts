@@ -9,10 +9,10 @@ const out=join(REPO,'out/acceptance/real-path',`${new Date().toISOString().repla
 const CHECK_MS=5000,FOLLOW='顺便说声谢谢',THANKS='不客气。';
 const evidence:unknown[]=[];let failure='';
 for(const mode of ['continue','reply','held']){
- const task=mode==='continue'?'把青松填到名称栏。':mode==='held'?'1. 读出资料名称 2. 读出页面标题':'读出资料名称。';
+ const task=mode==='continue'?'读出资料名称并说明名称栏当前显示什么。':mode==='held'?'1. 读出资料名称 2. 读出页面标题':'读出资料名称。';
  const checkMs=mode==='held'?9000:CHECK_MS;
- const first=mode==='continue'?'名称栏还没填，剩下的是把青松填写进去。':'资料名称是青松。';
- const final='已把青松填到名称栏。';
+ const first=mode==='continue'?'资料名称是青松，名称栏的内容还没读到。':'资料名称是青松。';
+ const final='资料名称是青松，名称栏为空。';
  const site=createServer((_req,res)=>{res.writeHead(200,{'content-type':'text/html;charset=utf-8'}).end('<title>整理资料</title><p>资料名称：青松</p><input id="name" aria-label="名称">');});
  await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${siteAddress(site).port}/`;
  const verdict=mode==='continue'?{status:'continue',verificationSubject:'answer',repair:'complete_task',evidence:first,items:[{text:'填写名称',done:false}],remaining:'完成剩余要求'}:{status:'done',remaining:null};
@@ -20,7 +20,7 @@ for(const mode of ['continue','reply','held']){
   {match:'USER REQUEST:',steps:[{text:'{"problems":[]}'}]},
   {match:`"lastReply":"${final}`,steps:[{text:'{"status":"done","remaining":null}'}]},
   {match:'"lastReply"',steps:[{text:JSON.stringify(verdict),delayMs:checkMs}]},
-  {match:'[GOAL CHECK]',steps:[{tool:{name:'fill',args:{target:'#name',value:'青松',label:'名称'}}},{text:final}]},
+  {match:'[GOAL CHECK]',steps:[{tool:{name:'read_element',args:{target:'#name'}}},{text:final}]},
   {match:FOLLOW,steps:[{text:THANKS}]},
   {match:task,steps:[{tool:{name:'navigate',args:{url}}},{text:first}]},
  ]);
@@ -54,7 +54,8 @@ for(const mode of ['continue','reply','held']){
    const timeline=await rp.evaluate(panel,`window.__tl`) as Array<{t:number;running:boolean}>;
    const target=(await rp.targets()).find(t=>t.url===url);assert.ok(target);const value=await rp.evaluate(await rp.attach(target.targetId),`document.querySelector('#name').value`) as string;
    evidence.push({mode,timeline,value});
-   assert.equal(value,'青松','the unfinished work is completed after the check');
+   assert.equal(value,'','the clarification does not change the field');
+   assert.ok((await text()).includes(final),'the completed answer reports the actual field');
    const flags=timeline.map(p=>p.running);assert.ok(flags.includes(true),'the run was shown as running');
    const ends=flags.slice(flags.indexOf(true)).filter(running=>!running).length;
    assert.equal(ends,1,`the task must be shown as finished exactly once, saw ${ends}: ${JSON.stringify(timeline)}`);

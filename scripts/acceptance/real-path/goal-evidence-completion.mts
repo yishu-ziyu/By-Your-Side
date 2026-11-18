@@ -33,7 +33,7 @@ const steps: Step[] = scenario === 'navigation' ? [{ tool: { name: 'tabs', args:
   : scenario === 'recovery'
     ? [{ tool: { name: 'click', args: { target: '#save' } } }, { text: '保存失败，内容已保留。' }]
     : [{ tool: { name: 'fill', args: { target: '#name', value: '李蕾' } } }, { text: '姓名已改为李蕾，按你的要求还没提交。' }];
-const follow: Step[] = [{ tool: { name: 'click', args: { target: '#save' } } }, { text: '草稿已保存。' }];
+const follow: Step[] = [{ tool: { name: 'click', args: { target: '#save' } } }, { text: '草稿仍未保存。' }];
 const model = await startScriptedModel([
   { match: '[GOAL CHECK]', steps: follow },
   { match: task, steps },
@@ -96,13 +96,13 @@ try {
     assert.ok(JSON.stringify([checks[0].input.page, checks[0].input.observations]).includes(original), 'relevant original survives both ledger and request budgets');
   } else if (scenario === 'recovery') {
     assert.ok(trace.some(event => event.type === 'goal_check' && event.data.replayInput?.verification?.reads.some((read: any) => read.data.includes(failure))), 'fresh reads include the failure outside the button');
-    assert.equal(saves, 2, 'one rejected save followed by one successful retry');
-    assert.equal(page.state, '草稿已保存');
+    assert.equal(saves, 1, 'the failed save is observed, with no second write by the checker');
+    assert.equal(page.state, failure);
   } else if (scenario === 'navigation') {
-    assert.equal(page.url, destination, 'requested address opens in the original browser target');
+    assert.notEqual(page.url, destination, 'automatic checking does not move the original tab');
     assert.ok(trace.some(event => event.type === 'goal_check' && event.data.adjustedBy === 'navigation_constraint'), 'host verifies the structured tab constraint');
   } else assert.equal(page.name, '李蕾');
-  assert.equal(final.status, 'done', 'completed user goal remains completed');
+  if (scenario !== 'recovery' && scenario !== 'navigation') assert.equal(final.status, 'done', 'completed user goal remains completed');
   assert.equal(submits, 0, 'no submission');
 } catch (caught) { error = caught instanceof Error ? caught.stack : String(caught); }
 finally {

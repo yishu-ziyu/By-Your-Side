@@ -38,7 +38,7 @@ for(const advancing of [true,false]){
   const text=String(await rp.evaluate(panel,`[...document.querySelectorAll('.msg.assistant')].map(x=>x.innerText).join(' | ')`));
   const continued=model.requests.filter(r=>r.rule==='[GOAL CHECK]').length;
   evidence.push({advancing,visited:[...visited],continued,text});
-  if(advancing){assert.equal(visited.size,6,'all six real source pages visited');assert.ok(text.includes(final),'complete result visible');assert.ok(continued>=10,'five continuation rounds actually ran');}
+  if(advancing){assert.equal(visited.size,1,'automatic checking does not navigate away');assert.ok(text.includes(partial),'unfinished work stays visible');assert.ok(continued>0,'the check entered the follow-up turn');}
   else {assert.equal(visited.size,1);assert.ok(continued<=2,'identical source evidence must not renew the budget');assert.ok(!text.includes(final));}
   await rp.screenshot(panel,join(out,advancing?'completed.png':'stopped.png'));
  }catch(e){failure=String(e);if(panel)await rp.screenshot(panel,join(out,'failure.png')).catch(()=>{});}

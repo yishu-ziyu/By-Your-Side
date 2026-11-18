@@ -67,11 +67,11 @@ const verdictJson = (remaining: string) => JSON.stringify({ status: "continue", 
 const toolTexts: string[] = [];
 
 const model = await startScriptedModel([
-  { match: "MARK-R1", steps: [fill("#draft", SENTENCE), { text: CASES.r1.final }] },
-  { match: "MARK-R2", steps: [fill("#draft", SENTENCE), { text: CASES.r2.final }] },
-  { match: "MARK-R3", steps: [{ tool: { name: "click", args: { target: "#send" } } }, { text: CASES.r3.final }] },
-  { match: "MARK-R5", steps: [fill("#phone", "13800138000"), fill("#phone", "13800138000"), { text: CASES.r5.final }] },
-  { match: "MARK-R6", steps: [fill("#plan", "pro"), { text: CASES.r6.final }] },
+  { match: "明确重做 R1", steps: [fill("#draft", SENTENCE), { text: CASES.r1.final }] },
+  { match: "明确重做 R2", steps: [fill("#draft", SENTENCE), { text: CASES.r2.final }] },
+  { match: "明确重做 R3", steps: [{ tool: { name: "click", args: { target: "#send" } } }, { text: CASES.r3.final }] },
+  { match: "明确重做 R5", steps: [fill("#phone", "13800138000"), fill("#phone", "13800138000"), { text: CASES.r5.final }] },
+  { match: "明确重做 R6", steps: [fill("#plan", "pro"), { text: CASES.r6.final }] },
   { match: CASES.r1.ask, steps: [fill("#draft", "Note"), { text: CASES.r1.first }] },
   { match: CASES.r2.ask, steps: [fill("#draft", SENTENCE), { text: CASES.r2.first }] },
   { match: CASES.r3.ask, steps: [{ tool: { name: "click", args: { target: "#send" } } }, { text: CASES.r3.first }] },
@@ -152,6 +152,13 @@ try {
     await rp.click(panel, "#input");
     await rp.typeText(panel, c.ask);
     await rp.pressEnter(panel);
+    if (waitFor === c.final) {
+      await until(async () => await rp.evaluate(panel, `document.querySelector("#messages").textContent.includes(${JSON.stringify(c.first)})`) || undefined, 60_000, `${key}: first answer`, 100);
+      await settled();
+      await rp.click(panel, "#input");
+      await rp.typeText(panel, `明确重做 ${key.toUpperCase()}，沿用刚才的要求。`);
+      await rp.pressEnter(panel);
+    }
     await until(async () => await rp.evaluate(panel, `document.querySelector("#messages").textContent.includes(${JSON.stringify(waitFor)})`) || undefined, 60_000, `${key}: ${waitFor}`, 100);
     await settled();
     await sleep(800);

@@ -96,7 +96,8 @@ async function run(scenario:Scenario){
    assert.equal(evidence.pageUrl,siteUrl,'the assistant stayed on the login page');
    assert.ok(!evidence.tabs.some((u:string)=>/mail|邮箱/i.test(u)),'no mailbox was opened');
   }else{
-   assert.ok(evidence.goalPrompts.some((p:string)=>p.includes('去邮箱')),'a page that says the confirmation email was sent still sends the assistant on to the mailbox');
+   assert.equal(evidence.goalPrompts.length,0,'an email confirmation is handed back without an automatic browser step');
+   assert.equal(evidence.pageUrl,siteUrl);
    assert.equal(checks.length,0,'the mailbox step is decided before the fast model is asked');
   }
  }catch(e){error=e instanceof Error?e.stack:String(e);}finally{

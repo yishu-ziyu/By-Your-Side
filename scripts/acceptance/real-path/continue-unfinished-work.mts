@@ -10,7 +10,7 @@ const evidence:unknown[]=[];let failure='';
 for(const mode of ['complete','answer','approval']){
  const task=mode==='answer'?'读出资料名称。':mode==='approval'?'把青松填到名称栏，填写前先让我确认。':'把青松填到名称栏。';
  const first=mode==='answer'?'资料名称是白鹭。':mode==='approval'?'名称栏还没填，要现在填写吗？':'名称栏还没填，剩下的是把青松填写进去。';
- const final=mode==='answer'?'更正：资料名称是青松。':'已把青松填到名称栏。';
+ const final=mode==='answer'?'更正：资料名称是青松。':'名称栏仍为空，等你说继续再填写。';
  let writes=0;const site=createServer((req,res)=>{if(req.url==='/changed'){writes++;res.end('ok');return;}res.writeHead(200,{'content-type':'text/html;charset=utf-8'}).end(`<title>整理资料</title><p>资料名称：青松</p><input id="name" aria-label="名称" onchange="fetch('/changed')">`);});
  await new Promise<void>(r=>site.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${siteAddress(site).port}/`;
  const continuation:Step[]=[{text:final},{text:final}];let continuedPrompt='';
@@ -23,7 +23,7 @@ for(const mode of ['complete','answer','approval']){
  ],undefined,payload=>{
   for(const m of payload.messages??[]){const text=typeof m.content==='string'?m.content:(m.content??[]).map(p=>p.text??'').join('');if(m.role!=='user'||!text.startsWith('[GOAL CHECK]'))continue;
    continuedPrompt=text;
-   continuation[0]=text.includes('including the necessary page or file changes')?{tool:{name:'fill',args:{target:'#name',value:'青松',label:'名称'}}}:{text:mode==='answer'?final:first};
+   continuation[0]={tool:{name:'fill',args:{target:'#name',value:'青松',label:'名称'}}};
   }
  });
  const rp=await launchRealPath();let panel='';
@@ -36,9 +36,8 @@ for(const mode of ['complete','answer','approval']){
   const target=(await rp.targets()).find(t=>t.url===url);assert.ok(target);const work=await rp.attach(target.targetId);
   const value=await rp.evaluate(work,`document.querySelector('#name').value`);
   evidence.push({mode,value,writes,continuedPrompt});
-  if(mode==='complete')assert.equal(value,'青松','unfinished original work must actually fill the field');
-  else assert.equal(value,'','answer correction and confirmation cannot authorize a write');
-  if(mode==='answer')assert.ok(continuedPrompt.includes('do not change files, write to pages'),'answer-only repair remains constrained');
+  assert.equal(value,'','a checker-triggered turn cannot write to the page');
+  if(mode!=='approval')assert.ok(continuedPrompt.length>0,'the checker actually attempted the follow-up');
   if(mode==='approval')assert.equal(continuedPrompt,'','confirmation must prevent automatic continuation');
   await rp.screenshot(panel,join(out,mode+'.png'));
  }catch(e){failure=String(e);if(panel)await rp.screenshot(panel,join(out,'failure.png')).catch(()=>{});}

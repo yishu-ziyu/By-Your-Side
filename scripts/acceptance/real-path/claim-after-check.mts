@@ -50,7 +50,7 @@ const CASES = {
   r: { ask: "案例R：这页 Note 框里第一句英文是什么？", claim: "第一句是 Wrong R。", path: "/note" },
 };
 
-const FIXED = "已把第一句英文填入草稿框，没有保存。";
+const FIXED = "核对后确认第一句是 Jev currently accepts text input only.，没有改动草稿。";
 
 const CORRECTION = "草稿框当前内容是“Note”，不是第一句；请改为只保留第一句：“Jev currently accepts text input only.”，且不要点击保存。Please do not save.";
 
@@ -61,7 +61,7 @@ const GOAL_CHECK_PREFIX = "You check whether a browser assistant has finished th
 const toolTexts = new Set<string>();
 
 const model = await startScriptedModel([
-  { match: "[GOAL CHECK]", steps: [{ tool: { name: "snapshot", args: {} } }, fill(NOTE_FIRST), { text: FIXED }] },
+  { match: "[GOAL CHECK]", steps: [{ tool: { name: "snapshot", args: {} } }, { text: FIXED }] },
   { match: CASES.a.ask, steps: [fill("Note"), { text: CASES.a.claim }] },
   { match: CASES.b.ask, steps: [fill("hello world"), { text: CASES.b.claim }] },
   { match: CASES.e.ask, steps: [fill(NOTE_FIRST), { text: CASES.e.claim }] },
@@ -203,7 +203,7 @@ try {
 
   verdicts.push({ holdMs: 3_000, probe: "VERDICT-CONTINUE" }, { holdMs: 0, probe: "VERDICT-DONE" });
   const checksBeforeA = checks.length;
-  const a = await runCase("a", s => s.answers.some(t => t.includes(FIXED)) && s.evidence.some(t => t.includes(NOTE_FIRST)), {
+  const a = await runCase("a", s => s.answers.some(t => t.includes(FIXED)), {
     claim: s => s.claimOutsideProcess,
     fix: s => s.fix.length > 0,
     final: s => s.answers.some(t => t.includes(FIXED)),
@@ -232,7 +232,7 @@ try {
   assert.ok(caseA.fixText.map(fixHead).includes(`核对发现：${FINDING}`), `n: the process line shows the finding: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.fixText.every(t => !t.includes("请") && !/please/i.test(t)), `n: the fix line has no instruction to the assistant: ${JSON.stringify(caseA.fixText)}`);
   assert.ok(caseA.noteEvidenceFirstMs !== null, "a: 「草稿现在是：「Note」」 visible");
-  assert.ok(caseA.finalEvidence.includes(`草稿现在是：「${NOTE_FIRST}」`), `a: final evidence shows the right sentence: ${JSON.stringify(caseA.finalEvidence)}`);
+  assert.ok(caseA.finalEvidence.includes(`草稿现在是：「Note」`), `a: final evidence shows the unchanged draft: ${JSON.stringify(caseA.finalEvidence)}`);
 
   const orderA = await rp.evaluate(panel, `(() => {
     const nodes = [...document.querySelectorAll("#messages > *")];
@@ -249,8 +249,8 @@ try {
     };
   })()`) as { noteEvidence: number; firstProcess: number; secondProcess: number; secondEvidence: number; finalAnswer: number; outline: string[] };
   evidence.j = orderA;
-  assert.ok(orderA.firstProcess >= 0 && orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.secondProcess && orderA.firstProcess < orderA.secondProcess && orderA.secondProcess === orderA.secondEvidence && orderA.secondEvidence < orderA.finalAnswer,
-    `j: order 「Note」 evidence and the first process (holding the first answer) < second process (holding the second evidence) < final answer: ${JSON.stringify(orderA)}`);
+  assert.ok(orderA.firstProcess >= 0 && orderA.noteEvidence >= 0 && orderA.noteEvidence < orderA.secondProcess && orderA.firstProcess < orderA.secondProcess && orderA.secondEvidence === -1 && orderA.secondProcess < orderA.finalAnswer,
+    `j: order 「Note」 evidence and the first process (holding the first answer) < read-only second process < final answer: ${JSON.stringify(orderA)}`);
 
   const b = await runCase("b", s => s.answers.some(t => t.includes(CASES.b.claim)), { final: s => s.answers.some(t => t.includes(CASES.b.claim)) });
   evidence.b = { evidence: b.samples.at(-1)!.evidence, finalAnswerMs: b.samples.at(-1)!.t };
