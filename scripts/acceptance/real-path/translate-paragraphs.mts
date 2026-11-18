@@ -14,7 +14,7 @@ const url = `http://127.0.0.1:${siteAddress(server).port}/article`;
 const scope = (quotes: string[], source = url) => ({ url: source, quotes });
 const paragraphs = ["north station opened in April", "the second instrument on Friday"];
 const attempt = (match: string, args: { scope?: ReturnType<typeof scope> }) => ({
-  match, pageTranslationDestination: args.scope ? "scoped" as const : "whole" as const,
+  match, pageTranslationTargetsMatch: true, pageTranslationDestination: args.scope ? "scoped" as const : "whole" as const,
   steps: [{ tool: { name: "page_translation", args: { action: "translate", ...args } } }, { text: match + "已处理。" }],
 });
 let holdTranslation: Promise<void> | undefined;

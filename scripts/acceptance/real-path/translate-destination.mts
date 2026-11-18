@@ -17,9 +17,16 @@ const sidebarAnswer = "北站于四月启用。港口于周五收到了第二台
 const pageAnswer = "前两段已处理。";
 const scope = { url, quotes: ["north station opened in April", "the second instrument on Friday"] };
 const tool = (mode: "translated" | "bilingual") => ({ name: "page_translation", args: { action: "translate", scope, mode } });
+const firstOnly = "只把第一段的译文加在原文旁。";
+const protectedRequest = "隐私样例，token=demo；改为只发侧栏。";
+const safeAnswer = "没有修改页面。";
 const model = await startScriptedModel([
+  { match: "隐私样例", steps: [{tool: tool("translated")}, {text: safeAnswer}] },
+  { match: firstOnly, pageTranslationDestination: "scoped", pageTranslationParagraphs: [1], steps: [
+    { tool: {name: "page_translation",args: {action:"translate",scope:{url,quotes:["The river rose after midnight."]}}} }, {text:safeAnswer},
+  ] },
   { match: sidebarRequest, steps: [{ tool: tool("translated") }, { tool: tool("translated") }, { text: sidebarAnswer }] },
-  { match: pageRequest, pageTranslationDestination: "scoped", steps: [
+  { match: pageRequest, pageTranslationDestination: "scoped", pageTranslationParagraphs: [1,2], steps: [
     { tool: { name: "page_translation", args: { action: "display", mode: "bilingual" } } },
     { tool: tool("bilingual") }, { text: pageAnswer },
   ] },
@@ -80,6 +87,13 @@ try {
       thirdUnchanged: window.articleState().thirdUnchanged };
   })()`);
   check("后续明确要求后，两段双语显示，第三段保留原文和节点", inPage.ids.join(",") === "first,second" && inPage.visible && inPage.originalsVisible && inPage.thirdUnchanged, inPage);
+  rounds.wrongParagraph = await say(firstOnly, safeAnswer);
+  const correctTarget = await rp.evaluate(work, "window.articleState().thirdUnchanged");
+  check("用户指定第一段时拒绝写入第三段的唯一原文", correctTarget === true, correctTarget);
+  const start = model.requests.length;
+  rounds.protected = await say(protectedRequest, safeAnswer);
+  const extra = model.requests.slice(start).filter(r => r.rule === "page_translation_intent").length;
+  check("经过脱敏的请求不会再交给辅助模型授权", extra === 0, extra);
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ dist: process.env.SIDEAGENT_ACCEPTANCE_DIST ?? "worktree", checks, rounds, passed: checks.every(c => c.pass) }, null, 2));
   await closeBrowser?.(); await model.close(); await new Promise<void>(resolve => server.close(() => resolve()));
