@@ -206,7 +206,9 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     const isBodyParagraph = (element: HTMLElement) => element.checkVisibility({opacityProperty: true, visibilityProperty: true}) &&
       readNodes(element)?.some((node, index) => !node.parentElement?.closest('a,[role="link"]') && /[\p{L}\p{N}]/u.test(original(element, node, index)));
 
-    if (candidates.size > 1 && canonicalArticle() !== authority.root) {
+    const primary = canonicalArticle();
+    if (primary && primary !== authority.root) throw paragraphMismatch();
+    if (!primary && candidates.size > 1) {
       for (const [root, elements] of candidates) {
         if (root !== authority.root && elements.some(isBodyParagraph)) throw paragraphMismatch();
       }

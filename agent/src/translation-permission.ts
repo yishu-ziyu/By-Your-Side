@@ -13,6 +13,18 @@ export function intactTranslationRequest(text: string): boolean {
   return redactCredentialText(text) === text && sanitizeTrace(text) === text;
 }
 
+function directGrant(request: string, proof: string): boolean {
+  const literal = /`{3}[\s\S]*?(?:`{3}|$)|`[^`]*(?:`|$)|“[^”]*(?:”|$)|「[^」]*(?:」|$)|『[^』]*(?:』|$)|‘[^’]*(?:’|$)|"[^"]*(?:"|$)|^\s*>[^\n]*/gmu;
+  const direct = request.replace(literal, '\uFFFC').replace(/(^|[\s:])'[^'\n]*'/gu, '$1\uFFFC');
+  const clauses = direct.split(/[,，;；。！？!?.\n]/u).map(s => s.trim()).filter(Boolean);
+  const withdrawn = clauses.reduce((last, clause, i) => /撤回|撤销|收回|取消|\b(?:withdraw|retract|revoke|cancel|undo)\b/iu.test(clause) ? i : last, -1); // WHY: hardcode-ok 明确撤回使此前引文失效，此规则不授予写权限。
+  const available = clauses.slice(withdrawn + 1).filter(s => !/不要|不准|禁止|勿|别|\b(?:never|do not|don't)\b/iu.test(s)); // WHY: hardcode-ok 否定句不能成为授权证据，即使判定器返回肯定。
+  const grant = proof.trim();
+  if (!grant || !available.length) return false;
+  if (grant === request.trim()) return direct === request && withdrawn === -1 && available.length === clauses.length;
+  return available.some(clause => clause.includes(grant));
+}
+
 function positions(value: unknown): value is number[] {
   return Array.isArray(value) && value.length > 0 && value.length <= 64 && new Set(value).size === value.length
     && value.every(n => Number.isSafeInteger(n) && n > 0);
@@ -28,7 +40,7 @@ export async function translationDestination(host: SideCallHost, model: Model<Ap
     content: JSON.stringify({ previousUser, requests }), signal, timeoutMs: 5000, maxTokens: 240, retry: 'none',
     parse: text => {
       const reply = parseJsonReply(text, isJsonObject);
-      if (!('permission' in reply) || typeof reply.permission !== 'string' || !reply.permission.trim() || !latest.includes(reply.permission) || !('destination' in reply)) return null;
+      if (!('permission' in reply) || typeof reply.permission !== 'string' || !directGrant(latest, reply.permission) || !('destination' in reply)) return null;
       if (reply.destination === 'whole') return { destination: 'whole' } as const;
       if (reply.destination !== 'scoped' || !('paragraphs' in reply)) return null;
       return reply.paragraphs === null || positions(reply.paragraphs) ? { destination: 'scoped', paragraphs: reply.paragraphs } as const : null;
