@@ -1,6 +1,7 @@
 import type { GoalFacts } from "../../agent/src/goal-facts.ts";
 
-export type Expect = { answer?: string[]; answerNot?: string[]; page?: string[]; tab?: string[]; replyHas?: string[] };
+export type SelectorCount = { selector: string; count: number };
+export type Expect = { answer?: string[]; answerNot?: string[]; page?: string[]; tab?: string[]; replyHas?: string[]; pageSelectorCounts?: SelectorCount[] };
 export type PoolTask = { n: number; url: string; say: string[]; onPage?: number[]; expect: Record<string, Expect> };
 
 export type Row = {
@@ -32,6 +33,7 @@ export type Row = {
     mainRequests: number;
     mainResponsesWithUsage: number;
     mainReportedTokens: number | null;
+    mainReportedBreakdown: { input: number | null; cacheRead: number | null; cacheWrite: number | null; output: number | null };
     sideAttemptsRecorded: number;
     sideReportedTokens: null;
   };
@@ -44,6 +46,12 @@ export const ok = (row: Row) => row.finished && !row.error && !row.cardSaysFaile
 export const outcome = (row: Row) => row.timing?.pauseMs != null ? "等待用户" : !row.finished ? "没完成" : row.error ? `报错：${row.error.slice(0, 40)}` : row.cardSaysFailed ? "卡片写没做成" : row.changedGoal ? "换了目标" : !row.answer.trim() || noAnswer(row) ? "没给回答就停了" : row.expect === "fail" ? `结果不对：${row.missed.join("；").slice(0, 40)}` : "完成";
 
 const strings = (value: unknown) => Array.isArray(value) && value.every(item => typeof item === "string");
+
+function selectorCountOf(value: unknown): value is SelectorCount {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const { selector, count } = value as Partial<SelectorCount>;
+  return typeof selector === "string" && !!selector.trim() && typeof count === "number" && Number.isSafeInteger(count) && count >= 0 && Object.keys(value).length === 2;
+}
 
 export function poolOf(value: unknown): PoolTask[] {
   if (!Array.isArray(value)) throw new Error("任务池应当是数组");
@@ -60,6 +68,10 @@ export function poolOf(value: unknown): PoolTask[] {
       if (!/^\d+$/.test(key) || Number(key) < 1 || Number(key) > (say as string[]).length) throw new Error(`${where} expect 的键 ${key} 不是句号`);
       if (!rule || typeof rule !== "object") throw new Error(`${where} expect.${key} 应当是对象`);
       for (const [field, patterns] of Object.entries(rule)) {
+        if (field === "pageSelectorCounts") {
+          if (!Array.isArray(patterns) || !patterns.every(selectorCountOf) || new Set(patterns.map(item => item.selector)).size !== patterns.length) throw new Error(`${where} expect.${key}.pageSelectorCounts 需要互不重复的 CSS 选择器和非负整数 count`);
+          continue;
+        }
         if (!["answer", "answerNot", "page", "tab", "replyHas"].includes(field) || !strings(patterns)) throw new Error(`${where} expect.${key}.${field} 不认识或不是字符串数组`);
         if (field !== "replyHas") for (const pattern of patterns as string[]) new RegExp(pattern, "i");
       }
@@ -72,13 +84,14 @@ export function poolOf(value: unknown): PoolTask[] {
   });
 }
 
-export function missedOf(rule: Expect, seen: { answer: string; page: string; tabs: string[]; replyHas: string[] }): string[] {
+export function missedOf(rule: Expect, seen: { answer: string; page: string; tabs: string[]; replyHas: string[]; pageCounts?: number[] }): string[] {
   const test = (pattern: string, text: string) => new RegExp(pattern, "i").test(text);
 
   return [
     ...(rule.answer ?? []).filter(p => !test(p, seen.answer)).map(p => `回答没有 /${p}/`),
     ...(rule.answerNot ?? []).filter(p => test(p, seen.answer)).map(p => `回答不该有 /${p}/`),
     ...(rule.page ?? []).filter(p => !test(p, seen.page)).map(p => `页面没有 /${p}/`),
+    ...(rule.pageSelectorCounts ?? []).flatMap(({ selector, count }, i) => seen.pageCounts?.[i] === count ? [] : [`原始页面 ${selector} 应有 ${count} 项，读到 ${seen.pageCounts?.[i] ?? "未测"}`]),
     ...(rule.tab ?? []).filter(p => !seen.tabs.some(url => test(p, url))).map(p => `没有打开 /${p}/`),
     ...(rule.replyHas ?? []).filter(selector => !seen.replyHas.includes(selector)).map(selector => `回答里没有 ${selector}`),
   ];
@@ -103,7 +116,7 @@ type TraceRecord = {
     facts?: unknown;
     hostFacts?: { goalFacts?: unknown };
     attempts?: unknown;
-    message?: { role?: unknown; usage?: { totalTokens?: unknown } };
+    message?: { role?: unknown; usage?: Partial<Record<"input" | "cacheRead" | "cacheWrite" | "output" | "totalTokens", unknown>> };
   };
 };
 
@@ -140,13 +153,18 @@ export function attribute(rows: Row[], rowRuns: Set<string>[], lines: string[], 
     const mine = parsed.filter(r => typeof r.runId === "string" && rowRuns[index]!.has(r.runId));
     const facts = factsOf(mine.filter(r => r.type === "goal_check").at(-1)?.data?.hostFacts?.goalFacts ?? mine.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
     row.calls = mine.filter(r => r.type === "model_request").length;
-    const tokens = mine.flatMap(r => {
+    const usages = mine.flatMap(r => {
       const message = r.data?.message;
-      const amount = message?.usage?.totalTokens;
-      return r.type === "message_end" && message?.role === "assistant" && typeof amount === "number" && Number.isFinite(amount) ? [amount] : [];
+      return r.type === "message_end" && message?.role === "assistant" ? [message.usage] : [];
     });
+    const counter = (field: "input" | "cacheRead" | "cacheWrite" | "output" | "totalTokens") => {
+      const values = usages.map(usage => usage?.[field]);
+      return values.length && values.every((v): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0) ? values.reduce((sum, v) => sum + v, 0) : null;
+    };
     const sideAttempts = mine.reduce((sum, r) => sum + (r.type === "side_call" && typeof r.data?.attempts === "number" ? r.data.attempts : 0), 0);
-    row.usage = { mainRequests: row.calls, mainResponsesWithUsage: tokens.length, mainReportedTokens: tokens.length ? tokens.reduce((a, b) => a + b, 0) : null, sideAttemptsRecorded: sideAttempts, sideReportedTokens: null };
+    row.usage = { mainRequests: row.calls, mainResponsesWithUsage: usages.filter(u => typeof u?.totalTokens === "number").length, mainReportedTokens: counter("totalTokens"),
+      mainReportedBreakdown: { input: counter("input"), cacheRead: counter("cacheRead"), cacheWrite: counter("cacheWrite"), output: counter("output") },
+      sideAttemptsRecorded: sideAttempts, sideReportedTokens: null };
     row.changedGoal = !!task?.onPage?.includes(row.k) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
     row.verdict = mine.filter(r => r.type === "goal_check").map(r => r.data?.status).filter((s): s is string => typeof s === "string").at(-1) ?? null;
   });

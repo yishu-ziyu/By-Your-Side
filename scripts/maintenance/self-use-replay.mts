@@ -96,6 +96,8 @@ const load = () => Math.round(loadavg()[0] * 10) / 10;
 
 try {
   const panel = await rp.attach(await rp.openSidePanel());
+  const selectors = [...new Set(pool.flatMap(task => Object.values(task.expect).flatMap(rule => (rule.pageSelectorCounts ?? []).map(item => item.selector))))];
+  await rp.evaluate(panel, `${JSON.stringify(selectors)}.forEach(selector => document.createDocumentFragment().querySelectorAll(selector))`);
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({ ...fast.items, ...mainItems, sideagent_self_use: { until: Date.now() + 6 * 3600_000 } })}).then(() => true)`);
   const ready = 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false && !document.querySelector("#status-pill")?.classList.contains("running")';
   await until(async () => await rp.evaluate(panel, ready), 60_000, "侧栏就绪");
@@ -125,15 +127,17 @@ try {
       let missed: string[] = [];
       const readPanel = () => rp.evaluate(panel, "window.__bysReplayTurn.read()") as Promise<TurnSnapshot>;
       const validate = async (seen: TurnSnapshot) => {
+        const pageChecks = rule.pageSelectorCounts ?? [];
+        const needsPage = !!rule.page?.length || !!pageChecks.length;
         const [page, tabs] = await Promise.all([
-          rule.page?.length ? rp.evaluate(workSession, "document.body?.innerText ?? ''") : "",
+          needsPage ? rp.evaluate(workSession, `({ text: ${rule.page?.length ? "document.body?.innerText ?? ''" : "''"}, counts: ${JSON.stringify(pageChecks.map(item => item.selector))}.map(selector => document.querySelectorAll(selector).length) })`) as Promise<{ text: string; counts: number[] }> : { text: "", counts: [] },
           rule.tab?.length ? rp.targets().then(targets => targets.filter(t => t.type === "page").map(t => t.url)) : [],
         ]);
-        missed = missedOf(rule, { answer: seen.answer, page: String(page), tabs, replyHas: seen.has });
+        missed = missedOf(rule, { answer: seen.answer, page: page.text, pageCounts: page.counts, tabs, replyHas: seen.has });
         if (missed.length || seen.answerReadyMs === null || seen.error || seen.paused || seen.cardFailed) {
           correctAt = null;
         } else if (correctAt === null || matchedAnswerMs !== seen.answerReadyMs) {
-          correctAt = rule.page?.length || rule.tab?.length ? (await readPanel()).elapsedMs : seen.answerReadyMs;
+          correctAt = needsPage || rule.tab?.length ? (await readPanel()).elapsedMs : seen.answerReadyMs;
         }
         matchedAnswerMs = seen.answerReadyMs;
       };
