@@ -1676,7 +1676,9 @@ return;}
       if (readablePage && !extractorBlank && (!preview?.text.trim() || preview.totalChars > preview.text.length)) {
         const requests = this.currentUserRequirements();
         const key = JSON.stringify([run, requests]);
-        if (this.sourceScope?.key !== key) {
+        // WHY: a page that fits one complete read is read whole; asking the side model first holds the first answer for seconds and its answer is not stable for the same request.
+        if ((preview?.totalChars ?? 0) <= WHOLE_SOURCE_MAX_CHARS) this.sourceScope = { key, result: Promise.resolve('whole' as const) };
+        else if (this.sourceScope?.key !== key) {
           const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
           const result = host && model ? pageReadScope(host, model, requests).catch(() => 'whole' as const) : Promise.resolve('whole' as const);
           this.sourceScope = { key, result };
