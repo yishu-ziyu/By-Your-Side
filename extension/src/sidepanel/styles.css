@@ -3282,6 +3282,7 @@ details.run-steps > summary > .run-icon, details.run-steps > summary > .run-act-
   #think-menu { transition: opacity var(--d-micro) linear; transform: none; }
   #think-menu .mm-views, #think-chip svg { transition: none; }
   #think-menu.mm-in-all .mm-main { display: none; }
+  #think-menu.mm-in-all .mm-views { transform: none; }
   #think-chip .think-swap { animation: none; }
   #ctx-pop { transform: none; }
 }
