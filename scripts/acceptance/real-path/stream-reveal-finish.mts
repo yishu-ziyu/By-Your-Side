@@ -97,6 +97,7 @@ async function checkReplay(rp: Awaited<ReturnType<typeof launchRealPath>>, panel
   ] }, panel);
   await rp.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({
     inproc_model_config: { provider: "custom", modelId: "demo-model", baseUrl },
+    inproc_fast_model_config: { provider: "custom", modelId: "demo-model", baseUrl },
     "inproc_cred:custom": { type: "api_key", key: "local-fixture" },
   })}).then(() => true)`);
   await rp.click(panel, "#conversation-new");
@@ -118,7 +119,7 @@ async function checkReplay(rp: Awaited<ReturnType<typeof launchRealPath>>, panel
     assert.deepEqual(exceptions, [], "sidebar runtime exceptions");
     return state.idle && !state.revealing && !state.fades && state;
   }, 15_000, "complete visible answer with finished reveal", 50).catch(async error => {
-    throw new Error(`${String(error)}\n${JSON.stringify(await rp.evaluate(panel, readPanel))}`);
+    throw new Error(`${String(error)}\n${JSON.stringify(await rp.evaluate(panel, readPanel)) + " " + String(await rp.evaluate(panel, "document.querySelector('#messages')?.innerText.slice(-400)"))}`);
   });
   assert.equal(normalize(result.text), visibleAnswer, "exact visible answer (ignoring layout whitespace)");
   assert.equal(result.animated, !reduced, "reveal only animates when motion is enabled");
@@ -130,7 +131,7 @@ const evidence: Record<string, unknown> = {};
 const exceptions: string[] = [];
 let rp: Awaited<ReturnType<typeof launchRealPath>> | undefined;
 let model: Awaited<ReturnType<typeof startScriptedModel>> | undefined;
-const site = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><title>Public arithmetic replay</title>"));
+const site = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><title>Public arithmetic replay</title><main><p>Public arithmetic exercise with 21 cases and 12 passes.</p></main>"));
 
 await mkdir(dir, { recursive: true });
 try {
@@ -140,7 +141,10 @@ try {
   if (!process.argv.includes("--ranges-only")) {
     await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve));
     const target = await until(async () => (await rp!.targets()).find(t => t.type === "page" && t.url === "about:blank"), 10_000, "isolated work tab");
-    await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/` }, await rp.attach(target.targetId));
+    const work = await rp.attach(target.targetId);
+    await rp.cdp.send("Page.navigate", { url: `http://127.0.0.1:${siteAddress(site).port}/` }, work);
+    await until(async () => await rp!.evaluate(work, 'document.body?.innerText.includes("21 cases")') || undefined, 15_000, "public fixture ready");
+    await rp.cdp.send("Page.bringToFront", {}, work);
     const off = rp.cdp.onEvent("Runtime.exceptionThrown", (event: { sessionId?: string; params: { exceptionDetails: { text: string; exception?: { description?: string } } } }) => {
       if (event.sessionId !== panel) return;
       const details = event.params.exceptionDetails;
@@ -159,6 +163,7 @@ try {
     off();
   }
 } catch (error) {
+  evidence.modelRequests = model?.requests;
   evidence.error = error instanceof Error ? error.stack : String(error);
   console.error(evidence.error);
   process.exitCode = 1;
