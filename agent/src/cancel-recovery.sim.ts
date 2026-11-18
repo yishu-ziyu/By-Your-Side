@@ -211,19 +211,21 @@ test("后台还在等待停稳时，取消记录已可用于重启恢复", async
     id: "task-stop", originConversationId: id, executionConversationId: id, runId: "run-stop",
     goal: snapshot.goal!, revision: 0, controlVersion: 0, state: "running", updatedAt: 1000,
   }]);
-  const entered = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
-  const { manager } = storage.makeManager([], { waitForStop: () => { entered.resolve(); return release.promise; } });
+  let entered!: () => void;
+  let release!: () => void;
+  const waitEntered = new Promise<void>(resolve => { entered = resolve; });
+  const waitReleased = new Promise<void>(resolve => { release = resolve; });
+  const { manager } = storage.makeManager([], { waitForStop: () => { entered(); return waitReleased; } });
   await manager.ensureDefault();
   const stopping = manager.handleMessage({ type: "abort", conversationId: id });
   try {
-    await entered.promise;
+    await waitEntered;
     assert.equal((await storage.taskRecords.get("task-stop"))?.state, "cancelled", "等待旧运行停稳前先保存取消");
     const restarted = storage.makeManager([]).manager;
     await restarted.ensureDefault();
     assert.equal(restarted.getTaskProgress(id)?.state, "aborted");
   } finally {
-    release.resolve();
+    release();
     await stopping;
   }
 });
