@@ -125,6 +125,16 @@ try {
     const ambiguous = await command({ action: 'begin', scope: { url, quotes: [second], paragraphs: [1] } });
     assert.ok('error' in ambiguous && /授权/.test(ambiguous.error), JSON.stringify(ambiguous));
 
+    await browser.evaluate(work, `(() => {
+      const canonical = document.createElement('link'); canonical.rel = 'canonical'; canonical.href = location.href;
+      const kind = document.createElement('meta'); kind.setAttribute('property','og:type'); kind.content = 'article';
+      const title = document.createElement('meta'); title.setAttribute('property','og:title'); title.content = 'Weather notes';
+      document.head.append(canonical, kind, title); return true;
+    })()`);
+    const currentArticle = await command({ action: 'begin', scope: { url, quotes: [second], paragraphs: [1] } });
+    assert.ok(!('error' in currentArticle), '有评论文章时仍应能确定当前规范文章的第一段：'+JSON.stringify(currentArticle));
+    await ok({action: 'restore'});
+
     const legacy = await ok({ action: 'begin', scope: { url, quotes: [third] } });
     await ok({ action: 'apply', document: legacy.document, translations: await batch(legacy.document) });
     assert.match((await inspect()).third, /中文译文/);
