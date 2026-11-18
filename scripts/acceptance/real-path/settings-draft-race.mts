@@ -17,7 +17,6 @@ try {
     const page = await rp.attach(targetId);
     try {
       await until(async()=>await rp.evaluate(page,`document.querySelector(${JSON.stringify(c.list)})?.lastElementChild?.querySelector("button")?.checkVisibility() || false`),15000,"设置项可见");
-      // Block only the selected write in this fresh test profile. Release executes the native API.
       await rp.evaluate(page,`(() => {
         const key=${JSON.stringify(c.key)};
         const storage=chrome.storage.local;

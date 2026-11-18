@@ -43,6 +43,10 @@ function harness(key: () => Promise<string> = async () => "local-fixture") {
 
   return {
     connections,
+    acceptReady(voiceId: string) {
+      fromPanel({ kind: "client", msg: { type: "voice", conversationId, voiceId, command: { kind: "ready_ack" } } });
+      return Promise.all(outgoing.splice(0));
+    },
     observeIdle() { voice.observe({ type:"status", conversationId, state:"idle" }); },
     start(voiceId: string, reconnectOf?: string) {
       fromPanel({ kind: "client", msg: {type:"voice", conversationId, voiceId, command:{ kind:"start", ...(reconnectOf ? {reconnectOf} : {}) }} });
@@ -69,11 +73,12 @@ test("自动重连：第一轮超时后，下一轮就绪仍入队一次", async
   h.complete();
 
   await h.start("retry-one", "original");
-  await h.start("retry-two", "original"); // 连线计时器超时后的下一次 start
-  h.connections[1]!.send(ready); // 已被替换的连接迟到
+  await h.start("retry-two", "original");
+  h.connections[1]!.send(ready);
   assert.deepEqual(h.connections[1]!.queued, []);
 
   h.connections[2]!.send(ready);
+  await h.acceptReady("retry-two");
   h.connections[2]!.send(ready);
   h.observeIdle();
   assert.deepEqual(h.connections[2]!.queued, [answer]);
@@ -105,6 +110,7 @@ test("对照：首次重连成功会补播，手动新开会话不会补播", as
 
     await h.start("next", reconnect ? "original" : undefined);
     h.connections[1]!.send(ready);
+    if (reconnect) await h.acceptReady("next");
     h.observeIdle();
     assert.deepEqual(h.connections[1]!.queued, reconnect ? [answer] : []);
   }
@@ -117,4 +123,24 @@ test("对照：连接对象已建立但还没就绪，结果也只会入队一�
   h.connections[0]!.send(ready);
   h.observeIdle();
   assert.deepEqual(h.connections[0]!.queued, [answer]);
+});
+
+
+test("侧栏超时后旧连接才就绪：旧连接无确认，补播留给下一轮", async () => {
+  const h = harness();
+  await h.start("original");
+  h.connections[0]!.send(ready);
+  h.connections[0]!.send({ type: "closed" });
+  h.complete();
+
+  await h.start("timed-out", "original");
+  h.connections[1]!.send(ready);
+  assert.deepEqual(h.connections[1]!.queued, []);
+
+  await h.start("current", "original");
+  await h.acceptReady("timed-out");
+  h.connections[2]!.send(ready);
+  assert.deepEqual(h.connections[2]!.queued, []);
+  await h.acceptReady("current");
+  assert.deepEqual(h.connections[2]!.queued, [answer]);
 });
