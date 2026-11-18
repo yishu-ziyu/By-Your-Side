@@ -736,11 +736,13 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
           notes.add(`fetch ${redactUrlCredentials(reply.url).slice(0, 120)} read only the first ${reply.bytes} bytes; text past that point was not read, so something missing from it is not evidence that the page lacks it.`);
         }
 
-        if (canonical === "navigate" && result && typeof result === "object" && !["timeout", "download", "error_page"].includes(String((result as { readiness?: unknown }).readiness))) {
+        const landed = arrivalOf(canonical, result);
+
+        if (landed && (landed.readiness === "interactive" || landed.readiness === "complete")) {
           try {
             const page = await options.call("snapshot", {}, nextSubId(id)(), "readonly-poll") as { text?: unknown };
 
-            if (typeof page?.text === "string") value = { ...(value as object), text: page.text };
+            if (typeof page?.text === "string") value = withArrivalText(canonical, value, page.text);
           } catch {  }
 
           guard();
@@ -772,8 +774,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         deferred.resolve(handle);
         handle.dispose();
         const fetchFailed = canonical === "fetch" && result && typeof result === "object" ? fetchFailureReason(result as FetchReply) : null;
-        const read = canonical === "navigate" && value && typeof value === "object" && "text" in value && typeof value.text === "string" && "url" in value && typeof value.url === "string"
-          ? { url: value.url, text: value.text } : undefined;
+        const read = readOf(canonical, value);
         emit(fetchFailed
           ? { ...step, phase: "end", result, error: `HTTP ${(result as FetchReply).status} (not ok)`, reason: fetchFailed, elapsedMs: Date.now() - started }
           : { ...step, phase: "end", result, read, elapsedMs: Date.now() - started });
@@ -871,6 +872,39 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       vm.dispose();
     }
   }
+}
+
+const ARRIVING_ACTIONS: ReadonlySet<string> = new Set(["click", "double_click", "press_key", "select_option", "fill"]);
+
+const fieldsOf = (value: unknown): Record<string, unknown> | null => isFields(value) ? value : null;
+
+function effectOf(canonical: string, result: unknown): Record<string, unknown> | null {
+  const data = fieldsOf(result);
+
+  if (!data || !ARRIVING_ACTIONS.has(canonical)) return null;
+
+  return fieldsOf(canonical === "fill" ? fieldsOf(data.submit)?.effect : data.effect);
+}
+
+function arrivalOf(canonical: string, result: unknown): { url: string; readiness: string } | null {
+  const data = canonical === "navigate" ? fieldsOf(result) : fieldsOf(effectOf(canonical, result)?.arrived);
+
+  return data && typeof data.url === "string" && typeof data.readiness === "string" ? { url: data.url, readiness: data.readiness } : null;
+}
+
+function withArrivalText(canonical: string, value: unknown, text: string): unknown {
+  if (canonical === "navigate") return { ...fieldsOf(value), text };
+  const data = fieldsOf(value)!;
+  const effect = effectOf(canonical, data)!;
+  const arrived = { ...effect, arrived: { ...fieldsOf(effect.arrived), text } };
+
+  return canonical === "fill" ? { ...data, submit: { ...fieldsOf(data.submit), effect: arrived } } : { ...data, effect: arrived };
+}
+
+function readOf(canonical: string, value: unknown): { url: string; text: string } | undefined {
+  const page = canonical === "navigate" ? fieldsOf(value) : fieldsOf(effectOf(canonical, value)?.arrived);
+
+  return page && typeof page.url === "string" && typeof page.text === "string" ? { url: page.url, text: page.text } : undefined;
 }
 
 function withoutLoadTimings({ quietMs: _quiet, retryMs: _retry, ...rest }: Record<string, unknown>): Record<string, unknown> {
