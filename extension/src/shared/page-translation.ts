@@ -184,6 +184,18 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     return candidates;
   };
 
+  const canonicalArticle = () => {
+    const page = new URL(location.href);
+    page.hash = '';
+    if (document.querySelector<HTMLMetaElement>('meta[property="og:type"]')?.content !== 'article' ||
+      document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href !== page.href) return null;
+    const normalize = (value: string) => value.trim().replace(/\s+/g, ' ');
+    const title = normalize(document.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content ?? '');
+    if (!title) return null;
+    const titles = [...document.querySelectorAll<HTMLElement>('h1')].filter(h => h.checkVisibility({opacityProperty: true, visibilityProperty: true}) && normalize(h.innerText) === title);
+    return titles.length === 1 ? titles[0]!.closest('article,[role="article"]') : null;
+  };
+
   const paragraphMismatch = () => new Error('原文段落与授权序号不符，或正文范围不唯一，未写入译文。');
 
   const verifyParagraphAuthority = (scope: Scope, readNodes: (element: HTMLElement) => Text[] | undefined) => {
@@ -194,8 +206,10 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     const isBodyParagraph = (element: HTMLElement) => element.checkVisibility({opacityProperty: true, visibilityProperty: true}) &&
       readNodes(element)?.some((node, index) => !node.parentElement?.closest('a,[role="link"]') && /[\p{L}\p{N}]/u.test(original(element, node, index)));
 
-    for (const [root, elements] of candidates) {
-      if (root !== authority.root && elements.some(isBodyParagraph)) throw paragraphMismatch();
+    if (candidates.size > 1 && canonicalArticle() !== authority.root) {
+      for (const [root, elements] of candidates) {
+        if (root !== authority.root && elements.some(isBodyParagraph)) throw paragraphMismatch();
+      }
     }
 
     let ordinal = 0, matched = 0;
