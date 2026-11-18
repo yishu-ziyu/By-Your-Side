@@ -215,7 +215,7 @@ interface BrowserToolExecution {
   assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void;
   onStep?: (step: ProgramStep) => void;
   beforeCopy?: () => Promise<PreparedCopy>;
-  beforePageTranslation?: (request: TranslationRequest, toolCallId: string, signal?: AbortSignal) => Promise<() => void>;
+  beforePageTranslation?: (request: TranslationRequest, toolCallId: string, signal?: AbortSignal) => Promise<{ beforeDispatch: () => void; paragraphs?: number[] }>;
   files?: () => ArtifactStore | undefined;
   attachments?: () => readonly Attachment[];
   downloadAttachment?: (input: { id: string; name: string; mimeType: string; dataBase64: string }) => Promise<FileAttachment>;
@@ -476,7 +476,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         if (request.action === 'translate') {
           if (!scope || !execution?.beforePageTranslation) throw new Error('本会话无法核对网页翻译授权，未改动页面。');
           request = rpc.resolvePageParams('page_translation', params, sid) as unknown as TranslationRequest;
-          scope.beforeDispatch = await execution.beforePageTranslation(request, id, signal);
+          const authorized = await execution.beforePageTranslation(request, id, signal);
+          scope.beforeDispatch = authorized.beforeDispatch;
+          if (request.scope) request = { ...request, scope: { url: request.scope.url, quotes: request.scope.quotes, ...(authorized.paragraphs ? { paragraphs: authorized.paragraphs } : {}) } };
         }
         const result = await runPageTranslation(request,
           async command => await call('page_translation', {...command}) as TranslationReceipt,
