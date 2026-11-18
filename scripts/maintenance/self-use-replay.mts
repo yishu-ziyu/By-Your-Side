@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir, loadavg } from "node:os";
 import { join } from "node:path";
-import { REPO, launchRealPath, sleep, until } from "../acceptance/real-path/harness.mts";
+import { REPO, launchRealPath, sleep, until, watchInproc } from "../acceptance/real-path/harness.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "../acceptance/real-path/inproc-config.mts";
 import { type Row, attribute, checkState, missedOf, ok, outcome, poolOf, recordsOf, turnRuns } from "./replay-row.mts";
 
@@ -55,6 +55,7 @@ await mkdir(shots, { recursive: true });
 
 const rp = await launchRealPath({ dist: process.env.SIDEAGENT_ACCEPTANCE_DIST ?? join(REPO, "extension/dist"), recordFps: 10 });
 const rows: Row[] = [];
+let minimaxTraffic: { requests: number; httpErrors: number; networkFailures: number; unfinished: number } | null = null;
 const rowRuns: Set<string>[] = [];
 const allLines: string[] = [];
 let lastTraceKey = 0;
@@ -103,6 +104,7 @@ try {
   await until(async () => await rp.evaluate(panel, ready).catch(() => false) || undefined, 60_000, "侧栏重开就绪");
   const work = (await rp.targets()).find(t => t.url === "about:blank")!;
   const workSession = await rp.attach(work.targetId);
+  const traffic = MODEL.provider === "minimax-cn" && fastName.startsWith("minimax-cn/") ? await watchInproc(rp, rp.extensionId) : null;
 
   for (const task of pool) {
     await rp.cdp.send("Page.navigate", { url: task.url }, workSession).catch(() => {});
@@ -195,6 +197,18 @@ try {
     }
   }
   await newTraceLines(panel);
+  if (traffic) {
+    const calls = traffic.requestsBetween(0).filter(request => {
+      const url = new URL(request.url);
+      return request.method === "POST" && url.origin === "https://api.minimaxi.com" && url.pathname === "/anthropic/v1/messages";
+    });
+    minimaxTraffic = {
+      requests: calls.length,
+      httpErrors: calls.filter(call => call.status !== null && call.status >= 400).length,
+      networkFailures: calls.filter(call => !!call.failed).length,
+      unfinished: calls.filter(call => call.endMs === null).length,
+    };
+  }
 } finally {
   await rp.close(); await rp.remove();
 }
@@ -203,18 +217,28 @@ attribute(rows, rowRuns, allLines, pool);
 
 for (const row of rows) if (row.timing && !ok(row)) row.timing.correctCompletionMs = null;
 const done = rows.filter(ok);
-const times = done.flatMap(row => row.timing?.correctCompletionMs == null ? [] : [row.timing.correctCompletionMs]).sort((a, b) => a - b);
-const p50 = times.length ? (times[Math.floor((times.length - 1) / 2)]! + times[Math.floor(times.length / 2)]!) / 2 : null;
-const p95 = times[Math.ceil(times.length * 0.95) - 1] ?? null;
+function latencyOf(values: Array<number | null | undefined>) {
+  const times = values.filter((v): v is number => typeof v === "number").sort((a,b) => a - b);
+  return {
+    count: times.length,
+    p50Ms: times.length ? (times[Math.floor((times.length - 1) / 2)]! + times[Math.floor(times.length / 2)]!) / 2 : null,
+    p95Ms: times[Math.ceil(times.length * 0.95) - 1] ?? null,
+  };
+}
+const plannedTurns = pool.reduce((count, t) => count + t.say.length, 0);
+const firstFeedback = latencyOf(rows.map(r => r.timing?.firstFeedbackMs));
+const correctCompletion = latencyOf(done.map(r => r.timing?.correctCompletionMs));
 const maxLoad = Math.max(0, ...rows.flatMap(r => r.load));
 const role = process.env.SIDEAGENT_BUILD_ROLE ?? (!process.env.SIDEAGENT_ACCEPTANCE_DIST ? "daily" : undefined);
-await writeFile(join(outDir, `${day}.json`), JSON.stringify({ day, model: MODEL, effort: EFFORT, fastModel: fast.name, correctCompletion: { count: times.length, p50Ms: p50, p95Ms: p95 }, ...(role ? { role } : {}), rows }, null, 2));
+await writeFile(join(outDir, `${day}.json`), JSON.stringify({ day, model: MODEL, effort: EFFORT, fastModel: fast.name, plannedTurns, firstFeedback, correctCompletion, minimaxTraffic, ...(role ? { role } : {}), rows }, null, 2));
 await writeFile(join(outDir, `${day}.md`), [
   `# 自用回放 ${day}`,
   ``,
   `主模型 ${MODEL.provider}/${MODEL.modelId}（起始档 ${EFFORT}），快速模型 ${fast.name}。`,
   ``,
-  `${rows.length} 句，顺利完成 ${done.length} 句（按完成、没报错、卡片没写「没做成」、没换目标、有回答、结果断言没落空算），正确完成耗时（${times.length} 句）的 P50 ${p50 ?? "未测"} 毫秒，P95 ${p95 ?? "未测"} 毫秒。截图和每句的诊断记录在 out/self-use/${day}/。`,
+  `计划 ${plannedTurns} 句，执行 ${rows.length} 句，正确完成 ${done.length} 句。正确完成耗时（${correctCompletion.count} 句）的 P50 ${correctCompletion.p50Ms ?? "未测"} 毫秒，P95 ${correctCompletion.p95Ms ?? "未测"} 毫秒。截图和每句的诊断记录在 out/self-use/${day}/。`,
+  `首个可见反馈（${firstFeedback.count} 句）的 P50 ${firstFeedback.p50Ms ?? "未测"} 毫秒，P95 ${firstFeedback.p95Ms ?? "未测"} 毫秒。正确完成耗时取最终回答就绪时刻；有页面或标签页断言时取首次同时核验结果的时间上界。`,
+  ...(minimaxTraffic ? [`隔离回放期间共向 MiniMax 发送 ${minimaxTraffic.requests} 次模型请求，HTTP 错误 ${minimaxTraffic.httpErrors} 次，网络失败或取消 ${minimaxTraffic.networkFailures} 次，采样结束时在途 ${minimaxTraffic.unfinished} 次。`] : []),
   ...(maxLoad > 20 ? [``, `机器 1 分钟负载最高 ${maxLoad}，超过 20：这一晚的用时不能和别的晚上比。`] : []),
   ``,
   `| # | 原话 | 用时 | 核对后 | 往返 | 负载 | 核对 | 结果 | 回答开头 |`,
