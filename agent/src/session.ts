@@ -579,10 +579,10 @@ if(required.includes(key))candidates.set(key,attachment);
   }
 
   private windDown: WindDown = { phase: 'settled' };
-  private goalRepair: { epoch: number } | null = null;
+  private goalRepair: symbol | null = null;
 
   private assertGoalRepairTool(name: string, params: Record<string, unknown>): void {
-    if (this.goalRepair?.epoch === this.controlEpoch && !allowsGoalRepairTool(name, params)) {
+    if (this.goalRepair && !allowsGoalRepairTool(name, params)) {
       throw new Error("完成核对期间只能读取和修正回答，未执行这一步。");
     }
   }
@@ -3516,7 +3516,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       flushChecks({ attempt, progressVersion: this.noProgressPolicy?.progressVersion ?? 0 });
       this.mainEffort.raise(session.model, "goal_unfinished");
       this.deliveredResultThisRun = false;
-      const repair = { epoch: this.controlEpoch };
+      const repair = Symbol();
       this.goalRepair = repair;
       void session.prompt(continuation.prompt)
         .catch(error => {

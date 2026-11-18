@@ -200,8 +200,9 @@ export class VoiceClient {
     if (this.hold) clearTimeout(this.hold.timer);
     this.hold = null;
   }
-  async start(conversationId: string, diagnostic = false): Promise<void> {
+  async start(conversationId: string, diagnostic = false, retry = false): Promise<void> {
     if (this.id) return;
+    if (!retry && this.recovering) this.stop(false);
     this.needsMicrophonePermission = false;
     this.userIntentActive = true;
     this.conversationId = conversationId;
@@ -929,7 +930,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     this.recoveryAttempts++;
     this.diagnostic?.('voice_reconnect_attempt', { turn: this.turn, attempt: this.recoveryAttempts, at: performance.now() });
-    await this.start(this.conversationId, this.diagSession);
+    await this.start(this.conversationId, this.diagSession, true);
   }
 
   onTransportDisconnected(): void {
