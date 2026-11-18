@@ -18,16 +18,21 @@ const pageAnswer = "前两段已处理。";
 const scope = { url, quotes: ["north station opened in April", "the second instrument on Friday"] };
 const tool = (mode: "translated" | "bilingual") => ({ name: "page_translation", args: { action: "translate", scope, mode } });
 const model = await startScriptedModel([
-  { match: sidebarRequest, steps: [{ tools: [tool("translated"), tool("translated")] }, { text: sidebarAnswer }, { text: sidebarAnswer }] },
-  { match: pageRequest, steps: [{ tool: tool("bilingual") }, { text: pageAnswer }] },
+  { match: sidebarRequest, steps: [{ tool: tool("translated") }, { tool: tool("translated") }, { text: sidebarAnswer }] },
+  { match: pageRequest, pageTranslationDestination: "scoped", steps: [
+    { tool: { name: "page_translation", args: { action: "display", mode: "bilingual" } } },
+    { tool: tool("bilingual") }, { text: pageAnswer },
+  ] },
 ], { delayMs: 100 });
 const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => {
   checks.push({ name, pass, actual }); console.log(pass ? "PASS" : "FAIL", name, JSON.stringify(actual));
 };
 const rounds: Record<string, Json> = {};
-const rp = await launchRealPath({ chromeArgs: ["--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"] });
+let closeBrowser: (() => Promise<void>) | undefined;
 try {
+  const rp = await launchRealPath({ chromeArgs: ["--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"] });
+  closeBrowser = async () => { await rp.close(); await rp.remove(); };
   const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
   await rp.cdp.send("Page.navigate", { url }, work);
   await until(async () => await rp.evaluate(work, 'document.querySelectorAll("article p").length === 3'), 15000, "练习页就绪");
@@ -77,7 +82,7 @@ try {
   check("后续明确要求后，两段双语显示，第三段保留原文和节点", inPage.ids.join(",") === "first,second" && inPage.visible && inPage.originalsVisible && inPage.thirdUnchanged, inPage);
 } catch (error) { check("流程完成", false, String(error)); } finally {
   await writeFile(join(out, "result.json"), JSON.stringify({ dist: process.env.SIDEAGENT_ACCEPTANCE_DIST ?? "worktree", checks, rounds, passed: checks.every(c => c.pass) }, null, 2));
-  await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(resolve => server.close(() => resolve()));
+  await closeBrowser?.(); await model.close(); await new Promise<void>(resolve => server.close(() => resolve()));
 }
 if (checks.some(c => !c.pass)) process.exitCode = 1;
 console.log(out);

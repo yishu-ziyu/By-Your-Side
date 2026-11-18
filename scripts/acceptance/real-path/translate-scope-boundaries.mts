@@ -13,8 +13,9 @@ await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
 const url = `http://127.0.0.1:${siteAddress(server).port}/article`;
 const scope = (quotes: string[], source = url) => ({ url: source, quotes });
 const paragraphs = ["north station opened in April", "the second instrument on Friday"];
-const attempt = (match: string, args: object, delayMs?: number) => ({
-  match, steps: [{ tool: { name: "page_translation", args }, delayMs }, { text: match + "已处理。" }],
+const attempt = (match: string, args: { action: string; scope?: ReturnType<typeof scope>; mode?: string; language?: string }, delayMs?: number) => ({
+  match, ...(args.action === "translate" ? { pageTranslationDestination: args.scope ? "scoped" as const : "whole" as const } : {}),
+  steps: [{ tool: { name: "page_translation", args }, delayMs }, { text: match + "已处理。" }],
 });
 const batches: Array<{ at: number; texts: string[] }> = [];
 const model = await startScriptedModel([

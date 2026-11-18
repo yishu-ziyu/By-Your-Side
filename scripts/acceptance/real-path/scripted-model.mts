@@ -9,7 +9,7 @@ export type StepUsage = { prompt: number; cached?: number };
 
 export type Step = TextStep | { tool: ToolCall; delayMs?: number; usage?: StepUsage } | { tools: ToolCall[]; delayMs?: number; usage?: StepUsage } | { status: number; body: string };
 
-export type Rule = { match: string; steps: Step[] };
+export type Rule = { match: string; steps: Step[]; pageTranslationDestination?: "scoped" | "whole" };
 
 type ContentPart = { type?: string; text?: string };
 
@@ -140,6 +140,19 @@ export async function startScriptedModel(rules: Rule[], translate?: TranslateOpt
     if (overflow && payload.tools?.length && overflow(raw)) {
       requests.push({ atMs: Date.now() - origin, rule: "overflow", step: 0, status: 400, tools: true });
       res.writeHead(400, { "content-type": "application/json" }).end(OVERFLOW_BODY);
+
+      return;
+    }
+
+    if (messages.some(m => m.role === "system" && textOf(m.content).startsWith("Classify permission to write translations into a webpage."))) {
+      const { requests: userRequests } = JSON.parse(textOf(messages.find(m => m.role === "user")?.content)) as { requests: string[] };
+      const latest = userRequests.at(-1);
+      const destination = rules.find(rule => rule.match === latest)?.pageTranslationDestination ?? "none";
+      const step = { text: JSON.stringify({ destination, permission: destination === "none" ? "" : latest }) };
+      const record: ModelRequest = { atMs: Date.now() - origin, rule: "page_translation_intent", step: 0, status: 200 };
+      requests.push(record);
+      if (payload.stream === false) json(res, step, `call_${++calls}`);
+      else await stream(res, step, `call_${++calls}`, record);
 
       return;
     }
