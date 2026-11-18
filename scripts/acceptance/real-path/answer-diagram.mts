@@ -435,7 +435,9 @@ async function sourceReferences(): Promise<void> {
     const shortNodes = await browser.evaluate(panel, `['D','E','F','G'].every(id=>document.querySelector('.gc-diagram svg [data-id="'+id+'"]'))`);
     check('短定位验收的正例和负例都显示为节点', shortNodes === true, {shortNodes});
     check('重叠重复的定位、未登记的来源及只有两个汉字的日期均不可点', ['E','F','G'].every(id=>!seen.cited.includes(id)), seen.cited);
-    await pressNode(panel, 'D');
+    const shortNode = '.gc-diagram svg [data-id="D"] rect';
+    await browser.evaluate(panel, `document.querySelector(${JSON.stringify(shortNode)})?.scrollIntoView({block:"center"})`);
+    await browser.click(panel, shortNode);
     seen = await browser.evaluate(panel, quote) as typeof seen;
     check('唯一中文短定位能打开正确原文和原页面', seen.cited.includes('D') && !!seen.text?.includes('克莱芒会议于十一世纪召开') && seen.text.length <= 102 && seen.link === url, seen);
     await pressNode(panel, 'C');
