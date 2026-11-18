@@ -76,7 +76,7 @@ async function run(scenario:Scenario){
   await until(async()=>{
    trace=await rp!.evaluate(panel,traceExpr);
    const idle=await rp!.evaluate(panel,`document.querySelector('#send-btn')?.disabled===false&&!document.querySelector('#status-pill')?.classList.contains('running')`);
-   return idle&&(staysPut||goalPrompts().length>0)?true:undefined;
+   return idle ? true : undefined;
   },60000,'run settled');
   await sleep(800);
   trace=await rp.evaluate(panel,traceExpr);
@@ -98,6 +98,7 @@ async function run(scenario:Scenario){
   }else{
    assert.equal(evidence.goalPrompts.length,0,'an email confirmation is handed back without an automatic browser step');
    assert.equal(evidence.pageUrl,siteUrl);
+   assert.ok(evidence.goalChecks.some((c:any)=>c.status==='needs_user'&&c.remaining?.includes('查收确认邮件')));
    assert.equal(checks.length,0,'the mailbox step is decided before the fast model is asked');
   }
  }catch(e){error=e instanceof Error?e.stack:String(e);}finally{
