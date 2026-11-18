@@ -1,3 +1,4 @@
+import { appendCorrections, type FactCheckFlag } from "../../agent/src/fact-check.ts";
 import type { GoalFacts } from "../../agent/src/goal-facts.ts";
 
 export type SelectorCount = { selector: string; count: number };
@@ -29,6 +30,7 @@ export type Row = {
     pauseMs: number | null;
   };
   runIds?: string[];
+  factChecks?: { expected: number; settled: number; skipped: number; failed: number; sent: number; superseded: number; withCorrections: number };
   usage?: {
     mainRequests: number;
     mainResponsesWithUsage: number;
@@ -113,6 +115,12 @@ type TraceRecord = {
   data?: {
     text?: unknown;
     phase?: unknown;
+    skipped?: unknown;
+    failed?: unknown;
+    willRetry?: unknown;
+    disposition?: unknown;
+    problems?: unknown;
+    findings?: unknown;
     status?: unknown;
     facts?: unknown;
     hostFacts?: { goalFacts?: unknown };
@@ -142,6 +150,68 @@ export function checkState(records: TraceRecord[], runs: Set<string>): "pending"
     }
   }
   return [...open.values()].some(n => n > 0) ? truncated ? "truncated" : "pending" : "done";
+}
+
+type FactCheckCounts = NonNullable<Row["factChecks"]>;
+const newCounts = (): FactCheckCounts => ({ expected: 0, settled: 0, skipped: 0, failed: 0, sent: 0, superseded: 0, withCorrections: 0 });
+
+function correctionText(value: unknown): string | null {
+  if (!Array.isArray(value) || !value.length || !value.every((item: unknown): item is FactCheckFlag => {
+    if (!item || typeof item !== "object") return false;
+    const flag = item as Partial<FactCheckFlag>;
+    return flag.kind === "contradiction" && typeof flag.claim === "string" && typeof flag.source === "string" && typeof flag.quote === "string" && typeof flag.text === "string";
+  })) return null;
+  return appendCorrections("", value).trim();
+}
+
+export function settlementOf(records: TraceRecord[], runs: Set<string>): { state: "pending" | "done" | "unknown" | "failed"; reason?: string; counts: FactCheckCounts; corrections: string[] } {
+  const counts = newCounts();
+  const corrections: string[] = [];
+  let pending = !runs.size;
+  let unknown: string | undefined;
+  let failed: string | undefined;
+  for (const runId of runs) {
+    const mine = records.filter(r => r.runId === runId);
+    let ends = 0, settled = 0, active = false;
+    const findings: { count: number; text: string | null }[] = [];
+    for (const { type, data } of mine) {
+      if (type === "agent_start") active = true;
+      if (type === "agent_end") {
+        active = data?.willRetry === true;
+        if (!active) ends++;
+      }
+      if (type === "abort" || type === "takeover" || type === "session_error") failed = type === "session_error" ? "会话出错" : type === "abort" ? "本轮已取消" : "本轮已交给用户";
+      if (type === "fact_check") {
+        if (typeof data?.skipped === "string") { counts.skipped++; settled++; }
+        else if (typeof data?.failed === "string") { counts.failed++; settled++; }
+        else if (typeof data?.problems === "number" && data.problems > 0) findings.push({ count: data.problems, text: correctionText(data.findings) });
+      }
+      if (type !== "fact_check_delivery") continue;
+      const sent = data?.disposition === "sent_to_ui";
+      if (!sent && data?.disposition !== "superseded") { unknown = "无法辨认事实核对的交付状态"; continue; }
+      if (sent) counts.sent++; else counts.superseded++;
+      settled++;
+      if (typeof data?.problems !== "number" || data.problems < 0) { unknown = "事实核对缺少更正数量"; continue; }
+      if (!data.problems) continue;
+      if (findings.filter(entry => entry.count === data.problems).length > 1) unknown = "同轮重叠的事实核对无法对应到具体更正";
+      const at = findings.findIndex(entry => entry.count === data.problems);
+      const finding = at < 0 ? null : findings.splice(at, 1)[0]?.text;
+      if (sent) {
+        counts.withCorrections++;
+        if (finding) corrections.push(finding);
+        else unknown = "缺少要在回答中核验的更正";
+      }
+    }
+    counts.expected += ends;
+    counts.settled += settled;
+    if (settled > ends) unknown = "事实核对记录无法对应本轮结束事件";
+    if (!ends || ends !== settled || active) pending = true;
+  }
+  const goal = checkState(records, runs);
+  if (records.some(r => r.type === "trace_limit" && (typeof r.runId !== "string" || runs.has(r.runId)))) unknown = "诊断记录写满，无法确认核对终态";
+  if (failed) return { state: "failed", reason: failed, counts, corrections };
+  if (unknown) return { state: "unknown", reason: unknown, counts, corrections };
+  return { state: pending || goal !== "done" ? "pending" : "done", counts, corrections };
 }
 
 export function attribute(rows: Row[], rowRuns: Set<string>[], lines: string[], pool: PoolTask[]) {

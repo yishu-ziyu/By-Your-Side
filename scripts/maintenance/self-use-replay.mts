@@ -5,7 +5,7 @@ import { homedir, loadavg } from "node:os";
 import { join } from "node:path";
 import { REPO, launchRealPath, sleep, until, watchInproc } from "../acceptance/real-path/harness.mts";
 import { DEFAULT_TEST_MODEL, loadModelPlan, modelStorageItems } from "../acceptance/real-path/inproc-config.mts";
-import { type Row, attribute, checkState, missedOf, ok, outcome, poolOf, recordsOf, turnRuns } from "./replay-row.mts";
+import { type Row, attribute, settlementOf, missedOf, ok, outcome, poolOf, recordsOf, turnRuns } from "./replay-row.mts";
 
 import { observeTurn, type TurnSnapshot } from "./replay-panel.mts";
 
@@ -135,6 +135,7 @@ try {
       let firstIdle = 0;
       let correctAt: number | null = null;
       let matchedAnswerMs: number | null = null;
+      let facts: Row["factChecks"];
       let missed: string[] = [];
       const readPanel = () => rp.evaluate(panel, "window.__bysReplayTurn.read()") as Promise<TurnSnapshot>;
       const validate = async (seen: TurnSnapshot) => {
@@ -165,26 +166,29 @@ try {
         }, 30_000, "开始或直接回答");
         const idle = await until(async () => {
           const seen = await readPanel();
-          return seen.paused || seen.idle ? seen : undefined;
+          return seen.paused || seen.error || seen.idle ? seen : undefined;
         }, 300_000, "这一轮结束", 250);
         firstIdle = idle.elapsedMs;
         await validate(idle);
-        if (!idle.paused) {
-          let quietAt: number | null = null;
+        if (!idle.paused && !idle.error) {
           const records: ReturnType<typeof recordsOf> = [];
           await until(async () => {
-            const seen = await readPanel();
-            if (seen.paused) return true;
-            if (!seen.idle || seen.checking) { quietAt = null; correctAt = null; return undefined; }
             const fresh = await newTraceLines(panel);
             lines.push(...fresh);
             records.push(...recordsOf(fresh));
-            const check = checkState(records, turnRuns(records, say));
-            if (check === "truncated") { error = "诊断记录写满，核对结论无法确认"; return true; }
-            if (check === "pending" || (seen.answer && seen.answerReadyMs === null)) { quietAt = null; return undefined; }
-            quietAt ??= Date.now();
-            return Date.now() - quietAt >= 2000 || undefined;
-          }, 300_000, "核对和续做结束", 500);
+            const seen = await readPanel();
+            if (seen.paused || seen.error) return true;
+            const runs = turnRuns(records, say);
+            if (!runs.size && seen.idle) { error = "缺少本轮运行标识，无法确认最终回答"; return true; }
+            const check = settlementOf(records, runs);
+            facts = check.counts;
+            if (check.state === "unknown" || check.state === "failed") { finished = false; error = check.reason ?? "本轮核对终态未知"; return true; }
+            if (!seen.idle) { correctAt = null; return undefined; }
+            if (seen.answerReadyMs !== null && (correctAt === null || matchedAnswerMs !== seen.answerReadyMs)) await validate(seen);
+            if (seen.checking || check.state !== "done" || (seen.answer && seen.answerReadyMs === null)) return undefined;
+            if (check.corrections.length && !await rp.evaluate(panel, `window.__bysReplayTurn.correctionsVisible(${JSON.stringify(check.corrections)})`)) return undefined;
+            return true;
+          }, 300_000, "本轮目标、事实核对和回答更正的终态", 250);
         }
       } catch (cause) {
         error = String(cause).slice(0, 200);
@@ -200,6 +204,7 @@ try {
       lines.push(...await newTraceLines(panel));
       rowRuns.push(turnRuns(recordsOf(lines), say));
       const row: Row = { n: task.n, k, say, secs, checkSecs, totalSecs: secs + checkSecs, calls: 0, load: [loadStart, load()], finished, error: error ?? seen.error, cardSaysFailed: seen.cardFailed, changedGoal: false, verdict: null, expect: missed.length ? "fail" : "pass", missed, answer: seen.answer,
+        ...(facts ? { factChecks: facts } : {}),
         timing: { firstFeedbackMs: seen.firstFeedbackMs, finalAnswerMs: seen.answerReadyMs, correctCompletionMs: correctAt, verifiedMs, pauseMs: seen.pauseMs } };
       rows.push(row);
       await rp.evaluate(panel, "window.__bysReplayTurn.dispose()");

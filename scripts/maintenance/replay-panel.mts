@@ -25,6 +25,8 @@ export function observeTurn(say: string, selectors: string[]): string {
     const expected = ${JSON.stringify(say)};
     const selectors = ${JSON.stringify(selectors)};
     let user, started, answerNode, answerKey, firstFeedbackMs = null, answerReadyMs = null, pauseMs = null;
+    const checkedTexts = new Set();
+    const normalized = text => text.replace(/\\s+/g, "").trim();
     let frame = 0;
     const elapsed = () => started === undefined ? 0 : Math.round(performance.now() - started);
     const rendered = el => !!el && el.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) && el.getClientRects().length > 0;
@@ -46,6 +48,9 @@ export function observeTurn(say: string, selectors: string[]): string {
       if (firstFeedbackMs === null && document.visibilityState === "visible" && ((running && inView(pill)) || feedback.some(inView))) firstFeedbackMs = elapsed();
       const paused = !!user && (banner?.dataset.phase === "user" || after(".handoff-card").some(rendered));
       if (paused && pauseMs === null) pauseMs = elapsed();
+      for (const el of after(".msg.assistant[data-fact-checked]").filter(rendered)) {
+        if (!el.matches(".streaming, [data-revealing='true']")) checkedTexts.add(normalized(el.innerText));
+      }
       const text = answer?.innerText.trim() ?? "";
       const has = selectors.filter(sel => answer && [...answer.querySelectorAll(sel)].some(rendered));
       if (!text || answer?.matches(".streaming, [data-streaming='true'], [data-revealing='true']")) {
@@ -69,11 +74,11 @@ export function observeTurn(say: string, selectors: string[]): string {
       if (event.key === "Enter" && started === undefined) { started = performance.now(); schedule(); }
     };
     const observer = new MutationObserver(schedule);
-    observer.observe(root, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class", "hidden", "data-revealing", "data-streaming", "data-delivery-kind"]});
+    observer.observe(root, {childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class", "hidden", "data-revealing", "data-streaming", "data-delivery-kind", "data-fact-checked"]});
     observer.observe(pill, {attributes: true, attributeFilter: ["class"]});
     if (banner) observer.observe(banner, {attributes: true, attributeFilter: ["data-phase", "hidden"]});
     input.addEventListener("keydown", send, true);
-    window.__bysReplayTurn = { read, dispose() { observer.disconnect(); cancelAnimationFrame(frame); input.removeEventListener("keydown", send, true); } };
+    window.__bysReplayTurn = { read, correctionsVisible(required) { read(); return required.every(text => [...checkedTexts].some(shown => shown.includes(normalized(text)))); }, dispose() { observer.disconnect(); cancelAnimationFrame(frame); input.removeEventListener("keydown", send, true); } };
     return true;
   })()`;
 }
