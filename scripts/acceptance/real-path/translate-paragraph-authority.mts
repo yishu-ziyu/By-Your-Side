@@ -58,8 +58,9 @@ try {
 
     const work = await browser.attach((await browser.targets()).find(t => t.url === 'about:blank')!.targetId);
     const load = async () => {
+      await browser.evaluate(work, 'window.paragraphAuthorityOldDocument = true');
       await browser.cdp.send('Page.navigate', { url }, work);
-      await until(async () => await browser.evaluate(work, `location.href === ${JSON.stringify(url)} && document.readyState === 'complete' && !!document.querySelector('#third')`), 10_000, '练习页就绪');
+      await until(async () => await browser.evaluate(work, `location.href === ${JSON.stringify(url)} && !window.paragraphAuthorityOldDocument && document.readyState === 'complete' && !!document.querySelector('#third')`), 10_000, '练习页就绪');
     };
     await load();
     const worker = await browser.attach((await until(() => browser.serviceWorker(), 10_000, '真实扩展后台就绪')).targetId);
