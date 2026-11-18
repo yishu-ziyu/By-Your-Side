@@ -1332,6 +1332,8 @@ function reload(): Promise<void> {
 }
 
 async function reloadSettings(): Promise<void> {
+  const personaCommit = personaDraft.commits();
+  const translationCommit = translationDraft.commits();
   const stored = await chrome.storage.local.get(null);
   config = modelConfig(stored[INPROC_CONFIG_KEY]);
   fastConfig = modelConfig(stored[INPROC_FAST_CONFIG_KEY]);
@@ -1385,12 +1387,10 @@ async function reloadSettings(): Promise<void> {
   const voice = stored[STEP_VOICE_STORAGE_KEY];
   savedTimbre = isStepVoice(voice) ? voice : DEFAULT_STEP_VOICE;
   savedOrbStyle = parseOrbStyle(stored[ORB_STYLE_STORAGE_KEY]);
-  savedPersona = parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]);
-  savedTranslationStyle = parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]);
   renderTimbres(savedTimbre);
   renderOrbStyles(savedOrbStyle);
-  renderPersonas(savedPersona);
-  renderTranslationStyles(savedTranslationStyle);
+  personaDraft.sync(parseVoicePersona(stored[VOICE_PERSONA_STORAGE_KEY]), personaCommit);
+  translationDraft.sync(parseTranslationStyle(stored[TRANSLATION_STYLE_KEY]), translationCommit);
   $<HTMLInputElement>("edge-entry").checked = !isEdgeEntryOff(stored[EDGE_ENTRY_KEY]);
   selectionBar.checked = !isSelectionBarOff(stored[SELECTION_BAR_KEY]);
   $<HTMLInputElement>("reading-aloud").checked = isReadingAloudOn(stored[READING_ALOUD_KEY]);
@@ -1429,8 +1429,6 @@ const timbreList = $("timbre-list");
 const sample = new Audio();
 let savedTimbre = DEFAULT_STEP_VOICE;
 let savedOrbStyle: OrbStyle = "dusk";
-let savedPersona: VoicePersona = parseVoicePersona(undefined);
-let savedTranslationStyle: TranslationStyle = parseTranslationStyle(undefined);
 
 function radioRow(className: string, label: string, checked: boolean, meta = ""): HTMLButtonElement {
   const pick = document.createElement("button");
@@ -1561,6 +1559,61 @@ function renderOrbStyles(current: OrbStyle): void {
   }));
 }
 
+function styleDraft<T extends { id: string }>(
+  key: string,
+  initial: T,
+  status: HTMLElement,
+  success: string,
+  render: (value: T, picked?: "custom") => void,
+) {
+  let saved = initial;
+  let revision = 0;
+  let commits = 0;
+  let dirty = false;
+  let editingCustom = false;
+  const renderCurrent = () => render(saved, editingCustom ? "custom" : undefined);
+
+  return {
+    dirty: () => dirty,
+    commits: () => commits,
+    openCustom() {
+      revision++;
+      editingCustom = true;
+      renderCurrent();
+    },
+    edit() {
+      revision++;
+      dirty = true;
+      editingCustom = true;
+      setStatus(status, "有修改还没保存。");
+    },
+    sync(value: T, observedCommit: number) {
+      if (observedCommit !== commits) return;
+      saved = value;
+      renderCurrent();
+    },
+    async save(value: T) {
+      const submitted = ++revision;
+      try {
+        await navigator.locks.request(`settings-style:${key}`, async () => {
+          await chrome.storage.local.set({ [key]: value });
+          saved = value;
+          commits++;
+          if (submitted !== revision) return;
+          editingCustom = false;
+          if (value.id === "custom") dirty = false;
+          renderCurrent();
+          setStatus(status, success, "ok");
+        });
+      } catch (error) {
+        if (submitted !== revision) return;
+        renderCurrent();
+        setStatus(status, `没有保存：${plainError(error, "请再试一次")}`, "err");
+      }
+    },
+  };
+}
+
 const personaList = $("persona-list");
 
 const personaCustom = $("persona-custom");
@@ -1570,7 +1623,7 @@ const personaText = $<HTMLTextAreaElement>("persona-text");
 const personaStatus = $("persona-status");
 
 const personaCount = $("persona-count");
-let personaDirty = false;
+const personaDraft = styleDraft(VOICE_PERSONA_STORAGE_KEY, parseVoicePersona(undefined), personaStatus, "已保存，下次语音对话生效。", renderPersonas);
 
 const PERSONA_OPTIONS = [...VOICE_PERSONAS.map(({ id, label, summary }) => ({ id, label, summary })), { id: "custom", label: "自定义", summary: "用你自己的描述" }] as const;
 
@@ -1582,13 +1635,13 @@ function renderPersonas(saved: VoicePersona, picked: VoicePersona["id"] = saved.
     pick.dataset.persona = option.id;
     pick.addEventListener("click", () => {
       if (option.id === "custom") {
-        renderPersonas(saved, "custom");
+        personaDraft.openCustom();
         personaText.focus();
 
         return;
       }
 
-      void savePersona({ id: option.id });
+      void personaDraft.save({ id: option.id });
     });
     row.append(pick);
 
@@ -1596,30 +1649,17 @@ function renderPersonas(saved: VoicePersona, picked: VoicePersona["id"] = saved.
   }));
   personaCustom.hidden = picked !== "custom";
 
-  if (saved.id === "custom" && !personaDirty && document.activeElement !== personaText) personaText.value = saved.text;
+  if (saved.id === "custom" && !personaDraft.dirty() && document.activeElement !== personaText) personaText.value = saved.text;
   personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`;
 }
 
-async function savePersona(persona: VoicePersona): Promise<void> {
-  try {
-    await chrome.storage.local.set({ [VOICE_PERSONA_STORAGE_KEY]: persona });
-    savedPersona = persona;
-    if (persona.id === "custom") personaDirty = false;
-    renderPersonas(persona);
-    setStatus(personaStatus, "已保存，下次语音对话生效。", "ok");
-  } catch (error) {
-    renderPersonas(savedPersona, persona.id === "custom" ? "custom" : savedPersona.id);
-    setStatus(personaStatus, `没有保存：${plainError(error, "请再试一次")}`, "err");
-  }
-}
-
-personaText.addEventListener("input", () => { personaDirty = true; personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`; });
+personaText.addEventListener("input", () => { personaDraft.edit(); personaCount.textContent = `${personaText.value.length}/${CUSTOM_PERSONA_MAX_CHARS}`; });
 
 $("persona-save").addEventListener("click", () => {
   const text = personaText.value.trim();
 
   if (!text) return setStatus(personaStatus, "先写几句你想要的语气和措辞。", "err");
-  void savePersona({ id: "custom", text });
+  void personaDraft.save({ id: "custom", text });
 });
 
 const translationStyleList = $("translation-style-list");
@@ -1631,7 +1671,7 @@ const translationStyleInput = $<HTMLTextAreaElement>("translation-style-text");
 const translationStatus = $("translation-status");
 
 const translationStyleCount = $("translation-style-count");
-let translationDirty = false;
+const translationDraft = styleDraft(TRANSLATION_STYLE_KEY, parseTranslationStyle(undefined), translationStatus, "已保存，下次翻译起生效。", renderTranslationStyles);
 
 const TRANSLATION_STYLE_OPTIONS = [...TRANSLATION_STYLES.map(({ id, label, summary }) => ({ id, label, summary })), { id: "custom", label: "自定义", summary: "用你自己的话说想要的译文" }] as const;
 
@@ -1643,13 +1683,13 @@ function renderTranslationStyles(saved: TranslationStyle, picked: TranslationSty
     pick.dataset.translationStyle = option.id;
     pick.addEventListener("click", () => {
       if (option.id === "custom") {
-        renderTranslationStyles(saved, "custom");
+        translationDraft.openCustom();
         translationStyleInput.focus();
 
         return;
       }
 
-      void saveTranslationStyle({ id: option.id });
+      void translationDraft.save({ id: option.id });
     });
     row.append(pick);
 
@@ -1657,27 +1697,14 @@ function renderTranslationStyles(saved: TranslationStyle, picked: TranslationSty
   }));
   translationStyleCustom.hidden = picked !== "custom";
 
-  if (saved.id === "custom" && !translationDirty && document.activeElement !== translationStyleInput) translationStyleInput.value = saved.text;
+  if (saved.id === "custom" && !translationDraft.dirty() && document.activeElement !== translationStyleInput) translationStyleInput.value = saved.text;
   translationStyleCount.textContent = `${translationStyleInput.value.length}/${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}`;
 }
 
-async function saveTranslationStyle(style: TranslationStyle): Promise<void> {
-  try {
-    await chrome.storage.local.set({ [TRANSLATION_STYLE_KEY]: style });
-    savedTranslationStyle = style;
-    if (style.id === "custom") translationDirty = false;
-    renderTranslationStyles(style);
-    setStatus(translationStatus, "已保存，下次翻译起生效。", "ok");
-  } catch (error) {
-    renderTranslationStyles(savedTranslationStyle, style.id === "custom" ? "custom" : savedTranslationStyle.id);
-    setStatus(translationStatus, `没有保存：${plainError(error, "请再试一次")}`, "err");
-  }
-}
-
-translationStyleInput.addEventListener("input", () => { translationDirty = true; translationStyleCount.textContent = `${translationStyleInput.value.length}/${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}`; });
+translationStyleInput.addEventListener("input", () => { translationDraft.edit(); translationStyleCount.textContent = `${translationStyleInput.value.length}/${CUSTOM_TRANSLATION_STYLE_MAX_CHARS}`; });
 
 addEventListener("beforeunload", (event) => {
-  if (!connectionDrafts.size && !formDirty && !voiceInput.value && !speechInput.value && !personaDirty && !translationDirty
+  if (!connectionDrafts.size && !formDirty && !voiceInput.value && !speechInput.value && !personaDraft.dirty() && !translationDraft.dirty()
     && $("dictation-status").dataset.unsaved !== "true") return;
   event.preventDefault();
   event.returnValue = "";
@@ -1687,7 +1714,7 @@ $("translation-style-save").addEventListener("click", () => {
   const text = translationStyleInput.value.trim();
 
   if (!text) return setStatus(translationStatus, "先写一两句你想要的译文。", "err");
-  void saveTranslationStyle({ id: "custom", text });
+  void translationDraft.save({ id: "custom", text });
 });
 
 function bindToggle(input: HTMLInputElement, key: string, status: HTMLElement, said: (on: boolean) => string): void {

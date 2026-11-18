@@ -350,15 +350,17 @@ export class RealtimeVoiceConnection {
     this.log({type: 'unknown_client_message', clientType: type});
   }
 
-  notifyTask(text: string, id?: string, valid?:()=>boolean, verbatim=false): void {
+  notifyTask(text: string, id?: string, valid?:()=>boolean, verbatim=false): boolean {
     const trimmed = text.trim();
-
-    if (!trimmed || this.closed) return;
-
-    if(this.queuedNotify.length>=256)return this.fatal('待播任务结果过多，语音已停止；结果仍保留在侧栏。');
+    if (!trimmed || this.closed) return false;
+    if (this.queuedNotify.length >= 256) {
+      this.fatal('待播任务结果过多，语音已停止；结果仍保留在侧栏。');
+      return false;
+    }
     this.queuedNotify.push({text:trimmed,id,valid,verbatim});
     this.maybeFlush();
     this.log({type:'notify_queued',chars:trimmed.length});
+    return true;
   }
 
   close(): void {

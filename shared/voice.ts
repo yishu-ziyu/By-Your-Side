@@ -233,6 +233,7 @@ export function voicePersonaText(persona: VoicePersona): string {
 export type VoiceCommand =
   | { kind: "start"; diagnostic?: true; capture?: true; reconnectOf?: string; voice?: string; persona?: VoicePersona;  model?: string }
   | { kind: "stop" }
+  | { kind: "ready_ack" }
   | { kind: "audio"; turn: number; data: string; frame?: number }
   | { kind: "commit"; turn: number;input?:VoiceInputContext;contextPending?:boolean }
   | { kind: "input_context"; turn:number;input?:VoiceInputContext;error?:string }
@@ -339,7 +340,7 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
 
   switch (c.kind) {
     case "start": return isVoiceStart(c);
-    case "stop": return true;
+    case "stop": case "ready_ack": return true;
     case "audio": return turn(c.turn) && validPCM(c.data) && (c.frame === undefined || Number.isSafeInteger(c.frame) && c.frame >= 0 && c.frame <= 1_000_000);
     case "commit": return turn(c.turn)&&(c.contextPending===undefined||typeof c.contextPending==='boolean');
     case "input_context": return turn(c.turn)&&(c.input!==undefined||c.error!==undefined)&&(c.error===undefined||typeof c.error==='string'&&c.error.length>0&&c.error.length<=500);

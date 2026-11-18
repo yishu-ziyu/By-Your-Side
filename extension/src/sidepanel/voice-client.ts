@@ -1085,28 +1085,7 @@ return;}
         return;
       }
 
-      if(e.state==='ready'){
-        this.serverVad=e.inputMode==='server_vad'||this.serverVad;
-
-        if(this.serverVad){this.turn=Math.max(1,this.turn);this.player?.follow(this.turn);}
-
-        if(this.connectTimer)clearTimeout(this.connectTimer);
-        this.ready=true;
-        this.drainBacklog();
-        this.recovering=false;
-        this.reconnectOf=null;
-        this.recoveryAttempts=0;
-        this.recoveryStartTime=0;
-
-        if(this.recoveryTimer){clearTimeout(this.recoveryTimer);this.recoveryTimer=null;}
-
-        if(!this.speaking&&this.phase!=='speaking')this.setPhase('listening',this.sayAgainAfterRecovery?'刚才语音服务没有响应，请再说一遍':e.detail);
-
-        this.sayAgainAfterRecovery=false;
-        this.diagnostic?.('voice_recovered', { turn: this.turn, attempt: this.recoveryAttempts, at: performance.now() });
-
-        if(this.diagSession&&!this.diagConfirmed&&!this.diagTimer)this.diagTimer=setTimeout(()=>{if(this.diagSession&&!this.diagConfirmed)this.failUnconfirmed();},8000);
-      }
+      if (e.state === 'ready') this.receiveReady(e);
 
       if(e.state==='answering')this.setPhase('thinking',e.detail??'正在处理这句话');
 
@@ -1132,6 +1111,29 @@ return;}
     }
     else if(e.kind==='response_end')this.player?.responseEnd(e.responseId);
     else this.event(e);
+  }
+  private receiveReady(e: Extract<VoiceEvent, { kind: "state" }>): void {
+    if (this.reconnectOf && !this.command({ kind: 'ready_ack' })) return;
+    this.serverVad=e.inputMode==='server_vad'||this.serverVad;
+
+    if(this.serverVad){this.turn=Math.max(1,this.turn);this.player?.follow(this.turn);}
+
+    if(this.connectTimer)clearTimeout(this.connectTimer);
+    this.ready=true;
+    this.drainBacklog();
+    this.recovering=false;
+    this.reconnectOf=null;
+    this.recoveryAttempts=0;
+    this.recoveryStartTime=0;
+
+    if(this.recoveryTimer){clearTimeout(this.recoveryTimer);this.recoveryTimer=null;}
+
+    if(!this.speaking&&this.phase!=='speaking')this.setPhase('listening',this.sayAgainAfterRecovery?'刚才语音服务没有响应，请再说一遍':e.detail);
+
+    this.sayAgainAfterRecovery=false;
+    this.diagnostic?.('voice_recovered', { turn: this.turn, attempt: this.recoveryAttempts, at: performance.now() });
+
+    if(this.diagSession&&!this.diagConfirmed&&!this.diagTimer)this.diagTimer=setTimeout(()=>{if(this.diagSession&&!this.diagConfirmed)this.failUnconfirmed();},8000);
   }
   stopSpeaking():void{
     if(!this.id||!this.ready)return;

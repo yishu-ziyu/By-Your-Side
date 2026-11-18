@@ -25,6 +25,7 @@ export class VoiceRelay {
     live: boolean;
     voiceId: string;
     conversationId: string;
+    reconnectOf?: string;
     turn: number;
     diagnostic: boolean;
     serverVad?: boolean;
@@ -83,9 +84,9 @@ export class VoiceRelay {
           return;
         }
 
-        this.stop("new_voice");
+        if (!this.retryingSameVoice(port, message.conversationId, message.command.reconnectOf)) this.stop("new_voice");
         this.observation.clear();
-        this.lease = { port, buffer: [], live: message.command.model === GPT_LIVE_MODEL && message.command.diagnostic !== true, voiceId: message.voiceId, conversationId: message.conversationId, turn: 0, diagnostic: message.command.diagnostic === true };
+        this.lease = { port, buffer: [], live: message.command.model === GPT_LIVE_MODEL && message.command.diagnostic !== true, voiceId: message.voiceId, conversationId: message.conversationId, reconnectOf: message.command.reconnectOf, turn: 0, diagnostic: message.command.diagnostic === true };
       }
 
       const lease = this.lease;
@@ -158,6 +159,11 @@ export class VoiceRelay {
         this.observation.clear();
       }
     });
+  }
+  private retryingSameVoice(port: chrome.runtime.Port, conversationId: string, reconnectOf?: string): boolean {
+    const previous = this.lease;
+    return !!reconnectOf && previous?.port === port && previous.conversationId === conversationId
+      && (previous.voiceId === reconnectOf || previous.reconnectOf === reconnectOf);
   }
   async observe(conversationId: string, token: unknown, mode: unknown = 'image'): Promise<unknown> {
     if (mode !== 'text' && mode !== 'image') {

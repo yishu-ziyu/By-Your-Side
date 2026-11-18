@@ -386,38 +386,34 @@ export class GptLiveSession {
       throw new Error(origin.error ?? '页面资料没有及时到达，未执行这句话。');
     }
   }
-  notify(snapshot: TaskProgressSnapshot): void {
+  notify(snapshot: TaskProgressSnapshot): boolean {
     const delivery = snapshot.conversationContext?.latestDelivery;
     const name = snapshot.conversationId !== this.deps.getSnapshot()?.conversationId ? taskName(snapshot) : undefined;
-
     if (delivery && delivery.runId === snapshot.runId) {
-      this.completeDelivery(name ? { ...delivery, text: aboutTask(name, delivery.text) } : delivery);
-
-      return;
+      return this.completeDelivery(name ? { ...delivery, text: aboutTask(name, delivery.text) } : delivery);
     }
 
     const record = ['error', 'aborted', 'idle'].includes(snapshot.state) ? this.settle(snapshot.runId) : undefined;
-
-    if (record) this.answer(record, 'speakable', progressSpeech(snapshot, name));
+    return record ? this.answer(record, 'speakable', progressSpeech(snapshot, name)) : false;
   }
   streamDelivery(stream: UserDeliveryStream): void {
     if (stream.phase === 'cancelled') this.cancelled.add(stream.id);
   }
-  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'>): void {
+  completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'>): boolean {
     const blocked = this.closed ? 'closed' : delivery.kind === 'ack' ? 'ack' : this.notices.has(delivery.id) ? 'already_sent' : this.cancelled.has(delivery.id) ? 'cancelled' : null;
-    if (blocked) { this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:blocked}); return; }
+    if (blocked) { this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:blocked}); return blocked === 'already_sent'; }
     const record = this.settle(delivery.runId);
 
-    if (!record) {this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:'no_waiting_delegation'});return;}
-    this.notices.add(delivery.id);
-
+    if (!record) {this.deps.diagnostic?.('gpt_live_delivery_skipped',{id:delivery.id,runId:delivery.runId,reason:'no_waiting_delegation'});return false;}
     const owner = this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' });
 
-    if (!this.answer(record, 'speakable', spokenDeliveryText(delivery, owner, this.deps.getSnapshot()?.conversationId), owner?.goalCheck?.status === 'done' ? undefined : delivery.hostNote)) return;
+    if (!this.answer(record, 'speakable', spokenDeliveryText(delivery, owner, this.deps.getSnapshot()?.conversationId), owner?.goalCheck?.status === 'done' ? undefined : delivery.hostNote)) return false;
+    this.notices.add(delivery.id);
 
-    if (record.viaSession) return;
+    if (record.viaSession) return true;
     this.speaking.set(record.id, delivery.id);
     this.deps.onPlayback?.(delivery.id, 'speaking');
+    return true;
   }
   private watchProgress(): void {
     this.progressTimer ??= setInterval(() => this.tickProgress(), 2_000);

@@ -442,16 +442,13 @@ export class RealtimeVoiceSession {
       this.deps.emit(event);
     }
   }
-  notify(snapshot: TaskProgressSnapshot): void {
+  notify(snapshot: TaskProgressSnapshot): boolean {
     const delivery = snapshot.conversationContext?.latestDelivery;
     const name = snapshot.conversationId !== this.deps.getSnapshot()?.conversationId ? taskName(snapshot) : undefined;
-
     if (delivery && delivery.runId === snapshot.runId) {
-      this.completeDelivery(name ? { ...delivery, text: aboutTask(name, delivery.text) } : delivery);
+      return this.completeDelivery(name ? { ...delivery, text: aboutTask(name, delivery.text) } : delivery);
     }
-    else {
-      this.connection?.notifyTask(progressSpeech(snapshot, name));
-    }
+    return this.connection?.notifyTask(progressSpeech(snapshot, name)) ?? false;
   }
   streamDelivery(stream: UserDeliveryStream): void {
     if (stream.phase === 'cancelled') {
@@ -460,19 +457,20 @@ export class RealtimeVoiceSession {
   }
   completeDelivery(delivery: Pick<UserDelivery, 'id' | 'runId' | 'kind' | 'text' | 'facts' | 'hostNote'> & {
     voiceTurn?: number;
-  }): void {
-    if (this.closed || this.deps.diagnosticMode || this.notices.has(delivery.id) || this.cancelled.has(delivery.id)) {
-      return;
-    }
+  }): boolean {
+    if (this.closed || !this.connection || this.deps.diagnosticMode || this.cancelled.has(delivery.id)) return false;
+    if (this.notices.has(delivery.id)) return true;
 
     this.notices.add(delivery.id);
     const text = spokenDeliveryText(delivery, this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' }), this.deps.getSnapshot()?.conversationId);
 
-    this.connection?.notifyTask(text, delivery.id, () => {
+    const accepted = this.connection.notifyTask(text, delivery.id, () => {
       const current = this.deps.getDeliverySnapshot?.({ ...delivery, phase: 'streaming' }) ?? this.deps.getSnapshot();
 
       return !this.closed && !this.cancelled.has(delivery.id) && current?.runId === delivery.runId && !['aborted', 'error'].includes(current.state);
     });
+    if (accepted === false) this.notices.delete(delivery.id);
+    return accepted !== false;
   }
   close(emit = true): void {
     if (this.closed) {

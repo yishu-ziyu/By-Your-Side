@@ -7,9 +7,16 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage } from "../../shared/protocol.js";
-import { DEFAULT_STEP_VOICE, parseVoicePersona, STEP_VOICES, voicePersonaText, type TaskProgressSnapshot, type VoiceClientMessage, type VoiceRouteContext, type VoiceTarget } from "../../shared/voice.js";
+import { DEFAULT_STEP_VOICE, parseVoicePersona, STEP_VOICES, voicePersonaText, type TaskProgressSnapshot, type UserDelivery, type UserDeliveryStream, type VoiceClientMessage, type VoiceRouteContext, type VoiceTarget } from "../../shared/voice.js";
 
-type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'notify' | 'streamDelivery' | 'completeDelivery'> & { bindQueued?(owner: string, runId: string): boolean; endQueued?(owner: string, requestId: string, text: string | null): void };
+type VoiceSession = Pick<RealtimeVoiceSession, 'start' | 'command' | 'close' | 'streamDelivery'> & {
+  notify(snapshot: TaskProgressSnapshot): boolean | void;
+  completeDelivery(delivery: UserDelivery): boolean | void;
+  bindQueued?(owner: string, runId: string): boolean;
+  endQueued?(owner: string, requestId: string, text: string | null): void;
+};
+type PendingVoiceDelivery = { delivery: UserDelivery; owner: string; notify?: true };
+type ReconnectTicket = { voiceId: string; conversationId: string; startedAt: number; endedAt: number; pending: Map<string, PendingVoiceDelivery> };
 
 async function readStepVoiceKey(): Promise<string> {
   const environment = process.env.STEPFUN_API_KEY?.trim();
@@ -65,12 +72,17 @@ function initialDeliverySuppression(
 
 export class VoiceService {
   private readonly deliveryOwners = new Map<string, string>();
-  private lastUnexpectedEnd: { voiceId: string; conversationId: string; startedAt: number; endedAt: number } | null = null;
+  private lastUnexpectedEnd: ReconnectTicket | null = null;
   private active: {
     id: string;
     conversationId: string;
     session: VoiceSession;
     observed: string;
+    ready: boolean;
+    panelReady: boolean;
+    reconnect: ReconnectTicket | null;
+    pending: Map<string, PendingVoiceDelivery>;
+    delivering: Set<string>;
     startedAt: number;
     controls: Set<string>;
     notifiedControls: Set<string>;
@@ -89,7 +101,7 @@ export class VoiceService {
         return;
       }
 
-      const resumed = this.takeUnexpectedEnd(conversationId, message.command.reconnectOf);
+      const resumed = this.findReconnect(conversationId, message.command.reconnectOf);
       this.close("replaced");
 
       if (!this.snapshot(conversationId)) {
@@ -109,7 +121,9 @@ export class VoiceService {
       const persona = voicePersonaText(parseVoicePersona(message.command.persona));
 
       const active = {
-        id: message.voiceId, conversationId, observed, startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), boundTasks: new Set<string>(), terminalTasks: new Set<string>(), session: this.createSession({
+        id: message.voiceId, conversationId, observed, ready: false, panelReady: false, reconnect: resumed,
+        pending: resumed?.pending ?? new Map<string, PendingVoiceDelivery>(), delivering: new Set<string>(),
+        startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), boundTasks: new Set<string>(), terminalTasks: new Set<string>(), session: this.createSession({
           voiceId: message.voiceId,
           voice,
           persona,
@@ -165,11 +179,18 @@ export class VoiceService {
       return;
     }
 
+    if (message.command.kind === 'ready_ack') {
+      active.panelReady = true;
+      this.deliverWhenReady(active);
+      return;
+    }
+
     if (message.command.kind === "interrupt") {
       const current = this.snapshot(conversationId)?.conversationContext?.latestDelivery;
 
       if (current?.id) {
         active.announcedDeliveries.add(current.id);
+        active.pending.delete(current.id);
       }
     }
 
@@ -228,17 +249,12 @@ export class VoiceService {
       const e = message.event;
 
       if (e.kind === 'user_delivery_stream' && e.stream.runId === snapshot.runId) {
-        this.deliveryOwners.set(e.stream.id, owner);
-        active.streamedDeliveries.add(e.stream.id);
-        active.session.streamDelivery?.({ ...e.stream, text: aboutTask(taskName(snapshot), e.stream.text) });
+        this.observeStream(active, owner, { ...e.stream, text: aboutTask(taskName(snapshot), e.stream.text) });
       }
       else if (e.kind === 'user_delivery' && e.delivery.runId === snapshot.runId && e.delivery.status !== 'played') {
         this.deliveryOwners.set(e.delivery.id, owner);
 
-        if (!active.announcedDeliveries.has(e.delivery.id)) {
-          active.announcedDeliveries.add(e.delivery.id);
-          active.session.completeDelivery?.({ ...e.delivery, text: aboutTask(taskName(snapshot), e.delivery.text) });
-        }
+        this.offerDelivery(active, snapshot, { delivery: e.delivery, owner });
       }
 
       return;
@@ -260,15 +276,13 @@ export class VoiceService {
       const e = message.event;
 
       if (e.kind === 'user_delivery_stream' && e.stream.runId === (snapshot.runId ?? null)) {
-        active.announcedDeliveries.add(e.stream.id);
-        active.streamedDeliveries.add(e.stream.id);
-        active.session.streamDelivery?.(e.stream);
+        this.observeStream(active, owner, e.stream);
 
         return;
       }
 
       if (e.kind === 'user_delivery' && active.streamedDeliveries.has(e.delivery.id) && e.delivery.runId === (snapshot.runId ?? null)) {
-        active.session.completeDelivery?.(e.delivery);
+        this.offerDelivery(active, snapshot, { delivery: e.delivery, owner });
 
         return;
       }
@@ -294,9 +308,8 @@ export class VoiceService {
     const resultIdentity = hasResult && result ? `${result.runId}:${result.observedAt}` : 'none';
 
     if (speakable && delivery && snapshot.state === 'idle' && !active.controls.size && !active.announcedDeliveries.has(delivery.id)) {
-      active.announcedDeliveries.add(delivery.id);
       active.observed = `${snapshot.runId}:${snapshot.state}:${resultIdentity}:${delivery.id}`;
-      active.session.notify(snapshot);
+      this.offerDelivery(active, snapshot, { delivery, owner, notify: true });
 
       return;
     }
@@ -324,12 +337,60 @@ export class VoiceService {
       active.session.notify(snapshot);
     }
   }
-  private takeUnexpectedEnd(conversationId: string, reconnectOf?: string): { startedAt: number } | null {
-    const end = this.lastUnexpectedEnd;
-    this.lastUnexpectedEnd = null;
-    if (!end || end.conversationId !== conversationId || end.voiceId !== reconnectOf) return null;
+  private observeStream(active: NonNullable<VoiceService["active"]>, owner: string, stream: UserDeliveryStream): void {
+    if (stream.phase === 'cancelled') active.pending.delete(stream.id);
+    if (owner !== active.conversationId) this.deliveryOwners.set(stream.id, owner);
+    active.streamedDeliveries.add(stream.id);
+    active.session.streamDelivery?.(stream);
+  }
+  private offerDelivery(active: NonNullable<VoiceService["active"]>, snapshot: TaskProgressSnapshot, pending: PendingVoiceDelivery): void {
+    const { delivery, owner, notify } = pending;
+    const id = delivery.id;
+    if (active.announcedDeliveries.has(id) || active.delivering.has(id) || delivery.kind === 'ack' || delivery.status === 'played') return;
+    if (!this.canDeliver(active)) {
+      active.pending.set(id, pending);
+      return;
+    }
+    active.pending.delete(id);
+    this.deliveryOwners.set(id, owner);
+    active.delivering.add(id);
+    try {
+      const accepted = notify && snapshot.conversationContext?.latestDelivery?.id === id
+        ? active.session.notify(snapshot)
+        : active.session.completeDelivery(owner === active.conversationId ? delivery : { ...delivery, text: aboutTask(taskName(snapshot), delivery.text) });
+      if (accepted !== false) active.announcedDeliveries.add(id);
+    } finally {
+      active.delivering.delete(id);
+    }
+  }
+  private canDeliver(active: NonNullable<VoiceService["active"]>): boolean {
+    return active.ready && (!active.reconnect || active.panelReady);
+  }
+  private flushPending(active: NonNullable<VoiceService["active"]>): void {
+    for (const [id, pending] of [...active.pending]) {
+      if (this.active !== active || !this.canDeliver(active)) return;
+      const snapshot = this.snapshot(pending.owner);
+      active.pending.delete(id);
+      if (!snapshot || snapshot.runId !== pending.delivery.runId || ['aborted', 'error', 'paused'].includes(snapshot.state)) continue;
+      if (snapshot.conversationContext?.latestDelivery?.id === id && snapshot.conversationContext.latestDelivery.status === 'played') continue;
 
-    return Date.now() - end.endedAt <= VOICE_RECONNECT_WINDOW_MS ? { startedAt: end.startedAt } : null;
+      this.offerDelivery(active, snapshot, pending);
+    }
+  }
+  private findReconnect(conversationId: string, reconnectOf?: string): ReconnectTicket | null {
+    const end = this.lastUnexpectedEnd;
+    if (end && end.conversationId === conversationId && end.voiceId === reconnectOf && Date.now() - end.endedAt <= VOICE_RECONNECT_WINDOW_MS) return end;
+
+    this.lastUnexpectedEnd = null;
+    return null;
+  }
+  private rememberUnexpectedEnd(active: NonNullable<VoiceService["active"]>): void {
+    active.ready = false;
+    active.panelReady = false;
+    if (active.reconnect && this.lastUnexpectedEnd === active.reconnect) return;
+    this.lastUnexpectedEnd = {
+      voiceId: active.id, conversationId: active.conversationId, startedAt: active.startedAt, endedAt: Date.now(), pending: active.pending,
+    };
   }
   private handleSessionEvent(
     active: NonNullable<VoiceService["active"]>,
@@ -340,18 +401,28 @@ export class VoiceService {
     this.emit({ type: "voice", voiceId, conversationId, event });
     if (this.active !== active || event.kind !== "state") return;
     if (event.state === "closed" || (event.state === "error" && event.recoverable)) {
-      this.lastUnexpectedEnd = { voiceId, conversationId, startedAt: active.startedAt, endedAt: Date.now() };
+      this.rememberUnexpectedEnd(active);
       return;
     }
-    if (event.state === "ready" && this.snapshot(conversationId)?.state === "idle") {
-      this.observe({ type: "status", conversationId, state: "idle" });
-    }
+    if (event.state !== "ready") return;
+    active.ready = true;
+    this.deliverWhenReady(active);
+  }
+  private deliverWhenReady(active: NonNullable<VoiceService["active"]>): void {
+    if (!this.canDeliver(active)) return;
+    this.flushPending(active);
+    if (this.active !== active) return;
+    const { conversationId } = active;
+    if (this.snapshot(conversationId)?.state === "idle") this.observe({ type: "status", conversationId, state: "idle" });
+    if (!this.canDeliver(active) || this.active !== active) return;
+    if (this.lastUnexpectedEnd === active.reconnect) this.lastUnexpectedEnd = null;
+    active.reconnect = null;
   }
   close(reason = "closed"): void {
     if (this.active) {
       this.diagnostic?.("voice_host_closed",{voiceId:this.active.id,reason});
       if (reason !== "stop" && reason !== "replaced") {
-        this.lastUnexpectedEnd = { voiceId: this.active.id, conversationId: this.active.conversationId, startedAt: this.active.startedAt, endedAt: Date.now() };
+        this.rememberUnexpectedEnd(this.active);
       }
     }
     const active = this.active;
