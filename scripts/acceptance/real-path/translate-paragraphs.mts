@@ -51,6 +51,7 @@ const checks: Array<{ name: string; pass: boolean; actual: Json }> = [];
 const check = (name: string, pass: boolean, actual: Json) => {
   checks.push({ name, pass, actual }); console.log(pass ? "PASS" : "FAIL", name, JSON.stringify(actual));
 };
+let inspectPanel: (() => Promise<Json>) | undefined;
 try {
   const work = await rp.attach((await rp.targets()).find(t => t.url === "about:blank")!.targetId);
   await rp.cdp.send("Page.navigate", { url }, work);
@@ -60,10 +61,15 @@ try {
   const ready = 'document.querySelector("#conversation-new")?.disabled === false && document.querySelector("#send-btn")?.disabled === false';
   await until(async () => await rp.evaluate(panel, ready), 60000, "侧栏就绪");
   await rp.cdp.send("Page.bringToFront", {}, work);
+  inspectPanel = () => rp.evaluate(panel, 'document.querySelector("#messages")?.innerText.slice(-800)');
+  const freshConversation = async () => {
+    await rp.click(panel, "#conversation-new");
+    await until(async () => await rp.evaluate(panel, `${ready} && !document.querySelector("#messages .msg.user")`), 15000, "新对话就绪");
+  };
   const send = async (text: string) => {
     await rp.click(panel, "#input"); await rp.typeText(panel, text); await rp.pressEnter(panel);
   };
-  const delivered = (text: string) => until(async () => await rp.evaluate(panel, `${ready} && [...document.querySelectorAll("#messages .msg.assistant")].some(n => n.innerText.includes(${JSON.stringify(text + "已处理。")}))`), 60000, text);
+  const delivered = (text: string) => until(async () => await rp.evaluate(panel, `${ready} && (() => { const user = [...document.querySelectorAll("#messages .msg.user")].at(-1); return user && [...document.querySelectorAll("#messages .msg.assistant")].some(n => (user.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) && n.innerText.includes(${JSON.stringify(text + "已处理。")})); })()`), 60000, text);
   const say = async (text: string) => { await send(text); await delivered(text); };
   const state = () => rp.evaluate(work, `[...document.querySelectorAll('article [data-bys-translation="true"]')].map(el => el.parentElement.id || el.parentElement.tagName)`) as Promise<string[]>;
   const firstTwo = (ids: string[]) => ids.join(",") === "first,second";
@@ -77,19 +83,6 @@ try {
   const outside = await rp.evaluate(work, "window.outsideWrites");
   check("只写入两段，段落以外未出现译文或翻译占位", firstTwo(first) && Array.isArray(outside) && outside.length === 0, { first, outside });
   check("两段都有译文，内联链接仍可核对", await rp.evaluate(work, `[...document.querySelectorAll('#first [data-bys-translation=true],#second [data-bys-translation=true]')].filter(n=>n.textContent.includes("中文译文")).length === 2 && !!document.querySelector('#second [data-bys-translation=true] a[href$="/data"]')`) === true, first);
-  for (const text of ["核对不唯一的段落", "核对缺少的段落", "核对另一篇文章"]) {
-    await say(text);
-    const after = await state();
-    const outside = await rp.evaluate(work, "window.outsideWrites");
-    check(text + "时不扩大翻译范围", firstTwo(after) && Array.isArray(outside) && outside.length === 0, { after, outside });
-  }
-  await say("继续翻译整篇");
-  const all = await state();
-  check("整页操作可以接着翻译剩余四段", all.length === 6 && all.includes("third"), all);
-  await say("还原网页原文");
-  const restored = await rp.evaluate(work, "document.querySelector('article').outerHTML");
-  check("还原了全部原文、链接和段落结构", restored === page, restored);
-
   await say("把第三段译在原处");
   const pinned = await rp.evaluate(work, `(() => {
     const el = document.querySelector("#third"); window.previousThird = el.querySelector('[data-bys-translation=true]');
@@ -101,13 +94,30 @@ try {
   await rp.evaluate(work, 'document.querySelector("#third").hidden = false');
   check("折叠的第三段在另两段翻译后仍保留原有双语节点和手工译文", pinned === true && await preserved() === true, await state());
   for (const text of ["只对气象站改用日文", "只对气象站切换为译文"]) {
+    await freshConversation();
     await say(text);
     check(text + "不改变第三段的已有内容或呈现", await preserved() === true, await state());
   }
-  await rp.click(panel, "#conversation-new");
-  await until(async () => await rp.evaluate(panel, `${ready} && !document.querySelector("#messages .msg.user")`), 15000, "新对话就绪");
+  await freshConversation();
   await say("还原网页原文");
   check("局部操作后仍能还原全部已管理段落", await rp.evaluate(work, "document.querySelector('article').outerHTML") === page, await state());
+
+  await freshConversation();
+  await rp.evaluate(work, "window.outsideWrites = []");
+  await say("只在页面翻译前两段");
+  for (const text of ["核对不唯一的段落", "核对缺少的段落", "核对另一篇文章"]) {
+    await freshConversation();
+    await say(text);
+    const after = await state();
+    const outside = await rp.evaluate(work, "window.outsideWrites");
+    check(text + "时不扩大翻译范围", firstTwo(after) && Array.isArray(outside) && outside.length === 0, { after, outside });
+  }
+  await say("继续翻译整篇");
+  const all = await state();
+  check("整页操作可以接着翻译剩余四段", all.length === 6 && all.includes("third"), all);
+  await say("还原网页原文");
+  const restored = await rp.evaluate(work, "document.querySelector('article').outerHTML");
+  check("还原了全部原文、链接和段落结构", restored === page, restored);
 
   await rp.evaluate(work, 'document.querySelector("#first").textContent = "The morning observation was provisional."');
   hold();
@@ -150,7 +160,7 @@ try {
   const main = model.requests.find(r => r.rule === "把这个页面翻译成中文" && r.step === 0 && r.tools && r.closedAt);
   const completed = await rp.evaluate(work, `!!document.querySelector('article [data-bys-translation=true]')`);
   check("明确整页任务在首轮返回前预取并完成网页翻译", completed === true && !!main?.closedAt && whole.some(b => b.at < main.closedAt!), { completed, requests: whole.length });
-} catch (error) { check("流程完成", false, String(error)); } finally {
+} catch (error) { check("流程完成", false, { error: String(error), panel: await inspectPanel?.().catch(() => null), recentRequests: model.requests.slice(-8).map(r => r.rule) }); } finally {
   release();
   await writeFile(join(out, "result.json"), JSON.stringify({ checks, passed: checks.length > 0 && checks.every(c => c.pass) }, null, 2));
   await rp.close(); await rp.remove(); await model.close(); await new Promise<void>(resolve => server.close(() => resolve()));
