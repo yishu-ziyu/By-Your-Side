@@ -49,15 +49,13 @@
     "expect": {
       "1": {
         "answer": [
-          "1918",
-          "1928",
-          "拉[脱脫]维[亚亞]|拉脫維亞",
-          "汽船|威利|米奇|米老鼠"
+          "(?:拉[脱脫][维維][亚亞])[^\\d。；;\\n]{0,42}1918|1918[^\\d。；;\\n]{0,42}(?:拉[脱脫][维維][亚亞])",
+          "(?:汽船|威利|米奇|米老鼠)[^\\d。；;\\n]{0,42}1928|1928[^\\d。；;\\n]{0,42}(?:汽船|威利|米奇|米老鼠)"
         ]
       },
       "2": {
         "replyHas": [
-          ".gc-diagram svg [data-cited]"
+          ".gc-diagram:has(.gc-cites > li:nth-child(2)) svg [data-cited]"
         ],
         "answer": [
           "1918",
@@ -164,8 +162,8 @@
       },
       "2": {
         "page": [
-          "第.{0,2}[九9]",
-          "十年|10.{0,2}年",
+          "After months of research and revisions(?:(?!View the 2026 Report)[\\s\\S]){0,2000}第\\s*(?:九|9)",
+          "For nearly a decade(?:(?!Every day brings new papers)[\\s\\S]){0,1700}(?:十年|10\\s*年)",
           "Every day brings new papers"
         ],
         "pageSelectorCounts": [
