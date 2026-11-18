@@ -21,7 +21,8 @@
           "ueaj\\.dev|x\\.com/_ueaj|@_ueaj"
         ]
       }
-    }
+    },
+    "readyText": "How I got into AI research"
   },
   {
     "n": 5,
@@ -35,7 +36,8 @@
           "zh\\.wikipedia\\.org/wiki/(%E6%95%85%E5%AE%AB|故宫)"
         ]
       }
-    }
+    },
+    "readyText": "Example Domain"
   },
   {
     "n": 6,
@@ -62,7 +64,8 @@
           "1928"
         ]
       }
-    }
+    },
+    "readyText": "1928"
   },
   {
     "n": 8,
@@ -80,7 +83,8 @@
           "Scale|规模|扩展|招揽|反面|反例"
         ]
       }
-    }
+    },
+    "readyText": "One of the most common types of advice"
   },
   {
     "n": 11,
@@ -103,7 +107,8 @@
           "未登录|没有.{0,10}(视频|推荐)|空(状态|的)"
         ]
       }
-    }
+    },
+    "readyText": "Code is no longer the bottleneck"
   },
   {
     "n": 13,
@@ -120,7 +125,8 @@
           "没有.{0,8}字幕|字幕.{0,10}(为空|是空的|为 ?0|不存在)"
         ]
       }
-    }
+    },
+    "readyText": "和曾鸣聊产业史观"
   },
   {
     "n": 14,
@@ -134,7 +140,8 @@
           "57\\.1\\s*%"
         ]
       }
-    }
+    },
+    "readyText": "One of the most common types of advice"
   },
   {
     "n": 16,
@@ -172,6 +179,7 @@
           }
         ]
       }
-    }
+    },
+    "readyText": "After months of research and revisions"
   }
 ]

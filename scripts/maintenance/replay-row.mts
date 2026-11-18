@@ -2,7 +2,7 @@ import type { GoalFacts } from "../../agent/src/goal-facts.ts";
 
 export type SelectorCount = { selector: string; count: number };
 export type Expect = { answer?: string[]; answerNot?: string[]; page?: string[]; tab?: string[]; replyHas?: string[]; pageSelectorCounts?: SelectorCount[] };
-export type PoolTask = { n: number; url: string; say: string[]; onPage?: number[]; expect: Record<string, Expect> };
+export type PoolTask = { n: number; url: string; readyText?: string; say: string[]; onPage?: number[]; expect: Record<string, Expect> };
 
 export type Row = {
   n: number;
@@ -59,8 +59,9 @@ export function poolOf(value: unknown): PoolTask[] {
   return value.map((task, index) => {
     const where = `任务池第 ${index + 1} 项`;
     if (!task || typeof task !== "object") throw new Error(`${where}不是对象`);
-    const { n, url, say, onPage, expect } = task as Record<string, unknown>;
+    const { n, url, readyText, say, onPage, expect } = task as Record<string, unknown>;
     if (typeof n !== "number" || typeof url !== "string" || !strings(say)) throw new Error(`${where}缺 n、url 或 say`);
+    if (readyText !== undefined && (typeof readyText !== "string" || !readyText.trim())) throw new Error(`${where} readyText 应为页面上可见的文字`);
     if (onPage !== undefined && !(Array.isArray(onPage) && onPage.every(i => typeof i === "number"))) throw new Error(`${where} onPage 应当是数字数组`);
     if (!expect || typeof expect !== "object") throw new Error(`${where}缺 expect：每句都要有结果断言`);
 

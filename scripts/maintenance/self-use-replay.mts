@@ -55,6 +55,7 @@ await mkdir(shots, { recursive: true });
 
 const rp = await launchRealPath({ dist: process.env.SIDEAGENT_ACCEPTANCE_DIST ?? join(REPO, "extension/dist"), recordFps: 10 });
 const rows: Row[] = [];
+const unavailable: Array<{ n: number; reason: string }> = [];
 let minimaxTraffic: { requests: number; httpErrors: number; networkFailures: number; unfinished: number } | null = null;
 const rowRuns: Set<string>[] = [];
 const allLines: string[] = [];
@@ -110,6 +111,16 @@ try {
 
   for (const task of pool) {
     await rp.cdp.send("Page.navigate", { url: task.url }, workSession).catch(() => {});
+    if (task.readyText) {
+      const readyPage = `location.origin === ${JSON.stringify(new URL(task.url).origin)} && document.body?.innerText.includes(${JSON.stringify(task.readyText)})`;
+      const observed = await until(async () => await rp.evaluate(workSession, readyPage).catch(() => false) || undefined, 30_000, "任务起始页面就绪").catch(() => false);
+      if (!observed) {
+        const reason = "起始网页未显示登记的内容";
+        unavailable.push({ n: task.n, reason });
+        console.log(`${task.n} 未跑：${reason}`);
+        continue;
+      }
+    }
     await rp.cdp.send("Page.bringToFront", {}, workSession).catch(() => {});
     await rp.click(panel, "#conversation-new");
     await until(async () => await rp.evaluate(panel, ready), 60_000, "新对话就绪");
@@ -234,7 +245,7 @@ const firstFeedback = latencyOf(rows.map(r => r.timing?.firstFeedbackMs));
 const correctCompletion = latencyOf(done.map(r => r.timing?.correctCompletionMs));
 const maxLoad = Math.max(0, ...rows.flatMap(r => r.load));
 const role = process.env.SIDEAGENT_BUILD_ROLE ?? (!process.env.SIDEAGENT_ACCEPTANCE_DIST ? "daily" : undefined);
-await writeFile(join(outDir, `${day}.json`), JSON.stringify({ day, model: MODEL, effort: EFFORT, fastModel: fast.name, plannedTurns, firstFeedback, correctCompletion, minimaxTraffic, ...(role ? { role } : {}), rows }, null, 2));
+await writeFile(join(outDir, `${day}.json`), JSON.stringify({ day, model: MODEL, effort: EFFORT, fastModel: fast.name, plannedTurns, unavailable, firstFeedback, correctCompletion, minimaxTraffic, ...(role ? { role } : {}), rows }, null, 2));
 await writeFile(join(outDir, `${day}.md`), [
   `# 自用回放 ${day}`,
   ``,
