@@ -26,7 +26,7 @@
   },
   {
     "n": 5,
-    "url": "https://example.com/",
+    "url": "about:blank",
     "say": [
       "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“故宫”，打开“故宫”这个条目。"
     ],
@@ -36,8 +36,7 @@
           "zh\\.wikipedia\\.org/wiki/(%E6%95%85%E5%AE%AB|故宫)"
         ]
       }
-    },
-    "readyText": "Example Domain"
+    }
   },
   {
     "n": 6,
@@ -158,6 +157,17 @@
           "第[九9]|第.{0,2}[九9]",
           "十年|10.{0,2}年",
           "研究"
+        ],
+        "page": [
+          "After months of research and revisions",
+          "For nearly a decade, this report has been a labor of love",
+          "Every day brings new papers"
+        ],
+        "pageSelectorCounts": [
+          {
+            "selector": ".body.markup [data-bys-translation]",
+            "count": 0
+          }
         ]
       },
       "2": {
