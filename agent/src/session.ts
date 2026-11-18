@@ -166,7 +166,7 @@ const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
 
 const PRE_OBSERVATION_TEXT_MAX = 12_000;
 const AX_TREE_SOURCE_MIN_CHARS = 400;
-const WHOLE_PAGE_TRANSLATION = /^(?:请?(?:把(?:这个页面|当前页面|这一页|整页)翻译成(?:简体)?中文|(?:重新)?翻译(?:这个页面|当前页面|这一页|整页))(?:[，,]\s*只保留译文)?[。！!]?|(?:please )?translate (?:this|the current) (?:web)?page (?:to|into) (?:simplified )?chinese[.!]?)$/iu;
+const WHOLE_PAGE_TRANSLATION = /^(?:请?(?:把(?:这个页面|当前页面|这一页|整页)翻译成(?:简体)?中文|(?:重新)?翻译(?:这个页面|当前页面|这一页|整页))(?:[，,]\s*只保留译文)?[。！!]?|(?:please )?translate (?:this|the current) (?:web)?page (?:to|into) (?:simplified )?chinese[.!]?)$/iu; // WHY: hardcode-ok 预取早于工具授权，会把网页发给服务商，只允许完整的整页命令；其他说法仍由正常翻译工具处理。
 const TRANSLATION_PREFETCH_BLOCKS = 16;
 const TRANSLATION_PREFETCH_LANES = 4;
 const TRANSLATION_PREFETCH_AFTER_MAIN_MS = 100;
