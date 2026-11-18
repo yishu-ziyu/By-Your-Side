@@ -46,6 +46,45 @@ test("S3-4: OPFS worker 超时终止卡死 worker 并清理计时器", async (t)
   }
 });
 
+test("OPFS 追加完毕但未收到回执时，按原始偏移回读确认", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const prevChrome = (globalThis as { chrome?: unknown }).chrome;
+  const prevNavigator = globalThis.navigator;
+  const prevWorker = (globalThis as { Worker?: unknown }).Worker;
+  const dispatched = Promise.withResolvers<void>();
+  let contents = "old\n";
+  let stopped = false;
+  class StubWorker {
+    onmessage: ((ev: unknown) => void) | null = null;
+    postMessage(msg: { id: number; data: Uint8Array; reportAppendOffset?: true }) {
+      if (msg.reportAppendOffset) this.onmessage?.({ data: { id: msg.id, appendOffset: contents.length } });
+      contents += new TextDecoder().decode(msg.data);
+      dispatched.resolve();
+    }
+    terminate() { stopped = true; }
+  }
+  Object.defineProperty(globalThis, "chrome", { value: { runtime: { getURL: (p: string) => p } }, configurable: true });
+  Object.defineProperty(globalThis, "navigator", { value: { storage: { getDirectory: async () => ({
+    getFileHandle: async () => ({ getFile: async () => {
+      assert.ok(stopped, "必须在旧 worker 停止后回读");
+      return new Blob([contents]);
+    } }),
+  }) } }, configurable: true });
+  Object.defineProperty(globalThis, "Worker", { value: StubWorker, configurable: true });
+  try {
+    const fs = createOpfsFileSystem();
+    const pending = fs.appendFile("/log.txt", "new\n", {} as never);
+    await dispatched.promise;
+    t.mock.timers.tick(15_000);
+    assert.equal((await pending).ok, true, "回读确认追加完成时按成功处理");
+    assert.equal(contents, "old\nnew\n");
+  } finally {
+    Object.defineProperty(globalThis, "chrome", { value: prevChrome, configurable: true });
+    Object.defineProperty(globalThis, "navigator", { value: prevNavigator, configurable: true });
+    Object.defineProperty(globalThis, "Worker", { value: prevWorker, configurable: true });
+  }
+});
+
 test("S3-6: 切到新标签页触发语音/交办时立即隐藏旧标签页的胶囊", async () => {
   const prevChrome = (globalThis as { chrome?: unknown }).chrome;
   const sent: Array<{ tabId: number; message: unknown }> = [];

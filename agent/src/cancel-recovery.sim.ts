@@ -26,7 +26,7 @@ function createHarnessStorage() {
     exclusive: async (fn) => fn(),
   });
 
-  const makeManager = (emitted: ServerMessage[], opts?: { paused?: boolean }) => {
+  const makeManager = (emitted: ServerMessage[], opts?: { paused?: boolean; waitForStop?: () => Promise<void> }) => {
     let held = opts?.paused ?? false;
 
     const manager = new ConversationManager(
@@ -48,7 +48,7 @@ function createHarnessStorage() {
           persistTaskResults: (s: TaskProgressSnapshot) => { persistedSnapshot = structuredClone(s); },
           persistAcceptedTask: (s: TaskProgressSnapshot) => { persistedSnapshot = structuredClone(s); },
           flushPersistence: async () => {},
-          waitForStop: async () => {},
+          waitForStop: opts?.waitForStop ?? (async () => {}),
           abort: () => { held = false; },
           settleAnswerGate: () => {},
           startTask: () => {
@@ -196,6 +196,36 @@ test("非流式 paused 任务收到带 taskRequestId 的 abort 后重启保持�
   const summary = second.manager.list().find((item) => item.id === id);
   assert.equal(summary?.checkpoint, undefined);
   assert.equal(second.manager.getTaskProgress(id)?.state, "aborted");
+});
+
+test("后台还在等待停稳时，取消记录已可用于重启恢复", async () => {
+  const storage = createHarnessStorage();
+  const id = "conv-stop-in-flight";
+  const snapshot: TaskProgressSnapshot = {
+    conversationId: id, observedAt: 1000, state: "running", goal: "保留作业结果", startedAt: 1000,
+    runId: "run-stop", active: [], lastAction: null, successVerified: false, results: [],
+  };
+  storage.setSnapshot(snapshot);
+  storage.setSummaries([{ id, title: "正在收尾", createdAt: 1000, updatedAt: 1000, state: "running", mode: "act", runId: "run-stop" }]);
+  await storage.writeTaskRecords([{
+    id: "task-stop", originConversationId: id, executionConversationId: id, runId: "run-stop",
+    goal: snapshot.goal!, revision: 0, controlVersion: 0, state: "running", updatedAt: 1000,
+  }]);
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const { manager } = storage.makeManager([], { waitForStop: () => { entered.resolve(); return release.promise; } });
+  await manager.ensureDefault();
+  const stopping = manager.handleMessage({ type: "abort", conversationId: id });
+  try {
+    await entered.promise;
+    assert.equal((await storage.taskRecords.get("task-stop"))?.state, "cancelled", "等待旧运行停稳前先保存取消");
+    const restarted = storage.makeManager([]).manager;
+    await restarted.ensureDefault();
+    assert.equal(restarted.getTaskProgress(id)?.state, "aborted");
+  } finally {
+    release.resolve();
+    await stopping;
+  }
 });
 
 test("崩溃窗口恢复：taskRecords 已记 cancelled 但会话快照停留在 running 时不误报中断且立即落盘修正", async () => {
