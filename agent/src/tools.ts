@@ -204,7 +204,7 @@ const MODEL_TOOL_OF: Record<string, string> = {
 
 const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
 
-interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
+interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal; beforeDispatch?: () => void }
 
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
@@ -215,6 +215,7 @@ interface BrowserToolExecution {
   assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void;
   onStep?: (step: ProgramStep) => void;
   beforeCopy?: () => Promise<PreparedCopy>;
+  beforePageTranslation?: (request: TranslationRequest, toolCallId: string, signal?: AbortSignal) => Promise<() => void>;
   files?: () => ArtifactStore | undefined;
   attachments?: () => readonly Attachment[];
   downloadAttachment?: (input: { id: string; name: string; mimeType: string; dataBase64: string }) => Promise<FileAttachment>;
@@ -405,7 +406,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         return programId ? rpc.call(name, callParams, rpcTimeoutMs, sid, programId, undefined, undefined, undefined, programDeadline) : rpc.call(name, callParams, rpcTimeoutMs, sid);
       }
 
-      return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId, undefined, programDeadline);
+      return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId, undefined, programDeadline, scope?.beforeDispatch);
     };
 
     const invokeReleasingIdleOwner = async (executionEpoch?: number) => {
@@ -417,6 +418,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         if (!blockedByIdleOwner || !execution?.releaseIdleTab) throw error;
 
+        scope?.beforeDispatch?.();
         if (!await execution.releaseIdleTab(Number.isSafeInteger(callParams.tabId) ? Number(callParams.tabId) : undefined)) throw error;
         assertNotAborted();
 
@@ -452,11 +454,11 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   const call = makeCall(undefined);
   const readAfterNavigate = call;
 
-  const makeDefinitions = (call: ReturnType<typeof makeCall>, _scope: ExecutionScope | undefined) => [
+  const makeDefinitions = (call: ReturnType<typeof makeCall>, scope: ExecutionScope | undefined) => [
     defineTool({
       name: "page_translation",
       label: "翻译网页",
-      description: 'Translate the current webpage IN PLACE, progressively, using the current model. For a request limited to particular paragraphs (including a follow-up to put those translations on the page), pass scope with the observed page URL and one unique source quote per paragraph. Read the original if necessary. Never omit scope to work around a missing or ambiguous quote. Omit scope only for a whole-page translation. action:"translate" also resumes incomplete work, default target 简体中文 and default bilingual; pass mode:"translated" when the user only wants translation. action:"display" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48), fontFamily:"songti" for 宋体 or "original" to restore the site font. In display, submit ONLY the fields this request changes; omitted fields keep the current page state (a font-only request must not carry mode or fontSize), and never add display attributes the user did not ask to change. For a font or display-only request, call display ONLY. Its remaining count does not authorize resuming translation; do not call translate unless the user asks to translate or continue. For 宋体, the original font or the size of translations made by this tool, use display, not handwritten JS. action:"restore" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. If incompleteReason is present, keep completed text and report the changing content or limit; do not automatically restart translation. To translate the page, use this tool, never handwritten JS or a sidebar-only translation.' + TRANSLATION_JS_FALLBACK + ' Do not delegate page translation to workers.',
+      description: 'Change the translation displayed IN the webpage only when the current user asks for that change. For a translation requested in the sidebar, in chat, or by voice, read the requested source and give the translation in the requested answer channel; leave the webpage unchanged. A request about particular text on a webpage does not by itself authorize writing to it. For requested in-page translation limited to particular paragraphs (including a follow-up to put those translations on the page), pass scope with the observed page URL and one unique source quote per paragraph. Read the original if necessary. Never omit scope to work around a missing or ambiguous quote. Omit scope only for an explicitly requested whole-page translation. action:"translate" also resumes incomplete work, default target 简体中文 and default bilingual; pass mode:"translated" only when the user wants the webpage to show the translation without the original. action:"display" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48), fontFamily:"songti" for 宋体 or "original" to restore the site font. In display, submit ONLY the fields this request changes; omitted fields keep the current page state (a font-only request must not carry mode or fontSize), and never add display attributes the user did not ask to change. For a font or display-only request, call display ONLY. Its remaining count does not authorize resuming translation; do not call translate unless the user asks to translate or continue. For 宋体, the original font or the size of translations made by this tool, use display, not handwritten JS. action:"restore" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. If incompleteReason is present, keep completed text and report the changing content or limit; do not automatically restart translation.' + TRANSLATION_JS_FALLBACK + ' Do not delegate page translation to workers.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal('translate'), Type.Literal('display'), Type.Literal('restore')]),
         scope: Type.Optional(Type.Object({
@@ -469,8 +471,14 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         fontFamily: Type.Optional(Type.Union([Type.Literal('original'), Type.Literal('songti')])),
         document: Type.Optional(Type.String({description:'Observed translation instance; reject if the page changed.'})),
       }),
-      execute: async (_id, params, signal) => {
-        const result = await runPageTranslation(params as TranslationRequest,
+      execute: async (id, params, signal) => {
+        let request = params as TranslationRequest;
+        if (request.action === 'translate') {
+          if (!scope || !execution?.beforePageTranslation) throw new Error('本会话无法核对网页翻译授权，未改动页面。');
+          request = rpc.resolvePageParams('page_translation', params, sid) as unknown as TranslationRequest;
+          scope.beforeDispatch = await execution.beforePageTranslation(request, id, signal);
+        }
+        const result = await runPageTranslation(request,
           async command => await call('page_translation', {...command}) as TranslationReceipt,
           translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), signal ?? new AbortController().signal,
           {settle: async command => { await rpc.call('page_translation', {...command}, 5_000, sid); }});

@@ -254,8 +254,11 @@ export class ToolRpc {
     return () => { this.lateListeners.delete(handler); };
   }
 
-  async call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string, executionEpoch?: number, sdkId?: string, signal?: AbortSignal, programDeadline?: number): Promise<unknown> {
-    try { if(this.beforeCall)await this.beforeCall(); } catch (error) {
+  async call(name: ToolName, params: Record<string, unknown>, timeoutMs?: number, sessionId?: string, programId?: string, executionEpoch?: number, sdkId?: string, signal?: AbortSignal, programDeadline?: number, beforeDispatch?: () => void): Promise<unknown> {
+    try {
+      if(this.beforeCall)await this.beforeCall();
+      beforeDispatch?.();
+    } catch (error) {
       const failed: ToolExecutionError = error instanceof Error ? error : new Error(String(error));
       failed.executionFact = "not_executed";
       throw failed;
