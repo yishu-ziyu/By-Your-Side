@@ -8,7 +8,7 @@ type Destination = { destination: 'whole' } | { destination: 'scoped'; paragraph
 export type TranslationIntent = Destination | null;
 
 export function intactTranslationRequest(text: string): boolean {
-  if (!text.trim() || looksSecret(text) || /\[(?:redacted|truncated|image omitted|object Object)\b|密钥|凭据|令牌|\b(?:credentials?|secrets?|bearer)\b/iu.test(text)) return false;
+  if (!text.trim() || looksSecret(text) || /\[(?:redacted|truncated|image omitted|object Object)\b|密钥|凭据|令牌|\b(?:credentials?|secrets?|bearer)\b/iu.test(text)) return false; // WHY: hardcode-ok 凭据标签和日志占位符只用于拒绝转发，删改过的句子不能授予写权限。
   if (/\b(?:[a-z0-9]+[_-]){1,3}[a-z0-9]{24,}\b/iu.test(text)) return false;
   return redactCredentialText(text) === text && sanitizeTrace(text) === text;
 }
