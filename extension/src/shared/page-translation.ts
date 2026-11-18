@@ -11,7 +11,10 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   type Block = {pendingMark?: HTMLElement; families?: FontOverride[]; hadStyles?: Map<HTMLElement, boolean>; id: string; element: HTMLElement; segments: Segment[]; output?: HTMLElement; font?: {value: string; priority: string; hadStyle: boolean; applied: string}};
 
+  type Scope = { url: string; targets: Map<HTMLElement, Array<{ node: Text; original: string }>> };
+
   type State = {
+    scope?: Scope;
     token: string; url: string; language: string; mode: TranslationMode; fontSize: number | null; fontFamily: TranslationFont;
     next: number; blocks: Map<HTMLElement, Block>; observer: MutationObserver;
     restore: () => void; markTimer?: ReturnType<typeof setTimeout>;
@@ -147,7 +150,40 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     return {document: state?.token ?? '', language: state?.language ?? '', mode: state?.mode ?? 'bilingual', fontSize: state?.fontSize ?? null, fontFamily: state?.fontFamily ?? 'original', translated: 0, remaining: 0, unsupported: 0, blocks: []};
   }
 
-  if (command.action === 'begin') dropManual();
+  const original = (element: HTMLElement, node: Text, index: number) => {
+    const segment = state?.blocks.get(element)?.segments[index];
+    return segment?.node === node && node.data === (state?.mode === 'translated' ? segment.translation ?? segment.original : segment.original) ? segment.original : node.data;
+  };
+
+  const resolveScope = (): Scope | undefined => {
+    if (!command.scope) return undefined;
+    if (new URL(command.scope.url).href !== location.href) throw new Error('原文对应的网址已变化，未翻译页面。');
+    const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
+    const paragraphs = [...readParagraphs()].map(([element, nodes]) => ({
+      element, nodes, text: normalize(nodes.map((node, index) => original(element, node, index)).join('')),
+    }));
+    const scope: Scope = { url: location.href, targets: new Map() };
+
+    for (const quote of command.scope.quotes) {
+      const matches = paragraphs.filter(p => p.text.includes(normalize(quote)));
+      if (matches.length !== 1) throw new Error('原文摘录没有唯一对应的段落，请核对原文，未翻译页面。');
+      const { element, nodes } = matches[0]!;
+      if (tooLarge(nodes) || scope.targets.has(element)) throw new Error('请为每个可翻译的段落提供一条独立摘录，未翻译页面。');
+      scope.targets.set(element, nodes.map((node, index) => ({ node, original: original(element, node, index) })));
+    }
+
+    if (state && (
+      command.language && command.language !== state.language ||
+      command.mode && command.mode !== state.mode ||
+      command.fontSize !== undefined && command.fontSize !== state.fontSize ||
+      command.fontFamily && command.fontFamily !== state.fontFamily
+    )) throw new Error('局部翻译不能改动已有译文的语言或显示方式，请先还原译文。');
+
+    return scope;
+  };
+
+  const scope = resolveScope();
+  if (command.action === 'begin' && !scope) dropManual();
 
   if (command.action === 'begin' && state && command.language && state.language !== command.language) { clear(); state = undefined; }
 
@@ -181,6 +217,24 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   }
 
   const current = state;
+
+  const bindScope = () => {
+    if (command.action === 'begin') {
+      if (scope || current.scope) current.token = crypto.randomUUID();
+      current.scope = scope;
+    }
+    if (!current.scope) return;
+    if (current.scope.url !== location.href) throw new Error('原文对应的网址已变化，未写入译文。');
+    const groups = readParagraphs();
+    for (const [element, saved] of current.scope.targets) {
+      const nodes = groups.get(element);
+      if (!nodes || nodes.length !== saved.length || saved.some((s, i) => s.node !== nodes[i] || original(element, s.node, i) !== s.original)) throw new Error('原文段落已变化，未写入译文。');
+    }
+
+    return groups;
+  };
+  const scopedGroups = bindScope();
+  const inScope = (element: HTMLElement) => current.scope?.targets.has(element) ?? true;
 
   const hadStyleBeforeTypography = (block: Block, element: HTMLElement) => {
     block.hadStyles ??= new Map();
@@ -240,7 +294,8 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     }
   };
 
-  if (command.mode || command.fontSize !== undefined || command.fontFamily !== undefined) {
+  const applyDisplay = () => {
+    if (scope || (!command.mode && command.fontSize === undefined && command.fontFamily === undefined)) return;
     for (const block of current.blocks.values()) restoreFont(block);
 
     if (command.fontFamily) current.fontFamily = command.fontFamily;
@@ -250,11 +305,12 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     if (command.fontSize !== undefined) current.fontSize = command.fontSize;
 
     for (const block of current.blocks.values()) if (block.segments.every(s => s.translation !== undefined)) render(block);
-  }
+  };
+  applyDisplay();
 
   if (command.action === 'apply') {
     const translations = new Map(command.translations!.map(t => [t.id, t.text]));
-    const affected = [...current.blocks.values()].filter(b => b.segments.some(s => translations.has(s.id)));
+    const affected = [...current.blocks.values()].filter(b => inScope(b.element) && b.segments.some(s => translations.has(s.id)));
 
     if (translations.size !== command.translations!.length) throw new Error('译文段落标识重复，未写入页面。');
     const unchanged = affected.filter(b => b.element.isConnected && b.segments.every(s => translations.has(s.id) && s.node.isConnected && b.element.contains(s.node) && s.node.data === (current.mode === 'translated' ? s.translation ?? s.original : s.original)));
@@ -266,10 +322,11 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
     }
   }
 
-  const groups = readParagraphs();
+  const groups = scopedGroups ?? readParagraphs();
   let unsupported = 0;
 
   for (const [element, nodes] of groups) {
+    if (!inScope(element)) continue;
     let block = current.blocks.get(element);
 
     if (block && (block.segments.length !== nodes.length || block.segments.some((s, i) => s.node !== nodes[i] || s.node.data !== (current.mode === 'translated' ? s.translation ?? s.original : s.original)))) {
@@ -286,7 +343,8 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
 
   for (const [element, block] of current.blocks) if (!groups.has(element)) { undo(block); current.blocks.delete(element); }
 
-  const pending = [...current.blocks.values()].filter(b => !b.segments.every(s => s.translation !== undefined));
+  const eligible = [...current.blocks.values()].filter(b => inScope(b.element));
+  const pending = eligible.filter(b => !b.segments.every(s => s.translation !== undefined));
   pending.sort((a, b) => fromViewport(a.element) - fromViewport(b.element));
 
   if (command.action === 'begin' || command.action === 'collect' || command.action === 'apply') {
@@ -327,7 +385,7 @@ export function translationInPage(command: TranslationCommand): TranslationPageR
   }
 
   const receipt: Omit<TranslationReceipt, 'tabId'> = {document: current.token, language: current.language, mode: current.mode, fontSize: current.fontSize, fontFamily: current.fontFamily,
-    translated: current.blocks.size - pending.length, remaining: pending.length, unsupported, blocks};
+    translated: eligible.length - pending.length, remaining: pending.length, unsupported, blocks};
 
   if (command.action === 'apply') receipt.applied = applied;
 

@@ -23,7 +23,10 @@ export interface TranslationReceipt {
   incompleteReason?: 'page-changing' | 'batch-limit' | 'model-output';
 }
 
+export interface TranslationScope { url: string; quotes: string[] }
+
 export interface TranslationCommand {
+  scope?: TranslationScope;
   tabId?: number;
   action: 'begin' | 'collect' | 'apply' | 'display' | 'restore' | 'settle' | 'peek';
   document?: string;
@@ -38,6 +41,7 @@ export interface TranslationCommand {
 }
 
 export interface TranslationRequest {
+  scope?: TranslationScope;
   tabId?: number;
   action: 'translate' | 'display' | 'restore';
   language?: string;
@@ -59,6 +63,11 @@ export function validateTranslationCommand(p: TranslationCommand): void {
   if (p.fontFamily !== undefined && !['original', 'songti'].includes(p.fontFamily)) throw new Error('无效的译文字体');
 
   if (p.document !== undefined && (typeof p.document !== 'string' || p.document.length > 100)) throw new Error('无效的文档身份');
+
+  if (p.scope !== undefined) {
+    const scope = p.scope;
+    if (p.action !== 'begin' || !scope || typeof scope.url !== 'string' || !URL.canParse(scope.url) || !Array.isArray(scope.quotes) || !scope.quotes.length || scope.quotes.length > 64 || scope.quotes.some(quote => typeof quote !== 'string' || !quote.trim() || quote.length > 12000)) throw new Error('限定翻译需要来源网址和每段原文。');
+  }
 
   if (p.delayMs !== undefined && (p.action !== 'settle' || !Number.isFinite(p.delayMs) || p.delayMs < 0 || p.delayMs > 60_000)) throw new Error('无效的收尾延迟');
 
