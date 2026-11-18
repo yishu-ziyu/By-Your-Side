@@ -76,8 +76,8 @@ async function checkRanges(rp: Awaited<ReturnType<typeof launchRealPath>>, panel
   return results;
 }
 
-const readPanel = `(() => {
-  const reply = document.querySelector('#messages .msg.assistant:has(> p, > ul)');
+const readPanel = String.raw`(() => {
+  const reply = [...document.querySelectorAll('#messages .msg.assistant.markdown')].findLast(el => el.dataset.markdown?.startsWith('输出是：'));
   return {
     text: [...(reply?.querySelectorAll(':scope > p, :scope > ul') ?? [])].map(el => el.innerText).join('\n'),
     revealing: !!reply?.hasAttribute('data-revealing'),
@@ -105,7 +105,7 @@ async function checkReplay(rp: Awaited<ReturnType<typeof launchRealPath>>, panel
     window.revealProbeAnimated = false;
     window.revealProbeObserver?.disconnect();
     window.revealProbeObserver = new MutationObserver(() => {
-      if (document.querySelector('#messages .msg.assistant[data-revealing], #messages .msg.assistant .chunk-fade')) window.revealProbeAnimated = true;
+      if (document.querySelector('#messages .msg.assistant .chunk-fade')) window.revealProbeAnimated = true;
     });
     window.revealProbeObserver.observe(document.querySelector('#messages'), { subtree: true, childList: true, attributes: true, attributeFilter: ['data-revealing'] });
   })()`);
@@ -148,7 +148,11 @@ try {
     });
     await rp.cdp.send("Runtime.enable", {}, panel);
     const pieces = answer.match(/[\s\S]{1,18}/g)!.map((text, index) => ({ text, delayMs: index === 0 ? 0 : 140 }));
-    model = await startScriptedModel([{ match: task, steps: [{ text: answer, pieces }] }]);
+    model = await startScriptedModel([
+      { match: "USER REQUEST:", steps: [{ text: '{"problems":[]}' }] },
+      { match: "[GOAL CHECK]", steps: [{ text: '{"status":"done"}' }] },
+      { match: task, steps: [{ text: answer, pieces }] },
+    ]);
     evidence.animated = await checkReplay(rp, panel, model.baseUrl, exceptions, false);
     evidence.darkReduced = await checkReplay(rp, panel, model.baseUrl, exceptions, true);
     assert.ok(model.requests.filter(request => request.rule === task && request.finished && request.lastTextAt).length >= 2, "both replays streamed from the local fixture");
