@@ -37,7 +37,8 @@ export type Row = {
     mainReportedTokens: number | null;
     mainReportedBreakdown: { input: number | null; cacheRead: number | null; cacheWrite: number | null; output: number | null };
     sideAttemptsRecorded: number;
-    sideReportedTokens: null;
+    sideResponsesWithUsage: number;
+    sideReportedTokens: number | null;
   };
 };
 
@@ -125,6 +126,7 @@ type TraceRecord = {
     facts?: unknown;
     hostFacts?: { goalFacts?: unknown };
     attempts?: unknown;
+    usage?: { responses?: unknown; totalTokens?: unknown };
     message?: { role?: unknown; usage?: Partial<Record<"input" | "cacheRead" | "cacheWrite" | "output" | "totalTokens", unknown>> };
   };
 };
@@ -233,9 +235,16 @@ export function attribute(rows: Row[], rowRuns: Set<string>[], lines: string[], 
       return values.length && values.every((v): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0) ? values.reduce((sum, v) => sum + v, 0) : null;
     };
     const sideAttempts = mine.reduce((sum, r) => sum + (r.type === "side_call" && typeof r.data?.attempts === "number" ? r.data.attempts : 0), 0);
+    const sideUsage = mine.flatMap(({ type, data }) => {
+      const usage = data?.usage;
+      if (type !== "side_call" || typeof usage?.responses !== "number" || typeof usage.totalTokens !== "number") return [];
+      return [{ responses: usage.responses, tokens: usage.totalTokens }];
+    });
+    const responses = sideUsage.reduce((sum, usage) => sum + usage.responses, 0);
     row.usage = { mainRequests: row.calls, mainResponsesWithUsage: usages.filter(u => typeof u?.totalTokens === "number").length, mainReportedTokens: counter("totalTokens"),
       mainReportedBreakdown: { input: counter("input"), cacheRead: counter("cacheRead"), cacheWrite: counter("cacheWrite"), output: counter("output") },
-      sideAttemptsRecorded: sideAttempts, sideReportedTokens: null };
+      sideAttemptsRecorded: sideAttempts, sideResponsesWithUsage: responses,
+      sideReportedTokens: responses ? sideUsage.reduce((sum, usage) => sum + usage.tokens, 0) : null };
     row.changedGoal = !!task?.onPage?.includes(row.k) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
     row.verdict = mine.filter(r => r.type === "goal_check").map(r => r.data?.status).filter((s): s is string => typeof s === "string").at(-1) ?? null;
   });
