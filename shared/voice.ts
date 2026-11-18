@@ -231,7 +231,7 @@ export function voicePersonaText(persona: VoicePersona): string {
 }
 
 export type VoiceCommand =
-  | { kind: "start"; diagnostic?: true; capture?: true; voice?: string; persona?: VoicePersona;  model?: string }
+  | { kind: "start"; diagnostic?: true; capture?: true; reconnectOf?: string; voice?: string; persona?: VoicePersona;  model?: string }
   | { kind: "stop" }
   | { kind: "audio"; turn: number; data: string; frame?: number }
   | { kind: "commit"; turn: number;input?:VoiceInputContext;contextPending?:boolean }
@@ -326,6 +326,10 @@ export function validCapturePCM(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && v.length <= VOICE_CAPTURE_MAX_BASE64 && v.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(v);
 }
 
+function isVoiceStart(c: Record<string, unknown>): boolean {
+  return (c.reconnectOf === undefined || id(c.reconnectOf)) && (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true) && (c.voice === undefined || typeof c.voice === "string" && c.voice.length <= 64) && (c.model === undefined || typeof c.model === "string" && c.model.length <= 64);
+}
+
 export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
   if (!v || typeof v !== "object") return false;
   const m = v as VoiceClientMessage;
@@ -334,7 +338,7 @@ export function isVoiceClientMessage(v: unknown): v is VoiceClientMessage {
   const c = m.command;
 
   switch (c.kind) {
-    case "start": return (c.diagnostic === undefined || c.diagnostic === true) && (c.capture === undefined || c.capture === true) && (c.voice === undefined || typeof c.voice === "string" && c.voice.length <= 64) && (c.model === undefined || typeof c.model === "string" && c.model.length <= 64);
+    case "start": return isVoiceStart(c);
     case "stop": return true;
     case "audio": return turn(c.turn) && validPCM(c.data) && (c.frame === undefined || Number.isSafeInteger(c.frame) && c.frame >= 0 && c.frame <= 1_000_000);
     case "commit": return turn(c.turn)&&(c.contextPending===undefined||typeof c.contextPending==='boolean');

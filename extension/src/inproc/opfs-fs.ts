@@ -1,8 +1,9 @@
 import type { Context } from "@earendil-works/chord";
 import { err, FileError, ok, type FileInfo, type FileSystem, type Result } from "@earendil-works/pi-durable/env";
-import type { OpfsWorkerRequest, OpfsWorkerResponse } from "./opfs-worker.js";
+import type { OpfsWorkerEvent, OpfsWorkerRequest, OpfsWorkerResponse } from "./opfs-worker.js";
 
 type R<T> = Promise<Result<T, FileError>>;
+type WriteOutcome = OpfsWorkerResponse & { interrupted?: true; appendOffset?: number };
 
 const parts = (path: string) => path.split("/").filter(Boolean);
 const fail = <T>(code: FileError["code"], message: string, path?: string): Result<T, FileError> => err(new FileError(code, message, path));
@@ -32,12 +33,27 @@ export function createOpfsFileSystem(): FileSystem {
     const name = segments.pop()!;
     return (await dir(segments, create)).getFileHandle(name, { create });
   };
+  const confirmsAppend = async (path: string, offset: number, data: Uint8Array): Promise<boolean> => {
+    try {
+      const saved = await (await file(path, false)).getFile();
+      if (saved.size !== offset + data.byteLength) return false;
+      const suffix = new Uint8Array(await saved.slice(offset).arrayBuffer());
+
+      return suffix.length === data.length && suffix.every((byte, i) => byte === data[i]);
+    } catch {
+      return false;
+    }
+  };
   let worker: Worker | undefined;
   let nextId = 0;
-  const pending = new Map<number, { resolve: (response: OpfsWorkerResponse) => void; timer: ReturnType<typeof setTimeout> }>();
-  const finishPending = (response: OpfsWorkerResponse) => {
+  const pending = new Map<number, { resolve: (response: WriteOutcome) => void; timer: ReturnType<typeof setTimeout>; appendOffset?: number }>();
+  const receive = (response: OpfsWorkerEvent) => {
     const entry = pending.get(response.id);
     if (!entry) return;
+    if ("appendOffset" in response) {
+      entry.appendOffset = response.appendOffset;
+      return;
+    }
     clearTimeout(entry.timer);
     pending.delete(response.id);
     entry.resolve(response);
@@ -49,25 +65,32 @@ export function createOpfsFileSystem(): FileSystem {
     worker = undefined;
     for (const [entryId, entry] of active) {
       clearTimeout(entry.timer);
-      entry.resolve({ id: entryId, error: { name: "Error", message } });
+      entry.resolve({ id: entryId, interrupted: true, appendOffset: entry.appendOffset, error: { name: "Error", message } });
     }
   };
   const write = (path: string, request: Omit<OpfsWorkerRequest, "id" | "path">): R<void> =>
     serial(path, async () => {
       if (!worker) {
-        worker = new Worker(chrome.runtime.getURL("opfs-worker.js"), { type: "module" });
-        worker.onmessage = (event: MessageEvent<OpfsWorkerResponse>) => finishPending(event.data);
-        worker.onerror = (event) => failAllPending(`opfs worker: ${event.message}`);
+        const started = new Worker(chrome.runtime.getURL("opfs-worker.js"), { type: "module" });
+        worker = started;
+        started.onmessage = (event: MessageEvent<OpfsWorkerEvent>) => { if (worker === started) receive(event.data); };
+        started.onerror = (event) => { if (worker === started) failAllPending(`opfs worker: ${event.message}`); };
       }
       const id = ++nextId;
-      const response = await new Promise<OpfsWorkerResponse>((resolve) => {
+      const response = await new Promise<WriteOutcome>((resolve) => {
         const timer = setTimeout(() => {
           if (pending.has(id)) failAllPending(`opfs worker: no reply to ${request.op} ${path}`);
         }, 15_000);
         pending.set(id, { resolve, timer });
-        worker!.postMessage({ id, path, ...request } satisfies OpfsWorkerRequest);
+        worker!.postMessage({ id, path, ...request, ...(request.op === "append" ? { reportAppendOffset: true } : {}) } satisfies OpfsWorkerRequest);
       });
       if (!response.error) return ok(undefined);
+      if (response.interrupted) {
+        if (request.op === "append" && request.data && response.appendOffset !== undefined
+          && await confirmsAppend(path, response.appendOffset, request.data)) return ok(undefined);
+
+        return fail("unknown", `OPFS write outcome unknown: ${path}. Reopen and verify before retrying.`, path);
+      }
       console.error("[sideagent] opfs", request.op, path, response.error.name, response.error.message);
       return fromDom(response.error, path);
     });
@@ -103,7 +126,7 @@ export function createOpfsFileSystem(): FileSystem {
       try { return ok(await (await (await file(path, false)).getFile()).text()); } catch (error) { return fromDom(error, path); }
     }),
     writeFile: (path: string, content: string | Uint8Array) => write(path, { op: "write", data: bytes(content) }),
-    appendFile: (path: string, content: string | Uint8Array) => write(path, { op: "append", data: bytes(content) }),
+    appendFile: (path: string, content: string | Uint8Array) => write(path, { op: "append", data: typeof content === "string" ? bytes(content) : content.slice() }),
     truncateFile: (path: string, size: number) => write(path, { op: "truncate", size }),
     flushFile: async () => ok(undefined),
     renameFile: (source: string, destination: string): R<void> => serial(source, async () => {

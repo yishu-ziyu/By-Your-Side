@@ -4,8 +4,9 @@ type SyncHandle = {
   truncate(size: number): void;
   close(): void;
 };
-export type OpfsWorkerRequest = { id: number; op: "write" | "append" | "truncate"; path: string; data?: Uint8Array; size?: number };
+export type OpfsWorkerRequest = { id: number; op: "write" | "append" | "truncate"; path: string; data?: Uint8Array; size?: number; reportAppendOffset?: true };
 export type OpfsWorkerResponse = { id: number; error?: { name: string; message: string } };
+export type OpfsWorkerEvent = OpfsWorkerResponse | { id: number; appendOffset: number };
 
 async function open(path: string): Promise<SyncHandle> {
   const segments = path.split("/").filter(Boolean);
@@ -31,14 +32,17 @@ function writeAll(handle: SyncHandle, data: Uint8Array, at: number) {
   }
 }
 
-async function run({ op, path, data, size }: OpfsWorkerRequest) {
+async function run({ id, op, path, data, size, reportAppendOffset }: OpfsWorkerRequest) {
   const handle = await open(path);
   try {
     if (op === "write") {
       handle.truncate(0);
       writeAll(handle, data!, 0);
-    } else if (op === "append") writeAll(handle, data!, handle.getSize());
-    else handle.truncate(size!);
+    } else if (op === "append") {
+      const appendOffset = handle.getSize();
+      if (reportAppendOffset) self.postMessage({ id, appendOffset } satisfies OpfsWorkerEvent);
+      writeAll(handle, data!, appendOffset);
+    } else handle.truncate(size!);
   } finally {
     handle.close();
   }

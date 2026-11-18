@@ -65,7 +65,7 @@ function initialDeliverySuppression(
 
 export class VoiceService {
   private readonly deliveryOwners = new Map<string, string>();
-  private lastUnexpectedEnd: { conversationId: string; startedAt: number; endedAt: number } | null = null;
+  private lastUnexpectedEnd: { voiceId: string; conversationId: string; startedAt: number; endedAt: number } | null = null;
   private active: {
     id: string;
     conversationId: string;
@@ -89,7 +89,7 @@ export class VoiceService {
         return;
       }
 
-      const resumed = this.takeUnexpectedEnd(conversationId);
+      const resumed = this.takeUnexpectedEnd(conversationId, message.command.reconnectOf);
       this.close("replaced");
 
       if (!this.snapshot(conversationId)) {
@@ -324,10 +324,10 @@ export class VoiceService {
       active.session.notify(snapshot);
     }
   }
-  private takeUnexpectedEnd(conversationId: string): { startedAt: number } | null {
+  private takeUnexpectedEnd(conversationId: string, reconnectOf?: string): { startedAt: number } | null {
     const end = this.lastUnexpectedEnd;
     this.lastUnexpectedEnd = null;
-    if (!end || end.conversationId !== conversationId) return null;
+    if (!end || end.conversationId !== conversationId || end.voiceId !== reconnectOf) return null;
 
     return Date.now() - end.endedAt <= VOICE_RECONNECT_WINDOW_MS ? { startedAt: end.startedAt } : null;
   }
@@ -340,7 +340,7 @@ export class VoiceService {
     this.emit({ type: "voice", voiceId, conversationId, event });
     if (this.active !== active || event.kind !== "state") return;
     if (event.state === "closed" || (event.state === "error" && event.recoverable)) {
-      this.lastUnexpectedEnd = { conversationId, startedAt: active.startedAt, endedAt: Date.now() };
+      this.lastUnexpectedEnd = { voiceId, conversationId, startedAt: active.startedAt, endedAt: Date.now() };
       return;
     }
     if (event.state === "ready" && this.snapshot(conversationId)?.state === "idle") {
@@ -351,11 +351,12 @@ export class VoiceService {
     if (this.active) {
       this.diagnostic?.("voice_host_closed",{voiceId:this.active.id,reason});
       if (reason !== "stop" && reason !== "replaced") {
-        this.lastUnexpectedEnd = { conversationId: this.active.conversationId, startedAt: this.active.startedAt, endedAt: Date.now() };
+        this.lastUnexpectedEnd = { voiceId: this.active.id, conversationId: this.active.conversationId, startedAt: this.active.startedAt, endedAt: Date.now() };
       }
     }
-    this.active?.session.close();
+    const active = this.active;
     this.active = null;
+    active?.session.close();
     this.deliveryOwners.clear();
   }
 }

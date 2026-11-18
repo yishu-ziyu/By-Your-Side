@@ -135,6 +135,7 @@ export class VoiceClient {
 
   private userIntentActive = false;
   private recovering = false;
+  private reconnectOf: string | null = null;
   private recoveryAttempts = 0;
   private recoveryStartTime = 0;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -763,6 +764,8 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     if (this.diagSession) return { kind: 'start', diagnostic: true, ...model };
     const command: Extract<VoiceCommand, { kind: 'start' }> = { kind: 'start', ...model };
 
+    if (this.recovering && this.reconnectOf) command.reconnectOf = this.reconnectOf;
+
     if (this.voice) command.voice = this.voice;
 
     if (this.persona.id !== 'default') command.persona = this.persona;
@@ -888,6 +891,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       return;
     }
 
+    this.reconnectOf ??= this.id;
     this.recovering = true;
 
     if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
@@ -1089,6 +1093,7 @@ return;}
         this.ready=true;
         this.drainBacklog();
         this.recovering=false;
+        this.reconnectOf=null;
         this.recoveryAttempts=0;
         this.recoveryStartTime=0;
 
@@ -1149,6 +1154,7 @@ return;}
     this.clearHold();
     this.userIntentActive = false;
     this.recovering = false;
+    this.reconnectOf = null;
     this.recoveryAttempts = 0;
     this.recoveryStartTime = 0;
 

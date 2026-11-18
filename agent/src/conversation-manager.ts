@@ -94,7 +94,7 @@ function reconcileCancelledRestore(
   progress.abort();
   delete summary.checkpoint;
   summary.state = 'idle';
-  void persist?.(progress.snapshot());
+  void Promise.resolve(persist?.(progress.snapshot())).catch(() => {});
 
   return false;
 }
@@ -152,8 +152,8 @@ export class ConversationManager {
       if (!prior) return;
       if (snapshot?.runId && prior.runId && snapshot.runId !== prior.runId) return prior;
       if (prior.state === 'cancelled' && snapshot?.state !== 'aborted') return prior;
-      const state: TaskRecord['state'] = job && ['queued','suspended'].includes(job.state) ? job.state === 'queued' ? 'queued' : 'interrupted'
-        : job?.state === 'cancelled' || snapshot?.state === 'aborted' ? 'cancelled'
+      const state: TaskRecord['state'] = job?.state === 'cancelled' || snapshot?.state === 'aborted' ? 'cancelled'
+        : job && ['queued','suspended'].includes(job.state) ? job.state === 'queued' ? 'queued' : 'interrupted'
         : snapshot?.state === 'paused' ? 'paused' : snapshot?.state === 'interrupted' || job?.state === 'unknown' ? 'interrupted'
         : snapshot?.state === 'error' ? 'failed' : snapshot?.state === 'running' ? 'running'
         : snapshot?.goalCheck?.status === 'done' || snapshot?.state === 'idle' && !projectTaskView(snapshot).resumable ? 'completed' : 'waiting';
@@ -1171,7 +1171,6 @@ return { kind: "silent" };}
       this.controlVersions.set(id, (this.controlVersions.get(id) ?? 0) + 1);
       this.progress.get(id)?.abort();
       entry.runtime.handleMessage({ type: 'abort' });
-      await entry.runtime.session.waitForStop?.().catch(() => {});
       await this.persistAbortedConversation(id, entry);
       this.emit({ type: 'agent_event', conversationId: id, event: { kind: 'notice', message: '你发了新任务，这条回答不再接着做。回答保持不变。' } });
     }
@@ -2353,9 +2352,18 @@ return receipt;
     if (entry.summary.state !== 'idle') entry.summary.state = 'idle';
     entry.summary.updatedAt = Date.now();
     if (progress) {
-      await entry.runtime.session.persistTaskResults?.(progress.snapshot());
-      await entry.runtime.session.flushPersistence?.();
-      await this.syncTask(id, false, progress.snapshot());
+      const cancelled = progress.snapshot();
+      try {
+        await this.syncTask(id, false, cancelled);
+        if (progress.snapshot().runId === cancelled.runId) {
+          await entry.runtime.session.persistTaskResults?.(cancelled);
+          await entry.runtime.session.flushPersistence?.();
+        }
+        await this.taskQueue.persisted();
+      } finally {
+        if (progress.snapshot().runId === cancelled.runId) await entry.runtime.session.waitForStop?.();
+      }
+      if (progress.snapshot().runId !== cancelled.runId) return;
     }
     this.store?.save(this.list());
     this.emit({ type: 'conversation_updated', conversationId: id, conversation: { ...entry.summary } });
@@ -2419,7 +2427,7 @@ return true;}
       if(message.type==='abort'){
         this.progress.get(id)?.abort();entry.runtime.handleMessage(message);
 
-        try{await entry.runtime.session.waitForStop();await this.persistAbortedConversation(id,entry);this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:true});}
+        try{await this.persistAbortedConversation(id,entry);this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:true});}
         catch{this.emit({type:'task_control_ack',conversationId:id,requestId:message.taskRequestId,action:'abort',ok:false});}
 
         return true;
@@ -2605,10 +2613,7 @@ return;
 
     try{entry.runtime.handleMessage(message);}catch(error){this.pendingStarts.delete(id);throw error;}
 
-    if (message.type === 'abort') {
-      await entry.runtime.session.waitForStop?.();
-      await this.persistAbortedConversation(id, entry);
-    }
+    if (message.type === 'abort') await this.persistAbortedConversation(id, entry);
 
     if (message.type === "user_message") {
       entry.summary.updatedAt = Date.now();

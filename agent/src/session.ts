@@ -74,7 +74,7 @@ import type { Nudge, NudgeContext, NudgeMemory } from "../../shared/nudge.js";
 import { appendCorrections, checkFacts, seenThisRun, worthChecking, type FactCheckFlag, type FactCheckInput } from "./fact-check.js";
 import { asksUser, checkGoal, goalReadEvidence, defersWork, recordHostGoalCheck, recordUnavailableGoalCheck, GOAL_CHECK_BOOKKEEPING_TOOLS, GOAL_CHECK_PROMPT, GOAL_CHECK_PROMPT_SHA, GOAL_GATE_WAIT_MS, severalAsks, type GoalCheckFile, type GoalCheckInput, type GoalCheckTrace, type GoalCheckTraceContext, type GoalVerification, type GoalVerdict } from "./goal-check.js";
 import { GoalLedger } from "./goal-ledger.js";
-import { ContinuePolicy } from "./continue-policy.js";
+import { allowsGoalRepairTool, ContinuePolicy } from "./continue-policy.js";
 import type { TaskHistoryStore } from "./task-history.js";
 import type { TaskHistoryEntry } from "../../shared/task-history.js";
 import type { MemoryValidity } from "../../shared/memory.js";
@@ -579,6 +579,13 @@ if(required.includes(key))candidates.set(key,attachment);
   }
 
   private windDown: WindDown = { phase: 'settled' };
+  private goalRepair: { epoch: number } | null = null;
+
+  private assertGoalRepairTool(name: string, params: Record<string, unknown>): void {
+    if (this.goalRepair?.epoch === this.controlEpoch && !allowsGoalRepairTool(name, params)) {
+      throw new Error("完成核对期间只能读取和修正回答，未执行这一步。");
+    }
+  }
   private spokenAsk = false;
 
   private heldAnswers(): AgentUiEvent[] | null {
@@ -874,6 +881,7 @@ if(required.includes(key))candidates.set(key,attachment);
       let session: AgentLoop = await DurableAgentLoop.open({
         persistence: restored?.persistence, messages: restored?.messages, sessionId: options.conversationId,
         models, model: loopModel(models, options.modelPattern), tools: customTools.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
+          resultHost?.assertGoalRepairTool(tool.name, asParams(args[1]));
           await resultHost?.assertContinuationTool(tool.name, asParams(args[1]));
           const result = await tool.execute(...args);
           return resultHost ? resultHost.referenceReadResult(tool.name, result) : result;
@@ -3508,6 +3516,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
       flushChecks({ attempt, progressVersion: this.noProgressPolicy?.progressVersion ?? 0 });
       this.mainEffort.raise(session.model, "goal_unfinished");
       this.deliveredResultThisRun = false;
+      const repair = { epoch: this.controlEpoch };
+      this.goalRepair = repair;
       void session.prompt(continuation.prompt)
         .catch(error => {
           if (this.windDown === pending) {
@@ -3516,7 +3526,7 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
             check.finish();
           }
           this.emitError(error);
-        });
+        }).finally(() => { if (this.goalRepair === repair) this.goalRepair = null; });
 
       return;
     }
