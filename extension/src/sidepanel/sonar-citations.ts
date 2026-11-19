@@ -68,7 +68,7 @@ export function clearFailure(from: Element): void {
 
 function findNumberText(answer: HTMLElement, value: string): { node: Text; at: number } | null {
   const walker = document.createTreeWalker(answer, NodeFilter.SHOW_TEXT, {
-    acceptNode: node => node.parentElement?.closest("a,code,pre,button,.num-cite,.answer-actions,.answer-panel,.memory-used-line,.gen-card [data-gc-tab]") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    acceptNode: node => node.parentElement?.closest("svg,.gc-diagram,a,code,pre,button,.num-cite,.answer-actions,.answer-panel,.memory-used-line,.gen-card [data-gc-tab]") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
   });
 
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -94,7 +94,7 @@ export async function attachSourceCitations(answer: HTMLElement, context: Citati
   generations.set(answer, generation);
   answer.querySelector('.citation-row')?.remove();
   const body = answer.cloneNode(true) as HTMLElement;
-  body.querySelectorAll('.answer-sources,.source-fav,.answer-actions,.answer-panel,.memory-used-line').forEach(node => node.remove());
+  body.querySelectorAll('svg,.gc-diagram,.answer-sources,.source-fav,.answer-actions,.answer-panel,.memory-used-line').forEach(node => node.remove());
   const values = citationValues(body.textContent ?? '');
 
   for (const value of values) {

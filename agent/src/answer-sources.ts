@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { ANSWER_SOURCE_MAX_CHARS, capturedCite, isAnswerSource, type AnswerSource } from '../../shared/answer-source.js';
+import { ANSWER_SOURCE_MAX_CHARS, capturedCite, capturedExcerpt, isAnswerSource, type AnswerSource } from '../../shared/answer-source.js';
 import { redactCredentialText } from '../../shared/untrusted.js';
 import { diagramLabel, splitAnswer } from '../../shared/answer-cards.js';
 
 export interface CitationEvidence {
-  items: Array<{ node: string; claim: string; ref: string; anchor: string; text: string | null; from: string | null }>;
+  items: Array<{ node: string; claim: string; ref: string; anchor: string; text: string | null; from: string | null; onRenderedNodeClick?: { excerpt: string; openOriginal?: string } }>;
   documents: AnswerSource[];
   truncated: boolean;
 }
@@ -16,7 +16,13 @@ export function citationEvidence(text: string, sources?: ReadonlyMap<string, Ans
       if ('text' in cite) return [];
       const match = capturedCite(cite,sources);
       if (match) documents.set(match.source.id,match.source);
-      return [{ node, claim: diagramLabel(block.source, node), ref: cite.source, anchor: cite.anchor, text: match ? match.source.text.slice(Math.max(0,match.start-400),match.start+1200) : null, from: match?.source.from ?? null }];
+      const claim = diagramLabel(block.source, node);
+      const preview = match && claim !== node ? capturedExcerpt(match) : undefined;
+      return [{ node, claim, ref: cite.source, anchor: cite.anchor,
+        text: match ? match.source.text.slice(Math.max(0,match.start-400),match.start+1200) : null,
+        from: match?.source.from ?? null,
+        ...(preview ? { onRenderedNodeClick: { excerpt: preview.text, ...(preview.url ? { openOriginal: preview.url } : {}) } } : {}),
+      }];
     }) : []);
   let remaining = ANSWER_SOURCE_MAX_CHARS;
   const selected = [...documents.values()].filter(source => {

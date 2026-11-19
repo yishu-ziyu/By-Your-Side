@@ -36,6 +36,7 @@ import { regrade, submitProbeInPage, typeIntoField, typingWritten, TypingInterru
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite, UserChangedFieldError } from "../fill-undo.js";
+import { hiddenFieldHint } from "./hidden-field-hint.js";
 import { UNSAVED_FIELDS_ALERT, type EffectReport, type PageAppeared } from "../../../../shared/effect.js";
 import { CdpObjectArg, callDom, callOnBackendNode, ensureCursor, ensureDomOps, notExecuted, type DispatchGuard } from "./page-call.js";
 import {
@@ -1169,7 +1170,10 @@ async function locatePointerTarget(
             if (fact === "not_executed") throw e;
             throw Object.assign(new Error(`ref @${ref} 量不到位置，结果未知。请重新 snapshot 看页面：操作没生效就用当前的 ref 再做一次（${oneLine(e)}）`),{executionFact:fact});
           }
-          throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
+          const reason = oneLine(e);
+          const hint = await hiddenFieldHint(tabId, { backendNodeId }, "click");
+
+          throw notExecuted(new Error(hint ? `ref @${ref} 点击失败（${reason}）${hint}` : `ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${reason}）`));
         }
       }
     }
@@ -1184,7 +1188,7 @@ async function locatePointerTarget(
       );
 
       if (!res || !res.ok) {
-        throw new Error(res?.ok === false ? res.error : `未找到目标元素：${target}`);
+        throw new Error(res?.ok === false ? res.error + await hiddenFieldHint(tabId, { target }, "click") : `未找到目标元素：${target}`);
       }
 
       if (!isDomRect(res.rect)) throw new Error(`未找到目标元素：${target}`);
@@ -2372,7 +2376,7 @@ async function fillField(
       targetRect = await rectOfBackendNode(tabId, backendNodeId, false, beforeDispatch, true);
     } catch (e) {
       if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
-        throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
+        throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）${await hiddenFieldHint(tabId, { backendNodeId })}`);
       }
     }
   }
@@ -2390,7 +2394,7 @@ async function fillField(
       if (res?.ok && res.rect && typeof res.rect.x === "number") {
         targetRect = res.rect;
       } else if (backendNodeId === undefined) {
-        throw notExecuted(new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`));
+        throw notExecuted(new Error(res?.ok === false ? res.error + await hiddenFieldHint(tabId, { target: params.target }) : `未找到目标元素：${params.target}`));
       }
     } catch (e) {
       if (backendNodeId === undefined) {

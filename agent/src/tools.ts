@@ -5,7 +5,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "./define-tool.js";
 import { Type } from "typebox";
 import { ELEMENT_PROPERTIES } from "../../shared/element-state.js";
-import { formatEffectReport } from "../../shared/effect.js";
+import { formatEffectReport, type EffectReport } from "../../shared/effect.js";
 import { formatFetchReply, fetchFailureReason, type FetchReply } from "./fetch-result.js";
 import { redactCredentialText, wrapPageContent } from "../../shared/untrusted.js";
 import { isLeadSession, type Attachment, type FileAttachment, type TabInfo, type ToolContract, type ToolName, type UploadFilePayload } from "../../shared/protocol.js";
@@ -128,7 +128,17 @@ function truncate(text: string, max: number): string {
 
 export const TABS_LIST_AT_START = "; the open tabs at task start are already in the task's first message, so call list only if tabs may have changed since";
 export const TABS_RESULT_IN_BACKGROUND = ' A result left in a background tab is expected: the reply automatically gives the user a "切过去看" button for the working tab, so never call show just to deliver a result.';
-const TRANSLATION_JS_FALLBACK = " It covers the whole page. For only some paragraphs, return the translated text in the conversation; JS cannot change the page.";
+const TRANSLATION_JS_FALLBACK = " Use the translation tool rather than JS to write the translated paragraphs in the page.";
+
+function pageTranslationReceiptText(action: TranslationRequest["action"], result: TranslationReceipt): string {
+  const { blocks: _blocks, ...receipt } = result;
+  const applied = action === "translate" && receipt.translated > 0 && receipt.remaining === 0 && !receipt.incompleteReason;
+  const payload = applied
+    ? { status: "applied", ...receipt, note: "Translations are already rendered in the webpage; no extra snapshot or DOM check is needed." }
+    : receipt;
+
+  return JSON.stringify(payload);
+}
 const MARK_JS_FALLBACK = " mark has one outline style and circles terms in the whole page; unsupported visual edits cannot be performed with read-only JS.";
 export const JS_FALLBACK = new RegExp([TRANSLATION_JS_FALLBACK, MARK_JS_FALLBACK].map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
 
@@ -204,7 +214,7 @@ const MODEL_TOOL_OF: Record<string, string> = {
 
 const modelToolOf = (rpcName: string): string => MODEL_TOOL_OF[rpcName] ?? rpcName;
 
-interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal }
+interface ExecutionScope { epoch: number; toolCallId: string; signal?: AbortSignal; beforeDispatch?: () => void }
 
 export const STALE_STEP_MESSAGE = "用户已补充或改变要求，旧步骤未执行。请读取最新用户输入并重新核对目标后继续；原任务尚未交付的结果仍需完成。";
 
@@ -215,6 +225,7 @@ interface BrowserToolExecution {
   assertCall?: (name: string, params: Record<string, unknown>, toolCallId?: string) => void;
   onStep?: (step: ProgramStep) => void;
   beforeCopy?: () => Promise<PreparedCopy>;
+  beforePageTranslation?: (request: TranslationRequest, toolCallId: string, signal?: AbortSignal) => Promise<{ beforeDispatch: () => void; paragraphs?: number[] }>;
   files?: () => ArtifactStore | undefined;
   attachments?: () => readonly Attachment[];
   downloadAttachment?: (input: { id: string; name: string; mimeType: string; dataBase64: string }) => Promise<FileAttachment>;
@@ -405,7 +416,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         return programId ? rpc.call(name, callParams, rpcTimeoutMs, sid, programId, undefined, undefined, undefined, programDeadline) : rpc.call(name, callParams, rpcTimeoutMs, sid);
       }
 
-      return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId, undefined, programDeadline);
+      return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId, undefined, programDeadline, scope?.beforeDispatch);
     };
 
     const invokeReleasingIdleOwner = async (executionEpoch?: number) => {
@@ -417,6 +428,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         if (!blockedByIdleOwner || !execution?.releaseIdleTab) throw error;
 
+        scope?.beforeDispatch?.();
         if (!await execution.releaseIdleTab(Number.isSafeInteger(callParams.tabId) ? Number(callParams.tabId) : undefined)) throw error;
         assertNotAborted();
 
@@ -452,26 +464,51 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
   const call = makeCall(undefined);
   const readAfterNavigate = call;
 
-  const makeDefinitions = (call: ReturnType<typeof makeCall>, _scope: ExecutionScope | undefined) => [
+  const withArrivedPage = async <T extends object>(head: string, data: T, effect: EffectReport) => {
+    if (effect.arrived && effect.arrived.readiness !== "interactive" && effect.arrived.readiness !== "complete") return textResult(head, data);
+
+    try {
+      const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
+      const notes = page.url ? await siteNotesAfter(page.url) : "";
+
+      return textResult(`${head}\n\n${freshSnapshotLabel(page)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}${notes}`, { ...data, page });
+    } catch {
+      return textResult(head, data);
+    }
+  };
+
+  const makeDefinitions = (call: ReturnType<typeof makeCall>, scope: ExecutionScope | undefined) => [
     defineTool({
       name: "page_translation",
       label: "翻译网页",
-      description: 'Translate the current webpage IN PLACE, progressively, using the current model. action:"translate" translates all currently loaded readable text (also resumes partial translation), default target 简体中文 and default bilingual; pass mode:"translated" when the user only wants translation. action:"display" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48), fontFamily:"songti" for 宋体 or "original" to restore the site font. In display, submit ONLY the fields this request changes; omitted fields keep the current page state (a font-only request must not carry mode or fontSize), and never add display attributes the user did not ask to change. For a font or display-only request, call display ONLY. Its remaining count does not authorize resuming translation; do not call translate unless the user asks to translate or continue. For 宋体, the original font or the size of translations made by this tool, use display, not handwritten JS. action:"restore" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. If incompleteReason is present, keep completed text and report the changing content or limit; do not automatically restart translation. To translate the page, use this tool, never handwritten JS or a sidebar-only translation.' + TRANSLATION_JS_FALLBACK + ' Do not delegate page translation to workers.',
+      description: 'Change the translation displayed IN the webpage only when the current user asks for that change. For a translation requested in the sidebar, in chat, or by voice, read the requested source and give the translation in the requested answer channel; leave the webpage unchanged. A request about particular text on a webpage does not by itself authorize writing to it. For requested in-page translation limited to particular paragraphs (including a follow-up to put those translations on the page), pass scope with the observed page URL and one unique source quote per paragraph. Read the original if necessary. Never omit scope to work around a missing or ambiguous quote. Omit scope only for an explicitly requested whole-page translation. action:"translate" also resumes incomplete work, default target 简体中文 and default bilingual; pass mode:"translated" only when the user wants the webpage to show the translation without the original. action:"display" switches existing results without translating again: mode bilingual/translated, optional fontSize in px (10–48), fontFamily:"songti" for 宋体 or "original" to restore the site font. In display, submit ONLY the fields this request changes; omitted fields keep the current page state (a font-only request must not carry mode or fontSize), and never add display attributes the user did not ask to change. For a font or display-only request, call display ONLY. Its remaining count does not authorize resuming translation; do not call translate unless the user asks to translate or continue. For 宋体, the original font or the size of translations made by this tool, use display, not handwritten JS. action:"restore" restores original text. Keeps links and original nodes. Does not translate editable fields, code, images, PDF or frames. Receipt has translated/remaining/unsupported paragraph counts: report partial work honestly. If incompleteReason is present, keep completed text and report the changing content or limit; do not automatically restart translation.' + TRANSLATION_JS_FALLBACK + ' Do not delegate page translation to workers.',
       parameters: Type.Object({
         action: Type.Union([Type.Literal('translate'), Type.Literal('display'), Type.Literal('restore')]),
+        scope: Type.Optional(Type.Object({
+          url: Type.String({ description: 'Exact URL on which the source text was observed.' }),
+          quotes: Type.Array(Type.String({ minLength: 1, maxLength: 12000 }), { minItems: 1, maxItems: 64, description: 'One verbatim, unique excerpt of the original text per requested paragraph.' }),
+        })),
         tabId: Type.Optional(Type.Number()), language: Type.Optional(Type.String()),
         mode: Type.Optional(Type.Union([Type.Literal('bilingual'), Type.Literal('translated')])),
         fontSize: Type.Optional(Type.Number({minimum: 10, maximum: 48})),
         fontFamily: Type.Optional(Type.Union([Type.Literal('original'), Type.Literal('songti')])),
         document: Type.Optional(Type.String({description:'Observed translation instance; reject if the page changed.'})),
       }),
-      execute: async (_id, params, signal) => {
-        const result = await runPageTranslation(params as TranslationRequest,
+      execute: async (id, params, signal) => {
+        let request = params as TranslationRequest;
+        if (request.action === 'translate') {
+          if (!scope || !execution?.beforePageTranslation) throw new Error('本会话无法核对网页翻译授权，未改动页面。');
+          request = rpc.resolvePageParams('page_translation', params, sid) as unknown as TranslationRequest;
+          const authorized = await execution.beforePageTranslation(request, id, signal);
+          scope.beforeDispatch = authorized.beforeDispatch;
+          if (request.scope) request = { ...request, scope: { url: request.scope.url, quotes: request.scope.quotes, ...(authorized.paragraphs ? { paragraphs: authorized.paragraphs } : {}) } };
+        }
+        const result = await runPageTranslation(request,
           async command => await call('page_translation', {...command}) as TranslationReceipt,
           translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), signal ?? new AbortController().signal,
           {settle: async command => { await rpc.call('page_translation', {...command}, 5_000, sid); }});
 
-        return textResult(JSON.stringify(result), result);
+        return textResult(pageTranslationReceiptText(request.action, result), result);
       },
     }),
     defineTool({
@@ -517,7 +554,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
     defineTool({
       name: "browser_run",
       label: "Browser program",
-      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so read-only page expressions go inside browser.js({code:"..."}); all changes and requests use their dedicated browser tools. Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, navigate({url})->{url, title, readiness, text} (text is a fresh snapshot of the new page unless readiness is timeout, download or error_page), js({code})->{value}, hover/click({target or point}), fill({target,value} or {target,from}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content, deliver}) saves text the program already holds as a file in this conversation (same file list as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten, shown}. Set deliver: true only when the user asked for this file (an export, download or table to keep): only then it shows as a side-panel card; without it the file is a working file the user does not see (e.g. one you will upload). For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' Every snake_case method also answers to its camelCase name (pressKey = press_key, readElement = read_element). browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. browser.check({text, selector?, state:"appears"|"disappears", timeoutMs:3000}) polls for a text or target without a model round trip and returns {ok, waitedMs, polls} (ok:false on timeout, never an error) — use it right after an action to confirm the outcome instead of a new snapshot. browser.assert({ok, name, reason}) stops the whole program when ok is false: no later action runs, and the result says which step stopped and why. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. For custom page logic, prefer browser.js({code: () => { return document.title; }}): the host serializes the function, so nested quotes and newlines need no extra escaping. The function runs in the page and cannot capture program variables; string code is also accepted. For ordinary page text use browser.readElement({target}) instead. A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
+      description: 'Run an async JavaScript program that drives the browser tools through the browser object; it has no page globals (no window, document, fetch, Blob, setTimeout, Node or require), so read-only page expressions go inside browser.js({code:"..."}); all changes and requests use their dedicated browser tools. Its methods use the SAME object parameters and return raw data from the regular tools: snapshot()->{text}, navigate({url})->{url, title, readiness, text} (text is a fresh snapshot of the new page unless readiness is timeout, download or error_page); when click, pressKey, selectOption or fill with submit loads a new page, its result has effect.arrived {url, title, readiness, text} with the same fresh snapshot, so do not sleep or snapshot after it, js({code})->{value}, hover/click({target or point}), fill({target,value} or {target,from}), and the other browser tools; browser.doubleClick({target|point}) is also available. Composed helpers: ' + programHelpers.map(h => h.name).join(", ") + ' (host-implemented, no new RPC).' + (files ? ' browser.saveFile({filename, content, deliver}) saves text the program already holds as a file in this conversation (same file list as the artifacts tool; same filename rule, 256000-character limit; saving the same name overwrites it) and returns only {filename, chars, lines, overwritten, shown}. Set deliver: true only when the user asked for this file (an export, download or table to keep): only then it shows as a side-panel card; without it the file is a working file the user does not see (e.g. one you will upload). For large data you obtained with tools (page or API extraction longer than a few thousand characters), build the CSV/JSON/text inside the program and save it with browser.saveFile instead of returning it and retyping it through artifacts; return just the receipt and a short summary such as the row count.' : '') + ' Every snake_case method also answers to its camelCase name (pressKey = press_key, readElement = read_element). browser.waitFor({selector,timeoutMs:5000}) waits for one visible enabled target (@ref / CSS / xpath= / text=); browser.sleep({ms}) waits up to 10000ms. browser.check({text, selector?, state:"appears"|"disappears", timeoutMs:3000}) polls for a text or target without a model round trip and returns {ok, waitedMs, polls} (ok:false on timeout, never an error) — use it right after an action to confirm the outcome instead of a new snapshot. browser.assert({ok, name, reason}) stops the whole program when ok is false: no later action runs, and the result says which step stopped and why. Use await for every operation and return JSON-serializable evidence. For one known action on a page you have not read yet, fold the observation into this same program (snapshot → pick the target → click → read back) instead of spending a separate round on snapshot. Prefer this for a known sequence with conditions/waits; observe first when targets are unknown. For custom page logic, prefer browser.js({code: () => { return document.title; }}): the host serializes the function, so nested quotes and newlines need no extra escaping. The function runs in the page and cannot capture program variables; string code is also accepted. For ordinary page text use browser.readElement({target}) instead. A takeover or cancellation stops the entire program even if caught. Do not bypass user control with page JS.',
       parameters: Type.Object({
         code: Type.String({ description: 'Async function body; await browser methods and return concise evidence. Example: await browser.hover({target:"#card"}); await browser.waitFor({selector:"#edit"}); await browser.click({target:"#edit"}); return (await browser.snapshot()).text;' }),
         label: Type.Optional(Type.String({ description: "Short user-facing goal for this sequence" })),
@@ -550,6 +587,8 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
             if (!step.error && step.name === "siteMethod" && data.url === finalUrl && typeof data.text === "string") return true;
 
             if (!step.error && step.name === "navigate" && (data.readiness === "interactive" || data.readiness === "complete") && data.url === finalUrl) return true;
+
+            if (!step.error && step.read?.url === finalUrl) return true;
 
             if (!PROGRAM_QUIET_STEPS.has(step.name) && requiresControlGate(step.name, step.params)) return false;
           }
@@ -929,14 +968,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
           if (!effect?.documentChanged || opened) return textResult(head, data);
 
-          try {
-            const page = (await readAfterNavigate("snapshot", {})) as ToolContract["snapshot"]["data"];
-            const notes = page.url ? await siteNotesAfter(page.url) : "";
-
-            return textResult(`${head}\n\n${freshSnapshotLabel(page)}\n${wrapPageContent(redactCredentialText(page.text), { tabId: page.tabId })}${notes}`, { ...data, page });
-          } catch {
-            return textResult(head, data);
-          }
+          return await withArrivedPage(head, data, effect);
         }
 
         return textResult(`${clicked} This confirms event dispatch only; observe the page to verify the intended change before continuing or reporting success.${newTabText}${appeared}`, data);
@@ -1176,7 +1208,9 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
 
         const effect = "effect" in data && (data.effect?.changed || data.singleLineInput) ? data.effect : undefined;
 
-        return textResult(`Pressed ${params.key}.${formatEffectReport(effect, "key press")}${appearedNote("appeared" in data ? data.appeared : undefined)}`, data);
+        const head = `Pressed ${params.key}.${formatEffectReport(effect, "key press")}${appearedNote("appeared" in data ? data.appeared : undefined)}`;
+
+        return effect?.documentChanged ? await withArrivedPage(head, data, effect) : textResult(head, data);
       },
     }),
 

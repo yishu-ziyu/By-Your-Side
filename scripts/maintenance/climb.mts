@@ -5,8 +5,8 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { loadavg } from "node:os";
 import { join, resolve } from "node:path";
 import { REPO, sleep } from "../acceptance/real-path/harness.mts";
-import { type Arm, type Pass, type Verdict, judge, registrationOf, shuffled } from "./climb-rules.mts";
-import { poolOf, type Row } from "./replay-row.mts";
+import { type Arm, type Pass, type Verdict, judge, registrationOf, replayModelArgs, shuffled } from "./climb-rules.mts";
+import { firstAnswerMsOf, poolOf, readingsOf, readingsTable, recordsOf, type Row } from "./replay-row.mts";
 
 const MAX_LOAD = 20;
 const ignoreLoad = process.argv.includes('--force');
@@ -26,6 +26,10 @@ function child(args: string[], env: Record<string, string>, capture: boolean): P
 }
 
 const file = process.argv[2] ?? "";
+const pairsArg = process.argv.find(a => a.startsWith("--pairs="))?.slice(8);
+const onlyPairs = pairsArg ? new Set(pairsArg.split(",").map(Number)) : null;
+const mergeDirs = process.argv.find(a => a.startsWith("--merge="))?.slice(8).split(",").filter(Boolean) ?? null;
+const skipRedLines = process.argv.includes("--skip-red-lines") || !!mergeDirs;
 const reg = registrationOf(JSON.parse(readFileSync(file, "utf8")));
 const registrationHash = createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 12);
 const dists: Record<Arm, string> = { base: resolve(REPO, reg.base), cand: resolve(REPO, reg.cand) };
@@ -38,7 +42,7 @@ const sentences = new Map(reg.scenarios.map(n => {
 }));
 const rulerHead = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim();
 const rulerDirty = execFileSync("git", ["status", "--porcelain", "--", "scripts/maintenance", "scripts/acceptance"], { cwd: REPO, encoding: "utf8" }).trim().length > 0;
-const outDir = join(REPO, "out/hill-climb", reg.name);
+const outDir = join(REPO, "out/hill-climb", onlyPairs ? `${reg.name}-pairs-${[...onlyPairs].join("-")}` : reg.name);
 await mkdir(outDir, { recursive: true });
 const started = Date.now();
 const reasons: string[] = [];
@@ -52,7 +56,7 @@ async function runCase(name: string, arm: Arm, args: string[] = []) {
   return code === 0;
 }
 
-for (const name of reg.redLines) {
+for (const name of skipRedLines ? [] : reg.redLines) {
   if (await runCase(name, "cand")) continue;
   if (await runCase(name, "base")) { early = "否决"; reasons.push(`红线 ${name} 改后失败、改前通过`); }
   else { early ??= "证据不足"; reasons.push(`红线 ${name} 改前改后都失败：先修用例或环境`); }
@@ -69,17 +73,29 @@ if (!early && "case" in reg.target) {
 }
 
 const passes: Pass[] = [];
-if (!early && reg.scenarios.length) {
+if (mergeDirs) {
+  for (const dir of mergeDirs) {
+    const shard = JSON.parse(readFileSync(join(resolve(REPO, dir), "passes.json"), "utf8")) as { registration: string; passes: Pass[] };
+    if (shard.registration !== registrationHash) throw new Error(`${dir} 的登记 ${shard.registration} 与本次登记 ${registrationHash} 不同，不能合并`);
+    for (const pass of shard.passes) {
+      if (passes.some(p => p.pair === pass.pair && p.arm === pass.arm)) throw new Error(`第 ${pass.pair + 1} 对 ${pass.arm} 在多个分片里都有，不能合并`);
+      passes.push(pass);
+    }
+  }
+  notes.push(`合并 ${mergeDirs.length} 个分片：${mergeDirs.join("、")}；红线由各分片之外单独运行`);
+} else if (!early && reg.scenarios.length) {
   for (const [pair, order] of shuffled(reg.seed + 1, reg.N).entries()) {
+    if (onlyPairs && !onlyPairs.has(pair)) continue;
     if (Date.now() - started > reg.budgetMin * 60_000) { notes.push(`预算 ${reg.budgetMin} 分钟用完，只跑了 ${pair}/${reg.N} 对`); break; }
     for (const arm of order) {
       await waitForQuietMachine();
-      const args = ["scripts/maintenance/self-use-replay.mts", `--only=${reg.scenarios.join(",")}`, `--label=climb-${reg.name}-${pair + 1}-${arm}`, ...(reg.pool ? [`--pool=${reg.pool}`] : []), ...(reg.model ? [`--model=${reg.model}`] : [])];
-      const { out } = await child(args, { SIDEAGENT_ACCEPTANCE_DIST: dists[arm], SIDEAGENT_BUILD_ROLE: arm, SIDEAGENT_RECORD: "0" }, true);
+      const args = ["scripts/maintenance/self-use-replay.mts", `--only=${reg.scenarios.join(",")}`, `--label=climb-${reg.name}-${pair + 1}-${arm}`, ...(reg.pool ? [`--pool=${reg.pool}`] : []), ...replayModelArgs(reg)];
+      const { code, out } = await child(args, { SIDEAGENT_ACCEPTANCE_DIST: dists[arm], SIDEAGENT_BUILD_ROLE: arm, SIDEAGENT_RECORD: "0" }, true);
+      if (code !== 0) { notes.push(`第 ${pair + 1} 对 ${arm} 回放退出码 ${code ?? "未返回"}`); continue; }
       const report = /报告：(\S+\.md)/.exec(out)?.[1];
       if (!report) { notes.push(`第 ${pair + 1} 对 ${arm} 回放没有出报告`); continue; }
-      const json = JSON.parse(readFileSync(report.replace(/\.md$/, ".json"), "utf8")) as { model: { provider: string; modelId: string }; fastModel: string; rows: Row[] };
-      passes.push({ arm, pair, report, model: `${json.model.provider}/${json.model.modelId}`, fastModel: json.fastModel, rows: json.rows });
+      const json = JSON.parse(readFileSync(report.replace(/\.md$/, ".json"), "utf8")) as { model: { provider: string; modelId: string }; fastModel: string; effort?: string; rows: Row[] };
+      passes.push({ arm, pair, report, model: `${json.model.provider}/${json.model.modelId}`, fastModel: json.fastModel, effort: json.effort, rows: json.rows });
     }
   }
 }
@@ -88,14 +104,23 @@ const judged = early ? { verdict: early, reasons: [], lines: [] } : reg.scenario
 const verdict: Verdict = reasons.length && judged.verdict === "通过" ? "证据不足" : judged.verdict;
 const allReasons = [...reasons, ...judged.reasons];
 const minutes = Math.round((Date.now() - started) / 60_000);
+const rowsWithFirstAnswer = (pass: Pass): Row[] => pass.rows.map(row => {
+  const trace = join(pass.report.replace(/\.md$/, ""), `${row.n}-${row.k}.trace.jsonl`);
+  if (!row.timing || row.timing.firstAnswerMs !== undefined || !existsSync(trace)) return row;
+  return { ...row, timing: { ...row.timing, firstAnswerMs: firstAnswerMsOf(recordsOf(readFileSync(trace, "utf8").split("\n")), new Set(row.runIds ?? []), row.timing.finalAnswerMs !== null) } };
+});
+const plannedSentences = (onlyPairs && !mergeDirs ? onlyPairs.size : reg.N) * reg.scenarios.reduce((total, n) => total + (sentences.get(n) ?? 0), 0);
+const readingLines = passes.length ? ["", ...readingsTable((["base", "cand"] as const).map(arm => [arm === "base" ? "改前" : "改后", readingsOf(passes.filter(p => p.arm === arm).flatMap(rowsWithFirstAnswer), plannedSentences)]))] : [];
 const aa = dists.base === dists.cand;
 const report = [
   `# 爬山判定 ${reg.name}：${verdict}`,
   ``,
   `改前 ${dists.base}；改后 ${dists.cand}${aa ? "（同一份构建：A/A 检验，应当判「证据不足」）" : ""}。场景 ${reg.scenarios.join("、") || "无"}，${reg.N} 对，α=${reg.alpha}，用时 ${minutes} 分钟，登记 ${registrationHash}，尺子 ${rulerHead}${rulerDirty ? "（开跑时回放或验收脚本有未提交的改动）" : ""}。`,
   ``,
+  ...(reg.scenarios.length ? [`回放配置 ${replayModelArgs(reg).join(" ") || "沿用现有回放默认值"}。`, ""] : []),
   ...(allReasons.length ? ["没通过的原因：", ...allReasons.map(r => `- ${r}`), ""] : []),
   ...[...notes, ...judged.lines].map(l => `- ${l}`),
+  ...readingLines,
   ``,
   "每遍回放：",
   ...passes.map(p => `- 第 ${p.pair + 1} 对 ${p.arm}：${p.report}`),

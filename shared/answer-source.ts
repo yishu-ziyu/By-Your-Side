@@ -21,7 +21,15 @@ export function capturedCite(cite: DiagramCite, sources?: AnswerSourceMap): { so
   const source = sources?.get(cite.source);
   if (!source) return undefined;
   const anchor = cite.anchor.trim();
-  if (anchor.length < 8 || anchor.length > 80 || anchor.split(/\s+/).length > 12 || (/\p{Script=Han}/u.test(anchor) && [...anchor].length > 20)) return undefined;
+  if (anchor.length > 80 || anchor.split(/\s+/).length > 12) return undefined;
+  const length = [...anchor].length;
+  if (length < 8) {
+    if (length < 4 || (anchor.match(/\p{Unified_Ideograph}/gu)?.length ?? 0) < 3) return undefined;
+    const start = source.text.indexOf(anchor);
+    if (start < 0 || source.text.indexOf(anchor, start + 1) >= 0) return undefined;
+    return { source, start, end: start + anchor.length };
+  }
+  if (length > 20 && /\p{Script=Han}/u.test(anchor)) return undefined;
   const pattern = new RegExp(anchor.split(/\s+/).map(word=>word.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('\\s+'), 'iu');
   const match = pattern.exec(source.text);
   return match ? {source,start:match.index,end:match.index+match[0].length} : undefined;
@@ -30,7 +38,10 @@ export function capturedCite(cite: DiagramCite, sources?: AnswerSourceMap): { so
 export function resolveDiagramCite(cite: DiagramCite, sources?: AnswerSourceMap): { text: string; from?: string; url?: string } | undefined {
   if ('text' in cite) return cite;
   const match = capturedCite(cite,sources);
-  if (!match) return undefined;
+  return match ? capturedExcerpt(match) : undefined;
+}
+
+export function capturedExcerpt(match: NonNullable<ReturnType<typeof capturedCite>>): { text: string; from: string; url?: string } {
   const {source} = match;
   let start = match.start;
   const boundary = [...source.text.slice(0,start).matchAll(/(?:[.!?。！？]\s+|\n\s*\n)/g)].at(-1);

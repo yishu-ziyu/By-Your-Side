@@ -1,0 +1,18 @@
+{
+  "name": "browser-perf-local",
+  "base": "out/performance/base",
+  "cand": "out/performance/candidate",
+  "pool": "eval/tasks/browser-perf-replay.json",
+  "scenarios": [3, 5, 6, 8, 11, 13, 14, 16],
+  "N": 1,
+  "seed": 6,
+  "alpha": 0.05,
+  "budgetMin": 60,
+  "model": "minimax-cn/MiniMax-M3.1-Flash-Preview",
+  "fastModel": "minimax-cn/MiniMax-M3.1-Flash-Preview",
+  "effort": "low",
+  "minimaxPi": true,
+  "target": { "metric": "correctCompletionMs", "deltaRel": 0.5 },
+  "guards": [{ "metric": "ok" }],
+  "redLines": ["claim-after-check", "takeover-during-slow-step", "translate-destination", "translate-paragraph-authority", "diagram-cited-numbers"]
+}

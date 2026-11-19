@@ -3,7 +3,7 @@ import { assertNoPendingDialog } from "../page-events.js";
 import { resolveReadableTab } from "../state.js";
 import { pdfText, tabShowsPdf } from "./pdf-text.js";
 
-export async function pageText(params: { tabId?: number; max?: number }, sessionId: string = LEAD_SESSION_ID): Promise<{ text: string; totalChars: number; tabId: number; url?: string; title?: string }> {
+export async function pageText(params: { tabId?: number; max?: number }, sessionId: string = LEAD_SESSION_ID): Promise<{ text: string; totalChars: number; tabId: number; url?: string; title?: string; links?: Array<{ text: string; href: string }> }> {
   const tab = await resolveReadableTab(params.tabId, sessionId);
 
   if (tab.id == null) throw new Error("工作标签页无效");
@@ -24,19 +24,57 @@ export async function pageText(params: { tabId?: number; max?: number }, session
   return { ...value, tabId: tab.id };
 }
 
-function readMainText(max: number): { text: string; totalChars: number; url: string; title: string } {
+function readMainText(max: number): { text: string; totalChars: number; url: string; title: string; links?: Array<{ text: string; href: string }> } {
   const SKIP = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "CANVAS", "IFRAME", "BUTTON", "SELECT", "FORM"]);
-  const visible = (el: Element) => el.checkVisibility();
+  // WHY: CSS display:contents elements generate no layout box so checkVisibility() returns false even when their descendants are visible (e.g. Substack article wrappers).
+  const isDisplayContents = (el: Element, cs: CSSStyleDeclaration = getComputedStyle(el)): boolean => {
+    if (cs.display !== "contents" || cs.visibility === "hidden" || cs.visibility === "collapse") return false;
+    for (let parent = el.parentElement; parent; parent = parent.parentElement) if (getComputedStyle(parent).display === "none") return false;
+    return true;
+  };
+  const visible = (el: Element) => el.checkVisibility() || isDisplayContents(el);
+  const visibleLabel = (el: Element): string => {
+    let text = "";
+    for (const node of el.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) text += node.textContent ?? "";
+      else if (node.nodeType === Node.ELEMENT_NODE) {
+        const child = node as Element;
+        if (!SKIP.has(child.tagName) && child.getAttribute("aria-hidden") !== "true" && visible(child)) text += visibleLabel(child);
+      }
+    }
+    return text;
+  };
   const candidates = [...document.querySelectorAll<HTMLElement>("main, article, [role=main]")].filter(visible);
   const root = candidates.sort((a, b) => b.innerText.length - a.innerText.length)[0] ?? document.body;
   const out: string[] = [];
+  const externalLinks: Array<{ text: string; href: string }> = [];
+  const internalLinks: Array<{ text: string; href: string }> = [];
+  const seenHref = new Set<string>();
+  const pageKey = `${location.origin}${location.pathname}${location.search}`;
+  const collectLink = (el: Element): void => {
+    const raw = el.getAttribute("href")?.trim();
+    if (!raw || raw.startsWith("#")) return;
+    let parsed: URL;
+    try { parsed = new URL(raw, location.href); } catch { return; }
+    if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || `${parsed.origin}${parsed.pathname}${parsed.search}` === pageKey) return;
+    if (parsed.href.length > 240) return;
+    const href = parsed.href;
+    const label = visibleLabel(el).replace(/\s+/g, " ").trim().slice(0, 80);
+    if (label.length < 2 || seenHref.has(href)) return;
+    seenHref.add(href);
+    const bucket = parsed.hostname === location.hostname ? internalLinks : externalLinks;
+    if (bucket.length < 20) bucket.push({ text: label, href });
+  };
 
   const walk = (el: Element, inCell: boolean): void => {
-    if (SKIP.has(el.tagName) || el.getAttribute("aria-hidden") === "true" || el.getAttribute("role") === "navigation" || !visible(el)) return;
+    if (SKIP.has(el.tagName) || el.getAttribute("aria-hidden") === "true" || el.getAttribute("role") === "navigation") return;
+    const cs = getComputedStyle(el);
+    const contents = cs.display === "contents";
+    if (contents ? cs.visibility === "hidden" || cs.visibility === "collapse" : !el.checkVisibility()) return;
+    if (el.tagName === "A") collectLink(el);
     if (el.tagName === "BR") { out.push("\n"); return; }
-    const display = getComputedStyle(el).display;
-    const cell = display === "table-cell";
-    const block = !cell && !inCell && !display.startsWith("inline");
+    const cell = cs.display === "table-cell";
+    const block = !contents && !cell && !inCell && !cs.display.startsWith("inline");
     const level = /^H([1-6])$/.exec(el.tagName)?.[1];
 
     out.push(cell ? " " : block ? "\n" : "");
@@ -58,7 +96,8 @@ function readMainText(max: number): { text: string; totalChars: number; url: str
       walk(root, false);
     }
   }
-  const text = out.join("").replace(/[ \t ]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  const text = out.join("").replace(/[ \t\u00A0]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  const links = [...externalLinks, ...internalLinks].slice(0, 20);
 
-  return { text: text.slice(0, max), totalChars: text.length, url: location.href, title: document.title };
+  return { text: text.slice(0, max), totalChars: text.length, url: location.href, title: document.title, ...(links.length ? { links } : {}) };
 }

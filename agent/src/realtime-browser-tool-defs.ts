@@ -34,6 +34,7 @@ function providerParameters(value: unknown): Record<string, unknown> {
 function voiceDescription(tool: { name: string; description: string }): string {
   if (tool.name === 'tabs') return tool.description.replace(TABS_LIST_AT_START, '').replace(TABS_RESULT_IN_BACKGROUND, '');
 
+  if (tool.name === 'page_translation') return tool.description.replace(JS_FALLBACK, ' For other page edits, use browser_request.');
   return tool.description.replace(JS_FALLBACK, ' For anything this tool cannot express (only part of the page, colors, styles), use browser_request.');
 }
 

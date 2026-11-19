@@ -34,6 +34,7 @@ export type SideCallRecord = {
   model: string;
   effort: ModelThinkingLevel;
   attempts: number;
+  usage?: { responses: number; input: number; cacheRead: number; cacheWrite: number; output: number; totalTokens: number };
   ms: number;
   outcome: "ok" | "failed";
   reason?: SideFailureReason;
@@ -68,6 +69,9 @@ interface AttemptReport { attempt: number; elapsedMs: number; outcome: AttemptOu
 const STRICT_JSON = GOAL_CHECK_FORMAT_SUFFIX;
 
 const EMPTY_REPLY_BUDGET_FACTOR = 5;
+
+// WHY: with adaptive thinking (MiniMax) the provider does not add a thinking budget; thinking and the answer share max_tokens, so a short answer budget is spent on thinking and the JSON never arrives.
+const THINKING_ROOM_TOKENS = 2048;
 
 export function isParamRejection(message: string | undefined): boolean {
   if (!message) return false;
@@ -136,9 +140,11 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
   let userSuffix = "";
   let lastError: string | undefined;
 
+  const usage = { responses: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, totalTokens: 0 };
   const finish = (outcome: "ok" | "failed", reason?: SideFailureReason) => {
     const line: SideCallRecord = { purpose: spec.purpose, model: modelKey(model), effort, attempts, ms: Date.now() - calledAt, outcome };
 
+    if (usage.responses) line.usage = usage;
     if (reason) line.reason = reason;
 
     if (outcome === "failed" && lastError) line.detail = lastError.slice(0, 160);
@@ -179,7 +185,7 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
     };
 
     let reply: AssistantMessage;
-    const options: SimpleStreamOptions = { maxTokens, signal: attemptSignal };
+    const options: SimpleStreamOptions = { maxTokens: effort === "off" ? maxTokens : maxTokens + THINKING_ROOM_TOKENS, signal: attemptSignal };
 
     if (effort !== "off") options.reasoning = effort;
 
@@ -203,6 +209,10 @@ export async function sideJudgment<T>(host: SideCallHost, model: Model<Api>, spe
       continue;
     }
 
+    if (reply.usage?.totalTokens > 0) {
+      usage.responses += 1;
+      for (const field of ["input", "cacheRead", "cacheWrite", "output", "totalTokens"] as const) usage[field] += reply.usage[field];
+    }
     if (reply.stopReason === "error" || reply.stopReason === "aborted") {
       const aborted = abortReason(attemptSignal);
 

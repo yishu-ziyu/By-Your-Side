@@ -1,3 +1,4 @@
+import { intactTranslationRequest, namedTranslationTargets, translationDestination, type TranslationIntent } from './translation-permission.js';
 import { calculationIssue, interfaceIssue } from "../../shared/answer-cards.js";
 import { programIssue } from "../../shared/ui-program.js";
 import { UNSAVED_FIELDS_ALERT } from "../../shared/effect.js";
@@ -17,7 +18,7 @@ import { isTransientModelError } from "../../shared/provider-busy.js";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { elementText, redactObservedText } from './task-evidence.js';
 import { translationPrompt, isProviderThrottle, salvageTranslations, needsTranslation, translationModelBlocks, restoreTranslationWhitespace, type TranslateMeta } from "./page-translation.js";
-import type { TranslationBlock, TranslationReceipt, TranslationSegment } from "../../shared/page-translation.js";
+import type { TranslationBlock, TranslationReceipt, TranslationRequest, TranslationSegment } from "../../shared/page-translation.js";
 import { readingContext, readingHandoffContext, isReadingTranslation, READING_ACT_MARKER, READING_ANSWER_LIMIT, READING_KINDS, READING_KIND_SELECTION_LIMIT, type ReadingKind, type ReadingTranscript } from "../../shared/reading.js";
 import {createTaskResultsTool} from "./task-results.js";
 import { AUTO_RESULT_ID_PREFIX, normalizeResultTarget, RESULT_OBSERVATION_TEXT_MAX, RESULT_VERIFY_READ_TOOLS, type TaskResultRegistration} from "../../shared/task-results.js";
@@ -165,9 +166,27 @@ const RESULT_TEXT_MAX = 500;
 const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
 
 const PRE_OBSERVATION_TEXT_MAX = 12_000;
+const PRE_OBSERVATION_MAIN_TEXT_MAX = 30_000;
+
+function mainTextLinksBlock(value: unknown): string {
+  if (!value || typeof value !== "object" || !("links" in value) || !Array.isArray(value.links)) return "";
+  const lines: string[] = [];
+  let total = 0;
+
+  for (const item of value.links) {
+    if (!item || typeof item !== "object" || !("text" in item) || !("href" in item) || typeof item.text !== "string" || typeof item.href !== "string") continue;
+    const line = `- ${item.text.trim()}: ${item.href.trim()}`;
+
+    if (total + line.length > 1_500) break;
+    lines.push(line);
+    total += line.length + 1;
+  }
+
+  return lines.length ? `[Links in main text]\n${lines.join("\n")}` : "";
+}
 const AX_TREE_SOURCE_MIN_CHARS = 400;
-const TRANSLATE_INTENT = /翻译|译成|译为|\btranslate\b/i;
-const OTHER_TARGET = /(?:翻译|译)(?:成|为|到)\s*(?!中文|简体|汉语|普通话)[\p{L}]|\binto\s+(?!chinese)[a-z]/iu;
+const WHOLE_PAGE_TRANSLATION = /^(?:请?(?:把(?:这个页面|当前页面|这一页|整页)翻译成(?:简体)?中文|(?:重新)?翻译(?:这个页面|当前页面|这一页|整页))(?:[，,]\s*只保留译文)?[。！!]?|(?:please )?translate (?:this|the current) (?:web)?page (?:to|into) (?:simplified )?chinese[.!]?)$/iu; // WHY: hardcode-ok 预取早于工具授权，会把网页发给服务商，只允许完整的整页命令；其他说法仍由正常翻译工具处理。
+const TRANSLATION_INTENT_HINT = /翻译|译文|双语|\btranslat\w*\b|\bbilingual\b/iu; // WHY: hardcode-ok 仅用于提前并行启动已有的 page_translation_intent 分类器，不授予写权限；正式授权仍由 preparePageTranslation 严格校验结果。
 const TRANSLATION_PREFETCH_BLOCKS = 16;
 const TRANSLATION_PREFETCH_LANES = 4;
 const TRANSLATION_PREFETCH_AFTER_MAIN_MS = 100;
@@ -217,7 +236,7 @@ export class BrowserAgentSession {
   private activeGoal:string|null=null;
   private activeGoalPage:{tabId:number;url:string}|null=null;
   private displayAbort:AbortController|null=null;
-  private authorizedDisplayCall:string|null=null;
+  private authorizedDisplayCall: { id: string; pageTranslationControl: boolean } | null = null;
   private displayWork:Promise<void>|null=null;
   private starting:object|null=null;
   private deferredSteers:Array<{text:string;context?:PageContext;attachments?:Attachment[];pages?:PageContext[]}>=[];
@@ -238,8 +257,8 @@ export class BrowserAgentSession {
 
   private copyIntent: { key: string; attempts: number; result: Promise<CopyIntent> } | null = null;
 
-  private copyRequirements(): string[] {
-    const requirements = this.conversationSnapshot()?.recoveryInput?.requirements;
+  private currentUserRequirements(snapshot = this.conversationSnapshot()): string[] {
+    const requirements = snapshot?.recoveryInput?.requirements;
     return requirements?.length ? requirements : [this.activeGoal ?? ''];
   }
 
@@ -306,7 +325,7 @@ export class BrowserAgentSession {
   }
 
   private async copyIntentForRequest(retryUnavailable = false): Promise<CopyIntent> {
-    const requests = this.copyRequirements();
+    const requests = this.currentUserRequirements();
     const key = JSON.stringify([this.copyScope(), requests]);
     const previous = this.copyIntent?.key === key ? this.copyIntent : null;
     if (previous) {
@@ -343,6 +362,72 @@ export class BrowserAgentSession {
     return { ...(intent.range ? {range:intent.range} : {}), record: result => {
       if (scope === this.copyScope() && epoch === this.controlEpoch && !this.hold.isHeld()) this.copiedFields.record(result, scope);
     }};
+  }
+
+  private translationIntent: { key: string; result: Promise<TranslationIntent>; abort?: AbortController } | null = null;
+  private translationTargets: { key: string; result: Promise<boolean> } | null = null;
+
+  private translationInput() {
+    const snapshot = this.conversationSnapshot();
+    const requests = this.currentUserRequirements(snapshot);
+    const history = snapshot?.conversationContext?.recentTurns ?? [];
+    const userTurns = history.filter(turn => turn.role === 'user');
+    const previous = userTurns.at(-1)?.text === requests.at(-1) ? userTurns.at(-2)?.text : userTurns.at(-1)?.text;
+    const key = JSON.stringify([snapshot?.runId ?? this.deliveryRunId(), this.requestStartedAt, this.controlEpoch, this.steers, requests]);
+    return { requests, previous, key };
+  }
+
+  async preparePageTranslation(request: TranslationRequest, toolCallId: string, signal?: AbortSignal): Promise<{ beforeDispatch: () => void; paragraphs?: number[] }> {
+    const epoch = this.controlEpoch;
+    const { requests, previous, key } = this.translationInput();
+    const beforeDispatch = () => {
+      if (signal?.aborted || epoch !== this.controlEpoch || !this.canWriteCurrentInput(toolCallId)
+        || key !== this.translationInput().key) throw new Error(STALE_STEP_MESSAGE);
+    };
+    beforeDispatch();
+    const ui = this.authorizedDisplayCall;
+    if (!request.scope && ui?.id === toolCallId && ui.pageTranslationControl) return { beforeDispatch };
+    if (!requests.every(intactTranslationRequest)) throw new Error('当前指令无法原样核对，未改动网页。');
+    if (!request.scope && requests.length === 1 && WHOLE_PAGE_TRANSLATION.test(requests[0]!.trim())
+      && request.tabId === this.activeGoalPage?.tabId) return { beforeDispatch };
+
+    const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+    if (!host || !model) throw new Error('网页翻译授权无法核对，未改动页面。');
+    if (this.translationIntent?.key !== key) {
+      const pending = translationDestination(host, model, requests, previous, signal);
+      this.translationIntent = { key, result: pending };
+      pending.catch(() => { if (this.translationIntent?.result === pending) this.translationIntent = null; });
+    }
+    const entry = this.translationIntent;
+    const onAbort = () => entry.abort?.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    let intent: TranslationIntent;
+    try { intent = await entry.result; } catch {
+      beforeDispatch();
+      throw new Error('网页翻译授权核对超时或暂时失败，未改动页面，请重试。');
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+    }
+    beforeDispatch();
+    if (!intent) throw new Error('本轮用户没有明确授权把译文写进网页，未改动页面。需要在侧栏或语音交付时，读取指定原文并直接给出译文。');
+    if (intent.destination === 'whole' && !request.scope) return { beforeDispatch };
+    if (intent.destination !== 'scoped' || !request.scope) throw new Error('网页翻译范围与本轮用户授权不符，未改动页面。');
+    if (intent.paragraphs) return { beforeDispatch, paragraphs: intent.paragraphs };
+
+    const targetKey = JSON.stringify([key, request.scope]);
+    if (this.translationTargets?.key !== targetKey) {
+      const pending = namedTranslationTargets(host, model, requests, previous, request.scope.quotes, signal);
+      this.translationTargets = { key: targetKey, result: pending };
+      pending.catch(() => { if (this.translationTargets?.result === pending) this.translationTargets = null; });
+    }
+    let matched: boolean;
+    try { matched = await this.translationTargets.result; } catch {
+      beforeDispatch();
+      throw new Error('网页翻译段落核对超时或暂时失败，未改动页面，请重试。');
+    }
+    beforeDispatch();
+    if (!matched) throw new Error('无法核对所选原文与用户指定的段落，未改动页面。');
+    return { beforeDispatch };
   }
 
   private readonly quoteSources = new AnswerSources();
@@ -705,7 +790,7 @@ if(required.includes(key))candidates.set(key,attachment);
 
     if (this.pendingCorrections.length === 0) return true;
 
-    return this.authorizedDisplayCall !== null && toolCallId === this.authorizedDisplayCall;
+    return this.authorizedDisplayCall !== null && toolCallId === this.authorizedDisplayCall.id;
   }
   private pendingStop: Promise<void> | null = null;
   private pendingHandback: {
@@ -844,6 +929,7 @@ if(required.includes(key))candidates.set(key,attachment);
           ...(options?.customTools ?? createBrowserTools(rpc, undefined, undefined, undefined, {
             epoch: () => resultHost?.executionEpoch() ?? 0,
             beforeCopy: async () => resultHost ? resultHost.prepareCopyCheck() : {record() {}},
+            beforePageTranslation: (request, id, signal) => resultHost!.preparePageTranslation(request, id, signal),
             canWrite: () => resultHost?.canWriteCurrentInput() ?? false,
             files: () => resultHost?.fileStore(),
             attachments: () => resultHost?.userAttachments() ?? [],
@@ -894,6 +980,7 @@ if(required.includes(key))candidates.set(key,attachment);
           resultHost?.modelRequestTrace.observe({ ...request, effort: resultHost.session?.model ? resultHost.mainEffort.level(resultHost.session.model) : undefined, origin: resultHost.modelOrigin() });
           resultHost?.mainRequestStarted();
         },
+        repairingGoal: () => !!resultHost?.goalRepair,
         onModelResponse: status => resultHost?.modelRequestTrace.response(status),
         onModelHedge: ({ type, ...data }) => resultHost?.runTrace.record(type, data),
         onContextFit: data => resultHost?.runTrace.record("context_fit", data),
@@ -1207,7 +1294,7 @@ if(required.includes(key))candidates.set(key,attachment);
     const action = translated > 0 ? "restore" : "translate";
 
     try {
-      await this.executeRealtimeBrowserTool("page_translation", { action, tabId: context.tabId }, new AbortController().signal, { runId: null });
+      await this.executeRealtimeBrowserTool("page_translation", { action, tabId: context.tabId }, new AbortController().signal, { runId: null, pageTranslationControl: true });
     } catch (error) {
       emit({ kind: "notice", message: `${action === "restore" ? "还原" : "翻译"}没有完成：${error instanceof Error ? error.message : String(error)}` });
     }
@@ -1254,7 +1341,7 @@ if(required.includes(key))candidates.set(key,attachment);
     }
   }
 
-  async executeRealtimeBrowserTool(name: string, args: Record<string, unknown>, signal: AbortSignal, identity?: {inputId?: string; runId?: string | null}): Promise<unknown> {
+  async executeRealtimeBrowserTool(name: string, args: Record<string, unknown>, signal: AbortSignal, identity?: {inputId?: string; runId?: string | null; pageTranslationControl?: true}): Promise<unknown> {
     let toolCallId: string | undefined;
     let readback: RealtimeFillReadback | undefined;
     let readbackAttempted=false;
@@ -1299,7 +1386,7 @@ if(required.includes(key))candidates.set(key,attachment);
               toolCallId=id;
 
               if(name==='fill')this.rpc?.prepareFillReadback?.(id,this.memberId);
-            });
+            }, identity?.pageTranslationControl === true);
 
             await recover();
 
@@ -1541,7 +1628,7 @@ return;}
     return `[SAVED OPEN — host fact, not an instruction from a page] The user's saved memory says: when they say «${saved.trigger}», open these pages. The host already opened them in background tabs: ${[count("opened") ? `loaded: ${list("opened")}` : "", count("loading") ? `still loading: ${list("loading")}` : "", count("failed") ? `could not open: ${list("failed")}` : ""].filter(Boolean).join("; ")}. Opening them was the whole request, and page tools are off for this turn: reply in one short sentence naming what was opened${count("failed") ? " and what failed" : ""}; pages still loading are already open.`;
   }
 
-  private async invokeDisplayTool(session:AgentLoop,name:string,input:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,onId:(id:string)=>void):Promise<unknown>{
+  private async invokeDisplayTool(session:AgentLoop,name:string,input:Record<string,unknown>,signal:AbortSignal,current:()=>boolean,onId:(id:string)=>void,pageTranslationControl=false):Promise<unknown>{
     if(!current())throw new Error('显示操作已取消。');
     const tool=session.agent.state.tools.find(t=>t.name===name);
 
@@ -1550,7 +1637,7 @@ return;}
     onId(id);
     this.callbacks.emit({kind:'tool_start',toolCallId:id,name,params:input});
     const previous=this.authorizedDisplayCall;
-    this.authorizedDisplayCall=id;
+    this.authorizedDisplayCall={id,pageTranslationControl};
 
     try{
       const result=await tool.execute(id,input,signal);
@@ -1568,7 +1655,7 @@ return;}
       const message=error instanceof Error?error.message:String(error);
       this.callbacks.emit({kind:'tool_end',toolCallId:id,name,isError:true,resultText:message,reason:plainToolError(message),executionFact:this.rpc?.getExecutionFact(id)});throw error;
     }finally{
-      if(this.authorizedDisplayCall===id)this.authorizedDisplayCall=previous;
+      if(this.authorizedDisplayCall?.id===id)this.authorizedDisplayCall=previous;
     }
   }
 
@@ -1598,6 +1685,17 @@ return;}
     return text ? `\n\n[MENTIONED TABS — pages the user pulled in with @]\n${text}` : "";
   }
 
+  private resolveSourceScope(run: string | null): Promise<PageReadScope> {
+    const requests = this.currentUserRequirements();
+    const key = JSON.stringify([run, requests]);
+    if (this.sourceScope?.key !== key) {
+      const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+      const result = host && model ? pageReadScope(host, model, requests).catch(() => 'whole' as const) : Promise.resolve('whole' as const);
+      this.sourceScope = { key, result };
+    }
+    return this.sourceScope.result;
+  }
+
   private async readUserPageForPrompt(context: PageContext | undefined, phase: "task" | "steer", role: PageRole = "current"): Promise<string | null> {
     const tabId = context?.tabId;
 
@@ -1607,7 +1705,7 @@ return;}
     const epoch=this.controlEpoch,run=this.deliveryRunId();
 
     try {
-      const freshMain = () => (this.rpc!.call("page_text", { tabId, max: PRE_OBSERVATION_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
+      const freshMain = () => (this.rpc!.call("page_text", { tabId, max: PRE_OBSERVATION_MAIN_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
       const [freshOrRetriedMain, tree] = await Promise.all([
         freshMain().then(res => res ?? freshMain()),
         (this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; url?: unknown; textEvidence?: { fragments?: Array<{ text?: unknown }> } }>).catch(() => null),
@@ -1619,6 +1717,7 @@ return;}
         : freshOrRetriedMain;
 
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
+      let mainLinks = mainTextLinksBlock(main);
       const preview = pageReading(main);
       let wholeRead = false;
       const readablePage = /^(?:https?|file):/i.test(preview?.url ?? context.url ?? '');
@@ -1626,20 +1725,18 @@ return;}
       const treeEvidenceChars = (tree?.textEvidence?.fragments ?? []).reduce((total, fragment) => total + (typeof fragment.text === "string" ? fragment.text.length : 0), 0);
       const extractorBlank = !preview?.text.trim() && treeEvidenceChars >= AX_TREE_SOURCE_MIN_CHARS;
       if (readablePage && !extractorBlank && (!preview?.text.trim() || preview.totalChars > preview.text.length)) {
-        const requests = this.copyRequirements();
-        const key = JSON.stringify([run, requests]);
-        if (this.sourceScope?.key !== key) {
-          const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
-          const result = host && model ? pageReadScope(host, model, requests).catch(() => 'whole' as const) : Promise.resolve('whole' as const);
-          this.sourceScope = { key, result };
-        }
-        const scope = await this.sourceScope.result;
+        const scope = await this.resolveSourceScope(run);
         if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
         this.runTrace.record('page_read_scope', { scope, tabId, previewChars: preview?.text.length ?? 0, totalChars: preview?.totalChars ?? null });
+        if (scope === 'none' && role === 'current') {
+          this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: 0, mainText: 0, tree: 0, repeat: false, omitted: "scope_none" });
+          return null;
+        }
         if (scope === 'whole') {
           const exceedsLimit = (preview?.totalChars ?? 0) > WHOLE_SOURCE_MAX_CHARS;
-          const full = !exceedsLimit
-            ? pageReading(await this.rpc.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS).catch(() => null)) : null;
+          const readFull = () => (this.rpc!.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown; links?: unknown }>).catch(() => null);
+          const fullRaw = !exceedsLimit ? await readFull().then(res => res ?? readFull()) : null;
+          const full = pageReading(fullRaw);
           if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
           if (!full?.text.trim() || full.url !== (preview?.url ?? context.url) || full.totalChars !== full.text.length) {
             if (this.continuationEnabled() && role === 'current' && !exceedsLimit) {
@@ -1653,6 +1750,7 @@ return;}
             }
           } else {
             main = full;
+            mainLinks = mainTextLinksBlock(fullRaw);
             wholeRead = true;
             if (role === 'current') this.goalLedger.recordWholeSource(full.url, full.text);
             this.runTrace.record('page_source_complete', { tabId, url: full.url, chars: full.text.length });
@@ -1675,6 +1773,7 @@ return;}
       const body = [
         this.sourcePreparationOnly && '[SOURCE NOT READY] The full source is not available. The host permits only same-page reading and wait_for_condition. If the user requested waiting for future results, register an independently checkable condition and end this fragment. Do not analyze, mark or deliver a final answer until the source is ready. If waiting was not authorized, explain that the source is unavailable.',
         text && (total > text.length ? `${citedText}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part. Source catalog: unavailable for this partial read; read_element on the complete intended source registers source IDs.]` : citedText),
+        text && !this.sourcePreparationOnly && mainLinks,
         ax && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${clip(ax, "Accessibility tree")}`,
       ].filter(Boolean).join("\n\n");
 
@@ -1997,12 +2096,32 @@ return;}
     return (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""]).filter(Boolean);
   }
 
+  private warmTranslationIntent(context: PageContext | undefined): void {
+    if (!context || typeof context.tabId !== "number" || isRestrictedPage(context.url)) return;
+    const { requests, previous, key } = this.translationInput();
+    const latest = requests.at(-1)?.trim();
+
+    if (!latest || !TRANSLATION_INTENT_HINT.test(latest) || (requests.length === 1 && WHOLE_PAGE_TRANSLATION.test(latest))) return;
+    if (!requests.every(intactTranslationRequest) || this.translationIntent?.key === key) return;
+    const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+
+    if (!host || !model) return;
+    const abort = new AbortController();
+    const pending = translationDestination(host, model, requests, previous, abort.signal);
+    this.translationIntent = { key, result: pending, abort };
+    pending.catch(() => { if (this.translationIntent?.result === pending) this.translationIntent = null; });
+  }
+
   private prefetchPageTranslation(text: string, context: PageContext | undefined): void {
     this.dropTranslationPrefetch();
+    this.warmTranslationIntent(context);
     const tabId = context?.tabId;
     const model = this.translationModel();
 
-    if (!this.rpc || !model || typeof tabId !== "number" || !TRANSLATE_INTENT.test(text) || OTHER_TARGET.test(text)) return;
+    const request = this.activeGoal;
+    if (!this.rpc || !model || typeof tabId !== "number" || context?.selection?.text || !request || !WHOLE_PAGE_TRANSLATION.test(request.trim())) return;
+    // WHY: Attachments, steering and prior voice turns can narrow the scope of an otherwise whole-page command.
+    if (text !== withPageContext(request, context)) return;
     const language = "简体中文";
     const abort = new AbortController();
     this.translationPrefetch = abort;
@@ -2043,6 +2162,8 @@ return;}
   private dropTranslationPrefetch(): void {
     this.translationPrefetch?.abort();
     this.translationPrefetch = null;
+    this.translationIntent?.abort?.abort();
+    if (this.translationIntent?.abort) this.translationIntent = null;
   }
 
   private translationModel(): string | null {
@@ -2665,6 +2786,7 @@ return {kind:'model'};
 
   holdForUser(opts?: { abortStream?: boolean }): AgentRunState {
     this.runTrace.record("takeover", { abortStream: opts?.abortStream });
+    this.dropTranslationPrefetch();
 
     for(const record of this.pendingCorrections.filter(candidate=>candidate.input===null))this.unreserveCorrection(record);
 
@@ -3087,7 +3209,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
               this.finishAgentEnd(event);
             }
 
-            void (checkGoal ? this.checkGoalAfterDelivery(event) : Promise.resolve()).then(() => this.checkFactsAfterDelivery(event));
+            if (checkGoal) void this.checkGoalAfterDelivery(event);
+            void this.checkFactsAfterDelivery(event);
           }
 
           break;

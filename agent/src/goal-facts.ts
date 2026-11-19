@@ -1,7 +1,7 @@
 import { typedValuesOf } from "./site-notes.js";
 
 export interface GoalFacts {
-  navigation?: { originTabId: number | null; tabs: Array<{ tabId: number; url: string | null; created: boolean; closed?: true }>; truncated: boolean };
+  navigation?: { originTabId: number | null; tabs: Array<{ tabId: number; url: string | null; created: boolean; closed?: true; loaded?: NotLoaded }>; truncated: boolean };
   actions: Array<{ page: string | null; tools: string[]; onGoalPage: boolean; openedByAssistant: boolean }>;
   typedNotFromUser: string[];
   searchedNotFromUser: string[];
@@ -39,7 +39,13 @@ const shown = (url: string) => url.replace(/#.*$/, "").slice(0, 200);
 
 const record = (value: unknown): Record<string, unknown> => (value && typeof value === "object" ? value as Record<string, unknown> : {});
 
-type Visit = { url: string | null; byAssistant: boolean };
+type NotLoaded = "error_page" | "timeout" | "download";
+
+type Visit = { url: string | null; byAssistant: boolean; loaded?: NotLoaded };
+
+function notLoaded(readiness: unknown): NotLoaded | undefined {
+  return readiness === "error_page" || readiness === "timeout" || readiness === "download" ? readiness : undefined;
+}
 
 export class PageTrail {
   private urls = new Map<number, Visit>();
@@ -72,9 +78,10 @@ export class PageTrail {
     const tab = typeof params.tabId === "number" ? params.tabId : -1;
     const data = record(result);
     const before: Visit = this.urls.get(tab) ?? { url: null, byAssistant: true };
-    const landed = (tabId: number, url: unknown, byAssistant: boolean) => {
+    const landed = (tabId: number, url: unknown, byAssistant: boolean, readiness?: unknown) => {
       if (typeof url !== "string" || !/^https?:/i.test(url)) return;
-      this.urls.set(tabId, { url, byAssistant });
+      const loaded = notLoaded(readiness);
+      this.urls.set(tabId, { url, byAssistant, ...(loaded ? { loaded } : {}) });
       this.searched.push(...searchTerms(url));
     };
 
@@ -90,8 +97,8 @@ export class PageTrail {
     }
     if (name === "open_tab" && typeof data.tabId === "number" && !data.tabClosed) this.createdTabs.add(data.tabId);
     if (name === "navigate" && tab >= 0 && typeof data.workingTabId === "number" && data.workingTabId !== tab) this.createdTabs.add(data.workingTabId);
-    if (name === "navigate") landed(typeof data.workingTabId === "number" ? data.workingTabId : tab, data.url, true);
-    else if (name === "open_tab" && typeof data.tabId === "number") landed(data.tabId, data.url, true);
+    if (name === "navigate") landed(typeof data.workingTabId === "number" ? data.workingTabId : tab, data.url, true, data.readiness);
+    else if (name === "open_tab" && typeof data.tabId === "number") landed(data.tabId, data.url, true, data.readiness);
     else if (name === "snapshot") landed(typeof data.tabId === "number" ? data.tabId : tab, data.url, (this.urls.get(typeof data.tabId === "number" ? data.tabId : tab) ?? before).byAssistant);
     else if (name === "click" || name === "double_click" || name === "press_key") {
       const newTab = record(data.newTab);
@@ -101,9 +108,10 @@ export class PageTrail {
         if (typeof newTab.url === "string") landed(newTab.tabId, newTab.url, before.byAssistant);
         else this.urls.set(newTab.tabId, { url: null, byAssistant: before.byAssistant });
       } else if (record(data.effect).documentChanged) {
-        const pageUrl = record(data.page).url;
+        const arrived = record(record(data.effect).arrived);
+        const pageUrl = record(data.page).url ?? arrived.url;
 
-        if (typeof pageUrl === "string") landed(tab, pageUrl, before.byAssistant);
+        if (typeof pageUrl === "string") landed(tab, pageUrl, before.byAssistant, arrived.readiness);
         else this.urls.set(tab, { url: null, byAssistant: before.byAssistant });
       }
     }
@@ -135,7 +143,7 @@ export class PageTrail {
     const visits = [...this.urls.entries()];
     const recent = visits.filter(([tabId]) => tabId !== this.originTabId).slice(-15);
     const tabs = [...visits.filter(([tabId]) => tabId === this.originTabId), ...recent]
-      .map(([tabId, visit]) => ({ tabId, url: visit.url, created: this.createdTabs.has(tabId), ...(this.closedTabs.has(tabId) ? { closed: true as const } : {}) }));
+      .map(([tabId, visit]) => ({ tabId, url: visit.url, created: this.createdTabs.has(tabId), ...(this.closedTabs.has(tabId) ? { closed: true as const } : {}), ...(visit.loaded ? { loaded: visit.loaded } : {}) }));
     return { navigation: { originTabId: this.originTabId, tabs, truncated: tabs.length < visits.length }, actions: [...pages.values()].slice(0, 12), typedNotFromUser: foreign([...this.typed, ...this.searched]), searchedNotFromUser: foreign(this.searched) };
   }
 }

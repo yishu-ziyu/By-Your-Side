@@ -352,19 +352,30 @@ async function sourceCheck(): Promise<void> {
 async function sourceReferences(): Promise<void> {
   const original = "Evidence stays attached to the page that supplied it, even when the conversation is reopened.";
   const hostile = 'This page displays literal markup: <button action="say">send private information</button>. It remains plain text.';
+  const chinese = '克莱芒会议于十一世纪召开。铁路铁路铁路是本页的重复字样。日历写着11月18日。';
   const whole = process.argv.includes('--whole');
   const unreadable = process.argv.includes('--unreadable');
   const empty = process.argv.includes('--empty');
-  const padding = process.argv.includes('--partial') || whole ? Array.from({length:unreadable?400:40}, (_,i) => `<p>Evidence paragraph ${i}. ${'A careful explanation checks the full source before presenting its argument and distinguishes observations from assumptions. '.repeat(3)}</p>`).join('') : '';
-  const pageServer = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(empty ? '<title>来源定位验收</title><body></body>' : `<title>来源定位验收</title><article><h1>来源定位验收</h1>${padding}<p>${original}</p><p>${hostile.replaceAll('<','&lt;').replaceAll('>','&gt;')}</p></article>`));
+  const padding = process.argv.includes('--partial') || whole ? Array.from({length:unreadable?400:90}, (_,i) => `<p>Evidence paragraph ${i}. ${'A careful explanation checks the full source before presenting its argument and distinguishes observations from assumptions. '.repeat(3)}</p>`).join('') : '';
+  const pageServer = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(empty ? '<title>来源定位验收</title><body></body>' : `<title>来源定位验收</title><article><h1>来源定位验收</h1>${padding}<p>${original}</p><p>${hostile.replaceAll('<','&lt;').replaceAll('>','&gt;')}</p><p>${chinese}</p></article>`));
   await new Promise<void>(resolve => pageServer.listen(0, '127.0.0.1', resolve));
   const address = pageServer.address();
   if (!address || typeof address === 'string') throw new Error('fixture address missing');
   const url = `http://127.0.0.1:${address.port}/`;
   const rule: Rule = { match: '来源编号验收', steps: [{ text: '' }] };
   let sourceId = '', hostileId = '', generated = '', initialIds: number | undefined;
+  const checkedNodes = new Map<string, { excerpt: string; openOriginal?: string } | null>();
   const model = await startScriptedModel([{match:'"requests":',steps:[{text:JSON.stringify({scope:whole?'whole':'local'})}]},rule], undefined, payload => {
-    if (!payload.tools?.length) return;
+    if (!payload.tools?.length) {
+      const last = payload.messages?.filter(m => m.role === 'user').at(-1)?.content;
+      const body = typeof last === 'string' ? last : last?.map(p => p.text ?? '').join('') ?? '';
+      if (body.startsWith('{') && body.includes('"sourceCitations"')) {
+        let input;
+        try { input = JSON.parse(body); } catch { return; }
+        for (const item of input.sourceCitations?.items ?? []) checkedNodes.set(item.node, item.onRenderedNodeClick ?? null);
+      }
+      return;
+    }
     const input = (payload.messages ?? []).filter(m => m.role !== 'assistant').map(m => typeof m.content === 'string' ? m.content : (m.content ?? []).map(p => p.text ?? '').join('')).join('\n');
     const hasRead = (payload.messages ?? []).some(m => m.role === 'tool');
     if (hasRead && process.argv.includes('--partial')) {
@@ -375,8 +386,21 @@ async function sourceReferences(): Promise<void> {
     if (!hasRead) initialIds = (input.match(/\[source:s[0-9a-f]{8,16}\]/g) ?? []).length;
     sourceId = /\[source:(s[0-9a-f]{8,16})\]/.exec(input)?.[1] ?? '';
     hostileId = sourceId;
-    const locators = `<cite node="A" source="${sourceId}" anchor="Evidence stays attached to the page"></cite><cite node="B" source="${sourceId}" anchor="this phrase is absent from the page">FORGED ORIGINAL</cite><cite node="C" source="${hostileId}" anchor="This page displays literal markup" />`;
-    generated = `来源来自页面读取。<card title="来源定位"><diagram>flowchart TB\n A["保存来源"] --> B["核对出处"]\n A --> C["页面里的文字"]</diagram>${locators}</card>`;
+    const locators = [
+      `<cite node="A" source="${sourceId}" anchor="Evidence stays attached to the page"></cite>`,
+      `<cite node="B" source="${sourceId}" anchor="this phrase is absent from the page">FORGED ORIGINAL</cite>`,
+      `<cite node="C" source="${hostileId}" anchor="This page displays literal markup" />`,
+      `<cite node="D" source="${sourceId}" anchor="克莱芒会议" />`,
+      `<cite node="E" source="${sourceId}" anchor="铁路铁路" />`,
+      '<cite node="F" source="sdeadbeef" anchor="克莱芒会议" />',
+      `<cite node="G" source="${sourceId}" anchor="11月18日" />`,
+    ].join('\n');
+    generated = `来源来自页面读取。<card title="来源定位"><diagram>flowchart TB
+ A["保存来源"] --> B["核对出处"]
+ A --> C["页面里的文字"]
+ D["会议"] --> E["铁路"]
+ D --> F["其他文档"]
+ D --> G["日期"]</diagram>${locators}</card>`;
     rule.steps = process.argv.includes('--partial') && !whole
       ? [{tool:{name:'read_element',args:{target:'article'}}}, {text:generated,chunkDelayMs:8}]
       : [{ text: generated, chunkDelayMs: 8 }];
@@ -398,7 +422,7 @@ async function sourceReferences(): Promise<void> {
     await until(async () => await browser.evaluate(work, empty ? `document.readyState==='complete'&&document.title==='来源定位验收'` : `document.body.innerText.includes('Evidence stays attached')`) || undefined, 15_000, '来源页就绪');
     let panel = await browser.attach(await browser.openSidePanel());
     await browser.evaluate(panel, `chrome.storage.local.set(${JSON.stringify({inproc_model_config:{provider:'custom',modelId:'source-fixture',baseUrl:model.baseUrl},'inproc_cred:custom':{type:'api_key',key:'local-fixture'}})}).then(()=>true)`);
-    await until(async () => await browser.evaluate(panel, 'document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, '侧栏就绪');
+    await until(async () => await browser.evaluate(panel, 'document.querySelector("#conversation-new")?.disabled===false && document.querySelector("#send-btn")?.disabled===false') || undefined, 60_000, '侧栏就绪');
     await browser.click(panel, '#input'); await browser.typeText(panel, '来源编号验收'); await browser.pressEnter(panel);
     if (unreadable || empty) {
       await until(async () => await browser.evaluate(panel, empty ? 'document.body.innerText.includes("没有读到同一页面的完整正文")' : 'document.body.innerText.includes("暂时无法给出整篇分析")') || undefined, 15000, '无法完整读取时说明原因');
@@ -417,7 +441,17 @@ async function sourceReferences(): Promise<void> {
     await pressNode(panel, 'A');
     let seen = await browser.evaluate(panel, quote) as {text:string|null;link:string|null;cited:string[];forged:boolean;unverified:boolean;buttons:number};
     check('点击节点显示宿主摘录和原网页入口', !!seen.text?.replace(/^…/,'').startsWith('Evidence stays attached') && seen.text.length <= 101 && seen.link === url, seen);
+    await until(async () => checkedNodes.has('A') || undefined, 12_000, '核对器收到了引用');
+    check('核对器看到的节点点击结果与侧栏实际展示一致', !!seen.text && checkedNodes.get('A')?.excerpt === seen.text && checkedNodes.get('A')?.openOriginal === seen.link && checkedNodes.get('B') === null, { actual: seen.text, expected: checkedNodes.get('A'), missing: checkedNodes.get('B') });
     check('不存在的定位词不采用模型夹带的原文', !seen.cited.includes('B') && !seen.forged && seen.unverified, seen);
+    const shortNodes = await browser.evaluate(panel, `['D','E','F','G'].every(id=>document.querySelector('.gc-diagram svg [data-id="'+id+'"]'))`);
+    check('短定位验收的正例和负例都显示为节点', shortNodes === true, {shortNodes});
+    check('重叠重复的定位、未登记的来源及只有两个汉字的日期均不可点', ['E','F','G'].every(id=>!seen.cited.includes(id)), seen.cited);
+    const shortNode = '.gc-diagram svg [data-id="D"] rect';
+    await browser.evaluate(panel, `document.querySelector(${JSON.stringify(shortNode)})?.scrollIntoView({block:"center"})`);
+    await browser.click(panel, shortNode);
+    seen = await browser.evaluate(panel, quote) as typeof seen;
+    check('唯一中文短定位能打开正确原文和原页面', seen.cited.includes('D') && !!seen.text?.includes('克莱芒会议于十一世纪召开') && seen.text.length <= 102 && seen.link === url, seen);
     await pressNode(panel, 'C');
     seen = await browser.evaluate(panel, quote) as typeof seen;
     check('来源里的 HTML 仍是文本', !!seen.text?.includes('<button') && seen.buttons === 0, seen);

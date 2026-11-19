@@ -54,6 +54,15 @@ export interface EffectReport {
   volatile: boolean;
   alerts: string[];
   documentChanged?: true;
+  arrived?: EffectArrival;
+}
+
+export interface EffectArrival {
+  url: string;
+  title: string;
+  readiness: string;
+  note?: string;
+  text?: string;
 }
 
 export type PageAppeared = { text: string; ms: number } | { redrawn: true; ms: number };

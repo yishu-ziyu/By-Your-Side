@@ -5,12 +5,17 @@ import { withTimeout } from "../timeout.js";
 import { hasPageBaseline } from "../page-changes.js";
 import { readPageChanges } from "./snapshot.js";
 import { isOwnBackupDownload } from "../../shared/memory-backup.js";
+import { ERROR_PAGE_NOTE, readCurrentDocument, waitForInteractive } from "./page-readiness.js";
 
 const CONTENT_FILE = "content-effect.js";
 
 const changedRoots = new WeakMap<EffectReport, { roots: Array<{ sel: string; field?: true }> | "many"; since: number }>();
 
 const effectStarts = new Map<string, number>();
+
+const effectDocuments = new Map<string, string>();
+
+const ARRIVE_TIMEOUT_MS = 10_000;
 
 interface EffectInput {
   token: string;
@@ -56,6 +61,9 @@ export async function beginEffect(
 
     if (effectStarts.size > 50) effectStarts.delete(effectStarts.keys().next().value!);
     effectStarts.set(token, startedAt);
+    const documentId = (await readCurrentDocument(tabId))?.documentId;
+
+    if (documentId) effectDocuments.set(token, documentId);
 
     return token;
   } catch {
@@ -97,6 +105,7 @@ export async function collectEffect(tabId: number, token: string | null, mark?: 
     return final;
   } finally {
     effectStarts.delete(token);
+    effectDocuments.delete(token);
 
     try {
       await callPage(tabId, (t: string) => window.__sideagent?.effect?.end(t), [token]);
@@ -113,11 +122,14 @@ async function withDocumentChange(tabId: number, token: string, report: EffectRe
 
   if (!moved && !replaced) return report;
   const base = report ?? EMPTY_EFFECT_REPORT;
+  const readiness = replaced ? (await waitForInteractive(tabId, ARRIVE_TIMEOUT_MS, { previousDocumentId: effectDocuments.get(token) })).readiness : "complete";
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   const url = URL.canParse(tab?.url ?? pageUrl) ? new URL(tab?.url ?? pageUrl) : null;
   const where = [tab?.title ? `"${tab.title.slice(0, 120)}"` : "", url ? `${url.origin}${url.pathname}` : ""].filter(Boolean).join(" — ");
+  const arrived = { url: tab?.url ?? pageUrl, title: tab?.title ?? "", readiness, ...(readiness === "error_page" ? { note: ERROR_PAGE_NOTE } : {}) };
+  const state = readiness === "error_page" ? `; ${ERROR_PAGE_NOTE}` : readiness === "timeout" ? "; it was still loading when this step ended" : "";
 
-  return { ...base, changed: true, documentChanged: true, evidence: [...base.evidence, where ? `the page loaded a new document: ${where}` : "the page loaded a new document"] };
+  return { ...base, changed: true, documentChanged: true, arrived, evidence: [...base.evidence, `${where ? `the page loaded a new document: ${where}` : "the page loaded a new document"}${state}`] };
 }
 
 const PAGE_CHANGES_TIMEOUT_MS = 1500;

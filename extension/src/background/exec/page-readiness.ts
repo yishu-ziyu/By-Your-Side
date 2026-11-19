@@ -25,6 +25,12 @@ export async function readCurrentDocument(tabId:number) {
   return (await probeDocument(tabId)).doc;
 }
 
+export async function showsErrorPage(tabId:number):Promise<boolean> {
+  const {doc,error}=await probeDocument(tabId);
+
+  return !doc&&!!error&&ERROR_PAGE.test(error);
+}
+
 function unscriptableByDesign(url:string|undefined):boolean { return isRestrictedPage(url) || url === 'about:blank'; }
 
 export const ERROR_PAGE_NOTE="Chrome shows its own error page for this address (for example the site could not be reached); the page did not open.";

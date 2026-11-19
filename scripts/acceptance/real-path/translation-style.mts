@@ -64,6 +64,7 @@ try {
 
   await rp.click(settings, '[data-translation-style="custom"]');
   await rp.click(settings, "#translation-style-text"); await rp.typeText(settings, CUSTOM);
+  await rp.evaluate(settings, 'document.getElementById("translation-style-save").scrollIntoView({block:"center",behavior:"instant"}); true');
   await rp.click(settings, "#translation-style-save");
   await until(async () => await rp.evaluate(settings, `chrome.storage.local.get("translation_style").then(s => s.translation_style?.text === ${JSON.stringify(CUSTOM)})`) || null, 5000, "自定义风格已保存");
   await rp.screenshot(settings, join(out, "c-settings-custom.png"));

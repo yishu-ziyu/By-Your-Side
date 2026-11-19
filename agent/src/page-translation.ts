@@ -151,7 +151,7 @@ export async function runPageTranslation(
 
   try {
     arm();
-    let latest = await call({...request, action: 'begin', document: undefined});
+    let latest = await call({...request, action: 'begin'});
     const target = {tabId: latest.tabId, document: latest.document};
     settle = {...target, action: 'settle'};
     let stalledBatches = 0, started = 0, acknowledgedWrite = false, halt = false, throttles = 0, cooldownUntil = 0;

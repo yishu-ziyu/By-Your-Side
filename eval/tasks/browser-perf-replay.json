@@ -1,0 +1,193 @@
+[
+  {
+    "n": 3,
+    "url": "https://ueaj.substack.com/p/how-i-got-into-ai-research",
+    "say": [
+      "当前这个页面的标题是什么？作者是谁？",
+      "可以打开一下这个作者的个人网站，或者说他的一些其他的社交媒体吗？"
+    ],
+    "onPage": [
+      1
+    ],
+    "expect": {
+      "1": {
+        "answer": [
+          "How I got into AI research",
+          "ueaj"
+        ]
+      },
+      "2": {
+        "answer": [
+          "ueaj\\.dev|x\\.com/_ueaj|@_ueaj"
+        ]
+      }
+    },
+    "readyText": "How I got into AI research"
+  },
+  {
+    "n": 5,
+    "url": "about:blank",
+    "say": [
+      "打开中文维基百科 https://zh.wikipedia.org ，用页面上的搜索框搜索“故宫”，打开“故宫”这个条目。"
+    ],
+    "expect": {
+      "1": {
+        "tab": [
+          "zh\\.wikipedia\\.org/wiki/(%E6%95%85%E5%AE%AB|故宫)"
+        ]
+      }
+    }
+  },
+  {
+    "n": 6,
+    "url": "https://zh.wikipedia.org/wiki/11%E6%9C%8818%E6%97%A5",
+    "say": [
+      "查这页的11月18日历史事件：拉脱维亚独立和《汽船威利号》分别发生在哪一年？",
+      "把这两个事件用 Mermaid 时间线或流程图呈现，在图里能点开原文核对。"
+    ],
+    "expect": {
+      "1": {
+        "answer": [
+          "(?:拉[脱脫][维維][亚亞])[^\\d。；;\\n]{0,42}1918|1918[^\\d。；;\\n]{0,42}(?:拉[脱脫][维維][亚亞])",
+          "(?:汽船|威利|米奇|米老鼠)[^\\d。；;\\n]{0,42}1928|1928[^\\d。；;\\n]{0,42}(?:汽船|威利|米奇|米老鼠)"
+        ]
+      },
+      "2": {
+        "replyHas": [
+          ".gc-diagram:has(.gc-cites > li:nth-child(2)) svg [data-cited]"
+        ],
+        "answer": [
+          "1918",
+          "1928"
+        ]
+      }
+    },
+    "readyText": "1928"
+  },
+  {
+    "n": 8,
+    "url": "https://paulgraham.com/ds.html",
+    "say": [
+      "文章的论证结构是什么"
+    ],
+    "onPage": [
+      1
+    ],
+    "expect": {
+      "1": {
+        "answer": [
+          "论点|论证",
+          "Scale|规模|扩展|招揽|反面|反例"
+        ]
+      }
+    },
+    "readyText": "One of the most common types of advice"
+  },
+  {
+    "n": 11,
+    "url": "https://claude.com/resources/articles/the-ai-native-sdlc-playbook",
+    "say": [
+      "打开youtube",
+      "点击第一行第二个"
+    ],
+    "onPage": [
+      2
+    ],
+    "expect": {
+      "1": {
+        "tab": [
+          "youtube\\.com"
+        ]
+      },
+      "2": {
+        "answer": [
+          "未登录|没有.{0,10}(视频|推荐)|空(状态|的)"
+        ]
+      }
+    },
+    "readyText": "Code is no longer the bottleneck"
+  },
+  {
+    "n": 13,
+    "url": "https://www.bilibili.com/video/BV1XNtJ6UEmm/",
+    "say": [
+      "获得当前视频的字幕"
+    ],
+    "onPage": [
+      1
+    ],
+    "expect": {
+      "1": {
+        "answer": [
+          "没有.{0,8}字幕|字幕.{0,10}(为空|是空的|为 ?0|不存在)"
+        ]
+      }
+    },
+    "readyText": "和曾鸣聊产业史观"
+  },
+  {
+    "n": 14,
+    "url": "https://paulgraham.com/ds.html",
+    "say": [
+      "total = 21\npassed = 12\nrate = passed / total * 100\nprint(f\"Agent 成功率：{rate:.1f}%\")【这个的结果会是什么？为什么】"
+    ],
+    "expect": {
+      "1": {
+        "answer": [
+          "57\\.1\\s*%"
+        ]
+      }
+    },
+    "readyText": "One of the most common types of advice"
+  },
+  {
+    "n": 16,
+    "url": "https://nathanbenaich.substack.com/p/state-of-ai-2026",
+    "say": [
+      "只翻译这篇文章的前两段正文，译文发在侧栏。",
+      "把这两段译文以中英对照放回各自的原文旁，其他段落保持原样。"
+    ],
+    "onPage": [
+      1,
+      2
+    ],
+    "expect": {
+      "1": {
+        "answer": [
+          "第[九9]|第.{0,2}[九9]",
+          "十年|10.{0,2}年",
+          "研究"
+        ],
+        "page": [
+          "After months of research and revisions",
+          "For nearly a decade, this report has been a labor of love",
+          "Every day brings new papers"
+        ],
+        "pageSelectorCounts": [
+          {
+            "selector": ".body.markup [data-bys-translation]",
+            "count": 0
+          }
+        ]
+      },
+      "2": {
+        "page": [
+          "After months of research and revisions(?:(?!View the 2026 Report)[\\s\\S]){0,2000}第\\s*(?:九|9)",
+          "For nearly a decade(?:(?!Every day brings new papers)[\\s\\S]){0,1700}(?:十年|10\\s*年)",
+          "Every day brings new papers"
+        ],
+        "pageSelectorCounts": [
+          {
+            "selector": "[data-bys-translation=\"true\"]",
+            "count": 2
+          },
+          {
+            "selector": ".body.markup > p:nth-of-type(1) > [data-bys-translation=\"true\"], .body.markup > p:nth-of-type(3) > [data-bys-translation=\"true\"]",
+            "count": 2
+          }
+        ]
+      }
+    },
+    "readyText": "After months of research and revisions"
+  }
+]

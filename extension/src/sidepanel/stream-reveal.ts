@@ -214,8 +214,30 @@ function fadeSpan(delay: number): HTMLSpanElement {
   return span;
 }
 
+function disjointFades(fades: Fade[]): Fade[] {
+  if (fades.length < 2) return fades;
+  const newestFirst = [...fades].sort((a, b) => b.at - a.at);
+  const boundaries = [...new Set(fades.flatMap(({ from, to }) => [from, to]))].sort((a, b) => b - a);
+  const ranges: Fade[] = [];
+
+  for (let i = 1; i < boundaries.length; i += 1) {
+    const from = boundaries[i]!;
+    const to = boundaries[i - 1]!;
+    const fade = newestFirst.find((range) => range.from <= from && to <= range.to);
+
+    if (!fade) continue;
+    const previous = ranges.at(-1);
+
+    if (previous?.from === to && previous.at === fade.at) previous.from = from;
+    else ranges.push({ from, to, at: fade.at });
+  }
+
+  return ranges;
+}
+
 function wrapRanges(nodes: ChildNode[], fades: Fade[], now: number): void {
   if (!fades.length) return;
+  const ranges = disjointFades(fades);
   const texts = collectTexts(nodes);
   let offset = 0;
 
@@ -224,18 +246,16 @@ function wrapRanges(nodes: ChildNode[], fades: Fade[], now: number): void {
     const end = offset + node.data.length;
     offset = end;
     if (node.parentElement?.closest(".gen-card")) continue;
-    const cuts: Fade[] = [];
 
-    for (const fade of fades) {
-      const cut = { from: Math.max(fade.from, start), to: Math.min(fade.to, end), at: fade.at };
+    for (const range of ranges) {
+      if (range.to <= start) break;
+      const from = Math.max(range.from, start);
+      const to = Math.min(range.to, end);
 
-      if (cut.to > cut.from) cuts.unshift(cut);
-    }
-
-    for (const cut of cuts) {
-      const tail = node.splitText(cut.from - start);
-      tail.splitText(cut.to - cut.from);
-      const span = fadeSpan(Math.round(now - cut.at));
+      if (to <= from) continue;
+      const tail = node.splitText(from - start);
+      tail.splitText(to - from);
+      const span = fadeSpan(Math.round(now - range.at));
       tail.replaceWith(span);
       span.append(tail);
     }
