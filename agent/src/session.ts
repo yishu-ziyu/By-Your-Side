@@ -167,6 +167,23 @@ const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
 
 const PRE_OBSERVATION_TEXT_MAX = 12_000;
 const PRE_OBSERVATION_MAIN_TEXT_MAX = 30_000;
+
+function mainTextLinksBlock(value: unknown): string {
+  if (!value || typeof value !== "object" || !("links" in value) || !Array.isArray(value.links)) return "";
+  const lines: string[] = [];
+  let total = 0;
+
+  for (const item of value.links) {
+    if (!item || typeof item !== "object" || !("text" in item) || !("href" in item) || typeof item.text !== "string" || typeof item.href !== "string") continue;
+    const line = `- ${item.text.trim()}: ${item.href.trim()}`;
+
+    if (total + line.length > 1_500) break;
+    lines.push(line);
+    total += line.length + 1;
+  }
+
+  return lines.length ? `[Links in main text]\n${lines.join("\n")}` : "";
+}
 const AX_TREE_SOURCE_MIN_CHARS = 400;
 const WHOLE_PAGE_TRANSLATION = /^(?:请?(?:把(?:这个页面|当前页面|这一页|整页)翻译成(?:简体)?中文|(?:重新)?翻译(?:这个页面|当前页面|这一页|整页))(?:[，,]\s*只保留译文)?[。！!]?|(?:please )?translate (?:this|the current) (?:web)?page (?:to|into) (?:simplified )?chinese[.!]?)$/iu; // WHY: hardcode-ok 预取早于工具授权，会把网页发给服务商，只允许完整的整页命令；其他说法仍由正常翻译工具处理。
 const TRANSLATION_PREFETCH_BLOCKS = 16;
@@ -1694,6 +1711,7 @@ return;}
         : freshOrRetriedMain;
 
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
+      const mainLinks = mainTextLinksBlock(main);
       const preview = pageReading(main);
       let wholeRead = false;
       const readablePage = /^(?:https?|file):/i.test(preview?.url ?? context.url ?? '');
@@ -1747,6 +1765,7 @@ return;}
       const body = [
         this.sourcePreparationOnly && '[SOURCE NOT READY] The full source is not available. The host permits only same-page reading and wait_for_condition. If the user requested waiting for future results, register an independently checkable condition and end this fragment. Do not analyze, mark or deliver a final answer until the source is ready. If waiting was not authorized, explain that the source is unavailable.',
         text && (total > text.length ? `${citedText}\n[This is the first ${text.length} of ${total} characters of the page's main text. Read further with snapshot or read_element only if the question needs a later part. Source catalog: unavailable for this partial read; read_element on the complete intended source registers source IDs.]` : citedText),
+        text && !this.sourcePreparationOnly && mainLinks,
         ax && `${text ? "[Accessibility tree of the same page, with element refs]\n" : ""}${clip(ax, "Accessibility tree")}`,
       ].filter(Boolean).join("\n\n");
 
