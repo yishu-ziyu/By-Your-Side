@@ -379,6 +379,21 @@ export function recordUnavailableGoalCheck(model: Model<Api>, input: GoalCheckIn
     verdict: { status: "unavailable", ...(reason ? { reason } : {}) }, ms: Date.now() - (trace.startedAt ?? Date.now()) });
 }
 
+function pointedTargetOutcome(input: GoalCheckInput, parsed: GoalReply): { verdict: GoalVerdict; adjustedBy: string } | null {
+  if (parsed.goalOnPage !== true || parsed.pointedFound !== false || input.verification) return null;
+  const strayed = strayedFrom(input);
+  if (strayed && parsed.status !== "blocked" && parsed.status !== "needs_user") {
+    if (asksUser(input.lastReply) || input.replyForm) return { verdict: { status: "needs_user", remaining: "等你说指的是哪一个" }, adjustedBy: "strayed+asksUser" };
+    return { verdict: { status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: strayed.finding, correction: strayed.correction }, adjustedBy: "strayed" };
+  }
+  // WHY: when the user pointed at something on goalPage and goal_check already confirmed it is absent (without straying or claiming false success), looping continue with repair=complete_task forces repeated empty-page retries.
+  if (strayed || parsed.status !== "continue" || parsed.repair === "correct_result"
+    || (input.page === null && !(input.observations?.length ?? 0))
+    || (parsed.repair !== "complete_task" && parsed.verificationSubject !== "answer")) return null;
+  if (asksUser(input.lastReply) || input.replyForm) return { verdict: { status: "needs_user", remaining: "等你说下一步怎么做" }, adjustedBy: "pointed_missing+asksUser" };
+  return { verdict: { status: "blocked", cause: "missing", remaining: plainBlockedReason("missing") }, adjustedBy: "pointed_missing" };
+}
+
 export async function checkGoal(host: SideCallHost, model: Model<Api>, input: GoalCheckInput, signal: AbortSignal, headers?: Record<string, string>, trace?: GoalCheckTraceContext): Promise<GoalVerdict> {
   const startedAt = Date.now();
   let side: SideCallRecord | undefined;
@@ -447,11 +462,8 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     if (navigationMismatch && !input.verification && (parsed.status === "done" || parsed.status === "continue") && !asksUser(input.lastReply) && !input.replyForm) return finish(navigationMismatch, "model", undefined, "navigation_constraint");
 
 
-    const strayed = strayedFrom(input);
-    if (strayed && parsed.goalOnPage === true && parsed.pointedFound === false && !input.verification && parsed.status !== "blocked" && parsed.status !== "needs_user") {
-      if (asksUser(input.lastReply) || input.replyForm) return finish({ status: "needs_user", remaining: "等你说指的是哪一个" }, "model", undefined, "strayed+asksUser");
-      return finish({ status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: strayed.finding, correction: strayed.correction }, "model", undefined, "strayed");
-    }
+    const pointedOutcome = pointedTargetOutcome(input, parsed);
+    if (pointedOutcome) return finish(pointedOutcome.verdict, "model", undefined, pointedOutcome.adjustedBy);
 
     const remaining = parsed.remaining?.trim() ? parsed.remaining.trim().replace(/\s+/g, " ").slice(0, 60) : null;
 
