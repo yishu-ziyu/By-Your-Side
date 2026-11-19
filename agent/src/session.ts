@@ -364,7 +364,7 @@ export class BrowserAgentSession {
     }};
   }
 
-  private translationIntent: { key: string; result: Promise<TranslationIntent> } | null = null;
+  private translationIntent: { key: string; result: Promise<TranslationIntent>; abort?: AbortController } | null = null;
   private translationTargets: { key: string; result: Promise<boolean> } | null = null;
 
   private translationInput() {
@@ -398,10 +398,15 @@ export class BrowserAgentSession {
       this.translationIntent = { key, result: pending };
       pending.catch(() => { if (this.translationIntent?.result === pending) this.translationIntent = null; });
     }
+    const entry = this.translationIntent;
+    const onAbort = () => entry.abort?.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
     let intent: TranslationIntent;
-    try { intent = await this.translationIntent.result; } catch {
+    try { intent = await entry.result; } catch {
       beforeDispatch();
       throw new Error('网页翻译授权核对超时或暂时失败，未改动页面，请重试。');
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
     }
     beforeDispatch();
     if (!intent) throw new Error('本轮用户没有明确授权把译文写进网页，未改动页面。需要在侧栏或语音交付时，读取指定原文并直接给出译文。');
@@ -1712,7 +1717,7 @@ return;}
         : freshOrRetriedMain;
 
       if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
-      const mainLinks = mainTextLinksBlock(main);
+      let mainLinks = mainTextLinksBlock(main);
       const preview = pageReading(main);
       let wholeRead = false;
       const readablePage = /^(?:https?|file):/i.test(preview?.url ?? context.url ?? '');
@@ -1729,8 +1734,9 @@ return;}
         }
         if (scope === 'whole') {
           const exceedsLimit = (preview?.totalChars ?? 0) > WHOLE_SOURCE_MAX_CHARS;
-          const readFull = () => (this.rpc!.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
-          const full = !exceedsLimit ? pageReading(await readFull().then(res => res ?? readFull())) : null;
+          const readFull = () => (this.rpc!.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown; links?: unknown }>).catch(() => null);
+          const fullRaw = !exceedsLimit ? await readFull().then(res => res ?? readFull()) : null;
+          const full = pageReading(fullRaw);
           if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
           if (!full?.text.trim() || full.url !== (preview?.url ?? context.url) || full.totalChars !== full.text.length) {
             if (this.continuationEnabled() && role === 'current' && !exceedsLimit) {
@@ -1744,6 +1750,7 @@ return;}
             }
           } else {
             main = full;
+            mainLinks = mainTextLinksBlock(fullRaw);
             wholeRead = true;
             if (role === 'current') this.goalLedger.recordWholeSource(full.url, full.text);
             this.runTrace.record('page_source_complete', { tabId, url: full.url, chars: full.text.length });
@@ -2099,8 +2106,9 @@ return;}
     const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
 
     if (!host || !model) return;
-    const pending = translationDestination(host, model, requests, previous);
-    this.translationIntent = { key, result: pending };
+    const abort = new AbortController();
+    const pending = translationDestination(host, model, requests, previous, abort.signal);
+    this.translationIntent = { key, result: pending, abort };
     pending.catch(() => { if (this.translationIntent?.result === pending) this.translationIntent = null; });
   }
 
@@ -2154,6 +2162,8 @@ return;}
   private dropTranslationPrefetch(): void {
     this.translationPrefetch?.abort();
     this.translationPrefetch = null;
+    this.translationIntent?.abort?.abort();
+    if (this.translationIntent?.abort) this.translationIntent = null;
   }
 
   private translationModel(): string | null {
@@ -2776,6 +2786,7 @@ return {kind:'model'};
 
   holdForUser(opts?: { abortStream?: boolean }): AgentRunState {
     this.runTrace.record("takeover", { abortStream: opts?.abortStream });
+    this.dropTranslationPrefetch();
 
     for(const record of this.pendingCorrections.filter(candidate=>candidate.input===null))this.unreserveCorrection(record);
 
