@@ -110,7 +110,7 @@ function refOf(tabId: number, backendNodeId: number): string {
   return `@${backendNodeId} `;
 }
 
-export async function hiddenFieldHint(tabId: number, where: { backendNodeId: number } | { target: string }): Promise<string> {
+export async function hiddenFieldHint(tabId: number, where: { backendNodeId: number } | { target: string }, action: "fill" | "click" = "fill"): Promise<string> {
   const objectGroup = `bys-reveal-${crypto.randomUUID()}`;
 
   try {
@@ -137,7 +137,10 @@ export async function hiddenFieldHint(tabId: number, where: { backendNodeId: num
       named.push(`${refOf(tabId, node.backendNodeId)}${item.role}（${item.facts.map(fact => FACT_TEXT[fact]).join("，")}）${item.name ? `，名字：${wrapPageContent(item.name)}` : ""}`);
     }
 
-    return `。这个输入框在页面上还没显示出来，没有写入，也没有点任何东西。可能让它出现的可见控件：${named.join("；或 ")}。先点它，等输入框出现后再填写。`;
+    const subject = action === "click" ? "这个元素在页面上还没显示出来，没有点击，也没有点任何东西" : "这个输入框在页面上还没显示出来，没有写入，也没有点任何东西";
+    const follow = action === "click" ? "先点它，等目标出现后再操作。" : "先点它，等输入框出现后再填写。";
+
+    return `。${subject}。可能让它出现的可见控件：${named.join("；或 ")}。${follow}`;
   } catch {
     return "";
   } finally {

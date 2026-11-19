@@ -1170,7 +1170,10 @@ async function locatePointerTarget(
             if (fact === "not_executed") throw e;
             throw Object.assign(new Error(`ref @${ref} 量不到位置，结果未知。请重新 snapshot 看页面：操作没生效就用当前的 ref 再做一次（${oneLine(e)}）`),{executionFact:fact});
           }
-          throw notExecuted(new Error(`ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${oneLine(e)}）`));
+          const reason = oneLine(e);
+          const hint = await hiddenFieldHint(tabId, { backendNodeId }, "click");
+
+          throw notExecuted(new Error(hint ? `ref @${ref} 点击失败（${reason}）${hint}` : `ref @${ref} 已失效，操作未执行。请重新 snapshot，确认当前目标并使用新的 ref，不要重试旧 ref（${reason}）`));
         }
       }
     }
@@ -1185,7 +1188,7 @@ async function locatePointerTarget(
       );
 
       if (!res || !res.ok) {
-        throw new Error(res?.ok === false ? res.error : `未找到目标元素：${target}`);
+        throw new Error(res?.ok === false ? res.error + await hiddenFieldHint(tabId, { target }, "click") : `未找到目标元素：${target}`);
       }
 
       if (!isDomRect(res.rect)) throw new Error(`未找到目标元素：${target}`);
