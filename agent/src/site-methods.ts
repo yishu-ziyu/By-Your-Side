@@ -141,7 +141,7 @@ export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Pro
   const track = !wanted ? ranked[0] : ranked.find(item => lang(item) === wanted) ?? ranked.find(item => lang(item).split("-")[0] === wanted.split("-")[0]);
   const available = tracks.map(item => ({ language: item.lang, label: item.label, automatic: item.auto === true }));
   if (!track && !tracks.length && result.loginRequired === true) return { ...base, status: "login_required", reason: "The site only provides subtitles after sign-in and this browser is not signed in. This does not mean the video has no subtitles.", evidence: result.text };
-  if (!track) return { ...base, status: tracks.length ? "partial" : result.lists ? "no_captions" : "unavailable", reason: tracks.length ? "No readable track matches the requested language; available lists the tracks this video has." : "No verified readable caption track was found.", evidence: result.text, available };
+  if (!track) return { ...base, ...noCaptionOutcome(tracks.length, result.lists), evidence: result.text, available };
   let body = await call("fetch", { url: track.url, method: "GET" });
   await unchanged();
   if (body?.ok !== true || typeof body.text !== "string") return { ...base, status: "unavailable", reason: "The player's caption URL could not be read.", httpStatus: body?.status, evidence: result.text };
@@ -155,4 +155,11 @@ export async function runSiteMethod(params: Fields, runtime: MethodRuntime): Pro
   }
   const parsed = transcript(body.text);
   return { ...base, status: body.truncated === true || !parsed ? "partial" : "observed", language: track.lang, automatic: track.auto === true, videoId: result.videoId, ...(result.title ? { title: result.title } : {}), ...(result.part ? { part: result.part } : {}), trackSource: track.source, available, format: parsed?.format ?? "unparsed", text: parsed?.text ?? body.text, truncated: body.truncated === true, scope: "Caption text has already been fetched from this video's selected player track. For another language, call this method again with language from available. This is one source, not independent corroboration. Do not fetch the same track again. Automatic captions may contain transcription errors." };
+}
+
+function noCaptionOutcome(tracksCount: number, lists: unknown): { status: "partial" | "no_captions" | "unavailable"; reason: string } {
+  if (tracksCount) return { status: "partial", reason: "No readable track matches the requested language; available lists the tracks this video has." };
+  if (lists) return { status: "no_captions", reason: "Already checked the player via video_captions: this video's caption list is empty (no subtitles available). Report this directly without calling video_captions or probing subtitle APIs again." };
+
+  return { status: "unavailable", reason: "No verified readable caption track was found." };
 }
