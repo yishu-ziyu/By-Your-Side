@@ -3138,7 +3138,8 @@ return this.displayWork?.catch(()=>{})??Promise.resolve();}
               this.finishAgentEnd(event);
             }
 
-            void (checkGoal ? this.checkGoalAfterDelivery(event) : Promise.resolve()).then(() => this.checkFactsAfterDelivery(event));
+            if (checkGoal) void this.checkGoalAfterDelivery(event);
+            void this.checkFactsAfterDelivery(event);
           }
 
           break;
