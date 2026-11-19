@@ -15,6 +15,9 @@ const url = `http://127.0.0.1:${siteAddress(server).port}/article`;
 
 const events: Array<{ kind: string; at: number }> = [];
 const t0 = Date.now();
+let holdSecondIntent = false;
+let secondMainSeen: (() => void) | null = null;
+const secondMainReady = new Promise<void>(resolve => { secondMainSeen = resolve; });
 const model = await startScriptedModel([
   {
     match: "把前两段译文双语放进网页",
@@ -26,10 +29,31 @@ const model = await startScriptedModel([
       { text: "前两段已双语写入。" },
     ],
   },
-], { delayMs: 40 }, payload => {
+  {
+    match: "把第二段再双语写进网页",
+    pageTranslationTargetsMatch: true,
+    pageTranslationDestination: "scoped",
+    pageTranslationParagraphs: [2],
+    steps: [
+      { delayMs: 20, tool: { name: "page_translation", args: { action: "translate", mode: "bilingual", scope: { url, quotes: ["The harbor received the second instrument on Friday."] } } } },
+      { text: "第二段已双语写入。" },
+    ],
+  },
+  {
+    match: "简短回一句你好",
+    steps: [{ text: "你好，已立刻切到新问题。" }],
+  },
+], { delayMs: 40 }, async payload => {
   const sys = (payload.messages ?? []).filter(m => m.role === "system").map(m => typeof m.content === "string" ? m.content : "").join("\n");
-  if (sys.startsWith("Classify permission to write translations into a webpage.")) events.push({ kind: "intent", at: Date.now() - t0 });
-  else if (payload.tools?.length) events.push({ kind: "main", at: Date.now() - t0 });
+  if (sys.startsWith("Classify permission to write translations into a webpage.")) {
+    events.push({ kind: "intent", at: Date.now() - t0 });
+    if (holdSecondIntent) {
+      await new Promise(resolve => setTimeout(resolve, 4500));
+    }
+  } else if (payload.tools?.length) {
+    events.push({ kind: "main", at: Date.now() - t0 });
+    if (holdSecondIntent) secondMainSeen?.();
+  }
 });
 
 const rp = await launchRealPath();
@@ -60,6 +84,23 @@ try {
   const gapMs = intentEvents[0] && firstMain ? intentEvents[0].at - firstMain.at : null;
   check("网页成功写入两段双语译文", written === 2, { written });
   check("翻译授权分类器在主模型思考期间提前并行启动且仅调用一次", intentEvents.length === 1 && gapMs !== null && gapMs < 350, { intentCount: intentEvents.length, gapMs, events });
+
+  holdSecondIntent = true;
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, "把第二段再双语写进网页");
+  await rp.pressEnter(panel);
+  await Promise.race([secondMainReady, new Promise((_, rej) => setTimeout(() => rej(new Error("未等到第二轮主模型发出工具调用")), 15_000))]);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  await until(async () => await rp.evaluate(panel, 'document.querySelector("#send-btn")?.classList.contains("stopping")'), 10_000, "侧栏出现停止按钮");
+  const stopClickedAt = Date.now();
+  await rp.click(panel, "#send-btn");
+  await until(async () => await rp.evaluate(panel, `${ready} && !document.querySelector("#send-btn")?.classList.contains("stopping")`), 15_000, "停止后恢复就绪");
+  await rp.click(panel, "#input");
+  await rp.typeText(panel, "简短回一句你好");
+  await rp.pressEnter(panel);
+  await until(async () => await rp.evaluate(panel, `[...document.querySelectorAll("#messages .msg.assistant")].some(n => n.innerText.includes("你好，已立刻切到新问题"))`), 15_000, "新问题回答显示");
+  const recoverElapsedMs = Date.now() - stopClickedAt;
+  check("预热授权挂起时点击停止会立刻中止，不再卡住后续新请求", recoverElapsedMs < 2500, { recoverElapsedMs });
 } catch (error) {
   check("流程完成", false, String(error));
 } finally {
