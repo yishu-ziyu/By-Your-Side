@@ -386,10 +386,10 @@ function pointedTargetOutcome(input: GoalCheckInput, parsed: GoalReply): { verdi
     if (asksUser(input.lastReply) || input.replyForm) return { verdict: { status: "needs_user", remaining: "等你说指的是哪一个" }, adjustedBy: "strayed+asksUser" };
     return { verdict: { status: "continue", verifiedByHost: true, verificationSubject: "answer", repair: "ask_user", remaining: "说清没找到什么，问你要不要换个做法", finding: strayed.finding, correction: strayed.correction }, adjustedBy: "strayed" };
   }
-  // WHY: when the user pointed at something on goalPage and goal_check already confirmed it is absent (without straying or claiming false success), looping continue with repair=complete_task forces repeated empty-page retries.
-  if (strayed || parsed.status !== "continue" || parsed.repair === "correct_result"
+  // WHY: when the user pointed at something on goalPage and goal_check already confirmed it is absent (without straying, truncating the page, or requesting a result correction), looping continue with repair=complete_task forces repeated empty-page retries.
+  if (strayed || parsed.status !== "continue" || parsed.repair !== "complete_task"
     || (input.page === null && !(input.observations?.length ?? 0))
-    || (parsed.repair !== "complete_task" && parsed.verificationSubject !== "answer")) return null;
+    || (input.page?.text.length ?? 0) > PAGE_CHARS) return null;
   if (asksUser(input.lastReply) || input.replyForm) return { verdict: { status: "needs_user", remaining: "等你说下一步怎么做" }, adjustedBy: "pointed_missing+asksUser" };
   return { verdict: { status: "blocked", cause: "missing", remaining: plainBlockedReason("missing") }, adjustedBy: "pointed_missing" };
 }
