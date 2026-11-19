@@ -356,7 +356,7 @@ async function sourceReferences(): Promise<void> {
   const whole = process.argv.includes('--whole');
   const unreadable = process.argv.includes('--unreadable');
   const empty = process.argv.includes('--empty');
-  const padding = process.argv.includes('--partial') || whole ? Array.from({length:unreadable?400:40}, (_,i) => `<p>Evidence paragraph ${i}. ${'A careful explanation checks the full source before presenting its argument and distinguishes observations from assumptions. '.repeat(3)}</p>`).join('') : '';
+  const padding = process.argv.includes('--partial') || whole ? Array.from({length:unreadable?400:90}, (_,i) => `<p>Evidence paragraph ${i}. ${'A careful explanation checks the full source before presenting its argument and distinguishes observations from assumptions. '.repeat(3)}</p>`).join('') : '';
   const pageServer = createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(empty ? '<title>来源定位验收</title><body></body>' : `<title>来源定位验收</title><article><h1>来源定位验收</h1>${padding}<p>${original}</p><p>${hostile.replaceAll('<','&lt;').replaceAll('>','&gt;')}</p><p>${chinese}</p></article>`));
   await new Promise<void>(resolve => pageServer.listen(0, '127.0.0.1', resolve));
   const address = pageServer.address();
