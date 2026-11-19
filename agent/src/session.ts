@@ -375,8 +375,16 @@ export class BrowserAgentSession {
 
     const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
     if (!host || !model) throw new Error('网页翻译授权无法核对，未改动页面。');
-    if (this.translationIntent?.key !== key) this.translationIntent = { key, result: translationDestination(host, model, requests, previous, signal) };
-    const intent = await this.translationIntent.result;
+    if (this.translationIntent?.key !== key) {
+      const pending = translationDestination(host, model, requests, previous, signal);
+      this.translationIntent = { key, result: pending };
+      pending.catch(() => { if (this.translationIntent?.result === pending) this.translationIntent = null; });
+    }
+    let intent: TranslationIntent;
+    try { intent = await this.translationIntent.result; } catch {
+      beforeDispatch();
+      throw new Error('网页翻译授权核对超时或暂时失败，未改动页面，请重试。');
+    }
     beforeDispatch();
     if (!intent) throw new Error('本轮用户没有明确授权把译文写进网页，未改动页面。需要在侧栏或语音交付时，读取指定原文并直接给出译文。');
     if (intent.destination === 'whole' && !request.scope) return { beforeDispatch };
@@ -384,9 +392,16 @@ export class BrowserAgentSession {
     if (intent.paragraphs) return { beforeDispatch, paragraphs: intent.paragraphs };
 
     const targetKey = JSON.stringify([key, request.scope]);
-    if (this.translationTargets?.key !== targetKey) this.translationTargets = { key: targetKey,
-      result: namedTranslationTargets(host, model, requests, previous, request.scope.quotes, signal) };
-    const matched = await this.translationTargets.result;
+    if (this.translationTargets?.key !== targetKey) {
+      const pending = namedTranslationTargets(host, model, requests, previous, request.scope.quotes, signal);
+      this.translationTargets = { key: targetKey, result: pending };
+      pending.catch(() => { if (this.translationTargets?.result === pending) this.translationTargets = null; });
+    }
+    let matched: boolean;
+    try { matched = await this.translationTargets.result; } catch {
+      beforeDispatch();
+      throw new Error('网页翻译段落核对超时或暂时失败，未改动页面，请重试。');
+    }
     beforeDispatch();
     if (!matched) throw new Error('无法核对所选原文与用户指定的段落，未改动页面。');
     return { beforeDispatch };
