@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "By Your Side",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Chrome AI 助手：在侧栏陪你阅读，也帮你操作网页。",
   "permissions": ["alarms", "debugger", "favicon", "tabs", "tabGroups", "scripting", "sidePanel", "storage", "contextMenus", "offscreen", "declarativeNetRequestWithHostAccess", "downloads", "downloads.ui", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],

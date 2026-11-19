@@ -6,7 +6,7 @@
 
 `Chrome 扩展 (Manifest V3)` · `本地运行时` · `人机协同控制`
 
-[快速开始](#快速开始) · [核心能力](#核心能力) · [实际演示](#实际演示) · [技术架构](#技术架构) · [安全与控制](#安全与控制) · [开发指南](#开发指南) · [English](./README.md)
+[Chrome 应用商店](https://chromewebstore.google.com/detail/by-your-side/emmojfmjolcafmjicpdaeljfgmefacng) · [快速开始](#快速开始) · [核心能力](#核心能力) · [实际演示](#实际演示) · [技术架构](#技术架构) · [安全与控制](#安全与控制) · [开发指南](#开发指南) · [English](./README.md)
 
 ---
 
@@ -21,13 +21,13 @@
 ## 核心能力
 
 ### 带出处核对的伴读体验
-支持结合当前页、后台标签页、PDF 文档和视频字幕回答问题。回答中引用自原网页的数字会以浅底标出，鼠标移上去时，原网页对应位置会直接高亮，不会强行滚走你的阅读位置。
+支持结合当前页、后台标签页、PDF 文档和视频字幕回答问题。首轮读页兼容 `display:contents` 等现代布局，提取正文中的可见链接，并在问题与当前页无关时自动跳过正文以减少干扰。回答中引用自原网页的数字会以浅底标出，鼠标移上去时，原网页对应位置会直接高亮，不会强行滚走你的阅读位置。
 
-### 页边批注与随内容变化的划词工具条
-在任意 HTTP(S) 网页选中文字（或按 `Cmd+J` / `Ctrl+J`）即可呼出纯文字工具条。第一个按钮会随选中内容自动切换：选中表格显示「生成图表」，选中日期显示「加日程」，选中地址显示「查路线」，选中论断显示「查证」。回答以暖纸色批注卡停在页边并连回原文；按 `Alt+T` 可在原文段落下方逐段展开整页译文，再按一次即可还原。
+### 页边批注、划词工具条与双语翻译
+在任意 HTTP(S) 网页选中文字（或按 `Cmd+J` / `Ctrl+J`）即可呼出纯文字工具条。第一个按钮会随选中内容自动切换：选中表格显示「生成图表」，选中日期显示「加日程」，选中地址显示「查路线」，选中论断显示「查证」。回答以暖纸色批注卡停在页边并连回原文。按 `Alt+T` 可在原文下方逐段展开或还原整页译文，也可以在侧栏要求把指定段落的双语译文放回原页；未获本轮明确授权时，扩展不会改动网页正文。
 
 ### 可回读校验、提交前可一键还原的网页操作
-支持打开与切换标签页、点击控件、填写表单、选择下拉项、上传下载文件，以及执行多步浏览器程序（`browser_run`）。写入输入框后会回读 DOM 核对网页是否真正保留了目标值；在表单提交之前，执行摘要上提供「恢复这 N 处填写」入口，一键回到动手前的状态。
+支持打开与切换标签页、点击控件、填写表单、选择下拉项、上传下载文件，以及执行多步浏览器程序（`browser_run`）。触发页面跳转的动作会自动带回新页面内容，点到或填到折叠隐藏的输入框时会给出可见展开按钮线索，减少无效试错。写入输入框后会回读 DOM 核对网页是否真正保留了目标值；在表单提交之前，执行摘要上提供「恢复这 N 处填写」入口，一键回到动手前的状态。
 
 ### 嵌在回答里的沙箱小工具与图表
 可在回答流内直接生成交互式图表、示意图和针对当前网页的现场小工具。小工具运行在无网络的严格 CSP 沙箱中：默认只读当前页，只有你在工具里点击时才触发网页操作。好用的小工具和学会的站点操作可以按域名存下，下次在该网站开启新会话时，输入框上方会自动摆出最多 2 个快捷起手按钮。
@@ -38,7 +38,7 @@
 ### 直连多模型服务商，无中间业务后端
 模型请求由扩展 Offscreen 运行时直接发往你配置的服务商：
 - **浏览器账号登录（OAuth）**：OpenAI Codex（ChatGPT 账号）、GitHub Copilot、Kimi For Coding、xAI。
-- **API Key 接入**：阶跃星辰（Step Plan）、智谱 GLM、DeepSeek、Kimi / Moonshot、MiniMax、通义千问 Qwen、Anthropic、OpenAI、Google Gemini、OpenRouter、Groq、Cerebras、Together、Fireworks、Mistral、Hugging Face、Command Code、OpenCode Go、Inception，以及任意**自定义 OpenAI 兼容接口**。
+- **API Key 接入**：OpenDesign、阶跃星辰（Step Plan）、智谱 GLM、DeepSeek、Kimi / Moonshot、MiniMax、通义千问 Qwen、Anthropic、OpenAI、Google Gemini、OpenRouter、Groq、Cerebras、Together、Fireworks、Mistral、Hugging Face、Command Code、OpenCode Go、Inception，以及任意**自定义 OpenAI 兼容接口**。
 - **分角色路由**：支持分别指定主模型、快速模型与备用模型，并按服务商自动控制并发队列。
 
 ---
@@ -59,13 +59,19 @@
 
 ## 快速开始
 
-### 环境要求
+### 方式一：从 Chrome 应用商店安装（推荐）
+
+前往 **[Chrome 网上应用店安装 By Your Side](https://chromewebstore.google.com/detail/by-your-side/emmojfmjolcafmjicpdaeljfgmefacng)**（需桌面版 Chrome `120+`），固定到工具栏或按 `Cmd+Shift+Y`（Windows/Linux 为 `Ctrl+Shift+Y`）打开侧栏，随后跳至[连接模型服务商](#连接模型服务商必选)。商店版会在每次审核通过后由 Chrome 自动更新。
+
+### 方式二：从源码构建安装（开发版）
+
+#### 环境要求
 
 - **Node.js** `>= 22.0.0`（仓库 `.node-version` 锁定为 `22`）
 - **npm**（随 Node.js 自带）
 - **Google Chrome** 桌面版 `120+`（macOS、Linux 或 Windows）
 
-### 1. 克隆仓库并安装依赖
+#### 1. 克隆仓库并安装依赖
 
 ```bash
 git clone https://github.com/yishu-ziyu/By-Your-Side.git
@@ -73,7 +79,7 @@ cd By-Your-Side
 npm install
 ```
 
-### 2. 构建 Chrome 扩展
+#### 2. 构建 Chrome 扩展
 
 ```bash
 npm run build
@@ -81,20 +87,20 @@ npm run build
 
 构建脚本会将 Service Worker、侧栏界面、Offscreen Agent 运行时、内容脚本、PDF/ONNX/QuickJS WebAssembly 资源及 `manifest.json` 完整打包输出到 **`extension/dist/`** 目录。
 
-### 3. 在 Chrome 中加载扩展
+#### 3. 在 Chrome 中加载扩展
 
 1. 在 Chrome 地址栏打开 `chrome://extensions`。
 2. 打开右上角的**开发者模式（Developer mode）**。
 3. 点击**加载已解压的扩展程序（Load unpacked）**，选择仓库下的 **`extension/dist`** 目录（注意不要选外层的 `extension/`，编译产物在 `extension/dist` 内）。
 4. 将 **By Your Side** 固定到工具栏，或按快捷键 `Cmd+Shift+Y`（Windows/Linux 为 `Ctrl+Shift+Y`）打开侧栏。
 
-### 4. 连接模型服务商（必选）
+### 连接模型服务商（必选）
 
 1. 点击侧栏右上角菜单（`...`），进入**模型与语音**（或右键扩展图标打开**选项**）。
 2. 选择一个服务商，完成浏览器账号登录（如 ChatGPT / OpenAI Codex、GitHub Copilot、Kimi、xAI）或填入 API Key / 自定义兼容地址。
 3. 等待连接连通性自检通过。可选：在同一页面配置**快速模型**、**备用模型**及语音朗读/听写凭据。
 
-### 5. 首次体验与验证
+### 首次体验与验证
 
 - 打开任意文章网页，在侧栏提问：「总结这一页的核心观点和关键数字」，把鼠标移到回答中的浅底数字上核对原页高亮。
 - 在网页中选中一段话或一张表格，按 `Cmd+J`（`Ctrl+J`）体验页边批注与生成图表，或按 `Alt+T` 测试整页双语对照翻译与还原。
@@ -223,7 +229,7 @@ sequenceDiagram
 | [`scripts/checks/`](./scripts/checks) | 架构边界、复杂度、无注释规范、样式/动效 Token、界面用词与贡献者白名单检查 |
 | [`scripts/formal/`](./scripts/formal) | 取消、接管与发送确认的 Quint 形式化状态模型（`page-control.qnt`、`send-confirm.qnt`） |
 | [`scripts/acceptance/`](./scripts/acceptance) | 隔离 Chrome 实例下的真实扩展端到端验收用例 |
-| [`eval/`](./eval) 与 [`scripts/gym/`](./scripts/gym) | 任务评测集（`tasks.jsonl`、`duplex.jsonl`）与评测运行器 |
+| [`eval/`](./eval) 与 [`scripts/gym/`](./scripts/gym) | 任务评测集（`tasks.jsonl`、`duplex.jsonl`、`tasks/browser-perf-replay.json`）与评测运行器 |
 
 ### 常用命令
 

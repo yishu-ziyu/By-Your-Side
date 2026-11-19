@@ -6,7 +6,7 @@ Read pages, navigate websites, and carry out multi-step tasks from a side panel 
 
 `Chrome Extension (Manifest V3)` · `Local-First Runtime` · `Human-in-the-Loop`
 
-[Quick Start](#quick-start) · [Features](#features) · [See It in Action](#see-it-in-action) · [How It Works](#how-it-works) · [Safety & Control](#safety--control) · [Development](#development) · [简体中文](./README.zh-CN.md)
+[Chrome Web Store](https://chromewebstore.google.com/detail/by-your-side/emmojfmjolcafmjicpdaeljfgmefacng) · [Quick Start](#quick-start) · [Features](#features) · [See It in Action](#see-it-in-action) · [How It Works](#how-it-works) · [Safety & Control](#safety--control) · [Development](#development) · [简体中文](./README.zh-CN.md)
 
 ---
 
@@ -21,13 +21,13 @@ Most browser work splits across two awkward tools. Standalone chat tabs cannot s
 ## Features
 
 ### Grounded reading with verifiable figures
-Ask questions across active tabs, background tabs, PDFs, and video captions. Numbers drawn from the current page are highlighted in the reply; hovering over a highlighted figure lights up the matching passage on the live webpage without scrolling your viewport away.
+Ask questions across active tabs, background tabs, PDFs, and video captions. First-turn page reads handle modern `display:contents` layouts, surface visible main-text links, and skip unrelated page bodies when a question does not depend on the current page. Numbers drawn from the current page are highlighted in the reply; hovering over a highlighted figure lights up the matching passage on the live webpage without scrolling your viewport away.
 
-### Margin annotations and adaptive selection bar
-Select text on any HTTP(S) page (or press `Cmd+J` / `Ctrl+J`) to open a lightweight text toolbar. Its first button adapts to what you selected: **Generate Chart** for tables, **Add Event** for dates, **Find Route** for addresses, and **Fact-Check** for claims. Replies sit in paper-toned margin cards linked to the source passage, and `Alt+T` toggles inline paragraph-by-paragraph page translation.
+### Margin annotations, selection bar, and bilingual translation
+Select text on any HTTP(S) page (or press `Cmd+J` / `Ctrl+J`) to open a lightweight text toolbar. Its first button adapts to what you selected: **Generate Chart** for tables, **Add Event** for dates, **Find Route** for addresses, and **Fact-Check** for claims. Replies sit in paper-toned margin cards linked to the source passage. Press `Alt+T` to toggle full-page inline translation, or ask the assistant in the Side Panel to place bilingual translations beside specific paragraphs; page writes are fail-closed unless your turn explicitly authorizes editing the page.
 
 ### Multi-step web actions with pre-submit undo
-Navigate tabs, click controls, fill forms, select dropdowns, upload or download files, and run multi-step browser programs (`browser_run`). After writing to form inputs, the extension reads the DOM back to confirm the page kept the expected values, and gives you a one-click **Restore** link on the action receipt before the form is submitted.
+Navigate tabs, click controls, fill forms, select dropdowns, upload or download files, and run multi-step browser programs (`browser_run`). Navigation actions return the arrived page automatically, and clicking or filling a collapsed input surfaces the visible trigger control instead of looping blindly. After writing to form inputs, the extension reads the DOM back to confirm the page kept the expected values, and gives you a one-click **Restore** link on the action receipt before the form is submitted.
 
 ### Sandboxed charts, answer UIs, and reusable mini-tools
 Generate interactive charts, diagrams, and page-specific mini-tools directly inside an answer. Mini-tools run inside strict offline sandboxes: they read the current page first and trigger page actions only when you click inside the tool. Saved mini-tools and learned site workflows resurface as up to two starter buttons above the input box when you start a new chat on that site.
@@ -38,7 +38,7 @@ Talk via push-to-talk dictation or realtime duplex voice without switching betwe
 ### Direct multi-provider connections, no middleman server
 Connect straight from the extension's offscreen runtime to your own accounts and keys:
 - **Browser OAuth sign-in**: OpenAI Codex (ChatGPT account), GitHub Copilot, Kimi For Coding, and xAI.
-- **API keys**: Anthropic, OpenAI, Google Gemini, DeepSeek, StepFun, OpenRouter, Moonshot AI, MiniMax, Qwen, Zhipu GLM, Groq, Cerebras, Together, Fireworks, Mistral, Hugging Face, Command Code, OpenCode Go, Inception, or any **custom OpenAI-compatible endpoint**.
+- **API keys**: Anthropic, OpenAI, Google Gemini, DeepSeek, OpenDesign, StepFun, OpenRouter, Moonshot AI, MiniMax, Qwen, Zhipu GLM, Groq, Cerebras, Together, Fireworks, Mistral, Hugging Face, Command Code, OpenCode Go, Inception, or any **custom OpenAI-compatible endpoint**.
 - **Role routing**: Assign separate **Main**, **Fast**, and **Backup** models with per-provider concurrency gating.
 
 ---
@@ -59,13 +59,19 @@ What happens in this turn ([video clip](./extension/assets/demo/fill-a-form.webm
 
 ## Quick Start
 
-### Prerequisites
+### Option A: Install from Chrome Web Store (Recommended)
+
+Install **[By Your Side on the Chrome Web Store](https://chromewebstore.google.com/detail/by-your-side/emmojfmjolcafmjicpdaeljfgmefacng)** for desktop Chrome (`120+`), then pin the extension or press `Cmd+Shift+Y` (`Ctrl+Shift+Y` on Windows/Linux) and jump to [Connect a model provider](#connect-a-model-provider-required). Chrome updates the store release automatically after each store review.
+
+### Option B: Build and load from source (Development build)
+
+#### Prerequisites
 
 - **Node.js** `>= 22.0.0` (`.node-version` pins Node `22`)
 - **npm** (included with Node.js)
 - **Google Chrome** `120+` on desktop (macOS, Linux, or Windows)
 
-### 1. Clone and install dependencies
+#### 1. Clone and install dependencies
 
 ```bash
 git clone https://github.com/yishu-ziyu/By-Your-Side.git
@@ -73,7 +79,7 @@ cd By-Your-Side
 npm install
 ```
 
-### 2. Build the extension
+#### 2. Build the extension
 
 ```bash
 npm run build
@@ -81,22 +87,22 @@ npm run build
 
 This bundles the Service Worker, Side Panel, Offscreen Agent Runtime, Content Scripts, PDF/ONNX/QuickJS WebAssembly assets, and `manifest.json` into **`extension/dist/`**.
 
-### 3. Load unpacked in Chrome
+#### 3. Load unpacked in Chrome
 
 1. Open `chrome://extensions` in Chrome.
 2. Turn on **Developer mode** in the top-right corner.
 3. Click **Load unpacked** and select the **`extension/dist`** directory (do not select `extension/` itself; the compiled entrypoints live in `extension/dist`).
 4. Pin **By Your Side** to your Chrome toolbar, or press `Cmd+Shift+Y` (`Ctrl+Shift+Y` on Windows/Linux) to open the Side Panel.
 
-### 4. Connect a model provider (Required)
+### Connect a model provider (Required)
 
-> **Interface language note**: Built-in UI chrome in `v0.2.0` uses Simplified Chinese labels, while prompts, page reading, translations, and answers work in English, Chinese, and other languages supported by your model.
+> **Interface language note**: Built-in UI chrome in `v0.2.1` uses Simplified Chinese labels, while prompts, page reading, translations, and answers work in English, Chinese, and other languages supported by your model.
 
 1. In the Side Panel header, open the menu (`...`) and select **Models & Voice (`模型与语音`)** (or right-click the extension icon and open **Options**).
 2. Pick a provider and either sign in via OAuth (for example, OpenAI Codex / ChatGPT, GitHub Copilot, Kimi, or xAI) or paste an API key / custom OpenAI-compatible base URL.
 3. Wait for the built-in connection probe (`OK` handshake) to pass. Optional: configure separate **Fast** and **Backup** models or voice credentials on the same page.
 
-### 5. Verify on a live page
+### Verify on a live page
 
 - Open any article or documentation tab, open the Side Panel, and ask *"Summarize the key claims and numbers on this page."*
 - Highlight a paragraph or table on the page and press `Cmd+J` (`Ctrl+J`) to test the margin annotation card, or press `Alt+T` to toggle inline page translation.
@@ -225,7 +231,7 @@ Because By Your Side operates inside your signed-in browser, all visited web con
 | [`scripts/checks/`](./scripts/checks) | Architecture boundary, complexity, zero-comment, UI style/motion token, copy, and contributor checks |
 | [`scripts/formal/`](./scripts/formal) | Quint formal state models (`page-control.qnt`, `send-confirm.qnt`) for cancellation, takeover, and confirmation invariants |
 | [`scripts/acceptance/`](./scripts/acceptance) | Real-extension end-to-end acceptance runner in isolated Chrome instances |
-| [`eval/`](./eval) & [`scripts/gym/`](./scripts/gym) | Benchmark task suites (`tasks.jsonl`, `duplex.jsonl`) and evaluation harnesses |
+| [`eval/`](./eval) & [`scripts/gym/`](./scripts/gym) | Benchmark task suites (`tasks.jsonl`, `duplex.jsonl`, `tasks/browser-perf-replay.json`) and evaluation harnesses |
 
 ### Common Commands
 
@@ -272,7 +278,7 @@ npm run reload:ext
 ### Current Limitations
 
 - **Desktop Chrome only**: Relies on Chrome Manifest V3 `sidePanel`, `offscreen`, and `debugger` APIs (`Chrome 120+`). Mobile browsers and non-Chromium browsers are not supported.
-- **Chinese-first UI labels in `v0.2.0`**: Built-in menus, confirmation prompts, and settings pages are currently written in Simplified Chinese, even though the agent can read and reply in English or other languages.
+- **Chinese-first UI labels in `v0.2.1`**: Built-in menus, confirmation prompts, and settings pages are currently written in Simplified Chinese, even though the agent can read and reply in English or other languages.
 - **Browser-protected pages**: Chrome blocks extensions from reading or acting on `chrome://` pages, other extensions, DevTools, and the Chrome Web Store; for those screens, you have to paste text or a screenshot manually.
 - **Complex canvas and custom editors**: Canvas-only apps (such as spreadsheets or WebGL boards) expose limited DOM semantics and rely on screenshot/coordinate fallbacks; rich-text editors do not support one-click form-fill undo.
 - **User-supplied model credentials**: No hosted free tier is bundled; you bring your own OAuth subscription or API key.
