@@ -1647,6 +1647,17 @@ return;}
     return text ? `\n\n[MENTIONED TABS — pages the user pulled in with @]\n${text}` : "";
   }
 
+  private resolveSourceScope(run: string | null): Promise<PageReadScope> {
+    const requests = this.currentUserRequirements();
+    const key = JSON.stringify([run, requests]);
+    if (this.sourceScope?.key !== key) {
+      const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+      const result = host && model ? pageReadScope(host, model, requests).catch(() => 'whole' as const) : Promise.resolve('whole' as const);
+      this.sourceScope = { key, result };
+    }
+    return this.sourceScope.result;
+  }
+
   private async readUserPageForPrompt(context: PageContext | undefined, phase: "task" | "steer", role: PageRole = "current"): Promise<string | null> {
     const tabId = context?.tabId;
 
@@ -1675,16 +1686,13 @@ return;}
       const treeEvidenceChars = (tree?.textEvidence?.fragments ?? []).reduce((total, fragment) => total + (typeof fragment.text === "string" ? fragment.text.length : 0), 0);
       const extractorBlank = !preview?.text.trim() && treeEvidenceChars >= AX_TREE_SOURCE_MIN_CHARS;
       if (readablePage && !extractorBlank && (!preview?.text.trim() || preview.totalChars > preview.text.length)) {
-        const requests = this.currentUserRequirements();
-        const key = JSON.stringify([run, requests]);
-        if (this.sourceScope?.key !== key) {
-          const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
-          const result = host && model ? pageReadScope(host, model, requests).catch(() => 'whole' as const) : Promise.resolve('whole' as const);
-          this.sourceScope = { key, result };
-        }
-        const scope = await this.sourceScope.result;
+        const scope = await this.resolveSourceScope(run);
         if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
         this.runTrace.record('page_read_scope', { scope, tabId, previewChars: preview?.text.length ?? 0, totalChars: preview?.totalChars ?? null });
+        if (scope === 'none' && role === 'current') {
+          this.runTrace.record("pre_observation", { phase, tabId, ms: Date.now() - startedAt, chars: 0, mainText: 0, tree: 0, repeat: false, omitted: "scope_none" });
+          return null;
+        }
         if (scope === 'whole') {
           const exceedsLimit = (preview?.totalChars ?? 0) > WHOLE_SOURCE_MAX_CHARS;
           const readFull = () => (this.rpc!.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
