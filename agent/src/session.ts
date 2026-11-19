@@ -166,6 +166,7 @@ const RESULT_TEXT_MAX = 500;
 const PRE_OBSERVATION_TIMEOUT_MS = 4_000;
 
 const PRE_OBSERVATION_TEXT_MAX = 12_000;
+const PRE_OBSERVATION_MAIN_TEXT_MAX = 30_000;
 const AX_TREE_SOURCE_MIN_CHARS = 400;
 const WHOLE_PAGE_TRANSLATION = /^(?:请?(?:把(?:这个页面|当前页面|这一页|整页)翻译成(?:简体)?中文|(?:重新)?翻译(?:这个页面|当前页面|这一页|整页))(?:[，,]\s*只保留译文)?[。！!]?|(?:please )?translate (?:this|the current) (?:web)?page (?:to|into) (?:simplified )?chinese[.!]?)$/iu; // WHY: hardcode-ok 预取早于工具授权，会把网页发给服务商，只允许完整的整页命令；其他说法仍由正常翻译工具处理。
 const TRANSLATION_PREFETCH_BLOCKS = 16;
@@ -1655,7 +1656,7 @@ return;}
     const epoch=this.controlEpoch,run=this.deliveryRunId();
 
     try {
-      const freshMain = () => (this.rpc!.call("page_text", { tabId, max: PRE_OBSERVATION_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
+      const freshMain = () => (this.rpc!.call("page_text", { tabId, max: PRE_OBSERVATION_MAIN_TEXT_MAX }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
       const [freshOrRetriedMain, tree] = await Promise.all([
         freshMain().then(res => res ?? freshMain()),
         (this.rpc.call("snapshot", { tabId }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; url?: unknown; textEvidence?: { fragments?: Array<{ text?: unknown }> } }>).catch(() => null),
@@ -1686,8 +1687,8 @@ return;}
         this.runTrace.record('page_read_scope', { scope, tabId, previewChars: preview?.text.length ?? 0, totalChars: preview?.totalChars ?? null });
         if (scope === 'whole') {
           const exceedsLimit = (preview?.totalChars ?? 0) > WHOLE_SOURCE_MAX_CHARS;
-          const full = !exceedsLimit
-            ? pageReading(await this.rpc.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS).catch(() => null)) : null;
+          const readFull = () => (this.rpc!.call('page_text', { tabId, max: WHOLE_SOURCE_MAX_CHARS }, PRE_OBSERVATION_TIMEOUT_MS) as Promise<{ text?: unknown; totalChars?: unknown; url?: unknown }>).catch(() => null);
+          const full = !exceedsLimit ? pageReading(await readFull().then(res => res ?? readFull())) : null;
           if(epoch!==this.controlEpoch||run!==this.deliveryRunId()||this.hold.isHeld())return null;
           if (!full?.text.trim() || full.url !== (preview?.url ?? context.url) || full.totalChars !== full.text.length) {
             if (this.continuationEnabled() && role === 'current' && !exceedsLimit) {
