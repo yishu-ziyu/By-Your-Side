@@ -36,6 +36,7 @@ import { regrade, submitProbeInPage, typeIntoField, typingWritten, TypingInterru
 import { watchDialog, type OpenedDialog } from "../page-events.js";
 import { switchTab } from "./tabs.js";
 import { beforeWrite, UserChangedFieldError } from "../fill-undo.js";
+import { hiddenFieldHint } from "./hidden-field-hint.js";
 import { UNSAVED_FIELDS_ALERT, type EffectReport, type PageAppeared } from "../../../../shared/effect.js";
 import { CdpObjectArg, callDom, callOnBackendNode, ensureCursor, ensureDomOps, notExecuted, type DispatchGuard } from "./page-call.js";
 import {
@@ -2372,7 +2373,7 @@ async function fillField(
       targetRect = await rectOfBackendNode(tabId, backendNodeId, false, beforeDispatch, true);
     } catch (e) {
       if (params.expectedBackendNodeId!==undefined || !isDebuggerUnavailable(e)) {
-        throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）`);
+        throw new Error(`ref @${ref} 填充失败（${oneLine(e)}）${await hiddenFieldHint(tabId, { backendNodeId })}`);
       }
     }
   }
@@ -2390,7 +2391,7 @@ async function fillField(
       if (res?.ok && res.rect && typeof res.rect.x === "number") {
         targetRect = res.rect;
       } else if (backendNodeId === undefined) {
-        throw notExecuted(new Error(res?.ok === false ? res.error : `未找到目标元素：${params.target}`));
+        throw notExecuted(new Error(res?.ok === false ? res.error + await hiddenFieldHint(tabId, { target: params.target }) : `未找到目标元素：${params.target}`));
       }
     } catch (e) {
       if (backendNodeId === undefined) {
