@@ -156,6 +156,15 @@ try {
 
       await rp.click(panel, "#input");
       await rp.typeText(panel, say);
+      const typedProbe = `(() => { const input = document.querySelector("#input"); const value = input ? ("value" in input ? input.value : input.textContent) ?? "" : ""; const focus = document.activeElement; return { has: value.includes(${JSON.stringify(say.slice(0, 12))}), focus: focus ? focus.tagName + (focus.id ? "#" + focus.id : "") : "none" }; })()`;
+      const typed = await rp.evaluate(panel, typedProbe) as { has: boolean; focus: string };
+      if (!typed.has) {
+        console.log(`${task.n}-${k} 输入框没收到文字（焦点在 ${typed.focus}），重新聚焦后再输一次`);
+        await rp.evaluate(panel, 'document.querySelector("#input")?.focus(); true');
+        await rp.typeText(panel, say);
+        const again = await rp.evaluate(panel, typedProbe) as { has: boolean; focus: string };
+        if (!again.has) console.log(`${task.n}-${k} 重输后输入框仍是空的（焦点在 ${again.focus}）`);
+      }
       await rp.evaluate(panel, observeTurn(say, rule.replyHas ?? []));
       await newTraceLines(panel);
       await rp.pressEnter(panel);
