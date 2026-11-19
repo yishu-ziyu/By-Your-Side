@@ -11,7 +11,7 @@ const cases = [
   { id: "yt-captions", url: "https://www.youtube.com/watch?v=video123", method: "youtube.captions", expected: "这段字幕属于当前视频。", also: ["that's right"], absent: "&#39;" },
   { id: "yt-program-bug", url: "https://www.youtube.com/watch?v=video123", method: "youtube.captions", code: 'const r = await browser.siteMethod({id:"youtube.captions"});\nreturn r.slice(0, 10);', expected: "这段字幕属于当前视频。", also: ["program line 2", "already finished: siteMethod"] },
   { id: "yt-language", url: "https://www.youtube.com/watch?v=multi1", method: "youtube.captions", language: "zh", expected: "这段字幕属于当前视频。", also: ['"language":"zh-CN"'], absent: "ترجمة" },
-  { id: "yt-no-captions", url: "https://www.youtube.com/watch?v=nocap1", method: "youtube.captions", expected: '"status":"no_captions"' },
+  { id: "yt-no-captions", url: "https://www.youtube.com/watch?v=nocap1", method: "youtube.captions", expected: '"status":"no_captions"', also: ["Already checked the player via video_captions"] },
   { id: "yt-stale", url: "https://www.youtube.com/watch?v=video456&stale=1", method: "youtube.captions", expected: "unavailable", absent: "这是上一条视频" },
   { id: "bili-captions", url: "https://www.bilibili.com/video/BV1TEST123", method: "bilibili.captions", expected: "当前分P的字幕。", also: ['"title":"练习合集"', '"part":{"index":1,"title":"第一讲","count":2}'], absent: "其他分P字幕" },
   { id: "bili-locale-path", url: "https://www.bilibili.com/zh-Hans/video/BV1TEST123", method: "bilibili.captions", expected: "当前分P的字幕。", absent: "其他分P字幕" },
