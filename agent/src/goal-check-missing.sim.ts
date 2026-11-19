@@ -85,3 +85,44 @@ test("pointed target missing still requests correction when assistant falsely cl
   assert.equal(verdict.status, "continue");
   assert.equal(verdict.verificationSubject, "answer");
 });
+
+test("pointed target missing preserves continue when repair is omitted to avoid swallowing false-success correction", async () => {
+  const verdict = await checkGoal(
+    stubHost({
+      items: [{ text: "点击第一行第二个", done: false }],
+      goalOnPage: true,
+      pointedFound: false,
+      status: "continue",
+      verificationSubject: "answer",
+      evidence: "已经帮你点击了第一行第二个视频。",
+      remaining: "更正回答",
+      correction: "页面没有视频列表，回答错误声称已点击。",
+      finding: "回答错误声称已点击",
+    }),
+    model,
+    { ...baseInput, lastReply: "已经帮你点击了第一行第二个视频。" },
+    AbortSignal.timeout(5_000),
+  );
+  assert.equal(verdict.status, "continue");
+});
+
+test("pointed target missing preserves continue when page observation is truncated", async () => {
+  const verdict = await checkGoal(
+    stubHost({
+      items: [{ text: "点击页面底部的更多链接", done: false }],
+      goalOnPage: true,
+      pointedFound: false,
+      status: "continue",
+      repair: "complete_task",
+      verificationSubject: "answer",
+      evidence: "目前只看到首屏内容，还没滚动查看页面下方。",
+      remaining: "继续向下滚动查找",
+      correction: "页面被截断，尚未检查页面下方区域。",
+      finding: "尚未检查截断部分",
+    }),
+    model,
+    { ...baseInput, page: { ...baseInput.page, truncated: true }, lastReply: "没找到该链接。" },
+    AbortSignal.timeout(5_000),
+  );
+  assert.equal(verdict.status, "continue");
+});
