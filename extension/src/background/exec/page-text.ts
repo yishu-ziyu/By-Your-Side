@@ -27,23 +27,39 @@ export async function pageText(params: { tabId?: number; max?: number }, session
 function readMainText(max: number): { text: string; totalChars: number; url: string; title: string; links?: Array<{ text: string; href: string }> } {
   const SKIP = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "CANVAS", "IFRAME", "BUTTON", "SELECT", "FORM"]);
   // WHY: CSS display:contents elements generate no layout box so checkVisibility() returns false even when their descendants are visible (e.g. Substack article wrappers).
-  const isDisplayContents = (el: Element, cs: CSSStyleDeclaration = getComputedStyle(el)) => cs.display === "contents" && cs.visibility !== "hidden" && cs.visibility !== "collapse";
+  const isDisplayContents = (el: Element, cs: CSSStyleDeclaration = getComputedStyle(el)): boolean => {
+    if (cs.display !== "contents" || cs.visibility === "hidden" || cs.visibility === "collapse") return false;
+    for (let parent = el.parentElement; parent; parent = parent.parentElement) if (getComputedStyle(parent).display === "none") return false;
+    return true;
+  };
   const visible = (el: Element) => el.checkVisibility() || isDisplayContents(el);
+  const visibleLabel = (el: Element): string => {
+    let text = "";
+    for (const node of el.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) text += node.textContent ?? "";
+      else if (node.nodeType === Node.ELEMENT_NODE) {
+        const child = node as Element;
+        if (!SKIP.has(child.tagName) && child.getAttribute("aria-hidden") !== "true" && visible(child)) text += visibleLabel(child);
+      }
+    }
+    return text;
+  };
   const candidates = [...document.querySelectorAll<HTMLElement>("main, article, [role=main]")].filter(visible);
   const root = candidates.sort((a, b) => b.innerText.length - a.innerText.length)[0] ?? document.body;
   const out: string[] = [];
   const externalLinks: Array<{ text: string; href: string }> = [];
   const internalLinks: Array<{ text: string; href: string }> = [];
   const seenHref = new Set<string>();
-  const pageKey = `${location.origin}${location.pathname}`;
+  const pageKey = `${location.origin}${location.pathname}${location.search}`;
   const collectLink = (el: Element): void => {
     const raw = el.getAttribute("href")?.trim();
     if (!raw || raw.startsWith("#")) return;
     let parsed: URL;
     try { parsed = new URL(raw, location.href); } catch { return; }
-    if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || `${parsed.origin}${parsed.pathname}` === pageKey) return;
-    const href = parsed.href.slice(0, 240);
-    const label = (el.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+    if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || `${parsed.origin}${parsed.pathname}${parsed.search}` === pageKey) return;
+    if (parsed.href.length > 240) return;
+    const href = parsed.href;
+    const label = visibleLabel(el).replace(/\s+/g, " ").trim().slice(0, 80);
     if (label.length < 2 || seenHref.has(href)) return;
     seenHref.add(href);
     const bucket = parsed.hostname === location.hostname ? internalLinks : externalLinks;
