@@ -121,7 +121,7 @@ test("pointed target missing preserves continue when page observation is truncat
       finding: "尚未检查截断部分",
     }),
     model,
-    { ...baseInput, page: { ...baseInput.page, truncated: true }, lastReply: "没找到该链接。" },
+    { ...baseInput, page: { ...baseInput.page, text: "长页面首屏内容。".repeat(1200) }, lastReply: "没找到该链接。" },
     AbortSignal.timeout(5_000),
   );
   assert.equal(verdict.status, "continue");
