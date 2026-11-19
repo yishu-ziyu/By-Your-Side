@@ -186,6 +186,7 @@ function mainTextLinksBlock(value: unknown): string {
 }
 const AX_TREE_SOURCE_MIN_CHARS = 400;
 const WHOLE_PAGE_TRANSLATION = /^(?:请?(?:把(?:这个页面|当前页面|这一页|整页)翻译成(?:简体)?中文|(?:重新)?翻译(?:这个页面|当前页面|这一页|整页))(?:[，,]\s*只保留译文)?[。！!]?|(?:please )?translate (?:this|the current) (?:web)?page (?:to|into) (?:simplified )?chinese[.!]?)$/iu; // WHY: hardcode-ok 预取早于工具授权，会把网页发给服务商，只允许完整的整页命令；其他说法仍由正常翻译工具处理。
+const TRANSLATION_INTENT_HINT = /翻译|译文|双语|\btranslat\w*\b|\bbilingual\b/iu; // WHY: hardcode-ok 仅用于提前并行启动已有的 page_translation_intent 分类器，不授予写权限；正式授权仍由 preparePageTranslation 严格校验结果。
 const TRANSLATION_PREFETCH_BLOCKS = 16;
 const TRANSLATION_PREFETCH_LANES = 4;
 const TRANSLATION_PREFETCH_AFTER_MAIN_MS = 100;
@@ -2088,8 +2089,24 @@ return;}
     return (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [this.activeGoal ?? ""]).filter(Boolean);
   }
 
+  private warmTranslationIntent(context: PageContext | undefined): void {
+    if (!context || typeof context.tabId !== "number" || isRestrictedPage(context.url)) return;
+    const { requests, previous, key } = this.translationInput();
+    const latest = requests.at(-1)?.trim();
+
+    if (!latest || !TRANSLATION_INTENT_HINT.test(latest) || (requests.length === 1 && WHOLE_PAGE_TRANSLATION.test(latest))) return;
+    if (!requests.every(intactTranslationRequest) || this.translationIntent?.key === key) return;
+    const host = this.sideHost(), model = this.modelRuntime?.fastModel?.() ?? this.session?.model;
+
+    if (!host || !model) return;
+    const pending = translationDestination(host, model, requests, previous);
+    this.translationIntent = { key, result: pending };
+    pending.catch(() => { if (this.translationIntent?.result === pending) this.translationIntent = null; });
+  }
+
   private prefetchPageTranslation(text: string, context: PageContext | undefined): void {
     this.dropTranslationPrefetch();
+    this.warmTranslationIntent(context);
     const tabId = context?.tabId;
     const model = this.translationModel();
 
