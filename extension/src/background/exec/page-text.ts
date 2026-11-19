@@ -26,17 +26,21 @@ export async function pageText(params: { tabId?: number; max?: number }, session
 
 function readMainText(max: number): { text: string; totalChars: number; url: string; title: string } {
   const SKIP = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "CANVAS", "IFRAME", "BUTTON", "SELECT", "FORM"]);
-  const visible = (el: Element) => el.checkVisibility();
+  // WHY: CSS display:contents elements generate no layout box so checkVisibility() returns false even when their descendants are visible (e.g. Substack article wrappers).
+  const isDisplayContents = (el: Element, cs: CSSStyleDeclaration = getComputedStyle(el)) => cs.display === "contents" && cs.visibility !== "hidden" && cs.visibility !== "collapse";
+  const visible = (el: Element) => el.checkVisibility() || isDisplayContents(el);
   const candidates = [...document.querySelectorAll<HTMLElement>("main, article, [role=main]")].filter(visible);
   const root = candidates.sort((a, b) => b.innerText.length - a.innerText.length)[0] ?? document.body;
   const out: string[] = [];
 
   const walk = (el: Element, inCell: boolean): void => {
-    if (SKIP.has(el.tagName) || el.getAttribute("aria-hidden") === "true" || el.getAttribute("role") === "navigation" || !visible(el)) return;
+    if (SKIP.has(el.tagName) || el.getAttribute("aria-hidden") === "true" || el.getAttribute("role") === "navigation") return;
+    const cs = getComputedStyle(el);
+    const contents = cs.display === "contents";
+    if (contents ? cs.visibility === "hidden" || cs.visibility === "collapse" : !el.checkVisibility()) return;
     if (el.tagName === "BR") { out.push("\n"); return; }
-    const display = getComputedStyle(el).display;
-    const cell = display === "table-cell";
-    const block = !cell && !inCell && !display.startsWith("inline");
+    const cell = cs.display === "table-cell";
+    const block = !contents && !cell && !inCell && !cs.display.startsWith("inline");
     const level = /^H([1-6])$/.exec(el.tagName)?.[1];
 
     out.push(cell ? " " : block ? "\n" : "");
