@@ -60,17 +60,23 @@ test("translationDestination allows >=10s budget for reasoning models", async ()
 });
 
 test("translationDestination surfaces SideCallError on timeout instead of masking it as refusal", async () => {
-  const host: SideCallHost = {
-    models: {
-      completeSimple: async (_model, _context, options) => new Promise<AssistantMessage>((_resolve, reject) => {
-        options?.signal?.addEventListener("abort", () => reject(options.signal?.reason ?? new Error("aborted")), { once: true });
-      }),
-    },
-  };
-  await assert.rejects(
-    translationDestination(host, MODEL, ["把前两段放进网页，双语对照。"], undefined, AbortSignal.timeout(15)),
-    (err: unknown) => err instanceof SideCallError && err.reason === "timeout",
-  );
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(new DOMException("timeout", "TimeoutError")), 10);
+  try {
+    const host: SideCallHost = {
+      models: {
+        completeSimple: async (_model, _context, options) => new Promise<AssistantMessage>((_resolve, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason ?? new Error("aborted")), { once: true });
+        }),
+      },
+    };
+    await assert.rejects(
+      translationDestination(host, MODEL, ["把前两段放进网页，双语对照。"], undefined, ac.signal),
+      (err: unknown) => err instanceof SideCallError && err.reason === "timeout",
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 test("translationDestination still returns null for explicit none or malformed output", async () => {
