@@ -205,6 +205,8 @@ sequenceDiagram
 
 ### 数据流向与已知安全限制
 
+完整用户数据与隐私说明见 [`PRIVACY.md`](./PRIVACY.md)。
+
 - **本地存储**：模型凭据、会话记录、站点操作习惯、附件及脱敏后的运行轨迹（`shared/trace-sanitize.ts`）保存在你本机的 Chrome 配置目录（`chrome.storage.local`、IndexedDB、OPFS）。导出的记忆备份文件离开扩展存储边界后包含个人上下文，请妥善保管。
 - **外部模型传输**：为完成问答与规划，必要的网页摘录、截图、提示词和工具返回结果会通过 HTTPS/WSS（`credentials: "omit"`）发送给你所选的模型或语音服务商。
 - **当前局限与未闭环风险**：

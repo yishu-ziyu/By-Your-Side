@@ -207,6 +207,8 @@ Because By Your Side operates inside your signed-in browser, all visited web con
 
 ### Data Handling and Known Security Limits
 
+See [`PRIVACY.md`](./PRIVACY.md) for the full user data and privacy policy (Chinese).
+
 - **Local storage**: Provider credentials, conversations, learned site operations, attached files, and sanitized traces (`shared/trace-sanitize.ts`) are stored locally inside your Chrome profile (`chrome.storage.local`, IndexedDB, and OPFS). Memory backups exported to disk leave extension storage and should be treated as sensitive files.
 - **External model providers**: To answer questions or plan actions, relevant page excerpts, screenshots, prompts, and tool results are transmitted over HTTPS/WSS (`credentials: "omit"`) to whichever model and voice providers you configure.
 - **Open risks**:
