@@ -26,6 +26,7 @@ export type Row = {
     firstFeedbackMs: number | null;
     finalAnswerMs: number | null;
     correctCompletionMs: number | null;
+    firstAnswerMs?: number | null;
     verifiedMs: number;
     pauseMs: number | null;
   };
@@ -126,6 +127,7 @@ type TraceRecord = {
     facts?: unknown;
     hostFacts?: { goalFacts?: unknown };
     attempts?: unknown;
+    elapsedMs?: unknown;
     usage?: { responses?: unknown; totalTokens?: unknown };
     message?: { role?: unknown; usage?: Partial<Record<"input" | "cacheRead" | "cacheWrite" | "output" | "totalTokens", unknown>> };
   };
@@ -225,6 +227,7 @@ export function attribute(rows: Row[], rowRuns: Set<string>[], lines: string[], 
     if (!rowRuns[index]?.size) { row.error ??= "诊断记录里没有这一句的开始，往返和换目标无法归属"; return; }
     const mine = parsed.filter(r => typeof r.runId === "string" && rowRuns[index]!.has(r.runId));
     const facts = factsOf(mine.filter(r => r.type === "goal_check").at(-1)?.data?.hostFacts?.goalFacts ?? mine.filter(r => r.type === "goal_check_input").at(-1)?.data?.facts);
+    if (row.timing) row.timing.firstAnswerMs = firstAnswerMsOf(mine, rowRuns[index]!, row.timing.finalAnswerMs !== null);
     row.calls = mine.filter(r => r.type === "model_request").length;
     const usages = mine.flatMap(r => {
       const message = r.data?.message;
@@ -248,4 +251,58 @@ export function attribute(rows: Row[], rowRuns: Set<string>[], lines: string[], 
     row.changedGoal = !!task?.onPage?.includes(row.k) && !!facts && (facts.actions.some(a => a.page !== null && !a.onGoalPage && a.openedByAssistant) || facts.searchedNotFromUser.length > 0);
     row.verdict = mine.filter(r => r.type === "goal_check").map(r => r.data?.status).filter((s): s is string => typeof s === "string").at(-1) ?? null;
   });
+}
+
+export function firstAnswerMsOf(records: TraceRecord[], runs: Set<string>, answered: boolean): number | null {
+  if (!answered) return null;
+  const end = records.find(r => r.type === "agent_end" && typeof r.runId === "string" && runs.has(r.runId) && r.data?.willRetry !== true && typeof r.data?.elapsedMs === "number");
+  return typeof end?.data?.elapsedMs === "number" ? end.data.elapsedMs : null;
+}
+
+export function latencyOf(values: Array<number | null | undefined>) {
+  const times = values.filter((v): v is number => typeof v === "number").sort((a,b) => a - b);
+  return {
+    count: times.length,
+    p50Ms: times.length ? (times[Math.floor((times.length - 1) / 2)]! + times[Math.floor(times.length / 2)]!) / 2 : null,
+    p95Ms: times[Math.ceil(times.length * 0.95) - 1] ?? null,
+  };
+}
+
+export type Spread = ReturnType<typeof latencyOf>;
+export type Readings = { firstFeedbackMs: Spread; firstAnswerMs: Spread; correctCompletionMs: Spread; mainRequests: Spread; mainTokens: Spread; sideTokens: Spread; done: number; planned: number };
+
+export function readingsOf(rows: Row[], planned: number): Readings {
+  const done = rows.filter(ok);
+  return {
+    firstFeedbackMs: latencyOf(rows.map(r => r.timing?.firstFeedbackMs)),
+    firstAnswerMs: latencyOf(rows.map(r => r.timing?.firstAnswerMs)),
+    correctCompletionMs: latencyOf(done.map(r => r.timing?.correctCompletionMs)),
+    mainRequests: latencyOf(rows.map(r => r.usage?.mainRequests)),
+    mainTokens: latencyOf(rows.map(r => r.usage?.mainReportedTokens)),
+    sideTokens: latencyOf(rows.map(r => r.usage?.sideReportedTokens)),
+    done: done.length,
+    planned,
+  };
+}
+
+const msText = (v: number) => v < 1000 ? `${Math.round(v)}ms` : `${(v / 1000).toFixed(1)}s`;
+const tokenText = (v: number) => `${(v / 1000).toFixed(1)}k`;
+const countText = (v: number) => String(v);
+
+function spreadText(spread: Spread, text: (v: number) => string) {
+  if (spread.p50Ms === null || spread.p95Ms === null) return "未测";
+  const atMax = Math.ceil(spread.count * 0.95) === spread.count;
+  return `${text(spread.p50Ms)} / ${text(spread.p95Ms)}${atMax ? "*" : ""}（${spread.count} 句）`;
+}
+
+export function readingsTable(columns: [string, Readings][]): string[] {
+  return [
+    "| 按句读数 P50 / P95 | 首个可见反馈 | 首次完整回答 | 正确完成 | 主模型请求 | 主模型 token | 辅助模型 token | 做成率 |",
+    "|---|---|---|---|---|---|---|---|",
+    ...columns.map(([label, r]) => `| ${label} | ${spreadText(r.firstFeedbackMs, msText)} | ${spreadText(r.firstAnswerMs, msText)} | ${spreadText(r.correctCompletionMs, msText)} | ${spreadText(r.mainRequests, countText)} | ${spreadText(r.mainTokens, tokenText)} | ${spreadText(r.sideTokens, tokenText)} | ${r.done}/${r.planned}（${r.planned ? Math.round(100 * r.done / r.planned) : 0}%） |`),
+    "",
+    "- 每格是每句的 P50 / P95，括号里是有读数的句数。P50 是中位数；P95 取最近秩（排序后第 ⌈0.95n⌉ 个），带 * 的格不到 20 句，P95 就是最大值。",
+    "- 首个可见反馈、正确完成从按下发送算起；首次完整回答取这句第一次不重试的 agent_end，从代理收到这句算起，不含发送到代理收到的间隔；没显示过回答的句子不计。正确完成只算做成的句子，两边的句子集合可能不同。",
+    "- 主模型请求是这句的 model_request 次数；token 是模型上报的总量，有一次响应没上报就整句不计。做成率是做成句数除以计划句数，没跑到的句子算没做成。",
+  ];
 }

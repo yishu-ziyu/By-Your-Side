@@ -6,7 +6,7 @@ import { loadavg } from "node:os";
 import { join, resolve } from "node:path";
 import { REPO, sleep } from "../acceptance/real-path/harness.mts";
 import { type Arm, type Pass, type Verdict, judge, registrationOf, replayModelArgs, shuffled } from "./climb-rules.mts";
-import { poolOf, type Row } from "./replay-row.mts";
+import { firstAnswerMsOf, poolOf, readingsOf, readingsTable, recordsOf, type Row } from "./replay-row.mts";
 
 const MAX_LOAD = 20;
 const ignoreLoad = process.argv.includes('--force');
@@ -104,6 +104,13 @@ const judged = early ? { verdict: early, reasons: [], lines: [] } : reg.scenario
 const verdict: Verdict = reasons.length && judged.verdict === "通过" ? "证据不足" : judged.verdict;
 const allReasons = [...reasons, ...judged.reasons];
 const minutes = Math.round((Date.now() - started) / 60_000);
+const rowsWithFirstAnswer = (pass: Pass): Row[] => pass.rows.map(row => {
+  const trace = join(pass.report.replace(/\.md$/, ""), `${row.n}-${row.k}.trace.jsonl`);
+  if (!row.timing || row.timing.firstAnswerMs !== undefined || !existsSync(trace)) return row;
+  return { ...row, timing: { ...row.timing, firstAnswerMs: firstAnswerMsOf(recordsOf(readFileSync(trace, "utf8").split("\n")), new Set(row.runIds ?? []), row.timing.finalAnswerMs !== null) } };
+});
+const plannedSentences = (onlyPairs && !mergeDirs ? onlyPairs.size : reg.N) * reg.scenarios.reduce((total, n) => total + (sentences.get(n) ?? 0), 0);
+const readingLines = passes.length ? ["", ...readingsTable((["base", "cand"] as const).map(arm => [arm === "base" ? "改前" : "改后", readingsOf(passes.filter(p => p.arm === arm).flatMap(rowsWithFirstAnswer), plannedSentences)]))] : [];
 const aa = dists.base === dists.cand;
 const report = [
   `# 爬山判定 ${reg.name}：${verdict}`,
@@ -113,6 +120,7 @@ const report = [
   ...(reg.scenarios.length ? [`回放配置 ${replayModelArgs(reg).join(" ") || "沿用现有回放默认值"}。`, ""] : []),
   ...(allReasons.length ? ["没通过的原因：", ...allReasons.map(r => `- ${r}`), ""] : []),
   ...[...notes, ...judged.lines].map(l => `- ${l}`),
+  ...readingLines,
   ``,
   "每遍回放：",
   ...passes.map(p => `- 第 ${p.pair + 1} 对 ${p.arm}：${p.report}`),
