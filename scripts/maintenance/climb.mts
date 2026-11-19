@@ -26,6 +26,10 @@ function child(args: string[], env: Record<string, string>, capture: boolean): P
 }
 
 const file = process.argv[2] ?? "";
+const pairsArg = process.argv.find(a => a.startsWith("--pairs="))?.slice(8);
+const onlyPairs = pairsArg ? new Set(pairsArg.split(",").map(Number)) : null;
+const mergeDirs = process.argv.find(a => a.startsWith("--merge="))?.slice(8).split(",").filter(Boolean) ?? null;
+const skipRedLines = process.argv.includes("--skip-red-lines") || !!mergeDirs;
 const reg = registrationOf(JSON.parse(readFileSync(file, "utf8")));
 const registrationHash = createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 12);
 const dists: Record<Arm, string> = { base: resolve(REPO, reg.base), cand: resolve(REPO, reg.cand) };
@@ -38,7 +42,7 @@ const sentences = new Map(reg.scenarios.map(n => {
 }));
 const rulerHead = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim();
 const rulerDirty = execFileSync("git", ["status", "--porcelain", "--", "scripts/maintenance", "scripts/acceptance"], { cwd: REPO, encoding: "utf8" }).trim().length > 0;
-const outDir = join(REPO, "out/hill-climb", reg.name);
+const outDir = join(REPO, "out/hill-climb", onlyPairs ? `${reg.name}-pairs-${[...onlyPairs].join("-")}` : reg.name);
 await mkdir(outDir, { recursive: true });
 const started = Date.now();
 const reasons: string[] = [];
@@ -52,7 +56,7 @@ async function runCase(name: string, arm: Arm, args: string[] = []) {
   return code === 0;
 }
 
-for (const name of reg.redLines) {
+for (const name of skipRedLines ? [] : reg.redLines) {
   if (await runCase(name, "cand")) continue;
   if (await runCase(name, "base")) { early = "否决"; reasons.push(`红线 ${name} 改后失败、改前通过`); }
   else { early ??= "证据不足"; reasons.push(`红线 ${name} 改前改后都失败：先修用例或环境`); }
@@ -69,8 +73,19 @@ if (!early && "case" in reg.target) {
 }
 
 const passes: Pass[] = [];
-if (!early && reg.scenarios.length) {
+if (mergeDirs) {
+  for (const dir of mergeDirs) {
+    const shard = JSON.parse(readFileSync(join(resolve(REPO, dir), "passes.json"), "utf8")) as { registration: string; passes: Pass[] };
+    if (shard.registration !== registrationHash) throw new Error(`${dir} 的登记 ${shard.registration} 与本次登记 ${registrationHash} 不同，不能合并`);
+    for (const pass of shard.passes) {
+      if (passes.some(p => p.pair === pass.pair && p.arm === pass.arm)) throw new Error(`第 ${pass.pair + 1} 对 ${pass.arm} 在多个分片里都有，不能合并`);
+      passes.push(pass);
+    }
+  }
+  notes.push(`合并 ${mergeDirs.length} 个分片：${mergeDirs.join("、")}；红线由各分片之外单独运行`);
+} else if (!early && reg.scenarios.length) {
   for (const [pair, order] of shuffled(reg.seed + 1, reg.N).entries()) {
+    if (onlyPairs && !onlyPairs.has(pair)) continue;
     if (Date.now() - started > reg.budgetMin * 60_000) { notes.push(`预算 ${reg.budgetMin} 分钟用完，只跑了 ${pair}/${reg.N} 对`); break; }
     for (const arm of order) {
       await waitForQuietMachine();
