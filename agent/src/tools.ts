@@ -129,6 +129,16 @@ function truncate(text: string, max: number): string {
 export const TABS_LIST_AT_START = "; the open tabs at task start are already in the task's first message, so call list only if tabs may have changed since";
 export const TABS_RESULT_IN_BACKGROUND = ' A result left in a background tab is expected: the reply automatically gives the user a "切过去看" button for the working tab, so never call show just to deliver a result.';
 const TRANSLATION_JS_FALLBACK = " Use the translation tool rather than JS to write the translated paragraphs in the page.";
+
+function pageTranslationReceiptText(action: TranslationRequest["action"], result: TranslationReceipt): string {
+  const { blocks: _blocks, ...receipt } = result;
+  const applied = action === "translate" && receipt.translated > 0 && receipt.remaining === 0 && !receipt.incompleteReason;
+  const payload = applied
+    ? { status: "applied", ...receipt, note: "Translations are already rendered in the webpage; no extra snapshot or DOM check is needed." }
+    : receipt;
+
+  return JSON.stringify(payload);
+}
 const MARK_JS_FALLBACK = " mark has one outline style and circles terms in the whole page; unsupported visual edits cannot be performed with read-only JS.";
 export const JS_FALLBACK = new RegExp([TRANSLATION_JS_FALLBACK, MARK_JS_FALLBACK].map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
 
@@ -498,7 +508,7 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
           translateBatch ?? (async () => { throw new Error('当前会话的翻译模型不可用。'); }), signal ?? new AbortController().signal,
           {settle: async command => { await rpc.call('page_translation', {...command}, 5_000, sid); }});
 
-        return textResult(JSON.stringify(result), result);
+        return textResult(pageTranslationReceiptText(request.action, result), result);
       },
     }),
     defineTool({
