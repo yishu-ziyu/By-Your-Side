@@ -252,6 +252,7 @@ await writeFile(join(outDir, `${day}.md`), [
   `计划 ${plannedTurns} 句，执行 ${rows.length} 句，正确完成 ${done.length} 句。截图和每句的诊断记录在 out/self-use/${day}/。正确完成耗时取最终回答就绪时刻；有页面或标签页断言时取首次同时核验结果的时间上界。`,
   ``,
   ...readingsTable([["本次", readings]]),
+  ``,
   ...(minimaxTraffic ? [`隔离回放期间共向 MiniMax 发送 ${minimaxTraffic.requests} 次模型请求，HTTP 错误 ${minimaxTraffic.httpErrors} 次，网络失败或取消 ${minimaxTraffic.networkFailures} 次，采样结束时在途 ${minimaxTraffic.unfinished} 次。`] : []),
   ...(maxLoad > 20 ? [``, `机器 1 分钟负载最高 ${maxLoad}，超过 20：这一晚的用时不能和别的晚上比。`] : []),
   ``,
