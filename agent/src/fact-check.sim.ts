@@ -57,6 +57,8 @@ test("checkFacts uses low reasoning effort and preserves grounded contradiction 
 
   assert.equal(seenReasoning, "low");
   assert.match(seenSystem, /summaries.*paraphrases|paraphrases/i);
+  assert.doesNotMatch(seenSystem, /\busually\b|a handful/i);
+  assert.match(seenSystem, /binding limits|eligibility|material exceptions/i);
   assert.equal(flags.length, 1);
   assert.equal(flags[0]!.quote, "限时价 ¥899");
 });
