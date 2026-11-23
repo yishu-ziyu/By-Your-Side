@@ -11,9 +11,9 @@ await mkdir(out, { recursive: true });
 
 const Q1 = '帮我查一下两件事：第一件先核实最新公告，第二件帮我找一下 X。';
 const Q2 = '你可以把我的页面切换到那个具体的 X 页面。';
-const FIRST_ANSWER = 'X 我还没对上，你是指社交平台还是别的？第一件公告已查清：已经正式恢复职务。';
+const FIRST_ANSWER = '第一件公告已查清：已经正式恢复职务。第二件事暂时没有查到更新记录。';
 const SECOND_ANSWER = 'X 具体指哪一页还没对上，请告诉我网址，我马上切过去。';
-const FINDING = '无关旧标签页里的概念还没找完';
+const FINDING = '第二件事的来源页面还没核对完';
 
 const site = createServer((_req, res) => {
   res.writeHead(200, { 'content-type': 'text/html;charset=utf-8' })
@@ -24,7 +24,7 @@ const origin = `http://127.0.0.1:${siteAddress(site).port}`;
 
 const model = await startScriptedModel([
   { match: `"lastReply":"${SECOND_ANSWER}`, steps: [{ text: JSON.stringify({ status: 'needs_user', items: [{ text: '切换页面', done: false }], remaining: '等用户给网址' }) }] },
-  { match: '"lastReply"', steps: [{ text: JSON.stringify({ status: 'continue', goalOnPage: false, repair: 'complete_task', verificationSubject: 'answer', evidence: FIRST_ANSWER, items: [{ text: '找旧概念', done: false }], remaining: '继续搜索', correction: '继续搜索旧概念', finding: FINDING }) }] },
+  { match: '"lastReply"', steps: [{ text: JSON.stringify({ status: 'continue', goalOnPage: false, repair: 'correct_result', verificationSubject: 'answer', evidence: FIRST_ANSWER, items: [{ text: '核对第二件事', done: false }], remaining: '继续核对', correction: '补充第二件事核对结果', finding: FINDING }) }] },
   { match: Q2, steps: [{ text: SECOND_ANSWER }] },
   { match: '[GOAL CHECK]', steps: [{ text: '正在重做上一轮。', delayMs: 4000 }] },
   { match: Q1, steps: [{ tool: { name: 'tabs', args: { action: 'open', url: `${origin}/news` } } }, { text: FIRST_ANSWER }] },
