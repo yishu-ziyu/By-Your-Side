@@ -59,11 +59,13 @@ export function shouldActivateForKey(key: string): boolean {
   return isLeadSession(identity.sessionId) && identity.conversationId === visibleConversationId;
 }
 
-export function setSessionClaimBlocked(key: string, blocked: boolean): void {
+export function setSessionClaimBlocked(key: string, blocked: boolean): boolean {
   const normalized = keyOf(key);
+  const previous = claimBlocked.has(normalized);
 
   if (blocked) claimBlocked.add(normalized);
   else claimBlocked.delete(normalized);
+  return previous;
 }
 
 export function beginTabTransfer(tabId: number, claimKey: string): () => void {

@@ -95,9 +95,8 @@ export function renderSelectionEvent(event: SelectionEvent, source: { text: stri
   const saved = document.createElement('span');
   saved.className = 'saved';
   saved.setAttribute('role', 'status');
-  let edited = false;
-  let settled = false;
-  title.addEventListener('input', () => { edited = true; });
+  let suggestion: 'awaiting' | 'user_edited' | 'settled' = 'awaiting';
+  title.addEventListener('input', () => { if (suggestion === 'awaiting') suggestion = 'user_edited'; });
   add.addEventListener('click', click => {
     click.stopPropagation();
     const name = title.value.trim() || source.title;
@@ -113,10 +112,11 @@ export function renderSelectionEvent(event: SelectionEvent, source: { text: stri
   return {
     element,
     settle(answer) {
-      if (answer === null || settled) return;
-      settled = true;
+      if (answer === null || suggestion === 'settled') return;
+      const useSuggestion = suggestion === 'awaiting';
+      suggestion = 'settled';
       title.placeholder = '活动名称';
-      if (edited) return;
+      if (!useSuggestion) return;
       title.value = (answer.split('\n').find(line => line.trim()) ?? '').trim().slice(0, TITLE_LIMIT) || source.title;
     },
   };

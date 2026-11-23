@@ -76,8 +76,7 @@ const sameSamples = (a: Int16Array, b: Int16Array): boolean => {
 export class VoiceDiagnosticLog {
   private voiceId: string | null = null;
   private conversationId = '';
-  private diagnostic = false;
-  private confirmed = false;
+  private diagnosticPhase: 'off' | 'requested' | 'confirmed' = 'off';
   private maxSeconds = VOICE_DIAG_MAX_SECONDS;
   private sampleRate = VOICE_DIAG_SAMPLE_RATE;
   private open: VoiceDiagCapture | null = null;
@@ -87,22 +86,22 @@ export class VoiceDiagnosticLog {
 
   private notify(): void { try { this.change(); } catch {  } }
   get recording(): boolean { return this.open !== null; }
-  get isDiagnostic(): boolean { return this.diagnostic; }
-  get isConfirmed(): boolean { return this.confirmed; }
+  get isDiagnostic(): boolean { return this.diagnosticPhase !== 'off'; }
+  get isConfirmed(): boolean { return this.diagnosticPhase === 'confirmed'; }
   get limitSeconds(): number { return this.maxSeconds; }
   get maxSamples(): number { return Math.floor(this.maxSeconds * this.sampleRate); }
 
   sessionStarted(info: { voiceId: string; conversationId: string; diagnostic: boolean }): void {
     this.voiceId = info.voiceId;
     this.conversationId = info.conversationId;
-    this.diagnostic = info.diagnostic;
-    this.confirmed = false;
+    this.diagnosticPhase = info.diagnostic ? 'requested' : 'off';
     this.sampleRate = VOICE_DIAG_SAMPLE_RATE;
     this.maxSeconds = VOICE_DIAG_MAX_SECONDS;
     this.notify();
   }
   confirmedBy(record: { sampleRate: number; maxSeconds: number }): void {
-    this.confirmed = true;
+    if (this.diagnosticPhase === 'off') return;
+    this.diagnosticPhase = 'confirmed';
     this.sampleRate = record.sampleRate;
     this.maxSeconds = record.maxSeconds;
     this.notify();
@@ -370,7 +369,7 @@ export class VoiceDiagnosticLog {
       exportedAt: new Date().toISOString(),
       voiceId: this.voiceId,
       conversationId: this.conversationId,
-      confirmed: this.confirmed,
+      confirmed: this.isConfirmed,
       maxSeconds: this.maxSeconds,
       sessionNotes: this.looseNotes,
       captures,

@@ -24,8 +24,7 @@ export async function mountDictationSettings(): Promise<void> {
   let selected: DictationProvider = "chrome";
   let revision = 0;
   let verifiedRevision = -1;
-  let conflict = false;
-  let saving = false;
+  let savePhase: "editing" | "saving" | "conflict" = "editing";
   let request: AbortController | undefined;
   const drafts = new Map<DictationProvider, string>();
   const originalKeys = new Map<DictationProvider, string>();
@@ -92,8 +91,8 @@ export async function mountDictationSettings(): Promise<void> {
   save.addEventListener("click", async () => {
     const tested = verifiedRevision === revision;
     cancel();
-    if (conflict) { report("其他窗口修改了语音转文字设置，请重新打开此页后再保存。", "err"); return; }
-    saving = true; save.disabled = true;
+    if (savePhase === "conflict") { report("其他窗口修改了语音转文字设置，请重新打开此页后再保存。", "err"); return; }
+    savePhase = "saving"; save.disabled = true;
     try {
       const values: Record<string, unknown> = { [DICTATION_CONFIG_KEY]: { provider: selected, keySource: source.value === "voice" ? "voice" : "own" } };
       if (selected !== "chrome" && !(selected === "stepfun-realtime" && source.value === "voice")) values[`${DICTATION_KEY_PREFIX}${selected}`] = key.value.trim();
@@ -109,15 +108,15 @@ export async function mountDictationSettings(): Promise<void> {
           : "已保存，下次点击左侧麦克风时生效。识别服务尚未验证。";
       report(changedKeys.size ? `${message} 其他服务的密钥修改仍未保存。` : message, "ok");
     } catch { report("保存失败，请重试。", "err"); }
-    finally { save.disabled = false; saving = false; }
+    finally { save.disabled = false; savePhase = "editing"; }
   });
   const updateSourceNote = async () => {
     document.getElementById("dictation-key-source-note")!.textContent = (await readVoiceDictationKey()).description;
   };
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && ("inproc_voice_key" in changes || "inproc_cred:stepfun" in changes)) { cancel(); void updateSourceNote(); }
-    if (area !== "local" || saving || !Object.keys(changes).some(name => name === DICTATION_CONFIG_KEY || name.startsWith(DICTATION_KEY_PREFIX))) return;
-    cancel(); conflict = true;
+    if (area !== "local" || savePhase === "saving" || !Object.keys(changes).some(name => name === DICTATION_CONFIG_KEY || name.startsWith(DICTATION_KEY_PREFIX))) return;
+    cancel(); savePhase = "conflict";
     report("其他窗口修改了语音转文字设置，请重新打开此页查看。", "err");
   });
   addEventListener("pagehide", cancel);

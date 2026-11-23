@@ -117,6 +117,7 @@ const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>(
 
 let currentCitationSource: Promise<CitationContext | null> | null = null;
 
+let panelActivity = panelLive([], null);
 let historyMode: "live" | "applying_updates" | "replaying" = "live";
 const isReplayingHistory = () => historyMode === "replaying";
 const isApplyingHistory = () => historyMode !== "live";
@@ -1114,9 +1115,8 @@ function resetConversationRender(): void {
   sessionRun.clear();
   teamView = null;
   teamRunId = null;
-  running = false;
+  panelActivity = panelLive([], null);
   steerRibbon.reset();
-  lastUserHasPage = false;
   applyHandoffPhase("agent");
   lastHistorySeq = 0;
   userBubbles.clear();
@@ -1385,10 +1385,10 @@ function syncSteerSend(): void {
   const send = document.getElementById("send-btn");
   const input = document.getElementById("input") as HTMLTextAreaElement | null;
 
-  if (steer && send && input) steer.hidden = !send.classList.contains("stopping") || !input.value.trim();
+  if (steer && send && input) steer.hidden = !panelActivity.abortVisible || !input.value.trim();
 
   if (send && input) {
-    const idle = !send.classList.contains("stopping") && !input.value.trim() && !attachments?.getAttachments().length;
+    const idle = !panelActivity.abortVisible && !input.value.trim() && !attachments?.getAttachments().length;
 
     if (idle) send.setAttribute("aria-disabled", "true");
     else send.removeAttribute("aria-disabled");
@@ -1669,11 +1669,8 @@ const queuedSends: PanelToBg[] = [];
 
 let lastDisconnectDetail = "";
 
-let running = false;
-
 let historyPrimed = false;
 
-let lastUserHasPage = false;
 
 let currentAssistant: HTMLElement | null = null;
 
@@ -2806,13 +2803,13 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   sessionRun.set(sessionId, state);
   const flags = panelLive(sessionRun.values(), teamView);
   const stopping = teamView?.phase === "draining";
-  running = flags.running;
+  const previous = panelActivity;
+  panelActivity = flags;
 
-  if (flags.userHasPage !== lastUserHasPage) {
-    lastUserHasPage = flags.userHasPage;
+  if (flags.userHasPage !== previous.userHasPage) {
     currentRun?.graph.user(flags.userHasPage);
 
-    if (!flags.userHasPage) collapseHandoffCard(!running);
+    if (!flags.userHasPage) collapseHandoffCard(!panelActivity.running);
     const phase = document.getElementById("handoff-banner")?.dataset.phase;
 
     if (flags.userHasPage && phase !== "user" && phase !== "leaving") applyHandoffPhase(stopping ? "leaving" : "user");
@@ -2830,7 +2827,7 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   if (handback) handback.disabled = !flags.userHasPage || handingOver;
   takeoverBtn.textContent = stopping ? "接管中" : flags.userHasPage ? "交还" : "接管";
   takeoverBtn.title = flags.userHasPage ? "交还：助手先重读页面，再接着做。" : "接管：助手暂停，由你操作页面。操作完，点「交还」。";
-  steerRibbon.setRunning(running && !flags.userHasPage);
+  steerRibbon.setRunning(panelActivity.running && !flags.userHasPage);
 
   if (flags.abortVisible) {
     sendBtn.classList.add("stopping");
@@ -2898,7 +2895,7 @@ const RUN_ORB_MARKS = {
 } as const;
 
 function syncRunOrb(run: RunHost): void {
-  const state = run.orbActivity.state(lastUserHasPage);
+  const state = run.orbActivity.state(panelActivity.userHasPage);
   run.root.dataset.phase = state;
   const mark = state in RUN_ORB_MARKS ? RUN_ORB_MARKS[state as keyof typeof RUN_ORB_MARKS] : null;
   run.orbMark.hidden = !mark;
@@ -3700,7 +3697,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
 
   run.lastToolName = ev.name;
 
-  if (orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
+  if (orbStateRuns(run.orbActivity.state(panelActivity.userHasPage))) {
     setRunTitle(run, `正在：${actionCardLabel(ev.name, ev.params)}`, false, kind);
   }
 
@@ -3783,7 +3780,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; pageTitle?: strin
   const entry = toolChips.get(ev.toolCallId);
   toolChips.delete(ev.toolCallId);
 
-  if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(lastUserHasPage))) {
+  if (run && run === currentRun && !toolChips.size && orbStateRuns(run.orbActivity.state(panelActivity.userHasPage))) {
     run.lastToolName = null;
     setRunTitle(run, THINKING_TITLE, false, "think");
     openThink(run, eventTime());
@@ -3873,7 +3870,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; pageTitle?: strin
       const halt = document.createElement("button");
       halt.type = "button";
       halt.textContent = "中止";
-      halt.onclick = (event) => { event.preventDefault(); event.stopPropagation(); if (run && currentRun === run && sendBtn.classList.contains("stopping")) stopCurrentTask(); };
+      halt.onclick = (event) => { event.preventDefault(); event.stopPropagation(); if (run && currentRun === run && panelActivity.abortVisible) stopCurrentTask(); };
       if (timeout.retry) acts.append(retry);
       acts.append(other, halt);
       label.after(acts);
@@ -5133,11 +5130,11 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
       historyOccurredAt = entry.occurredAt;
 
       if (entry.item.kind === "user") {
-        const steering = running && !entry.item.undelivered;
+        const steering = panelActivity.running && !entry.item.undelivered;
 
         restoreSupersededAnswer();
 
-        if (!running) {
+        if (!panelActivity.running) {
           runStartAt = eventTime();
         }
         confirmSentText(entry.item.text);
@@ -5149,7 +5146,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         const bubble = reuse ?? addUserMsg(entry.item.text, entry.item.attachments);
         bubble.dataset.seq = String(entry.seq);
         userBubbles.set(entry.seq, bubble);
-        chapters.noteUserTurn(bubble, entry.item, !running && !lastUserHasPage);
+        chapters.noteUserTurn(bubble, entry.item, !panelActivity.running && !panelActivity.userHasPage);
 
         if (entry.item.card) proactiveCard.turn(entry.item.card, bubble, entry.occurredAt);
         else if (entry.item.context) renderTurnContext(bubble, entry.item.context);
@@ -5551,7 +5548,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
 
   if (!text && pendingAtts.length === 0) return false;
 
-  if (!running&&!held) runStartAt = Date.now();
+  if (!panelActivity.running&&!held) runStartAt = Date.now();
 
   const context: PageContext | undefined = quickPage ?? (pendingAsk && !quick
     ? {
@@ -5576,7 +5573,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
     conversationId: targetedTask?.conversationId ?? selectedConversationId,
     ...(targetedTask ? {taskId:targetedTask.taskId,originConversationId:selectedConversationId} : {}),
     source: 'text' as const,
-    action: (targetedTask||running||held ? 'steer' : 'start') as "steer" | "start",
+    action: (targetedTask||panelActivity.running||held ? 'steer' : 'start') as "steer" | "start",
     expectedRunId: targetedTask ? targetedTask.runId : conversations.get(selectedConversationId)?.runId ?? null,
     text,
     context,
@@ -5584,7 +5581,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
     attachments: clientAttachments,
   };
 
-  const sent = send(running||held ? { type: "task_action", request } : { type: "task_action", request });
+  const sent = send({ type: "task_action", request });
 
   if (!sent) { noticeSendFailed();
 
@@ -5597,7 +5594,7 @@ function sendInput(quick?: string, quickPage?: PageContext): boolean {
   marginalia.showConversation();
   const citationPage = context ?? activeTabInfo;
 
-  if (!running && !held) { currentCitationSource = citationPage ? captureCitationContext(citationPage) : null; citationRequestPending = true; }
+  if (!panelActivity.running && !held) { currentCitationSource = citationPage ? captureCitationContext(citationPage) : null; citationRequestPending = true; }
 
   const queued = queuedSends.some((e) => e.kind === "client" && e.msg.type === "task_action" && e.msg.request.requestId === request.requestId);
   unconfirmedSend = { requestId: request.requestId, text, ask: quick ? null : pendingAsk, attachments: pendingAtts, conversationId: conversation, postedOn: queued ? "queued" : port ?? "queued" };
@@ -5649,7 +5646,7 @@ function stopCurrentTask(): void {
 bindAnswerCards(messagesEl, (text) => sendInput(text), () => selectedConversationId);
 
 sendBtn.onclick = () => {
-  if (sendBtn.classList.contains("stopping")) {
+  if (panelActivity.abortVisible) {
     stopCurrentTask();
   } else {
     sendInput();
@@ -5699,7 +5696,7 @@ function requestTakeover(): void {
 }
 
 takeoverBtn.onclick = () => {
-  if (takeoverBtn.dataset.mode === "handback") port?.postMessage({ kind: "control", action: "handback", conversationId: selectedConversationId } satisfies PanelToBg);
+  if (panelActivity.userHasPage) port?.postMessage({ kind: "control", action: "handback", conversationId: selectedConversationId } satisfies PanelToBg);
   else requestTakeover();
 };
 

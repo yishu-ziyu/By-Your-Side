@@ -104,8 +104,8 @@ export class VoiceClient {
   private connectionPhase: 'idle' | 'connecting' | 'recovering' | 'ready' = 'idle';
   private get ready(): boolean { return this.connectionPhase === 'ready'; }
   private get recovering(): boolean { return this.connectionPhase === 'recovering'; }
-  private serverVad = false;
-  private hasInputTurn = false;
+  private inputMode: 'manual' | 'vad_waiting' | 'vad_with_turn' = 'manual';
+  private get serverVad(): boolean { return this.inputMode !== 'manual'; }
   private turn = 0;
   private speaking = false;
   private phase: VoicePhase = 'idle';
@@ -208,8 +208,7 @@ export class VoiceClient {
     this.conversationId = conversationId;
     this.turn = 0;
     this.audioMarkedTurn = -1;
-    this.serverVad = false;
-    this.hasInputTurn = false;
+    this.inputMode = 'manual';
     this.capturePhase = !diagnostic ? 'off' : autoRecord ? 'auto_on_confirmation' : 'awaiting_confirmation';
     this.frameIndex = 0;
     this.sentFrames = 0;
@@ -781,7 +780,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
 
     if (!this.id) return { ok: false, turn, detail: '语音未开启，标记未发送。' };
 
-    if (!turn || this.serverVad&&!this.hasInputTurn) return { ok: false, turn, detail: '还没有可标记的一轮，先说一句再标记。' };
+    if (!turn || this.inputMode === 'vad_waiting') return { ok: false, turn, detail: '还没有可标记的一轮，先说一句再标记。' };
     const capture: CaptureCommand = { kind: 'capture', turn, mark: true };
 
     if (note) capture.note = note;
@@ -1050,7 +1049,7 @@ return;}
 
       if(this.player?.playing){this.player.stop();this.setPhase('listening');}
 
-      this.turn=e.turn;this.hasInputTurn=true;this.player?.follow(this.turn);
+      this.turn=e.turn;this.inputMode='vad_with_turn';this.player?.follow(this.turn);
       const input=this.getInput();this.command({kind:'commit',turn:this.turn,input});
 
       return;
@@ -1111,7 +1110,7 @@ return;}
   }
   private receiveReady(e: Extract<VoiceEvent, { kind: "state" }>): void {
     if (this.reconnectOf && !this.command({ kind: 'ready_ack' })) return;
-    this.serverVad=e.inputMode==='server_vad'||this.serverVad;
+    if (e.inputMode === 'server_vad' && !this.serverVad) this.inputMode = 'vad_waiting';
 
     if(this.serverVad){this.turn=Math.max(1,this.turn);this.player?.follow(this.turn);}
 

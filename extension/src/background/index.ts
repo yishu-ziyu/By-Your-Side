@@ -907,7 +907,7 @@ type PendingControl =
       timeout: PendingControlTimeout;
     };
 
-type TakeoverWait = { settled: Promise<void>; finish(): void };
+type TakeoverWait = { settled: Promise<void>; finish(): void; undo?: () => void };
 type ControlExchange =
   | { phase: "idle" }
   | { phase: "reading_handback"; token: number }
@@ -922,10 +922,13 @@ const exchange = {
   get wait(): TakeoverWait | null { return "wait" in this.state ? this.state.wait : null; },
 };
 
+function ownsTakeover(wait: TakeoverWait): boolean { return exchange.wait === wait; }
+
 function cancelDrainingTakeover(): void {
   if (exchange.state.phase !== "draining") return;
   const { wait } = exchange.state;
   exchange.state = { phase: "idle" };
+  wait.undo?.();
   wait.finish();
 }
 
@@ -1417,14 +1420,17 @@ function reconcileControlRun(): void {
   epochRunId = nextRun;
 
   if (stale) {
+    cancelHandbackCapture();
+    cancelDrainingTakeover();
+    if (exchange.pending) {
+      const pending = clearPendingControl(exchange.pending.requestId);
+      if (pending?.action === "takeover" && !gate.isUser()) cancelTakeover(pending);
+    }
+
     team = new TeamControl();
     statusBySession.clear();
     activityBySession.clear();
     lastStatus = gate.isUser() ? "user" : current!.state;
-
-    cancelHandbackCapture();
-    cancelDrainingTakeover();
-    if (exchange.pending) clearPendingControl(exchange.pending.requestId);
 
     if (remoteControl) { clearTimeout(remoteControl.timer); remoteControl.settle(); remoteControl = null; }
 
@@ -1879,19 +1885,32 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
   try {
     const targetTabId = wholeTask ? undefined : requestedTabId ?? await getWorkingTabId() ?? undefined;
     const allMembers = await localActiveMembers();
-    if (exchange.wait !== wait) return;
+    if (!ownsTakeover(wait)) return;
     let members = allMembers;
 
     if (targetTabId != null) {
       const collaborators = (await findSessionsForTab(targetTabId)).filter(k => parseExecutionKey(k).conversationId === conversationId).map(k => parseExecutionKey(k).sessionId);
 
-      if (exchange.wait !== wait) return;
+      if (!ownsTakeover(wait)) return;
       if (!collaborators.length) {
         emitNotice("TAB_OWNERSHIP_ERROR: 该页面不属于当前会话", "error");
         return;
       }
 
-      for (const sid of collaborators) { gate.blockSession(sid); setSessionClaimBlocked(sid, true); }
+      const prior = collaborators.map(sid => {
+        const wasBlocked = gate.isSessionBlocked(sid);
+        const wasClaimBlocked = setSessionClaimBlocked(sid, true);
+        gate.blockSession(sid);
+        return { sid, wasBlocked, wasClaimBlocked };
+      });
+      const generation = gate.gen;
+      wait.undo = () => {
+        if (gate.gen !== generation) return;
+        for (const { sid, wasBlocked, wasClaimBlocked } of prior) {
+          if (!wasBlocked) gate.releaseSession(sid);
+          setSessionClaimBlocked(sid, wasClaimBlocked);
+        }
+      };
 
       members = allMembers.filter(m => collaborators.includes(m.sessionId));
 
@@ -1905,7 +1924,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
     }
     await stopThenRequestTakeover(wait, members, targetTabId, lastStatus, remoteRequestId, ask, targets);
   } finally {
-    if (exchange.wait === wait) cancelDrainingTakeover();
+    if (ownsTakeover(wait)) cancelDrainingTakeover();
   }
 }
 
@@ -1917,7 +1936,7 @@ async function stopThenRequestTakeover(wait: TakeoverWait, members: ActiveMember
   persistControl();
 
   if (ask && targetTabId != null) await bringForwardForUser(targetTabId, "hand_to_user");
-  if (exchange.wait !== wait) return;
+  if (!ownsTakeover(wait)) return;
   const shown = showUserControlGuarded();
 
   if (ask && targetTabId != null && targets?.length) {
@@ -1928,9 +1947,13 @@ async function stopThenRequestTakeover(wait: TakeoverWait, members: ActiveMember
   }
   const sessionIds = members.map(m => m.sessionId);
   const draining = targetTabId != null ? drainPage(sessionIds) : gate.beginTakeover(CONTROL_TIMEOUT_MS);
+  if (targetTabId == null) {
+    const generation = gate.gen;
+    wait.undo = () => { gate.cancelTakeover(generation); };
+  }
   await stopRunningLoad(sessionIds, targetTabId);
   const result = await draining;
-  if (exchange.wait !== wait) return;
+  if (!ownsTakeover(wait)) return;
 
   if ("stillBusy" in result && result.stillBusy) emitNotice(STEP_STILL_RUNNING);
 
@@ -1942,7 +1965,7 @@ async function stopThenRequestTakeover(wait: TakeoverWait, members: ActiveMember
 
   emitHandoffPhase("leaving");
   await hidePresence(members.map((m) => key(m.sessionId)), true);
-  if (exchange.wait !== wait) return;
+  if (!ownsTakeover(wait)) return;
 
   for (const m of members) void suppressCursorStatus(key(m.sessionId));
   const requestId = remoteRequestId ?? nextControlRequestId("takeover");
