@@ -25,6 +25,12 @@ const SCALE: Record<string, number> = { 万: 1e4, 亿: 1e8, k: 1e3, K: 1e3, m: 1
 
 const NUMBER = new RegExp(`^[¥￥$€£]?\\s*([+−-]?\\d[\\d,]*(?:\\.\\d+)?)\\s*([%${Object.keys(SCALE).join("")}])?\\s*[^\\d\\s]{0,3}$`);
 
+const PERIOD_CELL_RE = /^(?:(?:19|20)\d{2}\s*(?:财年|年度|年|Q[1-4])|(?:FY|CY)\s*\d{2,4}|Q[1-4](?:\s*(?:19|20)?\d{2})?|\d{1,2}月)$/i; // WHY: hardcode-ok calendar/fiscal labels like 2025财年 are column headers, not numeric metrics
+
+const PLAIN_YEAR_RE = /^(?:19|20)\d{2}$/;
+
+const SUMMARY_ROW_RE = /^(?:合计|总计|小计|汇总|总和|total|subtotal|sum|grand\s+total)(?:[\s（(].*)?$/i; // WHY: hardcode-ok trailing total rows skew component bar scales
+
 const VIEW_LABELS: ReadonlyArray<{ mode: ChartViewMode; label: string }> = [
   { mode: "bar", label: "柱状" },
   { mode: "hbar", label: "横向" },
@@ -32,7 +38,10 @@ const VIEW_LABELS: ReadonlyArray<{ mode: ChartViewMode; label: string }> = [
 ];
 
 function numberOf(cell: string): number | null {
-  const match = NUMBER.exec(cell.trim());
+  const trimmed = cell.trim();
+
+  if (PERIOD_CELL_RE.test(trimmed)) return null;
+  const match = NUMBER.exec(trimmed);
 
   if (!match) return null;
   const value = Number(match[1]!.replace(/,/g, "").replace("−", "-"));
@@ -40,15 +49,48 @@ function numberOf(cell: string): number | null {
   return Number.isFinite(value) ? value * (SCALE[match[2] ?? ""] ?? 1) : null;
 }
 
+function isHeaderRow(rows: string[][]): boolean {
+  const firstCols = rows[0]!.slice(1);
+
+  if (firstCols.every((cell) => numberOf(cell) === null)) return true;
+  const yearOrText = firstCols.some((cell) => PLAIN_YEAR_RE.test(cell))
+    && firstCols.every((cell) => !cell || numberOf(cell) === null || PLAIN_YEAR_RE.test(cell));
+
+  if (!yearOrText) return false;
+
+  return rows.slice(1).some((row) => row.slice(1).some((cell) => numberOf(cell) !== null && !PLAIN_YEAR_RE.test(cell)));
+}
+
+function dropTrailingSummaryRow(body: string[][], width: number): string[][] {
+  if (body.length < 3) return body;
+  const last = body[body.length - 1]!;
+
+  if (!SUMMARY_ROW_RE.test((last[0] ?? "").trim())) return body;
+
+  for (let column = 1; column < width; column++) {
+    const lastVal = numberOf(last[column] ?? "");
+
+    if (lastVal === null) continue;
+    const prevVals = body.slice(0, -1).map((row) => numberOf(row[column] ?? "")).filter((v): v is number => v !== null);
+
+    if (prevVals.length < 2) continue;
+    const maxPrev = Math.max(...prevVals.map(Math.abs));
+
+    if (Math.abs(lastVal) >= maxPrev * 0.98) return body.slice(0, -1);
+  }
+
+  return body;
+}
+
 export function parseSelectionTable(text: string): SelectionTable | null {
   const rows = text.split("\n").map((line) => line.split("\t").map((cell) => cell.trim())).filter((row) => row.length > 1 && row.some(Boolean));
 
   if (rows.length < 2) return null;
-  const headed = rows[0]!.slice(1).every((cell) => numberOf(cell) === null);
-  const body = headed ? rows.slice(1) : rows;
+  const headed = isHeaderRow(rows);
+  const width = Math.max(...rows.map((row) => row.length));
+  const body = dropTrailingSummaryRow(headed ? rows.slice(1) : rows, width);
 
   if (body.length < 2 || body.length > MAX_ROWS) return null;
-  const width = Math.max(...rows.map((row) => row.length));
   const series: SelectionTable["series"] = [];
 
   for (let column = 1; column < width; column++) {

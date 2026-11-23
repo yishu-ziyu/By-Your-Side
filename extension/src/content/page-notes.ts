@@ -61,9 +61,14 @@ const NOTE_STYLES = `${PAPER_TOKENS}
 .acts button:focus-visible, .dot:focus-visible { outline: 2px solid var(--mark); outline-offset: 1px; }
 .acts svg { width: 13px; height: 13px; stroke-width: 2; }
 .dot { all: unset; display: none; width: 10px; height: 10px; border-radius: 50%; background: var(--mark); cursor: pointer; }
+.dot-label { display: none; }
 .note.folded { width: auto; padding: 0; border: 0; }
 .note.folded > :not(.dot) { display: none; }
 .note.folded .dot { display: block; }
+.note.below.folded .dot { display: inline-flex; align-items: center; gap: 6px; width: auto; height: auto; padding: 2px 9px 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--mark) 10%, transparent); border: 1px solid color-mix(in srgb, var(--mark) 32%, transparent); font: 500 12px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; color: color-mix(in srgb, currentColor 74%, transparent); }
+.note.below.folded .dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--mark); flex: none; }
+.note.below.folded .dot:hover { background: color-mix(in srgb, var(--mark) 16%, transparent); color: currentColor; }
+.note.below.folded .dot-label { display: inline; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes note-in { from { opacity: 0; transform: translateY(-3px); } }
 @keyframes word-in { from { opacity: 0; } }
 @keyframes thinking { 50% { transform: scale(1.25); } }
@@ -331,6 +336,12 @@ export function installPageNotes(options: Options) {
     dot.type = 'button';
     dot.setAttribute('aria-label', '展开');
     dot.title = '展开';
+    const shortQuote = record.source.text.replace(/\s+/g, ' ').trim();
+    const shortLabel = shortQuote.length > LABEL_LIMIT ? `${shortQuote.slice(0, LABEL_LIMIT)}…` : shortQuote;
+    const dotLabel = document.createElement('span');
+    dotLabel.className = 'dot-label';
+    dotLabel.textContent = translation ? '译文' : `批注 · ${shortLabel || '展开'}`;
+    dot.append(dotLabel);
     const body = document.createElement('div');
     body.className = 'text';
     const acts = document.createElement('span');
@@ -391,6 +402,8 @@ export function installPageNotes(options: Options) {
   addEventListener('resize', refresh, { signal: listening.signal });
   document.addEventListener('click', event => {
     if (!getSelection()?.isCollapsed) return;
+    // WHY: Closing a Gloss reading card positioned over its highlighted paragraph mounts the note during the same click event; ignore bubbled overlay clicks so the new note is not immediately folded.
+    if (event.composedPath().some(node => node instanceof Element && (node.hasAttribute('data-sideagent-ask') || node.hasAttribute(NOTE_ATTR)))) return;
 
     for (const note of notes.values()) {
       if (!note.marked || note.asleep || note.range.collapsed || !note.range.startContainer.isConnected) continue;

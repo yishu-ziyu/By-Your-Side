@@ -467,7 +467,8 @@ function boot(): void {
   let manualPos: { left: number; top: number } | null = null;
   let manualSize: ReadingCardSize | null = null;
   let pendingCardSize: ReadingCardSize | null = null;
-  let appliedSize: ReadingCardSize | null = null;
+  let liveResizedHeight = false;
+  let appliedSize: (ReadingCardSize & { fixedHeight: boolean }) | null = null;
   type PointerOrigin = { pointerId: number; startX: number; startY: number; left: number; top: number; moved: boolean };
   let gesture: (PointerOrigin & ({ kind: "drag" } | { kind: "resize"; width: number; height: number })) | null = null;
   const highlightName = `by-your-side-reading`;
@@ -587,7 +588,7 @@ function boot(): void {
     const reference = { getBoundingClientRect: () => r, getClientRects: () => lines.length ? lines : [r] };
 
     if (!isCard() || (!record?.turns.length && !awaitingVoiceAnswer())) {
-      surface.style.maxHeight = '';
+      if (!manualSize) surface.style.maxHeight = '';
       const box = surface.getBoundingClientRect();
       const above = first.top - LENS_GAP - box.height >= margin;
       void computePosition(reference, surface, {
@@ -701,14 +702,22 @@ function boot(): void {
     const maxHeight = Math.max(160, innerHeight - margin * 2);
     const width = clamp(manualSize.width, Math.min(CARD_MIN_WIDTH, maxWidth), maxWidth);
     const height = clamp(manualSize.height, Math.min(CARD_MIN_HEIGHT, maxHeight), maxHeight);
+    const fixedHeight = liveResizedHeight;
 
-    if (appliedSize?.width === width && appliedSize.height === height) return;
+    if (appliedSize?.width === width && appliedSize.height === height && appliedSize.fixedHeight === fixedHeight) return;
 
-    appliedSize = { width, height };
+    appliedSize = { width, height, fixedHeight };
     surface.classList.add('resized');
     surface.style.width = `${width}px`;
-    surface.style.height = `${height}px`;
-    surface.style.maxHeight = 'none';
+
+    if (fixedHeight) {
+      surface.style.height = `${height}px`;
+      surface.style.maxHeight = 'none';
+    }
+    else {
+      surface.style.removeProperty('height');
+      surface.style.maxHeight = `${height}px`;
+    }
   }
 
   function highlight(): void {
@@ -741,6 +750,7 @@ function boot(): void {
     highlights?.delete(highlightName);
     candidate = null;
     dismissOnUp = false;
+    liveResizedHeight = false;
 
     if (voice?.phase !== 'listening') endCompanion();
 
@@ -800,6 +810,7 @@ function boot(): void {
     if (!gesture.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
 
     gesture.moved = true;
+    liveResizedHeight = true;
     manualPos ??= { left: gesture.left, top: gesture.top };
     const margin = PLACE_MARGIN;
     const maxWidth = Math.max(200, innerWidth - margin * 2);
@@ -834,6 +845,7 @@ function boot(): void {
   function resetSize(event: MouseEvent): void {
     event.preventDefault();
     manualSize = null;
+    liveResizedHeight = false;
     if (gesture?.kind === "resize") gesture = null;
     applyManualSize();
     void chrome.storage.local.remove(READING_CARD_SIZE_KEY).catch(() => {  });

@@ -1,3 +1,4 @@
+import { cleanGuideTargetName } from "../shared/guide-intent.js";
 import { OVERLAY_ATTR } from "../shared/overlay.js";
 import {
   GUIDE_ARROW_CURVE_PX,
@@ -127,7 +128,7 @@ export const GUIDE_CANVAS_STYLES = `
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    max-width: min(320px, calc(100vw - 24px));
+    max-width: min(440px, calc(100vw - 24px));
     padding: 8px 14px;
     border: 1px solid var(--guide-border);
     border-radius: 999px;
@@ -137,7 +138,10 @@ export const GUIDE_CANVAS_STYLES = `
     font: 500 13px/1.3 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif;
     cursor: pointer;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+  .guide-offscreen-beacon[hidden] { display: none; }
   .guide-offscreen-beacon[data-dir="above"] { top: 14px; }
   .guide-offscreen-beacon[data-dir="below"] { bottom: 16px; }
   .guide-offscreen-beacon[data-dir="left"] { left: 14px; top: 50%; transform: translateY(-50%); }
@@ -316,7 +320,9 @@ export function createGuideCanvas(shadow: ShadowRoot, reducedMotion: MediaQueryL
       const arrow = direction === "above" ? "↑" : direction === "below" ? "↓" : direction === "left" ? "←" : "→";
       const where = direction === "above" ? "上方" : direction === "below" ? "下方" : direction === "left" ? "左侧" : "右侧";
       const prefix = step && step > 0 ? `第 ${step} 步` : "当前步骤";
-      const suffix = targetName ? `「${targetName}」` : "";
+      const clean = cleanGuideTargetName(targetName);
+      const clipped = clean.length > 16 ? `${clean.slice(0, 15)}…` : clean;
+      const suffix = clipped ? `「${clipped}」` : "";
       btn.dataset.dir = direction;
       btn.textContent = `${arrow} ${prefix}${suffix}在${where}，点此回到目标`;
       beaconAction = onLocate;

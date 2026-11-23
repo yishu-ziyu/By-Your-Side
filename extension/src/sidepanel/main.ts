@@ -887,7 +887,13 @@ function lastUserBubbleFor(text: string): HTMLElement | null {
 }
 
 function conversationEmpty(): boolean {
-  return !Array.from(messagesEl.children).some((child) => child.id !== "resume-entry-root" || child.childElementCount > 0);
+  return !Array.from(messagesEl.children).some((child) => {
+    if (child.id === "resume-entry-root") return child.childElementCount > 0;
+    // WHY: A settled passive memory notice ("好，记住了") in an otherwise empty New Chat must not hide the starter orb and drop the composer to the bottom.
+    if (child.classList.contains("memory-ask") && (child as HTMLElement).dataset.state !== "open") return false;
+
+    return true;
+  });
 }
 
 const pageOffers = mountPageOffers({ composerEl, inputEl, actions: (url) => slashSkills.pageActions(url), ready: () => conversationEmpty() });

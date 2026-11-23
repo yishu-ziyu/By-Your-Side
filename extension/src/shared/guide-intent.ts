@@ -86,3 +86,10 @@ export function guideInputWaitingCopy(name: string): string {
 export function guideSelectWaitingCopy(name: string): string {
   return name ? `请从「${name}」里选好需要的选项。` : "请从下拉列表里选好需要的选项。";
 }
+
+export function cleanGuideTargetName(raw: string): string {
+  const flat = raw.trim().replace(/\s+/g, " ");
+  const deduped = flat.replace(/^(.+?)\s*(\d[\d,.kKmM+]*)\s*\(\2\)$/, "$1").trim();
+
+  return deduped || flat;
+}

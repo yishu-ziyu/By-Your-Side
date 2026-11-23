@@ -2,6 +2,7 @@ import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 import {
   GUIDE_INPUT_SETTLE_MS,
   classifyGuideTarget,
+  cleanGuideTargetName,
   formatGuideFieldAfter,
   guideInputWaitingCopy,
   guideSelectWaitingCopy,
@@ -519,7 +520,7 @@ export function createTutorGuide<Inst>(host: TutorGuideHost<Inst>): TutorGuideCo
       el.scrollIntoView({ block: "center", inline: "nearest", behavior: host.reducedMotion.matches ? "auto" : "smooth" });
     }
 
-    const full = host.actionName(el ?? undefined);
+    const full = cleanGuideTargetName(host.actionName(el ?? undefined));
     const port = chrome.runtime.connect({ name: portName });
     const kind = detectTargetKind(el);
 
