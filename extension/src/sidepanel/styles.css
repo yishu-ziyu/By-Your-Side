@@ -1246,11 +1246,11 @@ details.run-steps.done .chip.error { background: transparent; }
 }
 #app.starter-ready.conversation-empty #starter { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; }
 #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #messages-frame { flex: 0 1 auto; }
-#app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #starter { position: static; flex: 0 0 auto; margin-top: auto; padding-bottom: var(--s-3); }
-#app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) .composer-dock-wrap { margin-bottom: auto; }
+#app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #starter { position: static; flex: 0.82 1 0; min-height: fit-content; justify-content: flex-end; padding-bottom: var(--s-2); overflow: visible; }
+#app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) .composer-dock-wrap { margin-bottom: 0; }
+#open-threads-slot { display: none; }
+#app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping)) #open-threads-slot { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow-y: auto; padding: var(--s-2) var(--s-3) var(--s-3); }
 #starter-orb { width: 56px; height: 56px; margin-bottom: var(--s-3); }
-#starter-demo { width: 100%; max-width: 320px; aspect-ratio: 6 / 5; object-fit: cover; object-position: top; margin-top: var(--s-4); border: 1px solid var(--border); border-radius: var(--r); background: var(--content-bg); }
-@media (max-height: 620px) { #starter-demo { display: none; } }
 #starter { position: relative; }
 #starter > :not(#starter-glow) { position: relative; }
 #starter-glow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -1280,7 +1280,8 @@ details.run-steps.done .chip.error { background: transparent; }
 #app.starter-leaving #starter { display: flex !important; position: absolute; inset-inline: 0; top: var(--starter-leaving-top); height: var(--starter-leaving-height); flex: none; margin: 0; pointer-events: none; z-index: 1; }
 #app.starter-leaving #starter-glow { inset: auto 0; top: calc(-1 * var(--starter-leaving-top)); height: 100vh; }
 #starter-title { margin: 0 0 3px; font-size: var(--fs-read); font-weight: 600; color: var(--text-primary); }
-#starter-sub { margin: 0 0 8px; font-size: var(--fs-meta); line-height: 1.45; }
+#starter-sub { margin: 0 0 8px; max-width: 280px; font-size: var(--fs-meta); line-height: 1.45; text-wrap: balance; }
+#starter-title:empty, #starter-sub:empty { display: none; }
 #starter-connect { display: none; border: 0; border-radius: var(--r); background: var(--text-primary); color: var(--content-bg); font-size: var(--fs-meta); padding: 6px 12px; cursor: pointer; }
 #starter-connect:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 1px; }
 #app.no-model #starter-connect { display: inline-flex; }
@@ -2764,7 +2765,7 @@ details.run-steps.done .run-body > details.thinking.narration > pre { color: var
 .msg.user .pskill-save:hover { color: var(--text-primary); }
 @media (prefers-reduced-motion: reduce) { .msg.user .pskill-save { transition: none; } }
 
-#open-threads { align-self: stretch; margin-top: var(--s-5); display: flex; flex-direction: column; gap: 2px; text-align: left; }
+#open-threads { align-self: stretch; margin-top: var(--s-2); display: flex; flex-direction: column; gap: 2px; text-align: left; }
 #open-threads[hidden] { display: none; }
 #open-threads .open-threads-head { margin: 0 0 var(--s-1); padding: 0 var(--s-2); font-size: var(--fs-meta); color: var(--text-tertiary); }
 #open-threads .open-thread { position: relative; }
@@ -4112,10 +4113,10 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
 
 @media (min-width: 640px) {
   .composer-dock-wrap { width: min(calc(100% - 2 * var(--s-3)), 720px); margin-inline: auto; }
+  #open-threads-slot { width: min(calc(100% - 2 * var(--s-3)), 720px); margin-inline: auto; padding-inline: 0; }
   #messages { padding-inline: max(var(--pad-x), calc((100% - 720px) / 2)); }
   #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden]))) #messages-frame { flex: 0 1 auto; }
-  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden]))) #starter { display: flex; flex: 1 1 0; justify-content: flex-end; padding-bottom: var(--s-5); }
-  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden])))::after { content: ""; flex: 1.3 1 0; }
+  #app.starter-ready.conversation-empty:not(:has(#status-pill.running, #send-btn.stopping, #marginalia-rail:not([hidden]))) #starter { display: flex; flex: 0.82 1 0; min-height: fit-content; justify-content: flex-end; padding-bottom: var(--s-3); }
 }
 
 #self-use-banner {
