@@ -589,6 +589,54 @@ export function interfaceIssue(text: string): { evidence: string; correction: st
   return null;
 }
 
+export interface AppStreamProgress {
+  stage: string;
+  lines: number;
+  parts: string[];
+}
+
+export function appStreamProgress(html: string): AppStreamProgress {
+  const trimmed = html.trim();
+  const lines = trimmed ? trimmed.split("\n").length : 0;
+  const parts: string[] = [];
+
+  if (/<style\b/i.test(trimmed)) parts.push("样式");
+  if (/<(?:canvas|svg)\b/i.test(trimmed)) parts.push("图表画布");
+  if (/<(?:input|select|button|form)\b/i.test(trimmed)) parts.push("交互控件");
+  if (/<table\b/i.test(trimmed)) parts.push("数据表");
+
+  const hasScript = /<script\b/i.test(trimmed);
+  const closedScript = /<\/script>/i.test(trimmed);
+  let stage = "正在搭界面结构…";
+
+  if (closedScript) stage = "正在收尾校验…";
+  else if (hasScript) stage = "正在写交互与计算逻辑…";
+  else if (parts.length > 0) stage = `已搭好${parts.join("、")}…`;
+  else if (lines >= 4) stage = "正在排版布局…";
+
+  return { stage, lines, parts };
+}
+
+export interface CardFormulaAudit {
+  verifiedCount: number;
+  brokenLabels: string[];
+}
+
+export function cardFormulaAudit(card: Card): CardFormulaAudit {
+  const stats = card.blocks.flatMap((b) => (b.kind === "stats" ? b.items : []));
+  let verifiedCount = 0;
+  const brokenLabels: string[] = [];
+
+  for (const stat of stats) {
+    if (!stat.expr) continue;
+
+    if (stat.computed !== undefined) verifiedCount += 1;
+    else brokenLabels.push(stat.label);
+  }
+
+  return { verifiedCount, brokenLabels };
+}
+
 export function calculationIssue(text: string): { evidence: string; correction: string } | null {
   const parts = splitAnswer(text);
   const cards = parts.flatMap(part => "card" in part && part.card?.closed && part.card.formulas ? [part.card] : []);

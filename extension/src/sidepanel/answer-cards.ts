@@ -3,7 +3,7 @@ import DOMPurify from "dompurify";
 import { isPopout, targetWindowId } from "./target-window.js";
 import { ChartColumn, createElement as icon, LayoutGrid, Table2 } from "lucide";
 import { parseSelectionTable, renderSelectionChart, type SelectionTable } from "../shared/table-chart.js";
-import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, cardEvidence, cardSpans, evaluate, fillRefs, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
+import { type Block, type Card, type CardField, type CardInput, type Cell, type RowSource, type PendingComponent, appStreamProgress, cardEvidence, cardFormulaAudit, cardSpans, evaluate, fillRefs, resolveProse, showFormula, showValue, splitAnswer } from "../../../shared/answer-cards.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { captureCitationContext, clearFailure, noteFailure } from "./sonar-citations.js";
 import { isMiniAppsOn, MINI_APPS_KEY } from "../shared/mini-apps.js";
@@ -93,7 +93,12 @@ function blockHtml(b: Block, i: number, extra: string, values: ReadonlyMap<strin
     case "inputs":
       return `<div class="gc-inputs" data-gc-key="b${i}">${b.items.map((v, j) => keyed(key(j), inputHtml(v))).join("")}</div>`;
     case "stats":
-      return `<div class="gc-stats${wideStats(b.items.map((s) => tidyNumber(s.value))) ? " wide" : ""}" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}"${fromAttrs(s.from)}><div class="k"><span>${t(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id ? ` data-gc-id="${esc(s.id)}"${!s.expr && s.computed !== undefined ? ` data-gc-number="${s.computed}"` : ""}` : ""}>${esc(tidyNumber(s.value))}</div><div class="n">${[s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr)].filter(Boolean).join(" · ")}</div></div>`)).join("")}${extra}</div>`;
+      return `<div class="gc-stats${wideStats(b.items.map((s) => tidyNumber(s.value))) ? " wide" : ""}" data-gc-key="b${i}">${b.items.map((s, j) => {
+        const broken = Boolean(s.expr && s.computed === undefined);
+        const noteParts = [s.note && t(s.note), s.formula && formulaHtml(s.formula, s.expr), broken ? "公式未复算，请核对" : ""].filter(Boolean);
+
+        return keyed(key(j), `<div class="gc-stat${s.tag ? " best" : ""}${broken ? " gc-warn" : ""}"${fromAttrs(s.from)}><div class="k"><span>${t(s.label)}</span>${s.tag ? `<span class="tag">${esc(s.tag)}</span>` : ""}</div><div class="v"${live(s)}${s.id ? ` data-gc-id="${esc(s.id)}"${!s.expr && s.computed !== undefined ? ` data-gc-number="${s.computed}"` : ""}` : ""}>${esc(tidyNumber(s.value))}</div><div class="n">${noteParts.join(" · ")}</div></div>`);
+      }).join("")}${extra}</div>`;
     case "steps":
       return `<ol class="gc-steps" data-gc-key="b${i}">${b.items.map((s, j) => keyed(key(j), `<li class="gc-step"><span class="num">${j + 1}</span><div><div class="t">${t(s.title)}</div>${s.detail ? `<div class="d">${t(s.detail)}</div>` : ""}</div></li>`)).join("")}${extra}</ol>`;
     case "options":
@@ -120,6 +125,21 @@ function unfinishedAppHtml(tag: "ui" | "app"): string {
   return `<div class="gen-card gen-app-card"><div class="gc-app"><div class="gc-app-wait"><span>${label}</span></div></div></div>`;
 }
 
+function formulaAuditHtml(card: Card, hasEvidence: boolean): string {
+  if (!card.closed) return "";
+  const audit = cardFormulaAudit(card);
+
+  if (audit.brokenLabels.length) {
+    return `<div class="gc-audit warn"><span>公式未能本地复算：${esc(audit.brokenLabels.join("、"))}，请核对原页</span></div>`;
+  }
+
+  if (audit.verifiedCount > 0 && hasEvidence) {
+    return `<div class="gc-audit"><span>已由本地按公式复算 ${audit.verifiedCount} 项</span><button type="button" class="gc-audit-btn" data-face="evidence">核对算式</button></div>`;
+  }
+
+  return "";
+}
+
 function appCardHtml(card: Card, app: Extract<Block, { kind: "app" }>): string {
   if (app.surface === "ui") {
     if (!card.closed) return `<div class="gen-card gen-app-card"><div class="gc-app" data-gc-key="app" data-app-live data-app="${encodeURIComponent(app.html)}" data-app-title="${esc(app.title)}" data-app-surface="ui"><div class="gc-app-frame"></div><div class="gc-app-wait">${BAR}<span>正在做界面…</span></div><div class="gc-app-bar" hidden></div></div></div>`;
@@ -128,7 +148,12 @@ function appCardHtml(card: Card, app: Extract<Block, { kind: "app" }>): string {
   }
   const head = `<div class="gc-app-head"><span class="gc-app-title">${esc(app.title)}</span><span class="gc-app-note">助手写的小程序 · 不联网</span></div>`;
 
-  if (!card.closed) return `<div class="gen-card gen-app-card">${keyed("app", `<div class="gc-app gc-ph" aria-hidden="true">${head}<div class="gc-app-wait">${BAR}<span>正在写小程序…</span></div></div>`)}</div>`;
+  if (!card.closed) {
+    const progress = appStreamProgress(app.html);
+    const meta = progress.lines > 0 ? `<span class="gc-app-lines">${progress.lines} 行</span>` : "";
+
+    return `<div class="gen-card gen-app-card">${keyed("app", `<div class="gc-app gc-ph" aria-hidden="true">${head}<div class="gc-app-wait">${BAR}<span>${esc(progress.stage)}</span>${meta}</div></div>`)}</div>`;
+  }
 
   return `<div class="gen-card gen-app-card" data-gc-card="${card.key}">${keyed("app", `<div class="gc-app" data-app="${encodeURIComponent(app.html)}" data-app-title="${esc(app.title)}">${head}<div class="gc-app-frame"></div><div class="gc-app-bar" hidden></div></div>`)}</div>`;
 }
@@ -165,7 +190,9 @@ function cardHtml(card: Card, sources?: AnswerSourceMap): string {
   const faces = shown.length > 1 ? keyed("faces", `<div class="gc-faces" role="group" aria-label="${shown.map((f) => f.label).join(" / ")}">${shown.map((f) => `<button type="button" class="gc-face" data-face="${f.face}" aria-pressed="${f.face === "answer"}" title="${f.label}" aria-label="${f.label}">${svg(f.glyph)}</button>`).join("")}</div>`) : "";
   const head = card.title ? `<div class="gc-head${faces ? " has-faces" : ""}"><div class="gc-title">${textHtml(card.title, card.values)}</div>${card.sub ? `<div class="gc-sub">${textHtml(card.sub, card.values)}</div>` : ""}</div>` : faces ? '<div class="gc-head has-faces" data-gc-key="head"></div>' : "";
 
-  return `<div class="gen-card"${card.closed ? ` data-gc-card="${card.key}"` : ""}>${head}${body ? `<div class="gc-body" data-gc-key="body">${body}</div>` : ""}${chart}${evidence}${buttons ? `<div class="gc-actions">${buttons}</div>` : ""}${card.source && card.closed ? `<div class="gc-foot">${esc(card.source)}</div>` : ""}${faces}</div>`;
+  const audit = formulaAuditHtml(card, rows.length > 0);
+
+  return `<div class="gen-card"${card.closed ? ` data-gc-card="${card.key}"` : ""}>${head}${body ? `<div class="gc-body" data-gc-key="body">${body}</div>` : ""}${chart}${evidence}${audit}${buttons ? `<div class="gc-actions">${buttons}</div>` : ""}${card.source && card.closed ? `<div class="gc-foot">${esc(card.source)}</div>` : ""}${faces}</div>`;
 }
 
 const svg = (node: Parameters<typeof icon>[0]) => {
@@ -1303,7 +1330,7 @@ export function bindAnswerCards(root: HTMLElement, say: (text: string) => boolea
     if (node) { toggleCite(node);
 
  return; }
-    const face = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-face");
+    const face = (event.target as Element).closest<HTMLButtonElement>(".gen-card .gc-face, .gen-card .gc-audit-btn");
     const card = face?.closest<HTMLElement>(".gen-card");
 
     if (face && card) { showFace(card, face.dataset.face ?? "answer");

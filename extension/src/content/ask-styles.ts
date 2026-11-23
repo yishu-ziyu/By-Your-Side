@@ -155,14 +155,36 @@ button.icon.small svg { width: 14px; height: 14px; stroke-width: 1.8; }
 .meta button { height: 24px; padding: 0 6px; margin-left: -6px; border-radius: var(--r-small); font-size: var(--t-meta); color: var(--pen); }
 .meta button + button { margin-left: 0; }
 .chart { margin: 0 0 10px; }
+.chart-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-inner); background: var(--sider-fill); }
+.seg[hidden] { display: none; }
 .seg button { height: 26px; padding: 0 10px; border-radius: var(--r-small); font-size: var(--t-meta); color: var(--ink-fg-2); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--ink-fg); box-shadow: 0 0 0 1px var(--ring); }
+.chart-modes { margin-left: auto; }
+.chart-sort { height: 26px; padding: 0 8px; border: 1px solid var(--ink-rule); border-radius: var(--r-small); background: var(--ink); font-size: var(--t-tiny); color: var(--ink-fg-2); }
+.chart-sort[aria-pressed="true"] { color: var(--pen); border-color: var(--pen-soft); }
 .plot { display: flex; align-items: flex-end; gap: 10px; height: 150px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
 .plot div { flex: 1 0 28px; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; font-size: var(--t-tiny); color: var(--ink-mute); }
-.plot i { display: block; flex: none; width: 100%; height: 0; border-radius: var(--r-small) var(--r-small) 0 0; background: var(--pen); opacity: .85; transition: height .5s var(--ease-out); }
+.plot i { display: block; flex: none; width: 100%; height: 0; border-radius: var(--r-small) var(--r-small) 0 0; background: var(--pen); opacity: .78; transition: height .5s var(--ease-out); }
+.plot .is-peak i { opacity: 1; }
+.plot .is-neg i { background: var(--warn); }
 .plot b { font-weight: 500; color: var(--ink-fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .plot span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plot.plot-hbar { display: flex; flex-direction: column; align-items: stretch; height: auto; gap: 6px; overflow-x: visible; }
+.plot.plot-hbar .hbar-row { flex: none; height: auto; display: grid; grid-template-columns: minmax(64px, 112px) 1fr auto; align-items: center; gap: 8px; }
+.plot.plot-hbar .hbar-label { text-align: left; color: var(--ink-fg-2); }
+.plot.plot-hbar .hbar-track { flex: none; height: 12px; display: block; border-radius: 999px; background: var(--sider-fill); overflow: hidden; }
+.plot.plot-hbar .hbar-track i { height: 100%; width: 0; border-radius: 999px; transition: width .35s var(--ease-out); }
+.plot.plot-hbar .hbar-val { text-align: right; }
+.plot.plot-line { display: block; height: auto; overflow-x: auto; }
+.line-svg { display: block; max-width: none; }
+.line-axis { stroke: var(--ink-rule); stroke-width: 1; }
+.line-path { fill: none; stroke: var(--pen); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.line-dot { fill: var(--ink); stroke: var(--pen); stroke-width: 2; }
+.line-dot.is-peak { fill: var(--pen); }
+.line-val { fill: var(--ink-fg); font-size: var(--t-tiny); font-weight: 500; font-variant-numeric: tabular-nums; }
+.line-lbl { fill: var(--ink-mute); font-size: var(--t-tiny); }
+.chart-summary { margin-top: 8px; font-size: var(--t-tiny); color: var(--ink-mute); font-variant-numeric: tabular-nums; }
 .event { display: grid; gap: 8px; }
 .event input { height: 34px; padding: 0 10px; border: 0; border-radius: var(--r-inner); outline: none; background: var(--sider-fill); font: inherit; font-size: var(--t-body); color: var(--ink-fg); }
 .event input::placeholder { color: var(--ink-mute); }

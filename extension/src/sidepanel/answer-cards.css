@@ -54,6 +54,14 @@
 .gc-app-iframe { display: block; width: 100%; border: 0; border-top: 1px solid var(--content-border); background: transparent; }
 .gc-app-wait { display: flex; align-items: center; gap: var(--s-2); padding: 14px; color: var(--text-tertiary); font-size: var(--fs-meta); }
 .gc-app-wait .gc-bar { flex: 0 0 64px; }
+.gc-app-lines { margin-left: auto; font-size: var(--fs-micro); font-variant-numeric: tabular-nums; color: var(--text-tertiary); }
+.gc-stat.gc-warn { background: var(--content-bg); box-shadow: inset 0 0 0 1px var(--warn); }
+.gc-stat.gc-warn .n { color: var(--warn); }
+.gc-audit { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1) 14px var(--s-2); font-size: var(--fs-micro); color: var(--text-tertiary); }
+.gc-audit.warn { color: var(--warn); }
+.gc-audit-btn { margin-left: auto; padding: 0 var(--s-2); height: 22px; border: 0; border-radius: var(--r-tail); background: var(--well); color: var(--accent); font: inherit; cursor: pointer; }
+.gc-audit-btn:hover { background: var(--content-subtle); }
+.gen-card[data-face="evidence"] > .gc-audit { display: none; }
 .gc-app-off { margin: 0; padding: 10px 14px 14px; color: var(--text-secondary); font-size: var(--fs-meta); }
 .gc-app-bar { display: flex; align-items: center; gap: var(--s-2); padding: 8px 14px 10px; border-top: 1px solid var(--content-border); font-size: var(--fs-meta); color: var(--text-secondary); }
 .gc-app-bar[hidden] { display: none; }
@@ -145,14 +153,36 @@
 .gen-card:is([data-face="evidence"], [data-face="chart"]) > .gc-body, .gen-card[data-face="evidence"] > .gc-foot { display: none; }
 .gc-chart { padding: 10px 14px var(--s-3); animation: gcContentIn var(--d-state) var(--e-enter) both; }
 .gc-chart .chart { margin: 0; }
+.gc-chart .chart-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); }
 .gc-chart .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--s-2); background: var(--well); }
+.gc-chart .seg[hidden] { display: none; }
 .gc-chart .seg button { height: 22px; padding: 0 var(--s-2); border: 0; border-radius: var(--r-tail); background: transparent; font: inherit; font-size: var(--fs-micro); color: var(--text-tertiary); cursor: pointer; }
 .gc-chart .seg button[aria-pressed="true"] { background: var(--content-bg); color: var(--text-primary); box-shadow: 0 0 0 1px var(--well-outline); }
+.gc-chart .chart-modes { margin-left: auto; }
+.gc-chart .chart-sort { height: 26px; padding: 0 var(--s-2); border: 1px solid var(--content-border); border-radius: var(--s-2); background: var(--content-bg); font: inherit; font-size: var(--fs-micro); color: var(--text-secondary); cursor: pointer; }
+.gc-chart .chart-sort[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .gc-chart .plot { display: flex; align-items: flex-end; gap: 10px; height: 150px; margin-top: var(--s-2); overflow-x: auto; scrollbar-width: none; }
 .gc-chart .plot div { flex: 1 0 28px; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: var(--s-1); font-size: var(--fs-micro); color: var(--text-tertiary); }
-.gc-chart .plot i { display: block; flex: none; width: 100%; height: 0; border-radius: var(--r-tail) var(--r-tail) 0 0; background: var(--accent); opacity: .85; transition: height var(--d-state) var(--e-move); }
+.gc-chart .plot i { display: block; flex: none; width: 100%; height: 0; border-radius: var(--r-tail) var(--r-tail) 0 0; background: var(--accent); opacity: .78; transition: height var(--d-state) var(--e-move); }
+.gc-chart .plot .is-peak i { opacity: 1; }
+.gc-chart .plot .is-neg i { background: var(--warn); }
 .gc-chart .plot b { font-weight: 500; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .gc-chart .plot span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-chart .plot.plot-hbar { display: flex; flex-direction: column; align-items: stretch; height: auto; gap: var(--s-1); overflow-x: visible; }
+.gc-chart .plot.plot-hbar .hbar-row { flex: none; height: auto; display: grid; grid-template-columns: minmax(64px, 112px) 1fr auto; align-items: center; gap: var(--s-2); }
+.gc-chart .plot.plot-hbar .hbar-label { text-align: left; color: var(--text-secondary); }
+.gc-chart .plot.plot-hbar .hbar-track { flex: none; height: 12px; display: block; border-radius: 999px; background: var(--well); overflow: hidden; }
+.gc-chart .plot.plot-hbar .hbar-track i { height: 100%; width: 0; border-radius: 999px; transition: width var(--d-state) var(--e-move); }
+.gc-chart .plot.plot-hbar .hbar-val { text-align: right; }
+.gc-chart .plot.plot-line { display: block; height: auto; overflow-x: auto; }
+.gc-chart .line-svg { display: block; max-width: none; }
+.gc-chart .line-axis { stroke: var(--content-border); stroke-width: 1; }
+.gc-chart .line-path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.gc-chart .line-dot { fill: var(--content-bg); stroke: var(--accent); stroke-width: 2; }
+.gc-chart .line-dot.is-peak { fill: var(--accent); }
+.gc-chart .line-val { fill: var(--text-primary); font-size: var(--fs-micro); font-weight: 500; font-variant-numeric: tabular-nums; }
+.gc-chart .line-lbl { fill: var(--text-tertiary); font-size: var(--fs-micro); }
+.gc-chart .chart-summary { margin-top: var(--s-2); font-size: var(--fs-micro); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 .gc-evidence { padding: 10px 14px var(--s-3); box-sizing: border-box; animation: gcContentIn var(--d-state) var(--e-enter) both; }
 .gen-card[data-face="answer"] > .gc-body { animation: gcContentIn var(--d-state) var(--e-enter) both; }
 .msg.assistant.markdown .gc-evidence table { display: table; width: 100%; margin: 0; border-collapse: collapse; font-size: var(--fs-micro); line-height: 1.45; font-variant-numeric: tabular-nums; }
