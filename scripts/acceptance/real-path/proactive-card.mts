@@ -34,7 +34,12 @@ const DONE = "正在给全季酒店前台发邮件申请明天晚退房到 14:00
 
 const REFUSED = "酒店没同意晚退房，最晚 12:00。\n\n前台说明天满房，延到 15:00 排不开。\n\n要我找附近能寄存行李的地方吗？";
 
+const CHAT = "先帮我确认房间的退房时间";
+const CHAT_REPLY = "订单写的是 12:00 退房。";
+
 const model = await startScriptedModel([
+  { match: '"lastReply":"订单写的是 12:00 退房。"', steps: [{ text: JSON.stringify({ status: "done" }) }] },
+  { match: CHAT, steps: [{ text: CHAT_REPLY }] },
   { match: `"lastReply":"正在给全季`, steps: [{ text: JSON.stringify({ status: "done" }) }] },
   { match: `"lastReply":"酒店没同意`, steps: [{ text: JSON.stringify({ status: "done" }) }] },
   { match: "申请明天晚退房到 14:00", steps: [{ tool: { name: "tabs", args: { action: "open", url: `${origin}/sent` } } }, { text: DONE, delayMs: 2_500 }] },
@@ -125,8 +130,9 @@ try {
   await read("/b");
   await until(async () => await rp.evaluate(panel, CARD), 60_000, "第二张卡", 500);
   await rp.click(panel, "#input");
+  await rp.typeText(panel, CHAT);
   await rp.pressEnter(panel);
-  await until(async () => (await rp.evaluate(panel, "document.querySelectorAll('#messages .msg.assistant').length > 0 && !document.querySelector('#send-btn').classList.contains('stopping')")) || undefined, 20_000, "先聊一句");
+  await until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll('#messages .msg.assistant')].some(el => el.textContent.includes(${JSON.stringify(CHAT_REPLY)})) && !document.querySelector('#send-btn').classList.contains('stopping')`)) || undefined, 20_000, "交谈得到约定的回答");
   const order = await rp.evaluate(panel, "[...document.querySelectorAll('#messages > *')].map(n => n.matches('.pc') ? 'card' : n.matches('.msg.user') ? 'user' : n.matches('.msg.assistant') ? 'answer' : '').filter(Boolean).join(',')");
   await sleep(600);
   await rp.click(panel, "#messages .pc .pc-verb");
@@ -160,6 +166,8 @@ try {
   const { traces } = await exportDiagnosticsViaSettings(rp, rp.extensionId, join(out, "downloads"));
   const verdicts = traces.split("\n").filter(Boolean).map(line => JSON.parse(line)).filter(line => line.type === "nudge_verdict").map(line => line.data);
   check("诊断记录：三页各一行判断，写明出的卡", verdicts.length === 3 && verdicts.every(v => v.verdict === "offer" && v.actionLabel === "申请" && String(v.url).startsWith(origin)), verdicts);
+} catch (error) {
+  check("完整流程", false, String(error));
 } finally {
   console.log(failures.length ? `FAILED ${failures.length}` : "ALL PASS");
 
