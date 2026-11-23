@@ -257,7 +257,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     }
 
     if (message.type === "task_history_list") {
-      connection?.send({ type: "task_history_result", requestId: message.requestId, ok: true, tasks: [] });
+      client?.connection.send({ type: "task_history_result", requestId: message.requestId, ok: true, tasks: [] });
 
       return;
     }
