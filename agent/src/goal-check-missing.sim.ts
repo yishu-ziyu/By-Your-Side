@@ -157,3 +157,31 @@ test("multi-part reply with consequential user question in first paragraph still
   );
   assert.equal(verdict.status, "needs_user");
 });
+
+const ambiguous = "你是指社交平台 X，还是某个具体名字里带 X 的东西？";
+const independentReading = "第一项青松是昨天发布的。第二项还没读完。要不要我接着读取第二项再整理？";
+
+async function checkAnswerRepair(reply: string, evidence: string, repair: "complete_task" | "correct_result") {
+  let adjustment: string | undefined;
+  const verdict = await checkGoal(
+    stubHost({ status: "continue", goalOnPage: false, repair, evidence, verificationSubject: "answer",
+      items: [{ text: "第一件事", done: false }], remaining: "第一件事", correction: "补全回答" }),
+    model, { ...baseInput, goal: ["查一下 X，另外整理两项公告"], lastReply: reply },
+    AbortSignal.timeout(5_000), undefined, { checkId: "clarify", record: event => { adjustment = event.adjustedBy; } },
+  );
+  return { status: verdict.status, adjustment };
+}
+
+test("回答完另一件事后，模型拿第一段的歧义反问要求重做，应等待用户", async () => {
+  const reply = `X 这个我还没对上，${ambiguous}\n\n两项公告都已整理好。第一项青松昨天发布，第二项白桦今天发布。`;
+  assert.deepEqual(await checkAnswerRepair(reply, ambiguous, "complete_task"), { status: "needs_user", adjustment: "clarification_question" });
+});
+
+test("助手自己能继续读第二项时保持 continue", async () => {
+  assert.equal((await checkAnswerRepair(independentReading, independentReading, "complete_task")).status, "continue");
+});
+
+test("虚报完成后仍须纠正，即使模型引用了同一段中的反问", async () => {
+  const reply = `已在社交平台 X 找到并核实了这条公告。${ambiguous}`;
+  assert.equal((await checkAnswerRepair(reply, ambiguous, "correct_result")).status, "continue");
+});
