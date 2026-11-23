@@ -6,7 +6,8 @@ import {
   REALTIME_BROWSER_TOOLS,
   validateRealtimeBrowserTool,
 } from "../agent/src/realtime-browser-tools.js";
-import { ToolRpc } from "../agent/src/rpc.js";
+import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import { ToolRpc, guideResultForModel } from "../agent/src/rpc.js";
 import { parseServerMessage } from "../shared/protocol.js";
 import {
   TEACH_MENU_ID,
@@ -49,6 +50,34 @@ describe("realtime voice guide_step integration and page teach entrypoints", () 
     assert.equal(TEACH_MENU_ID, "teach-sideagent");
     assert.ok(TEACH_SELECTION_DRAFT.includes("一步一步"));
     assert.ok(TEACH_PAGE_DRAFT.includes("一步一步"));
+  });
+
+  it("keeps the stopped guide fact in the model result even when the runner supplies its own abort diagnostic", () => {
+    const aborted = (toolName: string): ToolResultMessage => ({
+      role: "toolResult", toolCallId: "call-1", toolName, timestamp: 1, isError: true,
+      content: [{ type: "text", text: `<harness>\n[error] Tool ${toolName} was aborted\n</harness>` }],
+    });
+    const guide = aborted("guide_step");
+    const restored = guideResultForModel(guide);
+    assert.equal(restored.toolCallId, guide.toolCallId);
+    assert.equal(restored.isError, true);
+    const text = restored.content.flatMap(part => part.type === "text" ? [part.text] : []).join("\n");
+    assert.match(text, /用户停下了任务或接管了页面/);
+    assert.match(text, /没有替用户点/);
+    for (const result of [aborted("click"), aborted("fill"), { ...guide, isError: false },
+      { ...guide, content: [{ type: "text" as const, text: "timeout" }] }]) {
+      assert.deepEqual(guideResultForModel(result), result);
+    }
+  });
+
+  it("keeps dispatched writes unknown when cancelled", async () => {
+    for (const name of ["click", "fill"] as const) {
+      const rpc = new ToolRpc(() => {});
+      const ac = new AbortController();
+      const pending = rpc.call(name, { target: "#field" }, 10_000, undefined, undefined, undefined, undefined, ac.signal);
+      ac.abort();
+      await assert.rejects(pending, { executionFact: "unknown" });
+    }
   });
 
   it("sends tool_cancel and reports not_executed when voice aborts a waiting guide_step", async () => {
