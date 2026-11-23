@@ -32,7 +32,7 @@ import {
   sweepStaleOverlayHosts,
   viewportRectToDocumentBox,
 } from "../shared/overlay.js";
-import { GUIDE_ROUGHNESS, placeGuideBubble, sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
+import { GUIDE_ROUGHNESS, classifyViewportVisibility, placeGuideBubble, sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
 import { createGuideCanvas, GUIDE_CANVAS_STYLES, type GuideCanvas } from "./guide-canvas.js";
 import { createTutorGuide } from "./tutor-guide.js";
 import { feedbackLifetimeMs, type FeedbackPillView } from "../shared/feedback-pill.js";
@@ -502,6 +502,18 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return { x: Math.max(28, window.innerWidth - 41), y: Math.max(48, window.innerHeight - 102) };
   }
 
+  let viewportRaf = 0;
+
+  function scheduleViewportRelayout(): void {
+    if (viewportRaf) return;
+    viewportRaf = requestAnimationFrame(() => {
+      viewportRaf = 0;
+      relayoutMarks();
+      relayoutHolds();
+      relayoutActions();
+    });
+  }
+
   function onViewportResize(): void {
     for (const inst of instances.values()) {
       if (inst.action) {
@@ -524,15 +536,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       }
     }
 
-    relayoutMarks();
-    relayoutHolds();
-    relayoutActions();
+    scheduleViewportRelayout();
   }
 
   function onScroll(): void {
-    relayoutMarks();
-    relayoutHolds();
-    relayoutActions();
+    scheduleViewportRelayout();
   }
 
   function liveAnchor(holder: { anchor: Element | null; target?: string }): Element | null {
@@ -598,6 +606,18 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     const activeGuide = tutorGuide.active();
 
     if (activeGuide && mark.el === activeGuide.mark && mark.frame) {
+      const offscreen = classifyViewportVisibility(rect, { width: window.innerWidth, height: window.innerHeight });
+
+      if (offscreen) {
+        const targetEl = activeGuide.targetElement();
+        guideCanvas?.showOffscreenBeacon(offscreen, activeGuide.step, activeGuide.name, () => {
+          targetEl?.scrollIntoView({ block: "center", inline: "nearest", behavior: reducedMotion.matches ? "auto" : "smooth" });
+          scheduleViewportRelayout();
+        });
+
+        return;
+      }
+
       guideCanvas?.showSpotlight(rect);
       const labelEl = mark.el.querySelector<HTMLElement>(".mark-label");
 

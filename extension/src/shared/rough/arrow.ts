@@ -34,6 +34,24 @@ export const GUIDE_ARROW_CURVE_PX = 26;
 
 export const GUIDE_ROUGHNESS = 0.9;
 
+export type GuideOffscreenDirection = "above" | "below" | "left" | "right";
+
+export function classifyViewportVisibility(
+  rect: { x: number; y: number; width: number; height: number },
+  viewport: { width: number; height: number },
+): GuideOffscreenDirection | null {
+  if (rect.width <= 0 || rect.height <= 0 || viewport.width <= 0 || viewport.height <= 0) return null;
+  const right = rect.x + rect.width;
+  const bottom = rect.y + rect.height;
+
+  if (bottom <= 0) return "above";
+  if (rect.y >= viewport.height) return "below";
+  if (right <= 0) return "left";
+  if (rect.x >= viewport.width) return "right";
+
+  return null;
+}
+
 function intersectArea(a: RectBox, b: RectBox): number {
   const x = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
   const y = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));

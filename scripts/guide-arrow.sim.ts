@@ -5,6 +5,7 @@ import {
   GUIDE_DRAW_MS,
   GUIDE_ROUGHNESS,
   GUIDE_SPOTLIGHT_ALPHA,
+  classifyViewportVisibility,
   placeGuideBubble,
   sketchArrow,
   type RectBox,
@@ -74,5 +75,16 @@ describe("live tutor arrow and non-hiding bubble placement", () => {
     assert.ok(Number.isFinite(placed.left) && Number.isFinite(placed.top));
     assert.ok(placed.box.x >= 12 && placed.box.x + placed.box.w <= viewport.w - 12);
     assert.ok(placed.box.y >= 12 && placed.box.y + placed.box.h <= viewport.h - 12);
+  });
+
+  it("classifies visible and off-screen viewport targets accurately", () => {
+    const vp = { width: 1280, height: 800 };
+    assert.equal(classifyViewportVisibility({ x: 100, y: 200, width: 120, height: 36 }, vp), null);
+    assert.equal(classifyViewportVisibility({ x: 100, y: -10, width: 120, height: 36 }, vp), null);
+    assert.equal(classifyViewportVisibility({ x: 100, y: -60, width: 120, height: 36 }, vp), "above");
+    assert.equal(classifyViewportVisibility({ x: 100, y: 840, width: 120, height: 36 }, vp), "below");
+    assert.equal(classifyViewportVisibility({ x: -160, y: 200, width: 120, height: 36 }, vp), "left");
+    assert.equal(classifyViewportVisibility({ x: 1320, y: 200, width: 120, height: 36 }, vp), "right");
+    assert.equal(classifyViewportVisibility({ x: 0, y: 0, width: 0, height: 0 }, vp), null);
   });
 });

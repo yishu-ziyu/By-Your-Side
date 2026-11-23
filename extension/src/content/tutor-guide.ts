@@ -37,6 +37,7 @@ export interface ActiveGuideView<Inst> {
   inst: Inst;
   mark: HTMLDivElement | null;
   label: string;
+  name: string;
   misses: number;
   checking: boolean;
   step?: number;
@@ -67,6 +68,7 @@ interface GuideSession<Inst> {
   rect: DOMRect | null;
   port: chrome.runtime.Port;
   observer: MutationObserver;
+  resizeObserver?: ResizeObserver;
   misses: number;
   missed: boolean;
   lastChange: number;
@@ -486,6 +488,7 @@ export function createTutorGuide<Inst>(host: TutorGuideHost<Inst>): TutorGuideCo
     clearTimeout(g.inputTimer);
     clearTimeout(g.scrollTimer);
     g.observer.disconnect();
+    g.resizeObserver?.disconnect();
     stopWatch(g);
 
     if (g.mark) host.removeMark(g.mark);
@@ -550,6 +553,12 @@ export function createTutorGuide<Inst>(host: TutorGuideHost<Inst>): TutorGuideCo
     guide = g;
     port.onDisconnect.addListener(() => endGuide(g));
     g.observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    if (el && typeof ResizeObserver !== "undefined") {
+      g.resizeObserver = new ResizeObserver(() => {
+        if (guide === g) followGuideNode(g);
+      });
+      g.resizeObserver.observe(el);
+    }
     window.addEventListener("click", onGuideClick, true);
     window.addEventListener("pointerdown", onGuideDown, true);
     window.addEventListener("pointermove", onGuideMove, true);
@@ -582,6 +591,7 @@ export function createTutorGuide<Inst>(host: TutorGuideHost<Inst>): TutorGuideCo
         inst: g.inst,
         mark: g.mark,
         label: g.label,
+        name: g.name,
         misses: g.misses,
         checking: Boolean(g.watch && !g.watch.settled),
         step: g.step,

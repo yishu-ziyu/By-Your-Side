@@ -6,6 +6,7 @@ import {
   GUIDE_SPOTLIGHT_ALPHA,
   placeGuideBubble,
   sketchArrow,
+  type GuideOffscreenDirection,
   type Point2D,
   type RectBox,
 } from "../shared/rough/index.js";
@@ -117,6 +118,32 @@ export const GUIDE_CANVAS_STYLES = `
     25% { transform: translateX(-5px); }
     65% { transform: translateX(4px); }
   }
+  .guide-offscreen-beacon {
+    position: fixed;
+    left: 50%;
+    z-index: 3;
+    transform: translateX(-50%);
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: min(320px, calc(100vw - 24px));
+    padding: 8px 14px;
+    border: 1px solid var(--guide-border);
+    border-radius: 999px;
+    background: var(--guide-ink);
+    color: var(--guide-fg);
+    box-shadow: var(--guide-shadow);
+    font: 500 13px/1.3 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .guide-offscreen-beacon[data-dir="above"] { top: 14px; }
+  .guide-offscreen-beacon[data-dir="below"] { bottom: 16px; }
+  .guide-offscreen-beacon[data-dir="left"] { left: 14px; top: 50%; transform: translateY(-50%); }
+  .guide-offscreen-beacon[data-dir="right"] { left: auto; right: 14px; top: 50%; transform: translateY(-50%); }
+  .guide-offscreen-beacon:hover { border-color: var(--guide-pen); color: var(--guide-pen); }
+  .guide-offscreen-beacon:focus-visible { outline: 2px solid var(--guide-pen); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) {
     .guide-spotlight { transition: none; }
     .mark.guidance.warn .mark-label { animation: none; }
@@ -138,6 +165,8 @@ export interface GuideRenderInput {
 export interface GuideCanvas {
   showSpotlight(rect: { x: number; y: number; width: number; height: number } | null): void;
   clearSpotlight(): void;
+  showOffscreenBeacon(direction: GuideOffscreenDirection, step: number | undefined, targetName: string, onLocate: () => void): void;
+  clearOffscreenBeacon(): void;
   syncStrokeDraw(svg: SVGElement, animate: boolean): void;
   renderGuideOverlay(input: GuideRenderInput): void;
   destroy(): void;
@@ -193,6 +222,31 @@ export function createGuideCanvas(shadow: ShadowRoot, reducedMotion: MediaQueryL
   const blurId = `bys-blur-${Math.random().toString(36).slice(2, 8)}`;
   let spotSvg: SVGSVGElement | null = null;
   let spotHole: SVGRectElement | null = null;
+  let beaconBtn: HTMLButtonElement | null = null;
+  let beaconAction: (() => void) | null = null;
+
+  function clearBeacon(): void {
+    beaconAction = null;
+    if (beaconBtn) beaconBtn.hidden = true;
+  }
+
+  function ensureBeacon(): HTMLButtonElement {
+    if (beaconBtn) return beaconBtn;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "guide-offscreen-beacon";
+    btn.hidden = true;
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      beaconAction?.();
+    });
+    // WHY: Mount outside marksLayer so marksLayer.childElementCount only counts marks.
+    shadow.insertBefore(btn, shadow.firstChild);
+    beaconBtn = btn;
+
+    return btn;
+  }
 
   function ensureSpotlight(): void {
     if (spotSvg) return;
@@ -240,6 +294,7 @@ export function createGuideCanvas(shadow: ShadowRoot, reducedMotion: MediaQueryL
       }
 
       ensureSpotlight();
+      clearBeacon();
       spotHole!.setAttribute("x", String(Math.round(rect.x - 10)));
       spotHole!.setAttribute("y", String(Math.round(rect.y - 8)));
       spotHole!.setAttribute("width", String(Math.round(rect.width + 20)));
@@ -250,7 +305,26 @@ export function createGuideCanvas(shadow: ShadowRoot, reducedMotion: MediaQueryL
 
     clearSpotlight(): void {
       spotSvg?.classList.remove("on");
+      clearBeacon();
       setPageNotesYielding(false);
+    },
+
+    showOffscreenBeacon(direction, step, targetName, onLocate): void {
+      spotSvg?.classList.remove("on");
+      setPageNotesYielding(false);
+      const btn = ensureBeacon();
+      const arrow = direction === "above" ? "↑" : direction === "below" ? "↓" : direction === "left" ? "←" : "→";
+      const where = direction === "above" ? "上方" : direction === "below" ? "下方" : direction === "left" ? "左侧" : "右侧";
+      const prefix = step && step > 0 ? `第 ${step} 步` : "当前步骤";
+      const suffix = targetName ? `「${targetName}」` : "";
+      btn.dataset.dir = direction;
+      btn.textContent = `${arrow} ${prefix}${suffix}在${where}，点此回到目标`;
+      beaconAction = onLocate;
+      btn.hidden = false;
+    },
+
+    clearOffscreenBeacon(): void {
+      clearBeacon();
     },
 
     syncStrokeDraw(svg, animate): void {
@@ -295,6 +369,9 @@ export function createGuideCanvas(shadow: ShadowRoot, reducedMotion: MediaQueryL
 
     destroy(): void {
       setPageNotesYielding(false);
+      clearBeacon();
+      beaconBtn?.remove();
+      beaconBtn = null;
       spotSvg?.remove();
       spotSvg = null;
       spotHole = null;
