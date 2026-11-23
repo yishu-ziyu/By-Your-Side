@@ -396,6 +396,7 @@ export type ServerMessage = ConversationEnvelope & {epochs?:Record<string,number
     }
   | { type: "team_status"; team: TeamView | null }
   | { type: "tool_call"; id: string; name: ToolName; params: Record<string, unknown>; sessionId?: string; programId?: string; programDeadline?: number;  sdkId?: string }
+  | { type: "tool_cancel"; id: string }
   | { type: "agent_event"; event: AgentUiEvent; sessionId?: string });
 
 export type AgentUiEvent =
@@ -1129,6 +1130,7 @@ const SERVER_CHECKS: { [T in ServerMessage["type"]]?: (msg: ServerOf<T>) => bool
 
     return true;
   },
+  tool_cancel: (msg) => typeof msg.id === "string" && msg.id.length > 0 && msg.id.length <= 128,
 };
 
 function validServerEnvelope(msg: ServerMessage): boolean {

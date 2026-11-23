@@ -410,13 +410,16 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
         return rpc.call(name,callParams,remaining,sid,programId,executionEpoch,sdkId,signal);
       }
 
-      if (sdkId === undefined) {
-        if (executionEpoch !== undefined) return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, undefined, undefined, programDeadline);
+      // WHY: guide_step never clicks for the user and waits up to 2 minutes, so voice interrupt/hangup must abort it and trigger host tool_cancel cleanup.
+      const callSignal = name === "guide_step" ? signal : undefined;
 
-        return programId ? rpc.call(name, callParams, rpcTimeoutMs, sid, programId, undefined, undefined, undefined, programDeadline) : rpc.call(name, callParams, rpcTimeoutMs, sid);
+      if (sdkId === undefined) {
+        if (executionEpoch !== undefined) return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, undefined, callSignal, programDeadline);
+
+        return programId ? rpc.call(name, callParams, rpcTimeoutMs, sid, programId, undefined, undefined, callSignal, programDeadline) : rpc.call(name, callParams, rpcTimeoutMs, sid, undefined, undefined, undefined, callSignal);
       }
 
-      return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId, undefined, programDeadline, scope?.beforeDispatch);
+      return rpc.call(name, callParams, rpcTimeoutMs, sid, programId, executionEpoch, sdkId, callSignal, programDeadline, scope?.beforeDispatch);
     };
 
     const invokeReleasingIdleOwner = async (executionEpoch?: number) => {

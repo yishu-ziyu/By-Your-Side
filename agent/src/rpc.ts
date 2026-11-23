@@ -24,7 +24,12 @@ interface ToolCallFrame {
   epochs?: Record<string, number>;
 }
 
-type RpcSend = (frame: ToolCallFrame) => void;
+interface ToolCancelFrame {
+  type: "tool_cancel";
+  id: string;
+}
+
+type RpcSend = (frame: ToolCallFrame | ToolCancelFrame) => void;
 
 interface ToolExecutionError extends Error {
   executionFact?: ToolExecutionFact;
@@ -307,10 +312,21 @@ export class ToolRpc {
         if (!pending) return;
         clearTimeout(pending.timer); pending.cleanup?.(); this.pending.delete(id);
         const disp = this.dispatched.get(id);
+        const guideAbort = name === "guide_step";
 
-        if (disp) { disp.state = 'timed_out'; disp.fact = 'unknown'; }
+        if (disp) {
+          disp.state = 'timed_out';
+          disp.fact = guideAbort ? 'not_executed' : 'unknown';
 
-        reject(Object.assign(new Error('Readback cancelled'), {executionFact:'unknown'}));
+          if (guideAbort) disp.heldReason = 'guide_stopped';
+        }
+
+        try { send({ type: "tool_cancel", id }); } catch {  }
+
+        const reason = guideAbort
+          ? "用户停下了任务或接管了页面：这一步教学已经结束，圈和光标都收起了。工具没有替用户点任何东西。"
+          : "Readback cancelled";
+        reject(Object.assign(new Error(reason), { executionFact: guideAbort ? "not_executed" : "unknown" }));
       };
 
       const onTimeout = () => {

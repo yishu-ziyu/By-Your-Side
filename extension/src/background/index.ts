@@ -1565,13 +1565,7 @@ return;}
 
     }
 
-    if (msg.type === "tool_call") {
-      noteFillUndoRun(conversationId, msg.runId);
-      toolsInFlight += 1;
-      void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId, msg.programId,msg.runId,msg.epochs?.[normalizeSessionId(msg.sessionId)],msg.programDeadline).finally(() => { toolsInFlight -= 1; });
-
-      return;
-    }
+    if (handleToolServerMessage(msg)) return;
 
     if (msg.type === "status" || msg.type === "agent_event" || msg.type === "team_status") {
       broadcastVisibleServer(msg);
@@ -1587,6 +1581,30 @@ return;}
 let userTurn = 0;
 
 let toolsInFlight = 0;
+
+const inFlightToolIds = new Set<string>();
+
+const cancelledToolCalls = new Set<string>();
+
+function handleToolServerMessage(msg: ServerMessage): boolean {
+  if (msg.type === "tool_cancel") {
+    if (inFlightToolIds.has(msg.id)) cancelledToolCalls.add(msg.id);
+
+    return true;
+  }
+
+  if (msg.type !== "tool_call") return false;
+  noteFillUndoRun(conversationId, msg.runId);
+  inFlightToolIds.add(msg.id);
+  toolsInFlight += 1;
+  void executeToolCall(msg.id, msg.name, msg.params, msg.sessionId, msg.programId, msg.runId, msg.epochs?.[normalizeSessionId(msg.sessionId)], msg.programDeadline).finally(() => {
+    inFlightToolIds.delete(msg.id);
+    cancelledToolCalls.delete(msg.id);
+    toolsInFlight -= 1;
+  });
+
+  return true;
+}
 
 const uplink = {
  sendClientMessage: (msg: ClientMessage) => {
@@ -1719,6 +1737,8 @@ async function executeToolCall(
       task: runId ? `${runId}\u0000${userTurn}` : undefined,
       programExpired,
       cancelled: () => {
+        if (cancelledToolCalls.has(id)) return true;
+
         try { checkIdentity(); } catch { return true; }
 
         return gate.gen !== operationGeneration || gate.isSessionBlocked(sid) || workerTabControl.isStopped(key(sid));

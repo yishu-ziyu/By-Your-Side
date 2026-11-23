@@ -6,6 +6,8 @@ import {
   REALTIME_BROWSER_TOOLS,
   validateRealtimeBrowserTool,
 } from "../agent/src/realtime-browser-tools.js";
+import { ToolRpc } from "../agent/src/rpc.js";
+import { parseServerMessage } from "../shared/protocol.js";
 import {
   TEACH_MENU_ID,
   TEACH_PAGE_DRAFT,
@@ -47,5 +49,30 @@ describe("realtime voice guide_step integration and page teach entrypoints", () 
     assert.equal(TEACH_MENU_ID, "teach-sideagent");
     assert.ok(TEACH_SELECTION_DRAFT.includes("一步一步"));
     assert.ok(TEACH_PAGE_DRAFT.includes("一步一步"));
+  });
+
+  it("sends tool_cancel and reports not_executed when voice aborts a waiting guide_step", async () => {
+    const sent: Array<{ type: string; id: string }> = [];
+    const rpc = new ToolRpc((frame) => { sent.push({ type: frame.type, id: frame.id }); });
+    const ac = new AbortController();
+    const pending = rpc.call("guide_step", { target: "@5", say: "点设置", step: 1 }, 10_000, undefined, undefined, undefined, undefined, ac.signal);
+
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0]!.type, "tool_call");
+    const callId = sent[0]!.id;
+
+    ac.abort();
+    await assert.rejects(
+      pending,
+      (err: unknown) => (err as { executionFact?: string })?.executionFact === "not_executed"
+        && String((err as Error)?.message).includes("没有替用户点"),
+    );
+
+    assert.equal(sent.length, 2);
+    assert.deepEqual(sent[1], { type: "tool_cancel", id: callId });
+    assert.equal(rpc.heldReason(callId), "guide_stopped");
+
+    const parsed = parseServerMessage(JSON.stringify(sent[1]));
+    assert.deepEqual(parsed, { type: "tool_cancel", id: callId });
   });
 });
