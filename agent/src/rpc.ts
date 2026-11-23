@@ -1,8 +1,19 @@
+import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import { randomUUID } from "node:crypto";
 import { normalizeResultTarget } from '../../shared/task-results.js';
 import { LEAD_SESSION_ID, isHeldReason, isLeadSession, type HeldReason, type ToolExecutionFact, type ToolName, type ToolContract } from "../../shared/protocol.js";
 
 import { TOOL_DEFAULT_MS, TOOL_SLOW_MS, TOOL_USER_CONFIRM_MS } from "../../shared/timeouts.js";
+
+export const GUIDE_STOPPED_TEXT = "用户停下了任务或接管了页面：这一步教学已经结束，圈和光标都收起了。工具没有替用户点任何东西。";
+
+export function guideResultForModel(message: ToolResultMessage): ToolResultMessage {
+  if (message.toolName !== "guide_step" || !message.isError) return message;
+  // WHY: pi-durable stores its own abort diagnostic as the last content block and leaves the structured diagnostic outside the model transcript.
+  const diagnostic = message.content.at(-1);
+  if (diagnostic?.type !== "text" || diagnostic.text !== "<harness>\n[error] Tool guide_step was aborted\n</harness>") return message;
+  return { ...message, content: [...message.content.slice(0, -1), { type: "text", text: GUIDE_STOPPED_TEXT }] };
+}
 
 const DEFAULT_TOOL_TIMEOUT_MS = TOOL_DEFAULT_MS;
 
@@ -324,7 +335,7 @@ export class ToolRpc {
         try { send({ type: "tool_cancel", id }); } catch {  }
 
         const reason = guideAbort
-          ? "用户停下了任务或接管了页面：这一步教学已经结束，圈和光标都收起了。工具没有替用户点任何东西。"
+          ? GUIDE_STOPPED_TEXT
           : "Readback cancelled";
         reject(Object.assign(new Error(reason), { executionFact: guideAbort ? "not_executed" : "unknown" }));
       };

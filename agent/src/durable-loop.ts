@@ -8,6 +8,7 @@ import { isTransientModelError } from "../../shared/provider-busy.js";
 import { isModelTimeoutError } from "../../shared/user-facing.js";
 import { createRegistry, defineExtension, defineTool, Harness, hook, MemoryStorage, ProviderDoc, watchEvents, GenerationTask, type AgentEvent as DurableEvent, type Conversation, type EntryRecord, type Storage, type SubmissionId, type ToolRegistration } from "@earendil-works/pi-durable";
 import type { AgentSessionEvent, AgentSessionEventListener, PromptOptions, SessionEntry, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { GUIDE_STOPPED_TEXT, guideResultForModel } from "./rpc.js";
 import { RunNotStarted, type AgentLoop } from "./agent-loop.js";
 import { ExtensionHost, OBSERVED_EVENTS, type HookArgs, type HookMessage } from "./extension-host.js";
 import type { ModelRequestObservation } from "./model-request-trace.js";
@@ -388,7 +389,8 @@ export class DurableAgentLoop implements AgentLoop {
   }
 
   private async beforeRequest(messages: readonly Message[]): Promise<{ messages: readonly Message[] } | undefined> {
-    const next = this.hooks.has("context") ? [...await this.hooks.context(messages as readonly HookMessage[])] as Message[] : [...messages];
+    const history = messages.map(message => message.role === "toolResult" ? guideResultForModel(message) : message);
+    const next = this.hooks.has("context") ? [...await this.hooks.context(history as readonly HookMessage[])] as Message[] : history;
     return { messages: systemFirst(this.options.repairingGoal?.() ? goalRepairMessages(next, this.active) : next) };
   }
 
@@ -588,7 +590,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   private onToolEnd(toolCallId: string, toolName: string, entry: EntryRecord | undefined): void {
     const message = entry?.model?.[0];
-    const result = message?.role === "toolResult" ? message : interruptedResult(toolCallId, toolName);
+    const result = message?.role === "toolResult" ? guideResultForModel(message) : interruptedResult(toolCallId, toolName);
     this.emit({ type: "tool_execution_end", toolCallId, toolName, result, isError: result.isError });
   }
 
@@ -648,7 +650,7 @@ function customText(content: CustomAppMessage["content"]): string {
 }
 
 function interruptedResult(toolCallId: string, toolName: string): ToolResultMessage {
-  return { role: "toolResult", toolCallId, toolName, content: [{ type: "text", text: `Tool ${toolName} was interrupted before it finished. Read the page again before doing anything that changes it.` }], isError: true, timestamp: Date.now() };
+  return { role: "toolResult", toolCallId, toolName, content: [{ type: "text", text: toolName === "guide_step" ? GUIDE_STOPPED_TEXT : `Tool ${toolName} was interrupted before it finished. Read the page again before doing anything that changes it.` }], isError: true, timestamp: Date.now() };
 }
 
 function textOf(message: Message): string {
