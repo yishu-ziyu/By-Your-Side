@@ -2721,6 +2721,7 @@ return {kind:'model'};
     if (this.hold.isHeld()) throw new TaskActionRejected("页面现在归你，请先用侧栏交还。");
 
     if (!session || !this.runningOrStarting(session)) throw new TaskActionRejected("当前没有正在执行的主任务，修改未发送。");
+    this.goalRepair = null;
     this.failurePolicy?.reset(); this.noProgressPolicy?.reset(); this.restrictedPagePolicy?.reset(); this.exploreLadder?.reset(); this.runClock?.reset();
     this.deliveredResultThisRun = false;
     this.pageChangeTally = { attempts: 0, changes: 0 };

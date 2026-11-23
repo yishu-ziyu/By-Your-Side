@@ -1116,6 +1116,7 @@ function resetConversationRender(): void {
   leadToolUsed = false;
   goalNote = null;
   goalStep = null;
+  pendingSuperseded = null;
   historyPrimed = false;
   currentDraftReady = false;
   currentCitationSource = null;
@@ -1794,6 +1795,7 @@ let leadToolUsed = false;
 
 let goalNote: string | null = null;
 let goalStep: { at: number; of: number } | null = null;
+let pendingSuperseded: { run: RunHost | null; el: HTMLElement; noteEl: HTMLElement | null; anchor: HTMLElement } | null = null;
 
 interface ChipGroup {
   root: HTMLElement;
@@ -2865,7 +2867,10 @@ function setSessionState(sessionId: string, state: AgentRunState): void {
   if (flags.finishRun) {
     const outcome = currentRun?.orbActivity.state();
 
-    if (outcome === "stopped" || outcome === "failed") foldLeadAnswer();
+    if (outcome === "stopped" || outcome === "failed") {
+      foldLeadAnswer();
+      restoreSupersededAnswer();
+    }
     closeBlocks();
     finishRun();
     sessionRun.clear();
@@ -3102,18 +3107,94 @@ function mergeRepeatedSteps(run: RunHost): void {
   }
 }
 
-function supersedeAnswer(run: RunHost | null): void {
+function hasUserAfter(node: Element | null): boolean {
+  for (let next = node?.nextElementSibling ?? null; next; next = next.nextElementSibling) {
+    if (next.matches(".msg.user")) return true;
+  }
+
+  return false;
+}
+
+function beginGoalRedo(checked: RunHost | null): void {
+  const answerEl = checked?.answer?.el ?? latestAnswerEl();
+
+  if (hasUserAfter(answerEl ?? checked?.root ?? null)) {
+    goalNote = null;
+    goalStep = null;
+
+    return;
+  }
+
+  closeBlocks();
+  finishRun();
+  const anchor = document.createElement("div");
+  anchor.className = "redo-anchor";
+  anchor.hidden = true;
+  supersedeAnswer(checked?.answer ? checked : null, anchor);
+  appendToMessages(anchor);
+}
+
+function supersedeAnswer(run: RunHost | null, anchor: HTMLElement): void {
   const el = run?.answer?.el ?? latestAnswerEl();
 
   if (!el?.isConnected) return;
+  let noteEl: HTMLElement | null = null;
 
   if (run?.answer) {
-    const old = document.createElement("div");
-    old.className = "run-superseded";
-    old.textContent = `第一次的回答：${run.answer.text.replace(/\s+/g, " ").trim()}`;
-    run.body.insertBefore(old, run.body.querySelector(":scope > .run-total"));
+    noteEl = document.createElement("div");
+    noteEl.className = "run-superseded";
+    noteEl.textContent = `第一次的回答：${run.answer.text.replace(/\s+/g, " ").trim()}`;
+    run.body.insertBefore(noteEl, run.body.querySelector(":scope > .run-total"));
   }
   el.remove();
+  pendingSuperseded = { run, el, noteEl, anchor };
+}
+
+function restoreSupersededAnswer(beforeNode: HTMLElement | null = null): void {
+  const saved = pendingSuperseded;
+  pendingSuperseded = null;
+  goalNote = null;
+  goalStep = null;
+
+  if (saved) {
+    saved.noteEl?.remove();
+    saved.anchor.remove();
+
+    if (!saved.el.isConnected) {
+      const after = saved.run?.evidence?.isConnected ? saved.run.evidence
+        : saved.run?.graph.el.isConnected ? saved.run.graph.el
+          : saved.run?.root.isConnected ? saved.run.root
+            : null;
+
+      if (after && after.parentElement === messagesEl) after.after(saved.el);
+      else if (beforeNode && beforeNode.parentElement === messagesEl) messagesEl.insertBefore(saved.el, beforeNode);
+      else appendToMessages(saved.el);
+    }
+
+    if (saved.run && saved.run.check === "continued") {
+      saved.run.check = null;
+
+      if (saved.run.answer && saved.run.root.classList.contains("done")) paintAnsweredTitle(saved.run);
+    }
+  }
+
+  if (currentRun?.checkNote) {
+    currentRun.checkNote = null;
+    setRunTitle(currentRun, THINKING_TITLE, false, "think");
+    renderRunMeta(currentRun);
+  }
+}
+
+function placeRunAfterSteer(bubble: HTMLElement): void {
+  if (!currentRun || currentRun.root.classList.contains("done") || currentRun.body.querySelector(".chip")) return;
+
+  if (!(currentRun.root.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING)) return;
+  let anchor: Element = bubble;
+
+  while (anchor.nextElementSibling?.matches(".ctx-chips, .steer-received")) anchor = anchor.nextElementSibling;
+  anchor.after(currentRun.root);
+
+  if (currentRun.trail.isConnected) currentRun.root.after(currentRun.trail);
 }
 
 function latestAnswerEl(): HTMLElement | null {
@@ -4039,15 +4120,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       }
       if (ev.status === "open" && !resumeCardShown()) addMsg("msg notice", checkNoteForUser(ev.finding, ev.remaining));
 
-      if (ev.status === "continue" && !ev.held) {
-        closeBlocks();
-        finishRun();
-        supersedeAnswer(checked?.answer ? checked : null);
-        const anchor = document.createElement("div");
-        anchor.className = "redo-anchor";
-        anchor.hidden = true;
-        appendToMessages(anchor);
-      }
+      if (ev.status === "continue" && !ev.held) beginGoalRedo(checked);
       break;
     }
     case "turn_end":
@@ -4200,6 +4273,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
   const staleForStrip = delivery.kind !== "ack" && currentRunId !== null && delivery.runId !== null && delivery.runId !== currentRunId;
 
   if ((delivery.kind === "finding" || delivery.kind === "reply") && !staleForStrip) {
+    pendingSuperseded = null;
     const previous = resultByConversation.get(cid);
     const facts = delivery.facts;
     resultByConversation.set(cid, {
@@ -5055,6 +5129,8 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
       if (entry.item.kind === "user") {
         const steering = running && !entry.item.undelivered;
 
+        restoreSupersededAnswer();
+
         if (!running) {
           runStartAt = eventTime();
         }
@@ -5073,6 +5149,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
         else if (entry.item.context) renderTurnContext(bubble, entry.item.context);
 
         if (steering && !reuse) markSteerReceived(bubble);
+        if (steering) placeRunAfterSteer(bubble);
 
         if (entry.item.undelivered) handleDeliveryReceipt({ seq: entry.seq, ok: false, text: entry.item.text, original: entry.item.undelivered.original });
       }
