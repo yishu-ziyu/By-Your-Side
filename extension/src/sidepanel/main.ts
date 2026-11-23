@@ -3949,6 +3949,16 @@ function fieldKeyOf(toolCallId: string, readback: FieldReadback): string {
   return readbackKey(start?.target, start?.tab ?? workingTabKey, readback);
 }
 
+function syncVoiceGuideStatus(waiting: boolean, guide?: { step: number; target?: string }): void {
+  if (!waiting || !guide) {
+    voiceUI.setGuideStatus(null);
+
+    return;
+  }
+
+  voiceUI.setGuideStatus(guide.target ? `已在网页圈出第 ${guide.step} 步「${guide.target}」，等你操作` : `已在网页圈出第 ${guide.step} 步，等你操作`);
+}
+
 function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | null): void {
   if (sessionId && !isLeadSession(sessionId)) return;
 
@@ -4054,6 +4064,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     }
     case "guide_wait": {
+      syncVoiceGuideStatus(ev.waiting, ev.guide);
       const run = currentRun;
 
       if (!run) break;

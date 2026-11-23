@@ -1411,6 +1411,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     holdPoint,
     holdAt: (inst, point, target, el) => holdInst(inst, point.x, point.y, null, target, null, el),
     releaseHold: releaseHoldInst,
+    hideCursor: hide,
     finishPark,
     scheduleSettle,
     isHoldingCorner: (inst) => Boolean(inst.hold?.corner),

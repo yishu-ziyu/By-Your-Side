@@ -25,6 +25,7 @@ export interface TutorGuideHost<Inst> {
   holdPoint(r: SideAgentRect, corner?: boolean): { x: number; y: number };
   holdAt(inst: Inst, point: { x: number; y: number }, target: string | undefined, el: Element): void;
   releaseHold(inst: Inst): void;
+  hideCursor(inst: Inst): void;
   finishPark(inst: Inst): void;
   scheduleSettle(inst: Inst): void;
   isHoldingCorner(inst: Inst): boolean;
@@ -288,7 +289,7 @@ export function createTutorGuide<Inst>(host: TutorGuideHost<Inst>): TutorGuideCo
   function finishGuide(g: GuideSession<Inst>, changed: "dom" | "url" | "input" | "select"): void {
     const after = guideAfter(g);
     postGuide(g, { kind: "done", changed, ...(after ? { after } : {}), ...(changed === "url" ? { url: location.href } : {}) });
-    endGuide(g);
+    endGuide(g, false);
   }
 
   function checkGuide(g: GuideSession<Inst>): void {
@@ -473,7 +474,7 @@ export function createTutorGuide<Inst>(host: TutorGuideHost<Inst>): TutorGuideCo
     checkGuide(g);
   }
 
-  function endGuide(g: GuideSession<Inst>): void {
+  function endGuide(g: GuideSession<Inst>, hidePointer = false): void {
     if (guide !== g) return;
     guide = null;
     window.removeEventListener("click", onGuideClick, true);
@@ -495,7 +496,9 @@ export function createTutorGuide<Inst>(host: TutorGuideHost<Inst>): TutorGuideCo
     g.mark = null;
     host.guideCanvas()?.clearSpotlight();
 
-    if (host.isHoldingCorner(g.inst)) {
+    if (hidePointer) {
+      host.hideCursor(g.inst);
+    } else if (host.isHoldingCorner(g.inst)) {
       host.releaseHold(g.inst);
       host.scheduleSettle(g.inst);
     }
@@ -551,7 +554,7 @@ export function createTutorGuide<Inst>(host: TutorGuideHost<Inst>): TutorGuideCo
     };
 
     guide = g;
-    port.onDisconnect.addListener(() => endGuide(g));
+    port.onDisconnect.addListener(() => endGuide(g, true));
     g.observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
     if (el && typeof ResizeObserver !== "undefined") {
       g.resizeObserver = new ResizeObserver(() => {
@@ -600,7 +603,7 @@ export function createTutorGuide<Inst>(host: TutorGuideHost<Inst>): TutorGuideCo
       };
     },
     stop(): void {
-      if (guide) endGuide(guide);
+      if (guide) endGuide(guide, true);
     },
   };
 }
