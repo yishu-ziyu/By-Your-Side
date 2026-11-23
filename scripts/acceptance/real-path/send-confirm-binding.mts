@@ -47,7 +47,7 @@ try {
     await rp.click(panel, "#conversation-new"); await until(() => rp.evaluate(panel, idle), 10_000, "新对话就绪");
     const before = posts.length;
     const toolsBefore = toolTexts.length;
-    await rp.click(panel, "#input"); await rp.typeText(panel, `确认场景 ${name}`); await rp.pressEnter(panel);
+    await rp.focusForTyping(panel, "#input"); await rp.typeText(panel, `确认场景 ${name}`); await rp.pressEnter(panel);
     if (name.startsWith("script-")) {
       await until(() => rp.evaluate(panel, '[...document.querySelectorAll(".msg.assistant")].some(m=>m.textContent.includes("操作结束"))'), 30_000, `${name} 只读拒绝结束`);
       await sleep(1500);

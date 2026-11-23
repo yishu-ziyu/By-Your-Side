@@ -149,6 +149,25 @@ function browserControls(cdp: ReturnType<typeof createCdp>, id: string) {
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button, clickCount: 1 }, sessionId);
   };
 
+  const focusForTyping = async (sessionId: string, selector: string) => {
+    const query = JSON.stringify(selector);
+    let previous: { x: number; y: number } | null = null;
+    await until(async () => {
+      const target = await evaluate(sessionId, `(() => {
+        const el = document.querySelector(${query});
+        if (!el || el.disabled) return null;
+        const r = el.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+        return { x, y, focused: document.activeElement === el, hit: document.elementFromPoint(x, y) === el };
+      })()`) as { x: number; y: number; focused: boolean; hit: boolean } | null;
+      if (target?.focused) return true;
+      const stable = target?.hit && previous?.x === target.x && previous.y === target.y;
+      previous = target;
+      if (!stable) return false;
+      await click(sessionId, selector);
+      return await evaluate(sessionId, `document.activeElement === document.querySelector(${query})`) === true;
+    }, 5_000, `输入框取得键盘焦点 ${selector}`, 50);
+  };
+
   const typeText = (sessionId: string, text: string) => cdp.send("Input.insertText", { text }, sessionId);
 
   const pressEnter = async (sessionId: string) => {
@@ -186,6 +205,7 @@ function browserControls(cdp: ReturnType<typeof createCdp>, id: string) {
     openSidePanel,
     click,
     typeText,
+    focusForTyping,
     pressEnter,
     screenshot,
     serviceWorker: async (): Promise<TargetInfo | undefined> => findServiceWorker(await targets(), id),

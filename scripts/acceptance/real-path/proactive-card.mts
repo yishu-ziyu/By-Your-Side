@@ -129,7 +129,7 @@ try {
 
   await read("/b");
   await until(async () => await rp.evaluate(panel, CARD), 60_000, "第二张卡", 500);
-  await rp.click(panel, "#input");
+  await rp.focusForTyping(panel, "#input");
   await rp.typeText(panel, CHAT);
   await rp.pressEnter(panel);
   await until(async () => (await rp.evaluate(panel, `[...document.querySelectorAll('#messages .msg.assistant')].some(el => el.textContent.includes(${JSON.stringify(CHAT_REPLY)})) && !document.querySelector('#send-btn').classList.contains('stopping')`)) || undefined, 20_000, "交谈得到约定的回答");
