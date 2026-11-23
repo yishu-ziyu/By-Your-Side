@@ -256,6 +256,12 @@ export function startInprocHost(deps: InprocHostDeps): void {
       return;
     }
 
+    if (message.type === "task_history_list") {
+      connection?.send({ type: "task_history_result", requestId: message.requestId, ok: true, tasks: [] });
+
+      return;
+    }
+
     if (message.type !== "task_view_query" && message.type !== "task_receipt_query") {
       client?.connection.send({ type: "agent_event", conversationId: message.conversationId, event: { kind: "error", message: "先在「模型与语音」里连接模型。" } });
     }

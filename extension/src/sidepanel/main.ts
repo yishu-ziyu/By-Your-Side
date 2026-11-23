@@ -329,10 +329,9 @@ app.innerHTML = `
     <canvas id="starter-glow" aria-hidden="true"></canvas>
     <p id="starter-brand"></p>
     <canvas id="starter-orb" aria-hidden="true"></canvas>
-    <p id="starter-title">说说你想完成什么</p>
+    <p id="starter-title"></p>
     <p id="starter-sub"></p>
     <button type="button" id="starter-connect">连接模型</button>
-    <video id="starter-demo" src="demo/fill-a-form.webm" poster="demo/fill-a-form.jpg" muted loop playsinline preload="metadata" aria-label="演示：说一句话，助手把预约表单填好，提交前留给你核对"></video>
   </section>
   <div class="composer-dock-wrap">
     <div id="attach-menu" class="action-menu-popover" role="menu" aria-label="添加与设置" hidden>
@@ -389,6 +388,7 @@ app.innerHTML = `
       </div>
     </div>
   </div>
+  <div id="open-threads-slot"></div>
 `;
 
 function applyHostFeatures(features: { memory: boolean } | undefined): void {
@@ -794,21 +794,6 @@ const proactiveCard = installProactiveCard({
   },
 });
 
-const starterDemo = document.getElementById("starter-demo") as HTMLVideoElement;
-
-function syncStarterDemo(): void {
-  const shown = starterDemo.offsetParent !== null && !document.hidden && !matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  if (shown) void starterDemo.play().catch(() => {});
-  else starterDemo.pause();
-}
-
-starterDemo.addEventListener("loadedmetadata", syncStarterDemo);
-starterDemo.addEventListener("error", () => starterDemo.remove());
-document.addEventListener("visibilitychange", syncStarterDemo);
-matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", syncStarterDemo);
-new ResizeObserver(syncStarterDemo).observe(document.getElementById("starter")!);
-
 function updateStarterVisibility(): void {
   app.classList.toggle("starter-ready", starterReady());
   void takeNudgeDraft();
@@ -821,7 +806,7 @@ let modelConnected: boolean | null = null;
 function paintStarterModelState(): void {
   const none = modelConnected === false;
   app.classList.toggle("no-model", none);
-  document.getElementById("starter-title")!.textContent = none ? "先连接模型" : "说说你想完成什么";
+  document.getElementById("starter-title")!.textContent = none ? "先连接模型" : "";
   document.getElementById("starter-sub")!.textContent = none ? "连接以后，助手就能读这个页面、整理信息、在页面上操作。" : "";
 }
 
@@ -4397,7 +4382,7 @@ const INTRO_SEEN_KEY = "starter_intro_seen";
 }
 
 configureOpenThreads({
-  root: document.getElementById("starter")!,
+  root: document.getElementById("open-threads-slot")!,
   send,
   conversations: () => conversations.values(),
   currentConversationId: () => selectedConversationId,

@@ -217,7 +217,7 @@ export function refreshOpenThreads(): void {
 
     if (seq !== renderSeq) return;
 
-    if (local[OPEN_THREADS_KEY] !== true || !deps!.ready()) { clear();
+    if (local[OPEN_THREADS_KEY] === false || !deps!.ready()) { clear();
 
  return; }
 

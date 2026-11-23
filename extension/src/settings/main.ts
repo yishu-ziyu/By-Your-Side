@@ -1395,7 +1395,7 @@ async function reloadSettings(): Promise<void> {
   $<HTMLInputElement>("mini-apps").checked = isMiniAppsOn(stored[MINI_APPS_KEY]);
   $<HTMLInputElement>("voice-diagnostics").checked = isVoiceDiagnosticsOn(stored[VOICE_DIAGNOSTICS_KEY]);
   $<HTMLInputElement>("continuous-delegation").checked = stored[CONTINUATION_KEY] === true;
-  openThreads.checked = stored[OPEN_THREADS_KEY] === true;
+  openThreads.checked = stored[OPEN_THREADS_KEY] !== false;
   attentionCues.checked = isCuesOn(stored[ATTENTION_CUES_KEY]);
   renderMainModel();
   renderRegions();
