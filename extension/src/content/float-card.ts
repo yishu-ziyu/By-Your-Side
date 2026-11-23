@@ -47,10 +47,9 @@ iframe { flex: 1; width: 100%; border: 0; display: block; background: var(--fc-b
 
 export function installFloatCard(): void {
   let state: FloatCardState | null = null;
-  let host: HTMLElement | null = null;
-  let card: HTMLElement | null = null;
-  let bubble: HTMLButtonElement | null = null;
-  let mounting: Promise<void> | null = null;
+  type Mounted = { phase: "mounted"; host: HTMLElement; card: HTMLElement; bubble: HTMLButtonElement };
+  type Mount = { phase: "absent" } | { phase: "mounting" } | Mounted;
+  let surface: Mount = { phase: "absent" };
   const yielding = new Set<string>();
 
   const save = (next: Partial<FloatCardState>) => {
@@ -71,33 +70,36 @@ export function installFloatCard(): void {
   };
 
   const place = () => {
-    if (!state || !card || !bubble) return;
+    if (!state || surface.phase !== "mounted") return;
+    const { card, bubble } = surface;
     const r = fit(state.rect);
     Object.assign(card.style, { right: `${r.right}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
     Object.assign(bubble.style, { right: "16px", top: `${r.top}px` });
   };
 
   const teardown = () => {
-    host?.remove();
-    host = card = bubble = null;
+    if (surface.phase === "mounted") surface.host.remove();
+    surface = { phase: "absent" };
   };
 
   const track = (handle: HTMLElement, onMove: (dx: number, dy: number, start: FloatCardRect) => FloatCardRect) => {
     handle.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || !state || (e.target as HTMLElement).closest("button")) return;
+      if (e.button !== 0 || !state || surface.phase !== "mounted" || (e.target as HTMLElement).closest("button")) return;
       e.preventDefault();
       const start = fit(state.rect);
       const x0 = e.clientX, y0 = e.clientY;
       handle.setPointerCapture(e.pointerId);
-      card!.classList.add("moving");
+      const mounted = surface;
+      mounted.card.classList.add("moving");
       handle.classList.add("dragging");
       const move = (ev: PointerEvent) => {
-        state = { ...state!, rect: fit(onMove(ev.clientX - x0, ev.clientY - y0, start)) };
+        if (surface !== mounted || !state) return;
+        state = { ...state, rect: fit(onMove(ev.clientX - x0, ev.clientY - y0, start)) };
         place();
       };
       const up = () => {
         handle.removeEventListener("pointermove", move);
-        card?.classList.remove("moving");
+        mounted.card.classList.remove("moving");
         handle.classList.remove("dragging");
         save({});
       };
@@ -117,18 +119,18 @@ export function installFloatCard(): void {
     return b;
   };
 
-  const mount = async () => {
+  const mount = async (opening: Mount) => {
     const where = await chrome.runtime.sendMessage({ type: FLOAT_CARD_WHERE }).catch(() => null) as { windowId?: number } | null;
-    if (typeof where?.windowId !== "number" || !state?.open || document.hidden) return;
+    if (surface !== opening || typeof where?.windowId !== "number" || !state?.open || document.hidden) return;
 
-    host = document.createElement("div");
+    const host = document.createElement("div");
     host.setAttribute(OVERLAY_ATTR, OVERLAY_KIND_FLOAT_CARD);
     syncColorTone(host);
     const root = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = STYLES;
 
-    card = document.createElement("div");
+    const card = document.createElement("div");
     card.className = "card";
     card.popover = "manual";
     card.setAttribute("role", "dialog");
@@ -163,7 +165,7 @@ export function installFloatCard(): void {
     track(bar, (dx, dy, s) => ({ ...s, right: s.right - dx, top: s.top + dy }));
     card.append(bar, frame, ...edges);
 
-    bubble = document.createElement("button");
+    const bubble = document.createElement("button");
     bubble.className = "bubble";
     bubble.popover = "manual";
     bubble.type = "button";
@@ -172,26 +174,34 @@ export function installFloatCard(): void {
     bubble.addEventListener("click", () => save({ collapsed: false }));
 
     root.append(style, card, bubble);
+    surface = { phase: "mounted", host, card, bubble };
     document.documentElement.append(host);
     frame.src = chrome.runtime.getURL(`sidepanel.html?float=1&conversation=${encodeURIComponent(state.conversation)}&window=${where.windowId}`);
   };
 
   const render = () => {
     if (!state?.open || document.hidden) return teardown();
-    if (!host) {
-      mounting ??= mount().finally(() => { mounting = null; if (host) render(); });
+    if (surface.phase === "mounting") return;
+    if (surface.phase === "absent") {
+      const opening = { phase: "mounting" } as const;
+      surface = opening;
+      void mount(opening).finally(() => {
+        if (surface === opening) surface = { phase: "absent" };
+        else if (surface.phase === "mounted") render();
+      });
       return;
     }
+    const { host, card, bubble } = surface;
     host.style.visibility = yielding.size ? "hidden" : "";
-    card!.togglePopover(!state.collapsed);
-    bubble!.togglePopover(state.collapsed);
+    card.togglePopover(!state.collapsed);
+    bubble.togglePopover(state.collapsed);
     place();
   };
 
   const ns = (window.__sideagent ??= {});
   ns.floatCard = {
     uncover(target, x, y, token) {
-      if (!host || !target.isConnected || document.elementFromPoint(x, y) !== host) return false;
+      if (surface.phase !== "mounted" || !target.isConnected || document.elementFromPoint(x, y) !== surface.host) return false;
       for (let node: Element | null = target; node;) {
         if (node.closest(`[${OVERLAY_ATTR}]`)) return false;
         const parent = node.getRootNode();

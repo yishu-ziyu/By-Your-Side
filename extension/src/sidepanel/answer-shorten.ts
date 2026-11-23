@@ -208,12 +208,14 @@ function bindGesture(answer: HTMLElement, grip: HTMLElement): void {
   const H: Record<Level, number> = { 1: 0, 2: 0, 3: 0 };
   let pieces: Piece[] = [];
   let p = 3;
-  let raf = 0;
   let anchorTop = 0;
   let keepEnd = false;
   let target: Level = 3;
-  let sx = 0;
-  let sv = 0;
+  let spring: { x: number; velocity: number; frame: number } | null = null;
+  const cancelSpring = () => {
+    if (spring) cancelAnimationFrame(spring.frame);
+    spring = null;
+  };
   const hold = messages ? holds.get(messages) ?? { base: 0, raf: 0 } : null;
   if (messages && hold) holds.set(messages, hold);
 
@@ -322,9 +324,8 @@ function bindGesture(answer: HTMLElement, grip: HTMLElement): void {
   };
 
   const settle = (lv: Level) => {
-    cancelAnimationFrame(raf);
+    cancelSpring();
     if (hold?.finish === finishNow) hold.finish = undefined;
-    sv = 0;
     delete answer.dataset.shortening;
     render(lv);
     showLevel(answer, lv);
@@ -335,28 +336,29 @@ function bindGesture(answer: HTMLElement, grip: HTMLElement): void {
   const finishNow = () => settle(target);
 
   const springTo = (x0: number, v0: number, lv: Level) => {
-    cancelAnimationFrame(raf);
+    cancelSpring();
     target = lv;
     commit(answer, lv);
     if (reducedMotion()) { settle(lv); return; }
     if (hold) hold.finish = finishNow;
     const k = SPRING_K, c = 2 * Math.sqrt(k), end = H[lv];
-    sx = x0; sv = v0;
+    const motion = { x: x0, velocity: v0, frame: 0 };
+    spring = motion;
     let last = performance.now();
     const step = (now: number) => {
       let dt = Math.min(0.032, (now - last) / 1000);
       last = now;
-      while (dt > 0) { const h = Math.min(dt, 0.004); sv += (-k * (sx - end) - c * sv) * h; sx += sv * h; dt -= h; }
-      if (Math.abs(sx - end) < 0.5 && Math.abs(sv) < 8) { settle(lv); return; }
-      render(toP(sx));
-      raf = requestAnimationFrame(step);
+      while (dt > 0) { const h = Math.min(dt, 0.004); motion.velocity += (-k * (motion.x - end) - c * motion.velocity) * h; motion.x += motion.velocity * h; dt -= h; }
+      if (Math.abs(motion.x - end) < 0.5 && Math.abs(motion.velocity) < 8) { settle(lv); return; }
+      render(toP(motion.x));
+      motion.frame = requestAnimationFrame(step);
     };
-    raf = requestAnimationFrame(step);
+    motion.frame = requestAnimationFrame(step);
   };
 
   const begin = () => {
     if (hold?.finish && hold.finish !== finishNow) hold.finish();
-    cancelAnimationFrame(raf);
+    cancelSpring();
     answer.dataset.shortening = "";
     if (messages && hold) {
       cancelAnimationFrame(hold.raf);
@@ -369,40 +371,37 @@ function bindGesture(answer: HTMLElement, grip: HTMLElement): void {
     render(p);
   };
 
-  let startY: number | null = null;
-  let startX = 0;
-  let x = 0;
-  let moved = false;
-  let samples: Array<[t: number, y: number]> = [];
+  let gesture: { phase: "pressed" | "dragging"; pointerId: number; startY: number; startX: number; x: number; samples: Array<[number, number]> } | null = null;
 
   grip.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
     if (document.activeElement === grip) grip.blur();
     begin();
-    startY = e.clientY; startX = toX(p); x = startX; moved = false; samples = [[e.timeStamp, e.clientY]];
-    sv = 0;
+    const startX = toX(p);
+    gesture = { phase: "pressed", pointerId: e.pointerId, startY: e.clientY, startX, x: startX, samples: [[e.timeStamp, e.clientY]] };
     grip.setPointerCapture(e.pointerId);
     grip.classList.add("dragging");
   });
   grip.addEventListener("pointermove", (e) => {
-    if (startY === null) return;
-    const dy = e.clientY - startY;
+    if (!gesture || gesture.pointerId !== e.pointerId) return;
+    const dy = e.clientY - gesture.startY;
 
-    if (Math.abs(dy) > 4) moved = true;
-    if (!moved) return;
-    x = clamp(startX + dy, H[1], H[3]);
-    samples.push([e.timeStamp, e.clientY]);
-    samples = samples.filter(([t]) => e.timeStamp - t < 100);
-    render(toP(x));
+    if (Math.abs(dy) > 4) gesture.phase = "dragging";
+    if (gesture.phase !== "dragging") return;
+    gesture.x = clamp(gesture.startX + dy, H[1], H[3]);
+    gesture.samples.push([e.timeStamp, e.clientY]);
+    gesture.samples = gesture.samples.filter(([t]) => e.timeStamp - t < 100);
+    render(toP(gesture.x));
   });
   const end = (e: PointerEvent) => {
-    if (startY === null) return;
-    startY = null;
+    if (!gesture || gesture.pointerId !== e.pointerId) return;
+    const { phase, x, startX, samples } = gesture;
+    gesture = null;
     grip.classList.remove("dragging");
     const from = Math.round(p) as Level;
 
-    if (!moved) { springTo(x, 0, from === 1 ? 3 : (from - 1) as Level); return; }
+    if (phase === "pressed") { springTo(x, 0, from === 1 ? 3 : (from - 1) as Level); return; }
     const [t0, y0] = samples.find(([t]) => e.timeStamp - t < 100) ?? [e.timeStamp, e.clientY];
     const v = e.timeStamp > t0 ? ((e.clientY - y0) / (e.timeStamp - t0)) * 1000 : 0;
     const projected = x + v * PROJECT_S;
@@ -412,18 +411,19 @@ function bindGesture(answer: HTMLElement, grip: HTMLElement): void {
     springTo(x, v, lv);
   };
   grip.addEventListener("pointerup", end);
-  grip.addEventListener("pointercancel", () => {
-    if (startY === null) return;
-    startY = null;
+  grip.addEventListener("pointercancel", (e) => {
+    if (!gesture || gesture.pointerId !== e.pointerId) return;
+    const { x } = gesture;
+    gesture = null;
     grip.classList.remove("dragging");
     springTo(x, 0, Math.round(toP(x)) as Level);
   });
   grip.addEventListener("keydown", (e) => {
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
     e.preventDefault();
-    const running = raf !== 0 && sv !== 0;
+    const running = spring && spring.velocity !== 0 ? spring : null;
     const from = running ? target : Math.round(p) as Level;
-    const x0 = running ? sx : toX(p), v0 = running ? sv : 0;
+    const x0 = running?.x ?? toX(p), v0 = running?.velocity ?? 0;
     begin();
     springTo(running ? x0 : toX(p), v0, clamp(from + (e.key === "ArrowUp" ? -1 : 1), 1, 3) as Level);
   });

@@ -10,17 +10,23 @@ function translateY(el: HTMLElement): number {
 export function mountComposerGlide(app: HTMLElement, dock: HTMLElement, starter: HTMLElement, watch: HTMLElement[]): void {
   let lastBottom = dock.getBoundingClientRect().bottom;
   let lastStarter: DOMRect | null = null;
-  let glide: Animation | null = null;
-  let armed = false;
+  let motion: { phase: "initial" | "arming" | "ready" } | { phase: "moving"; animation: Animation } = { phase: "initial" };
+  const stopMotion = () => {
+    if (motion.phase === "moving") { motion.animation.cancel(); motion = { phase: "ready" }; }
+  };
   const viewport = () => `${innerWidth}x${innerHeight}`;
   let lastViewport = viewport();
-  const arm = () => { if (!armed && app.classList.contains("starter-ready")) requestAnimationFrame(() => requestAnimationFrame(() => { armed = true; remember(); })); };
+  const arm = () => {
+    if (motion.phase !== "initial" || !app.classList.contains("starter-ready")) return;
+    motion = { phase: "arming" };
+    requestAnimationFrame(() => requestAnimationFrame(() => { motion = { phase: "ready" }; remember(); }));
+  };
 
   const starterShown = () => getComputedStyle(starter).display !== "none";
 
   const remember = () => {
     lastViewport = viewport();
-    if (glide) return;
+    if (motion.phase === "moving") return;
     lastBottom = dock.getBoundingClientRect().bottom;
     if (!app.classList.contains("starter-leaving")) lastStarter = starterShown() ? starter.getBoundingClientRect() : null;
   };
@@ -28,14 +34,12 @@ export function mountComposerGlide(app: HTMLElement, dock: HTMLElement, starter:
   const settle = () => {
     // WHY: 确认按钮移动会让按下与松开落在不同元素上，吞掉用户的确认或取消。
     if (dock.querySelector("#confirm-dock:not([hidden])")) {
-      glide?.cancel();
-      glide = null;
+      stopMotion();
       remember();
       return;
     }
     if (viewport() !== lastViewport) {
-      glide?.cancel();
-      glide = null;
+      stopMotion();
       remember();
 
       return;
@@ -46,12 +50,11 @@ export function mountComposerGlide(app: HTMLElement, dock: HTMLElement, starter:
     const from = lastBottom + shift - bottom;
     const leaving = lastStarter && !starterShown() && !app.classList.contains("starter-leaving") ? lastStarter : null;
 
-    if (!armed) { arm(); remember(); return; }
+    if (motion.phase === "initial" || motion.phase === "arming") { arm(); remember(); return; }
 
-    if (Math.abs(bottom - lastBottom) < MIN_MOVE_PX) { if (!glide) remember(); return; }
+    if (Math.abs(bottom - lastBottom) < MIN_MOVE_PX) { if (motion.phase !== "moving") remember(); return; }
 
-    glide?.cancel();
-    glide = null;
+    stopMotion();
     lastBottom = bottom;
 
     if (reducedMotion()) { remember(); return; }
@@ -60,7 +63,7 @@ export function mountComposerGlide(app: HTMLElement, dock: HTMLElement, starter:
     const duration = parseFloat(style.getPropertyValue("--m-morph")) || 420;
     const easing = style.getPropertyValue("--e-sweep").trim() || "ease-in-out";
     const current = dock.animate([{ transform: `translateY(${from}px)` }, { transform: "translateY(0)" }], { duration, easing });
-    glide = current;
+    motion = { phase: "moving", animation: current };
 
     if (leaving) {
       const appTop = app.getBoundingClientRect().top;
@@ -71,7 +74,7 @@ export function mountComposerGlide(app: HTMLElement, dock: HTMLElement, starter:
       void fade.finished.finally(() => { app.classList.remove("starter-leaving"); fade.cancel(); lastStarter = null; });
     }
 
-    current.finished.then(() => { if (glide === current) { glide = null; remember(); } }, () => {});
+    current.finished.then(() => { if (motion.phase === "moving" && motion.animation === current) { motion = { phase: "ready" }; remember(); } }, () => {});
   };
 
   const observer = new MutationObserver(settle);
