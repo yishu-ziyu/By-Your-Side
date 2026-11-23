@@ -84,24 +84,27 @@ try {
 
   await rp.cdp.send("Page.bringToFront", {}, work);
   const panel = await rp.attach(await rp.openSidePanel());
-  await until(async () => await rp.evaluate(panel, `document.querySelector("#send-btn")?.disabled === false`) || undefined, 30_000, "侧栏可发送");
+  await until(async () => await rp.evaluate(panel, `document.querySelector("#conversation-new")?.disabled === false && document.querySelector("#send-btn")?.disabled === false`) || undefined, 30_000, "侧栏可发送");
   await configureViaSettings(rp, panel, { providerId: "custom", modelId: "demo-model", credential: { type: "api_key", key: "test-key" } }, { asCustom: true, baseUrl: model.baseUrl });
   await rp.cdp.send("Page.bringToFront", {}, work);
   await rp.click(panel, "#input"); await rp.typeText(panel, GOAL); await rp.pressEnter(panel);
   await until(async () => await rp.evaluate(work, `document.querySelector("#f2").value === "值2"`) || undefined, 30_000, "前两项已填");
   await rp.cdp.send("Target.closeTarget", { targetId: (await rp.targets()).find(t => t.url.includes("sidepanel"))!.targetId });
-  await until(async () => { const t = await tab(); return t?.shown && t.tone === "work" && t.task ? t : null; }, 10_000, "胶囊在做");
-  await sleep(800);
-  const working = (await tab())!;
+  const stopButton = async () => {
+    const t = await tab();
+    return t?.shown && t.tone === "work" && t.task && t.button && t.rect && t.button.x - 30 >= t.rect.x ? t.button : null;
+  };
+  await until(stopButton, 10_000, "工作中的胶囊显示停止键");
   await shot(work, "d0-collapsed.png");
-  await mouse(work, "mouseMoved", working.button!.x - 30, working.button!.y + working.button!.height / 2);
+  const beforeButton = await until(stopButton, 10_000, "悬停前取得当前停止键的位置");
+  await mouse(work, "mouseMoved", beforeButton.x - 30, beforeButton.y + beforeButton.height / 2);
   await until(async () => (await tab())?.card || null, 3000, "进度卡展开").catch(() => null);
   await sleep(600);
   const opened = await tab();
   await shot(work, "d-card.png");
   const c = opened?.card;
-  const stayed = Math.abs((opened?.button?.y ?? -99) - (working.button?.y ?? 99)) < 2;
-  check("d 悬停展开成进度卡：目标、做过的步骤；在窗口里，停止键没挪", Boolean(c && c.goal.includes("报名表") && c.steps >= 2 && c.rect.y >= 0 && c.rect.y + c.rect.height <= height) && stayed, { card: c ?? null, before: working.button, after: opened?.button ?? null });
+  const stayed = Math.abs((opened?.button?.y ?? -99) - beforeButton.y) < 2;
+  check("d 悬停展开成进度卡：目标、做过的步骤；在窗口里，停止键没挪", Boolean(c && c.goal.includes("报名表") && c.steps >= 2 && c.rect.y >= 0 && c.rect.y + c.rect.height <= height) && stayed, { card: c ?? null, before: beforeButton, after: opened?.button ?? null });
 
   if (c) {
     await mouse(work, "mouseMoved", c.input.x + 40, c.input.y + c.input.height / 2);
