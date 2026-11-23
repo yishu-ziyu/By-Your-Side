@@ -1,3 +1,6 @@
+import { SENSITIVE_FIELD_NAME, redactStoredTrace } from "../../../shared/trace-sanitize.js";
+import { redactCredentialText } from "../../../shared/untrusted.js";
+
 export type GuideTargetKind = "click" | "input" | "select";
 
 export interface GuideTargetDescriptor {
@@ -27,8 +30,6 @@ const NON_TEXT_INPUT_TYPES = new Set([
   "range",
 ]);
 
-const SENSITIVE_NAME_RE = /pass(word|code|phrase)?|secret|token|pin|otp|cvv|cvc|ssn|密码|口令|验证码/i;
-
 export function classifyGuideTarget(desc: GuideTargetDescriptor): GuideTargetKind {
   const tag = desc.tagName.toLowerCase();
   const role = (desc.role ?? "").toLowerCase();
@@ -51,7 +52,7 @@ export function classifyGuideTarget(desc: GuideTargetDescriptor): GuideTargetKin
 export function isSensitiveGuideField(inputType?: string, labelOrName?: string): boolean {
   if ((inputType ?? "").toLowerCase() === "password") return true;
 
-  return Boolean(labelOrName && SENSITIVE_NAME_RE.test(labelOrName));
+  return Boolean(labelOrName && SENSITIVE_FIELD_NAME.test(labelOrName));
 }
 
 export function formatGuideFieldAfter(
@@ -65,7 +66,8 @@ export function formatGuideFieldAfter(
     return [roleOrTag, safeName, "filled=true (redacted)"].filter(Boolean).join(" ").slice(0, 120);
   }
 
-  const clipped = snapshot.value.trim().replace(/\s+/g, " ").slice(0, 50);
+  const raw = snapshot.value.trim().replace(/\s+/g, " ");
+  const clipped = redactCredentialText(String(redactStoredTrace(raw))).slice(0, 50);
 
   return [roleOrTag, safeName, `value="${clipped}"`].filter(Boolean).join(" ").slice(0, 120);
 }

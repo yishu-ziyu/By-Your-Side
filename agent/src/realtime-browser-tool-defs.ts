@@ -4,7 +4,7 @@ import { ToolRpc } from './rpc.js';
 
 export const REALTIME_BROWSER_TOOL_NAMES = [
   'tabs', 'navigate', 'snapshot', 'read_element', 'read_elements', 'hover',
-  'click', 'fill', 'type_text', 'press_key', 'scroll', 'mark', 'page_translation',
+  'click', 'fill', 'type_text', 'press_key', 'scroll', 'mark', 'guide_step', 'page_translation',
 ] as const;
 
 const names = new Set<string>(REALTIME_BROWSER_TOOL_NAMES);

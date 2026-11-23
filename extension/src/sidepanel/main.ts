@@ -5369,6 +5369,12 @@ function applyPendingAsk(ask: PendingAsk): void {
   askCiteText.textContent = ask.element && ask.element.kind !== "selection" ? `${ask.element.kind === "table" ? "📊" : ask.element.kind === "code" ? "⌘" : "▣"} ${ask.element.title}` : ask.text || ask.title;
   askCiteText.title = ask.text;
   askCiteEl.hidden = false;
+
+  if (ask.draft && !inputEl.value.trim()) {
+    inputEl.value = ask.draft;
+    inputEl.dispatchEvent(new Event("input"));
+  }
+
   inputEl.focus({ preventScroll: true });
   saveDraft();
   materialsTray?.sync();

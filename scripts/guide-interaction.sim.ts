@@ -21,15 +21,18 @@ describe("live tutor guide target intent and completion rules", () => {
     assert.equal(classifyGuideTarget({ tagName: "SELECT" }), "select");
   });
 
-  it("redacts passwords and sensitive tokens from guide_step readback", () => {
+  it("redacts passwords and sensitive fields from guide_step readback", () => {
     assert.equal(isSensitiveGuideField("password", "login"), true);
-    assert.equal(isSensitiveGuideField("text", "API token"), true);
+    assert.equal(isSensitiveGuideField("text", "SMS verification code"), true);
     assert.equal(isSensitiveGuideField("text", "短信验证码"), true);
     assert.equal(isSensitiveGuideField("text", "搜索关键词"), false);
 
     const secretAfter = formatGuideFieldAfter("input", "Password", { value: "s3cr3t-pass", sensitive: true });
     assert.ok(!secretAfter.includes("s3cr3t-pass"));
     assert.ok(secretAfter.includes("redacted"));
+
+    const tokenInPlain = formatGuideFieldAfter("input", "备注", { value: "sk-1234567890abcdefghij", sensitive: false });
+    assert.ok(!tokenInPlain.includes("sk-1234567890abcdefghij"));
 
     const plainAfter = formatGuideFieldAfter("input", "搜索", { value: "By Your Side", sensitive: false });
     assert.ok(plainAfter.includes("By Your Side"));

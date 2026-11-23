@@ -11,9 +11,9 @@ import { installMemoryMark } from "./memory-mark.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
-import { createElement as icon, ArrowUp, Square, X, PanelRight, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, Languages, SpellCheck, CircleHelp, BookOpenText } from 'lucide';
+import { createElement as icon, ArrowUp, Square, X, PanelRight, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, Languages, SpellCheck, CircleHelp, BookOpenText, MousePointerClick } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
-import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
+import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, TEACH_SELECTION_DRAFT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { isReadingTranslation, READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, READING_KINDS, READING_KIND_SELECTION_LIMIT, type ReadingKind, type ReadingSource } from '../../../shared/reading.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
@@ -322,7 +322,7 @@ function boot(): void {
       <div class="resize" title="拖动调整大小，双击恢复" aria-hidden="true"></div>
       <span class="tail" aria-hidden="true"></span>
     </section>
-    <div class="menu" role="menu" aria-label="更多问法" hidden><button class="menu-action" role="menuitem" data-act="copy-selection"><span class="menu-action-icon menu-copy-icon" aria-hidden="true"></span>复制所选文字</button><button class="menu-action" role="menuitem" data-act="read-selection" hidden><span class="menu-action-icon menu-read-icon" aria-hidden="true"></span>朗读所选文字</button><div class="rule" role="separator"></div><div class="menu-label">更多问法</div>${PROMPTS.map(prompt => `<div class="menu-row"><span class="menu-glyph" aria-hidden="true"></span><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button></div>`).join('')}<div class="rule" role="separator"></div><button class="menu-action" role="menuitem" data-act="transfer"><span class="menu-action-icon menu-transfer-icon" aria-hidden="true"></span>在侧栏打开</button><div class="rule" role="separator"></div><div class="menu-label">自动显示</div><button role="menuitem" class="dim" data-act="mute-page">此页不再自动显示</button><button role="menuitem" class="dim" data-act="mute-all">所有网页不再自动显示</button></div>
+    <div class="menu" role="menu" aria-label="更多问法" hidden><button class="menu-action" role="menuitem" data-act="copy-selection"><span class="menu-action-icon menu-copy-icon" aria-hidden="true"></span>复制所选文字</button><button class="menu-action" role="menuitem" data-act="read-selection" hidden><span class="menu-action-icon menu-read-icon" aria-hidden="true"></span>朗读所选文字</button><div class="rule" role="separator"></div><div class="menu-label">更多问法</div>${PROMPTS.map(prompt => `<div class="menu-row"><span class="menu-glyph" aria-hidden="true"></span><button role="menuitem" data-prompt="${prompt.id}">${prompt.label}</button></div>`).join('')}<div class="rule" role="separator"></div><button class="menu-action" role="menuitem" data-act="teach"><span class="menu-action-icon menu-teach-icon" aria-hidden="true"></span>教我一步步操作</button><button class="menu-action" role="menuitem" data-act="transfer"><span class="menu-action-icon menu-transfer-icon" aria-hidden="true"></span>在侧栏打开</button><div class="rule" role="separator"></div><div class="menu-label">自动显示</div><button role="menuitem" class="dim" data-act="mute-page">此页不再自动显示</button><button role="menuitem" class="dim" data-act="mute-all">所有网页不再自动显示</button></div>
     <div class="menu answer-menu" role="menu" aria-label="更多回答操作" hidden><button role="menuitem" data-act="deep">用深度回答重答</button><button role="menuitem" data-act="details">收起回答</button></div>
     <div class="link" aria-hidden="true" hidden></div>
     <button class="restore" data-act="restore" hidden>继续阅读</button>`;
@@ -340,6 +340,7 @@ function boot(): void {
   el('[data-act="speak"]').prepend(icon(Volume2));
   el('.menu-copy-icon').append(icon(Copy));
   el('.menu-read-icon').append(icon(Volume2));
+  el('.menu-teach-icon').append(icon(MousePointerClick));
   el('.menu-transfer-icon').append(icon(PanelRight));
   for (const [index, glyph] of [...root.querySelectorAll('.menu-glyph')].entries()) glyph.append(icon(PROMPT_ICONS[PROMPTS[index]!.id]));
 
@@ -1554,6 +1555,14 @@ function boot(): void {
   });
   bar.addEventListener('focusout', hideBarTip);
 
+  async function transferSelection(draft?: string): Promise<void> {
+    const source = snapshot?.source ?? record?.source;
+
+    if (!source) throw new Error('先选中一段文字。');
+    await rpc('ASK_SELECTION_TO_PANEL', draft ? { text: source.text, draft } : { text: source.text });
+    hide();
+  }
+
   root.addEventListener('click', event => {
     const target = (event.target as Element).closest<HTMLElement>('[data-act],[data-ask],[data-prompt]');
 
@@ -1683,15 +1692,11 @@ function boot(): void {
         }
         if (!located) report('原文位置已变化，摘录仍保留。');
       }
-      else if (action === 'transfer' || action === 'handoff') {
+      else if (action === 'teach' || action === 'transfer' || action === 'handoff') {
         closeMenu();
 
-        if (action === 'transfer' || !record?.turns.length) {
-          const source = snapshot?.source ?? record?.source;
-
-          if (!source) throw new Error('先选中一段文字。');
-          await rpc('ASK_SELECTION_TO_PANEL', { text: source.text });
-          hide();
+        if (action !== 'handoff' || !record?.turns.length) {
+          await transferSelection(action === 'teach' ? TEACH_SELECTION_DRAFT : undefined);
 
           return;
         }

@@ -1,13 +1,14 @@
 import { isPageInteractionMessage } from '../../../shared/protocol.js';
+import { LEAD_COLOR } from '../../../shared/cast.js';
 import { findUniqueSource, resolveSource, documentIdentity } from './page-sources.js';
 import { OVERLAY_ATTR } from '../shared/overlay.js';
-import { sketchFrame } from '../shared/rough/index.js';
+import { GUIDE_DRAW_MS, GUIDE_ROUGHNESS, sketchFrame } from '../shared/rough/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const SHOW_MS = 1800;
 
-const DRAW_MS = 380;
+const DRAW_MS = GUIDE_DRAW_MS;
 
 const PEEK_FADE_MS = 160;
 
@@ -79,7 +80,7 @@ export function installSonarPinpoint(): void {
     svg.setAttribute('style', 'position:absolute;inset:0;width:100%;height:100%;overflow:visible');
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', '#2d4a86');
+    path.setAttribute('stroke', LEAD_COLOR);
     path.setAttribute('stroke-width', '2.5');
     path.setAttribute('stroke-linecap', 'round');
     svg.append(path);
@@ -93,7 +94,7 @@ export function installSonarPinpoint(): void {
 
       const outline = sketchFrame(
         { x: r.left - 6, y: r.top - 6, w: r.width + 12, h: r.height + 12 },
-        { seed: 42, roughness: 0.9 },
+        { seed: 42, roughness: GUIDE_ROUGHNESS },
       );
 
       path.setAttribute('d', outline.d);

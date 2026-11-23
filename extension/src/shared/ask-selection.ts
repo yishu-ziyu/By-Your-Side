@@ -8,6 +8,12 @@ const MAX_ASK_CHARS = READING_SELECTION_LIMIT;
 
 export const ASK_MENU_ID = "ask-sideagent";
 
+export const TEACH_MENU_ID = "teach-sideagent";
+
+export const TEACH_SELECTION_DRAFT = "教我一步一步操作这个，我自己来做，别替我点。";
+
+export const TEACH_PAGE_DRAFT = "教我一步一步操作这一页：";
+
 export const SELECTION_BAR_KEY = "sideagent_selection_bar";
 
 export const READING_ALOUD_KEY = "reading_aloud";
@@ -43,6 +49,7 @@ export interface PendingAsk {
   element?: import("../../../shared/protocol.js").PageElementSource;
   conversationId?: string;
   text: string;
+  draft?: string;
   tabId: number;
   title: string;
   url: string;

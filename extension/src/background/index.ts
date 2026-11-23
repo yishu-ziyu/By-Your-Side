@@ -68,7 +68,7 @@ import { readElement } from "./exec/read-element.js";
 import { readElements } from "./exec/read-elements.js";
 import { PendingControlTimeout } from "./control-pending.js";
 import { programDeadlineExpired } from "../../../shared/timeouts.js";
-import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
+import { ASK_MENU_ID, ASK_STORE, EXPLAIN_PROMPT, TEACH_MENU_ID, TEACH_PAGE_DRAFT, TEACH_SELECTION_DRAFT, clipSelection, type PendingAsk } from "../shared/ask-selection.js";
 
 import { workerTabControl } from "./worker-tab-control.js";
 import { fillUndoView, noteFillUndoRun, resetFillUndo, restoreFills, watchFillUndo } from "./fill-undo.js";
@@ -2264,6 +2264,11 @@ function ensureAskMenu(): void {
       title: "问 By Your Side",
       contexts: ["selection"],
     });
+    chrome.contextMenus.create({
+      id: TEACH_MENU_ID,
+      title: "教我怎么操作这一页",
+      contexts: ["page", "selection"],
+    });
   });
 }
 
@@ -2277,8 +2282,27 @@ if (conversationId === "default") ensureAskMenu();
 chrome.contextMenus?.onClicked.addListener((info, tab) => {
   if (conversationForWindow(tab?.windowId, true) !== conversationId) return;
 
-  if (info.menuItemId !== ASK_MENU_ID || !tab?.id) return;
+  if (!tab?.id) return;
   const tabId = tab.id;
+
+  if (info.menuItemId === TEACH_MENU_ID) {
+    const selected = clipSelection(String(info.selectionText ?? ""));
+    const ask: PendingAsk = {
+      text: selected ?? (tab.title || tab.url || "当前网页"),
+      draft: selected ? TEACH_SELECTION_DRAFT : TEACH_PAGE_DRAFT,
+      tabId,
+      title: tab.title ?? "",
+      url: tab.url ?? "",
+    };
+
+    void chrome.sidePanel.open({ tabId }).catch(() => {
+    });
+    void deliverAsk(ask);
+
+    return;
+  }
+
+  if (info.menuItemId !== ASK_MENU_ID) return;
   const text = clipSelection(String(info.selectionText ?? ""));
 
   if (!text) return;
@@ -2616,7 +2640,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   if (!raw || typeof raw !== "object") return;
 
   if (conversationForWindow(sender.tab?.windowId, true) !== conversationId) return;
-  const msg = raw as { type?: unknown; action?: unknown; text?: unknown };
+  const msg = raw as { type?: unknown; action?: unknown; text?: unknown; draft?: unknown };
 
   if (msg.type === "ASK_SELECTION_TO_PANEL") {
     if (!sender.tab?.id || sender.frameId !== 0 || typeof msg.text !== "string") return;
@@ -2626,8 +2650,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
 
       return; }
 
+    const draft = typeof msg.draft === "string" && msg.draft.trim() ? msg.draft.trim().slice(0, 200) : undefined;
     const opened = chrome.sidePanel.open({ tabId: sender.tab.id });
-    void opened.then(() => deliverAsk({ text, tabId: sender.tab!.id!, title: sender.tab!.title ?? "", url: sender.url ?? sender.tab!.url ?? "" }))
+    void opened.then(() => deliverAsk({ text, ...(draft ? { draft } : {}), tabId: sender.tab!.id!, title: sender.tab!.title ?? "", url: sender.url ?? sender.tab!.url ?? "" }))
       .then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false, error: "未能转入侧栏，请重试。" }));
 
     return true;

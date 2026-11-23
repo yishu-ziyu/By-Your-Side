@@ -12,6 +12,7 @@
   "press_key",
   "scroll",
   "mark",
+  "guide_step",
   "page_translation"
  ],
  "tools": [
@@ -1039,6 +1040,42 @@
       "clear": {
        "type": "boolean",
        "description": "true clears every mark on the page instead of drawing; no target needed"
+      }
+     }
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "guide_step",
+    "description": "Teach the user one step on the page: circles target with a curved arrow and spotlight, shows say beside it, scrolls it into view if off-screen, then WAITS (up to 2 minutes) for the USER to perform that step themselves (clicking a button/link/switch, typing into an input/textarea, selecting a dropdown option, or following a link to a new page/tab). You never click or fill for them. One call = one step; never combine actions. Outcomes: done = the user completed the step and the page or field changed — snapshot the page (or new tab) again, then give the next step or finish; no_change = the user clicked twice and nothing changed — explain or try another way, do not repeat the same step blindly; timeout = the user did not act for 2 minutes — say briefly that you are waiting. target accepts the same locator forms as click; use a ref from the latest snapshot.",
+    "parameters": {
+     "type": "object",
+     "required": [
+      "target",
+      "say",
+      "step"
+     ],
+     "properties": {
+      "tabId": {
+       "type": "number",
+       "description": "Owned tab id; omit to use the working tab"
+      },
+      "target": {
+       "type": "string",
+       "minLength": 1,
+       "description": "\"@N\" ref, \"loc=css:...\" locator, or raw CSS selector of the one control the user should act on"
+      },
+      "say": {
+       "type": "string",
+       "minLength": 1,
+       "description": "One short instruction in the user's language naming the visible label, e.g. 点右上角的 Settings"
+      },
+      "step": {
+       "type": "integer",
+       "minimum": 1,
+       "description": "1-based step number in this lesson"
       }
      }
     }
