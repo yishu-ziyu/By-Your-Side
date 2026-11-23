@@ -3131,7 +3131,7 @@ async function callCursorAt<T>(tabId: number, located: { backendNodeId?: number;
   ) as Promise<T>;
 }
 
-export async function showGuide(tabId: number, target: string, say: string, portName: string, sessionId: string): Promise<{ name: string }> {
+export async function showGuide(tabId: number, target: string, say: string, portName: string, sessionId: string, step?: number): Promise<{ name: string }> {
   const observedDocument = await assertObservedDocument(tabId, sessionId, [target]);
   const located = await locateTarget(tabId, target);
   await ensureDomOps(tabId);
@@ -3139,7 +3139,7 @@ export async function showGuide(tabId: number, target: string, say: string, port
   const motion = await getMarkMotion();
   await assertSameDocument(tabId, observedDocument);
 
-  return callCursorAt(tabId, located, cursorId(sessionId), "guide", [say, target, portName, { style: "sketch", motion }], observedDocument);
+  return callCursorAt(tabId, located, cursorId(sessionId), "guide", [say, target, portName, { style: "sketch", motion, ...(step ? { step } : {}) }], observedDocument);
 }
 
 export async function showHandoffMarks(tabId: number, targets: string[], sessionId: string): Promise<void> {

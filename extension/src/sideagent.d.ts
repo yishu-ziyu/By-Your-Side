@@ -35,6 +35,7 @@ interface MarkOptions {
   style?: "rect" | "sketch";
   motion?: "grow" | "boil";
   seed?: number;
+  step?: number;
 }
 
 interface CrossPageMember {

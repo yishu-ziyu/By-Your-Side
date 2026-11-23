@@ -78,7 +78,7 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
   let name = "";
 
   try {
-    ({ name } = await showGuide(tabId, params.target, params.say.trim(), portName, sessionId));
+    ({ name } = await showGuide(tabId, params.target, params.say.trim(), portName, sessionId, params.step));
     port = await Promise.race([connected, new Promise<null>(done => setTimeout(() => done(null), SHOW_MS))]);
   } catch (error) {
     waitingPorts.delete(portName);

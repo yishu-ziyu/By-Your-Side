@@ -32,7 +32,8 @@ import {
   sweepStaleOverlayHosts,
   viewportRectToDocumentBox,
 } from "../shared/overlay.js";
-import { sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
+import { GUIDE_ROUGHNESS, placeGuideBubble, sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
+import { createGuideCanvas, GUIDE_CANVAS_STYLES, type GuideCanvas } from "./guide-canvas.js";
 import { feedbackLifetimeMs, type FeedbackPillView } from "../shared/feedback-pill.js";
 import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, EDGE_TASK_ABORT, EDGE_TASK_STEER, isEdgePill, isEdgeTask, type EdgePill } from "../shared/edge-pill.js";
 import { CURSOR_SPOT_SAVE, CURSOR_SPOT_TAKE, isCursorSpots, type CursorSpot } from "../shared/cursor-spot.js";
@@ -124,6 +125,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     style?: "rect" | "sketch";
     motion?: "grow" | "boil";
     seed?: number;
+    step?: number;
   }
 
   interface LiveMark {
@@ -137,6 +139,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     options?: MarkOptions;
     seed?: number;
     drawn?: { w: number; h: number };
+    frame?: { x: number; y: number; w: number; h: number };
   }
 
   let defaultMarkOptions: MarkOptions = { style: "rect", motion: "grow" };
@@ -148,6 +151,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
   let inspectEl: HTMLDivElement | null = null;
   let rippleLayer: HTMLDivElement | null = null;
   let marksLayer: HTMLDivElement | null = null;
+  let guideCanvas: GuideCanvas | null = null;
   let viewportHooked = false;
   const instances = new Map<string, Instance>();
   const liveMarks: LiveMark[] = [];
@@ -189,6 +193,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       :host(.user-active) .cursor:not(.holding):not(.guiding):not(.hidden) .label { opacity: 0; }
       .cursor.rest { opacity: .78; }
       .cursor.rest .label { opacity: 0; }
+      .cursor.guiding .label { opacity: 0; pointer-events: none; }
       .cursor.flip .label { left: auto; right: ${Math.round(CURSOR_SVG_SIZE * 0.51)}px; }
       .svg-wrap {
         position: absolute; left: 0; top: 0;
@@ -460,15 +465,10 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       .mark.sketch.boil .boil-path[data-i="1"] { --path-i: 1; }
       .mark.sketch.boil .boil-path[data-i="2"] { --path-i: 2; }
 
-      .mark.guidance .mark-label {
-        box-sizing:border-box; width:max-content; max-width:min(240px, calc(100vw - 24px)); white-space:normal;
-        padding:6px 9px; border:1px solid rgba(45,74,134,.16); border-radius:6px;
-        background:#fbfcfe; color:#26364d;
-      }
+      ${GUIDE_CANVAS_STYLES}
       .mark.text { border:0; box-shadow:none; }
       .mark.text .mark-label { left:0; top:calc(100% + 2px); padding:0; line-height:1.2; }
       .mark-stroke { position:absolute; background:color-mix(in srgb, var(--c) 22%, transparent); }
-      /* 交给用户时的圈：填好、点过就淡出。 */
       .mark.handoff { transition: opacity .35s ease; }
       .mark.handoff.faded { opacity: 0; }
       @media (prefers-reduced-motion: reduce) {
@@ -480,6 +480,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       }
     `;
     marksShadow.appendChild(style);
+    guideCanvas = createGuideCanvas(marksShadow, reducedMotion);
     marksLayer = document.createElement("div");
     marksShadow.appendChild(marksLayer);
     (document.documentElement ?? document.body).appendChild(marksHost);
@@ -587,14 +588,40 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (!mark.drawn || !rect.width || !rect.height) return;
 
-    if (Math.abs(mark.drawn.w - rect.width) <= 1 && Math.abs(mark.drawn.h - rect.height) <= 1) return;
-    mark.drawn = { w: rect.width, h: rect.height };
-    const frame = drawSketchPaths(mark.el, { x: mark.pad, y: mark.pad, w: rect.width, h: rect.height }, mark.seed ?? 1);
+    const resized = Math.abs(mark.drawn.w - rect.width) > 1 || Math.abs(mark.drawn.h - rect.height) > 1;
+
+    if (resized) {
+      mark.drawn = { w: rect.width, h: rect.height };
+      mark.frame = drawSketchPaths(mark.el, { x: mark.pad, y: mark.pad, w: rect.width, h: rect.height }, mark.seed ?? 1);
+    }
+
+    if (guide && mark.el === guide.mark && mark.frame) {
+      guideCanvas?.showSpotlight(rect);
+      const labelEl = mark.el.querySelector<HTMLElement>(".mark-label");
+
+      if (labelEl) {
+        guideCanvas?.renderGuideOverlay({
+          markEl: mark.el,
+          labelEl,
+          targetFrame: mark.frame,
+          targetEl: guideElement(liveGuideNode(guide)),
+          seed: mark.seed ?? 1,
+          animate: false,
+          warn: Boolean(guide.warn),
+          step: guide.step,
+          cursorPoint: holdPoint(rect, true),
+        });
+      }
+
+      return;
+    }
+
+    if (!resized || !mark.frame) return;
     const labelEl = mark.el.querySelector<HTMLElement>(".sketch-label");
     const handoff = handoffMarks.find((m) => m.el === mark.el);
 
-    if (labelEl && handoff) placeHandoffLabel(handoff, labelEl, frame);
-    else if (labelEl) placeSketchLabel(mark.el, labelEl, frame);
+    if (labelEl && handoff) placeHandoffLabel(handoff, labelEl, mark.frame);
+    else if (labelEl) placeSketchLabel(mark.el, labelEl, mark.frame);
   }
 
   function relayoutHolds(): void {
@@ -1362,6 +1389,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     relocate: string | null;
     name: string;
     options?: MarkOptions;
+    step?: number;
+    warn?: boolean;
     mark: HTMLDivElement | null;
     label: string;
     rect: DOMRect | null;
@@ -1465,8 +1494,9 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     return g.node;
   }
 
-  function drawGuideMark(g: GuideSession, label: string): void {
+  function drawGuideMark(g: GuideSession, label: string, warn = false): void {
     g.label = label;
+    g.warn = warn;
 
     if (g.mark) removeMark(g.mark);
     const node = liveGuideNode(g);
@@ -1474,6 +1504,30 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (r) g.rect = r;
     g.mark = r ? spawnMark(g.inst, r, label, g.target, g.options, node) : null;
+
+    if (!r || !g.mark) {
+      guideCanvas?.clearSpotlight();
+
+      return;
+    }
+
+    guideCanvas?.showSpotlight(r);
+    const live = liveMarks.find((m) => m.el === g.mark);
+    const labelEl = g.mark.querySelector<HTMLElement>(".mark-label");
+
+    if (live?.frame && labelEl) {
+      guideCanvas?.renderGuideOverlay({
+        markEl: g.mark,
+        labelEl,
+        targetFrame: live.frame,
+        targetEl: guideElement(node),
+        seed: live.seed ?? 1,
+        animate: true,
+        warn,
+        step: g.step,
+        cursorPoint: holdPoint(r, true),
+      });
+    }
   }
 
   function holdAtGuide(g: GuideSession): void {
@@ -1490,7 +1544,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     const before = g.node;
 
     if (before.isConnected || liveGuideNode(g) === before) return;
-    drawGuideMark(g, g.label);
+    drawGuideMark(g, g.label, Boolean(g.warn));
 
     if (g.inst.hold?.corner) holdAtGuide(g);
   }
@@ -1546,7 +1600,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (!w || w.settled) return;
     w.settled = true;
-    drawGuideMark(g, GUIDE_NO_CHANGE_TEXT);
+    drawGuideMark(g, GUIDE_NO_CHANGE_TEXT, true);
     postGuide(g, { kind: "no_change" });
   }
 
@@ -1603,7 +1657,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (!onPath && !inside) {
       g.misses += 1;
       g.missed = true;
-      drawGuideMark(g, guideMissText(g.name));
+      drawGuideMark(g, guideMissText(g.name), true);
       holdAtGuide(g);
       postGuide(g, { kind: "miss", misses: g.misses });
 
@@ -1636,6 +1690,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (g.mark) removeMark(g.mark);
     g.mark = null;
+    guideCanvas?.clearSpotlight();
 
     if (g.inst.hold?.corner) {
       releaseHoldInst(g.inst);
@@ -1657,6 +1712,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     const g: GuideSession = {
       inst, node, target, options, port,
+      step: options?.step,
+      warn: false,
       relocate: guideLocator(node, target),
       name: full.length > 20 ? `${full.slice(0, 19)}…` : full,
       mark: null,
@@ -1731,6 +1788,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       el.replaceChildren(svg);
       frame = drawSketchPaths(el, targetBox, seed);
 
+      if (motion === "grow") guideCanvas?.syncStrokeDraw(svg, true);
+
       if (label) {
         const markLabel = document.createElement("div");
         markLabel.className = "mark-label sketch-label";
@@ -1763,6 +1822,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       options: opts,
       seed,
       drawn: isSketch ? { w: rect.width, h: rect.height } : undefined,
+      frame: isSketch ? frame : undefined,
     });
 
     return el;
@@ -1811,7 +1871,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     let frame = targetBox;
 
     paths.forEach((path, i) => {
-      const outline = sketchFrame(targetBox, boil ? { seed, roughness: 0.9, boil: 0.45, boilSeed: seed + (i + 1) * 7919 } : { seed, roughness: 0.9 });
+      const outline = sketchFrame(targetBox, boil ? { seed, roughness: GUIDE_ROUGHNESS, boil: 0.45, boilSeed: seed + (i + 1) * 7919 } : { seed, roughness: GUIDE_ROUGHNESS });
       frame = outline.frame;
       path.setAttribute("d", outline.d);
     });
@@ -1852,7 +1912,21 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       { left: frame.x - size.width - 8, top: frame.y + (frame.h - size.height) / 2 },
     ].map(clamp);
     const at = candidates.find(clear);
-    if (!at) { labelEl.style.display = "none"; return; }
+
+    if (!at) {
+      const fallback = placeGuideBubble(
+        frame,
+        { w: Math.max(48, size.width || 120), h: Math.max(24, size.height || 28) },
+        { x: -originX, y: -originY, w: innerWidth, h: innerHeight },
+        [],
+        { margin: 8 },
+      );
+      labelEl.style.left = `${fallback.left}px`;
+      labelEl.style.top = `${fallback.top}px`;
+
+      return;
+    }
+
     labelEl.style.left = `${at.left}px`;
     labelEl.style.top = `${at.top}px`;
   }
@@ -2659,6 +2733,8 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     edgeTab = null;
     activeMembers.clear();
     watchUser(false);
+    guideCanvas?.destroy();
+    guideCanvas = null;
     host?.remove();
     marksHost?.remove();
     host = null;
@@ -3025,6 +3101,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
       clearMarks(): void {
         clearHandoff();
+        guideCanvas?.clearSpotlight();
         liveMarks.length = 0;
         marksLayer?.replaceChildren();
       },
