@@ -154,10 +154,10 @@
 .gc-chart { padding: 10px 14px var(--s-3); animation: gcContentIn var(--d-state) var(--e-enter) both; }
 .gc-chart .chart { margin: 0; }
 .gc-chart .chart-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); }
-.gc-chart .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--s-2); background: var(--well); }
-.gc-chart .seg[hidden] { display: none; }
-.gc-chart .seg button { height: 22px; padding: 0 var(--s-2); border: 0; border-radius: var(--r-tail); background: transparent; font: inherit; font-size: var(--fs-micro); color: var(--text-tertiary); cursor: pointer; }
-.gc-chart .seg button[aria-pressed="true"] { background: var(--content-bg); color: var(--text-primary); box-shadow: 0 0 0 1px var(--well-outline); }
+.gc-chart .seg, .gc-chart .chart-modes { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--s-2); background: var(--well); }
+.gc-chart .seg[hidden], .gc-chart .chart-modes[hidden] { display: none; }
+.gc-chart .seg button, .gc-chart .chart-modes button { height: 22px; padding: 0 var(--s-2); border: 0; border-radius: var(--r-tail); background: transparent; font: inherit; font-size: var(--fs-micro); color: var(--text-tertiary); cursor: pointer; }
+.gc-chart .seg button[aria-pressed="true"], .gc-chart .chart-modes button[aria-pressed="true"] { background: var(--content-bg); color: var(--text-primary); box-shadow: 0 0 0 1px var(--well-outline); }
 .gc-chart .chart-modes { margin-left: auto; }
 .gc-chart .chart-sort { height: 26px; padding: 0 var(--s-2); border: 1px solid var(--content-border); border-radius: var(--s-2); background: var(--content-bg); font: inherit; font-size: var(--fs-micro); color: var(--text-secondary); cursor: pointer; }
 .gc-chart .chart-sort[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
@@ -182,7 +182,11 @@
 .gc-chart .line-dot.is-peak { fill: var(--accent); }
 .gc-chart .line-val { fill: var(--text-primary); font-size: var(--fs-micro); font-weight: 500; font-variant-numeric: tabular-nums; }
 .gc-chart .line-lbl { fill: var(--text-tertiary); font-size: var(--fs-micro); }
-.gc-chart .chart-summary { margin-top: var(--s-2); font-size: var(--fs-micro); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.gc-chart .chart-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-2); }
+.gc-chart .chart-summary { font-size: var(--fs-micro); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.gc-chart .chart-actions { display: inline-flex; align-items: center; gap: var(--s-1); margin-left: auto; }
+.gc-chart .chart-export { height: 24px; padding: 0 var(--s-2); border: 1px solid var(--content-border); border-radius: var(--r-tail); background: var(--content-bg); font: inherit; font-size: var(--fs-micro); color: var(--text-secondary); cursor: pointer; }
+.gc-chart .chart-export:hover { color: var(--accent); border-color: var(--accent); }
 .gc-evidence { padding: 10px 14px var(--s-3); box-sizing: border-box; animation: gcContentIn var(--d-state) var(--e-enter) both; }
 .gen-card[data-face="answer"] > .gc-body { animation: gcContentIn var(--d-state) var(--e-enter) both; }
 .msg.assistant.markdown .gc-evidence table { display: table; width: 100%; margin: 0; border-collapse: collapse; font-size: var(--fs-micro); line-height: 1.45; font-variant-numeric: tabular-nums; }

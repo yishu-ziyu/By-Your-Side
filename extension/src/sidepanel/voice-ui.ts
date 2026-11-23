@@ -12,7 +12,7 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   region.className = 'voice-progress';
   region.hidden = true;
   region.setAttribute('aria-label', '语音对话');
-  region.innerHTML = '<canvas class="voice-orb" aria-label="语音光球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-state-detail"></div><div class="voice-hint">随时插话 · 可调整当前任务</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div><div class="voice-sources"></div><div class="voice-actions"></div>';
+  region.innerHTML = '<canvas class="voice-orb" aria-label="语音光球"></canvas><button class="voice-end" type="button">结束</button><div class="voice-state" role="status"></div><div class="voice-state-detail"></div><div class="voice-hint">随时插话 · 可指挥或圈点当前网页</div><div class="voice-question voice-transcript"></div><div class="voice-transcript voice-answer"></div><div class="voice-facts"></div><div class="voice-sources"></div><div class="voice-actions"></div>';
   composer.querySelector('#input')!.before(region);
   const button = document.createElement('button');
   button.type = 'button';
@@ -39,6 +39,11 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
   const sources = region.querySelector<HTMLElement>('.voice-sources')!;
   let phase: VoicePhase = 'idle';
   let answerText = '';
+  let guideDetail = '';
+
+  const syncStateDetail = (plainDetail = ''): void => {
+    stateDetail.textContent = phase === 'error' ? plainDetail : guideDetail;
+  };
 
   const renderAnswer = (): void => {
     const sentences = phase === 'speaking' ? answerText.match(/[^。！？!?；;\n]+[。！？!?；;\n]*/g) ?? [] : [];
@@ -359,7 +364,13 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     const plainDetail = detail && detail !== '正在处理这句话' ? detail : '';
     const stateText: Partial<Record<VoicePhase, string>> = { listening: plainDetail || '在听', thinking: plainDetail || '在想', speaking: '在说', connecting: '正在连接', error: '语音不可用' };
     status.textContent = stateText[next] ?? (next === 'idle' ? '' : detail ?? '');
-    stateDetail.textContent = next === 'error' ? plainDetail : '';
+
+    if (next === 'idle') {
+      guideDetail = '';
+      setSources([]);
+    }
+
+    syncStateDetail(plainDetail);
 
     if (next === 'error' && client.needsMicrophonePermission) {
       status.textContent = '请在授权页开启麦克风，再回到这里重试。';
@@ -368,10 +379,6 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
     end.textContent = next === 'error' ? (client.needsMicrophonePermission ? '开启麦克风' : '重试') : '结束';
     stopSpeech.hidden = next !== 'speaking';
     region.dataset.state = next;
-
-    if (next === 'idle') {
-      setSources([]);
-    }
 
     renderAnswer();
   }, event => {
@@ -478,6 +485,10 @@ export function mountVoiceUI(composer: HTMLElement, getConversation: () => strin
 
   return {
     stop: () => client.stop(),
+    setGuideStatus: (detail: string | null) => {
+      guideDetail = detail?.trim() ?? '';
+      syncStateDetail();
+    },
     setVoice: (value: StepVoice) => { client.voice = value; },
     setPersona: (value: VoicePersona) => { client.persona = value; },
     setVoiceModel: (value: unknown) => { client.voiceModel = value; },

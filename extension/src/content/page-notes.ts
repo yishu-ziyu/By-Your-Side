@@ -2,6 +2,17 @@ import { createElement as icon, MessageCircle, Minus, X } from 'lucide';
 import { isReadingTranslation } from '../../../shared/reading.js';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
+import {
+  PAGE_NOTES_STORAGE_KEY,
+  normalizePageNoteUrl,
+  parsePageNotesStore,
+  pickBestQuoteMatch,
+  removePersistedNote,
+  setPersistedNoteFolded,
+  upsertPersistedNote,
+  type PageNotesStore,
+  type PersistedPageNote,
+} from '../shared/page-notes-store.js';
 import type { ReadingRecord } from '../shared/reading-state.js';
 import { PAPER_TOKENS } from './ask-styles.js';
 
@@ -87,6 +98,101 @@ export function inPageNote(node: Node | null): boolean {
   return root instanceof ShadowRoot && root.host.hasAttribute(NOTE_ATTR);
 }
 
+const SKIP_TEXT_ANCESTOR = `script,style,noscript,textarea,input,[${NOTE_ATTR}],[data-sideagent-ask]`;
+
+function collectTextNodes(root: Node): Array<{ node: Text; start: number; end: number }> {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const segments: Array<{ node: Text; start: number; end: number }> = [];
+  let offset = 0;
+
+  for (let cur = walker.nextNode(); cur; cur = walker.nextNode()) {
+    const parent = cur.parentElement;
+
+    if (!parent || parent.closest(SKIP_TEXT_ANCESTOR)) continue;
+    const text = cur.nodeValue ?? '';
+
+    if (!text) continue;
+    segments.push({ node: cur as Text, start: offset, end: offset + text.length });
+    offset += text.length;
+  }
+
+  return segments;
+}
+
+function resolveQuoteRange(quote: string, prefix: string, suffix: string): Range | null {
+  if (!document.body || !quote.trim()) return null;
+  const segments = collectTextNodes(document.body);
+
+  if (!segments.length) return null;
+  const haystack = segments.map((seg) => seg.node.nodeValue ?? '').join('');
+  const matchStart = pickBestQuoteMatch(haystack, quote, prefix, suffix);
+
+  if (matchStart < 0) return null;
+  const matchEnd = matchStart + quote.length;
+  let startNode: Text | null = null;
+  let startOffset = 0;
+  let endNode: Text | null = null;
+  let endOffset = 0;
+
+  for (const seg of segments) {
+    if (!startNode && matchStart >= seg.start && matchStart < seg.end) {
+      startNode = seg.node;
+      startOffset = matchStart - seg.start;
+    }
+
+    if (matchEnd > seg.start && matchEnd <= seg.end) {
+      endNode = seg.node;
+      endOffset = matchEnd - seg.start;
+      break;
+    }
+  }
+
+  if (!startNode || !endNode) return null;
+  const range = document.createRange();
+  range.setStart(startNode, startOffset);
+  range.setEnd(endNode, endOffset);
+
+  return range;
+}
+
+function captureRangeContext(range: Range): { quote: string; prefix: string; suffix: string } {
+  const quote = range.toString();
+
+  if (!document.body || !quote) return { quote, prefix: '', suffix: '' };
+  const segments = collectTextNodes(document.body);
+  const haystack = segments.map((seg) => seg.node.nodeValue ?? '').join('');
+  const startSeg = segments.find((seg) => seg.node === range.startContainer);
+
+  if (!startSeg) return { quote, prefix: '', suffix: '' };
+  const at = startSeg.start + range.startOffset;
+
+  return {
+    quote,
+    prefix: haystack.slice(Math.max(0, at - 48), at),
+    suffix: haystack.slice(at + quote.length, at + quote.length + 48),
+  };
+}
+
+async function readNotesStore(): Promise<PageNotesStore> {
+  try {
+    const raw = await chrome.storage.local.get(PAGE_NOTES_STORAGE_KEY);
+
+    return parsePageNotesStore(raw[PAGE_NOTES_STORAGE_KEY]);
+  } catch {
+    return {};
+  }
+}
+
+async function mutateNotesStore(update: (store: PageNotesStore) => PageNotesStore): Promise<void> {
+  try {
+    const current = await readNotesStore();
+    const next = update(current);
+
+    if (next === current) return;
+    await chrome.storage.local.set({ [PAGE_NOTES_STORAGE_KEY]: next });
+  } catch {  }
+}
+
 export function installPageNotes(options: Options) {
   const notes = new Map<string, Note>();
   const highlights = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
@@ -140,14 +246,42 @@ export function installPageNotes(options: Options) {
 
   const relayout = () => { frame ||= requestAnimationFrame(layout); };
 
-  function drop(note: Note): void {
+  function persistNote(note: Note, record: ReadingRecord): void {
+    const pageKey = normalizePageNoteUrl(location.href);
+    const turn = record.turns.at(-1);
+
+    if (!pageKey || !note.marked || !turn || turn.state !== 'done' || !turn.answer.trim()) return;
+    const ctx = captureRangeContext(note.range);
+    const quote = ctx.quote.trim() ? ctx.quote : record.source.text;
+
+    if (!quote.trim()) return;
+    const saved: PersistedPageNote = {
+      threadId: note.threadId,
+      quote,
+      prefix: ctx.prefix,
+      suffix: ctx.suffix,
+      question: turn.question,
+      answer: turn.answer,
+      folded: note.box.classList.contains('folded'),
+      updatedAt: Date.now(),
+    };
+    void mutateNotesStore((store) => upsertPersistedNote(store, pageKey, saved));
+  }
+
+  function drop(note: Note, forget = false): void {
     note.host.remove();
     notes.delete(note.threadId);
     mark();
     relayout();
+
+    if (forget) {
+      const pageKey = normalizePageNoteUrl(location.href);
+
+      if (pageKey) void mutateNotesStore((store) => removePersistedNote(store, pageKey, note.threadId));
+    }
   }
 
-  function paint(note: Note, record: ReadingRecord): void {
+  function paint(note: Note, record: ReadingRecord, save = true): void {
     note.record = record;
     const turn = record.turns.at(-1);
 
@@ -174,6 +308,7 @@ export function installPageNotes(options: Options) {
     note.body.classList.toggle('thinking', busy && !turn.answer.trim());
     note.body.classList.toggle('err', failed);
     relayout();
+    if (save && !busy && !failed) persistNote(note, record);
   }
 
   function create(record: ReadingRecord, range: Range, anchor: { block: Element; inside: boolean }): Note {
@@ -231,10 +366,13 @@ export function installPageNotes(options: Options) {
       if (!button) return;
 
       if (button === dot || button.dataset.act === 'fold') {
-        box.classList.toggle('folded');
+        const folded = box.classList.toggle('folded');
         relayout();
+        const pageKey = normalizePageNoteUrl(location.href);
+
+        if (pageKey) void mutateNotesStore((store) => setPersistedNoteFolded(store, pageKey, note.threadId, folded));
       }
-      else if (button.dataset.act === 'remove') drop(note);
+      else if (button.dataset.act === 'remove') drop(note, true);
       else if (button.dataset.act === 'ask') options.wake(note.record, note.range);
     });
 
@@ -263,6 +401,47 @@ export function installPageNotes(options: Options) {
       }
     }
   }, { signal: listening.signal });
+
+  const restorePersisted = async (): Promise<void> => {
+    const pageKey = normalizePageNoteUrl(location.href);
+
+    if (!pageKey || listening.signal.aborted) return;
+    const store = await readNotesStore();
+
+    if (listening.signal.aborted || normalizePageNoteUrl(location.href) !== pageKey) return;
+    const savedList = store[pageKey] ?? [];
+
+    for (const saved of savedList) {
+      if (notes.has(saved.threadId)) continue;
+      const range = resolveQuoteRange(saved.quote, saved.prefix, saved.suffix);
+      const anchor = range && !range.collapsed ? anchorFor(range) : null;
+
+      if (!range || !anchor) continue;
+      const restoredRecord: ReadingRecord = {
+        threadId: saved.threadId,
+        documentKey: pageKey,
+        modelConversationId: '',
+        source: {
+          text: saved.quote,
+          surrounding: `${saved.prefix}${saved.quote}${saved.suffix}`,
+          truncated: false,
+          tabId: 0,
+          url: location.href,
+          title: document.title,
+        },
+        turns: [{ question: saved.question || '批注', answer: saved.answer, state: 'done' }],
+        updatedAt: saved.updatedAt,
+      };
+      const note = create(restoredRecord, range, anchor);
+      note.box.classList.add('folded');
+      notes.set(saved.threadId, note);
+      paint(note, restoredRecord, false);
+    }
+
+    if (savedList.length) mark();
+  };
+
+  void restorePersisted();
 
   return {
     fits: (range: Range | null) => anchorFor(range) !== null,
@@ -313,7 +492,8 @@ export function installPageNotes(options: Options) {
       relayout();
     },
     clear(): void {
-      for (const note of [...notes.values()]) drop(note);
+      for (const note of [...notes.values()]) drop(note, false);
+      void restorePersisted();
     },
     dispose(): void {
       listening.abort();

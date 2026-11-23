@@ -3,7 +3,9 @@ import {
   linePoints,
   orderedSeriesData,
   recommendChartMode,
+  renderChartExportSvg,
   summarizeSeries,
+  tableToCsv,
   type ChartSortMode,
   type ChartViewMode,
   type SelectionTable,
@@ -164,6 +166,43 @@ function renderLineChart(plot: HTMLElement, table: SelectionTable, seriesIndex: 
   plot.append(svg);
 }
 
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function svgToPngBlob(svgMarkup: string): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const svgBlob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, img.naturalWidth * scale);
+      canvas.height = Math.max(1, img.naturalHeight * scale);
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) { URL.revokeObjectURL(url); resolve(null); return; }
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((blob) => resolve(blob), "image/png");
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
+function flashButtonLabel(button: HTMLButtonElement, temp: string, rest: string): void {
+  button.textContent = temp;
+  setTimeout(() => { if (button.isConnected) button.textContent = rest; }, 1600);
+}
+
 export function renderSelectionChart(table: SelectionTable): HTMLElement {
   const figure = document.createElement("figure");
   figure.className = "chart";
@@ -173,15 +212,29 @@ export function renderSelectionChart(table: SelectionTable): HTMLElement {
   tabs.className = "seg";
   tabs.hidden = table.series.length < 2;
   const modes = document.createElement("div");
-  modes.className = "seg chart-modes";
+  modes.className = "chart-modes";
   const sortBtn = document.createElement("button");
   sortBtn.type = "button";
   sortBtn.className = "chart-sort";
   const plot = document.createElement("div");
   plot.className = "plot";
   plot.setAttribute("role", "img");
+  const footRow = document.createElement("div");
+  footRow.className = "chart-foot";
   const foot = document.createElement("div");
   foot.className = "chart-summary";
+  const actions = document.createElement("div");
+  actions.className = "chart-actions";
+  const csvBtn = document.createElement("button");
+  csvBtn.type = "button";
+  csvBtn.className = "chart-export";
+  csvBtn.textContent = "导出 CSV";
+  const copyImgBtn = document.createElement("button");
+  copyImgBtn.type = "button";
+  copyImgBtn.className = "chart-export";
+  copyImgBtn.textContent = "复制图";
+  actions.append(csvBtn, copyImgBtn);
+  footRow.append(foot, actions);
 
   let seriesIndex = 0;
   let viewMode: ChartViewMode = recommendChartMode(table);
@@ -245,8 +298,43 @@ export function renderSelectionChart(table: SelectionTable): HTMLElement {
     draw();
   });
 
+  csvBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const csv = `\uFEFF${tableToCsv(table)}`;
+    const safeName = (table.series[seriesIndex]?.name || "chart").replace(/[^\p{L}\p{N}_-]+/gu, "-").slice(0, 32) || "chart";
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `${safeName}.csv`);
+    flashButtonLabel(csvBtn, "已导出", "导出 CSV");
+  });
+
+  copyImgBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const svgMarkup = renderChartExportSvg(table, seriesIndex, viewMode, sortMode);
+
+    if (!svgMarkup) return;
+    void svgToPngBlob(svgMarkup).then(async (png) => {
+      const safeName = (table.series[seriesIndex]?.name || "chart").replace(/[^\p{L}\p{N}_-]+/gu, "-").slice(0, 32) || "chart";
+
+      if (png && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+          flashButtonLabel(copyImgBtn, "已复制", "复制图");
+
+          return;
+        } catch {  }
+      }
+
+      if (png) {
+        downloadBlob(png, `${safeName}.png`);
+        flashButtonLabel(copyImgBtn, "已存 PNG", "复制图");
+      } else {
+        downloadBlob(new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" }), `${safeName}.svg`);
+        flashButtonLabel(copyImgBtn, "已存 SVG", "复制图");
+      }
+    });
+  });
+
   head.append(tabs, modes, sortBtn);
-  figure.append(head, plot, foot);
+  figure.append(head, plot, footRow);
   requestAnimationFrame(draw);
 
   return figure;

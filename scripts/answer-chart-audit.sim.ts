@@ -5,7 +5,9 @@ import {
   linePoints,
   orderedSeriesData,
   recommendChartMode,
+  renderChartExportSvg,
   summarizeSeries,
+  tableToCsv,
 } from "../extension/src/shared/table-chart-model.js";
 import { parseSelectionTable } from "../extension/src/shared/table-chart.js";
 import { appStreamProgress, cardFormulaAudit, splitAnswer } from "../shared/answer-cards.js";
@@ -30,9 +32,12 @@ describe("multi-view table chart model and parsing", () => {
     assert.ok(barMagnitudeRatio(-5.4, growthSummary) > 0.25);
   });
 
-  it("recommends line for time series, hbar for long Chinese labels, and bar otherwise", () => {
-    const timeTable = parseSelectionTable("月份\t销量\n1月\t10\n2月\t20\n3月\t15")!;
+  it("recommends line for 5+ time points, hbar for long Chinese labels, and bar otherwise", () => {
+    const timeTable = parseSelectionTable("月份\t销量\n1月\t10\n2月\t20\n3月\t15\n4月\t24\n5月\t28")!;
     assert.equal(recommendChartMode(timeTable), "line");
+
+    const shortTimeTable = parseSelectionTable("年份\t次数\n1901\t12\n1902\t18\n1903\t9\n1904\t24")!;
+    assert.equal(recommendChartMode(shortTimeTable), "bar");
 
     const longTable = parseSelectionTable("方案名称\t月费\n企业安全增强标准版\t299\n团队协作基础进阶版\t199\n个人精简体验版\t49")!;
     assert.equal(recommendChartMode(longTable), "hbar");
@@ -51,6 +56,22 @@ describe("multi-view table chart model and parsing", () => {
     const pts = linePoints(sorted, summary, 300, 148);
     assert.equal(pts.length, 3);
     assert.ok(pts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)));
+  });
+
+  it("exports RFC-4180 CSV and valid self-contained SVGs across all chart modes", () => {
+    const table = parseSelectionTable('地区\t销售额\t增长\n华东,北区\t¥120万\t+12%\n华南 "核心"\t¥80万\t-4%\n华西\t¥95万\t+6%')!;
+    const csv = tableToCsv(table);
+    assert.equal(csv.split("\n")[0], "项目,销售额,增长");
+    assert.ok(csv.includes('"华东,北区",¥120万,+12%'));
+    assert.ok(csv.includes('"华南 ""核心""",¥80万,-4%'));
+
+    for (const mode of ["bar", "hbar", "line"] as const) {
+      const svg = renderChartExportSvg(table, 1, mode, "desc");
+      assert.ok(svg.startsWith("<svg "));
+      assert.ok(svg.endsWith("</svg>"));
+      assert.ok(svg.includes("增长"));
+      assert.ok(!svg.includes("NaN"));
+    }
   });
 });
 
