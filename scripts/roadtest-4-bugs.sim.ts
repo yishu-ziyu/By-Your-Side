@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseSelectionTable } from "../extension/src/shared/table-chart.js";
+import { cleanGuideTargetName } from "../extension/src/shared/guide-intent.js";
 import { GUIDE_CANVAS_STYLES } from "../extension/src/content/guide-canvas.js";
 
 test("parseSelectionTable treats fiscal-year headers as column names and drops trailing summary totals", () => {
@@ -50,4 +51,7 @@ test("parseSelectionTable recognizes pure 4-digit year headers and keeps standar
 test("guide offscreen beacon hides when [hidden] is set and clips overflow cleanly", () => {
   assert.match(GUIDE_CANVAS_STYLES, /\.guide-offscreen-beacon\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
   assert.match(GUIDE_CANVAS_STYLES, /\.guide-offscreen-beacon\s*\{[^}]*text-overflow:\s*ellipsis/);
+  assert.equal(cleanGuideTargetName("Issues871 (871)"), "Issues");
+  assert.equal(cleanGuideTargetName("Pull requests 717 (717)"), "Pull requests");
+  assert.equal(cleanGuideTargetName("第 2 页"), "第 2 页");
 });

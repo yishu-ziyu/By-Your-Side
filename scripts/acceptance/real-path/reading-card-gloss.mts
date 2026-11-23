@@ -578,7 +578,8 @@ try {
 
   await openReading("/blank", 1280);
   const kept = await scene();
-  check("再划一段：记住上次拉的大小", Math.abs(kept.card.width - afterResize.card.width) < 2 && Math.abs(kept.card.height - afterResize.card.height) < 2, { resized: afterResize.card, kept: kept.card });
+  const keptMaxH = await inCard<number>(`function(){return parseFloat(this.querySelector('.surface').style.maxHeight)||0}`);
+  check("再划一段：记住上次拉的宽度与高度上限，短回答不留大片空白", Math.abs(kept.card.width - afterResize.card.width) < 2 && Math.abs(keptMaxH - afterResize.card.height) < 2 && kept.card.height < afterResize.card.height - 40, { resized: afterResize.card, kept: kept.card, keptMaxH });
 
   await doubleClick((await pointOf(".resize"))!);
   await sleep(250);
