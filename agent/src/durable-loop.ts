@@ -89,8 +89,7 @@ export class DurableAgentLoop implements AgentLoop {
   private readonly contextFit = new ContextFit();
   private runStart = 0;
   private cutText: (() => boolean) | null = null;
-  private cutForSteer = false;
-  private endSkipped = false;
+  private steerPhase: "idle" | "cut" | "end_deferred" = "idle";
   private skippedEndTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly runningTools = new Set<AbortController>();
 
@@ -160,7 +159,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   interruptText(): boolean {
     const cut = this.cutText?.() ?? false;
-    if (cut) this.cutForSteer = true;
+    if (cut && this.steerPhase === "idle") this.steerPhase = "cut";
     return cut;
   }
 
@@ -207,7 +206,7 @@ export class DurableAgentLoop implements AgentLoop {
     this.abortVersion += 1;
     this.warming?.abort();
     for (const running of this.runningTools) running.abort();
-    const skipped = this.endSkipped;
+    const skipped = this.steerPhase === "end_deferred";
     this.clearSkippedEnd();
     await this.conversation?.abort(ctx);
     await this.conversation?.waitForIdle(ctx);
@@ -216,8 +215,7 @@ export class DurableAgentLoop implements AgentLoop {
   }
 
   private clearSkippedEnd(): void {
-    this.cutForSteer = false;
-    this.endSkipped = false;
+    this.steerPhase = "idle";
     clearTimeout(this.skippedEndTimer);
   }
 
@@ -474,7 +472,7 @@ export class DurableAgentLoop implements AgentLoop {
 
   private async onDurable(event: DurableEvent): Promise<void> {
     if (event.type === "run_start") {
-      if (this.cutForSteer) { this.clearSkippedEnd(); return; }
+      if (this.steerPhase !== "idle") { this.clearSkippedEnd(); return; }
       let start = this.messages.length;
       while (start > 0 && (this.messages[start - 1]!.role === "user" || this.messages[start - 1]!.role === "custom")) start -= 1;
       this.runStart = start;
@@ -596,10 +594,10 @@ export class DurableAgentLoop implements AgentLoop {
 
   private async onRunEnd(): Promise<void> {
     await this.flushPersistence();
-    if (this.cutForSteer) {
-      this.endSkipped = true;
+    if (this.steerPhase !== "idle") {
+      this.steerPhase = "end_deferred";
       clearTimeout(this.skippedEndTimer);
-      this.skippedEndTimer = setTimeout(() => { if (this.endSkipped) { this.clearSkippedEnd(); void this.onRunEnd(); } }, 3_000);
+      this.skippedEndTimer = setTimeout(() => { if (this.steerPhase === "end_deferred") { this.clearSkippedEnd(); void this.onRunEnd(); } }, 3_000);
       return;
     }
     const end: AgentSessionEvent = { type: "agent_end", messages: this.messages.slice(this.runStart), willRetry: false };

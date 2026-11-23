@@ -1,4 +1,22 @@
-import type {UserDelivery, UserDeliveryStream} from '../../shared/voice.js';
+import type { TaskProgressSnapshot, UserDelivery, UserDeliveryStream, VoiceInputContext, VoiceTarget } from '../../shared/voice.js';
+
+export interface VoiceTurnInput {
+  turn: number;
+  snapshot: TaskProgressSnapshot | null;
+  targets?: VoiceTarget[];
+  input?: VoiceInputContext;
+  context: { phase: "pending" | "ready" } | { phase: "failed"; error: string };
+}
+
+export function commitVoiceInput(turn: VoiceTurnInput, input: VoiceInputContext | undefined, pending?: boolean): void {
+  turn.input = input;
+  if (turn.context.phase !== "failed") turn.context = { phase: pending ? "pending" : "ready" };
+}
+
+export function receiveVoiceContext(turn: VoiceTurnInput, input: VoiceInputContext | undefined, error?: string): void {
+  turn.input = input;
+  turn.context = error ? { phase: "failed", error } : { phase: "ready" };
+}
 
 const VOICE_TURN_PHASES = ['PREPARING', 'COMMITTED', 'COMPLETED', 'DISCARDED', 'INTERRUPTED'] as const;
 

@@ -250,15 +250,14 @@ type CompletedOutcome =
   | { status: "replayed"; name: ToolName | null };
 
 export class ControlGate {
-  private owner: ControlOwner = "agent";
+  private phase: ControlOwner | "draining" = "agent";
   private generation = 0;
-  private draining = false;
   private inflight = new Map<string, { settled: Promise<unknown>; sessionId: string; name: ToolName }>();
   private completed = new Map<string, CompletedOutcome>();
   private sessionBlocked = new Map<string, boolean>();
 
   get control(): ControlOwner {
-    return this.owner;
+    return this.phase === "draining" ? "agent" : this.phase;
   }
 
   get gen(): number {
@@ -266,11 +265,11 @@ export class ControlGate {
   }
 
   get isDraining(): boolean {
-    return this.draining;
+    return this.phase === "draining";
   }
 
   isUser(): boolean {
-    return this.owner === "user";
+    return this.phase === "user";
   }
 
   sessionOwners(): Record<string, ControlOwner> {
@@ -290,13 +289,13 @@ export class ControlGate {
   }
 
   isSessionBlocked(sessionId?: string | null): boolean {
-    if (this.draining) return true;
+    if (this.isDraining) return true;
 
     if (sessionId != null && this.sessionBlocked.has(sessionKey(sessionId))) {
       return this.sessionBlocked.get(sessionKey(sessionId)) === true;
     }
 
-    return this.owner === "user";
+    return this.phase === "user";
   }
 
   blockSession(sessionId: string): void {
@@ -310,13 +309,13 @@ export class ControlGate {
   canLand(name: ToolName, sessionId?: string | null, params?: Record<string, unknown>): boolean {
     if (!WRITE_TOOL_SET.has(name) && !requiresControlGate(name, params)) return true;
 
-    if (this.draining) return false;
+    if (this.isDraining) return false;
 
     if (sessionId != null && this.sessionBlocked.has(sessionKey(sessionId))) {
       return this.sessionBlocked.get(sessionKey(sessionId)) === false;
     }
 
-    return this.owner !== "user";
+    return this.phase !== "user";
   }
 
   async run<T>(id: string, name: ToolName, fn: () => Promise<T>, sessionId?: string | null, params?: Record<string, unknown>): Promise<T> {
@@ -397,11 +396,11 @@ export class ControlGate {
   }
 
   async beginTakeover(limitMs?: number): Promise<{ generation: number; superseded: boolean; stillBusy?: boolean }> {
-    if (this.owner === "user") {
+    if (this.phase === "user") {
       return { generation: this.generation, superseded: false };
     }
 
-    this.draining = true;
+    this.phase = "draining";
     const gen = ++this.generation;
     const settled = await this.stepsSettled([...this.inflight.values()], limitMs);
 
@@ -442,11 +441,10 @@ export class ControlGate {
   }
 
   commitTakeover(generation: number, sessionIds?: string[]): boolean {
-    if (this.owner === "user") return this.generation === generation;
+    if (this.phase === "user") return this.generation === generation;
 
-    if (!this.draining || this.generation !== generation) return false;
-    this.owner = "user";
-    this.draining = false;
+    if (this.phase !== "draining" || this.generation !== generation) return false;
+    this.phase = "user";
     this.sessionBlocked.clear();
 
     if (sessionIds) {
@@ -457,17 +455,16 @@ export class ControlGate {
   }
 
   cancelTakeover(generation: number): boolean {
-    if (!this.draining || this.generation !== generation) return false;
+    if (this.phase !== "draining" || this.generation !== generation) return false;
     this.generation += 1;
-    this.owner = "agent";
-    this.draining = false;
+    this.phase = "agent";
     this.sessionBlocked.clear();
 
     return true;
   }
 
   async takeover(): Promise<{ generation: number; superseded: boolean }> {
-    if (this.owner === "user") {
+    if (this.phase === "user") {
       return { generation: this.generation, superseded: false };
     }
 
@@ -481,8 +478,7 @@ export class ControlGate {
 
   handback(): { generation: number } {
     this.generation += 1;
-    this.owner = "agent";
-    this.draining = false;
+    this.phase = "agent";
     this.sessionBlocked.clear();
 
     return { generation: this.generation };
@@ -491,17 +487,15 @@ export class ControlGate {
   abort(): { generation: number; settled: Promise<void> } {
     const settled = Promise.allSettled([...this.inflight.values()].map((entry) => entry.settled)).then(() => {});
     this.generation += 1;
-    this.owner = "agent";
-    this.draining = false;
+    this.phase = "agent";
     this.sessionBlocked.clear();
 
     return { generation: this.generation, settled };
   }
 
   hydrate(owner: ControlOwner, generation: number, sessions?: Record<string, ControlOwner>, completed?: string[]): void {
-    this.owner = owner;
+    this.phase = owner;
     this.generation = generation;
-    this.draining = false;
     this.inflight.clear();
     this.sessionBlocked.clear();
 

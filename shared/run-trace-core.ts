@@ -38,8 +38,7 @@ export class TraceRecorder {
   private turn = 0;
   private started = 0;
   private turnStarted = 0;
-  private firstResponse = false;
-  private firstText = false;
+  private responsePhase: "waiting" | "responding" | "text" = "waiting";
   private tools = new Map<string, number>();
   private prompts = new Set<string>();
   private queue = Promise.resolve();
@@ -58,8 +57,7 @@ export class TraceRecorder {
     this.goalRevision = correlation?.goalRevision ?? null;
     this.turn = 0;
     this.started = Date.now();
-    this.firstResponse = false;
-    this.firstText = false;
+    this.responsePhase = "waiting";
     this.tools.clear();
     this.record("run_start", { text, context, model });
   }
@@ -107,13 +105,13 @@ export class TraceRecorder {
     const now = Date.now();
 
     if (event.type === "message_update") {
-      if (!this.firstResponse) {
-        this.firstResponse = true;
+      if (this.responsePhase === "waiting") {
+        this.responsePhase = "responding";
         this.record("first_response", { elapsedMs: now - this.turnStarted });
       }
 
-      if (!this.firstText && (event.assistantMessageEvent as { type?: string } | undefined)?.type === "text_delta") {
-        this.firstText = true;
+      if (this.responsePhase !== "text" && (event.assistantMessageEvent as { type?: string } | undefined)?.type === "text_delta") {
+        this.responsePhase = "text";
         this.record("first_text", { elapsedMs: now - this.turnStarted });
       }
 
@@ -133,8 +131,7 @@ export class TraceRecorder {
     if (event.type === "turn_start") {
       this.turn++;
       this.turnStarted = now;
-      this.firstResponse = false;
-      this.firstText = false;
+      this.responsePhase = "waiting";
     }
 
     if (event.type === "tool_execution_start") this.tools.set(String(event.toolCallId), now);

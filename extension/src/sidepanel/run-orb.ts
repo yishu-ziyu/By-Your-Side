@@ -4,37 +4,35 @@ export type RunOrbState = "thinking" | "executing" | "waiting" | "user" | "compl
 
 export class RunOrbActivity {
   private tools = new Map<string, { sessionId: string; waiting: boolean }>();
-  private failed = false;
-  private errored = false;
-  private stopped = false;
-  private finished = false;
+  private failure: "none" | "step" | "run" = "none";
+  private phase: "running" | "stopped" | "finished" = "running";
 
   observe(event: AgentUiEvent, sessionId = "main"): void {
     if (event.kind === "run_stopped") {
       this.stop();
     } else if (event.kind === "tool_start") {
       this.tools.set(event.toolCallId, { sessionId, waiting: event.name === "await_message" });
-      this.failed = false;
+      if (this.failure === "step") this.failure = "none";
     } else if (event.kind === "tool_end") {
       this.tools.delete(event.toolCallId);
 
-      this.failed = event.isError && !event.repeatRefused && !event.heldReason;
+      if (this.failure !== "run") this.failure = event.isError && !event.repeatRefused && !event.heldReason ? "step" : "none";
     } else if (event.kind === "error") {
-      this.errored = true;
+      this.failure = "run";
     } else if (event.kind === "agent_end") {
       for (const [id, tool] of this.tools) if (tool.sessionId === sessionId) this.tools.delete(id);
     }
   }
 
-  onlyStepFailed(): boolean { return this.failed && !this.errored && !this.stopped; }
+  onlyStepFailed(): boolean { return this.failure === "step" && this.phase !== "stopped"; }
 
-  stop(): void { this.stopped = true; }
-  finish(): void { this.finished = true; this.tools.clear(); }
+  stop(): void { this.phase = "stopped"; }
+  finish(): void { if (this.phase !== "stopped") this.phase = "finished"; this.tools.clear(); }
 
   state(userHasPage = false): RunOrbState {
-    if (this.stopped) return "stopped";
+    if (this.phase === "stopped") return "stopped";
 
-    if (this.finished) return this.failed || this.errored ? "failed" : "completed";
+    if (this.phase === "finished") return this.failure !== "none" ? "failed" : "completed";
 
     if (userHasPage) return "user";
 
@@ -42,7 +40,7 @@ export class RunOrbActivity {
 
     if (this.tools.size) return "waiting";
 
-    if (this.errored) return "failed";
+    if (this.failure === "run") return "failed";
 
     return "thinking";
   }

@@ -12,8 +12,7 @@ const CJK_IDEOGRAPH = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{2
 function cutProseTail(raw: string): string {
   const scheme = /^[a-zA-Z][a-zA-Z0-9+.-]{1,31}:\/\//.exec(raw);
   const authorityStart = scheme ? scheme[0].length : 0;
-  let inAuthority = true;
-  let authorityIsAscii = true;
+  let part: "ascii_authority" | "unicode_authority" | "remainder" = "ascii_authority";
 
   for (let i = authorityStart; i < raw.length; ) {
     const ch = String.fromCodePoint(raw.codePointAt(i)!);
@@ -21,12 +20,12 @@ function cutProseTail(raw: string): string {
     if (CJK_PUNCTUATION.test(ch)) return raw.slice(0, i);
 
     if (CJK_IDEOGRAPH.test(ch)) {
-      if (inAuthority && authorityIsAscii && i > authorityStart) return raw.slice(0, i);
+      if (part === "ascii_authority" && i > authorityStart) return raw.slice(0, i);
 
-      if (inAuthority) authorityIsAscii = false;
-    } else if (inAuthority) {
-      if (ch === "/" || ch === "?" || ch === "#") inAuthority = false;
-      else if (ch.codePointAt(0)! > 0x7f) authorityIsAscii = false;
+      if (part !== "remainder") part = "unicode_authority";
+    } else if (part !== "remainder") {
+      if (ch === "/" || ch === "?" || ch === "#") part = "remainder";
+      else if (ch.codePointAt(0)! > 0x7f) part = "unicode_authority";
     }
 
     i += ch.length;

@@ -20,12 +20,12 @@ export interface UplinkHandlers {
 
 export class Uplink {
   private readonly handlers: UplinkHandlers;
-  private inprocPort: chrome.runtime.Port | null = null;
-  private transport: TransportKind | null = null;
+  private link: { phase: "idle" | "opening" | "blocked" } | {
+    phase: "handshaking" | "connected" | "rejected"; port: chrome.runtime.Port;
+  } = { phase: "idle" };
+  private get inprocPort(): chrome.runtime.Port | null { return "port" in this.link ? this.link.port : null; }
   private retryAttempt = 0;
-  private authFailed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private connecting = false;
   private connectStarted = 0;
 
   constructor(handlers: UplinkHandlers) {
@@ -46,19 +46,19 @@ export class Uplink {
     });
     void this.connectInproc();
   }
-  wake(): void { if (this.transport === null) void this.connectInproc(); }
+  wake(): void { if (this.link.phase === "idle") void this.connectInproc(); }
 
   retry(): void {
-    this.authFailed = false;
     this.retryAttempt = 0;
     this.clearReconnectTimer();
+    if (this.link.phase === "opening") return;
     this.teardown();
     void this.connectInproc();
   }
 
   sendClientMessage(msg: ClientMessage): boolean {
     try {
-      if (this.transport === "inproc" && this.inprocPort) {
+      if (this.inprocPort) {
         this.inprocPort.postMessage(msg);
 
         return true;
@@ -71,13 +71,13 @@ export class Uplink {
   }
 
   private teardown(): void {
+    const port = this.inprocPort;
+    this.link = { phase: "idle" };
     try {
-      this.inprocPort?.disconnect();
+      port?.disconnect();
     } catch {
     }
 
-    this.inprocPort = null;
-    this.transport = null;
   }
 
   private handleRaw(raw: unknown): void {
@@ -85,12 +85,15 @@ export class Uplink {
 
     if (!msg) return;
 
+    const port = this.inprocPort;
+    if (!port) return;
     if (msg.type === "hello_ok") {
       performance.measure("sideagent.startup.ready", { start: this.connectStarted });
       this.retryAttempt = 0;
-      this.handlers.onConnState("connected", this.transport ?? undefined, msg.model);
+      this.link = { phase: "connected", port };
+      this.handlers.onConnState("connected", "inproc", msg.model);
     } else if (msg.type === "hello_error") {
-      this.authFailed = true;
+      this.link = { phase: "rejected", port };
     }
 
     this.handlers.onServerMessage(msg);
@@ -103,10 +106,12 @@ export class Uplink {
   }
 
   private handleDisconnect(detail: string | undefined): void {
-    const wasTransport = this.transport;
+    const wasTransport = this.inprocPort ? "inproc" : undefined;
+    const rejected = this.link.phase === "rejected";
     this.teardown();
 
-    if (this.authFailed) {
+    if (rejected) {
+      this.link = { phase: "blocked" };
       this.clearReconnectTimer();
       this.handlers.onConnState("disconnected", wasTransport ?? undefined, detail ?? "认证失败");
 
@@ -120,18 +125,15 @@ export class Uplink {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
 
-      if (this.transport !== null) return;
       void this.connectInproc();
     }, delay);
   }
 
   private async connectInproc(): Promise<void> {
-    if (this.authFailed || this.connecting) return;
-
-    if (this.transport !== null) return;
-    this.teardown();
+    if (this.link.phase !== "idle") return;
+    const opening = { phase: "opening" } as const;
+    this.link = opening;
     this.handlers.onConnState("connecting", undefined);
-    this.connecting = true;
     this.connectStarted = performance.now();
 
     try {
@@ -141,7 +143,7 @@ export class Uplink {
         await chrome.offscreen.createDocument({ url: INPROC_DOCUMENT, reasons: [chrome.offscreen.Reason.WORKERS, chrome.offscreen.Reason.USER_MEDIA], justification: "Run the agent loop inside the extension and record push-to-talk speech" });
       }
     } catch (err) {
-      this.connecting = false;
+      if (this.link !== opening) return;
       const detail = `助手没有启动：${err instanceof Error ? err.message : String(err)}`;
 
       this.handleDisconnect(detail);
@@ -149,14 +151,12 @@ export class Uplink {
       return;
     }
 
-    this.connecting = false;
-
-    if (this.transport !== null) return;
+    if (this.link !== opening) return;
     const port = chrome.runtime.connect({ name: INPROC_PORT_NAME });
-    this.inprocPort = port;
-    this.transport = "inproc";
+    this.link = { phase: "handshaking", port };
     const keySaves = new Map<string, { cancelled: boolean }>();
     port.onMessage.addListener((raw) => {
+      if (this.inprocPort !== port) return;
       if (raw && typeof raw === "object" && raw.type === "inproc_key_cancel" && typeof raw.requestId === "string") {
         const pending = keySaves.get(raw.requestId);
         if (pending) pending.cancelled = true;
@@ -201,6 +201,7 @@ export class Uplink {
     await this.pushModelConfig();
     await this.pushVoiceKey();
     performance.measure("sideagent.startup.settings", { start: settingsStarted });
+    if (this.inprocPort !== port) return;
     port.postMessage({ type: "hello", token: "", client: "sidepanel", protocol: PROTOCOL_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
   }
 

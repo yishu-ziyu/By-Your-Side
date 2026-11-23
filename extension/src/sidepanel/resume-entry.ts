@@ -219,23 +219,22 @@ const CHECK_HOLD_MS = 25_000;
 export class ResumeEntry {
   private view: TaskView | null = null;
   private checkpointUnavailable = false;
-  private note: string | null = null;
-  private noteRunId: string | null = null;
-  private pendingRequestId: string | null = null;
+  private request: { phase: "idle" | "disposed" } | { phase: "preparing" | "waiting"; id: string } | { phase: "failed"; runId: string | null; note: string } = { phase: "idle" };
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
-  private disposed = false;
+  private get pendingRequestId(): string | null { return "id" in this.request ? this.request.id : null; }
+  private get note(): string | null { return this.request.phase === "failed" ? this.request.note : null; }
   private checkHold: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly opts: ResumeEntryOptions) {}
 
   apply(view: TaskView | null, options: { checkpointUnavailable?: boolean } = {}): void {
-    if (this.disposed) return;
+    if (this.request.phase === "disposed") return;
     this.view = view;
     this.checkpointUnavailable = options.checkpointUnavailable === true;
 
     if (this.pendingRequestId && view?.state === "running") this.clearPending();
 
-    if (this.note && view && (view.runId !== this.noteRunId || view.state === "running")) this.note = null;
+    if (this.request.phase === "failed" && view && (view.runId !== this.request.runId || view.state === "running")) this.request = { phase: "idle" };
     this.rerender();
   }
 
@@ -246,7 +245,7 @@ export class ResumeEntry {
   }
 
   private rerender(): void {
-    if (this.disposed) return;
+    if (this.request.phase === "disposed") return;
     const summary = buildResumeSummary(this.view, this.checkpointUnavailable, this.note);
     this.render(this.checkHold && this.view?.state === "idle" ? { ...summary, visible: false } : summary);
   }
@@ -256,8 +255,6 @@ export class ResumeEntry {
     if (this.checkHold) clearTimeout(this.checkHold);
     this.checkHold = null;
     this.view = null;
-    this.note = null;
-    this.noteRunId = null;
     this.checkpointUnavailable = false;
     this.opts.root.hidden = true;
     this.opts.root.replaceChildren();
@@ -270,19 +267,22 @@ export class ResumeEntry {
       return;
     }
 
-    this.clearPending();
-    this.note = receipt.message?.trim() || (receipt.status === "rejected" ? "这次继续没有执行。" : "这次继续没有得到确认。");
-    this.noteRunId = this.view?.runId ?? null;
-    this.render(buildResumeSummary(this.view, this.checkpointUnavailable, this.note));
+    this.failRequest(receipt.message?.trim() || (receipt.status === "rejected" ? "这次继续没有执行。" : "这次继续没有得到确认。"));
   }
 
   dispose(): void {
-    this.disposed = true;
     this.clearPending();
+    this.request = { phase: "disposed" };
+  }
+
+  private failRequest(note: string): void {
+    this.clearPending();
+    this.request = { phase: "failed", note, runId: this.view?.runId ?? null };
+    this.render(buildResumeSummary(this.view, this.checkpointUnavailable, note));
   }
 
   private clearPending(): void {
-    this.pendingRequestId = null;
+    if (this.request.phase !== "disposed") this.request = { phase: "idle" };
 
     if (this.pendingTimer !== null) {
       clearTimeout(this.pendingTimer);
@@ -291,14 +291,12 @@ export class ResumeEntry {
   }
 
   private async requestResume(): Promise<void> {
-    if (this.pendingRequestId || !this.view) return;
+    if (this.request.phase === "disposed" || this.pendingRequestId || !this.view) return;
     const check = resumeAvailability(this.view, this.checkpointUnavailable);
 
     if (!check.available) return;
     const requestId = this.opts.newRequestId?.() ?? globalThis.crypto.randomUUID();
-    this.pendingRequestId = requestId;
-    this.note = null;
-    this.noteRunId = null;
+    this.request = { phase: "preparing", id: requestId };
     this.render(buildResumeSummary(this.view, this.checkpointUnavailable, "正在继续原任务…"));
     let context: PageContext | null;
 
@@ -311,10 +309,7 @@ export class ResumeEntry {
     if (this.pendingRequestId !== requestId) return;
 
     if (!context) {
-      this.clearPending();
-      this.note = "看不到当前浏览器页面，未发送继续请求；请先打开原任务的页面。";
-      this.noteRunId = this.view?.runId ?? null;
-      this.render(buildResumeSummary(this.view, this.checkpointUnavailable, this.note));
+      this.failRequest("看不到当前浏览器页面，未发送继续请求；请先打开原任务的页面。");
 
       return;
     }
@@ -330,23 +325,18 @@ export class ResumeEntry {
       context,
     };
 
+    this.request = { phase: "waiting", id: requestId };
     if (!this.opts.sendResume(request)) {
-      this.clearPending();
-      this.note = "连接不可用，继续请求没有发出去；原任务记录不变。";
-      this.noteRunId = this.view?.runId ?? null;
-      this.render(buildResumeSummary(this.view, this.checkpointUnavailable, this.note));
+      this.failRequest("连接不可用，继续请求没有发出去；原任务记录不变。");
 
       return;
     }
 
+    if (this.pendingRequestId !== requestId) return;
     this.pendingTimer = setTimeout(() => {
+      if (this.pendingRequestId !== requestId) return;
       this.pendingTimer = null;
-
-      if (!this.pendingRequestId) return;
-      this.pendingRequestId = null;
-      this.note = "继续请求还没有得到确认，可以再试一次；不会重复执行已确认的步骤。";
-      this.noteRunId = this.view?.runId ?? null;
-      this.render(buildResumeSummary(this.view, this.checkpointUnavailable, this.note));
+      this.failRequest("继续请求还没有得到确认，可以再试一次；不会重复执行已确认的步骤。");
     }, this.opts.pendingTimeoutMs ?? RESUME_PENDING_TIMEOUT_MS);
   }
 

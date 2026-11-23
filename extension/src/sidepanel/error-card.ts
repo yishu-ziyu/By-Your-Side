@@ -28,12 +28,11 @@ interface ErrorCardHost {
 }
 
 export function mountErrorCards(host: ErrorCardHost) {
-  let card: HTMLElement | null = null;
-  let recovering: string | null = null;
+  type Presentation = { phase: "shown"; el: HTMLElement; copy: ModelErrorCopy } | { phase: "recovering"; el: HTMLElement; copy: ModelErrorCopy; source: string };
+  let presentation: Presentation | null = null;
   let stopOnline: (() => void) | null = null;
   let autoUsed = 0;
   let auto = false;
-  let shown: ModelErrorCopy | null = null;
   let stopCountdown: (() => void) | null = null;
 
   const button = (label: string, act: string, primary = false) => {
@@ -52,9 +51,10 @@ export function mountErrorCards(host: ErrorCardHost) {
   const superseded = (el: HTMLElement) => [...document.querySelectorAll(".msg.user")].some(u => (el.compareDocumentPosition(u) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
 
   function recover(source: string, key?: string, autoSent = false, target?: KeyTarget): void {
-    if (!card) return;
+    if (!presentation) return;
     clearTimers();
-    recovering = source;
+    const card = presentation.el;
+    presentation = { ...presentation, phase: "recovering", source };
     const line = document.createElement("p");
     line.className = "error-card-status";
     line.textContent = `${source}，正在从出错处继续…`;
@@ -137,7 +137,7 @@ export function mountErrorCards(host: ErrorCardHost) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let owner: boolean | null = null;
     stopCountdown = () => clearTimeout(timer);
-    const live = () => card === el && el.isConnected && el.contains(line);
+    const live = () => presentation?.el === el && el.isConnected && el.contains(line);
 
     const tick = () => {
       if (!live()) return;
@@ -172,7 +172,7 @@ export function mountErrorCards(host: ErrorCardHost) {
     stopCountdown = null;
     auto = false;
 
-    if (shown) el.replaceChildren(...render(shown).childNodes);
+    if (presentation) el.replaceChildren(...render(presentation.copy).childNodes);
   }
 
   function render(copy: ModelErrorCopy): HTMLElement {
@@ -253,7 +253,8 @@ export function mountErrorCards(host: ErrorCardHost) {
     if (host.app.querySelector("#key-sheet")) return;
     const model = copy.model ?? "";
     const [provider = "", ...rest] = model.split("/");
-    const owner = card;
+    const owner = presentation?.el;
+    const ownsCard = () => !!owner && presentation?.el === owner && presentation.copy === copy;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const targetPromise = copy.modelConnection && copy.model === `${copy.modelConnection.provider}/${copy.modelConnection.modelId}` ? host.resolveKeyTarget(copy.modelConnection).catch(() => null) : Promise.resolve(null);
     const sheet = document.createElement("section");
@@ -306,10 +307,10 @@ export function mountErrorCards(host: ErrorCardHost) {
       status.dataset.tone = "";
       status.textContent = "正在测试…";
       const target = await targetPromise.catch(() => null);
-      const result = target && owner === card && shown === copy ? await host.testKey(key, target).catch((): KeyTestResult => ({ ok: false, reason: "测试没有完成，再试一次。" })) : { ok: false, reason: "无法核对原连接，请到设置里检查。" };
+      const result = target && ownsCard() ? await host.testKey(key, target).catch((): KeyTestResult => ({ ok: false, reason: "测试没有完成，再试一次。" })) : { ok: false, reason: "无法核对原连接，请到设置里检查。" };
       test.disabled = false;
 
-      if (result.ok && input.value.trim() === key && owner === card && shown === copy) {
+      if (result.ok && input.value.trim() === key && ownsCard()) {
         tested = key;
         save.disabled = false;
         status.dataset.tone = "ok";
@@ -329,10 +330,10 @@ export function mountErrorCards(host: ErrorCardHost) {
       if (!key) return;
       save.disabled = true;
       const target = await targetPromise.catch(() => null);
-      const saved = target && owner === card && shown === copy && await host.saveKey(target, key, () => owner === card && shown === copy).catch(() => false);
+      const saved = target && ownsCard() && await host.saveKey(target, key, () => ownsCard()).catch(() => false);
       if (!saved || !target) { tested = ""; status.dataset.tone = "err"; status.textContent = "无法确认密钥是否保存，请到设置核对后再继续。"; return; }
       close();
-      if (owner !== card || shown !== copy) return;
+      if (!ownsCard()) return;
       recover("已换密钥", key, false, target);
     });
     host.app.append(sheet);
@@ -341,10 +342,11 @@ export function mountErrorCards(host: ErrorCardHost) {
 
   const api = {
     recoveryFailed(reason: string): boolean {
-      if (!card || recovering === null || !shown) return false;
-      recovering = null;
+      if (presentation?.phase !== "recovering") return false;
+      const { el: card, copy } = presentation;
+      presentation = { phase: "shown", el: card, copy };
       card.classList.remove("is-recovering");
-      card.replaceChildren(...render(shown).childNodes);
+      card.replaceChildren(...render(copy).childNodes);
       const note = document.createElement("p");
       note.className = "error-card-note";
       note.textContent = reason;
@@ -353,11 +355,11 @@ export function mountErrorCards(host: ErrorCardHost) {
     },
     show(copy: ModelErrorCopy, live: boolean): void {
       clearTimers();
-      recovering = null;
-      shown = copy;
+      let card = presentation?.el;
       auto = live && !isModelTimeoutError(copy.detail);
 
       if (card?.isConnected) {
+        presentation = { phase: "shown", el: card, copy };
         const fresh = render(copy);
         card.className = fresh.className;
         card.replaceChildren(...fresh.childNodes);
@@ -371,17 +373,17 @@ export function mountErrorCards(host: ErrorCardHost) {
 
       autoUsed = 0;
       card = render(copy);
+      presentation = { phase: "shown", el: card, copy };
       host.mount(card);
       host.scrollToEnd();
       armCountdown(card);
     },
     delivered(): void {
-      if (!card) return;
-      const source = recovering;
-      const el = card;
-      card = null;
+      if (!presentation) return;
+      const source = presentation.phase === "recovering" ? presentation.source : null;
+      const el = presentation.el;
+      presentation = null;
       clearTimers();
-      recovering = null;
 
       if (source === null) { el.remove(); return; }
       const from = el.getBoundingClientRect().height;
@@ -400,7 +402,8 @@ export function mountErrorCards(host: ErrorCardHost) {
       host.scrollToEnd();
     },
     retire(): void {
-      if (!card || recovering !== null) return;
+      if (presentation?.phase !== "shown") return;
+      const card = presentation.el;
       clearTimers();
       card.querySelector(".error-card-wait")?.remove();
       const countdown = card.querySelector(".error-card-countdown");
@@ -408,7 +411,7 @@ export function mountErrorCards(host: ErrorCardHost) {
       if (countdown) countdown.replaceChildren("有了新消息，不再自动重试。");
       card.querySelectorAll("button").forEach(b => { b.disabled = true; });
       card.classList.add("is-retired");
-      card = null;
+      presentation = null;
     },
   };
 

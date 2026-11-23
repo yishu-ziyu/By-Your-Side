@@ -379,8 +379,9 @@ function boot(): void {
   let judging = 0;
   let record: ReadingRecord | undefined;
   let opening: Promise<void> | null = null;
-  let expanded = false;
-  let visible = false;
+  let surfaceMode: "toolbar" | "card" = "toolbar";
+  const isCard = () => surfaceMode === "card";
+  const isVisible = () => !surface.hidden;
   let sending = false;
   let pageMuted = false;
   let selectionVersion = 0;
@@ -439,7 +440,7 @@ function boot(): void {
     barTipTarget = target;
 
     const reveal = () => {
-      if (!target.isConnected || target.hidden || expanded || !target.dataset.tip) return;
+      if (!target.isConnected || target.hidden || isCard() || !target.dataset.tip) return;
       barTip.textContent = target.dataset.tip;
       barTip.hidden = false;
       target.setAttribute('aria-describedby', 'toolbar-tip');
@@ -450,7 +451,8 @@ function boot(): void {
     else barTipTimer = setTimeout(reveal, 160);
   }
 
-  let voice: { phase: 'listening' | 'released'; target: SelectionSnapshot; heard: string; previous: SelectionSnapshot | null } | null = null;
+  let voice: { phase: 'listening' | 'transcribing' | 'thinking'; target: SelectionSnapshot; heard: string; previous: SelectionSnapshot | null } | null = null;
+  const awaitingVoiceAnswer = () => !!voice && voice.phase !== 'listening';
   let companion = false;
   let speakingThread = '';
   let quiet = false;
@@ -466,8 +468,8 @@ function boot(): void {
   let manualSize: ReadingCardSize | null = null;
   let pendingCardSize: ReadingCardSize | null = null;
   let appliedSize: ReadingCardSize | null = null;
-  let drag: { pointerId: number; startX: number; startY: number; left: number; top: number; moved: boolean } | null = null;
-  let resize: { pointerId: number; startX: number; startY: number; left: number; top: number; width: number; height: number; moved: boolean } | null = null;
+  type PointerOrigin = { pointerId: number; startX: number; startY: number; left: number; top: number; moved: boolean };
+  let gesture: (PointerOrigin & ({ kind: "drag" } | { kind: "resize"; width: number; height: number })) | null = null;
   const highlightName = `by-your-side-reading`;
 
   const highlights = (CSS as typeof CSS & {
@@ -551,7 +553,7 @@ function boot(): void {
   let cardPositionVersion = 0;
 
   function position(): void {
-    if (!visible) return;
+    if (!isVisible()) return;
     const version = ++cardPositionVersion;
     const margin = PLACE_MARGIN;
     link.hidden = true;
@@ -584,7 +586,7 @@ function boot(): void {
     const last = lines.at(-1) ?? r;
     const reference = { getBoundingClientRect: () => r, getClientRects: () => lines.length ? lines : [r] };
 
-    if (!expanded || (!record?.turns.length && voice?.phase !== 'released')) {
+    if (!isCard() || (!record?.turns.length && !awaitingVoiceAnswer())) {
       surface.style.maxHeight = '';
       const box = surface.getBoundingClientRect();
       const above = first.top - LENS_GAP - box.height >= margin;
@@ -682,7 +684,7 @@ function boot(): void {
   }
 
   function applyManualSize(): void {
-    if (!expanded || !manualSize) {
+    if (!isCard() || !manualSize) {
       if (!appliedSize) return;
 
       appliedSize = null;
@@ -718,7 +720,6 @@ function boot(): void {
   }
 
   function show(keyboard = false): void {
-    visible = true;
     surface.hidden = false;
     restore.hidden = true;
 
@@ -728,12 +729,11 @@ function boot(): void {
 
   function hide(): void {
     const restoreFocus = Boolean(root.activeElement);
-    const shown = visible && expanded;
+    const shown = isVisible() && isCard();
     rememberDraft();
     hideBarTip();
     closeMenu();
     cardPositionVersion++;
-    visible = false;
     surface.hidden = true;
     link.hidden = true;
     const kept = shown && !!record && !record.turns.some(turn => CONTEXT_ACTIONS.some(action => action.attach && action.question === turn.question)) && notes.keep(record, snapshot?.range ?? null);
@@ -750,10 +750,10 @@ function boot(): void {
   }
 
   function startDrag(event: PointerEvent): void {
-    if (event.button !== 0 || !expanded || drag || resize || (event.target as Element).closest('button')) return;
+    if (event.button !== 0 || !isCard() || gesture || (event.target as Element).closest('button')) return;
 
     const box = surface.getBoundingClientRect();
-    drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: box.left, top: box.top, moved: false };
+    gesture = { kind: "drag", pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: box.left, top: box.top, moved: false };
     surface.classList.add('dragging');
     surface.classList.remove('glide', 'receding');
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -761,30 +761,30 @@ function boot(): void {
   }
 
   function moveDrag(event: PointerEvent): void {
-    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (gesture?.kind !== "drag" || event.pointerId !== gesture.pointerId) return;
 
-    const dx = event.clientX - drag.startX;
-    const dy = event.clientY - drag.startY;
+    const dx = event.clientX - gesture.startX;
+    const dy = event.clientY - gesture.startY;
 
-    if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+    if (!gesture.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
 
-    drag.moved = true;
-    manualPos = { left: drag.left + dx, top: drag.top + dy };
+    gesture.moved = true;
+    manualPos = { left: gesture.left + dx, top: gesture.top + dy };
     position();
   }
 
   function endDrag(event: PointerEvent): void {
-    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (gesture?.kind !== "drag" || event.pointerId !== gesture.pointerId) return;
 
-    drag = null;
+    gesture = null;
     surface.classList.remove('dragging');
   }
 
   function startResize(event: PointerEvent): void {
-    if (event.button !== 0 || !expanded || drag || resize) return;
+    if (event.button !== 0 || !isCard() || gesture) return;
 
     const box = surface.getBoundingClientRect();
-    resize = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: box.left, top: box.top, width: box.width, height: box.height, moved: false };
+    gesture = { kind: "resize", pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: box.left, top: box.top, width: box.width, height: box.height, moved: false };
     surface.classList.add('resizing');
     surface.classList.remove('glide', 'receding');
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -792,31 +792,31 @@ function boot(): void {
   }
 
   function moveResize(event: PointerEvent): void {
-    if (!resize || event.pointerId !== resize.pointerId) return;
+    if (gesture?.kind !== "resize" || event.pointerId !== gesture.pointerId) return;
 
-    const dx = event.clientX - resize.startX;
-    const dy = event.clientY - resize.startY;
+    const dx = event.clientX - gesture.startX;
+    const dy = event.clientY - gesture.startY;
 
-    if (!resize.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+    if (!gesture.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
 
-    resize.moved = true;
-    manualPos ??= { left: resize.left, top: resize.top };
+    gesture.moved = true;
+    manualPos ??= { left: gesture.left, top: gesture.top };
     const margin = PLACE_MARGIN;
     const maxWidth = Math.max(200, innerWidth - margin * 2);
     const maxHeight = Math.max(160, innerHeight - margin * 2);
     manualSize = {
-      width: clamp(resize.width + dx, Math.min(CARD_MIN_WIDTH, maxWidth), maxWidth),
-      height: clamp(resize.height + dy, Math.min(CARD_MIN_HEIGHT, maxHeight), maxHeight),
+      width: clamp(gesture.width + dx, Math.min(CARD_MIN_WIDTH, maxWidth), maxWidth),
+      height: clamp(gesture.height + dy, Math.min(CARD_MIN_HEIGHT, maxHeight), maxHeight),
     };
     applyManualSize();
     position();
   }
 
   function endResize(event: PointerEvent): void {
-    if (!resize || event.pointerId !== resize.pointerId) return;
+    if (gesture?.kind !== "resize" || event.pointerId !== gesture.pointerId) return;
 
-    const moved = resize.moved;
-    resize = null;
+    const moved = gesture.moved;
+    gesture = null;
     surface.classList.remove('resizing');
 
     if (moved && manualSize) {
@@ -834,7 +834,7 @@ function boot(): void {
   function resetSize(event: MouseEvent): void {
     event.preventDefault();
     manualSize = null;
-    resize = null;
+    if (gesture?.kind === "resize") gesture = null;
     applyManualSize();
     void chrome.storage.local.remove(READING_CARD_SIZE_KEY).catch(() => {  });
     position();
@@ -856,7 +856,7 @@ function boot(): void {
       report();
     }
 
-    if (expanded) {
+    if (isCard()) {
       render();
       const turn = next.turns.at(-1);
       const key = `${next.requestId}:${turn?.state}:${turn?.answer}`;
@@ -884,26 +884,26 @@ function boot(): void {
 
   function render(): void {
     const turns = record?.turns ?? [];
-    const waiting = voice?.phase === 'released';
-    const answering = expanded && (turns.length > 0 || waiting);
-    const composing = expanded && !turns.length && !waiting;
-    if (expanded) hideBarTip();
-    surface.classList.toggle('expanded', expanded);
+    const waiting = awaitingVoiceAnswer();
+    const answering = isCard() && (turns.length > 0 || waiting);
+    const composing = isCard() && !turns.length && !waiting;
+    if (isCard()) hideBarTip();
+    surface.classList.toggle('expanded', isCard());
     surface.classList.toggle('composing', composing);
     applyManualSize();
-    el('.bar').hidden = expanded;
-    el('.head').hidden = !expanded;
+    el('.bar').hidden = isCard();
+    el('.head').hidden = !isCard();
     const hasAnswer = turns.some(turn => turn.answer.trim());
-    el('.foot').hidden = !expanded || !hasAnswer;
+    el('.foot').hidden = !isCard() || !hasAnswer;
     for (const action of ['copy', 'handoff']) el(`[data-act="${action}"]`).hidden = !hasAnswer;
     el('[data-act="read-selection"]').hidden = !aloudEnabled;
     el('[data-act="speak"]').hidden = !hasAnswer || !aloudEnabled;
     answerMore.hidden = !hasAnswer;
     messages.hidden = !answering;
     surface.classList.toggle('live', turns.some(turn => turn.state === 'pending' || turn.state === 'streaming') || waiting);
-    el('.composer').hidden = !expanded;
+    el('.composer').hidden = !isCard();
     el('.chips').hidden = !composing;
-    const fitting = expanded || !snapshot ? undefined : CONTEXT_ACTIONS.find(action => action.fits(snapshot!.source.text, judged.get(snapshot!.source.text) ?? 'none'));
+    const fitting = isCard() || !snapshot ? undefined : CONTEXT_ACTIONS.find(action => action.fits(snapshot!.source.text, judged.get(snapshot!.source.text) ?? 'none'));
     const ctx = el('.ctx');
     ctx.hidden = !fitting;
     el('.bar').classList.toggle('has-ctx', !!fitting);
@@ -913,7 +913,7 @@ function boot(): void {
       ctx.textContent = fitting.label;
     }
 
-    if (!expanded) {
+    if (!isCard()) {
       position();
 
       return;
@@ -1131,7 +1131,7 @@ function boot(): void {
   }
 
   function renderWaitingTurn(sourceText: string): void {
-    if (voice?.phase !== 'released') {
+    if (!voice || voice.phase === 'listening') {
       pendingTurn?.remove();
       pendingTurn = null;
 
@@ -1146,7 +1146,7 @@ function boot(): void {
 
     setSourceQuote(pendingTurn, sourceText);
     pendingTurn.querySelector('.question')!.replaceChildren(icon(Mic, { 'aria-label': '说的' }), voice.heard || '听写中…');
-    pendingTurn.querySelector('.status')!.textContent = voice.heard ? '正在回答…' : '正在听写…';
+    pendingTurn.querySelector('.status')!.textContent = voice.phase === 'thinking' ? '正在回答…' : '正在听写…';
 
     if (pendingTurn.parentElement !== messages || pendingTurn !== messages.lastElementChild) messages.append(pendingTurn);
   }
@@ -1162,17 +1162,16 @@ function boot(): void {
     closeMenu();
     report();
     record = undefined;
-    expanded = true;
+    surfaceMode = "card";
     pinned = false;
     side = null;
     manualPos = null;
-    drag = null;
-    resize = null;
+    gesture = null;
     lastFocus = document.activeElement instanceof HTMLElement && !host.contains(document.activeElement) ? document.activeElement : lastFocus;
     input.value = '';
     render();
 
-    if (visible) animate('morph');
+    if (isVisible()) animate('morph');
     else show(keyboard);
     highlight();
     input.focus({ preventScroll: true });
@@ -1198,7 +1197,7 @@ function boot(): void {
   }
 
   function voiceTarget(): { selection?: string; asked?: string; source?: { text: string; surrounding: string; location?: string; truncated?: boolean } } {
-    const card = visible && expanded && record?.turns.length ? record : undefined;
+    const card = isVisible() && isCard() && record?.turns.length ? record : undefined;
     const target = voice?.target ?? selectionSnapshot() ?? (card ? snapshot : null);
 
     if (!target) return {};
@@ -1217,7 +1216,7 @@ function boot(): void {
 
     if (opening) await opening.catch(() => {});
 
-    if (!(visible && expanded && record)) {
+    if (!(isVisible() && isCard() && record)) {
       if (!target) throw new Error('没有选中的文字。');
       snapshot = target;
       selectionVersion++;
@@ -1241,15 +1240,14 @@ function boot(): void {
     closeMenu();
     report();
     record = undefined;
-    expanded = true;
+    surfaceMode = "card";
     pinned = false;
     side = null;
     manualPos = null;
-    drag = null;
-    resize = null;
+    gesture = null;
     render();
 
-    if (visible) animate('morph');
+    if (isVisible()) animate('morph');
     else show();
     growFromCursor();
     highlight();
@@ -1285,7 +1283,7 @@ function boot(): void {
       return { x: Math.round(Math.min(last.right + 3, innerWidth - 12)), y: Math.round(last.bottom - 3) };
     }
 
-    if (visible && expanded && !surface.hidden) {
+    if (isVisible() && isCard()) {
       const box = surface.getBoundingClientRect();
 
       return { x: Math.round(Math.max(8, box.left - 4)), y: Math.round(box.top + 10) };
@@ -1299,9 +1297,7 @@ function boot(): void {
   function companionPhase(): CompanionPhase | null {
     if (!companion) return null;
 
-    if (voice?.phase === 'listening') return 'listening';
-
-    if (voice) return voice.heard ? 'thinking' : 'transcribing';
+    if (voice) return voice.phase;
 
     if (record && speakingThread === record.threadId) return 'speaking';
     const last = record?.turns.at(-1);
@@ -1315,7 +1311,7 @@ function boot(): void {
     if (!companion) return;
     const phase = companionPhase();
     const said = phase === 'listening' || phase === 'transcribing' || phase === 'thinking' || phase === 'speaking' ? phase : null;
-    const card = visible && expanded && !surface.hidden ? surface.getBoundingClientRect() : null;
+    const card = isVisible() && isCard() ? surface.getBoundingClientRect() : null;
     window.__sideagent?.cursor?.companion?.({ point: pointerPoint(), voice: said, fly, quiet, ...(card ? { avoid: { x: card.x, y: card.y, width: card.width, height: card.height } } : {}) });
   }
 
@@ -1338,7 +1334,7 @@ function boot(): void {
   function companionStart(): boolean {
     if (retired()) return false;
     const live = selectionSnapshot();
-    const card = visible && expanded && !!record?.turns.length;
+    const card = isVisible() && isCard() && !!record?.turns.length;
     const target = live ?? (card ? snapshot : null);
 
     if (!target) return false;
@@ -1346,8 +1342,7 @@ function boot(): void {
     companion = true;
     closeMenu();
 
-    if (visible && !expanded) {
-      visible = false;
+    if (isVisible() && !isCard()) {
       surface.hidden = true;
     }
 
@@ -1367,9 +1362,9 @@ function boot(): void {
 
   function companionStop(): boolean {
     if (voice?.phase !== 'listening') return false;
-    voice.phase = 'released';
+    voice.phase = 'transcribing';
     const target = voice.target;
-    const onCard = visible && expanded && !!record?.turns.length;
+    const onCard = isVisible() && isCard() && !!record?.turns.length;
     const moved = !sameSelection(target, snapshot);
     selectionVersion++;
     snapshot = target;
@@ -1400,7 +1395,7 @@ function boot(): void {
     const previous = voice.previous;
     voice = null;
 
-    if (!(visible && expanded && record?.turns.length)) {
+    if (!(isVisible() && isCard() && record?.turns.length)) {
       hide();
       highlights?.delete(highlightName);
       endCompanion();
@@ -1423,7 +1418,7 @@ function boot(): void {
   }
 
   function recede(): void {
-    if (!visible || !expanded) return;
+    if (!isVisible() || !isCard()) return;
     quiet = true;
     if (!manualPos) surface.classList.toggle('receding', surface.dataset.place !== 'beside');
     clearTimeout(quietTimer);
@@ -1495,7 +1490,7 @@ function boot(): void {
   }
 
   async function wake(kept: ReadingRecord, range: Range): Promise<void> {
-    if (visible) hide();
+    if (isVisible()) hide();
     const threadId = kept.threadId;
     const restored = await rpc('reading_get', { threadId }).catch(() => null);
 
@@ -1511,7 +1506,7 @@ function boot(): void {
     const latest = [...record!.turns].reverse().find(turn => turn.source)?.source;
     selectionVersion++;
     snapshot = { source: latest ? { ...record!.source, ...latest } : record!.source, range, rect: range.getBoundingClientRect() };
-    expanded = true;
+    surfaceMode = "card";
     pinned = false;
     side = null;
     manualPos = null;
@@ -1579,9 +1574,9 @@ function boot(): void {
       if (quick) {
         closeMenu();
 
-        if (!expanded && isReadingTranslation(quick) && await inPage(quick)) return;
+        if (!isCard() && isReadingTranslation(quick) && await inPage(quick)) return;
 
-        if (!expanded) await openReading();
+        if (!isCard()) await openReading();
         await typed(quick, 'fast');
       }
       else if (action === 'ask') {
@@ -1646,7 +1641,7 @@ function boot(): void {
         record = restored.record;
         const latest = [...record!.turns].reverse().find(turn => turn.source)?.source;
         snapshot ??= { source: latest ? { ...record!.source, ...latest } : record!.source, range: null, rect: new DOMRect(innerWidth - 400, 80, 0, 0) };
-        expanded = true;
+        surfaceMode = "card";
         render();
         show();
         highlight();
@@ -1710,8 +1705,8 @@ function boot(): void {
     })().catch(err => {
       report(plainError(err, '这一步没有成功，请再试一次。'));
 
-      if (!visible) {
-        expanded = true;
+      if (!isVisible()) {
+        surfaceMode = "card";
         render();
         show();
       }
@@ -1746,7 +1741,7 @@ function boot(): void {
   const applyBarSetting = (off: boolean) => {
     barEnabled = !off;
 
-    if (!barEnabled && visible && !expanded) {
+    if (!barEnabled && isVisible() && !isCard()) {
       hide();
     }
   };
@@ -1755,20 +1750,20 @@ function boot(): void {
     aloudEnabled = on;
     el('[data-act="read-selection"]').hidden = !on;
     if (!on) el('[data-act="speak"]').hidden = true;
-    if (visible) render();
+    if (isVisible()) render();
   };
 
   const applyCardSize = (value: unknown) => {
     const next = readReadingCardSize(value);
 
-    if (resize) {
+    if (gesture?.kind === "resize") {
       pendingCardSize = next;
 
       return;
     }
 
     manualSize = next;
-    if (visible) {
+    if (isVisible()) {
       applyManualSize();
       position();
     }
@@ -1802,7 +1797,7 @@ function boot(): void {
       void rpc('reading_kind', { text }).then(result => {
         if (judged.size >= JUDGED_LIMIT) judged.delete(judged.keys().next().value!);
         judged.set(text, READING_KINDS.find(kind => kind === result.kind) ?? 'none');
-        if (snapshot === target && visible && !expanded) render();
+        if (snapshot === target && isVisible() && !isCard()) render();
       }, () => {});
     }, JUDGE_DELAY_MS);
   }
@@ -1814,7 +1809,7 @@ function boot(): void {
       void chrome.runtime.sendMessage({ type: PTT_WARM }).catch(() => {});
     }
 
-    if (visible && expanded && record?.turns.length) {
+    if (isVisible() && isCard() && record?.turns.length) {
       if (next) {
         candidate = !sameSelection(next, snapshot) ? next : null;
         render();
@@ -1827,14 +1822,14 @@ function boot(): void {
       return;
     }
 
-    if (!next || root.activeElement || sameSelection(next, snapshot) && visible) {
+    if (!next || root.activeElement || sameSelection(next, snapshot) && isVisible()) {
       return;
     }
 
     rememberDraft();
     selectionVersion++;
     snapshot = next;
-    expanded = false;
+    surfaceMode = "toolbar";
     pinned = false;
     side = null;
     manualPos = null;
@@ -1871,7 +1866,7 @@ function boot(): void {
 
     if (event.composedPath().includes(host)) return;
 
-    if (visible && expanded && record?.turns.length) dismissOnUp = true;
+    if (isVisible() && isCard() && record?.turns.length) dismissOnUp = true;
     else hide();
   }, { capture: true, signal });
   document.addEventListener('pointerup', event => {
@@ -1912,7 +1907,7 @@ function boot(): void {
       return;
     }
 
-    if (!visible || expanded || event.metaKey || event.ctrlKey || event.altKey || event.composedPath().includes(host) || isEditableTarget(event.target)) {
+    if (!isVisible() || isCard() || event.metaKey || event.ctrlKey || event.altKey || event.composedPath().includes(host) || isEditableTarget(event.target)) {
       return;
     }
 
@@ -1931,11 +1926,11 @@ function boot(): void {
     hideBarTip();
     closeMenu();
 
-    if (expanded) {
+    if (isCard()) {
       position();
       recede();
     }
-    else if (visible) {
+    else if (isVisible()) {
       hide();
     }
 
@@ -1979,10 +1974,9 @@ function boot(): void {
     selectionVersion++;
     snapshot = null;
     record = undefined;
-    expanded = false;
+    surfaceMode = "toolbar";
     manualPos = null;
-    drag = null;
-    resize = null;
+    gesture = null;
     hide();
     restore.hidden = true;
     notes.clear();
@@ -2013,7 +2007,7 @@ function boot(): void {
         void openReading(true).catch(err => report(plainError(err, '这一步没有成功，请再试一次。')));
       }
       else if (record) {
-        expanded = true;
+        surfaceMode = "card";
         render();
         show(true);
         input.focus();
@@ -2048,8 +2042,9 @@ function boot(): void {
     if (raw.type !== READING_VOICE || !('phase' in raw)) return;
     const message = raw as ReadingVoiceMessage;
 
-    if (message.phase === 'heard' && voice?.phase === 'released') {
+    if (message.phase === 'heard' && !!voice && voice.phase !== 'listening') {
       voice.heard = message.text.trim();
+      voice.phase = voice.heard ? 'thinking' : 'transcribing';
       render();
     }
     else if (message.phase === 'speaking') speakingThread = message.threadId;

@@ -10,11 +10,12 @@ export interface QueuedTask {
   title: string;
   state: 'queued' | 'suspended' | 'starting' | 'running' | 'completed' | 'cancelled' | 'failed' | 'unknown';
   receipt: TaskReceipt;
+  separatePhase?: 'open' | 'interrupted' | 'merged';
 }
 
 const MERGED = '已并回上一件';
 
-export const isMerged = (job: QueuedTask): boolean => job.receipt.message === MERGED;
+export const isMerged = (job: QueuedTask): boolean => job.separatePhase === 'merged';
 
 const STOPPED = '扩展后台重启，这件事停下了，还没做完。';
 
@@ -30,6 +31,7 @@ function isQueuedTask(value: unknown): value is QueuedTask {
   if (typeof value !== 'object' || value === null) return false;
   const job = value as Partial<QueuedTask>;
 
+  if (job.separatePhase !== undefined && !['open', 'interrupted', 'merged'].includes(job.separatePhase)) return false;
   try { return isTaskActionRequest(job.request) && isTaskReceipt(job.receipt) && typeof job.title === 'string' && QUEUE_STATES.includes(job.state as QueuedTask['state']); }
   catch { return false; }
 }
@@ -37,8 +39,13 @@ function isQueuedTask(value: unknown): value is QueuedTask {
 export class TaskQueue {
   async persisted(): Promise<void> { await this.options.persist?.flush?.(); }
   private readonly jobs = new Map<string, QueuedTask>();
-  private pumping = false;
-  private repump = false;
+  private pumpPhase: 'idle' | 'running' | 'rerun_requested' = 'idle';
+
+  private takeRerunRequest(): boolean {
+    const rerun = this.pumpPhase === 'rerun_requested';
+    this.pumpPhase = 'idle';
+    return rerun;
+  }
   constructor(private readonly options: {
     directory?: string;
     persist?: TaskQueuePersistence;
@@ -81,8 +88,10 @@ export class TaskQueue {
   }
   private restore(job: QueuedTask) {
     const updatedAt = Date.now();
+    job.separatePhase ??= job.receipt.message === MERGED ? 'merged' : job.receipt.message === STOPPED ? 'interrupted' : 'open';
 
     if (job.state === 'queued') {
+      job.separatePhase = 'open';
       job.state = 'suspended';
       job.receipt.taskState = 'interrupted';
       job.receipt = { ...job.receipt, status: 'queued', message: '连接已重启，这项待办尚未启动；原要求已保留，明确继续后才重新安排。', updatedAt };
@@ -90,7 +99,8 @@ export class TaskQueue {
     else if (['starting', 'running'].includes(job.state)) {
       job.state = 'unknown';
       job.receipt.taskState = 'interrupted';
-      job.receipt = job.request.originConversationId && job.request.source === 'text'
+      job.separatePhase = job.request.originConversationId && job.request.source === 'text' ? 'interrupted' : 'open';
+      job.receipt = job.separatePhase === 'interrupted'
         ? { ...job.receipt, status: 'unknown', message: STOPPED, updatedAt }
         : { ...job.receipt, status: 'unknown', message: '连接已重启，这项要求已保留；请核对后重新安排，不会自动重做。', updatedAt };
     }
@@ -156,7 +166,7 @@ export class TaskQueue {
       return { ...base, status: 'rejected', message: '待办已满，这项要求尚未接收；可以先取消一项待办。' };
     }
 
-    const job: QueuedTask = { request: structuredClone(request), title, state: 'queued', receipt: base };
+    const job: QueuedTask = { request: structuredClone(request), title, state: 'queued', receipt: base, separatePhase: 'open' };
     this.jobs.set(request.conversationId, job);
 
     try {
@@ -263,7 +273,7 @@ export class TaskQueue {
       : 'merged' in outcome ? { ...job.receipt, action: 'start', status: 'applied', message: MERGED, updatedAt: Date.now() }
         : { ...job.receipt, status: 'failed', message: outcome.failed, updatedAt: Date.now() };
     if (receipt.status === job.receipt.status && receipt.message === job.receipt.message && receipt.result?.text === job.receipt.result?.text) return;
-    this.update(job, { receipt });
+    this.update(job, { receipt, separatePhase: 'merged' in outcome ? 'merged' : 'failed' in outcome ? 'open' : job.separatePhase });
     this.options.changed(job);
   }
 
@@ -274,16 +284,16 @@ export class TaskQueue {
     if (receipt.action === 'abort') {
       delete next.result;
       next.taskState = 'cancelled'; next.action = 'abort'; next.status = 'applied'; next.message = '已取消';
-      this.update(job,{state:'cancelled',receipt:next});
+      this.update(job,{state:'cancelled',receipt:next,separatePhase:'open'});
     } else if (receipt.action === 'steer') {
       delete next.result;
       next.action = job.receipt.action === 'pause' ? 'pause' : 'start'; next.status = next.action === 'pause' ? 'applied' : job.state === 'queued' ? 'queued' : 'accepted'; next.message = receipt.message;
-      this.update(job,{receipt:next});
+      this.update(job,{receipt:next,separatePhase:'open'});
     } else if (receipt.action === 'pause' || receipt.action === 'resume') {
       next.taskState = receipt.action === 'pause' ? 'paused' : 'running';
       next.action = receipt.action === 'pause' ? 'pause' : 'start';
       next.status = receipt.action === 'pause' ? 'applied' : 'accepted'; next.message = receipt.message;
-      this.update(job,{receipt:next});
+      this.update(job,{receipt:next,separatePhase:'open'});
     } else return;
     this.options.changed(job);
   }
@@ -291,8 +301,8 @@ export class TaskQueue {
   resumeSeparate(id: string): void {
     const job = this.get(id);
 
-    if (!job?.request.originConversationId || job.state !== 'unknown' || job.receipt.message !== STOPPED) return;
-    this.update(job, { state: 'running', receipt: { ...job.receipt, status: 'accepted', message: `正在做：${job.title}`, updatedAt: Date.now() } });
+    if (!job?.request.originConversationId || job.state !== 'unknown' || job.separatePhase !== 'interrupted') return;
+    this.update(job, { state: 'running', separatePhase: 'open', receipt: { ...job.receipt, status: 'accepted', message: `正在做：${job.title}`, updatedAt: Date.now() } });
     this.options.changed(job);
   }
 
@@ -310,13 +320,13 @@ export class TaskQueue {
       return;
     }
 
-    if (this.pumping) {
-      this.repump = true;
+    if (this.pumpPhase !== 'idle') {
+      this.pumpPhase = 'rerun_requested';
 
       return;
     }
 
-    this.pumping = true;
+    this.pumpPhase = 'running';
 
     try {
       for (const job of this.jobs.values()) {
@@ -378,12 +388,7 @@ export class TaskQueue {
       }
     }
     finally {
-      this.pumping = false;
-
-      if (this.repump) {
-        this.repump = false;
-        await this.pump();
-      }
+      if (this.takeRerunRequest()) await this.pump();
     }
   }
 }

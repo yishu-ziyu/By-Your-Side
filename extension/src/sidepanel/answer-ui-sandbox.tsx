@@ -73,22 +73,22 @@ function followTheme(): void {
   dark.addEventListener("change", apply);
 }
 
-let root: ReturnType<typeof createRoot> | undefined;
+type Surface = { phase: "empty" } | { phase: "streaming" | "complete"; root: ReturnType<typeof createRoot> };
+let surface: Surface = { phase: "empty" };
 let initialState: Record<string, unknown> | undefined;
-let streaming = false;
 
 addEventListener("message", (event: MessageEvent<Program>) => {
   if (event.source !== parent || typeof event.data?.html !== "string") return;
-  if (root && !streaming) return;
-  if (!root) initialState = parseState(event.data.state ?? null);
-  streaming = event.data.streaming === true;
-  const first = !root;
-
-  if (!root) {
+  if (surface.phase === "complete") return;
+  const first = surface.phase === "empty";
+  const streaming = event.data.streaming === true;
+  if (first) {
+    initialState = parseState(event.data.state ?? null);
     followTheme();
-    root = createRoot(document.getElementById("root")!);
+    surface = { phase: "streaming", root: createRoot(document.getElementById("root")!) };
   }
-  root.render(<Renderer response={event.data.html} isStreaming={streaming} library={library} onAction={onAction} onError={onError} onStateUpdate={saveState} initialState={initialState} />);
+  surface.phase = streaming ? "streaming" : "complete";
+  surface.root.render(<Renderer response={event.data.html} isStreaming={streaming} library={library} onAction={onAction} onError={onError} onStateUpdate={saveState} initialState={initialState} />);
   if (first) watchHeight(event.data.maxHeight ?? 720);
 });
 
@@ -96,7 +96,7 @@ addEventListener("message", (event: MessageEvent<Program>) => {
 const BENIGN_ERROR = /^ResizeObserver loop/;
 
 // WHY: 写到一半的程序里组件参数常常还不全，那时候报的错等写完会消失。
-addEventListener("error", (event) => { if (!failed && !streaming && !BENIGN_ERROR.test(event.message)) { failed = true; post("error", { message: String(event.message).slice(0, 300) }); } });
+addEventListener("error", (event) => { if (!failed && surface.phase !== "streaming" && !BENIGN_ERROR.test(event.message)) { failed = true; post("error", { message: String(event.message).slice(0, 300) }); } });
 
 // WHY: 沙箱不许弹窗，链接点了没反应；只能交给侧栏开标签页，由侧栏查用户是否真的点了。
 document.addEventListener("click", (event) => {

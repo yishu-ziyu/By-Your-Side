@@ -289,7 +289,9 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   let items: Item[] = [];
   let view: EdgeTabView | null = null;
   let others: EdgeTabOther[] = [];
-  let open = false;
+  let surface: "closed" | "summary" | "details" = "closed";
+  const isOpen = () => surface !== "closed";
+  const hasDetails = () => surface === "details";
   let closeAt = 0;
   let fade = 0;
   let raf: number | undefined;
@@ -303,13 +305,12 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   let shownDy = 0;
   let task: EdgeTask = null;
   let taskKey = "";
-  let card = false;
   let rowW = CLOSED.w;
   let cardTimer: ReturnType<typeof setTimeout> | undefined;
   let tick: ReturnType<typeof setInterval> | undefined;
   let sending = false;
 
-  const canCard = () => open && Boolean(task) && view !== null && !["hand", "away", "idle"].includes(view.tone);
+  const canCard = () => isOpen() && Boolean(task) && view !== null && !["hand", "away", "idle"].includes(view.tone);
 
   function ago(ms: number): string {
     const s = Math.max(0, Math.round(ms / 1000));
@@ -343,8 +344,8 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   }
 
   function reshape(spring: readonly [number, number]): void {
-    const w = card ? Math.max(rowW, CARD_W) : rowW;
-    const h = card ? H + more.offsetHeight : H;
+    const w = hasDetails() ? Math.max(rowW, CARD_W) : rowW;
+    const h = hasDetails() ? H + more.offsetHeight : H;
 
     if (reduced.matches) { W.snap(w); Hs.snap(h); } else { W.aim(w, spring); Hs.aim(h, spring); }
     kick();
@@ -354,18 +355,18 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     clearTimeout(cardTimer);
     const next = on && canCard();
 
-    if (next === card) return;
-    card = next;
+    if (next === hasDetails()) return;
+    surface = next ? "details" : "summary";
 
-    if (card) {
+    if (hasDetails()) {
       clip.classList.remove("up");
       clip.classList.toggle("up", TOP + shownDy + H + more.offsetHeight + EDGE_MARGIN > innerHeight);
     }
-    more.inert = !card;
-    more.classList.toggle("on", card);
+    more.inert = !hasDetails();
+    more.classList.toggle("on", hasDetails());
     clearInterval(tick);
 
-    if (card) { fillCard(); tick = setInterval(fillCard, 1000); }
+    if (hasDetails()) { fillCard(); tick = setInterval(fillCard, 1000); }
     else if (shadow.activeElement && more.contains(shadow.activeElement)) (shadow.activeElement as HTMLElement).blur();
     reshape(MORPH);
   }
@@ -374,7 +375,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
   function clampDy(dy: number): number {
     const min = EDGE_MARGIN - TOP;
-    const max = innerHeight - EDGE_MARGIN - TOP - H - (open && others.length ? BUBBLE_GAP + BUBBLE_H : 0);
+    const max = innerHeight - EDGE_MARGIN - TOP - H - (isOpen() && others.length ? BUBBLE_GAP + BUBBLE_H : 0);
 
     return Math.round(Math.max(min, Math.min(max, dy)));
   }
@@ -382,7 +383,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   function avoidTargets(): void {
     shownDy = userDy ?? 0;
     root.style.transform = shownDy ? `translateY(${shownDy}px)` : "";
-    if (userDy !== null || !open || view?.tone === "hand" || !avoidedTargets.size) return;
+    if (userDy !== null || !isOpen() || view?.tone === "hand" || !avoidedTargets.size) return;
     const targets = [...avoidedTargets.values()].filter(el => el.isConnected).map(el => el.getBoundingClientRect());
     const surfaces = [clip, ...(others.length ? [bub] : [])].map(el => el.getBoundingClientRect());
     const overlaps = (a: DOMRect, b: DOMRect, dy: number) => a.left < b.right && a.right > b.left && a.top + dy < b.bottom && a.bottom + dy > b.top;
@@ -393,7 +394,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   }
 
   function uncoverTarget(target: Element, x: number, y: number, token: string): boolean {
-    if (!open || view?.tone === "hand" || !target.isConnected || target.ownerDocument !== document || target.contains(host)) return false;
+    if (!isOpen() || view?.tone === "hand" || !target.isConnected || target.ownerDocument !== document || target.contains(host)) return false;
     for (let node: Element | null = target; node;) {
       if (node.closest(`[${OVERLAY_ATTR}]`)) return false;
       const parent = node.getRootNode();
@@ -409,34 +410,34 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
   const clickedButton = (ev: Event) => ev.composedPath().some(n => n instanceof HTMLButtonElement);
 
-  let press: { id: number; y: number; from: number } | null = null;
-  let dragged = false;
+  type Press = { phase: "pressed" | "dragging"; id: number; y: number; from: number };
+  let pointer: { phase: "idle" | "after_drag" } | Press = { phase: "idle" };
+  const activePress = () => "id" in pointer;
 
   clip.addEventListener("pointerdown", ev => {
     if (ev.button !== 0 || ev.composedPath().includes(more)) return;
-    press = { id: ev.pointerId, y: ev.clientY, from: shownDy };
-    dragged = false;
+    pointer = { phase: "pressed", id: ev.pointerId, y: ev.clientY, from: shownDy };
   });
   addEventListener("pointermove", ev => {
-    if (!press || ev.pointerId !== press.id) return;
-    const d = ev.clientY - press.y;
+    if (!("id" in pointer) || ev.pointerId !== pointer.id) return;
+    const d = ev.clientY - pointer.y;
 
-    if (!dragged) {
+    if (pointer.phase === "pressed") {
       if (Math.abs(d) < DRAG_SLOP) return;
-      dragged = true;
+      pointer.phase = "dragging";
       clip.setPointerCapture(ev.pointerId);
       clip.classList.add("dragging");
       if (!busy()) setCard(false);
     }
 
     ev.preventDefault();
-    userDy = clampDy(press.from + d);
+    userDy = clampDy(pointer.from + d);
     avoidTargets();
   }, true);
   for (const end of ["pointerup", "pointercancel"] as const) addEventListener(end, ev => {
-    if (!press || ev.pointerId !== press.id) return;
-    press = null;
-
+    if (!("id" in pointer) || ev.pointerId !== pointer.id) return;
+    const dragged = pointer.phase === "dragging";
+    pointer = { phase: dragged ? "after_drag" : "idle" };
     if (!dragged) return;
     clip.classList.remove("dragging");
     handlers.moved?.(userDy ?? 0);
@@ -446,8 +447,8 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   }, true);
   addEventListener("resize", () => { if (userDy !== null) { userDy = clampDy(userDy); avoidTargets(); } });
 
-  clip.addEventListener("pointerenter", () => { clearTimeout(cardTimer); if (!card && canCard()) cardTimer = setTimeout(() => { if (!press || !dragged) setCard(true); }, CARD_IN_MS); });
-  clip.addEventListener("pointerleave", () => { clearTimeout(cardTimer); if (card && !busy()) cardTimer = setTimeout(() => setCard(false), CARD_OUT_MS); });
+  clip.addEventListener("pointerenter", () => { clearTimeout(cardTimer); if (!hasDetails() && canCard()) cardTimer = setTimeout(() => { if (pointer.phase !== "dragging") setCard(true); }, CARD_IN_MS); });
+  clip.addEventListener("pointerleave", () => { clearTimeout(cardTimer); if (hasDetails() && !busy()) cardTimer = setTimeout(() => setCard(false), CARD_OUT_MS); });
   clip.addEventListener("focus", () => { if (canCard()) setCard(true); });
   more.addEventListener("click", ev => ev.stopPropagation());
   for (const type of ["keydown", "keyup", "keypress"] as const) input.addEventListener(type, ev => {
@@ -479,10 +480,14 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
   clip.addEventListener("click", ev => {
     ev.stopPropagation();
-    if (dragged) { dragged = false; return; }
+    if (pointer.phase === "after_drag" || pointer.phase === "dragging") {
+      if (pointer.phase === "dragging") pointer.phase = "pressed";
+      else pointer = { phase: "idle" };
+      return;
+    }
     if (!clickedButton(ev)) handlers.capsule();
   });
-  for (const enter of ["pointerenter", "focus"] as const) clip.addEventListener(enter, () => { if (resting && (!open || view?.tone === "idle")) handlers.peek?.(true); });
+  for (const enter of ["pointerenter", "focus"] as const) clip.addEventListener(enter, () => { if (resting && (!isOpen() || view?.tone === "idle")) handlers.peek?.(true); });
   for (const leave of ["pointerleave", "blur"] as const) clip.addEventListener(leave, () => { if (view?.tone === "idle" && !(leave === "pointerleave" && shadow.activeElement === clip)) handlers.peek?.(false); });
   clip.addEventListener("keydown", ev => {
     if (ev.target !== clip || (ev.key !== "Enter" && ev.key !== " ")) return;
@@ -497,7 +502,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   });
   root.addEventListener("keydown", ev => {
     if (ev.key === "Escape" && listOpen) { setList(false); bhead.focus(); ev.stopPropagation(); }
-    else if (ev.key === "Escape" && card) { setCard(false); clip.focus(); ev.stopPropagation(); }
+    else if (ev.key === "Escape" && hasDetails()) { setCard(false); clip.focus(); ev.stopPropagation(); }
   });
 
   function setList(on: boolean): void {
@@ -679,10 +684,10 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     avoidTargets();
 
     if (!next) {
-      if (!open) return;
-      open = false;
-      host.dataset.shown = "false";
+      if (!isOpen()) return;
       setCard(false);
+      surface = "closed";
+      host.dataset.shown = "false";
       root.toggleAttribute("data-rest", resting);
 
       for (const it of items) if (!it.leaving) fadeOut(it);
@@ -697,8 +702,8 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     if (!attach()) return;
     root.hidden = false;
     root.removeAttribute("data-rest");
-    const opening = !open;
-    open = true;
+    const opening = !isOpen();
+    if (opening) surface = "summary";
     host.dataset.shown = "true";
     closeAt = 0;
 
@@ -740,8 +745,8 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     items = [...items.filter(i => i.leaving), ...kept];
 
     rowW = width;
-    if (card && !canCard() && !busy()) setCard(false);
-    else if (!card && canCard() && !press && clip.matches(":hover")) setCard(true);
+    if (hasDetails() && !canCard() && !busy()) setCard(false);
+    else if (!hasDetails() && canCard() && !activePress() && clip.matches(":hover")) setCard(true);
     reshape(opening ? OPEN : MORPH);
 
     const text = next.lead ? `${next.a} ${next.b}` : `${next.a}${next.tight ? "" : " "}${next.b}`;
@@ -755,7 +760,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   }
 
   function paintBubble(): void {
-    const count = open ? others.length : 0;
+    const count = isOpen() ? others.length : 0;
     const first = others[0];
     const key = first ? `${first.id}|${first.title}|${count}` : "";
 
@@ -799,7 +804,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
 
-    if (!open && closeAt && now >= closeAt) {
+    if (!isOpen() && closeAt && now >= closeAt) {
       closeAt = 0;
       W.aim(resting ? REST.w : CLOSED.w, CLOSE);
       Hs.aim(resting ? REST.h : CLOSED.h, CLOSE);
@@ -811,17 +816,17 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
     if (reduced.matches) {
       const step = dt / (FADE_MS / 1000);
-      fade = open || resting ? Math.min(1, fade + step) : Math.max(0, fade - step);
+      fade = isOpen() || resting ? Math.min(1, fade + step) : Math.max(0, fade - step);
     } else {
-      fade = !open && resting ? 1 : clamp01((W.x - CLOSED.w) / 14);
+      fade = !isOpen() && resting ? 1 : clamp01((W.x - CLOSED.w) / 14);
     }
 
     paint();
-    const settled = W.still && Hs.still && BW.still && BH.still && items.every(i => i.x.still) && !closeAt && fade === (open || resting ? 1 : 0);
+    const settled = W.still && Hs.still && BW.still && BH.still && items.every(i => i.x.still) && !closeAt && fade === (isOpen() || resting ? 1 : 0);
 
-    if (!open && settled && resting) return;
+    if (!isOpen() && settled && resting) return;
 
-    if (!open && settled) {
+    if (!isOpen() && settled) {
       W.snap(CLOSED.w);
       Hs.snap(CLOSED.h);
       root.hidden = true;
@@ -842,7 +847,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     const w = W.x;
     const h = Hs.x;
     const isDark = dark.matches;
-    const k = !open && resting ? 0.5 : clamp01((w - 20) / 120);
+    const k = !isOpen() && resting ? 0.5 : clamp01((w - 20) / 120);
     const up = clip.classList.contains("up");
     const mid = h <= H ? MID : up ? TOP + H - h / 2 : TOP + h / 2;
     mainShape!.setAttribute("d", shapePath(X, w, h, mid, 9, H / 2));
@@ -858,7 +863,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     hairStops.forEach((s, i) => { s.setAttribute("stop-color", hairColor); s.setAttribute("stop-opacity", String(ho[i]! * k)); });
 
     Object.assign(clip.style, { left: `${X - w}px`, top: `${mid - h / 2}px`, width: `${Math.max(0, w - 1)}px`, height: `${h}px` });
-    Object.assign(grip.style, { left: `${X - 8}px`, top: `${MID - 7}px`, opacity: String(!open && resting ? 0.45 * clamp01((28 - w) / 10) : 0) });
+    Object.assign(grip.style, { left: `${X - 8}px`, top: `${MID - 7}px`, opacity: String(!isOpen() && resting ? 0.45 * clamp01((28 - w) / 10) : 0) });
 
     for (const it of items) it.el.style.right = `${it.x.x}px`;
 
@@ -873,7 +878,7 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     avoidTargets();
   }
 
-  dark.addEventListener("change", () => { if (open) paint(); });
+  dark.addEventListener("change", () => { if (isOpen()) paint(); });
 
   function rectOf(el: Element): { x: number; y: number; width: number; height: number } {
     const r = el.getBoundingClientRect();
@@ -884,9 +889,9 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
   function rest(on: boolean): void {
     if (resting === on) return;
     resting = on;
-    root.toggleAttribute("data-rest", on && !open);
+    root.toggleAttribute("data-rest", on && !isOpen());
 
-    if (open) return;
+    if (isOpen()) return;
 
     if (on) {
       if (!attach()) return;
@@ -909,12 +914,12 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
 
       if (!task) { if (!busy()) setCard(false); return; }
 
-      if (!card && canCard() && !press && clip.matches(":hover")) setCard(true);
+      if (!hasDetails() && canCard() && !activePress() && clip.matches(":hover")) setCard(true);
 
-      if (card) { fillCard(); reshape(MORPH); }
+      if (hasDetails()) { fillCard(); reshape(MORPH); }
     },
     setOffset(dy: number | null): void {
-      if (press) return;
+      if (activePress()) return;
       userDy = dy === null ? null : clampDy(dy);
       avoidTargets();
     },
@@ -931,30 +936,30 @@ export function createEdgeTab(handlers: EdgeTabHandlers) {
     attach,
     state(): EdgeTabState {
       const end = view?.end;
-      const shownRect = open && !root.hidden ? rectOf(clip) : null;
+      const shownRect = isOpen() && !root.hidden ? rectOf(clip) : null;
 
       return {
-        shown: open,
-        tone: open ? view?.tone ?? null : null,
-        a: open ? view?.a ?? "" : "",
-        b: open ? view?.b ?? "" : "",
-        end: !open || !end ? null : typeof end === "string" ? end : end.label,
-        endEnabled: Boolean(open && end && (typeof end === "string" || end.enabled)),
+        shown: isOpen(),
+        tone: isOpen() ? view?.tone ?? null : null,
+        a: isOpen() ? view?.a ?? "" : "",
+        b: isOpen() ? view?.b ?? "" : "",
+        end: !isOpen() || !end ? null : typeof end === "string" ? end : end.label,
+        endEnabled: Boolean(isOpen() && end && (typeof end === "string" || end.enabled)),
         width: W.to,
         offset: userDy,
         task: Boolean(task),
-        card: card ? { rect: rectOf(more), input: rectOf(input), goal: task?.goal ?? "", steps: task?.steps.length ?? 0, placeholder: input.placeholder } : null,
+        card: hasDetails() ? { rect: rectOf(more), input: rectOf(input), goal: task?.goal ?? "", steps: task?.steps.length ?? 0, placeholder: input.placeholder } : null,
         rect: shownRect,
         panel: getComputedStyle(root).getPropertyValue("--panel").trim(),
-        bubble: open && others.length ? { count: others.length, letter: bhead.querySelector(".av")?.textContent ?? "", rect: rectOf(bhead), panel: rectOf(bub) } : null,
+        bubble: isOpen() && others.length ? { count: others.length, letter: bhead.querySelector(".av")?.textContent ?? "", rect: rectOf(bhead), panel: rectOf(bub) } : null,
         list: { open: listOpen, rows: listOpen ? Array.from(list.querySelectorAll<HTMLElement>("button.row"), (row, i) => ({ name: others[i]?.name ?? "", title: others[i]?.title ?? "", local: Boolean(others[i]?.local), rect: rectOf(row) })) : [] },
-        button: open ? (b => b ? rectOf(b) : null)(clip.querySelector(":scope > .el:not([data-leaving]) button")) : null,
-        icon: open && items.some(i => i.slot === "icon" && !i.leaving),
-        shimmer: open && (t => Boolean(t) && getComputedStyle(t!).animationName === "shim" && t!.getAnimations().some(a => a.playState === "running"))(clip.querySelector<HTMLElement>(".el:not([data-leaving]) .shim")),
+        button: isOpen() ? (b => b ? rectOf(b) : null)(clip.querySelector(":scope > .el:not([data-leaving]) button")) : null,
+        icon: isOpen() && items.some(i => i.slot === "icon" && !i.leaving),
+        shimmer: isOpen() && (t => Boolean(t) && getComputedStyle(t!).animationName === "shim" && t!.getAnimations().some(a => a.playState === "running"))(clip.querySelector<HTMLElement>(".el:not([data-leaving]) .shim")),
       };
     },
     click(part: "capsule" | "stop" | "action" | "bubble" | number): boolean {
-      if (!open) return false;
+      if (!isOpen()) return false;
 
       if (part === "capsule") { clip.click(); return true; }
 

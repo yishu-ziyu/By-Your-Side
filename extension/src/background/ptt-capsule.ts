@@ -64,8 +64,9 @@ function speechFor(capsule: PttCapsule): string | null {
 }
 
 export function installPttCapsule(onChange: () => void, voice: PttVoice, timing: PttTiming = () => {}) {
-  let tracked: Tracked | null = null;
-  let recordingTab: number | null = null;
+  type Capture = { phase: "idle" } | { phase: "recording"; tabId: number } | { phase: "tracking"; task: Tracked };
+  let capture: Capture = { phase: "idle" };
+  const trackedTask = () => capture.phase === "tracking" ? capture.task : null;
 
   const show = (tabId: number, capsule: PttCapsule | null) => {
     void chrome.tabs.sendMessage(tabId, { type: PTT_CAPSULE, capsule }).catch(() => {  });
@@ -96,7 +97,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
       if (next) start(t, next);
       const capsule = current(t);
 
-      if (tracked === t && capsule) show(t.tabId, capsule);
+      if (trackedTask() === t && capsule) show(t.tabId, capsule);
     });
   };
 
@@ -128,7 +129,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
   };
 
   const settle = (view: TaskView) => {
-    const t = tracked;
+    const t = trackedTask();
 
     if (!t) return;
 
@@ -146,7 +147,7 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
   };
 
   const onView = (view: TaskView) => {
-    const t = tracked;
+    const t = trackedTask();
 
     if (!t || view.conversationId !== t.conversationId) return;
     clearTimeout(t.settle);
@@ -168,28 +169,29 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
   };
 
   const hideOtherTab = (nextTabId: number) => {
+    const tracked = trackedTask();
     if (tracked && tracked.tabId !== nextTabId) {
       clearTimeout(tracked.settle);
       show(tracked.tabId, null);
     }
-    if (recordingTab !== null && recordingTab !== nextTabId) show(recordingTab, null);
+    if (capture.phase === "recording" && capture.tabId !== nextTabId) show(capture.tabId, null);
   };
 
   return {
-    tabId: () => tracked?.tabId ?? recordingTab,
+    tabId: () => capture.phase === "recording" ? capture.tabId : trackedTask()?.tabId ?? null,
     recording(tabId: number) {
       voice.hush();
       hideOtherTab(tabId);
 
-      if (tracked) clearTimeout(tracked.settle);
-      tracked = null; recordingTab = tabId; onChange();
+      clearTimeout(trackedTask()?.settle);
+      capture = { phase: "recording", tabId }; onChange();
     },
-    level(level: number) { if (recordingTab !== null) void chrome.tabs.sendMessage(recordingTab, { type: PTT_LEVEL, level }).catch(() => {}); },
+    level(level: number) { if (capture.phase === "recording") void chrome.tabs.sendMessage(capture.tabId, { type: PTT_LEVEL, level }).catch(() => {}); },
     handedOff(tabId: number, conversationId: string, heard: string, timingId?: string) {
       hideOtherTab(tabId);
-      recordingTab = null;
+      clearTimeout(trackedTask()?.settle);
       const t: Tracked = { tabId, conversationId, heard, sawRun: false, result: null, card: null, utterance: 0, queue: [], ack: ackFor(heard), marked: new Set(), ...timingId ? { timingId } : {} };
-      tracked = t;
+      capture = { phase: "tracking", task: t };
       t.last = { phase: 'doing', heard, step: null, ack: t.ack };
       if (t.ack) start(t, t.ack, true);
       show(tabId, current(t)!);
@@ -197,27 +199,29 @@ export function installPttCapsule(onChange: () => void, voice: PttVoice, timing:
     },
     failed(tabId: number, reason: string, heard?: string) {
       hideOtherTab(tabId);
-      recordingTab = null; tracked = null;
+      clearTimeout(trackedTask()?.settle);
+      capture = { phase: "idle" };
       show(tabId, heard ? { phase: 'failed', reason, heard } : { phase: 'failed', reason });
       onChange();
     },
     closed(tabId: number) {
-      if (tracked?.tabId === tabId) { clearTimeout(tracked.settle); tracked = null; voice.hush(); }
+      if (capture.phase === "tracking" && capture.task.tabId === tabId) { clearTimeout(capture.task.settle); capture = { phase: "idle" }; voice.hush(); }
 
-      if (recordingTab === tabId) recordingTab = null;
+      if (capture.phase === "recording" && capture.tabId === tabId) capture = { phase: "idle" };
       onChange();
     },
     dismiss(tabId: number) {
-      if (recordingTab === tabId) recordingTab = null;
+      if (capture.phase === "recording" && capture.tabId === tabId) capture = { phase: "idle" };
       show(tabId, null);
       onChange();
     },
     hush() { voice.hush(); },
-    conversationId: () => tracked?.conversationId ?? null,
-    heard: () => tracked?.heard ?? null,
+    conversationId: () => trackedTask()?.conversationId ?? null,
+    heard: () => trackedTask()?.heard ?? null,
     server(msg: ServerMessage) {
       if (msg.type === 'task_view') onView(msg.view);
 
+      const tracked = trackedTask();
       if (msg.type === 'agent_event' && tracked && msg.conversationId === tracked.conversationId && msg.event.kind === 'user_delivery') {
         tracked.result = answerSpeech(msg.event.delivery.text);
         const card = cardPreview(msg.event.delivery.text);

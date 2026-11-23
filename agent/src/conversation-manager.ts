@@ -301,12 +301,12 @@ export class ConversationManager {
   isVoiceTask(origin:string,target:string){const job=this.taskQueue.get(target);
 
 return !!job&&job.request.originConversationId===origin&&job.receipt.runId===this.getTaskProgress(target)?.runId;}
-  private queueClosed=false;
-  private connected=true;
+  private lifecycle: "connected" | "disconnected" | "disposed" = "connected";
+  private get connected(): boolean { return this.lifecycle === "connected"; }
   reconnect(): void {
-    this.connected = true;
+    if (this.lifecycle !== "disposed") this.lifecycle = "connected";
   }
-  private pumpTasks(){if(!this.queueClosed&&this.connected)void this.taskQueue.pump().catch(()=>this.emit({type:'agent_event',conversationId:DEFAULT_CONVERSATION_ID,event:{kind:'error',message:'待办调度未能保存状态，请核对任务记录；不会自动重做。'}}));}
+  private pumpTasks(){if(this.connected)void this.taskQueue.pump().catch(()=>this.emit({type:'agent_event',conversationId:DEFAULT_CONVERSATION_ID,event:{kind:'error',message:'待办调度未能保存状态，请核对任务记录；不会自动重做。'}}));}
   private runningTasks(){return new Set([...this.pendingStarts,...[...this.entries.values()].flatMap(e => e.runtime.session.isStreaming()||this.getTaskProgress(e.summary.id)?.state==='running' ? [e.summary.id] : [])]).size;}
   readonly controls:TaskControlBroker;
   constructor(
@@ -317,17 +317,17 @@ return !!job&&job.request.originConversationId===origin&&job.receipt.runId===thi
     readonly dispatcher = new TaskDispatcher(),
   ) {this.inputDispatcher=new TaskDispatcher(dispatcher.store);this.controls=new TaskControlBroker(emit);this.voicePlans=new VoicePlanStore(dispatcher.store.directory?join(dispatcher.store.directory,"voice-plans"):undefined);
     this.taskQueue=new TaskQueue({directory:dispatcher.store.directory?join(dispatcher.store.directory,'requirements'):undefined,persist:dispatcher.store.directory?undefined:store?.taskQueue,maxRunning:2,maxWaiting:8,
-      enabled:()=>this.connected&&!this.queueClosed,
+      enabled:()=>this.connected,
       running:()=>this.runningTasks(),
       blocked:request=>request.context?.tabId!==undefined&&[...this.taskPages].some(([id,tab])=>tab===request.context!.tabId&&(this.pendingStarts.has(id)||['running','paused'].includes(this.getTaskProgress(id)?.state??''))),
       execute:async request=>{
-        if(this.queueClosed||!this.connected)throw new TaskActionRejected('连接已关闭，任务未启动。');
+        if(!this.connected)throw new TaskActionRejected('连接已关闭，任务未启动。');
         this.pendingStarts.add(request.conversationId);
 
         try{
           const entry=await this.create(request.conversationId,request.text?.slice(0,36)||'独立任务');
 
-          if(this.queueClosed){entry.runtime.dispose();throw new TaskActionRejected('连接已关闭，任务未启动。');}
+          if(this.lifecycle === "disposed"){entry.runtime.dispose();throw new TaskActionRejected('连接已关闭，任务未启动。');}
           if (this.taskQueue.get(request.conversationId)?.state !== 'starting') throw new TaskActionRejected('任务已取消或暂停，没有启动。');
           const earlier=request.originConversationId?this.getTaskProgress(request.originConversationId)?.conversationContext?.recentTurns:undefined;
 
@@ -388,14 +388,13 @@ return snapshot?{...snapshot,controlVersion:this.controlVersions.get(id)??0}:nul
 
   private readonly lastTaskViews = new Map<string, string>();
   private readonly taskViewQueued = new Set<string>();
-  private taskViewDisposed = false;
   private queueTaskView(conversationId: string): void {
-    if (this.taskViewDisposed || this.taskViewQueued.has(conversationId)) return;
+    if (this.lifecycle === "disposed" || this.taskViewQueued.has(conversationId)) return;
     this.taskViewQueued.add(conversationId);
     queueMicrotask(() => {
       this.taskViewQueued.delete(conversationId);
 
-      if (this.taskViewDisposed) return;
+      if (this.lifecycle === "disposed") return;
       this.emitTaskView(conversationId);
     });
   }
@@ -1822,7 +1821,7 @@ return receipt;
     }
 
     const queued = this.taskQueue.get(request.conversationId);
-    if (queued && queued.state !== 'starting' || !stillCurrent() || this.queueClosed) {
+    if (queued && queued.state !== 'starting' || !stillCurrent() || this.lifecycle === "disposed") {
       targetProgress.abort();
       await entry.runtime.session.persistTaskResults?.(targetProgress.snapshot());
       await this.syncTask(request.conversationId, false, targetProgress.snapshot());
@@ -2140,7 +2139,7 @@ return receipt;
       if (savedTask) this.controlVersions.set(id,Math.max(this.controlVersions.get(id) ?? 0,savedTask.controlVersion));
       restoredInterrupted = reconcileCancelledRestore(savedTask?.state, progress, summary, snapshot => runtime.session.persistTaskResults?.(snapshot), restoredInterrupted);
       const observer = new TaskContinuationObserver({
-        rpc: runtime.rpc, enabled: () => this.continuationEnabled() && this.connected && !this.queueClosed,
+        rpc: runtime.rpc, enabled: () => this.continuationEnabled() && this.connected,
         snapshot: () => progress.snapshot(), update: value => progress.setContinuation(value),
         save: () => this.saveContinuation(id), changed: () => {
           this.queueTaskView(id);
@@ -2789,7 +2788,7 @@ return;
   }
 
   disconnect(): void {
-    this.connected=false;
+    if (this.lifecycle !== "disposed") this.lifecycle = "disconnected";
     this.controls.disconnect();
 
     try{this.taskQueue.suspendPending();}catch{this.emit({type:'agent_event',event:{kind:'error',message:'待办暂停状态未能保存；连接恢复后请核对，不会自动执行。'}});}
@@ -2817,7 +2816,7 @@ return;
       }
     }
   }
-  dispose(): void { this.queueClosed=true;this.taskViewDisposed=true;this.taskViewQueued.clear();this.controls.disconnect();
+  dispose(): void { this.lifecycle="disposed";this.taskViewQueued.clear();this.controls.disconnect();
     for (const observer of this.observers.values()) observer.dispose();
 
 for (const { runtime } of this.entries.values()) runtime.dispose(); }

@@ -1,3 +1,4 @@
+import { commitVoiceInput, receiveVoiceContext, type VoiceTurnInput as Input } from './voice-turn.js';
 import { realtimeBrowserError, type ExecuteRealtimeBrowserTool } from './realtime-browser-tools.js';
 import { aboutTask, progressSpeech, taskName } from './voice-receipt.js';
 import { randomUUID } from 'node:crypto';
@@ -31,14 +32,6 @@ export type RealtimeVoiceDependencies = {
   createConnection?: (options: ConstructorParameters<typeof RealtimeVoiceConnection>[0]) => RealtimeVoiceConnection;
 };
 
-type Input = {
-  turn: number;
-  snapshot: TaskProgressSnapshot | null;
-  targets?: ReturnType<NonNullable<RealtimeVoiceDependencies['getTargets']>>;
-  input?: VoiceInputContext;
-  error?: string;
-  ready: boolean;
-};
 
 export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' | 'facts' | 'hostNote'>, owner: TaskProgressSnapshot | null | undefined, currentConversationId: string | undefined): string {
   const remaining = delivery.facts ? delivery.facts.remaining.length + (delivery.facts.omittedRemaining ?? 0) : 0;
@@ -53,10 +46,10 @@ export function spokenDeliveryText(delivery: Pick<UserDelivery, 'kind' | 'text' 
 
 export class RealtimeVoiceSession {
   private connection: RealtimeVoiceConnection | null = null;
-  private closed = false;
-  private ready = false;
+  private phase: 'idle' | 'connecting' | 'ready' | 'closed' = 'idle';
+  private get closed(): boolean { return this.phase === 'closed'; }
   private turn = 1;
-  private input: Input = { turn: 1, snapshot: null, ready: false };
+  private input: Input = { turn: 1, snapshot: null, context: { phase: 'pending' } };
   private readonly inputHistory = new Map<number, Input>();
   private mutedEmit = false;
   private seq = 0;
@@ -67,10 +60,11 @@ export class RealtimeVoiceSession {
   constructor(private readonly deps: RealtimeVoiceDependencies) {
   }
   start(key: string): void {
-    if (this.closed || this.connection) {
+    if (this.phase !== 'idle') {
       return;
     }
 
+    this.phase = 'connecting';
     this.emit({ kind: 'state', state: 'connecting', detail: '正在连接语音服务' });
     const create = this.deps.createConnection ?? (o => new RealtimeVoiceConnection(o));
     this.connection = create({
@@ -171,7 +165,7 @@ export class RealtimeVoiceSession {
       const input = this.inputHistory.get(seq + 1);
       const context = input?.input?.context;
 
-      return input?.ready && !input.error && context?.tabId === current.tabId && context.url === current.url && input.snapshot?.runId === origin.snapshot?.runId && input.snapshot?.controlVersion === origin.snapshot?.controlVersion;
+      return input?.context.phase === 'ready' && context?.tabId === current.tabId && context.url === current.url && input.snapshot?.runId === origin.snapshot?.runId && input.snapshot?.controlVersion === origin.snapshot?.controlVersion;
     })) {
       throw new Error('未执行的前后两段来自不同页面或任务状态，不能拼接操作；请明确当前完整要求。');
     }
@@ -229,12 +223,12 @@ export class RealtimeVoiceSession {
   private async waitForInput(origin: Input): Promise<void> {
     const end = Date.now() + 5000;
 
-    while (!origin.ready && !this.closed && this.input === origin && Date.now() < end) {
+    while (origin.context.phase === 'pending' && !this.closed && this.input === origin && Date.now() < end) {
       await new Promise(r => setTimeout(r, 20));
     }
 
-    if (this.closed || this.input !== origin || !origin.ready || origin.error) {
-      throw new Error(origin.error ?? '页面资料没有及时到达，未执行这句话。');
+    if (this.closed || this.input !== origin || origin.context.phase !== 'ready') {
+      throw new Error(origin.context.phase === 'failed' ? origin.context.error : '页面资料没有及时到达，未执行这句话。');
     }
   }
   command(command: VoiceCommand): void {
@@ -258,7 +252,7 @@ export class RealtimeVoiceSession {
       case 'interrupt':
         if (this.deps.diagnosticMode) {
           this.turn = command.turn;
-          this.input = { turn: this.turn, snapshot: null, ready: true };
+          this.input = { turn: this.turn, snapshot: null, context: { phase: 'ready' } };
         }
 
         this.connection?.handle({ type: 'stop_speech' });
@@ -280,8 +274,7 @@ export class RealtimeVoiceSession {
           return;
         }
 
-        this.input.input = command.input;
-        this.input.ready = !command.contextPending;
+        commitVoiceInput(this.input, command.input, command.contextPending);
 
         return;
       case 'input_context':
@@ -289,9 +282,7 @@ export class RealtimeVoiceSession {
           return;
         }
 
-        this.input.input = command.input;
-        this.input.error = command.error;
-        this.input.ready = true;
+        receiveVoiceContext(this.input, command.input, command.error);
 
         return;
       case 'playback_done': {
@@ -323,7 +314,7 @@ export class RealtimeVoiceSession {
 
     switch (event.type) {
       case 'ready':
-        this.ready = true;
+        this.phase = 'ready';
         const ready: Extract<VoiceEvent, {kind:'state'}> = { kind: 'state', state: 'ready', detail: '已连接，可以说了' };
 
         if (!this.deps.diagnosticMode) ready.inputMode = 'server_vad';
@@ -335,7 +326,7 @@ export class RealtimeVoiceSession {
 
         return;
       case 'status':
-        if (this.ready) {
+        if (this.phase === 'ready') {
           this.emit({ kind: 'state', state: event.phase === 'idle' ? 'ready' : 'answering', detail: String(event.text ?? '') });
         }
 
@@ -346,7 +337,7 @@ export class RealtimeVoiceSession {
         }
 
         this.turn++;
-        this.input = { turn: this.turn, snapshot: this.deps.getSnapshot(), targets: this.deps.getTargets?.(), ready: false };
+        this.input = { turn: this.turn, snapshot: this.deps.getSnapshot(), targets: this.deps.getTargets?.(), context: { phase: 'pending' } };
         this.inputHistory.set(this.turn, this.input);
 
         for (const turn of this.inputHistory.keys()) {
@@ -429,8 +420,7 @@ export class RealtimeVoiceSession {
       }
 
       case 'closed':
-        this.closed = true;
-        this.ready = false;
+        this.phase = 'closed';
         this.emit({ kind: 'state', state: 'closed' });
 
         return;
@@ -477,8 +467,7 @@ export class RealtimeVoiceSession {
       return;
     }
 
-    this.closed = true;
-    this.ready = false;
+    this.phase = 'closed';
     this.mutedEmit = !emit;
     this.connection?.close();
 

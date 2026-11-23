@@ -175,8 +175,10 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   const call = options.call;
   options = { ...options, call: (name, params, stepId, origin) => call(name, params, stepId, origin, budget.deadline) };
   let cpuDeadline = Date.now() + 100;
-  let stopped = "";
-  let closed = false;
+  type Lifecycle = { phase: "running" } | { phase: "stopped"; error: Error } | { phase: "closed"; error?: Error };
+  let lifecycle: Lifecycle = { phase: "running" };
+  const isClosed = () => lifecycle.phase === "closed";
+  const failure = () => lifecycle.phase === "running" ? undefined : lifecycle.error;
   let steps = 0;
   let chain = Promise.resolve();
   let program: QuickJSHandle | undefined;
@@ -184,16 +186,10 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
   const images: Array<{ type: "image"; data: string; mimeType: string }> = [];
   const imageSources: Array<{ imageIndex: number; tabId?: number; url?: string; width?: number; height?: number }> = [];
   const trail: ProgramStep[] = [];
-  let stoppedBy: Error | undefined;
-
-  const stop = (reason: string | Error) => {
-    if (!stopped) {
-      stopped = message(reason);
-
-      if (reason instanceof Error) stoppedBy = reason;
-    }
-
-    return stoppedBy ?? new Error(stopped);
+  const stop = (reason: string | Error): Error => {
+    const error = failure() ?? (reason instanceof Error ? reason : new Error(reason));
+    lifecycle = { phase: lifecycle.phase === "closed" ? "closed" : "stopped", error };
+    return error;
   };
 
   const guard = () => {
@@ -201,7 +197,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
     if (budget.expired()) throw stop(budget.waitBudgetUsed() ? "Browser program waited 10 minutes and the page still has not finished; no further actions dispatched. Do not wait again the same way: tell the user what the page shows now or change method" : "Browser program timed out; no further actions dispatched");
 
-    if (stopped || closed) throw stop(stopped || "Browser program already ended");
+    if (lifecycle.phase !== "running") throw stop("Browser program already ended");
   };
 
   vm.runtime.setInterruptHandler(() => {
@@ -211,7 +207,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
 
     if (budget.expired()) stop("Browser program timed out");
 
-    return Boolean(stopped || closed);
+    return lifecycle.phase !== "running";
   });
   const emit = (step: ProgramStep) => {
     if (step.phase === "end") trail.push(step);
@@ -698,7 +694,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     const deferred = vm.newPromise();
     pending.add(deferred);
     chain = chain.then(async () => {
-      if (closed || stopped || options.signal?.aborted) return;
+      if (lifecycle.phase !== "running" || options.signal?.aborted) return;
       const id = `${options.id ?? "program"}/${++steps}`;
       const stepName = RPC_ALIASES[name] ?? (name === "waitFor" || name === "waitForElement" ? "wait_for" : name);
       const stepParams = name === "saveFile" ? { filename: params.filename, chars: typeof params.content === "string" ? params.content.length : null } : params;
@@ -783,7 +779,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
         stop(error instanceof ProgramAssertError ? error : text);
         emit({ ...step, phase: "end", result: actualResult, error: text, elapsedMs: Date.now() - started });
 
-        if (!closed) {
+        if (!isClosed()) {
           const handle = vm.newError(`${step.name}: ${text}`);
           deferred.reject(handle);
           handle.dispose();
@@ -825,7 +821,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
     if (evaluated.error) {
       const error = vm.dump(evaluated.error);
       evaluated.error.dispose();
-      throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error, options.code, FACADE) : String(error));
+      throw failure() ?? new Error(error.message ? explainProgramError(error, options.code, FACADE) : String(error));
     }
 
     program = evaluated.value;
@@ -838,7 +834,7 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (jobs.error) {
         const error = vm.dump(jobs.error);
         jobs.error.dispose();
-        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error, options.code, FACADE) : String(error));
+        throw failure() ?? new Error(error.message ? explainProgramError(error, options.code, FACADE) : String(error));
       }
 
       const state = vm.getPromiseState(program);
@@ -857,13 +853,13 @@ export async function runBrowserProgram(options: ProgramOptions): Promise<{
       if (state.type === "rejected") {
         const error = vm.dump(state.error);
         state.error.dispose();
-        throw stopped ? stop(stopped) : new Error(error.message ? explainProgramError(error, options.code, FACADE) : String(error));
+        throw failure() ?? new Error(error.message ? explainProgramError(error, options.code, FACADE) : String(error));
       }
 
       await pause(10);
     }
   } finally {
-    closed = true;
+    lifecycle = { phase: "closed", error: failure() };
 
     try { await chain; }
     finally {

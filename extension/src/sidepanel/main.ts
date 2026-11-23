@@ -117,7 +117,9 @@ const answerSources = new WeakMap<HTMLElement, Promise<CitationContext | null>>(
 
 let currentCitationSource: Promise<CitationContext | null> | null = null;
 
-let replayingHistory = false;
+let historyMode: "live" | "applying_updates" | "replaying" = "live";
+const isReplayingHistory = () => historyMode === "replaying";
+const isApplyingHistory = () => historyMode !== "live";
 
 let citationRequestPending = false;
 
@@ -207,13 +209,13 @@ function attachAnswerActions(answer: HTMLElement, delivered?: UserDelivery): voi
   memoryInline.adoptUsedLine(answer);
   placeTaskCardAfter(answer);
   syncAnswerTime(answer);
-  if (!replayingHistory && answer === fillUndoAnswer()) adoptFillUndo(answer);
-  if (!replayingHistory && planCardRun) paintPlanCard();
+  if (!isReplayingHistory() && answer === fillUndoAnswer()) adoptFillUndo(answer);
+  if (!isReplayingHistory() && planCardRun) paintPlanCard();
   attachShorten(answer);
   scrollToEnd();
 
-  if (delivered && !replayingHistory) void markPageRefs(answer);
-  if (delivered && !replayingHistory) void offerWorkingTab(answer, selectedConversationId, delivered.sources ?? delivered.facts?.sources ?? []);
+  if (delivered && !isReplayingHistory()) void markPageRefs(answer);
+  if (delivered && !isReplayingHistory()) void offerWorkingTab(answer, selectedConversationId, delivered.sources ?? delivered.facts?.sources ?? []);
   const source = answerSources.get(answer);
 
   if (source) void source.then(context => attachSourceCitations(answer, context));
@@ -422,7 +424,7 @@ const statusText = document.getElementById("status-text")!;
 
 const messagesEl = document.getElementById("messages")!;
 
-const chapters = mountChapters(messagesEl, document.getElementById("messages-frame")!, () => { pinned = false; }, () => replayingHistory);
+const chapters = mountChapters(messagesEl, document.getElementById("messages-frame")!, () => { pinned = false; }, isReplayingHistory);
 
 const composerEl = document.getElementById("composer") as HTMLElement;
 
@@ -583,16 +585,31 @@ if (popoutConversation) {
   try { if (isFloat || !sessionStorage.getItem(PANEL_CONVERSATION_KEY)) sessionStorage.setItem(PANEL_CONVERSATION_KEY, popoutConversation); } catch {  }
 }
 
-let conversationReady = false;
+type PanelAvailability = "selecting_offline" | "selecting_connected" | "ready" | "selected_offline";
+let availability: PanelAvailability = "selecting_offline";
+const hasConversation = () => availability === "ready" || availability === "selected_offline";
+const hasTransport = () => availability === "ready" || availability === "selecting_connected";
 
-let transportConnected = false;
+function setTransportConnected(connected: boolean): void {
+  if (hasConversation()) availability = connected ? "ready" : "selected_offline";
+  else availability = connected ? "selecting_connected" : "selecting_offline";
+}
 
 const completedConversations = new Set<string>();
 
-let conversationRequest: string | null = null;
+type ConversationCreation = { phase: "idle" } | {
+  phase: "creating" | "send_when_created";
+  id: string;
+  previousDraft: string | null;
+};
+let creation: ConversationCreation = { phase: "idle" };
 
-let draftAtNewRequest: string | null = null;
-let sendAfterCreate = false;
+function takeConversationCreation(id: string) {
+  if (creation.phase === "idle" || creation.id !== id) return null;
+  const completed = creation;
+  creation = { phase: "idle" };
+  return completed;
+}
 
 let bootFreshSession = true;
 
@@ -928,11 +945,11 @@ function renderConversations(): void {
   currentTitle.textContent = current?.title || "新会话";
   conversationSwitcher.replaceChildren(currentTitle);
   conversationSwitcher.title = current?.title || "切换会话";
-  conversationNew.disabled = !conversationReady || !transportConnected || conversationRequest !== null;
-  conversationNew.replaceChildren(icon(conversationRequest ? LoaderCircle : SquarePen));
-  conversationNew.setAttribute("aria-label", conversationRequest ? "正在新建会话" : "新会话");
-  conversationNew.setAttribute("aria-busy", String(!!conversationRequest));
-  conversationNew.title = conversationRequest ? "正在新建会话" : "新会话";
+  conversationNew.disabled = availability !== "ready" || creation.phase !== "idle";
+  conversationNew.replaceChildren(icon(creation.phase !== "idle" ? LoaderCircle : SquarePen));
+  conversationNew.setAttribute("aria-label", creation.phase !== "idle" ? "正在新建会话" : "新会话");
+  conversationNew.setAttribute("aria-busy", String(creation.phase !== "idle"));
+  conversationNew.title = creation.phase !== "idle" ? "正在新建会话" : "新会话";
   const now = Date.now();
   const list = [...conversations.values()].sort((a, b) => {
     const waitA = conversationOutcome(a, { completed: completedConversations.has(a.id), task: latestTaskFor(a.id) }).kind === "waiting";
@@ -1111,8 +1128,6 @@ function resetConversationRender(): void {
   currentLeadDraft = null;
   currentLeadDraftDetails = null;
   leadAnswer = null;
-  leadAnswerText = "";
-  leadAnswerTurnClosed = false;
   leadToolUsed = false;
   goalNote = null;
   goalStep = null;
@@ -1132,24 +1147,24 @@ function resetConversationRender(): void {
   setSessionState(LEAD_SESSION_ID, "idle");
 }
 
-function selectConversation(id: string, notify = true): void {
+function selectConversation(id: string, notify = true, previousDraft: string | null = creation.phase === "idle" ? null : creation.previousDraft): void {
   targetedTask = null;
-  const preserveInitialDraft = !conversationReady && (inputEl.value.length > 0 || attachments.getAttachments().length > 0 || pendingAsk !== null);
+  const preserveInitialDraft = !hasConversation() && (inputEl.value.length > 0 || attachments.getAttachments().length > 0 || pendingAsk !== null);
 
   if (id !== selectedConversationId) { cancelPendingKeySaves(); voiceUI.stop(); dictationUI?.cancel(); memoryInline.asksUnanswered("switched_conversation"); }
   completedConversations.delete(id);
   conversationMenu.hidden = true;
   conversationSwitcher.setAttribute("aria-expanded", "false");
 
-  if (id !== selectedConversationId || !conversationReady) {
-    const typed = draftAtNewRequest !== null && inputEl.value !== draftAtNewRequest ? inputEl.value : null;
+  if (id !== selectedConversationId || !hasConversation()) {
+    const typed = previousDraft !== null && inputEl.value !== previousDraft ? inputEl.value : null;
 
-    if (typed !== null) inputEl.value = draftAtNewRequest!;
-    draftAtNewRequest = null;
+    if (typed !== null && previousDraft !== null) inputEl.value = previousDraft;
+    if (creation.phase !== "idle") creation.previousDraft = null;
 
-    if (conversationReady) saveDraft();
+    if (hasConversation()) saveDraft();
     selectedConversationId = id;
-    conversationReady = true;
+    availability = hasTransport() ? "ready" : "selected_offline";
     takeAutoRetryLock(id);
 
     try { sessionStorage.setItem(PANEL_CONVERSATION_KEY, id); } catch {  }
@@ -1225,7 +1240,7 @@ function armBootDecisionTimeout(): void {
 
     if (!bootFreshSession) return;
 
-    if (!transportConnected) { armBootDecisionTimeout();
+    if (!hasTransport()) { armBootDecisionTimeout();
 
  return; }
 
@@ -1238,16 +1253,15 @@ function armBootDecisionTimeout(): void {
 }
 
 function requestNewConversation(): boolean {
-  if (conversationRequest) return true;
+  if (creation.phase !== "idle") return true;
 
-  if (conversationReady) { saveDraft(); draftAtNewRequest = inputEl.value; }
-
-  conversationRequest = crypto.randomUUID();
+  if (hasConversation()) saveDraft();
+  const id = crypto.randomUUID();
+  creation = { phase: "creating", id, previousDraft: hasConversation() ? inputEl.value : null };
   renderConversations();
 
-  if (!send({ type: "conversation_create", requestId: conversationRequest })) {
-    conversationRequest = null;
-    draftAtNewRequest = null;
+  if (!send({ type: "conversation_create", requestId: id })) {
+    creation = { phase: "idle" };
     renderConversations();
 
     return false;
@@ -1257,9 +1271,8 @@ function requestNewConversation(): boolean {
   bootCreateTimer = setTimeout(() => {
     bootCreateTimer = null;
 
-    if (conversationReady || conversationRequest === null) return;
-    conversationRequest = null;
-    sendAfterCreate = false;
+    if (hasConversation() || creation.phase === "idle" || creation.id !== id) return;
+    creation = { phase: "idle" };
     renderConversations();
 
     if (bootInheritedId) selectConversation(bootInheritedId, false);
@@ -1281,7 +1294,7 @@ conversationSwitcher.onclick = () => {
 };
 
 conversationNew.onclick = () => {
-  if (!conversationReady || conversationRequest) return;
+  if (!hasConversation() || creation.phase !== "idle") return;
   requestNewConversation();
 };
 
@@ -1307,7 +1320,7 @@ const memoryInline = mountMemoryInline({
   scrollToEnd: () => scrollToEnd(),
   send: (msg) => send(msg),
   conversationId: () => selectedConversationId,
-  replaying: () => replayingHistory,
+  replaying: isReplayingHistory,
   drawer: () => memoryDrawerCtrl,
 });
 
@@ -1434,7 +1447,7 @@ if (isFloat) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !(FLOAT_CARD_KEY in changes)) return;
     const next = readFloatCard(changes[FLOAT_CARD_KEY]!.newValue);
-    if (next && conversationReady && next.conversation !== selectedConversationId) selectConversation(next.conversation);
+    if (next && hasConversation() && next.conversation !== selectedConversationId) selectConversation(next.conversation);
   });
 }
 
@@ -1658,8 +1671,6 @@ let lastDisconnectDetail = "";
 
 let running = false;
 
-let applyingHistory = false;
-
 let historyPrimed = false;
 
 let lastUserHasPage = false;
@@ -1756,7 +1767,7 @@ function paintAction(el: HTMLElement, text: string): void {
 
 function setRunTitle(run: RunHost, text: string, now = false, kind?: IconKind): void {
   clearTimeout(run.titleTimer);
-  const wait = now || applyingHistory ? 0 : run.titleAt + RUN_TITLE_HOLD_MS - Date.now();
+  const wait = now || isApplyingHistory() ? 0 : run.titleAt + RUN_TITLE_HOLD_MS - Date.now();
 
   const paint = () => {
     paintAction(run.titleEl, text);
@@ -1785,11 +1796,7 @@ let currentLeadDraft: HTMLElement | null = null;
 
 let currentLeadDraftDetails: HTMLDetailsElement | null = null;
 
-let leadAnswer: HTMLElement | null = null;
-
-let leadAnswerText = "";
-
-let leadAnswerTurnClosed = false;
+let leadAnswer: { phase: "streaming" | "closed"; el: HTMLElement; text: string } | null = null;
 
 let leadToolUsed = false;
 
@@ -2074,7 +2081,7 @@ new MutationObserver(() => {
   syncScrollFade();
   followLive(currentRun?.body ?? null, false);
 
-  if (!pinned && !replayingHistory && !toBottomBtn.hidden && !toBottomBtn.classList.contains("has-new") && heightWhenLeft > 0 && messagesEl.scrollHeight > heightWhenLeft + 8) markToBottomNew(true);
+  if (!pinned && !isReplayingHistory() && !toBottomBtn.hidden && !toBottomBtn.classList.contains("has-new") && heightWhenLeft > 0 && messagesEl.scrollHeight > heightWhenLeft + 8) markToBottomNew(true);
 }).observe(messagesEl, { childList: true, subtree: true, characterData: true });
 
 function scrollToEnd(force = false): void {
@@ -2384,7 +2391,7 @@ function addMsg(cls: string, text: string): HTMLElement {
   const div = document.createElement("div");
   div.className = cls;
 
-  if (cls.split(/\s+/).includes("assistant") && currentCitationSource && !replayingHistory) answerSources.set(div, currentCitationSource);
+  if (cls.split(/\s+/).includes("assistant") && currentCitationSource && !isReplayingHistory()) answerSources.set(div, currentCitationSource);
   div.textContent = text;
   appendToMessages(div);
   scrollToEnd();
@@ -2499,7 +2506,7 @@ function ensureRun(): NonNullable<typeof currentRun> {
   iconBox.className = "run-icon";
   const orb = createOrb("thinking", ORB_BOX_STATUS, true);
 
-  if (!applyingHistory) orb.setRunning(true);
+  if (!isApplyingHistory()) orb.setRunning(true);
   const orbMark = document.createElement("span");
   orbMark.className = "run-orb-mark";
   orbMark.hidden = true;
@@ -2537,9 +2544,9 @@ function ensureRun(): NonNullable<typeof currentRun> {
   reveal.append(body);
   root.append(summary, reveal);
   root.addEventListener("toggle", () => followLive(body, false));
-  if (replayingHistory) appendToMessages(root);
+  if (isReplayingHistory()) appendToMessages(root);
   else messagesEl.appendChild(root);
-  const graph = mountLiveGraph({ history: () => applyingHistory });
+  const graph = mountLiveGraph({ history: isApplyingHistory });
   root.after(graph.el);
   const trail = document.createElement("div");
   trail.className = "run-trail";
@@ -2656,7 +2663,7 @@ function runningTool(run: RunHost) {
 }
 
 function refreshLiveStatus(run: RunHost): string {
-  if (run.root.hasAttribute("data-wait-user") || applyingHistory) return "";
+  if (run.root.hasAttribute("data-wait-user") || isApplyingHistory()) return "";
   const tool = runningTool(run);
   const from = Number.isFinite(run.thinkFrom) ? run.thinkFrom : tool && Number.isFinite(tool.start) ? tool.start : Number.NaN;
   const step = Number.isFinite(run.thinkFrom) ? "思考" : (tool?.chip.dataset.past || run.lastToolShort || "这一步");
@@ -2769,7 +2776,7 @@ function noteRunStarted(runId: string | null | undefined): void {
 }
 
 function applyTeamStatus(team: TeamView, runId: string | null | undefined): void {
-  const decision = acceptTeamStatus({ team: teamView, runId: teamRunId }, team, runId, applyingHistory);
+  const decision = acceptTeamStatus({ team: teamView, runId: teamRunId }, team, runId, isApplyingHistory());
 
   if (decision.accept) applyTeamRun(decision.state);
 }
@@ -2908,7 +2915,7 @@ function syncRunOrb(run: RunHost): void {
   if (mark && state !== "completed" && !run.root.classList.contains("done") && run.titleEl.textContent !== mark.label) setRunTitle(run, mark.label, true);
   const reading = run.readingTools.size > 0 && [...run.readingTools.values()].every(Boolean);
   run.orb.setState(state === "executing" && reading ? "reading" : state);
-  run.orb.setRunning(!applyingHistory && orbStateRuns(state));
+  run.orb.setRunning(!isApplyingHistory() && orbStateRuns(state));
 }
 
 function finishRun(): void {
@@ -3301,7 +3308,7 @@ function doneMark(run: RunHost): HTMLElement {
   svg.append(path);
   mark.append(svg);
 
-  if (!run.doneMarkShown && !replayingHistory) mark.classList.add("fresh");
+  if (!run.doneMarkShown && !isReplayingHistory()) mark.classList.add("fresh");
   run.doneMarkShown = true;
 
   return mark;
@@ -3372,7 +3379,7 @@ function stepsContainer(): HTMLElement {
 function closeBlocks(): void {
   if (currentAssistant) {
     const answer = currentAssistant;
-    revealText(answer, currentAssistantText, { render: renderMarkdown, live: !replayingHistory, final: true, onProgress: scrollToEnd, after: () => attachAnswerActions(answer) });
+    revealText(answer, currentAssistantText, { render: renderMarkdown, live: !isReplayingHistory(), final: true, onProgress: scrollToEnd, after: () => attachAnswerActions(answer) });
   }
 
   document.querySelector(".msg.assistant.streaming")?.classList.remove("streaming");
@@ -3383,8 +3390,8 @@ function closeBlocks(): void {
   closeLeadDraft();
 
   if (leadAnswer) {
-    leadAnswer.classList.remove("streaming");
-    leadAnswerTurnClosed = true;
+    leadAnswer.el.classList.remove("streaming");
+    leadAnswer.phase = "closed";
   }
 }
 
@@ -3411,7 +3418,7 @@ function quietRunForProse(): void {
   quietTimer = 0;
   const root = run.root;
 
-  if (applyingHistory || reducedMotion()) {
+  if (isApplyingHistory() || reducedMotion()) {
     root.classList.remove("run-quieting");
     root.hidden = true;
 
@@ -3438,29 +3445,22 @@ function quietRunForProse(): void {
 function appendLeadAnswer(delta: string): void {
   const run = ensureRun();
 
-  if (leadAnswer && leadAnswerTurnClosed) foldLeadAnswer();
+  if (leadAnswer?.phase === "closed") foldLeadAnswer();
 
   if (!leadAnswer) {
     quietRunForProse();
-    leadAnswer = addMsg("msg assistant markdown streaming", "");
-    leadAnswerText = "";
-    leadAnswerTurnClosed = false;
-    steerRibbon.decorate(leadAnswer, !replayingHistory);
+    leadAnswer = { phase: "streaming", el: addMsg("msg assistant markdown streaming", ""), text: "" };
+    steerRibbon.decorate(leadAnswer.el, !isReplayingHistory());
   }
 
-  leadAnswerText += delta;
-  revealText(leadAnswer, leadAnswerText, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });
+  leadAnswer.text += delta;
+  revealText(leadAnswer.el, leadAnswer.text, { render: renderMarkdown, live: !isReplayingHistory(), final: false, onProgress: scrollToEnd });
 }
 
 function foldLeadAnswer(): void {
-  const answer = leadAnswer;
-  const text = leadAnswerText;
-  const turnClosed = leadAnswerTurnClosed;
-
-  if (!answer) return;
+  if (!leadAnswer) return;
+  const { el: answer, text, phase } = leadAnswer;
   leadAnswer = null;
-  leadAnswerText = "";
-  leadAnswerTurnClosed = false;
   steerRibbon.undecorate(answer);
   answer.remove();
 
@@ -3468,18 +3468,16 @@ function foldLeadAnswer(): void {
   closeLeadDraft();
   appendLeadDelta(text);
 
-  if (turnClosed) closeLeadDraft();
+  if (phase === "closed") closeLeadDraft();
 }
 
-function keepOpeningLine(line: HTMLElement): void {
-  revealText(line, leadAnswerText, { render: renderMarkdown, live: !replayingHistory, final: true, onProgress: scrollToEnd });
+function keepOpeningLine(line: HTMLElement, text: string): void {
+  revealText(line, text, { render: renderMarkdown, live: !isReplayingHistory(), final: true, onProgress: scrollToEnd });
   line.classList.remove("streaming");
   line.classList.add("opening-line");
 
   if (currentRun) messagesEl.insertBefore(line, currentRun.root);
   leadAnswer = null;
-  leadAnswerText = "";
-  leadAnswerTurnClosed = false;
 }
 
 function adoptLeadAnswer(deliveryId: string, kind: string, runId: string | null | undefined): void {
@@ -3487,13 +3485,11 @@ function adoptLeadAnswer(deliveryId: string, kind: string, runId: string | null 
   const currentRunId = conversations.get(selectedConversationId)?.runId ?? null;
 
   if (runId && currentRunId && runId !== currentRunId) return;
-  leadAnswer.dataset.deliveryId = deliveryId;
-  leadAnswer.dataset.deliveryKind = kind;
-  leadAnswer.dataset.streaming = "true";
-  deliveredBubbles.set(deliveryId, leadAnswer);
+  leadAnswer.el.dataset.deliveryId = deliveryId;
+  leadAnswer.el.dataset.deliveryKind = kind;
+  leadAnswer.el.dataset.streaming = "true";
+  deliveredBubbles.set(deliveryId, leadAnswer.el);
   leadAnswer = null;
-  leadAnswerText = "";
-  leadAnswerTurnClosed = false;
 }
 
 function appendLeadDelta(delta: string): void {
@@ -3507,7 +3503,7 @@ function appendLeadDelta(delta: string): void {
     const summary = document.createElement("summary");
     const orb = createOrb("composing", ORB_BOX_THINKING);
 
-    if (!applyingHistory) orb.setRunning(true);
+    if (!isApplyingHistory()) orb.setRunning(true);
     orbByHost.set(details, orb);
     summary.appendChild(orb.el);
     const label = document.createElement("span");
@@ -3547,7 +3543,7 @@ function appendDelta(delta: string): void {
     currentAssistant = addMsg("msg assistant markdown streaming", "");
   }
   currentAssistantText += delta;
-  revealText(currentAssistant, currentAssistantText, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });
+  revealText(currentAssistant, currentAssistantText, { render: renderMarkdown, live: !isReplayingHistory(), final: false, onProgress: scrollToEnd });
 
   scrollToEnd();
 }
@@ -3719,7 +3715,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   if (ev.name === "learned_operation" && (ev.params.action === "save" || ev.params.action === "delete")) chip.dataset.skillWrite = "1";
   if (expandable) chip.setAttribute("aria-expanded", "false");
 
-  if (!applyingHistory) chip.classList.add("running");
+  if (!isApplyingHistory()) chip.classList.add("running");
   const dot = document.createElement("span");
   dot.className = `chip-dot ${chipState(false, false)}`;
   const iconBox = document.createElement("span");
@@ -3727,7 +3723,7 @@ function onToolStart(ev: { toolCallId: string; name: string; params: Record<stri
   setActionIcon(iconBox, kind);
   const chipOrb = createOrb("solving", ORB_BOX_CHIP);
 
-  if (!applyingHistory) chipOrb.setRunning(true);
+  if (!isApplyingHistory()) chipOrb.setRunning(true);
   const label = document.createElement("span");
   label.className = "chip-label";
   paintAction(label, actionCardLabel(ev.name, ev.params));
@@ -3799,7 +3795,7 @@ function onToolEnd(ev: { toolCallId: string; isError: boolean; pageTitle?: strin
   entry.chip.classList.remove("running");
   entry.orb.setRunning(false);
 
-  if (!applyingHistory) {
+  if (!isApplyingHistory()) {
     entry.dot.classList.add("settling");
     window.setTimeout(() => entry.dot.classList.remove("settling"), 500);
   }
@@ -3962,7 +3958,7 @@ function syncVoiceGuideStatus(waiting: boolean, guide?: { step: number; target?:
 function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string | null): void {
   if (sessionId && !isLeadSession(sessionId)) return;
 
-  if (!replayingHistory) observeForCue(ev);
+  if (!isReplayingHistory()) observeForCue(ev);
   noteFieldTarget(ev);
 
   const progressRun = currentRun ?? lastRun;
@@ -3971,7 +3967,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
 
   switch (ev.kind) {
     case "thinking_level":
-      if (!replayingHistory) modelMenu.thinking(ev);
+      if (!isReplayingHistory()) modelMenu.thinking(ev);
       break;
     case "memory":
       if (ev.action === "used") memoryInline.noteUsed(ev);
@@ -3993,7 +3989,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         if (answer === currentAssistant) currentAssistantText = text;
         revealText(answer, text, { render: renderMarkdown, live: false, final: true, after: () => attachAnswerActions(answer) });
       });
-      if (!replayingHistory) uiEvent("ui_fact_check", {
+      if (!isReplayingHistory()) uiEvent("ui_fact_check", {
         outcome: answer ? "applied" : "answer_missing",
         problems: ev.problems.length,
         documentVisible: !document.hidden,
@@ -4016,7 +4012,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       break;
     case "tool_start":
       if (leadDeliveryMode === "explicit") {
-        if (!leadToolUsed && leadAnswer && leadAnswerText.trim()) keepOpeningLine(leadAnswer);
+        if (!leadToolUsed && leadAnswer?.text.trim()) keepOpeningLine(leadAnswer.el, leadAnswer.text);
         else foldLeadAnswer();
         leadToolUsed = true;
       }
@@ -4175,7 +4171,7 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
       if(!bubble){target.dataset.deliveryId=s.id;target.dataset.deliveryKind=s.kind;deliveredBubbles.set(s.id,target);}
 
       target.dataset.streaming='true';
-      revealText(target, s.text, { render: renderMarkdown, live: !replayingHistory, final: false, onProgress: scrollToEnd });placeStartAcknowledgement(target, s.kind);scrollToEnd();break;
+      revealText(target, s.text, { render: renderMarkdown, live: !isReplayingHistory(), final: false, onProgress: scrollToEnd });placeStartAcknowledgement(target, s.kind);scrollToEnd();break;
     }
 
     case "turn_start":
@@ -4185,11 +4181,11 @@ function handleAgentEvent(ev: AgentUiEvent, sessionId?: string, runId?: string |
         if (currentRun) {
           currentRun.aside = ev.message;
           renderTrail(currentRun);
-        } else if (!applyingHistory) {
+        } else if (!isApplyingHistory()) {
           addMsg("msg notice", ev.message);
         }
       } else if (ev.progress) {
-        if (currentRun && !applyingHistory) setRunTitle(currentRun, ev.message);
+        if (currentRun && !isApplyingHistory()) setRunTitle(currentRun, ev.message);
       } else if(ev.plan){
         const key=`plan:${ev.plan.conversationId}:${ev.plan.id}`;
         const text=`语音计划 · 共${ev.plan.steps.length}步\n`+ev.plan.steps.map((s,i)=>`${i+1}. ${s.targetTitle??'目标会话'} · ${s.receipt?.message??(s.status==='pending'?'结果未知':'没做')}\n${s.text}`).join('\n');
@@ -4232,7 +4228,7 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
         receiptMessages.set(key, receipt);
 
         if (ev.receipt.needsModel && ev.receipt.text.trim()) {
-          if (!replayingHistory && lastSentPage?.requestId === ev.receipt.requestId) {
+          if (!isReplayingHistory() && lastSentPage?.requestId === ev.receipt.requestId) {
             const bubble = lastUserBubbleFor(ev.receipt.text);
             holdPendingMessage(receipt, bubble);
             resendAfterConnect.set(ev.receipt.conversationId, { text: ev.receipt.text, page: lastSentPage.page, card: receipt, bubble });
@@ -4246,12 +4242,12 @@ if(previous)previous.textContent=text;else receiptMessages.set(key,addMsg('msg n
     case "error": {
       const copy = describeModelError(ev.message);
 
-      if (copy) errorCards.show({ ...copy, ...(ev.modelConnection ? { modelConnection: ev.modelConnection } : {}) }, !replayingHistory);
+      if (copy) errorCards.show({ ...copy, ...(ev.modelConnection ? { modelConnection: ev.modelConnection } : {}) }, !isReplayingHistory());
       else if (!errorCards.recoveryFailed(plainError(ev.message, "重试没有成功。"))) {
         const plain = plainError(ev.message, "");
 
         if (plain) addMsg("msg error", plain);
-        else errorCards.show({ kind: "unknown", title: "这一步出错了", copy: "你的话还在，可以重试。", detail: ev.message }, !replayingHistory);
+        else errorCards.show({ kind: "unknown", title: "这一步出错了", copy: "你的话还在，可以重试。", detail: ev.message }, !isReplayingHistory());
       }
       break;
     }
@@ -4318,7 +4314,7 @@ function handleUserDelivery(delivery: UserDelivery): void {
   if (plan === 'update_text') {
     const answer = existing!;
     delete answer.dataset.streaming;
-    revealText(answer, delivery.text, { render: renderMarkdown, live: !replayingHistory, final: true, onProgress: scrollToEnd,
+    revealText(answer, delivery.text, { render: renderMarkdown, live: !isReplayingHistory(), final: true, onProgress: scrollToEnd,
       after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(answer, delivery); attachDeliverySources(answer, delivery); } } });
     existing!.dataset.deliveryKind = delivery.kind;
     placeStartAcknowledgement(existing!, delivery.kind);
@@ -4334,8 +4330,8 @@ function handleUserDelivery(delivery: UserDelivery): void {
   voiceUI.deliver?.(delivery);
 
   const bubble = addMsg("msg assistant markdown", "");
-  steerRibbon.decorate(bubble, !replayingHistory);
-  revealText(bubble, delivery.text, { render: renderMarkdown, live: !replayingHistory, final: true, onProgress: scrollToEnd,
+  steerRibbon.decorate(bubble, !isReplayingHistory());
+  revealText(bubble, delivery.text, { render: renderMarkdown, live: !isReplayingHistory(), final: true, onProgress: scrollToEnd,
     after: () => { if (delivery.kind === 'reply' || delivery.kind === 'finding') { attachAnswerActions(bubble, delivery); attachDeliverySources(bubble, delivery); } } });
   bubble.dataset.deliveryId = delivery.id;
   bubble.dataset.deliveryKind = delivery.kind;
@@ -4352,7 +4348,7 @@ function send(msg: ClientMessage): boolean {
 }
 
 function post(envelope: PanelToBg): boolean {
-  if (!port || !transportConnected) return false;
+  if (!port || !hasTransport()) return false;
 
   if (queuedSends.length || performance.now() - lastPortMessage > PORT_FRESH_MS) {
     queuedSends.push(envelope);
@@ -4550,7 +4546,7 @@ function adoptPlanResume(): void {
 }
 
 function queryTaskView(): void {
-  if (!conversationReady || !transportConnected) return;
+  if (availability !== "ready") return;
   send({ type: "task_view_query", requestId: crypto.randomUUID() });
 }
 
@@ -4717,9 +4713,9 @@ function handleServerMessage(raw: string): void {
       }
     }
 
-    if (msg.type === "conversation_created" && msg.requestId === conversationRequest) {
-      conversationRequest = null;
-      selectConversation(msg.conversation.id);
+    const completed = msg.type === "conversation_created" && takeConversationCreation(msg.requestId);
+    if (completed) {
+      selectConversation(msg.conversation.id, true, completed.previousDraft);
 
       if (pendingContinueDraft) {
         inputEl.value = pendingContinueDraft;
@@ -4729,7 +4725,7 @@ function handleServerMessage(raw: string): void {
         saveDraft();
       }
 
-      if (sendAfterCreate) { sendAfterCreate = false; sendInput(); }
+      if (completed.phase === "send_when_created") sendInput();
     }
 
     renderConversations();
@@ -4851,7 +4847,7 @@ function handleBgMessage(envelope: BgToPanel): void {
     for (const c of envelope.conversations) upsertConversation(c);
 
     if (bootFreshSession) resolveBootSession(envelope.selectedConversationId, envelope.conversations.length > 0);
-    else if (envelope.selectedConversationId !== selectedConversationId || !conversationReady) {
+    else if (envelope.selectedConversationId !== selectedConversationId || !hasConversation()) {
       selectConversation(envelope.selectedConversationId, false);
     }
 
@@ -4986,7 +4982,7 @@ function handleBgMessage(envelope: BgToPanel): void {
   }
 
   if (envelope.kind !== "conn") return;
-  transportConnected = envelope.state === "connected";
+  setTransportConnected(envelope.state === "connected");
   renderConversations();
 
   if (envelope.state === "connected") {
@@ -5007,7 +5003,7 @@ function handleBgMessage(envelope: BgToPanel): void {
       setTeamView(null);
     }
 
-    conversationRequest = null;
+    creation = { phase: "idle" };
     renderConversations();
     modelMenu.reset();
     setStatus("off", "未连接");
@@ -5024,7 +5020,7 @@ let lastHistorySeq = 0;
 
 let historyOccurredAt: number | undefined;
 
-function eventTime(): number { return historyEventTime(applyingHistory, historyOccurredAt); }
+function eventTime(): number { return historyEventTime(isApplyingHistory(), historyOccurredAt); }
 
 const userBubbles = new Map<number, HTMLElement>();
 
@@ -5127,9 +5123,8 @@ function handleDeliveryReceipt({ seq, ok, text, original, reason }: DeliveryRece
 }
 
 function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
-  replayingHistory = restoring;
+  historyMode = restoring ? "replaying" : "applying_updates";
   const fresh: PanelHistoryEntry[] = [];
-  applyingHistory = true;
 
   try {
     for (const entry of entries) {
@@ -5172,8 +5167,7 @@ function applyHistory(entries: PanelHistoryEntry[], restoring = false): void {
       lastHistorySeq = entry.seq;
     }
   } finally {
-    applyingHistory = false;
-    replayingHistory = false;
+    historyMode = "live";
     historyOccurredAt = undefined;
   }
 
@@ -5208,13 +5202,13 @@ function connect(): void {
     if (port !== p) return;
     port = null;
     pingSentAt = null;
-    transportConnected = false;
+    setTransportConnected(false);
     voiceUI.disconnect();
     scheduleReconnect();
   });
   const sync: Extract<PanelToBg, { kind: "sync" }> = { kind: "sync", afterSeq: lastHistorySeq };
 
-  if (conversationReady) sync.conversationId = selectedConversationId;
+  if (hasConversation()) sync.conversationId = selectedConversationId;
   else {
     const remembered = rememberedConversation();
 
@@ -5260,7 +5254,7 @@ function pingPort(): void {
 }
 
 function flushQueuedSends(): void {
-  if (!port || !transportConnected) return;
+  if (!port || !hasTransport()) return;
 
   for (const queued of queuedSends.splice(0)) {
     port.postMessage(queued);
@@ -5274,7 +5268,7 @@ function replaceDeadPort(): void {
   const dead = port;
   port = null;
   pingSentAt = null;
-  transportConnected = false;
+  setTransportConnected(false);
   voiceUI.disconnect();
 
   try {
@@ -5522,13 +5516,13 @@ function restoreLostSend(): void {
 let sendAfterRead: HTMLElement | null = null;
 
 function sendInput(quick?: string, quickPage?: PageContext): boolean {
-  if (!conversationReady) return false;
+  if (!hasConversation()) return false;
   if (!quick && dictationUI?.busy()) {
     addMsg("msg notice", "请先结束说话输入，等文字出现后再发送。按 Esc 可以取消。");
     return false;
   }
 
-  if (conversationRequest && !quick) { sendAfterCreate = true; return false; }
+  if (creation.phase !== "idle" && !quick) { creation.phase = "send_when_created"; return false; }
   const held=panelLive(sessionRun.values(), teamView).userHasPage;
 
   const text = Array.from(quick ?? inputEl.value).filter((ch) => {
@@ -5717,7 +5711,7 @@ installDropzone(document.getElementById("composer")!, (source, tabId) => {
   inputEl.value = inputEl.value.trim() ? `${inputEl.value}\n${template}` : template;
   inputEl.dispatchEvent(new Event("input", { bubbles: true }));
   inputEl.focus({ preventScroll: true });
-}, () => ({ ready: currentDraftReady && conversationReady, scope: selectedConversationId, revision: draftRevision }));
+}, () => ({ ready: currentDraftReady && hasConversation(), scope: selectedConversationId, revision: draftRevision }));
 
 armBootDecisionTimeout();
 

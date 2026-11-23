@@ -1069,8 +1069,7 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
   let heardAt = 0;
   let shownHeight = 0;
   let session: PageSession | undefined;
-  let pendingAction = false;
-  let lastAction = "";
+  let action: { phase: "idle" | "offered" | "running"; key?: string } = { phase: "idle" };
   // WHY: 界面是回答的一部分，跟着回答滚；框内再有滚动条，地图和按钮会被藏在第二层滚动后面。
   const maxHeight = () => box.dataset.appSurface === "ui" ? UI_MAX_HEIGHT : appMaxHeight();
   const reply = (id: number, ok: boolean, value: unknown) => frame.contentWindow?.postMessage(ok ? { miniAppReply: id, ok, value } : { miniAppReply: id, ok, error: value }, "*");
@@ -1083,21 +1082,22 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
     void mountApp(box, say);
   };
   const offerAction = (key: string, text: string, label: string, run: () => void | Promise<void>, cancel?: () => void): boolean => {
-    if (!current() || pendingAction || lastAction === key) return false;
-    pendingAction = true;
+    if (!current() || action.phase !== "idle" || action.key === key) return false;
+    action = { phase: "offered", key };
     const turn = currentUserTurn();
     const revision = actionRevision;
     appBar(box, text, {
       label,
-      cancel: () => { pendingAction = false; lastAction = key; box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", ""); cancel?.(); },
+      cancel: () => { action = { phase: "idle", key }; box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", ""); cancel?.(); },
       run: () => {
-        lastAction = key;
+        if (action.phase !== "offered" || action.key !== key) return;
+        action = { phase: "running", key };
         void (async () => {
           const now = await appPage();
           if (!current() || actionRevision !== revision || currentUserTurn() !== turn || conversationOf() !== conversation || !target || !now || now.tabId !== target.tabId || now.url !== target.url || now.documentId !== target.documentId) throw new Error("页面或对话已经变化，操作未执行。请重新打开工具。");
           await run();
           if (current()) box.querySelector<HTMLElement>(":scope > .gc-app-bar")?.setAttribute("hidden", "");
-        })().catch((error: unknown) => { if (current()) appBar(box, error instanceof Error ? error.message : String(error)); }).finally(() => { pendingAction = false; });
+        })().catch((error: unknown) => { if (current()) appBar(box, error instanceof Error ? error.message : String(error)); }).finally(() => { action = { phase: "idle", key }; });
       },
     });
     return true;
@@ -1160,7 +1160,7 @@ async function mountApp(box: HTMLElement, say: (text: string) => boolean | void)
       appStates.set(card, data.state);
       save(card);
     } else if (kind === "draft" && "text" in data && typeof data.text === "string" && data.text.trim()) {
-      if (pendingAction) return;
+      if (action.phase !== "idle") return;
       const text = data.text.replace(/\s+/g, " ").trim().slice(0, 500);
 
       appBar(box, `小程序想放进输入框：「${text}」`, { label: "放进输入框", run: () => fillInput(text) });

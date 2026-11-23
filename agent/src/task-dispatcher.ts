@@ -26,8 +26,7 @@ class TaskReceiptStore {
   private indexMem: Record<string, string[]> | null = null;
   private readonly membership = new Map<string, Set<string>>();
   private indexDirty = false;
-  private indexMissing = false;
-  private scannedAll = false;
+  private indexRecovery: "unneeded" | "scan_pending" | "scanned" = "unneeded";
   private readonly loadedConversations = new Set<string>();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   constructor(readonly directory?: string) { if (directory) mkdirSync(directory,{recursive:true,mode:0o700}); }
@@ -90,7 +89,7 @@ class TaskReceiptStore {
     if (this.indexMem) return this.indexMem;
 
     try { this.indexMem = JSON.parse(readFileSync(this.indexPath(), "utf8")) as Record<string, string[]>; }
-    catch { this.indexMem = {}; this.indexMissing = true; }
+    catch { this.indexMem = {}; this.indexRecovery = "scan_pending"; }
 
     this.membership.clear();
 
@@ -132,8 +131,8 @@ class TaskReceiptStore {
     if (!this.directory) return;
     const keys = this.loadIndex()[conversationId] ?? [];
 
-    if (keys.length === 0 && this.indexMissing && !this.scannedAll) {
-      this.scannedAll = true;
+    if (keys.length === 0 && this.indexRecovery === "scan_pending") {
+      this.indexRecovery = "scanned";
 
       for (const name of readdirSync(this.directory).filter((f) => f.endsWith(".json") && !f.startsWith("_"))) {
         try {

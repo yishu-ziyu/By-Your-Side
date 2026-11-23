@@ -48,31 +48,32 @@ let pending = new Set<string>();
 
 const ended = new Set<string>();
 
-let port: chrome.runtime.Port | null = null;
-
-let synced = false;
+type PanelLink = { phase: "offline" } | { phase: "syncing" | "synced"; port: chrome.runtime.Port };
+let link: PanelLink = { phase: "offline" };
 
 const seen = new Set<string>();
 
 const unresolved = () => [...cards.values()].some(card => !card.view.outcome && !ended.has(card.view.id) && card.el.isConnected);
 
 function ensurePort(): void {
-  if (port || !unresolved()) return;
+  if (link.phase !== "offline" || !unresolved()) return;
+  let port: chrome.runtime.Port;
 
   try { port = chrome.runtime.connect({ name: SEND_CONFIRM_PANEL_PORT }); } catch { return; }
+  link = { phase: "syncing", port };
   port.onMessage.addListener((message: { pending?: unknown }) => {
-    if (!Array.isArray(message?.pending)) return;
+    if (link.phase === "offline" || link.port !== port || !Array.isArray(message?.pending)) return;
     pending = new Set(message.pending.filter((id): id is string => typeof id === "string"));
 
     for (const id of pending) seen.add(id);
 
-    for (const card of cards.values()) if (!card.view.outcome && !pending.has(card.view.id) && (!synced || seen.has(card.view.id))) endLater(card);
-    synced = true;
+    for (const card of cards.values()) if (!card.view.outcome && !pending.has(card.view.id) && (link.phase === "syncing" || seen.has(card.view.id))) endLater(card);
+    link = { phase: "synced", port };
     refreshAll();
   });
   port.onDisconnect.addListener(() => {
-    port = null;
-    synced = false;
+    if (link.phase === "offline" || link.port !== port) return;
+    link = { phase: "offline" };
     seen.clear();
     pending = new Set();
     refreshAll();
@@ -262,9 +263,9 @@ function button(choice: "send" | "decline", text: string, card: Card): HTMLButto
   }
 
   b.addEventListener("click", event => {
-    if (!event.isTrusted || (choice === "send" && ((event.detail === 0 && document.activeElement !== b) || performance.now() < (card.armedAt ?? Infinity))) || card.answering || !port) return;
+    if (!event.isTrusted || (choice === "send" && ((event.detail === 0 && document.activeElement !== b) || performance.now() < (card.armedAt ?? Infinity))) || card.answering || link.phase !== "synced" || !pending.has(card.view.id)) return;
     card.answering = true;
-    port.postMessage({ id: card.view.id, choice });
+    link.port.postMessage({ id: card.view.id, choice });
     paint(card);
   });
 
@@ -290,7 +291,7 @@ export function sendConfirmCard(raw: unknown): HTMLElement | null {
   cards.set(raw.id, card);
   paint(card);
 
-  if (synced && !pending.has(raw.id)) endLater(card);
+  if (link.phase === "synced" && !pending.has(raw.id)) endLater(card);
 
   queueMicrotask(ensurePort);
 

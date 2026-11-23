@@ -229,9 +229,10 @@ interface ReadingSettingsDeps {
 class ReadingSettingsStore {
   private current: ReadingPrefs = { ...READING_DEFAULT_PREFS };
   private pending: ReadingPrefs | null = null;
-  private writing = false;
+  private syncPhase: "idle" | "writing" | "writing_then_reload" | "retry_then_reload" = "idle";
+  private get writing(): boolean { return this.syncPhase === "writing" || this.syncPhase === "writing_then_reload"; }
+  private get needsReload(): boolean { return this.syncPhase === "writing_then_reload" || this.syncPhase === "retry_then_reload"; }
   private revision = 0;
-  private reloadPending = false;
   private unsubscribe: (() => void) | null = null;
   private status: ReadingStatus = { state: "idle", message: "" };
 
@@ -290,7 +291,7 @@ class ReadingSettingsStore {
 
   private async drain(): Promise<void> {
     if (this.writing) return;
-    this.writing = true;
+    this.syncPhase = this.needsReload ? "writing_then_reload" : "writing";
 
     try {
       while (this.pending) {
@@ -310,12 +311,9 @@ class ReadingSettingsStore {
         if (!this.pending) this.setStatus("saved", "");
       }
     } finally {
-      this.writing = false;
-
-      if (this.reloadPending && !this.pending) {
-        this.reloadPending = false;
-        void this.reloadAuthority();
-      }
+      const reload = this.needsReload;
+      this.syncPhase = reload && this.pending ? "retry_then_reload" : "idle";
+      if (reload && !this.pending) void this.reloadAuthority();
     }
   }
 
@@ -341,7 +339,7 @@ class ReadingSettingsStore {
     this.revision += 1;
 
     if (this.pending || this.writing) {
-      this.reloadPending = true;
+      this.syncPhase = this.writing ? "writing_then_reload" : "retry_then_reload";
 
       return;
     }

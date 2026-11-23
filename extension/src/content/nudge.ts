@@ -88,11 +88,8 @@ export function installNudge(): void {
   let url = location.href;
   let dwell = 0;
   let interacted = false;
-  let viewReported = false;
-  let sentInteracted = false;
-  let done = false;
-  let lastSent = 0;
-  let inFlight = false;
+  type ReportPhase = "unreported" | "sending" | "view_reported" | "interaction_reported" | "done";
+  let reportState: { phase: ReportPhase; lastSent: number } = { phase: "unreported", lastSent: 0 };
 
   const markInteracted = () => { interacted = true; };
 
@@ -102,7 +99,7 @@ export function installNudge(): void {
   const report = () => {
     const text = mainText();
 
-    if (text.length < MIN_TEXT_CHARS) { done = true;
+    if (text.length < MIN_TEXT_CHARS) { reportState.phase = "done";
 
  return; }
 
@@ -110,22 +107,27 @@ export function installNudge(): void {
     const message: NudgePageMessage = { type: NUDGE_PAGE, title: document.title, text, interacted };
 
     if (selection) message.selection = selection;
-    inFlight = true; viewReported = true; sentInteracted = interacted; lastSent = Date.now();
-    void chrome.runtime.sendMessage(message).then((reply: { again?: boolean } | undefined) => { if (!reply?.again) done = true; }, () => {  })
-      .finally(() => { inFlight = false; });
+    const reporting = reportState;
+    const observed = interacted ? "interaction_reported" : "view_reported";
+    reporting.phase = "sending";
+    reporting.lastSent = Date.now();
+    void chrome.runtime.sendMessage(message).then(
+      (reply: { again?: boolean } | undefined) => { reporting.phase = reply?.again ? observed : "done"; },
+      () => { reporting.phase = observed; },
+    );
   };
 
   setInterval(() => {
     if (!enabled) return;
 
-    if (location.href !== url) { url = location.href; dwell = 0; interacted = false; viewReported = false; sentInteracted = false; done = false; lastSent = 0; hide(); }
+    if (location.href !== url) { url = location.href; dwell = 0; interacted = false; reportState = { phase: "unreported", lastSent: 0 }; hide(); }
 
     if (document.visibilityState !== 'visible') return;
     dwell += TICK_MS;
 
-    if (done || inFlight || dwell < NUDGE_DWELL_MS) return;
+    if (reportState.phase === "done" || reportState.phase === "sending" || dwell < NUDGE_DWELL_MS) return;
 
-    if (!viewReported || (interacted && (!sentInteracted || Date.now() - lastSent >= RESEND_MS))) report();
+    if (reportState.phase === "unreported" || (interacted && (reportState.phase === "view_reported" || Date.now() - reportState.lastSent >= RESEND_MS))) report();
   }, TICK_MS);
 
   const apply = (on: boolean) => { enabled = on;

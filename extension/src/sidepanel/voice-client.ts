@@ -101,7 +101,9 @@ export class VoiceClient {
   private stream: MediaStream | null = null;
   private worklet: AudioWorkletNode | null = null;
   private player: VoicePlayer | null = null;
-  private ready = false;
+  private connectionPhase: 'idle' | 'connecting' | 'recovering' | 'ready' = 'idle';
+  private get ready(): boolean { return this.connectionPhase === 'ready'; }
+  private get recovering(): boolean { return this.connectionPhase === 'recovering'; }
   private serverVad = false;
   private hasInputTurn = false;
   private turn = 0;
@@ -123,18 +125,16 @@ export class VoiceClient {
   private loudFrames = 0;
   private audioMarkedTurn = -1;
 
-  private diagSession = false;
-  private diagConfirmed = false;
+  private capturePhase: 'off' | 'awaiting_confirmation' | 'auto_on_confirmation' | 'armed' | 'recording' = 'off';
+  private get diagSession(): boolean { return this.capturePhase !== 'off'; }
+  private get diagConfirmed(): boolean { return this.capturePhase === 'armed' || this.capturePhase === 'recording'; }
+  private get recording(): boolean { return this.capturePhase === 'recording'; }
   private diagTimer: ReturnType<typeof setTimeout> | null = null;
   private diagWait: ReturnType<typeof setInterval> | null = null;
-  private recording = false;
-  private pendingAutoRecord = false;
   private frameIndex = 0;
   private sentFrames = 0;
   private trackSettings: VoiceDiagTrack | null = null;
 
-  private userIntentActive = false;
-  private recovering = false;
   private reconnectOf: string | null = null;
   private recoveryAttempts = 0;
   private recoveryStartTime = 0;
@@ -147,7 +147,7 @@ export class VoiceClient {
     private readonly getInput:()=>VoiceInputContext=()=>({}),
     private readonly diagnostic?:(event:string,fields:Record<string,string|number|boolean|null|undefined>)=>void,
     private readonly log?: VoiceDiagnosticLog) {}
-  get active(): boolean { return this.id !== null || this.recovering; }
+  get active(): boolean { return this.connectionPhase !== 'idle'; }
   get diagnosticMode(): boolean { return this.diagSession; }
   get diagnosticConfirmed(): boolean { return this.diagConfirmed; }
   get diagnosticRecording(): boolean { return this.recording; }
@@ -200,19 +200,17 @@ export class VoiceClient {
     if (this.hold) clearTimeout(this.hold.timer);
     this.hold = null;
   }
-  async start(conversationId: string, diagnostic = false, retry = false): Promise<void> {
+  async start(conversationId: string, diagnostic = false, retry = false, autoRecord = false): Promise<void> {
     if (this.id) return;
     if (!retry && this.recovering) this.stop(false);
     this.needsMicrophonePermission = false;
-    this.userIntentActive = true;
+    this.connectionPhase = retry ? 'recovering' : 'connecting';
     this.conversationId = conversationId;
     this.turn = 0;
     this.audioMarkedTurn = -1;
     this.serverVad = false;
     this.hasInputTurn = false;
-    this.diagSession = diagnostic;
-    this.diagConfirmed = false;
-    this.recording = false;
+    this.capturePhase = !diagnostic ? 'off' : autoRecord ? 'auto_on_confirmation' : 'awaiting_confirmation';
     this.frameIndex = 0;
     this.sentFrames = 0;
     this.dropBacklog();
@@ -792,7 +790,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     return ok ? { ok: true, turn } : { ok: false, turn, detail: '语音连接未就绪，标记未发送。' };
   }
   private captureDiagnosticFrame(source: Int16Array): void {
-    if (!this.diagSession || !this.diagConfirmed || !this.recording) return;
+    if (!this.recording) return;
     const bounded = this.log?.captureFrame(Int16Array.from(source)) ?? 'ignored';
 
     if (bounded === 'full') { this.endDiagnosticRecording('limit'); this.awaitTranscriptThenStop();
@@ -805,8 +803,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
   }
   async startDiagnostic(conversationId: string): Promise<void> {
     if (this.id) return;
-    this.pendingAutoRecord = true;
-    await this.start(conversationId, true);
+    await this.start(conversationId, true, false, true);
   }
   beginDiagnosticRecording(): { ok: boolean; detail?: string } {
     if (!this.diagSession) return { ok: false, detail: '未处于诊断模式。' };
@@ -820,7 +817,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     this.frameIndex = 0;
     this.sentFrames = 0;
     this.log?.captureStarted({ turn: this.turn, sampleRate: this.context?.sampleRate ?? 24000, track: this.trackSettings });
-    this.recording = true;
+    this.capturePhase = 'recording';
     this.speaking = false;
     this.command({ kind: 'interrupt', turn: this.turn });
     this.setPhase('listening', `诊断录音中（上限 ${this.log?.limitSeconds ?? 60} 秒）`);
@@ -830,7 +827,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
   }
   endDiagnosticRecording(reason: 'manual' | 'limit' | 'transport' = 'manual'): void {
     if (!this.recording) return;
-    this.recording = false;
+    this.capturePhase = 'armed';
     this.log?.captureEnded(reason);
 
     if (this.sentFrames > 0 && this.id && this.ready) this.command({ kind: 'commit', turn: this.turn });
@@ -865,7 +862,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     this.diagWait = timer;
   }
   scheduleRecovery(detail = '语音连接已断开，正在恢复…'): void {
-    if (!this.userIntentActive) return;
+    if (!this.active) return;
 
     if (this.needsMicrophonePermission) return;
 
@@ -893,14 +890,13 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     }
 
     this.reconnectOf ??= this.id;
-    this.recovering = true;
+    this.connectionPhase = 'recovering';
 
     if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
 
     if (this.recoveryTimer) { clearTimeout(this.recoveryTimer); this.recoveryTimer = null; }
 
     this.id = null;
-    this.ready = false;
     this.dropBacklog();
     this.speaking = false;
     this.player?.stop();
@@ -917,7 +913,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
   }
 
   private async executeRecovery(): Promise<void> {
-    if (!this.userIntentActive || !this.recovering) return;
+    if (!this.recovering) return;
 
     if (this.id !== null) return;
     const elapsed = Date.now() - this.recoveryStartTime;
@@ -934,7 +930,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
   }
 
   onTransportDisconnected(): void {
-    if (!this.userIntentActive) return;
+    if (!this.active) return;
 
     if (this.hold) {
       this.hold.pending ??= [];
@@ -963,7 +959,7 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
       return;
     }
 
-    if (this.userIntentActive && this.recovering) {
+    if (this.recovering) {
       if (this.id !== null) return;
 
       if (this.recoveryTimer) {
@@ -982,13 +978,14 @@ if(!this.speaking)this.setPhase('listening');}},this.analyser);
     this.log?.apply(record);
 
     if (record.type !== 'ready') return;
-    this.diagConfirmed = true;
+    const autoRecord = this.capturePhase === 'auto_on_confirmation';
+    if (!this.recording) this.capturePhase = 'armed';
 
     if (this.diagTimer) { clearTimeout(this.diagTimer); this.diagTimer = null; }
 
     this.diagnostic?.('diag_confirmed', { maxSeconds: record.maxSeconds, sampleRate: record.sampleRate });
 
-    if (this.pendingAutoRecord) { this.pendingAutoRecord = false; this.beginDiagnosticRecording(); }
+    if (autoRecord) this.beginDiagnosticRecording();
   }
   private failUnconfirmed(): void {
     this.diagTimer = null;
@@ -1061,7 +1058,7 @@ return;}
 
     if(e.kind==='state'){
       if(e.state==='error'){
-        if(e.recoverable && this.userIntentActive && !this.needsMicrophonePermission) {
+        if(e.recoverable && this.active && !this.needsMicrophonePermission) {
           this.sayAgainAfterRecovery = e.sayAgain === true;
           this.scheduleRecovery(e.detail ?? '语音连接已断开，正在恢复…');
 
@@ -1074,7 +1071,7 @@ return;}
       }
 
       if(e.state==='closed'){
-        if(this.userIntentActive && !this.recovering) {
+        if(this.active && !this.recovering) {
           this.scheduleRecovery('语音连接已关闭，正在重新连接…');
 
           return;
@@ -1119,9 +1116,8 @@ return;}
     if(this.serverVad){this.turn=Math.max(1,this.turn);this.player?.follow(this.turn);}
 
     if(this.connectTimer)clearTimeout(this.connectTimer);
-    this.ready=true;
+    this.connectionPhase = 'ready';
     this.drainBacklog();
-    this.recovering=false;
     this.reconnectOf=null;
     this.recoveryAttempts=0;
     this.recoveryStartTime=0;
@@ -1145,18 +1141,12 @@ return;}
     this.setPhase('listening','已停声，后台任务继续');
   }
   fail(detail: string): void {
-    this.userIntentActive = false;
-    this.recovering = false;
-
-    if(this.recoveryTimer){clearTimeout(this.recoveryTimer);this.recoveryTimer=null;}
-
     this.stop();
     this.setPhase('error',detail);
   }
   stop(notify=true): void {
     this.clearHold();
-    this.userIntentActive = false;
-    this.recovering = false;
+    this.connectionPhase = 'idle';
     this.reconnectOf = null;
     this.recoveryAttempts = 0;
     this.recoveryStartTime = 0;
@@ -1167,12 +1157,12 @@ return;}
 
     if(this.diagWait){clearInterval(this.diagWait);this.diagWait=null;}
 
-    if(this.recording){this.recording=false;this.log?.captureEnded('stopped');}
+    if(this.recording){this.capturePhase='armed';this.log?.captureEnded('stopped');}
 
-    this.pendingAutoRecord=false;
+    if (this.capturePhase === 'auto_on_confirmation') this.capturePhase = 'awaiting_confirmation';
 
     if(this.connectTimer)clearTimeout(this.connectTimer);this.connectTimer=null;
-    const id=this.id;this.id=null;this.ready=false;this.speaking=false;this.inputLevel=0;
+    const id=this.id;this.id=null;this.speaking=false;this.inputLevel=0;
     this.dropBacklog();
 
     if(id&&notify)this.send({type:'voice',voiceId:id,conversationId:this.conversationId,command:{kind:'stop'}});

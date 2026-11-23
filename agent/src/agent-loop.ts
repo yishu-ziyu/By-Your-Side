@@ -67,11 +67,11 @@ class FailoverLoop implements AgentLoop {
   private readonly listeners = new Set<AgentSessionEventListener>();
   private readonly unsubscribe: () => void;
   private heldEnd: Extract<AgentSessionEvent, { type: "agent_end" }> | undefined;
-  private running = false;
-  private stopped = false;
+  private phase: "idle" | "running" | "stopping" | "stopped" = "idle";
+  private get running(): boolean { return this.phase === "running" || this.phase === "stopping"; }
+  private get stopped(): boolean { return this.phase === "stopping" || this.phase === "stopped"; }
   private switchedThisRun = false;
-  private switchedAt: number | undefined;
-  private primary: Model<Api> | undefined;
+  private fallback: { at: number; primary: Model<Api> } | null = null;
   private readonly idleWaiters: Array<() => void> = [];
 
   constructor(
@@ -135,8 +135,7 @@ class FailoverLoop implements AgentLoop {
   getToolDefinition(name: string) { return this.inner.getToolDefinition(name); }
   setActiveToolsByName(names: string[]) { return this.inner.setActiveToolsByName(names); }
   setModel(model: Model<Api>) {
-    this.switchedAt = undefined;
-    this.primary = undefined;
+    this.fallback = null;
 
     return this.inner.setModel(model);
   }
@@ -148,21 +147,20 @@ class FailoverLoop implements AgentLoop {
   }
 
   async abort(): Promise<void> {
-    this.stopped = true;
+    this.phase = this.running ? "stopping" : "stopped";
     await this.inner.abort();
     await this.waitForIdle();
   }
 
   dispose(): void {
-    this.stopped = true;
+    this.phase = this.running ? "stopping" : "stopped";
     this.unsubscribe();
     this.listeners.clear();
     this.inner.dispose();
   }
 
   private async run(start: () => Promise<void>): Promise<void> {
-    this.running = true;
-    this.stopped = false;
+    this.phase = "running";
     this.switchedThisRun = false;
 
     try {
@@ -197,8 +195,7 @@ class FailoverLoop implements AgentLoop {
 
       const from = `${previous.provider}/${previous.id}`;
       const to = `${backup.provider}/${backup.id}`;
-      this.switchedAt = Date.now();
-      this.primary = previous;
+      this.fallback = { at: Date.now(), primary: previous };
       await this.inner.sessionManager.appendCustomEntry("sideagent-model-fallback-v1", { from, to });
       this.onSwitch(from, to, "fallback");
       this.inner.agent.state.messages = [...messages.slice(0, index), ...messages.slice(index + 1)];
@@ -214,7 +211,7 @@ class FailoverLoop implements AgentLoop {
       if (this.heldEnd) this.emit(this.heldEnd);
 
       this.heldEnd = undefined;
-      this.running = false;
+      this.phase = this.stopped ? "stopped" : "idle";
       this.emit({ type: "agent_settled" });
 
       for (const resolve of this.idleWaiters.splice(0)) resolve();
@@ -222,13 +219,13 @@ class FailoverLoop implements AgentLoop {
   }
 
   private async switchBackIfDue(): Promise<void> {
-    const primary = this.primary;
+    const fallback = this.fallback;
     const backup = this.inner.model;
 
-    if (this.switchedAt === undefined || !primary || !backup || Date.now() - this.switchedAt < MODEL_SWITCH_BACK_AFTER_MS) return;
+    if (!fallback || !backup || Date.now() - fallback.at < MODEL_SWITCH_BACK_AFTER_MS) return;
+    const { primary } = fallback;
 
-    this.switchedAt = undefined;
-    this.primary = undefined;
+    this.fallback = null;
 
     if (!await this.inner.setModel(primary).then(() => true, () => false)) return;
 

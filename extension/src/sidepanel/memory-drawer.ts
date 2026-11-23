@@ -63,8 +63,9 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
   const receiptUndos = new Map<string, (ok: boolean, error?: string) => void>();
   const memoryHistoryOpen = new MemoryHistoryOpen();
 
-  let memoryLoaded = false;
-  let memoryListRequestId: string | null = null;
+  type MemoryList = { phase: "empty" | "loaded" } | { phase: "loading" | "refreshing"; id: string };
+  let memoryList: MemoryList = { phase: "empty" };
+  const hasMemoryList = () => memoryList.phase === "loaded" || memoryList.phase === "refreshing";
   let memoryListError = "";
   let memoryInspection: MemoryInspection | null = null;
   let memoryEdit: MemoryEdit | null = null;
@@ -746,7 +747,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
       memoryBody.appendChild(failure);
     }
 
-    if (!memoryLoaded && memoryListRequestId) {
+    if (memoryList.phase === "loading") {
       const loading = document.createElement("div");
       loading.className = "memory-empty";
       loading.textContent = "正在读取记忆…";
@@ -754,7 +755,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
       return 0;
     }
 
-    if (!memoryLoaded && !memoryListRequestId) {
+    if (memoryList.phase === "empty") {
       const unavailable = document.createElement("div");
       unavailable.className = "memory-empty";
       unavailable.append("还不能读取记忆。", memoryButton("重试", "reload"));
@@ -801,10 +802,9 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
     memoryUiRequests.delete(outcome.requestId);
 
     if (outcome.action === "list") {
-      if (memoryListRequestId !== outcome.requestId) return;
-      memoryListRequestId = null;
+      if (!("id" in memoryList) || memoryList.id !== outcome.requestId) return;
+      memoryList = { phase: outcome.kind === "success" || hasMemoryList() ? "loaded" : "empty" };
       if (outcome.kind === "success") {
-        memoryLoaded = true;
         memoryListError = "";
         if (memoryEdit && !memoryState.get(memoryEdit.id)) memoryEdit = null;
         if (memoryForget && !memoryState.get(memoryForget.id)) memoryForget = null;
@@ -848,7 +848,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
   function requestMemoryList(): void {
     requestPastTasks();
     const message = memoryState.beginList(selectedConversationId());
-    memoryListRequestId = message.requestId;
+    memoryList = { phase: hasMemoryList() ? "refreshing" : "loading", id: message.requestId };
     memoryListError = "";
     renderMemoryDrawer();
     dispatchMemoryRequest(message, { action: "list" });
@@ -1035,7 +1035,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
     processMemoryOutcome,
     handlePastTasksResult,
     refreshIfStale(rev: number | undefined, hasLearnedRules: boolean): void {
-      if ((memoryDrawer.hidden && !hasLearnedRules) || !memoryLoaded) return;
+      if ((memoryDrawer.hidden && !hasLearnedRules) || !hasMemoryList()) return;
       if (memoryState.noteRev(rev, memoryEditorBusy())) requestMemoryList();
     },
     setCurrentHostname(hostname: string): void {
@@ -1051,7 +1051,7 @@ export function mountMemoryDrawer(deps: MemoryDrawerDeps) {
       return pastTasksRequestId !== null;
     },
     isListPending(): boolean {
-      return memoryListRequestId !== null;
+      return "id" in memoryList;
     },
   };
 }

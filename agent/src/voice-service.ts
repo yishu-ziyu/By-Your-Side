@@ -70,6 +70,8 @@ function initialDeliverySuppression(
   return { announcedDeliveries, observed };
 }
 
+type VoiceHandshake = 'waiting_both' | 'waiting_server' | 'waiting_panel' | 'ready' | 'disconnected';
+
 export class VoiceService {
   private readonly deliveryOwners = new Map<string, string>();
   private lastUnexpectedEnd: ReconnectTicket | null = null;
@@ -78,8 +80,7 @@ export class VoiceService {
     conversationId: string;
     session: VoiceSession;
     observed: string;
-    ready: boolean;
-    panelReady: boolean;
+    handshake: VoiceHandshake;
     reconnect: ReconnectTicket | null;
     pending: Map<string, PendingVoiceDelivery>;
     delivering: Set<string>;
@@ -120,8 +121,8 @@ export class VoiceService {
       const voice = STEP_VOICES.find(v => v.id === requestedVoice)?.id ?? DEFAULT_STEP_VOICE;
       const persona = voicePersonaText(parseVoicePersona(message.command.persona));
 
-      const active = {
-        id: message.voiceId, conversationId, observed, ready: false, panelReady: false, reconnect: resumed,
+      const active: NonNullable<VoiceService["active"]> = {
+        id: message.voiceId, conversationId, observed, handshake: resumed ? 'waiting_both' : 'waiting_server', reconnect: resumed,
         pending: resumed?.pending ?? new Map<string, PendingVoiceDelivery>(), delivering: new Set<string>(),
         startedAt: Date.now(), controls: new Set<string>(), notifiedControls: new Set<string>(), announcedDeliveries, streamedDeliveries: new Set<string>(), boundTasks: new Set<string>(), terminalTasks: new Set<string>(), session: this.createSession({
           voiceId: message.voiceId,
@@ -180,7 +181,8 @@ export class VoiceService {
     }
 
     if (message.command.kind === 'ready_ack') {
-      active.panelReady = true;
+      if (active.handshake === 'waiting_both') active.handshake = 'waiting_server';
+      else if (active.handshake === 'waiting_panel') active.handshake = 'ready';
       this.deliverWhenReady(active);
       return;
     }
@@ -364,7 +366,7 @@ export class VoiceService {
     }
   }
   private canDeliver(active: NonNullable<VoiceService["active"]>): boolean {
-    return active.ready && (!active.reconnect || active.panelReady);
+    return active.handshake === 'ready';
   }
   private flushPending(active: NonNullable<VoiceService["active"]>): void {
     for (const [id, pending] of [...active.pending]) {
@@ -385,8 +387,7 @@ export class VoiceService {
     return null;
   }
   private rememberUnexpectedEnd(active: NonNullable<VoiceService["active"]>): void {
-    active.ready = false;
-    active.panelReady = false;
+    active.handshake = 'disconnected';
     if (active.reconnect && this.lastUnexpectedEnd === active.reconnect) return;
     this.lastUnexpectedEnd = {
       voiceId: active.id, conversationId: active.conversationId, startedAt: active.startedAt, endedAt: Date.now(), pending: active.pending,
@@ -405,7 +406,8 @@ export class VoiceService {
       return;
     }
     if (event.state !== "ready") return;
-    active.ready = true;
+    if (active.handshake === 'waiting_both') active.handshake = 'waiting_panel';
+    else if (active.handshake === 'waiting_server') active.handshake = 'ready';
     this.deliverWhenReady(active);
   }
   private deliverWhenReady(active: NonNullable<VoiceService["active"]>): void {

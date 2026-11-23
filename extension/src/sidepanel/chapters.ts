@@ -23,8 +23,7 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
   frame.before(row);
   let shown = "";
   let pending: { bubble: HTMLElement; text: string } | null = null;
-  let errored = false;
-  let ended = false;
+  let phase: "active" | "errored" | "ended" = "active";
 
   let drag: { pointer: number; x: number; scroll: number; moved: boolean } | null = null;
   let suppressClick = false;
@@ -128,7 +127,7 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
     noteUserTurn(bubble: HTMLElement, item: Extract<PanelHistoryItem, { kind: "user" }>, idle: boolean): void {
       if (!idle || item.undelivered || item.text.trim() === RESUME_TEXT) return;
 
-      ended = false;
+      if (phase === "ended") phase = "active";
 
       if (dividers().length === 0) { pending = null; open(bubble, item.text); return; }
       pending = { bubble, text: item.text };
@@ -138,10 +137,10 @@ export function mountChapters(messages: HTMLElement, frame: HTMLElement, onJump:
       if (msg.type !== "agent_event" || !isLeadSession(msg.sessionId)) return;
       const event = msg.event;
 
-      if (event.kind === "agent_start") errored = false;
-      else if (event.kind === "error") { errored = true; ended = false; }
-      else if (event.kind === "agent_end") ended = !errored;
-      else if (event.kind === "tool_start" && isWriteTool(event.name) && pending && !ended) {
+      if (event.kind === "agent_start" && phase === "errored") phase = "active";
+      else if (event.kind === "error") phase = "errored";
+      else if (event.kind === "agent_end" && phase !== "errored") phase = "ended";
+      else if (event.kind === "tool_start" && isWriteTool(event.name) && pending && phase !== "ended") {
         const { bubble, text } = pending;
         pending = null;
 

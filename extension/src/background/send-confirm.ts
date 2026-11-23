@@ -78,20 +78,24 @@ function notSent(message: string, heldReason?: HeldReason): Error {
 
 const declined = new Set<string>();
 
-const pendingTabs = new Set<number>();
-
-const waitingPorts = new Map<string, { tabId: number; take: (port: chrome.runtime.Port) => void }>();
+type Confirmation =
+  | { phase: "preparing" | "opening" | "checking_outcome" }
+  | { phase: "connecting"; portName: string; take(port: chrome.runtime.Port): void }
+  | { phase: "waiting"; id: string; answer(choice: "send" | "decline"): void };
+const confirmations = new Map<number, Confirmation>();
 
 chrome.runtime.onConnect.addListener(port => {
   if (!port.name.startsWith(PORT_PREFIX)) return;
-  const waiting = waitingPorts.get(port.name);
-
-  if (!waiting || port.sender?.id !== chrome.runtime.id || port.sender.tab?.id !== waiting.tabId || port.sender.frameId !== 0) { port.disconnect(); return; }
-  waitingPorts.delete(port.name);
+  const tabId = port.sender?.tab?.id;
+  const waiting = tabId === undefined ? undefined : confirmations.get(tabId);
+  if (tabId === undefined || waiting?.phase !== "connecting" || port.name !== waiting.portName || port.sender?.id !== chrome.runtime.id || port.sender.frameId !== 0) { port.disconnect(); return; }
+  confirmations.set(tabId, { phase: "opening" });
   waiting.take(port);
 });
 
-const panelAnswers = new Map<string, (choice: "send" | "decline") => void>();
+function waitingConfirmations() {
+  return [...confirmations.values()].filter(c => c.phase === "waiting");
+}
 
 const panelPorts = new Set<chrome.runtime.Port>();
 
@@ -132,7 +136,7 @@ export async function reportSendClick<T extends { sendConfirmed?: true; heldReas
 }
 
 function publishPending(): void {
-  const pending = [...panelAnswers.keys()];
+  const pending = waitingConfirmations().map(c => c.id);
 
   for (const port of panelPorts) port.postMessage({ pending });
 }
@@ -145,9 +149,9 @@ chrome.runtime.onConnect.addListener(port => {
   port.onDisconnect.addListener(() => { panelPorts.delete(port); });
   port.onMessage.addListener((message: { id?: unknown; choice?: unknown }) => {
     if (typeof message?.id !== "string" || (message.choice !== "send" && message.choice !== "decline")) return;
-    panelAnswers.get(message.id)?.(message.choice);
+    waitingConfirmations().find(c => c.id === message.id)?.answer(message.choice);
   });
-  port.postMessage({ pending: [...panelAnswers.keys()] });
+  port.postMessage({ pending: waitingConfirmations().map(c => c.id) });
 });
 
 function hostOf(url: string | undefined): string {
@@ -201,8 +205,8 @@ export async function confirmSend(tabId: number, label: string, guard: SendGuard
 
   if (key && declined.has(key)) throw notSent(REPEAT_TEXT, "repeat");
 
-  if (pendingTabs.has(tabId)) throw notSent(BUSY_TEXT, "busy");
-  pendingTabs.add(tabId);
+  if (confirmations.has(tabId)) throw notSent(BUSY_TEXT, "busy");
+  confirmations.set(tabId, { phase: "preparing" });
 
   try {
     await bringForwardForUser(tabId, "send_confirm");
@@ -222,7 +226,7 @@ export async function confirmSend(tabId: number, label: string, guard: SendGuard
       confirmedChecks.set(guard, recheck);
     }
     return approved;
-  } finally { pendingTabs.delete(tabId); }
+  } finally { confirmations.delete(tabId); }
 }
 
 function secretField(name: string): boolean {
@@ -273,15 +277,13 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
   let host = details.host ?? "";
   if (!host) try { host = hostOf((await chrome.tabs.get(tabId)).url); } catch {  }
   const portName = `${PORT_PREFIX}${crypto.randomUUID()}`;
-  const connected = new Promise<chrome.runtime.Port>(take => waitingPorts.set(portName, { tabId, take }));
+  const connected = new Promise<chrome.runtime.Port>(take => confirmations.set(tabId, { phase: "connecting", portName, take }));
   let port: chrome.runtime.Port | null = null;
 
   try {
     await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, world: "ISOLATED", func: showSendConfirm, args: [OVERLAY_ATTR, OVERLAY_KIND_SEND_CONFIRM, portName, label, content ?? null, SEND_ARM_MS, sendSentence(host, label, content, recipient), rect ?? null] });
     port = await Promise.race([connected, new Promise<null>(done => setTimeout(() => done(null), SHOW_MS))]);
   } catch {  }
-
-  waitingPorts.delete(portName);
 
   if (!port) throw notSent("确认框没能显示在网页上，所以没有点「发送」。先看一眼侧栏，或再打开这个网页后重试。");
   const shown = port;
@@ -304,7 +306,7 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
   const cleanups: Array<() => void> = [];
 
   const outcome = await new Promise<Outcome>(done => {
-    panelAnswers.set(view.id, done);
+    confirmations.set(tabId, { phase: "waiting", id: view.id, answer: done });
     publishPending();
     guard.waiting(true, undefined, view);
     shown.onMessage.addListener((message: { choice?: unknown }) => {
@@ -324,7 +326,7 @@ async function askUser(tabId: number, guard: SendGuard, key: string | null, labe
   });
 
   for (const cleanup of cleanups) cleanup();
-  panelAnswers.delete(view.id);
+  confirmations.set(tabId, { phase: "checking_outcome" });
   publishPending();
   shown.disconnect();
   const final: Outcome = outcome === "send" && guard.cancelled() ? "stopped" : outcome;

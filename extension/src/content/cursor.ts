@@ -1689,7 +1689,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   const HANDOFF_INNER_FIELD = "input:not([type=button],[type=submit],[type=reset],[type=image],[type=hidden]),textarea,select,[contenteditable]:not([contenteditable=false])";
 
-  interface HandoffMark { el: HTMLDivElement; node: Element; control: Element; kind: "field" | "button"; name: string; touched: boolean; done: boolean }
+  interface HandoffMark { el: HTMLDivElement; node: Element; control: Element; kind: "field" | "button"; name: string; phase: "untouched" | "touched" | "done" }
 
   let handoffMarks: HandoffMark[] = [];
   let handoffListening = false;
@@ -1730,7 +1730,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (!el) return;
     el.style.setProperty("--c", HANDOFF_COLOR);
     el.classList.add("handoff");
-    handoffMarks.push({ el, node, control, kind, name: actionName(control) || actionName(node), touched: false, done: false });
+    handoffMarks.push({ el, node, control, kind, name: actionName(control) || actionName(node), phase: "untouched" });
 
     if (!handoffListening) {
       handoffListening = true;
@@ -1765,7 +1765,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       return v.x >= 4 && v.y >= 0 && v.x + v.w <= window.innerWidth - 4 && v.y + v.h <= window.innerHeight;
     };
     const adjacent = (b: Box) => (b.x < frame.x + frame.w && b.x + b.w > frame.x) || (b.y < frame.y + frame.h && b.y + b.h > frame.y);
-    const others = handoffMarks.filter((o) => o !== m && !o.done);
+    const others = handoffMarks.filter((o) => o !== m && o.phase !== "done");
     const hits = (rects: DOMRect[], v: Box) => rects.some((r) => Math.min(r.right, v.x + v.w) > Math.max(r.left, v.x) && Math.min(r.bottom, v.y + v.h) > Math.max(r.top, v.y));
     const rings = others.map((o) => o.el.getBoundingClientRect());
     const labels = others.flatMap((o) => o.el.querySelector(".mark-label")?.getBoundingClientRect() ?? []);
@@ -1797,11 +1797,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
   function syncHandoff(): void {
     for (const m of handoffMarks) {
-      if (m.kind === "field") m.done = m.touched && isHandoffFilled(m.control);
-      m.el.classList.toggle("faded", m.done);
+      if (m.kind === "field" && m.phase !== "untouched") m.phase = isHandoffFilled(m.control) ? "done" : "touched";
+      m.el.classList.toggle("faded", m.phase === "done");
     }
 
-    const left = handoffMarks.filter((m) => m.kind === "field" && !m.done);
+    const left = handoffMarks.filter((m) => m.kind === "field" && m.phase !== "done");
     const names = left.map((m) => m.name).filter(Boolean);
     const anyField = handoffMarks.some((m) => m.kind === "field");
 
@@ -1814,7 +1814,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     if (!event.isTrusted) return;
     const path = event.composedPath();
 
-    for (const m of handoffMarks) if (m.kind === "field" && path.includes(m.node)) m.touched = true;
+    for (const m of handoffMarks) if (m.kind === "field" && path.includes(m.node)) m.phase = "touched";
     syncHandoff();
   }
 
@@ -1824,7 +1824,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     let hit = false;
 
     for (const m of handoffMarks) {
-      if (m.kind === "button" && !m.done && path.includes(m.node)) { m.done = true; hit = true; }
+      if (m.kind === "button" && m.phase !== "done" && path.includes(m.node)) { m.phase = "done"; hit = true; }
     }
 
     if (hit) syncHandoff();

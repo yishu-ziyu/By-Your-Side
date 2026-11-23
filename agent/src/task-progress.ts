@@ -43,8 +43,12 @@ export class TaskProgress {
   private goal: string | null = null;
   private startedAt: number | null = null;
   private runId: string | null = null;
-  private aborted = false;
-  private interrupted = false;
+  private runDisposition: "normal" | "interrupted" | "aborted" = "normal";
+  private get aborted(): boolean { return this.runDisposition === "aborted"; }
+  private get interrupted(): boolean { return this.runDisposition === "interrupted"; }
+  private clearInterruption(): void {
+    if (this.interrupted) this.runDisposition = "normal";
+  }
   private restartRecovery = false;
   private interruptionReason:TaskProgressSnapshot['interruptionReason'];
   private lifecycleFrozen=false;
@@ -219,10 +223,10 @@ export class TaskProgress {
     const folded = snapshot.foldedResults;
     this.foldedResults = folded && Number.isSafeInteger(folded.count) && Array.isArray(folded.recent)
       ? { count: folded.count, recent: folded.recent.filter((text): text is string => typeof text === "string").slice(-8) } : { count: 0, recent: [] };
-    this.aborted = snapshot.state === "aborted";
     const checkingEnded = snapshot.checking === true;
     this.checking = false;
-    this.interrupted = !checkingEnded && !!this.runId && !!this.goal && snapshot.continuation?.state !== 'WAITING_CONDITION' && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
+    const interrupted = !checkingEnded && !!this.runId && !!this.goal && snapshot.continuation?.state !== 'WAITING_CONDITION' && ["none", "running", "paused", "interrupted"].includes(snapshot.state);
+    this.runDisposition = snapshot.state === "aborted" ? "aborted" : interrupted ? "interrupted" : "normal";
     this.restartRecovery = snapshot.restartRecovery === true || this.interrupted;
     this.interruptionReason=this.interrupted?(snapshot.interruptionReason??'host_restart'):undefined;
     this.lifecycleFrozen=false;
@@ -301,8 +305,7 @@ return;}
     this.runId = randomUUID();
     this.continuation = undefined;
     this.modelCallsThisRun = 0;
-    this.aborted = false;
-    this.interrupted = false;
+    this.runDisposition = "normal";
     this.restartRecovery = false;
     this.interruptionReason=undefined;
     this.lifecycleFrozen=false;
@@ -335,7 +338,7 @@ return;}
   }
   visitedUrls(): string[] { return [...(this.startUrl ? [this.startUrl] : []), ...this.runSources.map(source => source.url)]; }
   visitedPages(): Array<{ url: string; title?: string }> { return [...(this.goalPage ? [this.goalPage] : []), ...this.runSources].map(({ url, title }) => (title ? { url, title } : { url })); }
-  abort(): void { this.aborted = true; this.checking = false; this.interrupted = false; this.restartRecovery = false;
+  abort(): void { this.runDisposition = "aborted"; this.checking = false; this.restartRecovery = false;
     if (this.continuation && !['COMPLETED','STOPPED','FAILED'].includes(this.continuation.state)) this.continuation = {
       ...this.continuation, state: 'STOPPED', stopReason: '用户停止', controlVersion: this.continuation.controlVersion + 1,
       activeMs: this.continuation.activeMs + (this.continuation.segmentStartedAt === null ? 0 : this.clock() - this.continuation.segmentStartedAt),
@@ -367,7 +370,8 @@ return;}
 
         if(this.interrupted&&lead){this.ledger.beginRun(this.runId);this.latestResult=null;}
 
-        this.interrupted = false; this.members.set(member, "running");
+        this.clearInterruption();
+        this.members.set(member, "running");
       }
       else if (message.state === "user") end("paused");
       else if (this.members.get(member) !== "error") end("idle");
@@ -389,7 +393,7 @@ return;}
       if(this.interrupted&&lead){this.ledger.beginRun(this.runId);this.failureLimit=false;}
 
       this.checking = false;
-      this.interrupted = false;
+      this.clearInterruption();
       this.startedAt ??= this.clock();
       this.runId ??= randomUUID();
       this.members.set(member, "running");

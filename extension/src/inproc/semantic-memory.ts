@@ -20,8 +20,7 @@ async function within<T>(promise: Promise<T>): Promise<T> {
 
 export class BrowserSemanticMemory implements SemanticMemoryIndex {
   private engine: Promise<Memory> | null = null;
-  private extractor: Promise<FeatureExtractionPipeline> | null = null;
-  private ready = false;
+  private extractor: { phase: "cold" } | { phase: "loading" | "ready"; model: Promise<FeatureExtractionPipeline> } = { phase: "cold" };
   private readonly background: BackgroundSemanticIndex;
   private canWrite: () => boolean;
 
@@ -35,11 +34,13 @@ export class BrowserSemanticMemory implements SemanticMemoryIndex {
   }
 
   private model(): Promise<FeatureExtractionPipeline> {
-    this.extractor ??= pipeline("feature-extraction", MODEL_ID, { device: "wasm", dtype: "q8" }).then(model => {
-      this.ready = true;
+    if (this.extractor.phase !== "cold") return this.extractor.model;
+    const loading = pipeline("feature-extraction", MODEL_ID, { device: "wasm", dtype: "q8" }).then(model => {
+      this.extractor = { phase: "ready", model: loading };
       return model;
-    }).catch(error => { this.extractor = null; this.ready = false; throw error; });
-    return this.extractor;
+    }).catch(error => { this.extractor = { phase: "cold" }; throw error; });
+    this.extractor = { phase: "loading", model: loading };
+    return loading;
   }
 
   private async embed(texts: string[]): Promise<Float32Array[]> {
@@ -96,7 +97,7 @@ export class BrowserSemanticMemory implements SemanticMemoryIndex {
   }
 
   private async recall(query: MemoryQuery): Promise<SemanticMemoryHit[]> {
-    if (!this.ready || (this.readOnly() && !this.engine)) return [];
+    if (this.extractor.phase !== "ready" || (this.readOnly() && !this.engine)) return [];
     const hits = await within((await this.open()).recall(`query: ${query.text}`, { limit: 16, graph: false, minSimilarity: MIN_SIMILARITY }));
     return hits.flatMap((hit): SemanticMemoryHit[] => {
       const { kind, memoryId: id, version, fingerprint } = hit.meta;

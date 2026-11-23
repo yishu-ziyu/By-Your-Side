@@ -63,10 +63,10 @@ function readOnlyWhileSelfUse(doc: DocumentPersistence): DocumentPersistence {
 
 export function startInprocHost(deps: InprocHostDeps): void {
 
-  let port: chrome.runtime.Port | null = null;
-  let connection: ClientConn | null = null;
-  let core: HostCore | null = null;
-  let pendingCore: Promise<HostCore> | null = null;
+  let client: { phase: "attached" | "greeted"; port: chrome.runtime.Port; connection: ClientConn } | null = null;
+  type Runtime = { phase: "idle" } | { phase: "starting"; pending: Promise<HostCore> } | { phase: "ready"; core: HostCore };
+  let runtime: Runtime = { phase: "idle" };
+  const activeCore = () => runtime.phase === "ready" ? runtime.core : null;
   let selected: InprocModelConfig | null = null;
   let fastSelected: InprocModelConfig | null = null;
   let backupSelected: InprocModelConfig | null = null;
@@ -76,26 +76,25 @@ export function startInprocHost(deps: InprocHostDeps): void {
   const cancelledKeySaves = new Set<string>();
   const savedKeyTransactions = new Map<string, { requestId: string; runId: string; target: string; roles: string; connection: string; credential: string }>();
   const keySaveReplies = new Map<string, (ok: boolean) => void>();
-  const cancelKeySave = (id: string) => { cancelledKeySaves.add(id); try { port?.postMessage({ type: "inproc_key_cancel", requestId: id }); } catch {  } };
+  const cancelKeySave = (id: string) => { cancelledKeySaves.add(id); try { client?.port.postMessage({ type: "inproc_key_cancel", requestId: id }); } catch {  } };
   let voiceConfigured = false;
   let voiceModel: unknown;
-  let helloReceived = false;
   const deferredCreates: ClientMessage[] = [];
 
   const log = (message: string) => console.debug("[sideagent]", message);
   const voiceCapture = new VoiceCaptureRecorder(createVoiceCaptureSink(log), log);
 
   const models: ModelRuntime = deps.createRuntime((providerId, credential) => {
-    port?.postMessage({ type: "inproc_credential", providerId, credential: credential ?? null });
+    client?.port.postMessage({ type: "inproc_credential", providerId, credential: credential ?? null });
   });
   void models.loadProviderModels().catch((error: unknown) => log(`provider model list unavailable: ${String(error)}`));
 
   async function ensureCore(): Promise<HostCore> {
-    if (core) return core;
+    if (runtime.phase === "ready") return runtime.core;
 
     if (!selected) throw new Error("还没有连接模型。打开「更多 → 模型与语音」，选一个服务商。");
 
-    if (pendingCore) return pendingCore;
+    if (runtime.phase === "starting") return runtime.pending;
 
     const modelPort = models.createCoreModels(() => selected, () => fastSelected, () => backupSelected);
     let pattern = "";
@@ -116,7 +115,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     const taskHistory = new TaskHistoryStore(personal("tasks"));
     const siteNotes = new SiteNotesStore(document("site-notes"));
     const learnedOperations = new LearnedOperationStore(document("learned-operations"));
-    pendingCore = openConversationStore(log).then(store => startHostCore({
+    const pending = openConversationStore(log).then(store => startHostCore({
       taskRecords: new TaskRecordStore(document('task-records')),
       continuationEnabled: pushedContinuation,
       siteNotes,
@@ -186,14 +185,13 @@ export function startInprocHost(deps: InprocHostDeps): void {
       voiceDiagnostic: (event, fields) => voiceCapture.host(event, fields),
       log,
     })).then(value => {
-      core = value;
-
-      if (connection) core.adoptClient(connection);
+      runtime = { phase: "ready", core: value };
+      if (client) value.adoptClient(client.connection);
 
       return value;
-    }).finally(() => { pendingCore = null; });
-
-    return pendingCore;
+    }).catch((error: unknown) => { if (runtime.phase === "starting") runtime = { phase: "idle" }; throw error; });
+    runtime = { phase: "starting", pending };
+    return pending;
   }
 
   async function chatgptAccess(): Promise<string> {
@@ -209,14 +207,14 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
   function sendUnavailable(message: ClientMessage): void {
     if (message.type === "hello") {
-      connection?.send({ type: "hello_ok", version: PROTOCOL_VERSION, models: [], hostVersion: HOST_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
-      connection?.send({ type: "conversation_list", conversations: [] });
+      client?.connection.send({ type: "hello_ok", version: PROTOCOL_VERSION, models: [], hostVersion: HOST_VERSION, extensionVersion: "0.2.0", storageSchema: STORAGE_SCHEMA_VERSION });
+      client?.connection.send({ type: "conversation_list", conversations: [] });
 
       return;
     }
 
     if (message.type === "conversation_list") {
-      connection?.send({ type: "conversation_list", requestId: message.requestId, conversations: [] });
+      client?.connection.send({ type: "conversation_list", requestId: message.requestId, conversations: [] });
 
       return;
     }
@@ -237,7 +235,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         status: "rejected", message: detail, updatedAt: Date.now(), needsModel: true,
       };
 
-      connection?.send({ type: "agent_event", conversationId: request.conversationId, event: { kind: "notice", message: detail, receipt } });
+      client?.connection.send({ type: "agent_event", conversationId: request.conversationId, event: { kind: "notice", message: detail, receipt } });
 
       return;
     }
@@ -245,7 +243,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
     if (message.type === "warm_up") return;
 
     if (message.type === "nudge_request") {
-      connection?.send({ type: "nudge_result", requestId: message.requestId, nudge: null });
+      client?.connection.send({ type: "nudge_result", requestId: message.requestId, nudge: null });
 
       return;
     }
@@ -253,13 +251,13 @@ export function startInprocHost(deps: InprocHostDeps): void {
     if (message.type === "browse_habit_ask") return;
 
     if (message.type === "browse_habit_request") {
-      connection?.send({ type: "browse_habit_result", requestId: message.requestId, habits: [] });
+      client?.connection.send({ type: "browse_habit_result", requestId: message.requestId, habits: [] });
 
       return;
     }
 
     if (message.type !== "task_view_query" && message.type !== "task_receipt_query") {
-      connection?.send({ type: "agent_event", conversationId: message.conversationId, event: { kind: "error", message: "先在「模型与语音」里连接模型。" } });
+      client?.connection.send({ type: "agent_event", conversationId: message.conversationId, event: { kind: "error", message: "先在「模型与语音」里连接模型。" } });
     }
   }
 
@@ -268,7 +266,8 @@ export function startInprocHost(deps: InprocHostDeps): void {
     if (message.type === "inproc_catalog") {
       await models.applyCodexCatalog(message.codexCatalog);
       models.applyCustomCatalog(message.customCatalog);
-      if (core && connection) connection.send({ type: "model_info", models: await core.session.availableModels() });
+      const core = activeCore();
+      if (core && client) client.connection.send({ type: "model_info", models: await core.session.availableModels() });
       return;
     }
     if (message.type === "inproc_voice") {
@@ -298,6 +297,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
       if (!selected) return;
       const model = models.resolveModel(selected);
 
+      const core = activeCore();
       if (core) {
         if (mainChanged) for (const conversation of core.conversations.list()) {
           await core.conversations.handleMessage({ type: "set_model", conversationId: conversation.id, model: `${model.provider}/${model.id}` });
@@ -307,7 +307,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         const started = await ensureCore();
         performance.measure('sideagent.startup.core', { start: coreStarted });
 
-        if (helloReceived && connection) started.sendHelloOk(connection);
+        if (client?.phase === "greeted") started.sendHelloOk(client.connection);
 
         for (const create of deferredCreates.splice(0)) started.handleMessage(create);
       }
@@ -324,7 +324,7 @@ export function startInprocHost(deps: InprocHostDeps): void {
         if (message.command.diagnostic && voiceModel === GPT_LIVE_MODEL) throw new Error("GPT-Live 不支持诊断录音：先在「模型与语音」换回阶跃星辰语音。");
       }
       catch (error) {
-        connection?.send({ type: "voice", voiceId: message.voiceId, conversationId: message.conversationId,
+        client?.connection.send({ type: "voice", voiceId: message.voiceId, conversationId: message.conversationId,
           event: { kind: "state", state: "error", detail: error instanceof Error ? error.message : String(error) } });
 
         return;
@@ -346,30 +346,26 @@ export function startInprocHost(deps: InprocHostDeps): void {
         && saved.target === JSON.stringify(modelConfig(config)) && saved.roles === JSON.stringify([selected, fastSelected, backupSelected].map(modelConfig))
         && saved.connection === JSON.stringify(storedConnections[message.target.provider] ?? null)
         && saved.credential === credentialContents(storedCredentials[message.target.provider]);
-      if (!matchesSaved || !config || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(conversationId)?.runtime.session.matchesModelConnection(config)) {
-        connection?.send({ type: "agent_event", conversationId: message.conversationId, event: { kind: "error", message: "原模型连接已变化，没有继续。请重新检查连接。" } });
+      if (!matchesSaved || !config || !sameErrorTask(message.conversationId, message.expectedRunId) || !activeCore()?.conversations.get(conversationId)?.runtime.session.matchesModelConnection(config)) {
+        client?.connection.send({ type: "agent_event", conversationId: message.conversationId, event: { kind: "error", message: "原模型连接已变化，没有继续。请重新检查连接。" } });
         return;
       }
     }
 
-    if (message.type === "hello") helloReceived = true;
+    if (message.type === "hello" && client) client.phase = "greeted";
 
     if (!selected) { sendUnavailable(message);
 
  return; }
 
-    if (!core) await ensureCore();
+    const core = activeCore() ?? await ensureCore();
 
-    if (!core) { sendUnavailable(message);
-
- return; }
-
-    if (message.type === "hello") core.sendHelloOk(connection!);
+    if (message.type === "hello") { if (client) core.sendHelloOk(client.connection); }
     else core.handleMessage(message);
   }
 
   function sameErrorTask(conversationId: string | undefined, runId: string | undefined): boolean {
-    const task = core?.conversations.getTaskProgress(conversationId ?? "default");
+    const task = activeCore()?.conversations.getTaskProgress(conversationId ?? "default");
     return !!runId && task?.runId === runId && task.state === "error";
   }
 
@@ -394,17 +390,17 @@ export function startInprocHost(deps: InprocHostDeps): void {
   }
 
   async function saveKey(message: Extract<ClientMessage, { type: "model_key_save" }>): Promise<void> {
-    const reply = (ok: boolean) => connection?.send({ type: "model_key_save_result", conversationId: message.conversationId, requestId: message.requestId, ok });
+    const reply = (ok: boolean) => client?.connection.send({ type: "model_key_save_result", conversationId: message.conversationId, requestId: message.requestId, ok });
     try {
       const config = configuredTarget(message.target);
-      if (cancelledKeySaves.has(message.requestId) || !config || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config) || !port) { reply(false); return; }
+      if (cancelledKeySaves.has(message.requestId) || !config || !sameErrorTask(message.conversationId, message.expectedRunId) || !activeCore()?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config) || !client) { reply(false); return; }
       const ok = await new Promise<boolean>(resolve => {
         const timer = setTimeout(() => { keySaveReplies.delete(message.requestId); cancelKeySave(message.requestId); resolve(false); }, 9_000);
         keySaveReplies.set(message.requestId, value => { clearTimeout(timer); resolve(value); });
-        port?.postMessage({ ...message, type: "inproc_key_save" });
+        client?.port.postMessage({ ...message, type: "inproc_key_save" });
       });
-      const stillCurrent = !cancelledKeySaves.has(message.requestId) && sameErrorTask(message.conversationId, message.expectedRunId) && core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config) === true;
-      log(`key-save: ${JSON.stringify({ stored: ok, cancelled: cancelledKeySaves.has(message.requestId), sameTask: sameErrorTask(message.conversationId, message.expectedRunId), sameModel: core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config) === true })}`);
+      const stillCurrent = !cancelledKeySaves.has(message.requestId) && sameErrorTask(message.conversationId, message.expectedRunId) && activeCore()?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config) === true;
+      log(`key-save: ${JSON.stringify({ stored: ok, cancelled: cancelledKeySaves.has(message.requestId), sameTask: sameErrorTask(message.conversationId, message.expectedRunId), sameModel: activeCore()?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config) === true })}`);
       if (ok && stillCurrent) savedKeyTransactions.set(message.conversationId ?? "default", { requestId: message.requestId, runId: message.expectedRunId, target: JSON.stringify(modelConfig(config)), roles: message.roles, connection: message.connection, credential: credentialContents(modelCredential(config, message.key)) });
       reply(ok && stillCurrent);
     } catch (error) { log(`key-save: storage failure: ${(error instanceof Error ? error.name : "unknown")}`); reply(false); }
@@ -413,10 +409,10 @@ export function startInprocHost(deps: InprocHostDeps): void {
 
   async function testKey(message: Extract<ClientMessage, { type: "model_key_test" }>): Promise<void> {
     const reply = (result: { ok: boolean; ms?: number; reason?: string; detail?: string }) =>
-      connection?.send({ type: "model_key_test_result", conversationId: message.conversationId, requestId: message.requestId, ...result });
+      client?.connection.send({ type: "model_key_test_result", conversationId: message.conversationId, requestId: message.requestId, ...result });
 
     const config = configuredTarget(message.target);
-    if (!config || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config)) return reply({ ok: false, reason: "原连接已变化，请重新打开并核对。" });
+    if (!config || !sameErrorTask(message.conversationId, message.expectedRunId) || !activeCore()?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config)) return reply({ ok: false, reason: "原连接已变化，请重新打开并核对。" });
     const binding = JSON.stringify([selected, fastSelected, backupSelected, storedConnections[config.provider], storedCredentials[config.provider]]);
     const started = performance.now();
     const probe = deps.createRuntime(() => undefined);
@@ -425,10 +421,10 @@ export function startInprocHost(deps: InprocHostDeps): void {
     try {
       await probe.credentials.load({ ...storedCredentials, [config.provider]: modelCredential(config, message.key) });
       await probeModel(probe, config, timeout);
-      if (binding !== JSON.stringify([selected, fastSelected, backupSelected, storedConnections[config.provider], storedCredentials[config.provider]]) || !configuredTarget(message.target) || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config)) return reply({ ok: false, reason: "测试期间连接已变化，请重新打开并核对。" });
+      if (binding !== JSON.stringify([selected, fastSelected, backupSelected, storedConnections[config.provider], storedCredentials[config.provider]]) || !configuredTarget(message.target) || !sameErrorTask(message.conversationId, message.expectedRunId) || !activeCore()?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config)) return reply({ ok: false, reason: "测试期间连接已变化，请重新打开并核对。" });
       reply({ ok: true, ms: Math.round(performance.now() - started) });
     } catch (error) {
-      if (binding !== JSON.stringify([selected, fastSelected, backupSelected, storedConnections[config.provider], storedCredentials[config.provider]]) || !configuredTarget(message.target) || !sameErrorTask(message.conversationId, message.expectedRunId) || !core?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config)) return reply({ ok: false, reason: "测试期间连接已变化，请重新打开并核对。" });
+      if (binding !== JSON.stringify([selected, fastSelected, backupSelected, storedConnections[config.provider], storedCredentials[config.provider]]) || !configuredTarget(message.target) || !sameErrorTask(message.conversationId, message.expectedRunId) || !activeCore()?.conversations.get(message.conversationId ?? "default")?.runtime.session.matchesModelConnection(config)) return reply({ ok: false, reason: "测试期间连接已变化，请重新打开并核对。" });
       const raw = (error instanceof Error ? error.message : String(error)).split(message.key).join("[密钥已隐藏]");
       const copy = describeModelError(`模型请求最终失败：${raw}`);
 
@@ -439,21 +435,18 @@ export function startInprocHost(deps: InprocHostDeps): void {
     }
   }
 
-  setInterval(() => port?.postMessage({ type: "inproc_keepalive" }), INPROC_KEEPALIVE_MS);
+  setInterval(() => client?.port.postMessage({ type: "inproc_keepalive" }), INPROC_KEEPALIVE_MS);
 
   deps.onConnect(next => {
     if (next.name !== INPROC_PORT_NAME) return;
-    port = next;
-    helloReceived = false;
 
     const conn: ClientConn = {
       send: (frame: ServerMessage) => next.postMessage(frame),
       close: () => next.disconnect(),
     };
 
-    connection = conn;
-
-    if (core) core.adoptClient(conn);
+    client = { phase: "attached", port: next, connection: conn };
+    activeCore()?.adoptClient(conn);
     let queue = Promise.resolve();
     next.onMessage.addListener((raw: Inbound) => {
       if (raw.type === "inproc_key_save_result") {
@@ -484,12 +477,11 @@ export function startInprocHost(deps: InprocHostDeps): void {
       });
     });
     next.onDisconnect.addListener(() => {
-      if (port !== next) return;
-      port = null;
-      connection = null;
+      if (client?.port !== next) return;
+      client = null;
       savedKeyTransactions.clear();
       for (const id of pendingKeySaves.keys()) cancelKeySave(id);
-      core?.onClientGone(conn);
+      activeCore()?.onClientGone(conn);
     });
   });
 }

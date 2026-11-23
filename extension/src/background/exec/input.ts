@@ -1728,8 +1728,7 @@ async function clickTarget(params: ClickParams, sessionId: string, clock: Return
       }
     }
 
-    let cdpMouseMoved = false;
-    let cdpMousePressed = false;
+    const pointer: { phase: "untouched" | "moved" | "press_dispatched" } = { phase: "untouched" };
     let effect: EffectReport | undefined;
     let undo: Awaited<ReturnType<typeof beforeWrite>> | undefined;
 
@@ -1750,7 +1749,7 @@ async function clickTarget(params: ClickParams, sessionId: string, clock: Return
 
       await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers },beforeDispatch);
-      cdpMouseMoved = true;
+      pointer.phase = "moved";
       heldOf(sessionId).pointer = [x, y];
       const effectPending = beginEffect(tabId, { point: [x, y] });
       const undoPending = trackWrite(sessionId, tabId, { point: [x, y] });
@@ -1786,7 +1785,7 @@ async function clickTarget(params: ClickParams, sessionId: string, clock: Return
             clickCount: n,
             modifiers,
           },pressGuard);
-          cdpMousePressed = true;
+          pointer.phase = "press_dispatched";
           await sendCommand(tabId, "Input.dispatchMouseEvent", {
             type: "mouseReleased",
             x,
@@ -1823,10 +1822,10 @@ async function clickTarget(params: ClickParams, sessionId: string, clock: Return
       }
     } catch (e) {
       if (e && typeof e === "object" && "executionFact" in e && e.executionFact === "not_executed") {
-        if (cdpMouseMoved && !isPrePressTargetError(e)) Object.assign(e,{executionFact:"unknown"});
+        if (pointer.phase !== "untouched" && !isPrePressTargetError(e)) Object.assign(e,{executionFact:"unknown"});
         throw e;
       }
-      if (cdpMousePressed) {
+      if (pointer.phase === "press_dispatched") {
         throw new Error(
           `点击可能已送达，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：点击没生效就再点一次。`,
         );
@@ -1834,7 +1833,7 @@ async function clickTarget(params: ClickParams, sessionId: string, clock: Return
 
       if (e instanceof FillRefused || (e as { executionFact?: string })?.executionFact === "not_executed") throw e;
 
-      if (cdpMouseMoved) {
+      if (pointer.phase !== "untouched") {
         if (isPrePressTargetError(e)) throw notExecuted(e);
         throw new Error(
           `点击是否送达无法确认，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：点击没生效就再点一次。`,
@@ -2011,8 +2010,7 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
       }
     }
 
-    let dispatched = false;
-    let pressed = false;
+    const pointer: { phase: "untouched" | "moved" | "press_dispatched" } = { phase: "untouched" };
     let effect: EffectReport | undefined;
 
     try {
@@ -2029,7 +2027,7 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
 
       await beforeDispatch?.();
       await sendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers },beforeDispatch);
-      dispatched = true;
+      pointer.phase = "moved";
       heldOf(sessionId).pointer = [x, y];
       const effectPending = beginEffect(tabId, { point: [x, y] });
 
@@ -2082,7 +2080,7 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
         await sendCommand(tabId, "Input.dispatchMouseEvent", {
           type: "mousePressed", x, y, button, buttons: btnMask | buttonsMaskFor(sessionId), clickCount: 1, modifiers,
         },sequenceGuard);
-        pressed = true;
+        pointer.phase = "press_dispatched";
         await sendCommand(tabId, "Input.dispatchMouseEvent", {
           type: "mouseReleased", x, y, button, buttons: buttonsMaskFor(sessionId) & ~btnMask, clickCount: 1, modifiers,
         },sequenceGuard);
@@ -2113,13 +2111,13 @@ async function doubleClickTarget(params: ClickParams, sessionId: string, beforeD
         dialogWatch.stop();
       }
     } catch (e) {
-      if (pressed) {
+      if (pointer.phase === "press_dispatched") {
         throw new Error(`双击可能已送达，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：双击没生效就再双击一次。`);
       }
 
       if (e instanceof FillRefused || (e as { executionFact?: string })?.executionFact === "not_executed") throw e;
 
-      if (dispatched) {
+      if (pointer.phase !== "untouched") {
         if (isPrePressTargetError(e)) throw notExecuted(e);
         throw new Error(`双击是否送达无法确认，后续 CDP 返回异常（${oneLine(e)}）。请 snapshot 看当前页面：双击没生效就再双击一次。`);
       }

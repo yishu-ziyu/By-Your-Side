@@ -49,11 +49,9 @@ const KEEPALIVE_MS = 25_000;
 export function createDictation(deps: { open: (url: string) => DictationSocket; connectMs?: number; idleMs?: number; capMs?: number }): Dictation {
   const { connectMs = CONNECT_MS, idleMs = IDLE_MS, capMs = CAP_MS } = deps;
   let socket: DictationSocket | null = null;
-  let ready = false;
-  let stopping = false;
-  let committed = false;
-  let outcome: DictationResult | null = null;
-  let settle: ((result: DictationResult) => void) | null = null;
+  let phase: "connecting" | "stop_on_connect" | "listening" | "committed" | "finished" = "connecting";
+  let settle!: (result: DictationResult) => void;
+  const outcome = new Promise<DictationResult>(resolve => { settle = resolve; });
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cap: ReturnType<typeof setTimeout> | undefined;
   let keepalive: ReturnType<typeof setInterval> | undefined;
@@ -62,13 +60,13 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
   const send = (event: ClientEvent) => socket?.send(JSON.stringify(event));
 
   const finish = (result: DictationResult) => {
-    if (outcome) return;
-    outcome = result;
+    if (phase === "finished") return;
+    phase = "finished";
     clearInterval(keepalive);
     clearTimeout(timer);
     clearTimeout(cap);
     socket?.close();
-    settle?.(result);
+    settle(result);
   };
 
   const timeout = () => finish({ ok: false, reason: "timeout", message: "听写服务没有回应" });
@@ -79,20 +77,22 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
   };
 
   const commit = () => {
-    if (committed) return;
-    committed = true;
+    if (phase !== "listening") return;
+    phase = "committed";
     send({ type: "input_audio_buffer.commit" });
     waitIdle();
     cap = setTimeout(timeout, capMs);
   };
 
   const onEvent = (event: ServerEvent) => {
-    if (committed) waitIdle();
+    if (phase === "finished") return;
+    if (phase === "committed") waitIdle();
 
     if (event.type === "session.created") {
       send({ type: "session.update", session: { modalities: ["text", "audio"], input_audio_format: "pcm16", output_audio_format: "pcm16", turn_detection: null, tools: [] } });
-    } else if (event.type === "session.updated" && !ready) {
-      ready = true;
+    } else if (event.type === "session.updated" && (phase === "connecting" || phase === "stop_on_connect")) {
+      const stopping = phase === "stop_on_connect";
+      phase = "listening";
 
       if (!pending.length && !stopping) keepalive = setInterval(() => send({ type: "input_audio_buffer.clear" }), KEEPALIVE_MS);
 
@@ -109,6 +109,7 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
 
   return {
     start() {
+      if (socket || phase === "finished") return;
       socket = deps.open(DICTATION_URL);
       socket.onmessage = data => {
         try {
@@ -121,24 +122,22 @@ export function createDictation(deps: { open: (url: string) => DictationSocket; 
       socket.onerror = () => finish({ ok: false, reason: "failed", message: "连不上听写服务" });
       socket.onclose = () => finish({ ok: false, reason: "failed", message: "听写连接断开了" });
     },
-    alive: () => !outcome && !stopping,
+    alive: () => phase === "connecting" || phase === "listening",
     push(frame) {
-      if (outcome || stopping) return;
+      if (phase !== "connecting" && phase !== "listening") return;
       clearInterval(keepalive);
 
-      if (ready) send({ type: "input_audio_buffer.append", audio: base64(frame) });
+      if (phase === "listening") send({ type: "input_audio_buffer.append", audio: base64(frame) });
       else pending.push(frame);
     },
     stop() {
-      stopping = true;
       clearInterval(keepalive);
-
-      if (outcome) return Promise.resolve(outcome);
-
-      if (ready) commit();
-      else timer = setTimeout(() => finish({ ok: false, reason: "failed", message: "连不上听写服务（网络慢或代理）" }), connectMs);
-
-      return new Promise(resolve => { settle = resolve; });
+      if (phase === "listening") commit();
+      else if (phase === "connecting") {
+        phase = "stop_on_connect";
+        timer = setTimeout(() => finish({ ok: false, reason: "failed", message: "连不上听写服务（网络慢或代理）" }), connectMs);
+      }
+      return outcome;
     },
     cancel() {
       finish({ ok: false, reason: "cancelled" });

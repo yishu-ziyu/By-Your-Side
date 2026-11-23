@@ -889,7 +889,6 @@ const CONTROL_TIMEOUT_MS = 10_000;
 const STEP_STILL_RUNNING = "助手手上的一步超过 10 秒还没结束，这一页可能还会被它改动。";
 let controlRequestSeq = 0;
 let handbackCaptureSeq = 0;
-let handbackCapture: { token: number; generation: number; tabId: number } | null = null;
 
 type PendingControl =
   | {
@@ -908,18 +907,34 @@ type PendingControl =
       timeout: PendingControlTimeout;
     };
 
-let pendingControl: PendingControl | null = null;
-let takeoverInProgress: { settled: Promise<void>; finish: () => void } | null = null;
+type TakeoverWait = { settled: Promise<void>; finish(): void };
+type ControlExchange =
+  | { phase: "idle" }
+  | { phase: "reading_handback"; token: number }
+  | { phase: "draining"; wait: TakeoverWait }
+  | { phase: "takeover"; wait: TakeoverWait; request: Extract<PendingControl, { action: "takeover" }> }
+  | { phase: "handback"; request: Extract<PendingControl, { action: "handback" }> };
 
-function markTakeoverStarted(): void {
-  let finish = () => {};
-  const settled = new Promise<void>((resolve) => { finish = resolve; });
-  takeoverInProgress = { settled, finish };
+const exchange = {
+  state: { phase: "idle" } as ControlExchange,
+  get captureToken(): number | null { return this.state.phase === "reading_handback" ? this.state.token : null; },
+  get pending(): PendingControl | null { return "request" in this.state ? this.state.request : null; },
+  get wait(): TakeoverWait | null { return "wait" in this.state ? this.state.wait : null; },
+};
+
+function cancelDrainingTakeover(): void {
+  if (exchange.state.phase !== "draining") return;
+  const { wait } = exchange.state;
+  exchange.state = { phase: "idle" };
+  wait.finish();
 }
 
-function finishTakeover(): void {
-  takeoverInProgress?.finish();
-  takeoverInProgress = null;
+function beginTakeoverWait(): TakeoverWait {
+  let finish!: () => void;
+  const settled = new Promise<void>(resolve => { finish = resolve; });
+  const wait = { settled, finish };
+  exchange.state = { phase: "draining", wait };
+  return wait;
 }
 
 function cancelTakeover(pending: Extract<PendingControl, {action:"takeover"}>) {
@@ -937,7 +952,7 @@ function nextControlRequestId(action: "takeover" | "handback"): string {
 
 function cancelHandbackCapture(): void {
   handbackCaptureSeq += 1;
-  handbackCapture = null;
+  if (exchange.state.phase === "reading_handback") exchange.state = { phase: "idle" };
 }
 
 function persistControl(): void {
@@ -1097,7 +1112,7 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
 
   if(state!=='connected'&&remoteControl)finishRemoteControl(false,'连接中断，页面控制结果尚无法确认。',true);
 
-  if (state !== "connected" && teamHeld() && !gate.isUser() && !pendingControl) {
+  if (state !== "connected" && teamHeld() && !gate.isUser() && !exchange.pending) {
     persistControl();
     broadcast({kind:"conn",state,transport,detail});
 
@@ -1106,7 +1121,7 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
 
   if (state !== "connected") {
     cancelHandbackCapture();
-    const pendingAction = pendingControl?.action ?? null;
+    const pendingAction = exchange.pending?.action ?? null;
 
     const lostPending = onUplinkLostDuringControl({
       owner: gate.control,
@@ -1114,12 +1129,12 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
       pendingAction,
     });
 
-    if (pendingControl?.action === "takeover" && !lostPending.cancelTakeover) {
-      pendingControl.timeout.pause();
+    if (exchange.pending?.action === "takeover" && !lostPending.cancelTakeover) {
+      exchange.pending.timeout.pause();
     }
 
-    if (pendingControl && lostPending.cancelTakeover) {
-      const pending = clearPendingControl(pendingControl.requestId);
+    if (exchange.pending && lostPending.cancelTakeover) {
+      const pending = clearPendingControl(exchange.pending.requestId);
 
       if (pending?.action === "takeover") {
         cancelTakeover(pending);
@@ -1132,7 +1147,7 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
           : "连接中断，接管没有完成。",
         "error",
       );
-    } else if (pendingControl?.action === "handback") {
+    } else if (exchange.pending?.action === "handback") {
       emitNotice("连接中断，交还没有完成，页面仍归你。", "error");
     }
 
@@ -1156,11 +1171,11 @@ function handleConnState(state: ConnState, transport: TransportKind | undefined,
       if (gate.isUser() || gate.isDraining) statusBySession.set(LEAD_SESSION_ID, lastStatus);
       persistControl();
     }
-  } else if (teamHeld() || gate.isUser() || gate.isDraining || pendingControl?.action === "takeover") {
+  } else if (teamHeld() || gate.isUser() || gate.isDraining || exchange.pending?.action === "takeover") {
     const view = team.view();
-    const requestId = pendingControl?.action === "takeover" ? pendingControl.requestId : nextControlRequestId("takeover");
+    const requestId = exchange.pending?.action === "takeover" ? exchange.pending.requestId : nextControlRequestId("takeover");
 
-    if (pendingControl?.action === "takeover") pendingControl.timeout.arm();
+    if (exchange.pending?.action === "takeover") exchange.pending.timeout.arm();
     const takeover: Extract<ClientMessage, { type: "takeover" }> = { type: "takeover", requestId };
 
     if (view) {
@@ -1239,12 +1254,11 @@ async function showUserControlGuarded(tabId?: number): Promise<void> {
 }
 
 function clearPendingControl(requestId: string): PendingControl | null {
-  if (!pendingControl || pendingControl.requestId !== requestId) return null;
-  const pending = pendingControl;
-  pendingControl = null;
+  if (!exchange.pending || exchange.pending.requestId !== requestId) return null;
+  const pending = exchange.pending;
+  exchange.wait?.finish();
+  exchange.state = { phase: "idle" };
   pending.timeout.clear();
-
-  if (pending.action === "takeover") finishTakeover();
 
   return pending;
 }
@@ -1269,7 +1283,7 @@ function failPendingControl(requestId: string, reason: string): void {
 }
 
 function handleControlResult(msg: Extract<ServerMessage, { type: "control_result" }>): void {
-  if (!pendingControl || pendingControl.requestId !== msg.requestId || pendingControl.action !== msg.action) return;
+  if (!exchange.pending || exchange.pending.requestId !== msg.requestId || exchange.pending.action !== msg.action) return;
   const pending = clearPendingControl(msg.requestId);
 
   if (!pending) return;
@@ -1408,7 +1422,9 @@ function reconcileControlRun(): void {
     activityBySession.clear();
     lastStatus = gate.isUser() ? "user" : current!.state;
 
-    if (pendingControl) clearPendingControl(pendingControl.requestId);
+    cancelHandbackCapture();
+    cancelDrainingTakeover();
+    if (exchange.pending) clearPendingControl(exchange.pending.requestId);
 
     if (remoteControl) { clearTimeout(remoteControl.timer); remoteControl.settle(); remoteControl = null; }
 
@@ -1449,19 +1465,19 @@ return;}
       const acc = acceptIncomingTeam({
         incoming,
         local: team.view(),
-        pendingRequestId: pendingControl?.requestId ?? null,
+        pendingRequestId: exchange.pending?.requestId ?? null,
         resultRequestId: null,
       });
 
       if (!acc.accept) return;
       team.hydrate(incoming);
 
-      if (acc.restoreUser && (gate.isDraining || pendingControl?.action === "takeover") && !gate.isUser()) {
+      if (acc.restoreUser && (gate.isDraining || exchange.pending?.action === "takeover") && !gate.isUser()) {
         const ids = incoming.members.map((m) => m.sessionId);
-        const gen = pendingControl?.action === "takeover" ? pendingControl.generation : gate.gen;
+        const gen = exchange.pending?.action === "takeover" ? exchange.pending.generation : gate.gen;
 
         if (gate.commitTakeover(gen, ids) || gate.isUser()) {
-          if (pendingControl?.action === "takeover") clearPendingControl(pendingControl.requestId);
+          if (exchange.pending?.action === "takeover") clearPendingControl(exchange.pending.requestId);
 
           for (const m of incoming.members) statusBySession.set(m.sessionId, "user");
           emitLocalStatus("user");
@@ -1504,7 +1520,7 @@ return;}
 
       return;
     } else if (msg.type === "status") {
-      if (pendingControl && (msg.sessionId == null || msg.sessionId === LEAD_SESSION_ID)) {
+      if (exchange.pending && (msg.sessionId == null || msg.sessionId === LEAD_SESSION_ID)) {
         return;
       }
 
@@ -1835,12 +1851,12 @@ async function stopRunningLoad(sessionIds: string[], tabId: number | undefined):
 async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wholeTask=false,ask?:string,targets?:string[]): Promise<void> {
   await controlReady;
 
-  const joined = !!takeoverInProgress;
+  const joined = !!exchange.wait;
 
-  while (takeoverInProgress) await takeoverInProgress.settled;
+  while (exchange.wait) await exchange.wait.settled;
 
-  if (pendingControl) {
-    emitNotice(`正在${pendingControl.action === "takeover" ? "接管" : "交还"}，请稍候。`);
+  if (exchange.pending) {
+    emitNotice(`正在${exchange.pending.action === "takeover" ? "接管" : "交还"}，请稍候。`);
 
     return;
   }
@@ -1848,6 +1864,7 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
   // WHY: 一次点击同时走面板和服务端两条路；前一条失败时用户已被告知，这条再试一遍会让侧栏又卡一轮。
   if (joined && !gate.isUser() && team.view()?.phase !== "user") return;
 
+  if (exchange.captureToken !== null) { emitNotice("正在读原任务的页面…"); return; }
   handoffAsk = ask ?? null;
 
   if (gate.isUser() || team.view()?.phase === "user") {
@@ -1858,40 +1875,41 @@ async function handleTakeover(requestedTabId?: number,remoteRequestId?:string,wh
     return;
   }
 
-  const targetTabId = wholeTask ? undefined : requestedTabId ?? await getWorkingTabId() ?? undefined;
-  const allMembers = await localActiveMembers();
-  let members = allMembers;
-
-  if (targetTabId != null) {
-    const collaborators = (await findSessionsForTab(targetTabId)).filter(k => parseExecutionKey(k).conversationId === conversationId).map(k => parseExecutionKey(k).sessionId);
-
-    if (!collaborators.length) { emitNotice("TAB_OWNERSHIP_ERROR: 该页面不属于当前会话", "error");
-
- return; }
-
-    for (const sid of collaborators) { gate.blockSession(sid); setSessionClaimBlocked(sid, true); }
-
-    members = allMembers.filter(m => collaborators.includes(m.sessionId));
-
-    for (const sid of collaborators) if (!members.some(m => m.sessionId === sid)) members.push({sessionId:sid,role:isLeadSession(sid)?"lead":"worker",activity:"running",tabId:targetTabId});
-  }
-
-  if (members.length === 0) {
-    emitNotice("当前没有运行中的任务，不用接管。");
-
-    return;
-  }
-
-  markTakeoverStarted();
-
+  const wait = beginTakeoverWait();
   try {
-    await stopThenRequestTakeover(members, targetTabId, lastStatus, remoteRequestId, ask, targets);
+    const targetTabId = wholeTask ? undefined : requestedTabId ?? await getWorkingTabId() ?? undefined;
+    const allMembers = await localActiveMembers();
+    if (exchange.wait !== wait) return;
+    let members = allMembers;
+
+    if (targetTabId != null) {
+      const collaborators = (await findSessionsForTab(targetTabId)).filter(k => parseExecutionKey(k).conversationId === conversationId).map(k => parseExecutionKey(k).sessionId);
+
+      if (exchange.wait !== wait) return;
+      if (!collaborators.length) {
+        emitNotice("TAB_OWNERSHIP_ERROR: 该页面不属于当前会话", "error");
+        return;
+      }
+
+      for (const sid of collaborators) { gate.blockSession(sid); setSessionClaimBlocked(sid, true); }
+
+      members = allMembers.filter(m => collaborators.includes(m.sessionId));
+
+      for (const sid of collaborators) if (!members.some(m => m.sessionId === sid)) members.push({sessionId:sid,role:isLeadSession(sid)?"lead":"worker",activity:"running",tabId:targetTabId});
+    }
+
+    if (members.length === 0) {
+      emitNotice("当前没有运行中的任务，不用接管。");
+
+      return;
+    }
+    await stopThenRequestTakeover(wait, members, targetTabId, lastStatus, remoteRequestId, ask, targets);
   } finally {
-    if ((pendingControl as PendingControl | null)?.action !== "takeover") finishTakeover();
+    if (exchange.wait === wait) cancelDrainingTakeover();
   }
 }
 
-async function stopThenRequestTakeover(members: ActiveMemberInput[], targetTabId: number | undefined, fallbackStatus: AgentRunState, remoteRequestId?: string, ask?: string, targets?: string[]): Promise<void> {
+async function stopThenRequestTakeover(wait: TakeoverWait, members: ActiveMemberInput[], targetTabId: number | undefined, fallbackStatus: AgentRunState, remoteRequestId?: string, ask?: string, targets?: string[]): Promise<void> {
   void stopTrailReplay(key());
   team.snapshotAndFreeze(members);
   team.beginDrain();
@@ -1899,6 +1917,7 @@ async function stopThenRequestTakeover(members: ActiveMemberInput[], targetTabId
   persistControl();
 
   if (ask && targetTabId != null) await bringForwardForUser(targetTabId, "hand_to_user");
+  if (exchange.wait !== wait) return;
   const shown = showUserControlGuarded();
 
   if (ask && targetTabId != null && targets?.length) {
@@ -1911,6 +1930,7 @@ async function stopThenRequestTakeover(members: ActiveMemberInput[], targetTabId
   const draining = targetTabId != null ? drainPage(sessionIds) : gate.beginTakeover(CONTROL_TIMEOUT_MS);
   await stopRunningLoad(sessionIds, targetTabId);
   const result = await draining;
+  if (exchange.wait !== wait) return;
 
   if ("stillBusy" in result && result.stillBusy) emitNotice(STEP_STILL_RUNNING);
 
@@ -1922,11 +1942,12 @@ async function stopThenRequestTakeover(members: ActiveMemberInput[], targetTabId
 
   emitHandoffPhase("leaving");
   await hidePresence(members.map((m) => key(m.sessionId)), true);
+  if (exchange.wait !== wait) return;
 
   for (const m of members) void suppressCursorStatus(key(m.sessionId));
   const requestId = remoteRequestId ?? nextControlRequestId("takeover");
   const frozen = team.view();
-  pendingControl = {
+  const pending: Extract<PendingControl, { action: "takeover" }> = {
     action: "takeover",
     requestId,
     generation: result.generation,
@@ -1937,7 +1958,8 @@ async function stopThenRequestTakeover(members: ActiveMemberInput[], targetTabId
       failPendingControl(requestId, "助手没有确认接管。页面还在助手手里。"),
     ),
   };
-  pendingControl.timeout.arm();
+  exchange.state = { phase: "takeover", wait, request: pending };
+  pending.timeout.arm();
 
   const takeover: Extract<ClientMessage, { type: "takeover" }> = { type: "takeover", requestId };
 
@@ -1966,20 +1988,20 @@ async function stopThenRequestTakeover(members: ActiveMemberInput[], targetTabId
 async function handleHandback(remoteRequestId?:string): Promise<void> {
   await controlReady;
 
-  if (handbackCapture) {
+  if (exchange.captureToken !== null) {
     emitNotice("正在读原任务的页面…");
 
     return;
   }
 
-  if (takeoverInProgress && !pendingControl) {
+  if (exchange.state.phase === "draining") {
     emitNotice("正在接管，请稍候。");
 
     return;
   }
 
-  if (pendingControl) {
-    emitNotice(`正在${pendingControl.action === "takeover" ? "接管" : "交还"}，请稍候。`);
+  if (exchange.pending) {
+    emitNotice(`正在${exchange.pending.action === "takeover" ? "接管" : "交还"}，请稍候。`);
 
     return;
   }
@@ -1990,6 +2012,17 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
     return;
   }
 
+  const token = ++handbackCaptureSeq;
+  const generation = gate.gen;
+  exchange.state = { phase: "reading_handback", token };
+  try {
+    await readAndHandBack(remoteRequestId, token, generation);
+  } finally {
+    if (exchange.captureToken === token) exchange.state = { phase: "idle" };
+  }
+}
+
+async function readAndHandBack(remoteRequestId: string | undefined, token: number, generation: number): Promise<void> {
   const frozen = team.view()?.members ?? [{ sessionId: LEAD_SESSION_ID, role: "lead" as const, phase: "user" as const }];
   let activeId: number | undefined;
 
@@ -2000,16 +2033,13 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
     activeId = undefined;
   }
 
-  const token = ++handbackCaptureSeq;
-  const generation = gate.gen;
-  handbackCapture = { token, generation, tabId: activeId ?? 0 };
   emitHandoffPhase("rereading");
   const pages = [];
 
-  const settleCancelled = () => { if (handbackCaptureSeq === token + 1 || handbackCapture?.token === token) emitHandoffPhase(teamHeld() ? "user" : "agent"); };
+  const settleCancelled = () => { if (handbackCaptureSeq === token + 1 || exchange.captureToken === token) emitHandoffPhase(teamHeld() ? "user" : "agent"); };
 
   for (const member of frozen) {
-    if (handbackCapture?.token !== token) { settleCancelled(); return; }
+    if (exchange.captureToken !== token) { settleCancelled(); return; }
     const boundId = await getWorkingTabId(member.sessionId);
     let bound: { id: number; title: string; url: string } | null = null;
 
@@ -2055,14 +2085,15 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
     );
   }
 
-  if (handbackCapture?.token !== token || handbackCapture.generation !== generation || !teamHeld()) {
+  if (exchange.captureToken !== token || gate.gen !== generation || !teamHeld()) {
     settleCancelled();
 
     return;
   }
 
-  handbackCapture = null;
   await returnCursorsForSessions(frozen.map((member) => key(member.sessionId)));
+
+  if (exchange.captureToken !== token || gate.gen !== generation || !teamHeld()) { settleCancelled(); return; }
 
   for (const page of pages) {
     if (page.ok && page.context?.tabId != null) void glowPage(key(page.sessionId), page.context.tabId);
@@ -2072,7 +2103,7 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
   const leadPage = pages.find((p) => isLeadSession(p.sessionId) && p.ok);
   const members = pages.map(toTeamMemberHandback);
   const requestId = remoteRequestId ?? nextControlRequestId("handback");
-  pendingControl = {
+  const pending: Extract<PendingControl, { action: "handback" }> = {
     action: "handback",
     requestId,
     tabId: leadPage && leadPage.ok ? leadPage.context.tabId : activeId ?? 0,
@@ -2080,7 +2111,8 @@ async function handleHandback(remoteRequestId?:string): Promise<void> {
       failPendingControl(requestId, "助手没有确认交还。页面仍归你。"),
     ),
   };
-  pendingControl.timeout.arm();
+  exchange.state = { phase: "handback", request: pending };
+  pending.timeout.arm();
   const teamViewNow = team.view();
 
   const payload: Extract<ClientMessage, { type: "handback" }> = {
@@ -2110,11 +2142,12 @@ async function handleAbort(taskRequestId?:string): Promise<void> {
   const runId=conversationSummaries.find(c=>c.id===conversationId)?.runId;
 
   if(runId)abortedRuns.add(runId);
+  cancelDrainingTakeover();
   cancelHandbackCapture();
   emitHandoffPhase("agent");
 
-  if (pendingControl) {
-    const pending = clearPendingControl(pendingControl.requestId);
+  if (exchange.pending) {
+    const pending = clearPendingControl(exchange.pending.requestId);
 
     if (pending?.action === "takeover") cancelTakeover(pending);
   }
@@ -2192,7 +2225,7 @@ return;}
 
     if(request.action==='pause')await handleTakeover(request.tabId,request.requestId,request.scope!=='page',request.ask,request.targets);else await handleHandback(request.requestId);
 
-    if(remoteControl===current&&pendingControl?.requestId!==request.requestId){
+    if(remoteControl===current&&exchange.pending?.requestId!==request.requestId){
       if(request.action==='pause'&&(gate.isUser()||team.view()?.phase==='user'))finishRemoteControl(true);
       else if(request.action==='resume'&&team.view()?.members.some(m=>m.phase==='restoring'))return;
       else if(request.action==='resume'&&team.view()?.phase==='restored')finishRemoteControl(true);

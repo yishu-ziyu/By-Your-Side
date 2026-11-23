@@ -131,8 +131,7 @@ interface PendingToolCall {
   callId: string;
   name: string;
   responseId: string | null;
-  output: string | null;
-  settled: boolean;
+  result: { phase: 'executing' | 'sent' } | { phase: 'ready'; output: string };
   deferReply?: boolean;
   arguments?:Record<string,unknown>;
   feedback?: ExecutionFeedback;
@@ -214,7 +213,7 @@ export class RealtimeVoiceConnection {
   private readonly options: RealtimeVoiceConnectionOptions;
   private ws: WebSocket | null = null;
   private phase: Phase = 'idle';
-  private closed = false;
+  private get closed(): boolean { return this.phase === 'closed'; }
   private handshakeRetries = 0;
   private createdModel: string | null = null;
   private readyAt = 0;
@@ -224,18 +223,22 @@ export class RealtimeVoiceConnection {
   private readonly seenEventIds = new Set<string>();
   private readonly seenCallIds = new Set<string>();
   private activeResponseId: string | null = null;
-  private sendingResponse = false;
+  private requestPhase: 'idle' | 'requesting' | 'cancel_on_arrival' = 'idle';
+  private get sendingResponse(): boolean { return this.requestPhase === 'requesting'; }
+  private get pendingStop(): boolean { return this.requestPhase === 'cancel_on_arrival'; }
+  private clearPendingStop(): void { if (this.pendingStop) this.requestPhase = 'idle'; }
+  private finishRequest(): void { if (this.sendingResponse) this.requestPhase = 'idle'; }
   private busyRetries = 0;
   private readonly doneResponses = new Set<string>();
   private readonly playedResponses = new Set<string>();
   private readonly audioBytes = new Map<string, number>();
   private readonly assistantText = new Map<string, string>();
   private readonly finalizedText = new Map<string, string>();
-  private userSpeaking = false;
+  private speech: { phase: 'quiet' | 'speaking' } | { phase: 'ended'; at: number } = { phase: 'quiet' };
+  private get userSpeaking(): boolean { return this.speech.phase === 'speaking'; }
   private unansweredSpeechMs = 0;
   private lastSpeechAt = 0;
   private lastProviderEventAt = 0;
-  private speechStopAt: number | null = null;
   private firstTextNoted = false;
   private firstAudioNoted = false;
   private latestInput: UserInput | null = null;
@@ -259,7 +262,6 @@ export class RealtimeVoiceConnection {
   private suppressDispatch = false;
   private localCancelResponseId: string | null = null;
   private readonly silencedResponses = new Set<string>();
-  private pendingStop = false;
   private browserAbort = new AbortController();
   private browserQueue: Promise<unknown> = Promise.resolve();
   private readonly finishedResponses = new Set<string>();
@@ -324,7 +326,7 @@ export class RealtimeVoiceConnection {
       const text = (asString(message.text) ?? '').trim();
 
       if (!text) return;
-      this.pendingStop = false;
+      this.clearPendingStop();
       this.browserAbort.abort(); this.browserAbort = new AbortController();
       this.speechSeq++;this.speechItemId=null;
       this.recordUserInput({id: `text-${++this.textSeq}`, text});
@@ -365,7 +367,6 @@ export class RealtimeVoiceConnection {
 
   close(): void {
     if (this.closed) return;
-    this.closed = true;
     this.phase = 'closed';
     this.browserAbort.abort();
     this.planRoutingAbort.abort();
@@ -384,6 +385,7 @@ export class RealtimeVoiceConnection {
   }
 
   private onProviderMessage(data: RawData): void {
+    if (this.closed) return;
     let event: Record<string, unknown>;
 
     try {
@@ -452,7 +454,7 @@ export class RealtimeVoiceConnection {
 
         this.creatingDeliveryId=undefined;this.creatingNotice=null;
         this.log({type:'response_created',responseId:id,requested:this.sendingResponse,autoPending:this.autoResponsePending!==null});
-        this.sendingResponse = false;
+        this.finishRequest();
         this.busyRetries = 0;
         this.clearTimer('create-watch');
         this.autoResponsePending = null;
@@ -462,7 +464,7 @@ export class RealtimeVoiceConnection {
         if (this.pendingStop) {
           this.socketSend({type: 'response.cancel'});
           this.localCancelResponseId = id;
-          this.pendingStop = false;
+          this.clearPendingStop();
           this.log({type: 'late_response_cancelled', responseId: id});
         } else if (this.planMode && !this.options.diagnostic && !noticeResponse) this.gatePlanResponse(id);
         else if (autoForSpeech && !this.options.diagnostic && this.options.holdForTranscript?.()) this.gateResponse(id);
@@ -506,16 +508,15 @@ return asString(c?.text)??asString(c?.transcript)??'';}).join(''):'';
           else if (this.activeResponseId) this.dropResponse(this.activeResponseId);
         }
         this.browserAbort.abort(); this.browserAbort = new AbortController();
-        this.userSpeaking = true;
+        this.speech = { phase: 'speaking' };
         this.silenceOutput();
 
         if(this.creatingNotice){this.queuedNotify.unshift(this.creatingNotice.notice);this.creatingNotice=null;this.creatingDeliveryId=undefined;this.suppressDispatch=false;}
 
-        this.speechStopAt = null;
         this.firstTextNoted = false;
         this.firstAudioNoted = false;
         this.latestInput = null;
-        this.pendingStop = false;
+        this.clearPendingStop();
         this.autoResponsePending = null;
         this.clearTimer('auto-response-watchdog');
         this.speechSeq += 1;
@@ -531,11 +532,10 @@ return asString(c?.text)??asString(c?.transcript)??'';}).join(''):'';
 
         return this.emitMetric('vad_speech_started_since_ready', this.sinceReady());
       case 'input_audio_buffer.speech_stopped':
-        this.userSpeaking = false;
-        this.speechStopAt = Date.now();
+        this.speech = { phase: 'ended', at: Date.now() };
         {const itemId=asString(event.item_id)??this.speechItemId;const item=itemId?this.speechItems.get(itemId):undefined;
 
-if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
+if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speech.at});}
 
         if (this.planMode && !this.options.diagnostic) {
           if (this.planResponseOrigins.length >= 32) return this.fatal('语音回复来源无法确认，请重新开启语音。');
@@ -551,15 +551,14 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
           this.armTimer('auto-response-watchdog', AUTO_RESPONSE_WATCHDOG_MS, () => {
             this.log({type: 'auto_response_watchdog', speechSeq: this.autoResponsePending});
             this.autoResponsePending = null;
-            if (!this.sendingResponse) this.pendingStop = false;
+            this.clearPendingStop();
             this.maybeFlush();
           });
         }
 
         return this.maybeFlush();
       case 'input_audio_buffer.speech_backchannel': {
-        this.userSpeaking = false;
-        this.speechStopAt = null;
+        this.speech = { phase: 'quiet' };
         this.log({type: 'speech_backchannel'});
 
         return this.maybeFlush();
@@ -648,9 +647,9 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
     const bytes = Math.floor((delta.length * 3) / 4);
     this.audioBytes.set(responseId, (this.audioBytes.get(responseId) ?? 0) + bytes);
 
-    if (!this.firstAudioNoted && this.speechStopAt !== null) {
+    if (!this.firstAudioNoted && this.speech.phase === 'ended') {
       this.firstAudioNoted = true;
-      this.emitMetric('first_audio_since_vad_stop', Date.now() - this.speechStopAt);
+      this.emitMetric('first_audio_since_vad_stop', Date.now() - this.speech.at);
     }
 
     this.sendToClient({type: 'audio', data: delta, responseId});
@@ -664,9 +663,9 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
     if (this.finalizedText.has(responseId)) return;
 
-    if (!this.firstTextNoted && this.speechStopAt !== null) {
+    if (!this.firstTextNoted && this.speech.phase === 'ended') {
       this.firstTextNoted = true;
-      this.emitMetric('first_text_since_vad_stop', Date.now() - this.speechStopAt);
+      this.emitMetric('first_text_since_vad_stop', Date.now() - this.speech.at);
     }
 
     const full = (this.assistantText.get(responseId) ?? '') + delta;
@@ -846,7 +845,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
     if (this.activeResponseId === id) {
       this.activeResponseId = null;
-      this.sendingResponse = false;
+      this.finishRequest();
       this.busyRetries = 0;
       this.clearTimer('create-watch');
     }
@@ -914,8 +913,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       callId,
       name: asString(event.name) ?? 'unknown',
       responseId: asString(event.response_id) ?? this.activeResponseId,
-      output: null,
-      settled: false,
+      result: { phase: 'executing' },
       arguments:(()=>{try{return asRecord(JSON.parse(asString(event.arguments)??'{}'))??undefined;}catch{return undefined;}})(),
     };
 
@@ -940,10 +938,10 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       && /no ongoing response to cancel/i.test(message)) return;
 
     if (/busy|active|already|已有|进行中/i.test(`${code} ${message}`)) {
-      this.sendingResponse = false;
+      this.finishRequest();
       this.clearTimer('create-watch');
 
-      if (this.pendingStop) { this.pendingStop = false; return; }
+      if (this.pendingStop) { this.clearPendingStop(); return; }
       this.wantResponse = true;
       const retrying = this.busyRetries++ < MAX_BUSY_RETRIES;
 
@@ -1011,7 +1009,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
       result = call.feedback ? {...visible, hostFeedback:{text:call.feedback.text}} : visible;
     }
 
-    call.output = serializeToolOutput(result, direct);
+    call.result = { phase: 'ready', output: serializeToolOutput(result, direct) };
     const receipt = asRecord(result);
     call.deferReply = call.name === 'task_action' && receipt?.ok === true && ['accepted','queued'].includes(String(receipt.status));
     const failed=asRecord(result)?.ok===false;
@@ -1127,7 +1125,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
   }
 
   private maybeFlush(): void {
-    if (this.phase !== 'ready' || this.closed) return;
+    if (this.phase !== 'ready') return;
 
     if (this.planMode && this.planResponseOrigins.length > 0) return;
 
@@ -1137,18 +1135,16 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
     if (this.activeResponseId !== null || this.sendingResponse || this.userSpeaking) return;
 
-    if ([...this.pendingToolCalls.values()].some(call => !call.settled && call.output === null)) return;
+    if ([...this.pendingToolCalls.values()].some(call => call.result.phase === 'executing')) return;
     let replyNeeded = false;
-    const batch: PendingToolCall[] = [];
 
     for (const call of this.pendingToolCalls.values()) {
-      if (call.settled || call.output === null) continue;
+      if (call.result.phase !== 'ready') continue;
       const finished = call.responseId === null ? this.activeResponseId === null : this.doneResponses.has(call.responseId);
 
       if (!finished) continue;
-      this.socketSend({type: 'conversation.item.create', item: {type: 'function_call_output', call_id: call.callId, output: call.output}});
-      call.settled = true;
-      batch.push(call);
+      this.socketSend({type: 'conversation.item.create', item: {type: 'function_call_output', call_id: call.callId, output: call.result.output}});
+      call.result = { phase: 'sent' };
       replyNeeded ||= !call.deferReply && !call.muted;
       this.log({type: 'tool_output_sent', callId: call.callId, name: call.name});
     }
@@ -1176,11 +1172,11 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
 
     if (replyNeeded || this.wantResponse) {
       this.wantResponse = false;
-      this.sendingResponse = true;
+      this.requestPhase = 'requesting';
       this.socketSend({type: 'response.create'});
       this.armTimer('create-watch', RESPONSE_WATCHDOG_MS, () => {
         this.log({type: 'create_watchdog'});
-        this.sendingResponse = false;
+        this.finishRequest();
 
         if (this.creatingNotice) this.wantResponse = true;
         this.maybeFlush();
@@ -1222,14 +1218,14 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speechStopAt});}
   private stopSpeech(): void {
     const responseId = this.activeResponseId;
 
-    if (responseId === null && (this.sendingResponse || this.autoResponsePending === this.speechSeq)) this.pendingStop = true;
+    if (responseId === null && (this.sendingResponse || this.autoResponsePending === this.speechSeq)) this.requestPhase = 'cancel_on_arrival';
 
-    for (const call of this.pendingToolCalls.values()) if (!call.settled) call.muted = true;
+    for (const call of this.pendingToolCalls.values()) if (call.result.phase !== 'sent') call.muted = true;
     this.wantResponse = false;
     this.busyRetries = 0;
     this.clearTimer('busy-retry');
     this.clearTimer('create-watch');
-    this.sendingResponse = false;
+    this.finishRequest();
 
     if (responseId && this.held?.id === responseId) this.dropResponse(responseId);
     else if (responseId) {

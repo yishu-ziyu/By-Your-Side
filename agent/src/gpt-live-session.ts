@@ -1,7 +1,8 @@
+import { commitVoiceInput, receiveVoiceContext, type VoiceTurnInput as Input } from './voice-turn.js';
 import { aboutTask, progressSpeech, taskName } from './voice-receipt.js';
 import { createVoiceDelivery } from './voice-delivery.js';
 import { spokenDeliveryText, type RealtimeVoiceDependencies } from './realtime-voice-session.js';
-import type { VoiceCommand, VoiceInputContext, VoiceRouteResult, VoiceTarget, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
+import type { VoiceCommand, VoiceRouteResult, TaskProgressSnapshot, UserDelivery, UserDeliveryStream } from '../../shared/voice.js';
 import { GPT_LIVE_CONTEXT_BYTES, utf8Bytes } from '../../shared/gpt-live.js';
 import { VoiceIntentError } from './voice-errors.js';
 
@@ -63,9 +64,13 @@ function covers(whole: string, part: string): boolean {
   return !needle || normalizeWords(whole).includes(needle);
 }
 
-type Input = { turn: number; snapshot: TaskProgressSnapshot | null; targets?: VoiceTarget[]; input?: VoiceInputContext; error?: string; ready: boolean };
 
-type Delegation = { id: string; text: string; runId?: string | null; queuedIn?: string; queuedRequest?: string; viaSession?: true; done: boolean };
+type BoundDelegation = { phase: 'bound'; runId: string; owner?: string };
+type Delegation = { id: string; text: string; viaSession?: true; state:
+  | { phase: 'routing' | 'done' }
+  | { phase: 'queued'; owner: string; request: string }
+  | BoundDelegation };
+
 
 const HOST_GATE_MS = 500;
 
@@ -74,8 +79,7 @@ type DelegationGroup = {
   userTurnId?: string;
   texts: string[];
   usedText: string;
-  routing: boolean;
-  routed: boolean;
+  phase: 'new' | 'routing' | 'routed';
   repaired: boolean;
   runId?: string | null;
   conversationId?: string;
@@ -155,8 +159,7 @@ export class GptLiveSession {
         const input = this.inputs.get(command.turn);
 
         if (!input) return;
-        input.input = command.input;
-        input.ready = !command.contextPending;
+        commitVoiceInput(input, command.input, command.contextPending);
 
         return;
       }
@@ -165,9 +168,7 @@ export class GptLiveSession {
         const input = this.inputs.get(command.turn);
 
         if (!input) return;
-        input.input = command.input;
-        input.error = command.error;
-        input.ready = true;
+        receiveVoiceContext(input, command.input, command.error);
 
         return;
       }
@@ -189,15 +190,15 @@ export class GptLiveSession {
   private async delegate(id: string, text: string, userTurnId?: string, viaSession = false): Promise<void> {
     if (this.delegations.has(id) || !this.deps.route) return;
     const group = this.groupFor(id, userTurnId);
-    const record: Delegation = { id, text, done: false, ...(viaSession ? { viaSession: true as const } : {}) };
+    const record: Delegation = { id, text, state: { phase: 'routing' }, ...(viaSession ? { viaSession: true as const } : {}) };
     this.delegations.set(id, record);
     group.texts.push(text);
 
-    if (group.routed) { this.resolveJoiner(group, record); return; }
+    if (group.phase === 'routed') { this.resolveJoiner(group, record); return; }
 
-    if (group.routing) { group.late.push(record); return; }
-    group.routing = true;
-    const origin: Input = { turn: ++this.turn, snapshot: this.deps.getSnapshot(), targets: this.deps.getTargets?.(), ready: false };
+    if (group.phase === 'routing') { group.late.push(record); return; }
+    group.phase = 'routing';
+    const origin: Input = { turn: ++this.turn, snapshot: this.deps.getSnapshot(), targets: this.deps.getTargets?.(), context: { phase: 'pending' } };
     this.inputs.set(origin.turn, origin);
     this.deps.emit({ kind: 'input_turn', turn: origin.turn });
     const requestId = `gptlive-${this.deps.voiceId ?? 'voice'}-${group.key}`;
@@ -225,9 +226,9 @@ export class GptLiveSession {
           : '处理语音请求的服务暂时失败，这句话还没有执行，原任务没有改变。'
         : `这句没有执行：${error instanceof Error ? error.message : String(error)}`;
 
-      if (record.viaSession) { this.deps.diagnostic?.('gpt_live_host_gate_failed', { delegationId: id, detail: message.slice(0, 120) }); record.done = true; }
+      if (record.viaSession) { this.deps.diagnostic?.('gpt_live_host_gate_failed', { delegationId: id, detail: message.slice(0, 120) }); record.state = { phase: 'done' }; }
       else this.answer(record, 'speakable', message);
-      group.routed = true;
+      group.phase = 'routed';
       this.resolveLate(group);
 
       return;
@@ -242,16 +243,16 @@ export class GptLiveSession {
       delegatedChars: delegated.length, userWordsChars: userWords?.length ?? 0,
       delegated: delegated.slice(0, 80), userWords: (userWords ?? '').slice(0, 80),
     });
-    group.routed = true;
+    group.phase = 'routed';
     const receipt = result.kind === 'action' || result.kind === 'steer' ? result.receipts?.[0] : undefined;
 
     if ((result.kind === 'action' || result.kind === 'steer') && result.ok && result.status === 'accepted' && receipt?.runId) {
-      record.runId = receipt.runId;
+      record.state = { phase: 'bound', runId: receipt.runId };
       this.delivery.handle({ type: 'bound', delegationId: id, runId: receipt.runId });
       this.watchProgress();
       group.runId = receipt.runId;
       group.conversationId = receipt.conversationId;
-      this.deps.diagnostic?.("gpt_live_task_bound", {delegationId:id,runId:record.runId});
+      this.deps.diagnostic?.("gpt_live_task_bound", {delegationId:id,runId:receipt.runId});
       this.answer(record, 'commentary', result.message);
       this.resolveLate(group);
       if (userTurnId) this.repairWithUserWords(userTurnId, this.dialogue.get(userTurnId)?.text ?? '');
@@ -260,8 +261,7 @@ export class GptLiveSession {
     }
 
     if (result.kind === 'action' && result.ok && result.status === 'queued' && receipt?.conversationId) {
-      record.queuedIn = receipt.conversationId;
-      record.queuedRequest = receipt.requestId;
+      record.state = { phase: 'queued', owner: receipt.conversationId, request: receipt.requestId };
       this.deps.diagnostic?.('gpt_live_task_queued', { delegationId: id, conversationId: receipt.conversationId });
       this.answer(record, 'commentary', '这件事排在正在做的上一件后面，还没开始做，也还没有结果。可以简短告诉用户上一件做完就接着做；不要说已经做了、已经记下或已经保存。');
       this.resolveLate(group);
@@ -273,7 +273,7 @@ export class GptLiveSession {
       const differs = result.kind === 'action' || result.kind === 'steer' || result.kind === 'clarify' ? result.message : result.kind === 'none' ? result.spokenText : undefined;
 
       if (differs) this.answer(record, 'commentary', `客户端对用户刚才那句的处理：${differs}。你刚才的回答如果和它不一致，简短更正；一致就不用再说。`);
-      record.done = true;
+      record.state = { phase: 'done' };
       this.resolveLate(group);
 
       return;
@@ -288,14 +288,14 @@ export class GptLiveSession {
     else this.answer(record, 'commentary', '客户端没有可交给用户的结果。请你直接简短回答用户，不要编造事实。');
 
     this.resolveLate(group);
-    if (record.runId === undefined) record.done = true;
+    record.state = { phase: 'done' };
   }
   private groupFor(id: string, userTurnId?: string): DelegationGroup {
     const key = userTurnId ?? `item:${id}`;
     let group = this.groups.get(key);
 
     if (!group) {
-      group = { key, userTurnId, texts: [], usedText: '', routing: false, routed: false, repaired: false, late: [] };
+      group = { key, userTurnId, texts: [], usedText: '', phase: 'new', repaired: false, late: [] };
       this.groups.set(key, group);
     }
 
@@ -308,7 +308,7 @@ export class GptLiveSession {
     if (!covers(group.usedText, record.text)) void this.steerInto(group, record.text, 'item');
 
     this.answer(record, 'commentary', '这句已并入同一句请求处理，不用另外回答。');
-    record.done = true;
+    record.state = { phase: 'done' };
   }
   private repairWithUserWords(turnId: string, userWords: string): void {
     const group = this.groups.get(turnId);
@@ -336,40 +336,40 @@ export class GptLiveSession {
   private answer(record: Delegation, channel: 'speakable' | 'commentary', raw: string, hostNote?: string): boolean {
     const text = liveContextText(raw, channel, hostNote);
 
-    if (this.closed || record.done || !text.trim()) return false;
+    if (this.closed || record.state.phase === 'done' || !text.trim()) return false;
 
-    if (channel === 'speakable') { record.done = true; this.delivery.handle({ type: 'done', delegationId: record.id }); }
+    if (channel === 'speakable') { record.state = { phase: 'done' }; this.delivery.handle({ type: 'done', delegationId: record.id }); }
     this.deps.diagnostic?.('gpt_live_delegation_context', { delegationId: record.id, channel, chars: text.length, viaSession: !!record.viaSession });
     this.deps.emit(record.viaSession ? { kind: 'live_context', channel, text } : { kind: 'delegation_context', delegationId: record.id, channel, text });
 
     return true;
   }
   private settle(runId: string | null | undefined): Delegation | undefined {
-    const [latest, ...older] = [...this.delegations.values()].reverse().filter(d => !d.done && !!d.runId && d.runId === runId);
+    const [latest, ...older] = [...this.delegations.values()].reverse().filter(d => d.state.phase === 'bound' && d.state.runId === runId);
 
     for (const record of older) {
       this.answer(record, 'commentary', '这次委派的结果已随后一次委派送达，不用另外回答。');
-      record.done = true;
+      record.state = { phase: 'done' };
       this.delivery.handle({ type: 'done', delegationId: record.id });
     }
 
     return latest;
   }
   endQueued(owner: string, requestId: string, text: string | null): void {
-    const record = [...this.delegations.values()].find(d => !d.done && !d.runId && d.queuedIn === owner && d.queuedRequest === requestId);
+    const record = [...this.delegations.values()].find(d => d.state.phase === 'queued' && d.state.owner === owner && d.state.request === requestId);
 
     if (!record) return;
     this.deps.diagnostic?.('gpt_live_queued_ended', { delegationId: record.id, spoken: !!text });
 
     if (text) { this.answer(record, 'speakable', text); return; }
     this.answer(record, 'commentary', '这件事已经取消，没有开始做；用户已经知道，不用再提。');
-    record.done = true;
+    record.state = { phase: 'done' };
   }
   bindQueued(owner: string, runId: string): boolean {
-    const record = [...this.delegations.values()].find(d => !d.done && !d.runId && d.queuedIn === owner);
+    const record = [...this.delegations.values()].find(d => d.state.phase === 'queued' && d.state.owner === owner);
 
     if (!record) return false;
-    record.runId = runId;
+    record.state = { phase: 'bound', owner, runId };
     this.delivery.handle({ type: 'bound', delegationId: record.id, runId });
     this.watchProgress();
 
@@ -378,12 +378,12 @@ export class GptLiveSession {
   private async waitForInput(origin: Input): Promise<void> {
     const end = Date.now() + 5000;
 
-    while (!origin.ready && !this.closed && Date.now() < end) {
+    while (origin.context.phase === 'pending' && !this.closed && Date.now() < end) {
       await new Promise(r => setTimeout(r, 20));
     }
 
-    if (this.closed || !origin.ready || origin.error) {
-      throw new Error(origin.error ?? '页面资料没有及时到达，未执行这句话。');
+    if (this.closed || origin.context.phase !== 'ready') {
+      throw new Error(origin.context.phase === 'failed' ? origin.context.error : '页面资料没有及时到达，未执行这句话。');
     }
   }
   notify(snapshot: TaskProgressSnapshot): boolean {
@@ -419,14 +419,14 @@ export class GptLiveSession {
     this.progressTimer ??= setInterval(() => this.tickProgress(), 2_000);
   }
   private tickProgress(): void {
-    const waiting = [...this.delegations.values()].filter((d): d is Delegation & { runId: string } => !d.done && !!d.runId);
+    const waiting = [...this.delegations.values()].filter((d): d is Delegation & { state: BoundDelegation } => d.state.phase === 'bound');
 
     if (!waiting.length || this.closed) { if (this.progressTimer) clearInterval(this.progressTimer); this.progressTimer = null; return; }
     const tick = waiting.map(record => {
-      const snapshot = record.queuedIn ? this.deps.snapshotOf?.(record.queuedIn) : this.deps.getSnapshot();
-      const running = snapshot?.state === 'running' && record.runId === snapshot.runId;
+      const snapshot = record.state.owner ? this.deps.snapshotOf?.(record.state.owner) : this.deps.getSnapshot();
+      const running = snapshot?.state === 'running' && record.state.runId === snapshot.runId;
 
-      return { delegationId: record.id, runId: record.runId, running, step: running ? snapshot.active.at(-1)?.action ?? null : null };
+      return { delegationId: record.id, runId: record.state.runId, running, step: running ? snapshot.active.at(-1)?.action ?? null : null };
     });
 
     for (const action of this.delivery.handle({ type: 'tick', waiting: tick })) {

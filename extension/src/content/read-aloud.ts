@@ -150,8 +150,7 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
   let chunks: Chunk[] = [];
   let current = 0;
   let rate = 0;
-  let playing = false;
-  let failed = false;
+  let phase: 'idle' | 'loading' | 'playing' | 'paused' | 'failed' = 'idle';
   let generation = 0;
   let lang = 'en-US';
   let voice: SpeechSynthesisVoice | undefined;
@@ -193,6 +192,8 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
   }
 
   function render(): void {
+    const playing = phase === 'playing';
+    const failed = phase === 'failed';
     toggle.replaceChildren(icon(playing ? Pause : Play));
     toggle.setAttribute('aria-label', playing ? '暂停朗读' : '继续朗读');
     toggle.title = playing ? '暂停' : '继续';
@@ -208,7 +209,7 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
 
   function silence(): void {
     generation++;
-    playing = false;
+    phase = 'paused';
     speechSynthesis.cancel();
     mark(SENTENCE, null);
     mark(WORD, null);
@@ -216,7 +217,7 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
 
   function fail(message: string): void {
     silence();
-    failed = true;
+    phase = 'failed';
     label.textContent = message;
     bar.hidden = false;
     render();
@@ -225,7 +226,7 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
   function speakFrom(index: number): void {
     silence();
     const gen = generation;
-    playing = true;
+    phase = 'playing';
     render();
 
     const next = (k: number) => {
@@ -275,16 +276,17 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
   }
 
   function stop(): void {
-    if (playing || !bar.hidden) {
+    if (phase !== 'idle') {
       silence();
     }
 
     bar.hidden = true;
-    failed = false;
+    phase = 'idle';
   }
 
   async function start(fallback: string, range: Range | null): Promise<void> {
     stop();
+    phase = 'loading';
     bar.hidden = false;
     render();
 
@@ -305,7 +307,7 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
     const gen = generation;
     const voices = await loadVoices();
 
-    if (gen !== generation || bar.hidden) {
+    if (gen !== generation) {
       return;
     }
 
@@ -330,7 +332,7 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
       stop();
     }
     else if (action === 'toggle') {
-      if (playing) {
+      if (phase === 'playing') {
         silence();
         render();
       }
@@ -341,7 +343,7 @@ export function createReadAloud(root: ShadowRoot): ReadAloud {
     else if (action === 'rate') {
       rate = (rate + 1) % RATES.length;
 
-      if (playing) {
+      if (phase === 'playing') {
         speakFrom(current);
       }
       else {

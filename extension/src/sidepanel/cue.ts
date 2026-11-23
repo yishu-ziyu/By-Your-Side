@@ -18,9 +18,7 @@ let ctx: AudioContext | null = null;
 
 let suspendTimer: ReturnType<typeof setTimeout> | undefined;
 
-let stopped = false;
-
-let doneCued = false;
+let completion: "pending" | "cued" | "stopped" = "pending";
 
 let waitingFor: string | null = null;
 
@@ -29,13 +27,12 @@ let awaitingVerdict = false;
 export function observeForCue(ev: AgentUiEvent): void {
   switch (ev.kind) {
     case "agent_start":
-      stopped = false;
-      doneCued = false;
+      completion = "pending";
       waitingFor = null;
       awaitingVerdict = false;
       break;
     case "run_stopped":
-      stopped = true;
+      completion = "stopped";
       break;
     case "agent_end":
       if (!awaitingVerdict) cueDone();
@@ -49,7 +46,7 @@ export function observeForCue(ev: AgentUiEvent): void {
       if (!awaitingVerdict) break;
       awaitingVerdict = false;
 
-      if (stopped || ev.status === "continue") break;
+      if (completion === "stopped" || ev.status === "continue") break;
 
       if (ev.status === "needs_user") waitOn("goal-needs-user");
       else cueDone();
@@ -69,13 +66,13 @@ export function observeForCue(ev: AgentUiEvent): void {
 }
 
 function cueDone(): void {
-  if (stopped || doneCued || waitingFor) return;
-  doneCued = true;
+  if (completion !== "pending" || waitingFor) return;
+  completion = "cued";
   void play(DONE);
 }
 
 function waitOn(key: string | null): void {
-  if (key && key !== waitingFor && !stopped) void play(NEEDS_YOU);
+  if (key && key !== waitingFor && completion !== "stopped") void play(NEEDS_YOU);
   waitingFor = key;
 }
 

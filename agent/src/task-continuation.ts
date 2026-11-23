@@ -12,8 +12,8 @@ const POLL_MS = 2000;
 export class TaskContinuationObserver {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private generation = 0;
-  private busy = false;
-  private disposed = false;
+  private phase: 'idle' | 'checking' | 'disposed' = 'idle';
+  private get disposed(): boolean { return this.phase === 'disposed'; }
   constructor(private readonly host: {
     rpc: Pick<ToolRpc, 'call' | 'getPageTarget'>;
     enabled: () => boolean;
@@ -122,7 +122,7 @@ export class TaskContinuationObserver {
     this.schedule(0);
   }
   async poll() {
-    if (this.busy || this.disposed) return;
+    if (this.phase !== 'idle') return;
     const c = this.host.snapshot().continuation;
     if (!c || terminal(c)) return;
     if (!this.host.enabled()) { await this.control('stop', '功能已关闭'); return; }
@@ -130,7 +130,7 @@ export class TaskContinuationObserver {
     if (c.activeMs + (c.segmentStartedAt === null ? 0 : this.now() - c.segmentStartedAt) >= c.maxActiveMs || c.modelCalls >= c.maxModelCalls || c.observations >= c.maxObservations) { await this.control('stop', 'budget'); return; }
     if (c.state !== 'WAITING_CONDITION') { this.schedule(); return; }
     if (!this.host.idle()) { this.schedule(); return; }
-    this.busy = true;
+    this.phase = 'checking';
     const generation = this.generation;
     try {
       const observation = await this.read(c);
@@ -146,7 +146,9 @@ export class TaskContinuationObserver {
       if (ready) await this.host.wake(next);
     } catch (error) {
       if (this.current(c, generation)) await this.commit({ ...this.host.snapshot().continuation!, state: 'SUSPENDED', segmentStartedAt: null, lastError: error instanceof Error ? error.message.slice(0, 500) : '观察失败，已暂停。' });
-    } finally { this.busy = false; this.schedule(); }
+    } finally {
+      if (!this.disposed) { this.phase = 'idle'; this.schedule(); }
+    }
   }
   async control(action: 'pause' | 'stop' | 'revise', reason: string) {
     this.invalidate();
@@ -189,5 +191,5 @@ export class TaskContinuationObserver {
       ...(status !== 'done' ? { lastError: '本次处理尚未核对完成，保留未处理位置。' } : {}) });
     this.schedule();
   }
-  dispose() { this.disposed = true; this.invalidate(); }
+  dispose() { this.phase = 'disposed'; this.invalidate(); }
 }

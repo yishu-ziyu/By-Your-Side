@@ -12,7 +12,7 @@ function openSocket(url: string): DictationSocket {
   return socket;
 }
 
-interface Recording { dictation: Dictation; release: () => void }
+type Recording = { dictation: Dictation; mic: { phase: "opening" } | { phase: "recording"; release(): void } };
 
 const STANDBY_MS = 5 * 60_000;
 
@@ -89,17 +89,22 @@ export function installPushToTalk(): void {
     return connect();
   };
 
+  const releaseMic = (recording: Recording | null) => {
+    if (recording?.mic.phase === "recording") recording.mic.release();
+  };
+
   const start = async (): Promise<PttReply> => {
     current?.dictation.cancel();
-    current?.release();
+    releaseMic(current);
     const dictation = take();
-    const recording: Recording = { dictation, release: () => {} };
+    const recording: Recording = { dictation, mic: { phase: "opening" } };
     current = recording;
 
     try {
-      recording.release = await openMicrophone(frame => dictation.push(frame), level => {
+      const release = await openMicrophone(frame => dictation.push(frame), level => {
         if (current === recording) void chrome.runtime.sendMessage({ type: PTT_LEVEL, level } satisfies PttLevelMessage).catch(() => {});
       });
+      recording.mic = { phase: "recording", release };
     } catch (error) {
       dictation.cancel();
 
@@ -108,7 +113,7 @@ export function installPushToTalk(): void {
       return error instanceof DOMException && error.name === "NotAllowedError" ? { ok: false, reason: "permission" } : { ok: false, reason: "device", message: error instanceof Error ? error.message : String(error) };
     }
 
-    if (current !== recording) recording.release();
+    if (current !== recording) releaseMic(recording);
 
     return { ok: true };
   };
@@ -118,7 +123,7 @@ export function installPushToTalk(): void {
     current = null;
 
     if (!recording) return { ok: false, reason: "cancelled" };
-    recording.release();
+    releaseMic(recording);
     const result = recording.dictation.stop();
     warm();
 
@@ -130,7 +135,7 @@ export function installPushToTalk(): void {
 
     if (command.phase === "cancel") {
       current?.dictation.cancel();
-      current?.release();
+      releaseMic(current);
       current = null;
       warm();
       sendResponse({ ok: true });

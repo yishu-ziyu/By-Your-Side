@@ -58,7 +58,7 @@ export type ModelHedgeRecord =
   | { type: "model_hedge_winner"; model: string; winner: "first" | "hedge" | "none"; firstEventMs: number | null; hedgeError?: string };
 
 function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefined, timeoutMs: number, hedgeMs: number, start: (signal: AbortSignal, onProviderStreamEvent: () => void, hedge: boolean, onQueued?: ModelQueueOptions["onQueued"]) => AssistantMessageEventStream, onCut?: (cut: () => boolean, live: boolean) => void, onHedge?: (record: ModelHedgeRecord) => void): AssistantMessageEventStream {
-  type Attempt = { controller: AbortController; started: boolean; live: boolean; hedge: boolean; held: AssistantMessageEvent[] };
+  type Attempt = { controller: AbortController; phase: "pending" | "started" | "inactive"; hedge: boolean; held: AssistantMessageEvent[] };
 
   const name = `${model.provider}/${model.id}`;
   let sentAt = Date.now();
@@ -73,8 +73,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   let hedgeDeadline: number | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stallTimer: ReturnType<typeof setTimeout> | undefined;
-  let closed = false;
-  let finished = false;
+  let phase: "open" | "closing" | "finished" = "open";
   let partial: AssistantMessage | null = null;
   const blanks = new Map<number, number>();
 
@@ -85,8 +84,8 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
   const finish = () => {
-    if (finished) return;
-    finished = true;
+    if (phase === "finished") return;
+    phase = "finished";
     clearTimeout(hedgeTimer);
     clearTimeout(timer);
     clearTimeout(stallTimer);
@@ -102,8 +101,8 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   };
 
   const fail = (errorMessage: string) => {
-    if (closed) return;
-    closed = true;
+    if (phase !== "open") return;
+    phase = "closing";
     out.push({ type: "error", reason: "error", error: {
       role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
@@ -113,10 +112,10 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     finish();
   };
 
-  const othersLive = (attempt: Attempt) => attempts.some(other => other !== attempt && other.live);
+  const othersLive = (attempt: Attempt) => attempts.some(other => other !== attempt && other.phase !== "inactive");
 
   const drop = (attempt: Attempt) => {
-    attempt.live = false;
+    attempt.phase = "inactive";
     attempt.controller.abort();
   };
 
@@ -127,7 +126,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   };
 
   const alive = () => {
-    if (closed || finished) return;
+    if (phase !== "open") return;
     clearTimeout(stallTimer);
     stallTimer = setTimeout(() => fail(`stream idle timeout: ${name} sent nothing for ${MODEL_STALL_MID_STREAM_MS / 1000} s mid-response`), MODEL_STALL_MID_STREAM_MS);
   };
@@ -142,14 +141,14 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   };
 
   const launch = (hedge: boolean, onQueued?: ModelQueueOptions["onQueued"]) => {
-    const attempt: Attempt = { controller: new AbortController(), started: false, live: true, hedge, held: [] };
+    const attempt: Attempt = { controller: new AbortController(), phase: "pending", hedge, held: [] };
 
     if (outer?.aborted) attempt.controller.abort();
     attempts.push(attempt);
 
     const accepted = () => {
-      if (attempt.started || winner || closed) return;
-      attempt.started = true;
+      if (attempt.phase !== "pending" || winner || phase !== "open") return;
+      attempt.phase = "started";
 
       if (hedge) hedgeDeadline = Date.now() + MODEL_STALL_AFTER_START_MS;
       else deadline = { at: Date.now() + Math.min(timeoutMs, MODEL_STALL_AFTER_START_MS), message: acceptedMessage };
@@ -159,7 +158,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
     let source: AssistantMessageEventStream;
 
     try { source = start(attempt.controller.signal, accepted, hedge, onQueued); } catch (error) {
-      attempt.live = false;
+      attempt.phase = "inactive";
 
       if (!hedge) {
         clearTimeout(timer);
@@ -176,9 +175,9 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   };
 
   const cutText = (): boolean => {
-    if (closed || partial?.content.some(part => part.type === "toolCall")) return false;
+    if (phase !== "open" || partial?.content.some(part => part.type === "toolCall")) return false;
     const written = !!partial?.content.some(part => part.type === "text" && part.text.trim());
-    closed = true;
+    phase = "closing";
     const message: AssistantMessage = written ? { ...structuredClone(partial!), stopReason: "stop" } : {
       role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
       usage: partial ? structuredClone(partial.usage) : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
@@ -194,7 +193,7 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   const consume = async (attempt: Attempt, source: AssistantMessageEventStream) => {
     try {
       for await (const event of source) {
-        if (closed || (winner !== attempt && !attempt.live)) break;
+        if (phase !== "open" || (winner !== attempt && attempt.phase === "inactive")) break;
 
         if (winner !== attempt) {
           if (event.type === "start") {
@@ -230,16 +229,16 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
       }
     } catch (error) {
       if (winner === attempt || (!winner && !othersLive(attempt))) fail(errorText(error));
-      else if (attempt.hedge && attempt.live) hedgeError = errorText(error);
+      else if (attempt.hedge && attempt.phase !== "inactive") hedgeError = errorText(error);
     } finally {
-      if (attempt.hedge && !winner && hedgeDeadline !== null && !closed) {
+      if (attempt.hedge && !winner && hedgeDeadline !== null && phase === "open") {
         hedgeDeadline = null;
         arm();
       }
 
       if (winner === attempt) finish();
-      else if (attempt.live) {
-        attempt.live = false;
+      else if (attempt.phase !== "inactive") {
+        attempt.phase = "inactive";
 
         if (!winner && !othersLive(attempt)) {
           for (const held of attempt.held.splice(0)) out.push(held);
@@ -250,13 +249,13 @@ function withFirstEventDeadline(model: Model<Api>, outer: AbortSignal | undefine
   };
 
   const begin = () => {
-    if (closed || finished) return;
+    if (phase !== "open") return;
     sentAt = Date.now();
     deadline = { at: sentAt + timeoutMs, message: deadline.message };
     arm();
 
     hedgeTimer = hedgeMs > 0 ? setTimeout(() => {
-      if (winner || closed || outer?.aborted || !attempts[0]!.live || attempts[0]!.started) return;
+      if (winner || phase !== "open" || outer?.aborted || attempts[0]!.phase !== "pending") return;
 
       try { onHedge?.({ type: "model_hedge", model: name, hedgeMs }); } catch {  }
       launch(true);

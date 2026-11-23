@@ -83,7 +83,7 @@ export function mountDictation(opts: {
   row.append(canvas, hint, clock, cancelBtn, okBtn);
   composer.querySelector("#composer-bar")!.after(row);
 
-  let active = false;
+  let phase: "idle" | "starting" | "recording" | "transcribing" = "idle";
   let session = 0;
   let engine: Engine = "chrome";
   let before = "";
@@ -106,8 +106,6 @@ export function mountDictation(opts: {
   let releaseLock: (() => void) | null = null;
   let cloudRequest: AbortController | null = null;
   let serviceKey = "";
-  let pending = false;
-  let starting = false;
 
   const spoken = (): string => carried + finalText + interim;
 
@@ -139,7 +137,7 @@ export function mountDictation(opts: {
   };
 
   const draw = (now: number): void => {
-    if (!active) return;
+    if (phase !== "recording") return;
     if (now - lastPush >= STEP_MS) {
       bars.push(readLevel());
       lastPush = now;
@@ -187,7 +185,7 @@ export function mountDictation(opts: {
   const openWaveMic = async (mine: number): Promise<void> => {
     try {
       const media = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      if (!active || session !== mine || engine !== "chrome") { media.getTracks().forEach((track) => track.stop()); return; }
+      if (phase !== "recording" || session !== mine || engine !== "chrome") { media.getTracks().forEach((track) => track.stop()); return; }
       stream = media;
       audio = new AudioContext();
       analyser = audio.createAnalyser();
@@ -225,7 +223,7 @@ export function mountDictation(opts: {
     const controller = new AbortController();
     cloudRequest = controller;
     const openingTimer = setTimeout(() => {
-      if (!active || session !== mine) return;
+      if (phase !== "recording" || session !== mine) return;
       stop(false);
       opts.notice("麦克风启动超时，请检查浏览器的麦克风权限后重试。");
     }, 25_000);
@@ -233,10 +231,10 @@ export function mountDictation(opts: {
       if (engine === "stepfun-realtime") {
         hint.textContent = "正在连接 Realtime 3…";
         const connection = await openRealtimeDictation(serviceKey, controller.signal, text => {
-          if (session !== mine || !active) return;
+          if (session !== mine || phase !== "recording") return;
           interim = text; render();
         }, message => {
-          if (session !== mine || !active) return;
+          if (session !== mine || phase !== "recording") return;
           const recognized = spoken();
           stop(false);
           if (recognized && opts.conversation() === conversationAtStart) {
@@ -244,11 +242,11 @@ export function mountDictation(opts: {
           }
           opts.notice(message);
         });
-        if (session !== mine || !active) { connection.cancel(); return; }
+        if (session !== mine || phase !== "recording") { connection.cancel(); return; }
         realtime = connection;
       }
       const capture = await recordDictation(controller.signal, value => { if (session === mine) level = value; }, () => stop(true), engine === "stepfun-realtime" ? frame => realtime?.push(frame) : undefined);
-      if (!active || session !== mine) { capture.cancel(); return; }
+      if (phase !== "recording" || session !== mine) { capture.cancel(); return; }
       recording = capture;
       hint.textContent = engine === "stepfun-realtime" ? "实时转文字" : `${DICTATION_PROVIDERS[engine].name} · 说完出字`;
     } catch (error) {
@@ -295,7 +293,7 @@ export function mountDictation(opts: {
       }
     };
     r.onend = () => {
-      if (!active || rec !== r) return;
+      if (phase !== "recording" || rec !== r) return;
       const had = finalText + interim;
       emptyRestarts = had ? 0 : emptyRestarts + 1;
       if (emptyRestarts > MAX_EMPTY_RESTARTS) { stop(true); opts.notice("一直没听到声音，说话输入先停了。"); return; }
@@ -309,9 +307,9 @@ export function mountDictation(opts: {
   };
 
   const start = async (): Promise<void> => {
-    if (active || pending || starting) return;
+    if (phase !== "idle") return;
     if (opts.voiceBusy()) { opts.notice("语音对话正在用麦克风。先结束语音对话，再用说话输入。"); return; }
-    starting = true;
+    phase = "starting";
     const mine = ++session;
     try {
       const lock = await acquireLock();
@@ -330,7 +328,7 @@ export function mountDictation(opts: {
         return;
       }
       if (session !== mine || opts.voiceBusy()) return;
-      active = true;
+      phase = "recording";
       engine = settings.provider;
       serviceKey = settings.key;
       conversationAtStart = opts.conversation();
@@ -346,14 +344,16 @@ export function mountDictation(opts: {
       if (engine === "chrome") startChrome(session);
       else void startCloud(session);
     } catch { opts.notice("读取语音转文字设置失败，请重试。"); }
-    finally { starting = false; if (!active && !pending) unlock(); }
+    finally {
+      if (phase === "starting") { phase = "idle"; unlock(); }
+    }
   };
 
   const stop = (keep: boolean): void => {
-    if (!active && !pending && !starting) return;
+    if (phase === "idle") return;
     if (!keep) { session += 1; cloudRequest?.abort(); realtime?.cancel(); }
-    if (!active) return;
-    active = false;
+    if (phase !== "recording") return;
+    phase = "idle";
     const mine = session;
     const conversation = conversationAtStart;
     cancelAnimationFrame(raf);
@@ -389,7 +389,7 @@ export function mountDictation(opts: {
     const controller = cloudRequest!;
     const provider = engine;
     if (sameConversation) settle(before);
-    pending = true; button.disabled = true;
+    phase = "transcribing"; button.disabled = true;
     const placeholder = inputEl.placeholder;
     inputEl.placeholder = "正在转成文字…";
     const transcribed = provider === "stepfun-realtime" && streamSession
@@ -406,31 +406,31 @@ export function mountDictation(opts: {
         opts.notice(error instanceof Error ? error.message : "识别失败，请重试。");
       }
     }).finally(() => {
-      pending = false; button.disabled = false; unlock();
+      phase = "idle"; button.disabled = false; unlock();
       if (inputEl.placeholder === "正在转成文字…") inputEl.placeholder = placeholder;
       if (cloudRequest === controller) cloudRequest = null;
     });
   };
 
   opts.before.addEventListener("click", event => {
-    if (!active && !pending && !starting) return;
+    if (phase === "idle") return;
     event.preventDefault(); event.stopImmediatePropagation();
     opts.notice("说话输入正在用麦克风，请先确认或取消，再开启语音对话。");
   }, true);
-  button.addEventListener("click", () => { if (active) stop(true); else void start(); });
+  button.addEventListener("click", () => { if (phase === "recording") stop(true); else void start(); });
   okBtn.addEventListener("click", () => stop(true));
   cancelBtn.addEventListener("click", () => stop(false));
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && pending && !event.isComposing && document.activeElement === inputEl) {
+    if (event.key === "Escape" && phase === "transcribing" && !event.isComposing && document.activeElement === inputEl) {
       event.preventDefault(); event.stopImmediatePropagation(); stop(false);
       opts.notice("已取消这次转写，原草稿保留。");
       return;
     }
-    if (!active || event.isComposing) return;
+    if (phase !== "recording" || event.isComposing) return;
     if (event.key === "Enter" && document.activeElement !== cancelBtn) { event.preventDefault(); event.stopImmediatePropagation(); stop(true); }
     else if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); stop(false); }
   }, true);
   addEventListener("pagehide", () => stop(false));
 
-  return { busy: () => active || pending || starting, cancel: () => stop(false) };
+  return { busy: () => phase !== "idle", cancel: () => stop(false) };
 }

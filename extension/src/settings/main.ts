@@ -170,8 +170,8 @@ let openedCredential: StoredCredential | undefined;
 type ConnectionDraft = { baseUrl: string; key: string; modelId: string; changingKey: boolean; openedBaseUrl: string; openedConnection: InprocModelConfig | null; openedCredential: StoredCredential | undefined };
 const connectionDrafts = new Map<string, ConnectionDraft>();
 let formDirty = false;
-let formBusy = false;
-let savingConnection = false;
+type ConnectionFormPhase = "idle" | "testing" | "saving";
+let formPhase: ConnectionFormPhase = "idle";
 
 function rememberConnectionDraft(): void {
   if (!selected || !formDirty) return;
@@ -400,14 +400,14 @@ function renderRegions(): void {
   regionRow.replaceChildren(...entry.members.map((m) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.disabled = formBusy;
+    button.disabled = formPhase !== "idle";
     button.setAttribute("role", "radio");
     button.setAttribute("aria-checked", String(m.id === selected!.id));
     button.dataset.region = m.id;
     button.append(m.region ?? m.id);
 
     if (credentialNote(m.id)) button.append(Object.assign(document.createElement("i"), { className: "seg-dot", title: credentialNote(m.id) }));
-    button.addEventListener("click", () => { if (!login && !formBusy && m.id !== selected?.id) select(choiceOf(m.id)!); });
+    button.addEventListener("click", () => { if (!login && formPhase === "idle" && m.id !== selected?.id) select(choiceOf(m.id)!); });
 
     return button;
   }));
@@ -696,8 +696,10 @@ const probeTimeoutLead = (): string => `${PROBE_TIMEOUT_MS / 1000} 秒内没有�
 const TEST_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}。服务商可能正忙。再试一次，或换一个模型。`;
 const SAVE_TIMEOUT_REASON = (): string => `${probeTimeoutLead()}，密钥没有保存。原连接和输入都保留，可能是网络或服务繁忙，稍后重试。`;
 
-function setFormBusy(busy: boolean): void {
-  formBusy = busy;
+function setFormPhase(phase: ConnectionFormPhase): void {
+  formPhase = phase;
+  const busy = phase !== "idle";
+  connectionClose.disabled = phase === "saving";
   if (busy) closeModelList();
   for (const input of [baseUrlInput, keyInput, modelInput]) input.disabled = busy;
   for (const button of [saveButton, fastButton, testButton, keyRetry, $<HTMLButtonElement>("model-toggle"), $<HTMLButtonElement>("key-change"), $<HTMLButtonElement>("key-delete"), $<HTMLButtonElement>("connection-remove"), oauthLogin, oauthLogout]) button.disabled = busy;
@@ -754,10 +756,10 @@ async function runProbe(): Promise<ProbeOk | ProbeFail> {
     if (!live) return;
     live = false;
     clearInterval(ticker);
-    setFormBusy(false);
+    setFormPhase("idle");
   };
   cancelProbe = () => { cancel.abort(); release(); };
-  setFormBusy(true);
+  setFormPhase("testing");
 
   try {
     const savedKey = credentials[value.config.provider];
@@ -796,9 +798,7 @@ async function testConnection(): Promise<void> {
   const result = await runProbe();
 
   if (!result.ok && result.cancelled) return;
-  savingConnection = true;
-  setFormBusy(true);
-  connectionClose.disabled = true;
+  setFormPhase("saving");
   try {
     if (result.config && !result.key && result.credential) {
       try { await updateConnectionCheck(result.config, result.ok ? "passed" : "failed", result.credential); }
@@ -814,9 +814,7 @@ async function testConnection(): Promise<void> {
     hideKeyReason();
     setStatus(modelStatus, `本次连接测试通过（${(result.elapsed / 1000).toFixed(1)} 秒），不代表之后每次都可用。`, "ok");
   } finally {
-    savingConnection = false;
-    connectionClose.disabled = false;
-    setFormBusy(false);
+    setFormPhase("idle");
     if (!keyReason.hidden) keyInput.focus();
   }
 }
@@ -825,14 +823,10 @@ async function save(): Promise<void> {
   const result = await runProbe();
 
   if (!result.ok && result.cancelled) return;
-  savingConnection = true;
-  setFormBusy(true);
-  connectionClose.disabled = true;
+  setFormPhase("saving");
   try { await finishSave(result); }
   finally {
-    savingConnection = false;
-    connectionClose.disabled = false;
-    setFormBusy(false);
+    setFormPhase("idle");
     if (!keyReason.hidden) keyInput.focus();
   }
 }
@@ -1826,7 +1820,7 @@ $("connection-draft-return").addEventListener("click", () => {
 });
 $("connection-close").addEventListener("click", () => closeForm());
 connectionDialog.addEventListener("cancel", (event) => {
-  if (savingConnection) { event.preventDefault(); return; }
+  if (formPhase === "saving") { event.preventDefault(); return; }
   closeForm();
 });
 connectionDialog.addEventListener("close", () => { if (selected && !connectionDialog.open) closeForm(); });

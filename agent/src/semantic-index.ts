@@ -24,7 +24,7 @@ export class BackgroundSemanticIndex implements SemanticMemoryIndex {
   private documents: SemanticDocument[] = [];
   private wanted = "";
   private revision = "";
-  private working: Promise<void> | null = null;
+  private phase: "cold" | "building" | "idle" = "cold";
 
   constructor(private readonly adapter: SemanticAdapter, private readonly readOnly: () => boolean = () => false) {}
 
@@ -35,9 +35,10 @@ export class BackgroundSemanticIndex implements SemanticMemoryIndex {
       ...this.tasks.map(task => ({ kind: "task" as const, id: task.id, fingerprint: taskFingerprint(task), text: [task.goal, ...task.revisions, task.summary, task.done ?? "", ...task.unfinished].join("\n"), createdAt: task.endedAt })),
     ];
     this.wanted = JSON.stringify(this.documents.map(doc => [doc.kind, doc.id, doc.fingerprint]).sort());
-    if (!this.documents.length && !this.working && !this.revision) { this.revision = this.wanted; return; }
-    if (this.working || this.readOnly() || this.wanted === this.revision) return;
-    this.working = Promise.resolve().then(() => this.rebuild()).catch(() => undefined).finally(() => { this.working = null; });
+    if (!this.documents.length && this.phase === "cold") { this.revision = this.wanted; this.phase = "idle"; return; }
+    if (this.phase === "building" || this.readOnly() || this.wanted === this.revision) return;
+    this.phase = "building";
+    void Promise.resolve().then(() => this.rebuild()).catch(() => undefined).finally(() => { this.phase = this.revision ? "idle" : "cold"; });
   }
 
   private async rebuild(): Promise<void> {
