@@ -13,7 +13,7 @@ import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction,
 import { extensionAlive } from "./alive.js";
 import { createElement as icon, ArrowUp, Square, X, PanelRight, Volume2, Ellipsis, Mic, Copy, Check, Sparkles, Languages, SpellCheck, CircleHelp, BookOpenText, MousePointerClick } from 'lucide';
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
-import { clipSelection, isEditableTarget, EXPLAIN_PROMPT, TEACH_SELECTION_DRAFT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
+import { clipSelection, isDirectAskTypingKey, isEditableTarget, isSelectionArrowOrShiftKey, EXPLAIN_PROMPT, TEACH_SELECTION_DRAFT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { isReadingTranslation, READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, READING_KINDS, READING_KIND_SELECTION_LIMIT, type ReadingKind, type ReadingSource } from '../../../shared/reading.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
@@ -1894,7 +1894,7 @@ function boot(): void {
     }
   }, { signal });
   document.addEventListener('keyup', event => {
-    if (event.isTrusted && !retired() && (event.key === 'Shift' || event.key.startsWith('Arrow'))) {
+    if (event.isTrusted && !retired() && isSelectionArrowOrShiftKey(event.key)) {
       changedSelection(true);
     }
   }, { signal });
@@ -1916,9 +1916,7 @@ function boot(): void {
       return;
     }
 
-    const typing = (event.key.length === 1 && event.key !== ' ') || event.key === 'Process' || event.keyCode === 229;
-
-    if (!typing) {
+    if (!isDirectAskTypingKey(event.key, event.keyCode)) {
       return;
     }
 

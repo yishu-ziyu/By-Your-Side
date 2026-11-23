@@ -63,6 +63,16 @@ export function clipSelection(raw: string): string | null {
   return text.length > MAX_ASK_CHARS ? text.slice(0, MAX_ASK_CHARS) : text;
 }
 
+export function isSelectionArrowOrShiftKey(key: unknown): boolean {
+  return typeof key === "string" && (key === "Shift" || key.startsWith("Arrow"));
+}
+
+export function isDirectAskTypingKey(key: unknown, keyCode?: number): boolean {
+  if (keyCode === 229) return true;
+  if (typeof key !== "string") return false;
+  return (key.length === 1 && key !== " ") || key === "Process";
+}
+
 export function isEditableTarget(el: EventTarget | null): boolean {
   if (!(el instanceof Element)) return false;
   const node = el.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']");
