@@ -109,7 +109,9 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
         guard.waiting(true, wait);
       } else if (message?.kind === "done") {
         const url = typeof message.url === "string" ? ` · url ${clip(message.url, 200)}` : "";
-        done({ outcome: "done", changed: message.changed === "url" ? "url" : "dom", after: typeof message.after === "string" ? clip(message.after, 120) + url : url.slice(3) || undefined });
+        const changed: GuideStepResult["changed"] =
+          message.changed === "url" || message.changed === "input" || message.changed === "select" ? message.changed : "dom";
+        done({ outcome: "done", changed, after: typeof message.after === "string" ? clip(message.after, 120) + url : url.slice(3) || undefined });
       }
     });
     const gone = () => {
@@ -118,15 +120,22 @@ async function waitForUser(tabId: number, params: Params, sessionId: string, gua
     };
     shown.onDisconnect.addListener(gone);
     const removed = (closed: number) => { if (closed === tabId) done({ outcome: "left" }); };
+    const created = (opened: chrome.tabs.Tab) => {
+      if (!hitPending || opened.openerTabId !== tabId || opened.id == null) return;
+      const targetUrl = opened.pendingUrl || opened.url;
+      const detail = targetUrl ? `new tab #${opened.id} · url ${clip(targetUrl, 200)}` : `new tab #${opened.id}`;
+      done({ outcome: "done", changed: "new_tab", after: detail });
+    };
     const updated = (changed: number, info: { url?: string; status?: string }) => {
       if (changed !== tabId || (info.url === undefined && info.status !== "loading")) return;
       void readCurrentDocument(tabId).then(now => { if (now && now.documentId !== shown.sender?.documentId) gone(); });
     };
     chrome.tabs.onRemoved.addListener(removed);
+    chrome.tabs.onCreated.addListener(created);
     chrome.tabs.onUpdated.addListener(updated);
     const poll = setInterval(() => { if (guard.cancelled()) done({ outcome: "stopped" }); }, POLL_MS);
     const timer = setTimeout(() => done({ outcome: "timeout" }), GUIDE_WAIT_MS);
-    cleanups.push(() => { chrome.tabs.onRemoved.removeListener(removed); chrome.tabs.onUpdated.removeListener(updated); clearInterval(poll); clearTimeout(timer); });
+    cleanups.push(() => { chrome.tabs.onRemoved.removeListener(removed); chrome.tabs.onCreated.removeListener(created); chrome.tabs.onUpdated.removeListener(updated); clearInterval(poll); clearTimeout(timer); });
   });
 
   for (const cleanup of cleanups) cleanup();

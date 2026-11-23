@@ -1373,18 +1373,19 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       name: "guide_step",
       label: "Guide one step",
       description:
-        "Teach the user one step on the page: circles target, shows say beside it, then WAITS (up to 2 minutes) for the USER to click target themselves. You never click for them. One call = one click; never combine actions. Outcomes: done = the user clicked and the page changed — snapshot the page again, then give the next step or finish; no_change = the user clicked twice and nothing changed — explain or try another way, do not repeat the same step blindly; timeout = the user did not act for 2 minutes — say briefly that you are waiting. target accepts the same locator forms as click; use a ref from the latest snapshot.",
+        "Teach the user one step on the page: circles target with a curved arrow and spotlight, shows say beside it, scrolls it into view if off-screen, then WAITS (up to 2 minutes) for the USER to perform that step themselves (clicking a button/link/switch, typing into an input/textarea, selecting a dropdown option, or following a link to a new page/tab). You never click or fill for them. One call = one step; never combine actions. Outcomes: done = the user completed the step and the page or field changed — snapshot the page (or new tab) again, then give the next step or finish; no_change = the user clicked twice and nothing changed — explain or try another way, do not repeat the same step blindly; timeout = the user did not act for 2 minutes — say briefly that you are waiting. target accepts the same locator forms as click; use a ref from the latest snapshot.",
       parameters: Type.Object({
         tabId: Type.Optional(Type.Number({ description: "Owned tab id; omit to use the working tab" })),
-        target: Type.String({ minLength: 1, description: '"@N" ref, "loc=css:..." locator, or raw CSS selector of the one thing the user should click' }),
+        target: Type.String({ minLength: 1, description: '"@N" ref, "loc=css:..." locator, or raw CSS selector of the one control the user should act on' }),
         say: Type.String({ minLength: 1, description: "One short instruction in the user's language naming the visible label, e.g. 点右上角的 Settings" }),
         step: Type.Integer({ minimum: 1, description: "1-based step number in this lesson" }),
       }),
       execute: async (_id, params) => {
         const data = (await call("guide_step", { tabId: params.tabId, target: params.target, say: params.say, step: params.step }, undefined, undefined, undefined, USER_CONFIRM_TIMEOUT_MS)) as ToolContract["guide_step"]["data"];
         const now = data.after ? ` The target now reads: ${wrapPageContent(data.after)}` : "";
+        const verb = data.changed === "input" ? "entered text" : data.changed === "select" ? "selected an option" : data.changed === "new_tab" ? "opened a new tab" : "clicked and the page changed";
 
-        return textResult(`Step ${params.step} done: the user clicked and the page changed (${data.changed ? `${data.changed}; ` : ""}misses=${data.misses}, noChangeClicks=${data.noChangeClicks}).${now} Snapshot the page, then give the next step or finish in one sentence; do not guide a step that is already done.`, data);
+        return textResult(`Step ${params.step} done: the user ${verb} (${data.changed ? `${data.changed}; ` : ""}misses=${data.misses}, noChangeClicks=${data.noChangeClicks}).${now} Snapshot the page, then give the next step or finish in one sentence; do not guide a step that is already done.`, data);
       },
     }),
     defineTool({

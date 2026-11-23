@@ -34,12 +34,12 @@ import {
 } from "../shared/overlay.js";
 import { GUIDE_ROUGHNESS, placeGuideBubble, sketchFrame, sketchLabelPosition } from "../shared/rough/index.js";
 import { createGuideCanvas, GUIDE_CANVAS_STYLES, type GuideCanvas } from "./guide-canvas.js";
+import { createTutorGuide } from "./tutor-guide.js";
 import { feedbackLifetimeMs, type FeedbackPillView } from "../shared/feedback-pill.js";
 import { EDGE_PILL_GET, EDGE_PILL_OPEN, EDGE_PILL_SHOW, EDGE_TASK_ABORT, EDGE_TASK_STEER, isEdgePill, isEdgeTask, type EdgePill } from "../shared/edge-pill.js";
 import { CURSOR_SPOT_SAVE, CURSOR_SPOT_TAKE, isCursorSpots, type CursorSpot } from "../shared/cursor-spot.js";
 import { EDGE_ENTRY_KEY, EDGE_Y_KEY, edgeY, isEdgeEntryOff } from "../shared/edge-entry.js";
 import { createEdgeTab, type EdgeTab, type EdgeTabOther, type EdgeTabView } from "./edge-tab.js";
-import { EFFECT_SETTLE_MAX_MS } from "../../../shared/effect.js";
 import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
 (function () {
@@ -595,7 +595,9 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
       mark.frame = drawSketchPaths(mark.el, { x: mark.pad, y: mark.pad, w: rect.width, h: rect.height }, mark.seed ?? 1);
     }
 
-    if (guide && mark.el === guide.mark && mark.frame) {
+    const activeGuide = tutorGuide.active();
+
+    if (activeGuide && mark.el === activeGuide.mark && mark.frame) {
       guideCanvas?.showSpotlight(rect);
       const labelEl = mark.el.querySelector<HTMLElement>(".mark-label");
 
@@ -604,11 +606,11 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
           markEl: mark.el,
           labelEl,
           targetFrame: mark.frame,
-          targetEl: guideElement(liveGuideNode(guide)),
+          targetEl: activeGuide.targetElement(),
           seed: mark.seed ?? 1,
           animate: false,
-          warn: Boolean(guide.warn),
-          step: guide.step,
+          warn: activeGuide.warn,
+          step: activeGuide.step,
           cursorPoint: holdPoint(rect, true),
         });
       }
@@ -1382,369 +1384,24 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     flyTo(inst, { x, y });
   }
 
-  interface GuideSession {
-    inst: Instance;
-    node: Node;
-    target: string;
-    relocate: string | null;
-    name: string;
-    options?: MarkOptions;
-    step?: number;
-    warn?: boolean;
-    mark: HTMLDivElement | null;
-    label: string;
-    rect: DOMRect | null;
-    port: chrome.runtime.Port;
-    observer: MutationObserver;
-    misses: number;
-    missed: boolean;
-    lastChange: number;
-    down: { at: number; url: string } | null;
-    upTimer?: ReturnType<typeof setTimeout>;
-    watch: { since: number; url: string; timer: ReturnType<typeof setTimeout>; poll: ReturnType<typeof setInterval>; settled: boolean } | null;
-  }
-
-  let guide: GuideSession | null = null;
-
-  const GUIDE_NO_CHANGE_TEXT = "点了之后，页面没有变化。再点一次。如果还是没变化，就在侧栏告诉我。";
-
-  const GUIDE_PRESS_MS = 1500;
-
-  const GUIDE_STATES = ["aria-checked", "aria-selected", "aria-expanded", "aria-pressed"];
-
-  function guideMissText(name: string): string {
-    return name ? `这里不是要点的地方。点圈出来的「${name}」。` : "这里不是要点的地方。点圈出来的地方。";
-  }
-
-  function guideElement(node: Node): Element | null {
-    return node instanceof Element ? node : node.parentElement;
-  }
-
-  function nodeRect(node: Node): DOMRect | null {
-    if (!node.isConnected) return null;
-    let r: DOMRect;
-
-    if (node instanceof Element) r = node.getBoundingClientRect();
-    else {
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      r = range.getBoundingClientRect();
-    }
-
-    return r.width && r.height ? r : null;
-  }
-
-  function guideRole(el: Element): string {
-    const explicit = el.getAttribute("role")?.trim().split(/\s+/)[0];
-
-    if (explicit) return explicit;
-    const type = el instanceof HTMLInputElement ? el.type : "";
-
-    if (el.matches("button, input[type=button], input[type=submit]")) return "button";
-    if (el.matches("a[href]")) return "link";
-    if (type === "checkbox" || type === "radio") return type;
-    if (el instanceof HTMLSelectElement) return "combobox";
-
-    return "";
-  }
-
-  function guideCssPath(el: Element): string {
-    const parts: string[] = [];
-
-    for (let at: Element | null = el; at && at !== document.body && at !== document.documentElement; at = at.parentElement) {
-      if (at.id && at !== el) { parts.unshift(`#${CSS.escape(at.id)}`); break; }
-      const tag = at.tagName.toLowerCase();
-      const same = at.parentElement ? [...at.parentElement.children].filter((c) => c.tagName === at!.tagName) : [at];
-      parts.unshift(same.length > 1 ? `${tag}:nth-of-type(${same.indexOf(at) + 1})` : tag);
-    }
-
-    return parts.join(" > ");
-  }
-
-  function guideLocator(node: Node, target: string): string | null {
-    if (!target.startsWith("@")) return target;
-    const el = guideElement(node);
-    const dom = window.__sideagent?.dom;
-
-    if (!el || !dom) return null;
-    const role = guideRole(el);
-    const name = (el.getAttribute("aria-label") || el.textContent || "").trim().replace(/\s+/g, " ");
-    const candidates = [role && name && !name.includes('"') ? `loc=role:${role}[name="${name}"]` : "", el.id ? `#${CSS.escape(el.id)}` : "", guideCssPath(el)];
-
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-
-      try {
-        if (dom.resolve(candidate) === el) return candidate;
-      } catch {  }
-    }
-
-    return null;
-  }
-
-  function liveGuideNode(g: GuideSession): Node {
-    if (g.node.isConnected || !g.relocate) return g.node;
-
-    try {
-      const fresh = window.__sideagent?.dom?.resolve?.(g.relocate);
-
-      if (fresh) g.node = fresh;
-    } catch {  }
-
-    return g.node;
-  }
-
-  function drawGuideMark(g: GuideSession, label: string, warn = false): void {
-    g.label = label;
-    g.warn = warn;
-
-    if (g.mark) removeMark(g.mark);
-    const node = liveGuideNode(g);
-    const r = nodeRect(node);
-
-    if (r) g.rect = r;
-    g.mark = r ? spawnMark(g.inst, r, label, g.target, g.options, node) : null;
-
-    if (!r || !g.mark) {
-      guideCanvas?.clearSpotlight();
-
-      return;
-    }
-
-    guideCanvas?.showSpotlight(r);
-    const live = liveMarks.find((m) => m.el === g.mark);
-    const labelEl = g.mark.querySelector<HTMLElement>(".mark-label");
-
-    if (live?.frame && labelEl) {
-      guideCanvas?.renderGuideOverlay({
-        markEl: g.mark,
-        labelEl,
-        targetFrame: live.frame,
-        targetEl: guideElement(node),
-        seed: live.seed ?? 1,
-        animate: true,
-        warn,
-        step: g.step,
-        cursorPoint: holdPoint(r, true),
-      });
-    }
-  }
-
-  function holdAtGuide(g: GuideSession): void {
-    const node = liveGuideNode(g);
-    const el = guideElement(node);
-    const r = nodeRect(node);
-
-    if (!el || !r) return;
-    const p = holdPoint(r, true);
-    holdInst(g.inst, p.x, p.y, null, g.relocate ?? undefined, null, el);
-  }
-
-  function followGuideNode(g: GuideSession): void {
-    const before = g.node;
-
-    if (before.isConnected || liveGuideNode(g) === before) return;
-    drawGuideMark(g, g.label, Boolean(g.warn));
-
-    if (g.inst.hold?.corner) holdAtGuide(g);
-  }
-
-  function postGuide(g: GuideSession, message: Record<string, unknown>): void {
-    try { g.port.postMessage(message); } catch {  }
-  }
-
-  function pageMutated(records: MutationRecord[]): boolean {
-    const own = (n: Node) => n instanceof Element && n.hasAttribute(OVERLAY_ATTR);
-
-    return records.some((r) => {
-      if (guideElement(r.target)?.closest(`[${OVERLAY_ATTR}]`)) return false;
-
-      return !(r.type === "childList" && [...r.addedNodes, ...r.removedNodes].every(own));
-    });
-  }
-
-  function guideAfter(g: GuideSession): string | undefined {
-    const el = guideElement(liveGuideNode(g));
-
-    if (!el?.isConnected) return undefined;
-    const name = actionName(el).slice(0, 40);
-    const states = GUIDE_STATES.flatMap((a) => (el.hasAttribute(a) ? [`${a}=${el.getAttribute(a)}`] : []));
-
-    if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) states.push(`checked=${el.checked}`);
-    if (el instanceof HTMLSelectElement) states.push(`value="${(el.selectedOptions[0]?.textContent ?? "").trim().slice(0, 30)}"`);
-
-    return [guideRole(el) || el.tagName.toLowerCase(), name ? `"${name}"` : "", ...states].filter(Boolean).join(" ").slice(0, 120);
-  }
-
-  function stopWatch(g: GuideSession): void {
-    if (!g.watch) return;
-    clearTimeout(g.watch.timer);
-    clearInterval(g.watch.poll);
-    g.watch = null;
-  }
-
-  function checkGuide(g: GuideSession): void {
-    const w = g.watch;
-
-    if (!w) return;
-    const changed = location.href !== w.url ? "url" : g.lastChange >= w.since ? "dom" : null;
-
-    if (!changed) return;
-    const after = guideAfter(g);
-    postGuide(g, { kind: "done", changed, ...(after ? { after } : {}), ...(changed === "url" ? { url: location.href } : {}) });
-    endGuide(g);
-  }
-
-  function guideNoChange(g: GuideSession): void {
-    const w = g.watch;
-
-    if (!w || w.settled) return;
-    w.settled = true;
-    drawGuideMark(g, GUIDE_NO_CHANGE_TEXT, true);
-    postGuide(g, { kind: "no_change" });
-  }
-
-  function onGuideDown(ev: PointerEvent): void {
-    const g = guide;
-
-    if (!g || !ev.isTrusted) return;
-    g.down = { at: performance.now(), url: location.href };
-
-    if (g.watch?.settled) stopWatch(g);
-  }
-
-  function onGuideMove(ev: PointerEvent): void {
-    const g = guide;
-
-    if (!g || !ev.isTrusted || !g.missed) return;
-    g.missed = false;
-
-    if (g.inst.hold?.corner) {
-      releaseHoldInst(g.inst);
-      finishPark(g.inst);
-    }
-  }
-
-  function onGuideUp(ev: PointerEvent): void {
-    const g = guide;
-
-    if (!g || !ev.isTrusted || ev.button !== 0) return;
-    clearTimeout(g.upTimer);
-    const path = ev.composedPath();
-    g.upTimer = setTimeout(() => onGuidePress(ev, path), 50);
-  }
-
-  function onGuideClick(ev: MouseEvent): void {
-    if (!guide || !ev.isTrusted) return;
-    clearTimeout(guide.upTimer);
-    onGuidePress(ev, ev.composedPath());
-  }
-
-  function onGuidePress(ev: MouseEvent, path: EventTarget[]): void {
-    const g = guide;
-
-    if (!g || (g.watch && !g.watch.settled)) return;
-
-    if (path.some((n) => n instanceof Element && n.hasAttribute(OVERLAY_ATTR))) return;
-    stopWatch(g);
-    const node = liveGuideNode(g);
-    const el = guideElement(node);
-    const labels = el && "labels" in el ? [...((el as HTMLInputElement).labels ?? [])] : [];
-    const onPath = (!!el && path.includes(el)) || labels.some((label) => path.includes(label));
-    const r = !node.isConnected || path.length === 0 ? nodeRect(node) ?? g.rect : null;
-    const inside = !!r && ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 && ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4;
-
-    if (!onPath && !inside) {
-      g.misses += 1;
-      g.missed = true;
-      drawGuideMark(g, guideMissText(g.name), true);
-      holdAtGuide(g);
-      postGuide(g, { kind: "miss", misses: g.misses });
-
-      return;
-    }
-
-    postGuide(g, { kind: "hit" });
-    const now = performance.now();
-    const pressed = g.down && now - g.down.at < GUIDE_PRESS_MS ? g.down : null;
-    g.watch = {
-      since: pressed?.at ?? now,
-      url: pressed?.url ?? location.href,
-      timer: setTimeout(() => guideNoChange(g), EFFECT_SETTLE_MAX_MS),
-      poll: setInterval(() => checkGuide(g), 100),
-      settled: false,
-    };
-    checkGuide(g);
-  }
-
-  function endGuide(g: GuideSession): void {
-    if (guide !== g) return;
-    guide = null;
-    window.removeEventListener("click", onGuideClick, true);
-    window.removeEventListener("pointerdown", onGuideDown, true);
-    window.removeEventListener("pointermove", onGuideMove, true);
-    window.removeEventListener("pointerup", onGuideUp, true);
-    clearTimeout(g.upTimer);
-    g.observer.disconnect();
-    stopWatch(g);
-
-    if (g.mark) removeMark(g.mark);
-    g.mark = null;
-    guideCanvas?.clearSpotlight();
-
-    if (g.inst.hold?.corner) {
-      releaseHoldInst(g.inst);
-      scheduleSettle(g.inst);
-    }
-  }
-
-  function startGuide(inst: Instance, node: Node, say: string, target: string, portName: string, options?: MarkOptions): { name: string } {
-    if (guide) {
-      const old = guide;
-      endGuide(old);
-
-      try { old.port.disconnect(); } catch {  }
-    }
-
-    const el = guideElement(node);
-    const full = actionName(el ?? undefined);
-    const port = chrome.runtime.connect({ name: portName });
-
-    const g: GuideSession = {
-      inst, node, target, options, port,
-      step: options?.step,
-      warn: false,
-      relocate: guideLocator(node, target),
-      name: full.length > 20 ? `${full.slice(0, 19)}…` : full,
-      mark: null,
-      label: say,
-      rect: null,
-      observer: new MutationObserver((records) => {
-        if (!pageMutated(records)) return;
-        g.lastChange = performance.now();
-        checkGuide(g);
-
-        if (guide === g) followGuideNode(g);
-      }),
-      misses: 0,
-      missed: false,
-      lastChange: -1,
-      down: null,
-      watch: null,
-    };
-
-    guide = g;
-    port.onDisconnect.addListener(() => endGuide(g));
-    g.observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-    window.addEventListener("click", onGuideClick, true);
-    window.addEventListener("pointerdown", onGuideDown, true);
-    window.addEventListener("pointermove", onGuideMove, true);
-    window.addEventListener("pointerup", onGuideUp, true);
-    drawGuideMark(g, say);
-    holdAtGuide(g);
-
-    return { name: g.name };
-  }
+  const tutorGuide = createTutorGuide<Instance>({
+    reducedMotion,
+    guideCanvas: () => guideCanvas,
+    actionName,
+    holdPoint,
+    holdAt: (inst, point, target, el) => holdInst(inst, point.x, point.y, null, target, null, el),
+    releaseHold: releaseHoldInst,
+    finishPark,
+    scheduleSettle,
+    isHoldingCorner: (inst) => Boolean(inst.hold?.corner),
+    spawnMark: (inst, rect, label, target, options, node) => spawnMark(inst, rect, label, target, options, node),
+    removeMark,
+    frameOfMark: (el) => {
+      const m = liveMarks.find((x) => x.el === el);
+
+      return m?.frame ? { frame: m.frame, seed: m.seed ?? 1 } : null;
+    },
+  });
 
   function spawnMark(
     inst: Instance,
@@ -2703,7 +2360,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
     saveSpots();
     lifetime++;
 
-    if (guide) endGuide(guide);
+    tutorGuide.stop();
     clearHandoff();
 
     if (actionFrame !== undefined) cancelAnimationFrame(actionFrame);
@@ -3088,7 +2745,7 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
         if (!node) throw new Error(`未找到目标元素：${target}`);
 
-        return startGuide(getInstance(id), node, say, target, portName, options);
+        return tutorGuide.start(getInstance(id), node, say, target, portName, options);
       },
 
       handoffMark(rect: SideAgentRect, target: string, options?: MarkOptions, observedNode?: Node): void {
@@ -3191,13 +2848,15 @@ import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs.js";
 
     if (!inst) return null;
 
+    const activeGuide = tutorGuide.active();
+
     return {
       holding: Boolean(inst.hold),
       pressing: inst.el.classList.contains("pressing"),
       hidden: inst.el.classList.contains("hidden") || !inst.visible,
       x: inst.pos.x,
       y: inst.pos.y,
-      guide: guide?.inst === inst ? { label: guide.mark?.querySelector(".mark-label")?.textContent ?? "", misses: guide.misses, parkedAtTarget: Boolean(inst.hold?.corner), checking: Boolean(guide.watch && !guide.watch.settled) } : null,
+      guide: activeGuide?.inst === inst ? { label: activeGuide.mark?.querySelector(".mark-label")?.textContent ?? "", misses: activeGuide.misses, parkedAtTarget: Boolean(inst.hold?.corner), checking: activeGuide.checking } : null,
     };
   };
 

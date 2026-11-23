@@ -754,7 +754,7 @@ export interface GuideStepResult {
   outcome: "done";
   misses: number;
   noChangeClicks: number;
-  changed?: "dom" | "url" | "document";
+  changed?: "dom" | "url" | "document" | "input" | "select" | "new_tab";
   after?: string;
 }
 
