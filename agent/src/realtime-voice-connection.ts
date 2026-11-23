@@ -124,6 +124,13 @@ interface UserInput {
   sourceIds?:string[];
 }
 
+type TaskNotice = { text: string; id?: string; valid?: () => boolean; verbatim?: boolean };
+type NoticeState =
+  | { phase: 'idle' }
+  | { phase: 'awaiting_ack'; itemId: string; wireText: string; speechSeq: number; notice: TaskNotice }
+  | { phase: 'awaiting_response'; speechSeq: number; notice: TaskNotice }
+  | { phase: 'generating'; responseId: string };
+
 interface PendingToolCall {
   inputId?: string;
   executionFact?: string;
@@ -254,12 +261,13 @@ export class RealtimeVoiceConnection {
   private readonly pendingToolCalls = new Map<string, PendingToolCall>();
   private wantResponse = false;
   private readonly requests = new Map<string, RequestState>();
-  private queuedNotify: Array<{text:string;id?:string;valid?:()=>boolean;verbatim?:boolean}> = [];
-  private creatingDeliveryId: string | undefined;
-  private creatingNotice:{notice:{text:string;id?:string;valid?:()=>boolean;verbatim?:boolean};speechSeq:number}|null=null;
-  private noticeSeq=0;
-  private pendingNotice:{itemId:string;wireText:string;speechSeq:number;notice:{text:string;id?:string;valid?:()=>boolean;verbatim?:boolean}}|null=null;
-  private suppressDispatch = false;
+  private queuedNotify: TaskNotice[] = [];
+  private notification: NoticeState = { phase: 'idle' };
+  private noticeSeq = 0;
+  private get suppressDispatch(): boolean { return this.notification.phase !== 'idle'; }
+  private finishNotice(id: string): void {
+    if (this.notification.phase === 'generating' && this.notification.responseId === id) this.notification = { phase: 'idle' };
+  }
   private localCancelResponseId: string | null = null;
   private readonly silencedResponses = new Set<string>();
   private browserAbort = new AbortController();
@@ -439,20 +447,19 @@ export class RealtimeVoiceConnection {
       case 'session.updated': return this.onSessionUpdated(event);
       case 'response.created': {
         const id = asString(asRecord(event.response)?.id) ?? asString(event.response_id) ?? `resp-${++this.responseSeq}`;
-        const noticeResponse = this.creatingNotice?.speechSeq === this.speechSeq && this.sendingResponse;
+        const creating = this.notification.phase === 'awaiting_response' ? this.notification : null;
+        const noticeResponse = creating?.speechSeq === this.speechSeq && this.sendingResponse;
         const autoForSpeech = this.autoResponsePending === this.speechSeq && !this.sendingResponse;
         this.activeResponseId = id;
         const planOrigin = this.planMode && !noticeResponse ? this.planResponseOrigins.shift() : this.speechSeq;
         this.responseInputs.set(id, planOrigin ?? -1);
         if (this.planMode && this.planResponseOrigins.length === 0) this.clearTimer('plan-source');
 
-        if(this.creatingNotice){
-          if(this.creatingNotice.speechSeq===this.speechSeq&&!this.pendingStop){
-            if(this.creatingDeliveryId)this.sendToClient({type:'delivery_response',deliveryId:this.creatingDeliveryId,responseId:id});
-          }else this.queuedNotify.unshift(this.creatingNotice.notice);
+        if (creating) {
+          this.notification = { phase: 'generating', responseId: id };
+          if (creating.speechSeq !== this.speechSeq || this.pendingStop) this.queuedNotify.unshift(creating.notice);
+          else if (creating.notice.id) this.sendToClient({ type: 'delivery_response', deliveryId: creating.notice.id, responseId: id });
         }
-
-        this.creatingDeliveryId=undefined;this.creatingNotice=null;
         this.log({type:'response_created',responseId:id,requested:this.sendingResponse,autoPending:this.autoResponsePending!==null});
         this.finishRequest();
         this.busyRetries = 0;
@@ -480,25 +487,7 @@ export class RealtimeVoiceConnection {
       case 'response.done': return this.onResponseDone(event);
       case 'response.function_call_arguments.done': return this.onFunctionCall(event);
       case 'conversation.item.input_audio_transcription.completed': return this.onUserCompleted(event);
-      case 'conversation.item.created': {
-        const pending=this.pendingNotice,item=asRecord(event.item);
-
-        const content=Array.isArray(item?.content)?item.content.map(part=>{const c=asRecord(part);
-
-return asString(c?.text)??asString(c?.transcript)??'';}).join(''):'';
-
-        if(pending&&(item?.id===pending.itemId||(item?.role==='user'&&content===pending.wireText))){
-          this.clearTimer('notice-ack');this.pendingNotice=null;
-
-          if(pending.notice.valid&&!pending.notice.valid()){this.suppressDispatch=false;}
-          else if(pending.speechSeq!==this.speechSeq||this.pendingStop){this.queuedNotify.unshift(pending.notice);this.suppressDispatch=false;}
-          else {this.creatingDeliveryId=pending.notice.id;this.creatingNotice={notice:pending.notice,speechSeq:pending.speechSeq};this.wantResponse=true;}
-
-          this.log({type:'notify_accepted',itemId:pending.itemId,deliveryId:pending.notice.id});this.maybeFlush();
-        }
-
-        return;
-      }
+      case 'conversation.item.created': return this.acceptNoticeItem(event);
 
       case 'input_audio_buffer.speech_started':
         if (this.planMode) {
@@ -511,7 +500,10 @@ return asString(c?.text)??asString(c?.transcript)??'';}).join(''):'';
         this.speech = { phase: 'speaking' };
         this.silenceOutput();
 
-        if(this.creatingNotice){this.queuedNotify.unshift(this.creatingNotice.notice);this.creatingNotice=null;this.creatingDeliveryId=undefined;this.suppressDispatch=false;}
+        if (this.notification.phase === 'awaiting_response') {
+          this.queuedNotify.unshift(this.notification.notice);
+          this.notification = { phase: 'idle' };
+        }
 
         this.firstTextNoted = false;
         this.firstAudioNoted = false;
@@ -595,6 +587,28 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speech.at});}
     this.log({type: 'provider_stalled', speechMs: Math.round(this.unansweredSpeechMs), quietMs: now - this.lastSpeechAt, silentMs: now - this.lastProviderEventAt});
     this.sendToClient({type: 'error', message: '语音服务没有响应，正在重新连接；连上后请再说一遍。', recoverable: true, sayAgain: true});
     this.close();
+  }
+
+  private acceptNoticeItem(event: ProviderEvent): void {
+    const pending = this.notification;
+    if (pending.phase !== 'awaiting_ack') return;
+    const item = asRecord(event.item);
+    const content = Array.isArray(item?.content) ? item.content.map(part => {
+      const data = asRecord(part);
+      return asString(data?.text) ?? asString(data?.transcript) ?? '';
+    }).join('') : '';
+    if (item?.id !== pending.itemId && !(item?.role === 'user' && content === pending.wireText)) return;
+    this.clearTimer('notice-ack');
+    this.notification = { phase: 'idle' };
+    if (!pending.notice.valid || pending.notice.valid()) {
+      if (pending.speechSeq !== this.speechSeq || this.pendingStop) this.queuedNotify.unshift(pending.notice);
+      else {
+        this.notification = { phase: 'awaiting_response', notice: pending.notice, speechSeq: pending.speechSeq };
+        this.wantResponse = true;
+      }
+    }
+    this.log({ type: 'notify_accepted', itemId: pending.itemId, deliveryId: pending.notice.id });
+    this.maybeFlush();
   }
 
   private onSessionCreated(event: Record<string, unknown>): void {
@@ -850,7 +864,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speech.at});}
       this.clearTimer('create-watch');
     }
 
-    this.suppressDispatch = false;
+    this.finishNotice(id);
   }
 
   private finishResponseDone(id: string, status: string, doneText: string | null): void {
@@ -870,7 +884,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speech.at});}
     this.log({type: 'response_done', responseId: id, status});
 
     if (this.localCancelResponseId === id) this.localCancelResponseId = null;
-    this.suppressDispatch = false;
+    this.finishNotice(id);
     const bytes = this.audioBytes.get(id) ?? 0;
 
     if (status === 'cancelled') {
@@ -951,7 +965,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speech.at});}
       return this.sendToClient({type:'status',text:'语音服务正忙，稍后重试'});
     }
 
-    if(this.pendingNotice)return this.fatal('任务通知未被语音服务接收，未标记已播报；文字结果仍保留在侧栏。');
+    if(this.notification.phase === 'awaiting_ack')return this.fatal('任务通知未被语音服务接收，未标记已播报；文字结果仍保留在侧栏。');
     this.sendToClient({type: 'status', text: `语音服务提示：${message}`});
   }
 
@@ -1129,7 +1143,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speech.at});}
 
     if (this.planMode && this.planResponseOrigins.length > 0) return;
 
-    if (this.pendingStop||this.pendingNotice) return;
+    if (this.pendingStop || this.notification.phase === 'awaiting_ack') return;
 
     if (this.autoResponsePending === this.speechSeq) return;
 
@@ -1153,13 +1167,12 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speech.at});}
 
     while(this.queuedNotify[0]?.valid&&!this.queuedNotify[0].valid!())this.queuedNotify.shift();
 
-    if (this.queuedNotify.length && !replyNeeded && !this.creatingNotice) {
+    if (this.queuedNotify.length && !replyNeeded && this.notification.phase === 'idle') {
       const notice = this.queuedNotify.shift()!;
       const text = notice.text;
       const itemId=`bys-notice-${++this.noticeSeq}`;
       const wireText=notice.verbatim?`【系统通知】请原样对用户说这句话，不增删、不改写：${text} 这不是用户的新请求，不要调用工具。`:`【系统通知】${text}。请用一句话自然告知用户，说完就停，不反问、不客套；这不是用户的新请求，不要调用工具。`;
-      this.pendingNotice={itemId,wireText,speechSeq:this.speechSeq,notice};
-      this.suppressDispatch = true;
+      this.notification = { phase: 'awaiting_ack', itemId, wireText, speechSeq: this.speechSeq, notice };
       this.socketSend({
         type: 'conversation.item.create',
         item: {id:itemId,type: 'message', role: 'user', content: [{type: 'input_text', text: wireText}]},
@@ -1178,7 +1191,7 @@ if(item&&itemId)this.speechItems.set(itemId,{...item,at:this.speech.at});}
         this.log({type: 'create_watchdog'});
         this.finishRequest();
 
-        if (this.creatingNotice) this.wantResponse = true;
+        if (this.notification.phase === 'awaiting_response') this.wantResponse = true;
         this.maybeFlush();
       });
     }
