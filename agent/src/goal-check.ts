@@ -182,7 +182,6 @@ function parseGoalCheckReply(text: string, evidence?: CitationEvidence): Omit<Go
 }
 
 function hasUserDependency(input: GoalCheckInput): boolean {
-  if (input.replyForm) return true;
   const cleaned = input.lastReply.replace(/https?:\/\/[^\s)）\]」"'<>]+/g, '').trimEnd();
   const sentences = cleaned.split(/(?<=[。！？!?；;\n])|(?<=\.)\s+/).filter(asksUser);
   if (!sentences.length) return false;
@@ -191,6 +190,22 @@ function hasUserDependency(input: GoalCheckInput): boolean {
   const personal = /邮箱|邮件地址|手机号|电话号码|密码|验证码|身份证|银行卡|\b(email|phone|password|verification code|credit card)\b/i;
   const explicitGate = /(?:先|之前|前|等|等待).{0,12}(?:我|用户).{0,8}(?:确认|同意|批准)|(?:我|用户).{0,8}(?:确认|同意|批准).{0,8}(?:再|后|才)|\b(ask me|my approval|confirm before|confirmation before|wait for my)\b/i;
   return consequential.test(questions) || personal.test(questions) || explicitGate.test(input.goal.join('\n'));
+}
+
+function isClarificationQuestion(input: GoalCheckInput, parsed: GoalReply): boolean {
+  if (parsed.status !== "continue" || parsed.repair !== "complete_task" || parsed.verificationSubject !== "answer") return false;
+  const evidence = typeof parsed.evidence === "string" ? parsed.evidence.trim() : "";
+  if (!evidence || !input.lastReply.includes(evidence)) return false;
+  return evidence.split(/(?<=[。！？!?；;\n])|(?<=\.)\s+/).some(sentence => {
+    if (!asksUser(sentence) || defersWork(sentence) || emailStepIsNext(input.page?.text ?? "", sentence)) return false;
+    return /还是|指的?是|是指|哪一?[个种项页款位]|\b(which one|do you mean|refer to)\b/i.test(sentence); // WHY: hardcode-ok grammatical markers of a choice about the user's intended referent
+  });
+}
+
+function userDependencyReason(input: GoalCheckInput, parsed: GoalReply): string | undefined {
+  if (input.replyForm) return "replyForm";
+  if (isClarificationQuestion(input, parsed)) return "clarification_question";
+  return hasUserDependency(input) ? "user_dependency" : undefined;
 }
 
 export function defersWork(reply: string): boolean {
@@ -481,9 +496,9 @@ export async function checkGoal(host: SideCallHost, model: Model<Api>, input: Go
     const items = Array.isArray(parsed.items) ? parsed.items.flatMap(item => item && typeof item === "object" && typeof (item as GoalItem).text === "string" && typeof (item as GoalItem).done === "boolean"
       ? [{ text: (item as GoalItem).text.trim().replace(/\s+/g, " ").slice(0, 30), done: (item as GoalItem).done }] : []).filter(item => item.text).slice(0, 12) : [];
     const adjustments: string[] = [];
-    const waitsForUser = hasUserDependency(input);
+    const waitsForUser = userDependencyReason(input, parsed);
     const unfinishedItems = parsed.status === "done" && items.some(item => !item.done);
-    if (parsed.status === "continue" && waitsForUser) adjustments.push(input.replyForm ? "replyForm" : "user_dependency");
+    if (parsed.status === "continue" && waitsForUser) adjustments.push(waitsForUser);
     if (unfinishedItems) adjustments.push("unfinishedItems");
     const status = parsed.status === "continue" && waitsForUser ? "needs_user"
       : unfinishedItems ? (waitsForUser ? "needs_user" : "open") : parsed.status;
