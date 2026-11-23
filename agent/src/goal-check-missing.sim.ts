@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import { checkGoal } from "./goal-check.js";
+import { checkGoal, GOAL_CHECK_PROMPT } from "./goal-check.js";
 import type { SideCallHost } from "./side-judgment.js";
 
 const model = {
@@ -125,4 +125,35 @@ test("pointed target missing preserves continue when page observation is truncat
     AbortSignal.timeout(5_000),
   );
   assert.equal(verdict.status, "continue");
+});
+
+test("goal check prompt forbids deriving tasks from unrelated goalPage title or query and preserves clarification questions", () => {
+  assert.match(GOAL_CHECK_PROMPT, /goalPage[\s\S]*background context only[\s\S]*never add requirements/i);
+  assert.match(GOAL_CHECK_PROMPT, /clarify an ambiguous term/i);
+});
+
+test("multi-part reply with consequential user question in first paragraph still yields needs_user", async () => {
+  const firstParagraph = "表单已经填好，要我现在点提交吗？";
+  const secondParagraph = "另外你问的第二件事已经查清：公告写明董事会已于今日投票通过恢复原职务，市场开盘前出现明显上涨，并附带了多家媒体的报道链接与具体时间线细节。".repeat(3);
+  const verdict = await checkGoal(
+    stubHost({
+      items: [{ text: "提交表单", done: false }, { text: "查最新消息", done: true }],
+      goalOnPage: false,
+      status: "continue",
+      repair: "complete_task",
+      verificationSubject: "answer",
+      evidence: firstParagraph,
+      remaining: "提交表单",
+      correction: "直接点击提交按钮。",
+      finding: "表单尚未提交",
+    }),
+    model,
+    {
+      ...baseInput,
+      goal: ["帮我填表并在提交前问我，另外查一下最新消息"],
+      lastReply: `${firstParagraph}\n\n${secondParagraph}`,
+    },
+    AbortSignal.timeout(5_000),
+  );
+  assert.equal(verdict.status, "needs_user");
 });
