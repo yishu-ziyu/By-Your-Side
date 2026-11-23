@@ -30,17 +30,13 @@ function setup(...ids: string[]) {
 
 const busy = (step: string | null, id = 'd1'): WaitingDelegation => ({ delegationId: id, runId: `run-${id}`, running: true, step });
 
-test('9.9 秒不念，10 秒念正在做哪一步', () => {
+test('步骤不变：10 秒首播，隔 15 秒再念「还在A，稍等」', () => {
   const voice = setup('d1');
 
-  assert.deepEqual(voice.run(0, 9_900, () => [busy('A')]), []);
-  assert.deepEqual(voice.run(10_000, 10_000, () => [busy('A')]), [{ at: 10_000, id: 'd1', text: '还在做，正在A。' }]);
-});
-
-test('步骤不变：隔 15 秒才再念，换成「还在A，稍等」', () => {
-  const voice = setup('d1');
-
-  assert.deepEqual(voice.run(0, 25_000, () => [busy('A')]).map(s => [s.at, s.text]), [[10_000, '还在做，正在A。'], [25_000, '还在A，稍等。']]);
+  assert.deepEqual(voice.run(0, 25_000, () => [busy('A')]), [
+    { at: 10_000, id: 'd1', text: '还在做，正在A。' },
+    { at: 25_000, id: 'd1', text: '还在A，稍等。' },
+  ]);
 });
 
 test('13 秒换成步骤 B：隔 10 秒（20 秒）就念新步骤', () => {
