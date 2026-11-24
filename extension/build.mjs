@@ -34,6 +34,7 @@ await esbuild.build({
     "artifact-viewer": "src/sidepanel/artifact-viewer-page.ts",
     "diagram-engine": "src/sidepanel/diagram-engine.ts",
     "diagram-engine-more": "src/sidepanel/diagram-engine-more.ts",
+    "code-highlight-worker": "src/sidepanel/code-highlight-worker.ts",
     "file-read": "src/sidepanel/file-read/index.ts",
   },
 });

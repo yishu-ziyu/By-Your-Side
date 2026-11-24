@@ -1,189 +1,97 @@
-import { Lexer } from "marked";
-import { cardSpans, splitAnswer } from "../../../shared/answer-cards.js";
-import { D_READ } from "../shared/motion-tokens.js";
+import { cardSpans } from "../../../shared/answer-cards.js";
+import { IncrementalBlockFreezer, type StreamBlock, type StreamBlockKind } from "../../../shared/block-freezer.js";
+import { repairStreamingTail } from "../../../shared/streaming-tail.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
+import { D_STREAM_FADE } from "../shared/motion-tokens.js";
 import { dropPlaceholders, patchAnswer } from "./answer-cards.js";
+import { getCodeHighlighter } from "./code-highlighter.js";
 
-const BEAT_MIN = 150;
-const BEAT_MAX = 200;
-const CHUNK_MIN = 14;
-const CHUNK_MAX = 24;
-const CATCH_UP_MS = 1500;
-const STARVE_MIN = 6;
-const STARVE_WAIT = 350;
-const FADE_MS = D_READ;
-const FADE_SLACK_MS = 100;
+const REBUILD_LOAD = 0.15;
+const MAX_CATCH_UP = 260;
+const MIN_CPS = 32;
+const MAX_CPS = 360;
+const FADE_SLACK = 80;
+const HIGHLIGHT_INTERVAL = 110;
+const CARD_INTERVAL = 120;
+const TABLE_INTERVAL = 65;
 
-const PUNCT = /[，。；：、！？,.;:!?）」”]/;
-const AVG_BEAT = (BEAT_MIN + BEAT_MAX) / 2;
+const PLAIN_PROSE_DELTA = /^[^\n*_`~[\]()<>|#\\!{}$]+$/;
+const SYNTAX_BOUNDARY = /[\n*_`~[\]()<>|#\\!{}]/;
 
 type Fade = { from: number; to: number; at: number };
-
-type Block = { md: string; html: string; parsed: ChildNode[] | null; nodes: ChildNode[]; len: number; fades: Fade[] };
 
 type Options = {
   render: (text: string) => string;
   onProgress?: () => void;
 };
 
-function points(text: string): string[] {
-  return [...text];
+interface MountedSlot {
+  index: number;
+  kind: StreamBlockKind;
+  raw: string;
+  repaired: string;
+  frozen: boolean;
+  hasRef: boolean;
+  nodes: ChildNode[];
+  visibleLen: number;
+  fades: Fade[];
+  lastCodeText?: string;
+  lastHighlightHtml?: string;
+  lastHighlightAt?: number;
+  lastStructuralAt?: number;
+  lastCardCloseTags?: number;
 }
 
-function remendFence(md: string): string {
-  let open = false;
+const escHtml = (s: string) =>
+  s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
 
-  for (const line of md.split("\n")) {
-    if (/^ {0,3}```/.test(line)) open = !open;
+function isSelectionTouching(node: Node): boolean {
+  const sel = globalThis.getSelection?.();
+
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+  try {
+    return sel.containsNode(node, true);
+  } catch {
+    return node.contains(sel.getRangeAt(0).commonAncestorContainer);
   }
-
-  return open ? `${md}\n\`\`\`` : md;
 }
 
-function fenceOpen(md: string): boolean {
-  let open = false;
+function snapCharBoundary(text: string, targetIdx: number): number {
+  let idx = Math.min(text.length, Math.max(0, targetIdx));
 
-  for (const line of md.split("\n")) {
-    if (/^ {0,3}```/.test(line)) open = !open;
+  if (idx > 0 && idx < text.length) {
+    const prev = text.charCodeAt(idx - 1);
+
+    if (prev >= 0xd800 && prev <= 0xdbff) idx += 1;
   }
+  if (idx > 0 && idx < text.length && text[idx - 1] === "*" && text[idx] === "*") idx += 1;
 
-  return open;
+  return Math.min(text.length, idx);
 }
 
-function remendBold(md: string): string {
-  const visible = md.replace(/`[^`\n]*`/g, "");
-
-  return (visible.match(/\*\*/g) ?? []).length % 2 ? `${md}**` : md;
-}
-
-function remendCode(md: string): string {
-  const visible = md.replace(/```[\s\S]*?(```|$)/g, "");
-
-  return (visible.match(/`/g) ?? []).length % 2 ? `${md}\`` : md;
-}
-
-function remendLink(md: string): string {
-  const image = /!\[[^\]\n]*(?:\]\([^)\n]*)?$/.exec(md);
-
-  if (image) return md.slice(0, image.index);
-  if (/\[[^\]]*\]\([^)\n]*$/.test(md)) return `${md})`;
-  if (/\[[^\]]*$/.test(md)) return `${md}]`;
-
-  return md;
-}
-
-function remend(md: string): string {
-  const fenced = remendFence(md);
-
-  return fenceOpen(md) ? fenced : remendLink(remendCode(remendBold(fenced)));
-}
-
-function cardEnd(text: string, at: number): number {
+function cardFastForward(text: string, at: number): number {
   for (const { start, end } of cardSpans(text)) {
     if (end <= at) continue;
 
-    return start < at || !text.slice(at, start).trim() ? end : at;
+    return start <= at || !text.slice(at, start).trim() ? end : at;
   }
 
   return at;
 }
 
-const needsWhole = (md: string) => md.includes("{=") || splitAnswer(md).some((part) => "card" in part);
+function parseCodeFence(raw: string): { lang: string; code: string } | null {
+  const match = /^ {0,3}(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)(?:\n {0,3}\1[ \t]*)?$/.exec(raw.trimEnd());
 
-function remendAfterCards(md: string): string {
-  if ("card" in (splitAnswer(md).at(-1) ?? { card: undefined })) return md;
-  let cut = 0;
+  if (!match) return null;
 
-  for (const { end, closed } of cardSpans(md)) {
-    if (!closed) return md;
-    cut = end;
-  }
-
-  return md.slice(0, cut) + remend(md.slice(cut));
-}
-
-function splitBlocks(md: string): string[] {
-  if (!md) return [];
-  const parts: string[] = [];
-
-  for (const token of Lexer.lex(md, { gfm: true, breaks: true })) {
-    if (token.type === "space") {
-      if (parts.length) parts[parts.length - 1] += token.raw;
-      else parts.push(token.raw);
-    } else {
-      parts.push(token.raw);
-    }
-  }
-
-  return parts.length ? parts : [md];
-}
-
-function take(buffer: string, done: boolean, rng: () => number): { chunk: string; rest: string } {
-  let prefix = "";
-
-  if (buffer.startsWith("\n\n")) {
-    prefix = "\n\n";
-    buffer = buffer.slice(2);
-  }
-
-  const chars = points(buffer);
-
-  if (done || chars.length === 0) return { chunk: prefix + buffer, rest: "" };
-
-  let n = CHUNK_MIN + Math.floor(rng() * (CHUNK_MAX - CHUNK_MIN + 1));
-  n = Math.max(n, Math.ceil(chars.length / (CATCH_UP_MS / AVG_BEAT)));
-
-  if (n >= chars.length) n = chars.length;
-  else {
-    const br = buffer.indexOf("\n\n");
-
-    if (br > 0 && points(buffer.slice(0, br)).length <= n + 6) n = points(buffer.slice(0, br)).length;
-    else {
-      const lo = Math.max(n - 6, 1);
-      const hi = Math.min(n + 4, chars.length);
-
-      for (let k = hi; k >= lo; k -= 1) {
-        const prev = chars[k - 1]!;
-        const next = chars[k] ?? "";
-
-        if (PUNCT.test(prev) || (prev === " " && /[A-Za-z]/.test(next))) {
-          n = k;
-          break;
-        }
-      }
-    }
-  }
-
-  if (chars[n - 1] === "*" && chars[n] === "*") n += 1;
-
-  return { chunk: prefix + chars.slice(0, n).join(""), rest: chars.slice(n).join("") };
-}
-
-function lastText(nodes: ChildNode[]): Text | null {
-  const texts = collectTexts(nodes);
-
-  for (let i = texts.length - 1; i >= 0; i -= 1) if (texts[i]!.data.trim()) return texts[i]!;
-
-  return null;
-}
-
-function insertAt(last: Text): Text {
-  const end = last.data.trimEnd().length;
-
-  if (end < last.data.length) last.splitText(end);
-
-  return last;
+  return { lang: (match[2] ?? "").trim().split(/\s+/)[0] ?? "", code: match[3] ?? "" };
 }
 
 function collectTexts(nodes: ChildNode[]): Text[] {
   const texts: Text[] = [];
 
   for (const root of nodes) {
-    if (root.nodeType === Node.TEXT_NODE) {
-      texts.push(root as Text);
-      continue;
-    }
-
+    if (root.nodeType === Node.TEXT_NODE) { texts.push(root as Text); continue; }
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 
     for (let node = walker.nextNode(); node; node = walker.nextNode()) texts.push(node as Text);
@@ -192,23 +100,37 @@ function collectTexts(nodes: ChildNode[]): Text[] {
   return texts;
 }
 
+function lastVisibleText(nodes: ChildNode[]): Text | null {
+  const texts = collectTexts(nodes);
+
+  for (let i = texts.length - 1; i >= 0; i -= 1) if (texts[i]!.data.trim().length > 0) return texts[i]!;
+
+  return null;
+}
+
+function unwrapSpanIfSafe(span: HTMLSpanElement): void {
+  const parent = span.parentNode;
+
+  if (!parent || isSelectionTouching(span)) return;
+  span.replaceWith(...span.childNodes);
+  parent.normalize();
+}
+
 function fadeSpan(delay: number): HTMLSpanElement {
   const span = document.createElement("span");
+
   span.className = "chunk-fade";
   if (delay) span.style.animationDelay = `${-delay}ms`;
-  const unwrap = () => {
+  const finish = () => {
     window.clearTimeout(timer);
     span.removeEventListener("animationend", onEnd);
-    const parent = span.parentNode;
+    unwrapSpanIfSafe(span);
+  };
+  const onEnd = (event: Event) => {
+    if (event.target === span) finish();
+  };
+  const timer = window.setTimeout(finish, Math.max(D_STREAM_FADE - delay, 0) + FADE_SLACK);
 
-    if (!parent) return;
-    span.replaceWith(...span.childNodes);
-    parent.normalize();
-  };
-  const onEnd = (event: AnimationEvent) => {
-    if (event.target === span) unwrap();
-  };
-  const timer = window.setTimeout(unwrap, Math.max(FADE_MS - delay, 0) + FADE_SLACK_MS);
   span.addEventListener("animationend", onEnd);
 
   return span;
@@ -244,9 +166,9 @@ function wrapRanges(nodes: ChildNode[], fades: Fade[], now: number): void {
   for (const node of texts) {
     const start = offset;
     const end = offset + node.data.length;
-    offset = end;
-    if (node.parentElement?.closest(".gen-card")) continue;
 
+    offset = end;
+    if (node.parentElement?.closest(".gen-card, .code-block-head")) continue;
     for (const range of ranges) {
       if (range.to <= start) break;
       const from = Math.max(range.from, start);
@@ -254,8 +176,10 @@ function wrapRanges(nodes: ChildNode[], fades: Fade[], now: number): void {
 
       if (to <= from) continue;
       const tail = node.splitText(from - start);
+
       tail.splitText(to - from);
       const span = fadeSpan(Math.round(now - range.at));
+
       tail.replaceWith(span);
       span.append(tail);
     }
@@ -264,36 +188,92 @@ function wrapRanges(nodes: ChildNode[], fades: Fade[], now: number): void {
 
 function topNodes(html: string, answer: HTMLElement): ChildNode[] {
   const template = document.createElement("template");
+
   template.innerHTML = html;
   keepOpenedImages(template.content, answer);
 
   return [...template.content.childNodes].filter((node) => !(node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()));
 }
 
-function serialize(nodes: ChildNode[]): string {
-  return nodes.map((node) => (node instanceof Element ? node.outerHTML : node.textContent ?? "")).join("");
-}
-
 function anchorBefore(el: HTMLElement): ChildNode | null {
   return el.querySelector(":scope > .answer-actions, :scope > .answer-panel, :scope > .send-declined-card");
+}
+
+function markFrozenNodes(nodes: ChildNode[]): void {
+  for (const node of nodes) {
+    if (node instanceof HTMLElement && node.dataset.frozen !== "true") node.dataset.frozen = "true";
+  }
+}
+
+function findCodeElement(nodes: ChildNode[]): HTMLElement | null {
+  for (const node of nodes) {
+    if (!(node instanceof Element)) continue;
+    const code = node.matches("pre > code") ? node : node.querySelector("pre > code");
+
+    if (code instanceof HTMLElement) return code;
+  }
+
+  return null;
+}
+
+let blockKeyCounter = 0;
+
+function highlightStaticCodeBlocks(root: HTMLElement): void {
+  const highlighter = getCodeHighlighter();
+
+  for (const codeEl of root.querySelectorAll<HTMLElement>("pre > code")) {
+    if (codeEl.querySelector(".tok-kw, .tok-str, .tok-com, .tok-fn, .tok-type")) continue;
+    const code = codeEl.textContent ?? "";
+
+    if (!code.trim()) continue;
+    const lang = /^language-(\S+)$/.exec(codeEl.className)?.[1] ?? "";
+    const key = `static:${++blockKeyCounter}`;
+    const cached = highlighter.request(key, code, lang, (res) => {
+      if (codeEl.isConnected && codeEl.textContent === res.code && !isSelectionTouching(codeEl)) codeEl.innerHTML = res.html;
+    });
+
+    if (cached !== null && !isSelectionTouching(codeEl)) codeEl.innerHTML = cached;
+  }
+}
+
+function extractCardsSource(source: string): string {
+  const parts: string[] = [];
+
+  for (const span of cardSpans(source)) parts.push(source.slice(span.start, span.end));
+
+  return parts.join("\n\n");
+}
+
+function unwrapAllSafeFades(root: HTMLElement): void {
+  for (const span of [...root.querySelectorAll<HTMLSpanElement>(".chunk-fade")]) unwrapSpanIfSafe(span);
 }
 
 class Reveal {
   private target = "";
   private shown = 0;
   private final = false;
+  private finalAt = 0;
   private after: (() => void) | null = null;
-  private timer: number | null = null;
-  private lastRelease = -1e9;
-  private blocks: Block[] = [];
-  private whole: Fade[] | null = null;
-  private wholeLen = 0;
+  private rafId: number | null = null;
+  private settleTimer: number | null = null;
+  private lastFrameAt = 0;
+  private lastCommitAt = 0;
+  private lastCostMs = 0;
+  private carryChars = 0;
+  private smoothedCps = 48;
+  private lastPushAt = 0;
+  private lastPushLen = 0;
   private entered = false;
-  private rng = Math.random;
+  private cardSignature = "";
+  private readonly id = ++blockKeyCounter;
+  private readonly freezer = new IncrementalBlockFreezer();
+  private slots: MountedSlot[] = [];
 
-  constructor(private el: HTMLElement, private opts: Options) {}
+  constructor(private readonly el: HTMLElement, private readonly opts: Options) {}
 
   update(text: string, final: boolean, after?: () => void): void {
+    const now = performance.now();
+
     if (!text.startsWith(this.target.slice(0, this.shown))) {
       let common = 0;
 
@@ -301,240 +281,489 @@ class Reveal {
       this.rewind(common);
     }
 
+    const deltaLen = Math.max(0, text.length - this.lastPushLen);
+
+    if (this.lastPushAt > 0 && deltaLen > 0) {
+      const dtSec = Math.max(0.02, (now - this.lastPushAt) / 1000);
+
+      this.smoothedCps = this.smoothedCps * 0.72 + Math.min(MAX_CPS, deltaLen / dtSec) * 0.28;
+    }
+    this.lastPushAt = now;
+    this.lastPushLen = text.length;
     this.target = text;
-    this.final = final;
+    if (final && !this.final) {
+      this.final = true;
+      this.finalAt = now;
+    }
     if (after) this.after = after;
-    this.schedule(final || cardEnd(text, this.shown) > this.shown);
+
+    if (this.settleTimer !== null) {
+      window.clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+    }
+    this.el.dataset.revealing = "true";
+    if (this.rafId === null) {
+      this.lastFrameAt = now;
+      this.rafId = window.requestAnimationFrame(this.tick);
+    }
   }
 
   flush(): void {
+    this.cancelTimers();
     this.shown = this.target.length;
-    this.blocks = [];
-    this.whole = null;
-    this.stop();
+    this.slots = [];
+    this.freezer.reset();
+    delete this.el.dataset.revealing;
     patchAnswer(this.el, this.opts.render(this.target));
+    highlightStaticCodeBlocks(this.el);
     this.finishIfDone();
   }
 
+  private cancelTimers(): void {
+    if (this.rafId !== null) { window.cancelAnimationFrame(this.rafId); this.rafId = null; }
+    if (this.settleTimer !== null) { window.clearTimeout(this.settleTimer); this.settleTimer = null; }
+  }
+
   private rewind(common: number): void {
-    if (this.whole && needsWhole(this.target.slice(0, common))) {
-      this.shown = common;
-      this.lastRelease = -1e9;
-      this.paintWhole(this.target.slice(0, common), performance.now());
-
-      return;
-    }
-
     this.shown = common;
-    this.blocks = [];
-    this.whole = null;
-    this.lastRelease = -1e9;
-
+    this.slots = [];
+    this.freezer.reset();
+    this.cardSignature = "";
     for (const node of [...this.el.childNodes]) {
       if (node instanceof HTMLElement && node.matches(".answer-actions, .answer-panel, .send-declined-card, .memory-used-line, .memory-used-cite-row")) continue;
       node.remove();
     }
-
-    if (common) this.paintPrefix(this.target.slice(0, common));
+    if (common > 0) this.commit(this.target.slice(0, common), false);
   }
 
-  private paintPrefix(md: string): void {
-    const now = performance.now();
+  private tick = (now: number): void => {
+    this.rafId = null;
+    const dtMs = Math.min(64, Math.max(8, now - this.lastFrameAt));
 
-    if (needsWhole(md)) {
-      this.paintWhole(md, now);
+    this.lastFrameAt = now;
+    const budgetWait = this.lastCostMs > 0 ? Math.min(100, this.lastCostMs / REBUILD_LOAD) : 0;
+
+    if (budgetWait > 16 && now - this.lastCommitAt < budgetWait && !(this.final && now - this.finalAt >= MAX_CATCH_UP)) {
+      this.rafId = window.requestAnimationFrame(this.tick);
 
       return;
     }
 
-    for (const [i, part] of splitBlocks(md).entries()) {
-      const html = this.opts.render(part);
-      this.paintBlock(i, part, html, topNodes(html, this.el), now);
+    const jumped = cardFastForward(this.target, this.shown);
+
+    if (jumped > this.shown) {
+      this.shown = jumped;
+      const done = this.final && this.shown >= this.target.length;
+
+      this.runCommit(done);
+      if (done) { this.scheduleFinish(); return; }
+      this.rafId = window.requestAnimationFrame(this.tick);
+
+      return;
     }
-  }
 
-  private schedule(immediate = false): void {
-    if (immediate && this.timer !== null) {
-      window.clearTimeout(this.timer);
-      this.timer = null;
-    }
+    const backlog = this.target.length - this.shown;
 
-    if (this.timer !== null) return;
-    this.el.dataset.revealing = "true";
-    this.timer = window.setTimeout(() => this.beat(), immediate ? 0 : 0);
-  }
+    if (backlog > 0) {
+      const step = this.computeStepChars(backlog, dtMs, now);
 
-  private stop(): void {
-    if (this.timer !== null) window.clearTimeout(this.timer);
-    this.timer = null;
-    delete this.el.dataset.revealing;
-  }
+      if (step > 0) {
+        this.carryChars = Math.max(0, this.carryChars - step);
+        const nextIdx = snapCharBoundary(this.target, Math.min(this.target.length, this.shown + step));
+        const advanced = cardFastForward(this.target, nextIdx);
 
-  private beat(): void {
-    this.timer = null;
-    const now = performance.now();
-    const buffer = this.target.slice(this.shown);
-    const card = cardEnd(this.target, this.shown) > this.shown;
-    const starved = buffer.length > 0 && buffer.length < STARVE_MIN && !this.final && !card && now - this.lastRelease < STARVE_WAIT;
+        if (advanced > this.shown) {
+          this.shown = advanced;
+          const done = this.final && this.shown >= this.target.length;
 
-    if (buffer.length && !starved) {
-      const { chunk } = card ? { chunk: "" } : take(buffer, this.final, this.rng);
-      this.shown = cardEnd(this.target, this.shown + chunk.length);
-      this.release(now);
-      this.lastRelease = now;
-      this.opts.onProgress?.();
+          this.runCommit(done);
+          if (done) { this.scheduleFinish(); return; }
+        }
+      }
+    } else if (this.final) {
+      this.runCommit(true);
+      this.scheduleFinish();
+
+      return;
     }
 
     if (this.shown < this.target.length || !this.final) {
-      this.timer = window.setTimeout(() => this.beat(), BEAT_MIN + this.rng() * (BEAT_MAX - BEAT_MIN));
+      this.rafId = window.requestAnimationFrame(this.tick);
+    }
+  };
+
+  private computeStepChars(backlog: number, dtMs: number, now: number): number {
+    if (this.final) {
+      const remaining = Math.max(16, MAX_CATCH_UP - (now - this.finalAt));
+
+      if (remaining <= 24) return backlog;
+      const cps = Math.max(this.smoothedCps * 1.4, (backlog / remaining) * 1000);
+
+      this.carryChars += (cps * dtMs) / 1000;
+
+      return Math.floor(this.carryChars);
+    }
+    const horizonSec = MAX_CATCH_UP / 1000;
+    const cps = Math.max(MIN_CPS, Math.min(MAX_CPS, Math.max(backlog / horizonSec, this.smoothedCps * 0.88)));
+
+    this.carryChars += (cps * dtMs) / 1000;
+
+    return Math.floor(this.carryChars);
+  }
+
+  private runCommit(final: boolean): void {
+    const t0 = performance.now();
+
+    this.commit(this.target.slice(0, this.shown), final);
+    this.lastCostMs = performance.now() - t0;
+    this.lastCommitAt = performance.now();
+    this.opts.onProgress?.();
+  }
+
+  private scheduleFinish(): void {
+    const pendingFades = this.el.querySelectorAll(".chunk-fade").length;
+
+    if (pendingFades > 0 && !isSelectionTouching(this.el)) {
+      this.settleTimer = window.setTimeout(() => {
+        this.settleTimer = null;
+        unwrapAllSafeFades(this.el);
+        this.completeReveal();
+      }, D_STREAM_FADE + FADE_SLACK);
 
       return;
     }
+    unwrapAllSafeFades(this.el);
+    this.completeReveal();
+  }
 
-    if (this.el.querySelector(".chunk-fade")) {
-      this.timer = window.setTimeout(() => this.beat(), FADE_MS);
-
-      return;
-    }
-
+  private completeReveal(): void {
     delete this.el.dataset.revealing;
     this.finishIfDone();
+    this.opts.onProgress?.();
   }
 
   private finishIfDone(): void {
     if (!this.final || this.shown < this.target.length) return;
     dropPlaceholders(this.el);
-
     if (!this.after) return;
     const after = this.after;
+
     this.after = null;
     after();
   }
 
-  private release(now: number): void {
-    if (!this.entered) {
+  private commit(shownText: string, final: boolean): void {
+    const now = performance.now();
+
+    if (!this.entered && shownText.length > 0) {
       this.el.classList.add("stream-enter");
       this.entered = true;
     }
 
-    const source = this.target.slice(0, this.shown);
+    const { blocks } = this.freezer.update(shownText, final);
+    const nextCardSig = blocks.filter((b) => b.kind === "card").map((b) => `${b.index}:${b.raw.length}:${b.frozen ? 1 : 0}`).join("|");
+    const cardsChanged = nextCardSig !== this.cardSignature;
 
-    if (this.whole || needsWhole(source)) {
-      this.paintWhole(source, now);
+    this.cardSignature = nextCardSig;
+    const cardsSource = blocks.some((b) => b.hasRef) ? extractCardsSource(shownText) : "";
 
-      return;
+    for (let i = 0; i < blocks.length; i += 1) {
+      const block = blocks[i]!;
+      const isTail = i === blocks.length - 1;
+
+      this.commitBlock(i, block, isTail && !final, final, cardsChanged, cardsSource, now);
     }
 
-    const parts = splitBlocks(source);
-
-    for (const [i, md] of parts.entries()) {
-      const live = i === parts.length - 1;
-      const old = this.blocks[i];
-
-      if (old && old.md === md) continue;
-      const html = this.opts.render(live ? remend(md) : md);
-      const nodes = topNodes(html, this.el);
-      const added = old && md.startsWith(old.md) ? md.slice(old.md.length) : null;
-      const at = old && added && old.nodes.length ? this.appendOffset(old, nodes, added) : null;
-
-      if (!(old && added && at !== null && this.appendFast(old, md, html, nodes, added, at, now))) this.paintBlock(i, md, html, nodes, now);
-    }
-
-    while (this.blocks.length > parts.length) {
-      const extra = this.blocks.pop()!;
+    while (this.slots.length > blocks.length) {
+      const extra = this.slots.pop()!;
 
       for (const node of extra.nodes) node.remove();
     }
   }
 
-  private paintWhole(source: string, now: number): void {
-    if (!this.whole) {
-      const before = (node: ChildNode) => {
-        let len = 0;
+  private commitBlock(
+    index: number,
+    block: StreamBlock,
+    isLiveTail: boolean,
+    final: boolean,
+    cardsChanged: boolean,
+    cardsSource: string,
+    now: number,
+  ): void {
+    const prev = this.slots[index];
 
-        for (let n = node.previousSibling; n; n = n.previousSibling) len += n.textContent?.length ?? 0;
-
-        return len;
-      };
-      this.whole = [];
-
-      for (const block of this.blocks) {
-        const offset = block.nodes[0]?.parentNode === this.el ? before(block.nodes[0]) : 0;
-
-        for (const fade of block.fades) this.whole.push({ from: fade.from + offset, to: fade.to + offset, at: fade.at });
+    if (prev && prev.frozen && block.frozen && prev.raw === block.raw) {
+      if (block.hasRef && cardsChanged && !prev.nodes.some(isSelectionTouching)) {
+        this.renderProseSlot(index, prev, block, block.raw, cardsSource, now, false);
+        markFrozenNodes(prev.nodes);
       }
 
-      this.wholeLen = this.el.textContent?.length ?? 0;
-      this.blocks = [];
+      return;
     }
 
-    patchAnswer(this.el, this.opts.render(remendAfterCards(source)));
-    const len = this.el.textContent?.length ?? 0;
-    const fades = this.whole.filter((fade) => now - fade.at < FADE_MS && fade.from < len).map((fade) => ({ ...fade, to: Math.min(fade.to, len) }));
+    if (prev && prev.raw === block.raw && prev.frozen === block.frozen) return;
 
-    if (len > this.wholeLen) fades.push({ from: this.wholeLen, to: len, at: now });
-    this.whole = fades;
-    this.wholeLen = len;
-    wrapRanges([...this.el.childNodes], fades, now);
-  }
-
-  private appendOffset(old: Block, nodes: ChildNode[], added: string): number | null {
-    const before = old.parsed ?? topNodes(old.html, this.el);
-    const last = lastText(before);
-
-    if (!last) return null;
-    insertAt(last).appendData(added);
-
-    if (serialize(before) !== serialize(nodes)) return null;
-    let at = 0;
-
-    for (const text of collectTexts(before)) {
-      if (text === last) return at + last.data.length - added.length;
-      at += text.data.length;
+    if (
+      isLiveTail &&
+      block.kind === "markdown" &&
+      prev &&
+      prev.kind === "markdown" &&
+      !prev.frozen &&
+      !block.hasRef &&
+      block.raw.startsWith(prev.raw) &&
+      this.tryFastProseAppend(prev, block.raw, now)
+    ) {
+      return;
     }
 
-    return null;
+    if (isLiveTail && prev && prev.kind === "table" && block.kind === "table") {
+      const delta = block.raw.startsWith(prev.raw) ? block.raw.slice(prev.raw.length) : block.raw;
+
+      if (!SYNTAX_BOUNDARY.test(delta) && prev.lastStructuralAt && now - prev.lastStructuralAt < TABLE_INTERVAL) return;
+    }
+
+    const slot = prev ?? this.createSlot(block);
+
+    this.slots[index] = slot;
+    if (block.kind === "code") this.renderCodeSlot(index, slot, block, now, isLiveTail);
+    else if (block.kind === "card") this.renderCardSlot(index, slot, block, now, final);
+    else {
+      const effective = isLiveTail ? repairStreamingTail(block.raw).text : block.raw;
+
+      this.renderProseSlot(index, slot, block, effective, cardsSource, now, isLiveTail);
+      slot.lastStructuralAt = now;
+    }
+
+    slot.raw = block.raw;
+    slot.kind = block.kind;
+    slot.frozen = block.frozen;
+    slot.hasRef = block.hasRef;
+    if (block.frozen) markFrozenNodes(slot.nodes);
   }
 
-  private appendFast(block: Block, md: string, html: string, parsed: ChildNode[], added: string, at: number, now: number): boolean {
-    const text = lastText(block.nodes);
+  private createSlot(block: StreamBlock): MountedSlot {
+    return {
+      index: block.index,
+      kind: block.kind,
+      raw: "",
+      repaired: "",
+      frozen: false,
+      hasRef: block.hasRef,
+      nodes: [],
+      visibleLen: 0,
+      fades: [],
+    };
+  }
 
-    if (!text) return false;
-    const last = insertAt(text);
+  private nextAnchor(index: number): ChildNode | null {
+    for (let j = index + 1; j < this.slots.length; j += 1) {
+      const first = this.slots[j]?.nodes[0];
+
+      if (first && first.parentNode === this.el) return first;
+    }
+
+    return anchorBefore(this.el);
+  }
+
+  private mountSlotNodes(index: number, slot: MountedSlot, nextNodes: ChildNode[]): void {
+    const frag = document.createDocumentFragment();
+
+    for (const node of nextNodes) frag.append(node);
+    const oldFirst = slot.nodes[0];
+
+    if (oldFirst && oldFirst.parentNode === this.el) {
+      this.el.insertBefore(frag, oldFirst);
+      for (const node of slot.nodes) node.remove();
+    } else {
+      this.el.insertBefore(frag, this.nextAnchor(index));
+    }
+    slot.nodes = nextNodes;
+  }
+
+  private tryFastProseAppend(slot: MountedSlot, nextRaw: string, now: number): boolean {
+    const delta = nextRaw.slice(slot.raw.length);
+
+    if (!delta || !PLAIN_PROSE_DELTA.test(delta)) return false;
+    const repair = repairStreamingTail(nextRaw);
+    const prevRepair = repairStreamingTail(slot.raw);
+
+    if (repair.suffix !== prevRepair.suffix || repair.keptLength !== prevRepair.keptLength + delta.length) return false;
+    const lastText = lastVisibleText(slot.nodes);
+
+    if (!lastText) return false;
+    const parent = lastText.parentElement;
+
+    if (!parent || parent.closest("table, pre, .gen-card")) return false;
+    const host = parent.closest("p, li, h1, h2, h3, h4, h5, h6, blockquote");
+
+    if (!host || !slot.nodes.some((n) => n === host || n.contains(host))) return false;
     const span = fadeSpan(0);
-    span.textContent = added;
-    const parent = last.parentElement;
-    const anchor = parent?.classList.contains("chunk-fade") && parent.lastChild === last ? parent : last;
 
-    anchor.after(span);
-    block.fades.push({ from: at, to: at + added.length, at: now });
-    block.len += added.length;
-    block.md = md;
-    block.html = html;
-    block.parsed = parsed;
+    span.textContent = delta;
+    const inlineEl = parent.closest("code, a, strong, em, del");
+
+    if (!repair.suffix && inlineEl && host.contains(inlineEl)) {
+      inlineEl.after(span);
+    } else {
+      const anchor: ChildNode = parent.classList.contains("chunk-fade") && parent.lastChild === lastText ? parent : lastText;
+
+      anchor.after(span);
+    }
+    const prevLen = slot.visibleLen;
+
+    slot.visibleLen += delta.length;
+    slot.fades = slot.fades.filter((f) => now - f.at < D_STREAM_FADE);
+    slot.fades.push({ from: prevLen, to: slot.visibleLen, at: now });
+    slot.raw = nextRaw;
+    slot.repaired = repair.text;
 
     return true;
   }
 
-  private paintBlock(i: number, md: string, html: string, nodes: ChildNode[], now: number): void {
-    const len = nodes.reduce((sum, node) => sum + (node.textContent?.length ?? 0), 0);
-    const old = this.blocks[i];
-    let fades = old ? old.fades.filter((fade) => now - fade.at < FADE_MS && fade.from < len).map((fade) => ({ ...fade, to: Math.min(fade.to, len) })) : [];
-    const prevLen = old ? Math.min(old.len, len) : 0;
+  private renderProseSlot(
+    index: number,
+    slot: MountedSlot,
+    block: StreamBlock,
+    effective: string,
+    cardsSource: string,
+    now: number,
+    isLive: boolean,
+  ): void {
+    if (!effective.trim()) {
+      for (const node of slot.nodes) node.remove();
+      slot.nodes = [];
+      slot.visibleLen = 0;
+      slot.repaired = effective;
 
-    if (len > prevLen) fades.push({ from: prevLen, to: len, at: now });
-    const frag = document.createDocumentFragment();
+      return;
+    }
+    if (slot.repaired === effective && slot.nodes.some(isSelectionTouching)) return;
 
-    for (const node of nodes) frag.append(node);
-    if (old?.nodes[0]?.parentNode === this.el) {
-      this.el.insertBefore(frag, old.nodes[0]);
-      for (const node of old.nodes) node.remove();
-    } else {
-      this.el.insertBefore(frag, anchorBefore(this.el));
+    const html = block.hasRef && cardsSource ? this.opts.render(`${effective}\n\n${cardsSource}`) : this.opts.render(effective);
+    const nodes = block.hasRef && cardsSource
+      ? topNodes(html, this.el).filter((n) => !(n instanceof Element && n.classList.contains("gen-card")))
+      : topNodes(html, this.el);
+    const prevLen = slot.visibleLen;
+    const nextLen = nodes.reduce((sum, n) => sum + (n.textContent?.length ?? 0), 0);
+    const fades = slot.fades
+      .filter((f) => now - f.at < D_STREAM_FADE && f.from < nextLen)
+      .map((f) => ({ ...f, to: Math.min(f.to, nextLen) }));
+
+    if (isLive && nextLen > prevLen) fades.push({ from: prevLen, to: nextLen, at: now });
+    const isNewTable = prevLen === 0 && nodes.some((n) => n instanceof Element && (n.tagName === "TABLE" || !!n.querySelector("table")));
+
+    this.mountSlotNodes(index, slot, nodes);
+    slot.visibleLen = nextLen;
+    slot.repaired = effective;
+    slot.fades = fades;
+    if (isNewTable && isLive) {
+      for (const n of nodes) if (n instanceof HTMLElement) n.classList.add("stream-block-enter");
+    } else if (isLive && fades.length > 0) {
+      wrapRanges(nodes, fades, now);
+    }
+  }
+
+  private renderCodeSlot(index: number, slot: MountedSlot, block: StreamBlock, now: number, isLive: boolean): void {
+    const repaired = isLive ? repairStreamingTail(block.raw).text : block.raw;
+
+    if (!repaired.trim()) return;
+    const parsed = parseCodeFence(repaired);
+
+    if (!parsed) {
+      this.renderProseSlot(index, slot, block, repaired, "", now, isLive);
+
+      return;
+    }
+    const { lang, code } = parsed;
+    let codeEl = findCodeElement(slot.nodes);
+    let created = false;
+
+    if (!codeEl) {
+      created = true;
+      const nodes = topNodes(this.opts.render(repaired), this.el);
+
+      if (isLive) for (const n of nodes) if (n instanceof HTMLElement) n.classList.add("stream-block-enter");
+      this.mountSlotNodes(index, slot, nodes);
+      codeEl = findCodeElement(slot.nodes);
+    }
+    if (!codeEl) return;
+
+    const prevCode = slot.lastCodeText ?? "";
+    const isPureAppend = !created && code.startsWith(prevCode);
+    const appended = isPureAppend ? code.slice(prevCode.length) : "";
+
+    if (isPureAppend && appended.length > 0 && !isSelectionTouching(codeEl)) {
+      const span = fadeSpan(0);
+
+      span.textContent = appended;
+      codeEl.append(span);
+    } else if ((created || !isPureAppend) && !isSelectionTouching(codeEl)) {
+      codeEl.textContent = code;
     }
 
-    this.blocks[i] = { md, html, parsed: null, nodes, len, fades };
-    wrapRanges(nodes, fades, now);
+    slot.lastCodeText = code;
+    slot.repaired = repaired;
+    slot.visibleLen = code.length;
+    this.scheduleCodeHighlight(slot, codeEl, code, lang, now, !isLive || created || appended.includes("\n"));
+  }
+
+  private scheduleCodeHighlight(
+    slot: MountedSlot,
+    codeEl: HTMLElement,
+    code: string,
+    lang: string,
+    now: number,
+    eager: boolean,
+  ): void {
+    if (!code.length) return;
+    if (!eager && slot.lastHighlightAt && now - slot.lastHighlightAt < HIGHLIGHT_INTERVAL) return;
+    slot.lastHighlightAt = now;
+    const key = `stream:${this.id}:${slot.index}`;
+    const immediate = getCodeHighlighter().request(key, code, lang, (res) => {
+      if (!codeEl.isConnected || isSelectionTouching(codeEl)) return;
+      const latest = slot.lastCodeText ?? "";
+
+      if (latest === res.code) {
+        slot.lastHighlightHtml = res.html;
+        codeEl.innerHTML = res.html;
+      } else if (latest.startsWith(res.code)) {
+        slot.lastHighlightHtml = res.html;
+        codeEl.innerHTML = `${res.html}<span>${escHtml(latest.slice(res.code.length))}</span>`;
+      }
+    });
+
+    if (immediate !== null && !isSelectionTouching(codeEl)) {
+      slot.lastHighlightHtml = immediate;
+      codeEl.innerHTML = immediate;
+    }
+  }
+
+  private renderCardSlot(index: number, slot: MountedSlot, block: StreamBlock, now: number, final: boolean): void {
+    const closeTags = (block.raw.match(/>/g) ?? []).length;
+    const tagChanged = closeTags !== (slot.lastCardCloseTags ?? -1);
+
+    if (!final && !block.frozen && !tagChanged && slot.lastStructuralAt && now - slot.lastStructuralAt < CARD_INTERVAL) return;
+    slot.lastCardCloseTags = closeTags;
+    slot.lastStructuralAt = now;
+
+    const html = this.opts.render(block.raw);
+    const existingCard = slot.nodes.find((n): n is HTMLElement => n instanceof HTMLElement && n.classList.contains("gen-card"));
+
+    if (existingCard && existingCard.parentNode === this.el) {
+      const host = document.createElement("div");
+
+      host.append(existingCard);
+      patchAnswer(host, html);
+      const patched = [...host.childNodes];
+
+      this.mountSlotNodes(index, slot, patched);
+    } else {
+      const nodes = topNodes(html, this.el);
+
+      this.mountSlotNodes(index, slot, nodes);
+    }
+    slot.repaired = block.raw;
+    slot.visibleLen = slot.nodes.reduce((sum, n) => sum + (n.textContent?.length ?? 0), 0);
   }
 }
 
@@ -544,8 +773,8 @@ const reducedMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: re
 
 export function revealText(el: HTMLElement, text: string, opts: Options & { live: boolean; final: boolean; after?: () => void }): void {
   let reveal = reveals.get(el);
-  el.dataset.markdown = text;
 
+  el.dataset.markdown = text;
   if (!opts.live || reducedMotion()) {
     if (reveal) {
       reveal.update(text, opts.final, opts.after);
@@ -553,9 +782,8 @@ export function revealText(el: HTMLElement, text: string, opts: Options & { live
 
       return;
     }
-
     patchAnswer(el, opts.render(text));
-
+    highlightStaticCodeBlocks(el);
     if (opts.final || !opts.live) dropPlaceholders(el);
     opts.after?.();
 
@@ -566,6 +794,5 @@ export function revealText(el: HTMLElement, text: string, opts: Options & { live
     reveal = new Reveal(el, opts);
     reveals.set(el, reveal);
   }
-
   reveal.update(text, opts.final, opts.after);
 }

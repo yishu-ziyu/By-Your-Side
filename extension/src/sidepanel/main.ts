@@ -1968,6 +1968,20 @@ let followScrollTop = -1;
 
 let followRetry = 0;
 
+let glideRaf = 0;
+
+let lastGlideAt = 0;
+
+let mutationRaf = 0;
+
+const SCROLL_DAMPING = 16;
+
+function cancelScrollGlide(): void {
+  if (!glideRaf) return;
+  window.cancelAnimationFrame(glideRaf);
+  glideRaf = 0;
+}
+
 function nearBottom(): boolean {
   return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
 }
@@ -2012,13 +2026,55 @@ function syncScrollFade(el: HTMLElement = messagesEl, frame: HTMLElement = messa
 }
 
 function markUserScroll(): void {
+  cancelScrollGlide();
   userScrollAt = performance.now();
 }
 
-function followToEnd(): void {
+function snapToEnd(): void {
+  cancelScrollGlide();
   const before = messagesEl.scrollTop;
   messagesEl.scrollTop = messagesEl.scrollHeight;
   if (messagesEl.scrollTop !== before) followScrollTop = messagesEl.scrollTop;
+}
+
+function stepScrollGlide(now: number): void {
+  glideRaf = 0;
+  if (!pinned || userScrolling()) return;
+  const target = Math.max(0, messagesEl.scrollHeight - messagesEl.clientHeight);
+  const current = messagesEl.scrollTop;
+  const diff = target - current;
+
+  if (diff <= 0.75) {
+    if (diff > 0) {
+      messagesEl.scrollTop = target;
+      followScrollTop = messagesEl.scrollTop;
+    }
+    toBottomBtn.hidden = true;
+
+    return;
+  }
+
+  const dtSec = Math.min(0.05, Math.max(0.004, (now - lastGlideAt) / 1000));
+
+  lastGlideAt = now;
+  const step = Math.max(0.8, diff * (1 - Math.exp(-SCROLL_DAMPING * dtSec)));
+  const before = messagesEl.scrollTop;
+
+  messagesEl.scrollTop = Math.min(target, current + step);
+  if (messagesEl.scrollTop !== before) followScrollTop = messagesEl.scrollTop;
+  glideRaf = window.requestAnimationFrame(stepScrollGlide);
+}
+
+function followToEnd(immediate = false): void {
+  if (immediate || reducedMotion() || isReplayingHistory()) {
+    snapToEnd();
+
+    return;
+  }
+  if (!glideRaf) {
+    lastGlideAt = performance.now();
+    glideRaf = window.requestAnimationFrame(stepScrollGlide);
+  }
 }
 
 messagesEl.addEventListener("wheel", markUserScroll, { passive: true });
@@ -2042,7 +2098,7 @@ messagesEl.addEventListener("scroll", () => {
 
   const atEnd = messagesEl.scrollHeight - top - messagesEl.clientHeight <= 1;
 
-  if (top === followScrollTop) followScrollTop = -1;
+  if (followScrollTop >= 0 && Math.abs(top - followScrollTop) <= 1.5) followScrollTop = -1;
   else {
     const next = seenBottom() - top - messagesEl.clientHeight < 40 && (top >= lastScrollTop || atEnd);
 
@@ -2064,25 +2120,30 @@ new ResizeObserver(() => {
   followLive(currentRun?.body ?? null, false);
 }).observe(messagesEl);
 
+// WHY: Coalesce DOM mutation geometry reads into the next animation frame so streaming appends never trigger Forced Synchronous Layout.
 new MutationObserver(() => {
-  noteHeight();
-  syncScrollFade();
-  followLive(currentRun?.body ?? null, false);
-
-  if (!pinned && !isReplayingHistory() && !toBottomBtn.hidden && !toBottomBtn.classList.contains("has-new") && heightWhenLeft > 0 && messagesEl.scrollHeight > heightWhenLeft + 8) markToBottomNew(true);
+  if (mutationRaf) return;
+  mutationRaf = window.requestAnimationFrame(() => {
+    mutationRaf = 0;
+    noteHeight();
+    syncScrollFade();
+    followLive(currentRun?.body ?? null, false);
+    if (pinned && !userScrolling() && messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight > 1) followToEnd();
+    if (!pinned && !isReplayingHistory() && !toBottomBtn.hidden && !toBottomBtn.classList.contains("has-new") && heightWhenLeft > 0 && messagesEl.scrollHeight > heightWhenLeft + 8) markToBottomNew(true);
+  });
 }).observe(messagesEl, { childList: true, subtree: true, characterData: true });
 
 function scrollToEnd(force = false): void {
   followLive(currentRun?.body ?? null, force || runBodyPinned);
 
-  if (force || (pinned && !userScrolling())) followToEnd();
+  if (force || (pinned && !userScrolling())) followToEnd(force);
   else if (pinned && !followRetry) followRetry = window.setTimeout(() => { followRetry = 0; scrollToEnd(); }, USER_SCROLL_QUIET_MS);
   toBottomBtn.hidden = pinned || nearBottom();
 }
 
 toBottomBtn.onclick = () => {
   pinned = true;
-  followToEnd();
+  followToEnd(true);
   toBottomBtn.hidden = true;
   heightWhenLeft = 0;
   markToBottomNew(false);
