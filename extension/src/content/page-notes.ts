@@ -105,7 +105,7 @@ export function inPageNote(node: Node | null): boolean {
 
 const SKIP_TEXT_ANCESTOR = `script,style,noscript,textarea,input,[${NOTE_ATTR}],[data-sideagent-ask]`;
 
-function collectTextNodes(root: Node): Array<{ node: Text; start: number; end: number }> {
+export function collectTextNodes(root: Node): Array<{ node: Text; start: number; end: number }> {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const segments: Array<{ node: Text; start: number; end: number }> = [];
   let offset = 0;

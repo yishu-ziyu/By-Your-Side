@@ -107,7 +107,7 @@ const DEFAULT_TAB_TOOLS: ReadonlySet<string> = new Set([
   "page_operation",
   "page_translation",
   "close_tab", "click", "double_click", "drag", "upload_file", "cdp", "hover", "fill", "type_text", "press_key", "scroll",
-  "js", "navigate", "screenshot", "mark", "clear_marks", "guide_step", "ask_user_to_point",
+  "js", "navigate", "screenshot", "mark", "clear_marks", "page_skim", "page_transform", "guide_step", "ask_user_to_point",
 ]);
 
 const TARGET_CHANGING_TOOLS: ReadonlySet<string> = new Set(["switch_tab", "open_tab", "worker_tabs", "click", "double_click", "navigate"]);

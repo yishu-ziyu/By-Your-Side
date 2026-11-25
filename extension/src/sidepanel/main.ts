@@ -98,6 +98,8 @@ import { installChromeQuiet } from "./chrome-quiet.js";
 import { createSteerRibbon } from "./in-flight-steer.js";
 import { mountSlashSkills } from "./slash-skills.js";
 import { mountPageOffers } from "./page-offers.js";
+import { mountCollectorCard } from "./collector-card.js";
+import { mountFastActionBanner } from "./fast-actions-ui.js";
 import { mountTabMentions, type MentionedTab } from "./tab-mentions.js";
 import { paintPlanReceipt, siteName } from "./task-plan.js";
 import { mountAnswerCommand } from "./answer-command.js";
@@ -896,9 +898,25 @@ function conversationEmpty(): boolean {
   });
 }
 
-const pageOffers = mountPageOffers({ composerEl, inputEl, actions: (url) => slashSkills.pageActions(url), ready: () => conversationEmpty() });
+const collectorCard = mountCollectorCard({ composerEl, inputEl });
+const fastActionBanner = mountFastActionBanner({ composerEl, onChanged: () => pageOffers.sync() });
+const pageOffers = mountPageOffers({
+  composerEl,
+  inputEl,
+  actions: (url) => slashSkills.pageActions(url),
+  ready: () => conversationEmpty(),
+  onFastActionRun: (result, url) => fastActionBanner.showRunResult(result, url),
+  onOpenCollector: () => collectorCard.open(),
+});
 
-new MutationObserver(() => { app.classList.toggle("conversation-empty", conversationEmpty()); pageOffers.sync(); }).observe(messagesEl, { childList: true, subtree: true });
+let wasEmpty = conversationEmpty();
+new MutationObserver(() => {
+  const empty = conversationEmpty();
+  app.classList.toggle("conversation-empty", empty);
+  if (empty && !wasEmpty) fastActionBanner.clear();
+  wasEmpty = empty;
+  pageOffers.sync();
+}).observe(messagesEl, { childList: true, subtree: true });
 
 app.classList.toggle("conversation-empty", conversationEmpty());
 

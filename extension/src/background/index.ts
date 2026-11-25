@@ -42,6 +42,8 @@ import { closeTab, getActiveTab, listTabs, openTab, switchTab } from "./exec/tab
 import { navigate } from "./exec/navigate.js";
 import { snapshot, snapshotTab } from "./exec/snapshot.js";
 import { pageText } from "./exec/page-text.js";
+import { pageSkimTool, pageTransformTool } from "./exec/phase2-tools.js";
+import { TabSkeletonCache } from "../../../shared/tab-prewarm.js";
 import { isReplayRequest } from "../shared/cursor-trail.js";
 import { commitTrail } from "./exec/trail.js";
 import { click, cursorGaze, doubleClick, hover, clearMarks, cancelMarkHold, fill, selectOption, uploadFile, hideCursorsForSessions, leaveCursorsForSessions, returnCursorsForSessions, inspectStepTarget, clearStepInspect, locatedStillThere, pointAtLocated, takeLastActionTarget, getControlBannerOwner, hideControlBannersForOwner, hideUserControlBanners, mark, playLastTrail, pressKey, pressKeyGuarded, scroll, showHandoffMarks, showTeamControlBanners, stopTrailReplay, typeText } from "./exec/input.js";
@@ -134,6 +136,8 @@ const handlers: Record<ToolName, Handler> = {
   screenshot: (p, sid) => screenshot(p, sid),
   mark: (p, sid) => mark(p, sid),
   clear_marks: (p, sid) => clearMarks(sid, p.tabId),
+  page_skim: (p, sid) => pageSkimTool(p, sid),
+  page_transform: (p, sid) => pageTransformTool(p, sid),
   guide_step: async () => { throw notExecuted(new Error("guide_step 只能在任务里调用")); },
 };
 
@@ -1724,6 +1728,8 @@ async function executeToolCall(
       scroll:(p,s)=>scroll(p,s,beforeDispatch),
       mark:(p,s)=>mark(p,s,beforeDispatch),
       clear_marks:(p,s)=>clearMarks(s,p.tabId,beforeDispatch),
+      page_skim:(p,s)=>pageSkimTool(p,s,beforeDispatch),
+      page_transform:(p,s)=>pageTransformTool(p,s,beforeDispatch),
       switch_tab:(p,s)=>switchTab(p,s,beforeDispatch),
       navigate:(p,s)=>navigate(p,s,beforeDispatch,sendGuard.cancelled),
       open_tab:(p,s)=>openTab(p,s,beforeDispatch,sendGuard.cancelled),
@@ -2293,7 +2299,8 @@ async function readMentionedPages(entry: PanelHistoryEntry, pages: PageContext[]
     }
 
     try {
-      const got = await pageText({ tabId: page.tabId, max: 4_000 });
+      const cached = tabPrewarm.get(page.tabId, page.url);
+      const got = cached ?? await pageText({ tabId: page.tabId, max: 4_000 });
       if (!got.text.trim()) throw new Error("这一页没有可读的正文");
       settle(page.tabId, "read");
     } catch (error) {
@@ -2413,7 +2420,16 @@ if (chrome.commands?.onCommand) {
 void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
 });
 
+const tabPrewarm = new TabSkeletonCache((tabId, max) => pageText({ tabId, max }).catch(() => null));
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabPrewarm.invalidate(tabId);
+});
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url || changeInfo.status === "loading") {
+    tabPrewarm.invalidate(tabId);
+  }
   void (async () => {
     await controlReady;
 
@@ -2429,6 +2445,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 function attachPanel(port: chrome.runtime.Port) {
   if (panels.has(port)) return;
   panels.add(port);
+  void chrome.tabs.query({ currentWindow: true }).then((tabs) => tabPrewarm.prewarmWindow(tabs)).catch(() => {});
 
   if (conversationId === panelConversation(port)) void Promise.all([controlReady, historyReady]).then(() => syncPanel(port));
 
