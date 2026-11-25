@@ -3,7 +3,7 @@ import { IncrementalBlockFreezer, type StreamBlock, type StreamBlockKind } from 
 import { repairStreamingTail } from "../../../shared/streaming-tail.js";
 import { keepOpenedImages } from "../shared/answer-html.js";
 import { D_STREAM_FADE } from "../shared/motion-tokens.js";
-import { dropPlaceholders, patchAnswer } from "./answer-cards.js";
+import { dropPlaceholders, patchAnswer, patchCardNodes } from "./answer-cards.js";
 import { getCodeHighlighter } from "./code-highlighter.js";
 
 const REBUILD_LOAD = 0.15;
@@ -566,16 +566,22 @@ class Reveal {
   }
 
   private mountSlotNodes(index: number, slot: MountedSlot, nextNodes: ChildNode[]): void {
-    const frag = document.createDocumentFragment();
+    // WHY: 节点一离开页面再放回，卡片里的画框就会重新加载、从头画；已经在原位的节点留着不动。
+    const reused = new Set(nextNodes);
+    const placed = slot.nodes.filter((node) => node.parentNode === this.el);
+    let at: ChildNode | null = placed[0] ?? this.nextAnchor(index);
 
-    for (const node of nextNodes) frag.append(node);
-    const oldFirst = slot.nodes[0];
-
-    if (oldFirst && oldFirst.parentNode === this.el) {
-      this.el.insertBefore(frag, oldFirst);
-      for (const node of slot.nodes) node.remove();
-    } else {
-      this.el.insertBefore(frag, this.nextAnchor(index));
+    for (const node of placed) {
+      if (reused.has(node)) continue;
+      if (node === at) at = node.nextSibling;
+      node.remove();
+    }
+    for (const node of nextNodes) {
+      if (node === at) {
+        at = node.nextSibling;
+        continue;
+      }
+      this.el.insertBefore(node, at);
     }
     slot.nodes = nextNodes;
   }
@@ -750,13 +756,7 @@ class Reveal {
     const existingCard = slot.nodes.find((n): n is HTMLElement => n instanceof HTMLElement && n.classList.contains("gen-card"));
 
     if (existingCard && existingCard.parentNode === this.el) {
-      const host = document.createElement("div");
-
-      host.append(existingCard);
-      patchAnswer(host, html);
-      const patched = [...host.childNodes];
-
-      this.mountSlotNodes(index, slot, patched);
+      this.mountSlotNodes(index, slot, patchCardNodes(existingCard, html));
     } else {
       const nodes = topNodes(html, this.el);
 
