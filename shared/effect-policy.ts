@@ -16,6 +16,8 @@ export const WRITE_TOOLS = [
   "scroll",
   "mark",
   "clear_marks",
+  "page_skim",
+  "page_transform",
   "arm_event",
   "wait_event",
   "disarm_event",

@@ -1373,6 +1373,61 @@ export function createBrowserTools(rpc: ToolRpc, sessionId?: string, takeTab?: (
       },
     }),
     defineTool({
+      name: "page_skim",
+      label: "Highlight key points on page",
+      description:
+        "Highlight 2-5 key sentences directly on the current webpage with brief paper-toned margin notes so the user can skim the original page without reading a long sidebar summary. Pass exact verbatim quotes from the page text, or set clear:true to remove skim highlights.",
+      parameters: Type.Object({
+        tabId: Type.Optional(Type.Number()),
+        points: Type.Optional(
+          Type.Array(
+            Type.Object({
+              id: Type.String({ minLength: 1 }),
+              quote: Type.String({ minLength: 4 }),
+              note: Type.String({ minLength: 1 }),
+            }),
+            { maxItems: 6 },
+          ),
+        ),
+        clear: Type.Optional(Type.Boolean()),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("page_skim", params)) as ToolContract["page_skim"]["data"];
+        if (params.clear) return textResult("Cleared page skim highlights.", data);
+        const missed = data.missed ?? [];
+        const total = params.points?.length ?? 0;
+        const gap = missed.length ? ` Not found in the page text, so not highlighted: ${missed.join(", ")}; quote the page verbatim to retry those.` : "";
+
+        return textResult(`Highlighted ${data.matched ?? 0} of ${total} key points on the page, each with its margin note.${gap} Snapshots may not show the highlights; this count is the real result, report it as is.`, data);
+      },
+    }),
+    defineTool({
+      name: "page_transform",
+      label: "Transform page locally",
+      description:
+        "Modify the current webpage locally in-place without touching the remote server, with one-click zero-residue restore. Use enhance_table on a static <table> selector to add column sorting and keyword filtering; when the page has several tables, pass text with words from the wanted table's caption or header row to pick it. Use hide_elements to hide sidebars or clutter; collapse_elements to collapse long blocks; or restore:true to undo all local transforms. The result lists what each action matched.",
+      parameters: Type.Object({
+        tabId: Type.Optional(Type.Number()),
+        actions: Type.Optional(
+          Type.Array(
+            Type.Object({
+              type: Type.Union([Type.Literal("enhance_table"), Type.Literal("hide_elements"), Type.Literal("collapse_elements")]),
+              selector: Type.String({ minLength: 1, description: 'The element to change: an "@N" ref from the latest snapshot (preferred; never guess ids or class names), a "loc=css:..." locator from read_elements, or a raw CSS selector. For hide/collapse pass the whole region, e.g. the navigation or complementary landmark; for enhance_table any ref inside the table works.' }),
+              text: Type.Optional(Type.String({ description: "enhance_table only: words from the wanted table's caption or header row" })),
+              label: Type.Optional(Type.String()),
+            }),
+            { maxItems: 8 },
+          ),
+        ),
+        restore: Type.Optional(Type.Boolean()),
+      }),
+      execute: async (_id, params) => {
+        const data = (await call("page_transform", params)) as ToolContract["page_transform"]["data"];
+        if (params.restore) return textResult(`Restored ${data.restored ?? 0} local page transforms.`, data);
+        return textResult(`Applied local page transforms: ${data.affected ?? 0} elements changed on this page only.\n${(data.report ?? []).join("\n")}\nThe user can undo all of it with 恢复原页 in the side panel, or you can with restore:true. This is the real result, report it as is.`, data);
+      },
+    }),
+    defineTool({
       name: "guide_step",
       label: "Guide one step",
       description:

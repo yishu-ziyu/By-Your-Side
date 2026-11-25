@@ -4203,3 +4203,21 @@ details.plan-card:not([open]) > .plan-fill-scope { display: none; }
   .needs-model-card:not(.needs-model-connected) { --t1: var(--content-subtle-hover); --t3: var(--content-bg); --t4: var(--content-subtle); --sheen: transparent; }
   .needs-model-card .needs-model-connect { background: var(--text-primary) !important; color: var(--content-bg) !important; box-shadow: none; }
 }
+
+.bys-tray-card { margin: 0 var(--s-1) var(--s-2); padding: var(--s-3); border: 1px solid var(--content-border); border-radius: var(--r); background: var(--surface); display: flex; flex-direction: column; gap: var(--s-2); }
+.bys-tray-card[hidden], .bys-fast-bar[hidden] { display: none; }
+.bys-tray-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.bys-tray-title { font: var(--fs-ui)/var(--lh-ui) var(--font); font-weight: 600; color: var(--text-primary); }
+.bys-tray-actions { display: flex; align-items: center; gap: var(--s-1); }
+.bys-tray-btn { padding: var(--s-1) var(--s-2); border: 1px solid var(--content-border); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-primary); font: var(--fs-meta)/var(--lh-meta) var(--font); cursor: pointer; }
+.bys-tray-btn.primary { font-weight: 600; }
+.bys-tray-input { width: 100%; padding: var(--s-1) var(--s-2); border: 1px solid var(--content-border); border-radius: var(--r-sm); background: var(--bg); color: var(--text-primary); font: var(--fs-meta)/var(--lh-meta) var(--font); }
+.bys-tray-table-wrap { max-height: 180px; overflow: auto; }
+.bys-tray-hint { margin: 0; font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-tertiary); }
+.bys-tray-table { width: 100%; border-collapse: collapse; font: var(--fs-meta)/var(--lh-meta) var(--font); }
+.bys-tray-table th, .bys-tray-table td { padding: var(--s-1) var(--s-2); border-bottom: 1px solid var(--content-border); text-align: left; color: var(--text-secondary); }
+.bys-tray-table th { font-weight: 600; color: var(--text-primary); }
+.bys-tray-row { cursor: pointer; }
+.bys-tray-row:hover td { background: var(--surface-2); }
+.bys-fast-bar { margin: 0 var(--s-1) var(--s-2); padding: var(--s-2) var(--s-3); border: 1px solid var(--content-border); border-radius: var(--r-sm); background: var(--surface); display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.bys-fast-text { font: var(--fs-meta)/var(--lh-meta) var(--font); color: var(--text-secondary); flex: 1; }

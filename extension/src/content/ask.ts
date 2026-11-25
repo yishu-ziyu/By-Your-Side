@@ -8,6 +8,7 @@ import { installBrowseLog } from "./browse-log.js";
 import { installFloatCard } from "./float-card.js";
 import { installSonarPinpoint } from "./sonar-pinpoint.js";
 import { installMemoryMark } from "./memory-mark.js";
+import { installPhase2Bridge } from "./phase2-bridge.js";
 import { installPushToTalkKeys } from "./ptt.js";
 import { PTT_CAPSULE, PTT_LEVEL, PTT_WARM, READING_VOICE, type PttCapsuleAction, type ReadingVoiceMessage } from "../shared/ptt.js";
 import { extensionAlive } from "./alive.js";
@@ -15,6 +16,7 @@ import { createElement as icon, ArrowUp, Square, X, PanelRight, Volume2, Ellipsi
 import { sanitizeAnswerHtml } from '../shared/answer-html.js';
 import { clipSelection, isDirectAskTypingKey, isEditableTarget, isSelectionArrowOrShiftKey, EXPLAIN_PROMPT, TEACH_SELECTION_DRAFT, SELECTION_BAR_KEY, READING_ALOUD_KEY, isSelectionBarOff, isReadingAloudOn, READING_CARD_SIZE_KEY, readReadingCardSize, type ReadingCardSize } from '../shared/ask-selection.js';
 import { isReadingTranslation, READING_TRANSLATE_QUESTION, READING_CONTEXT_LIMIT, READING_SELECTION_LIMIT, READING_KINDS, READING_KIND_SELECTION_LIMIT, type ReadingKind, type ReadingSource } from '../../../shared/reading.js';
+import { judgeReadingKindFast } from '../../../shared/reading-fast-kind.js';
 import { readingBusy, type ReadingRecord } from '../shared/reading-state.js';
 import { renderMarkdownHtml } from '../shared/markdown.js';
 import { ASK_STYLES } from './ask-styles.js';
@@ -294,6 +296,7 @@ function boot(): void {
 
   installSonarPinpoint();
   installMemoryMark();
+installPhase2Bridge();
   installDragFeed();
   installMarginaliaTracker();
   installGhostHud();
@@ -1805,6 +1808,13 @@ function boot(): void {
     const text = target.source.text;
 
     if (text.length > READING_KIND_SELECTION_LIMIT || judged.has(text) || CONTEXT_ACTIONS.some(action => action.fits(text, 'none'))) return;
+    const fast = judgeReadingKindFast(text);
+    if (fast.decided) {
+      if (judged.size >= JUDGED_LIMIT) judged.delete(judged.keys().next().value!);
+      judged.set(text, fast.kind);
+      if (snapshot === target && isVisible() && !isCard()) render();
+      return;
+    }
     judging = window.setTimeout(() => {
       void rpc('reading_kind', { text }).then(result => {
         if (judged.size >= JUDGED_LIMIT) judged.delete(judged.keys().next().value!);

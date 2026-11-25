@@ -462,6 +462,8 @@ export const TOOL_NAMES = [
   "mark",
   "clear_marks",
   "guide_step",
+  "page_skim",
+  "page_transform",
   "double_click",
   "arm_event",
   "wait_event",
@@ -747,6 +749,8 @@ export interface ToolContract {
   mark: { params: { tabId?: number; target?: string; through?: string; label?: string; actions?: MarkAction[]; text?: string[] }; data: { marked: true; counts?: Array<{ text: string; count: number }> } };
   clear_marks: { params: {tabId?: number}; data: { cleared: true } };
   guide_step: { params: { tabId?: number; target: string; say: string; step: number }; data: GuideStepResult };
+  page_skim: { params: { tabId?: number; points?: Array<{ id: string; quote: string; note: string }>; clear?: boolean }; data: { ok: boolean; matched?: number; missed?: string[]; cleared?: boolean } };
+  page_transform: { params: { tabId?: number; actions?: Array<{ type: "enhance_table" | "hide_elements" | "collapse_elements"; selector: string; text?: string; label?: string }>; restore?: boolean }; data: { ok: boolean; affected?: number; report?: string[]; count?: number; restored?: number } };
 }
 
 export interface GuideWait { step: number; say: string; state: "waiting" | "no_change";  target?: string }

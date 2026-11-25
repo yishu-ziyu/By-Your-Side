@@ -45,7 +45,7 @@ export function resultHasWriteEffect(item:Pick<TaskResultItem,'tool'|'evidence'>
 
 const NO_REPEAT_HARM_WRITES: ReadonlySet<string> = new Set([
   'worker_tabs', 'navigate', 'open_tab', 'switch_tab', 'close_tab',
-  'scroll', 'hover', 'mark', 'clear_marks', 'ask_user_to_point',
+  'scroll', 'hover', 'mark', 'clear_marks', 'page_skim', 'page_transform', 'ask_user_to_point',
   'arm_event', 'wait_event', 'disarm_event', 'accept_dialog', 'dismiss_dialog',
   'release_held_inputs',
 ]);
@@ -214,7 +214,7 @@ const RESULT_ACTION_LABELS: Record<string, string> = {
   press_key: "按键", wheel: "滚轮", mouse_down: "按下鼠标", mouse_up: "松开鼠标", key_down: "按下键", key_up: "松开键",
   release_held_inputs: "松开按住输入", paste: "粘贴", html5_drag: "HTML5 拖放", select_option: "选择选项",
   navigate: "打开页面", open_tab: "打开标签页", switch_tab: "切换标签页",
-  close_tab: "关闭标签页", scroll: "滚动页面", mark: "标注页面", clear_marks: "清除标注",
+  close_tab: "关闭标签页", scroll: "滚动页面", mark: "标注页面", clear_marks: "清除标注", page_skim: "原页标重点", page_transform: "整理页面",
   js: "执行页面脚本", worker_tabs: "调整页面归属", share_tab: "设置协作页面",
 };
 
