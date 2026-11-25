@@ -528,21 +528,11 @@ export function dropPlaceholders(root: HTMLElement): void {
   for (const el of root.querySelectorAll(".gen-card .gc-stats, .gen-card .gc-steps, .gen-card .gc-options, .gen-card .gc-checks")) if (!el.children.length) el.remove();
 }
 
-export function patchAnswer(root: HTMLElement, html: string): void {
-  const next = document.createElement("template");
-  next.innerHTML = html;
-  keepOpenedImages(next.content, root);
-  const shown = root.childNodes.length > 0;
-  const kept = [...root.children].filter((el) => el.classList.contains("gen-card") && !el.classList.contains("send-declined-card"));
-  const trailing = [...root.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el.matches(".answer-actions, .answer-panel, .send-declined-card"));
-  const memoryCite = root.querySelector<HTMLElement>(":scope > .memory-used-cite-row > .memory-used-toggle, :scope > * > .memory-used-toggle");
-  const memoryLine = root.querySelector<HTMLElement>(":scope > .memory-used-line");
-  const want: Node[] = [];
+function mergeCards(kept: readonly Element[], content: DocumentFragment, shown: boolean): ChildNode[] {
+  const want: ChildNode[] = [];
   let k = 0;
 
-  for (const el of root.querySelectorAll<HTMLElement>("[data-tail]")) delete el.dataset.tail;
-
-  for (const node of [...next.content.childNodes]) {
+  for (const node of [...content.childNodes]) {
     const old = node instanceof Element && node.classList.contains("gen-card") ? kept[k++] : undefined;
 
     if (old && node instanceof Element) {
@@ -560,6 +550,30 @@ export function patchAnswer(root: HTMLElement, html: string): void {
   }
 
   for (const card of kept) if (card instanceof HTMLElement && card.querySelector(".gc-field")) refreshForm(card);
+
+  return want;
+}
+
+export function patchCardNodes(card: HTMLElement, html: string): ChildNode[] {
+  const next = document.createElement("template");
+  next.innerHTML = html;
+  keepOpenedImages(next.content, card);
+
+  return mergeCards([card], next.content, true);
+}
+
+export function patchAnswer(root: HTMLElement, html: string): void {
+  const next = document.createElement("template");
+  next.innerHTML = html;
+  keepOpenedImages(next.content, root);
+  const shown = root.childNodes.length > 0;
+  const kept = [...root.children].filter((el) => el.classList.contains("gen-card") && !el.classList.contains("send-declined-card"));
+  const trailing = [...root.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el.matches(".answer-actions, .answer-panel, .send-declined-card"));
+  const memoryCite = root.querySelector<HTMLElement>(":scope > .memory-used-cite-row > .memory-used-toggle, :scope > * > .memory-used-toggle");
+  const memoryLine = root.querySelector<HTMLElement>(":scope > .memory-used-line");
+  for (const el of root.querySelectorAll<HTMLElement>("[data-tail]")) delete el.dataset.tail;
+
+  const want = mergeCards(kept, next.content, shown);
 
   for (const node of [...root.childNodes]) {
     if (!want.includes(node) && !(node instanceof HTMLElement && trailing.includes(node))) node.remove();

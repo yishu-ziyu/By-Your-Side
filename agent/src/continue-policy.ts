@@ -99,7 +99,9 @@ export class ContinuePolicy {
     const asked = (snapshot?.recoveryInput?.requirements?.length ? snapshot.recoveryInput.requirements : [ctx.goal]).filter(Boolean);
     const request = asked.length ? ` The user's request: ${JSON.stringify(asked)}.` : "";
     const evidence = verdict.verificationSubject === "answer" && !verdict.verifiedByHost ? " The finding was not verified against the page." : "";
-    return { prompt: `[GOAL CHECK] Review your last result against the user's request and the observations you already have.${request}${evidence} You may read the open pages again and correct your answer. The host permits only reading and replying during this check. Preserve completed work. If something still requires changing a page or file, state what is incomplete and tell the user they can ask you to continue.` };
+    // WHY: 只把宿主自己核出的问题交给模型去改；核对模型写的自由文本可能夹带网页里的指令，不能进入执行。
+    const hostFinding = verdict.verifiedByHost && verdict.correction ? ` The host's own check found this in your last result: ${JSON.stringify(verdict.correction)}.` : "";
+    return { prompt: `[GOAL CHECK] Review your last result against the user's request and the observations you already have.${request}${evidence}${hostFinding} You may read the open pages again and correct your answer. The host permits only reading and replying during this check. Preserve completed work. If something still requires changing a page or file, state what is incomplete and tell the user they can ask you to continue.` };
   }
 
   started(runId: string | null, fingerprint: string | null, pageNow: string | null): number {
